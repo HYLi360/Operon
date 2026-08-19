@@ -1,0 +1,620 @@
+# How-to 操作手册
+
+本手册以“任务 → 步骤”的方式组织，供日常使用者查阅。命令默认在项目根目录执行；如在项目外，请加全局参数 `--project /path/to/project`。
+
+## 1. 如何批量录入元数据
+
+小规模数据可用 `add`；成百上千条记录建议编辑 TSV 后导入。
+
+```bash
+# 用文本编辑器或脚本填写 metadata/organisms.tsv、samples.tsv、assemblies.tsv ...
+operon import-metadata --replace
+```
+
+导入行为：
+
+- 默认（不带 `--replace`）：按主键合并，已有行更新，新行插入。
+- `--replace`：把 metadata TSV 当作完整快照，在**一个事务**中重建相关表；header-only 空表会清空对应表。推荐首次建库和批量刷新时使用。
+- 任一表校验或写入失败会整体回滚。
+
+TSV 示例 `metadata/assemblies.tsv`：
+
+```text
+assembly_idassembly_accessionassembly_versionassembly_levelassembly_methodreference_status...
+ASM_000001GCA_0000000011chromosomeSPAdes v4.0.0representative
+```
+
+所有可用列请用 `operon schema --dump` 查看。
+
+## 2. 如何扩展元数据字段
+
+1. 打开 `config/schemas.yaml`。
+2. 在对应表 `fields` 下添加字段，例如给 organism 加 `provenance_note`：
+
+```yaml
+tables:
+  organisms:
+    fields:
+      provenance_note:
+        type: string
+        description: 项目自定义来源备注
+```
+
+3. 运行任意会打开数据库的命令（如 `operon import-metadata`），系统会自动在 SQLite 表上增加该列（`ensure_metadata_columns`）。
+4. 编辑 TSV 或使用 `add --field provenance_note=...` 写入。
+
+注意：TSV 中的未知列仍会被拒绝；必须先改 schema，再导入数据。
+
+## 3. 如何导入或下载 NCBI Datasets 组装
+
+### 3.1 先预览已有元数据
+
+适配器接受 NCBI Datasets 的 JSON/JSONL report、dataformat TSV/CSV、完整 ZIP
+或解包目录。推荐第一次先运行 dry-run：
+
+```bash
+operon ncbi-datasets \
+  --input /data/assembly_data_report.jsonl \
+  --dry-run
+```
+
+输出中的 `new_ids` 是将要分配的 organism/sample/assembly/annotation 数量；
+`metadata_rows` 包含将要 upsert 的行数。dry-run 不复制输入、不写数据库、不生成日志。
+如果项目仍是 metadata schema 1.0，正式导入会保留自定义字段并补入 NCBI adapter
+需要的 assembly 字段，升级到 1.1；dry-run 不修改 schema。
+
+确认后去掉 `--dry-run`：
+
+```bash
+operon ncbi-datasets --input /data/assembly_data_report.jsonl
+```
+
+### 3.2 导入已有 ZIP 并自动归档文件
+
+```bash
+operon ncbi-datasets --input /data/ncbi_dataset.zip
+```
+
+程序会安全解包并识别：
+
+| Datasets 文件 | `operon` 角色/实体 |
+|---|---|
+| `genomic.fna` | `genome_fasta` → assembly |
+| `genomic.gff` / `.gff3` | `annotation_gff3` → annotation |
+| `protein.faa` | `protein_fasta` → annotation |
+| `cds_from_genomic.fna` | `cds_fasta` → annotation |
+| `sequence_report.jsonl` / assembly report | `assembly_report` → assembly |
+
+原始 ZIP 以 SHA-256 命名保存在 `raw/metadata/ncbi_datasets/`；生物文件通过
+正常 `ingest` 进入 raw 和 `files.tsv`。重复导入相同包会复用相同内部 ID 与 file ID。
+
+如果只需要元数据：
+
+```bash
+operon ncbi-datasets --input /data/ncbi_dataset.zip --no-archive-files
+```
+
+### 3.3 在线下载并自动归档
+
+```bash
+export NCBI_EMAIL='you@example.org'
+# export NCBI_API_KEY='...'  # 可选，较高请求配额
+
+operon ncbi-datasets \
+  --accession GCF_000005845.2 \
+  --accession GCA_000001405.29
+```
+
+大批量导入（默认 3 个并行下载 worker）：
+
+```bash
+operon ncbi-datasets --accession-file accessions.txt \
+  --download-workers 3
+```
+
+默认批大小为 10（允许范围 1–100），aiohttp 最多同时下载 3 个批次（可设 1–10）。
+每完成一个批次立即进入导入与归档，并删除该批次暂存 ZIP。Datasets ZIP 直接流式读取
+report，生物文件一次只解出一个到项目文件系统，然后移入 `raw/`，不会在 `/tmp` 中
+保留所有批次的 ZIP 和完整解包副本。
+
+遇到 `[SSL] record layer failure`、连接中断、超时或 429/5xx 时无需手工重跑：
+
+```bash
+operon ncbi-datasets --accession-file accessions.txt \
+  --retries 4 --retry-backoff 1.0
+```
+
+重试采用指数退避；默认即启用 4 次重试。如果某个 accession 无效、撤回或不可用，
+NCBI 可能返回只有 README 的“空 package”；`operon` 会识别并报告具体 accession，
+其他批次继续导入，最后汇总失败并返回非零退出码。需要进一步控制空间时，优先减少
+`--batch-size` 或 `--download-workers`，并用重复的 `--include` 只请求必要文件类型。
+
+默认下载所有适配器支持的类型。若只要组装和注释：
+
+```bash
+operon ncbi-datasets \
+  --accession GCF_000005845.2 \
+  --include genome \
+  --include gff3
+```
+
+下载使用 NCBI Datasets v2 API；Biopython Entrez 在 package 缺少 report 且设置了
+email 时作为元数据回退。下载 ZIP 会在项目所在文件系统中流式写入、验证为合法 ZIP，
+再进入导入流程；不会使用容量可能较小的 `/tmp` tmpfs。
+
+### 3.4 去重与版本规则
+
+- taxon ID 相同：复用 organism；
+- BioSample accession 相同：复用 sample；
+- paired GCF/GCA：映射到同一个 assembly；
+- 完整 accession 相同（包括 `.版本`）：幂等更新；
+- accession 版本变化：创建新的 `ASM_`，旧文件不被覆盖；
+- BioProject 对 assembly 是一对多，因此保存在 `assemblies.bioproject_accession`，
+  不放进唯一 accession 映射表；
+- 缺少 BioSample 时：为 assembly 创建专属 sample，重复导入时通过 assembly 复用。
+
+如果包中的同一实体/角色与已归档文件字节不同，命令会在元数据落库前拒绝，提示使用
+新的 assembly/annotation 版本。
+
+## 4. 如何归档双端测序数据
+
+1. 先建立 sample 与 run：
+
+```bash
+operon add run --field sample_id=SMP_000001 --field library_layout=PAIRED
+```
+
+2. 分别归档 R1/R2：
+
+```bash
+operon ingest --source /data/SRR001_R1.fastq.gz \
+  --entity-type run --entity-id RUN_000001 --role reads_r1
+
+operon ingest --source /data/SRR001_R2.fastq.gz \
+  --entity-type run --entity-id RUN_000001 --role reads_r2
+```
+
+3. 校验并 QC：
+
+```bash
+operon verify
+operon qc --entity-type run --entity-id RUN_000001
+```
+
+R1 与 R2 的 `read_count` 会分别以各自的 `input_identity` 保存，同时系统会写入 `paired_read_count_match`。
+
+## 5. 如何归档组装与注释
+
+```bash
+# assembly FASTA
+operon ingest --source /data/ASM.fna.gz \
+  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
+
+# annotation 三件套
+operon ingest --source /data/ANN.gff3.gz \
+  --entity-type annotation --entity-id ANN_000001 --role annotation_gff3
+operon ingest --source /data/ANN.cds.faa.gz \
+  --entity-type annotation --entity-id ANN_000001 --role cds_fasta
+operon ingest --source /data/ANN.protein.faa.gz \
+  --entity-type annotation --entity-id ANN_000001 --role protein_fasta
+
+# 全部归档后再统一 QC，避免只处理到部分注释
+operon qc
+```
+
+`ingest` 会自动回填：
+
+- `assemblies.fasta_file_id`
+- `annotations.gff_file_id` / `cds_file_id` / `protein_file_id`
+
+## 6. 如何配置封装式外部分析程序
+
+外部程序统一在 `config/tools.yaml` 中配置，不再每次手工拼接命令。新项目由
+`operon init` 自动生成；旧项目在第一次运行 `tools-check` 或 `analyze` 时若文件缺失
+也会自动补建，不会覆盖已有配置。默认模板给出 `blastn_nt`、`blastp_nr`、
+`hmmsearch_pfam` 和 `busco_autolineage` recipe；需要按本机环境修改启动方式与数据库路径。
+本文保留日常操作所需的速查；完整执行模型、全部字段、占位符、缓存身份、parser 专用
+选项和接入新工具的检查清单见 [Recipe 配置参考](recipe-reference.md)。
+
+直接使用 PATH 中的程序：
+
+```yaml
+tools:
+  blastn:
+    executable: blastn
+    run_method: ""          # 直接执行 blastn
+    version_args: ["-version"]
+    version_pattern: 'blastn:\s*([^\s]+)'
+```
+
+使用 conda 环境：
+
+```yaml
+tools:
+  blastn:
+    executable: blastn
+    run_method: "conda run --no-capture-output -n blast"
+```
+
+也可以写绝对路径的 conda、容器或其他前缀：
+
+```yaml
+run_method: "/opt/conda/bin/conda run --no-capture-output -n blast"
+run_method: "singularity exec /data/images/blast.sif"
+```
+
+recipe 关键字段：
+
+| 字段 | 含义 |
+|---|---|
+| `entity_type` / `file_role` / `format` | 从 manifest 中自动选择输入 artifact 的范围；目录使用 `format: directory` |
+| `input_kind` | `file`（默认）或 `directory`；执行前严格检查并重新计算内容哈希 |
+| `output_kind` | `file`（默认）或 `directory`；两者都支持非空校验、内容哈希与缓存复核 |
+| `output_subdir` / `output_suffix` | 控制默认的 `analysis/<recipe>/<entity_id>/<file_id>.<role><suffix>` 名称 |
+| `output_name` | 可选的单层名称模板，覆盖默认名称；BUSCO 应使用 `${file_id}.busco` 以避开 SEPP 的 `fasta` 路径替换缺陷 |
+| `database` | 参考数据库或共享下载缓存路径；相对路径按项目根目录解析 |
+| `database_version` | 数据库版本标签，参与缓存身份 |
+| `database_checksum` | 可选；提供后作为严格数据库身份 |
+| `database_mode` | `reference`（默认，按内容识别）或 `mutable_cache`（共享可增长下载区，要求 `database_version`） |
+| `arguments` | 命令参数；占位符见下表 |
+| `result_parser` | `blast_tabular`、`hmmer_tblout`、`busco_json` 或 `none` |
+| `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
+| `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
+
+可用占位符：
+
+| 占位符 | 内容 |
+|---|---|
+| `${input}` / `${output}` / `${database}` / `${threads}` | 完整输入 artifact、完整输出 artifact、数据库路径、线程数 |
+| `${input_parent}` / `${input_name}` / `${input_stem}` | 输入父目录、文件名、stem |
+| `${output_parent}` / `${output_name}` / `${output_stem}` | 输出父目录、artifact 名称、stem |
+| `${file_id}` / `${file_role}` / `${entity_type}` / `${entity_id}` | 当前 manifest 和实体标识 |
+
+目录输入也可用 `ingest` 归档；系统复制整棵目录并按相对路径与文件内容计算稳定哈希：
+
+```bash
+operon ingest --source proteome_set/ --entity-type organism \
+  --entity-id ORG_000001 --role other --format directory
+```
+
+检查配置与程序版本：
+
+```bash
+operon tools-check
+```
+
+## 7. 如何执行 BLAST、HMMSEARCH 与 BUSCO
+
+修改 `database` 后执行：
+
+```bash
+# 全部 assembly 的 genome FASTA 对 nt 做 blastn
+operon analyze --analysis blastn_nt
+
+# 只处理 assembly 类目中的某一个实体
+operon analyze --analysis blastn_nt --entity-id ASM_000001
+
+# 全部 annotation 的 protein FASTA 对 nr 做 blastp
+operon analyze --analysis blastp_nr
+
+# 全部 annotation 的 protein FASTA 对 Pfam-A.hmm 做 hmmsearch
+operon analyze --analysis hmmsearch_pfam
+```
+
+执行前预览计划与缓存命中情况：
+
+```bash
+operon analyze --analysis blastn_nt --dry-run
+```
+
+查看同步结果：
+
+```bash
+operon analysis-results --analysis blastn_nt
+operon analysis-results --analysis blastn_nt --hits
+```
+
+结果去向：
+
+- 完整输出 artifact（文件或目录）：`analysis/<recipe>/<entity_id>/<FIL_ID>.<role><output_suffix>`，例如
+  `analysis/blastn_nt/ASM_000001/FIL_000001.genome_fasta.blastn.tsv`
+- `analysis_jobs`：命令、工具版本、参数指纹、输入/数据库指纹、输出内容哈希、状态
+- `analysis_results`：`query_count`、`hit_count`、`query_with_hit_count`、`best_evalue`
+- `analysis_hits`：top hits 的 query、subject、指标值、rank
+- `qc_results`：同名汇总指标以 `analysis:<recipe>` 为 stage 写入，可继续被 profile 使用
+
+避免重复执行：缓存键由 `analysis_name + file_id + 输入 SHA-256 + 参数指纹 +
+工具版本 + 数据库身份` 组成。所有条件都匹配时直接返回缓存；用 `--force` 才会重跑。
+旧 completed 作业会被标记为 `superseded`，历史不丢失。
+
+每次运行前系统还会重新校验输入文件 SHA-256 或目录树哈希与 manifest 一致；被改动过
+的 raw 输入会被直接拒绝，不会进入外部程序。
+
+### 7.1 原生运行 BUSCO 并解析 JSON summary
+
+默认 `busco_autolineage` recipe 使用普通 protein FASTA 输入和目录输出。BUSCO 的
+`-o` 是短 run name，因此配置使用 `${output_name}`；`--out_path` 使用
+`${output_parent}`，BUSCO 最终创建的目录恰好就是 `${output}`：
+
+```yaml
+tools:
+  busco:
+    executable: busco
+    run_method:
+      mode: conda
+      bin: mamba
+      env: busco_6.1.0
+    version_args: ["--version"]
+    version_pattern: 'BUSCO\s+([^\s]+)'
+    recipes:
+      busco_autolineage:
+        description: BUSCO auto-lineage in protein mode
+        entity_type: annotation
+        file_role: protein_fasta
+        format: fasta
+        input_kind: file
+
+        # 共享、可增长的 BUSCO lineage 下载区；运行前自动创建。
+        database: resources/busco_downloads
+        database_version: odb12
+        database_mode: mutable_cache
+
+        output_subdir: busco
+        output_kind: directory
+        # 不要让 BUSCO/SEPP 的输出父路径含有字符串 "fasta"；SEPP 会对完整路径
+        # 执行 replace("fasta", "jplace")，从而生成一个不存在的父目录。
+        output_name: ${file_id}.busco
+        arguments:
+          - -m
+          - protein
+          - -i
+          - ${input}
+          - -o
+          - ${output_name}
+          - --out_path
+          - ${output_parent}
+          - --download_path
+          - ${database}
+          - -c
+          - ${threads}
+          - --auto-lineage
+          - --opt-out-run-stats
+          - --tar
+        result_parser: busco_json
+        result_glob: short_summary*.json
+```
+
+如果希望完全可复现，先准备并冻结所需 lineage 数据，删除 `--auto-lineage`、指定
+`--lineage_dataset`，加上 `--offline`，并把 `database_mode` 改为 `reference`；数据更新时
+同步更新 `database_version` 或 `database_checksum`。`mutable_cache` 的身份由路径、显式
+版本和可选 checksum 决定，不会因自动下载了另一个 lineage 而使旧作业缓存失效。
+
+运行并查看结果：
+
+```bash
+operon tools-check
+operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24 --dry-run
+operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24
+operon analysis-results --analysis busco_autolineage --entity-id ANN_000001
+```
+
+完整目录类似：
+
+```text
+analysis/busco/ANN_000001/FIL_000003.busco/
+```
+
+`busco_json` 在 `result_glob` 命中的文件中优先选择唯一的
+`short_summary.specific.*.json`；若仍有多个 specific summary，会拒绝猜测并要求收窄
+glob。解析出的主要指标包括：
+
+- `busco_complete_percent` / `busco_complete_count`
+- `busco_single_copy_percent` / `busco_single_copy_count`
+- `busco_duplicated_percent` / `busco_duplicated_count`
+- `busco_fragmented_percent` / `busco_fragmented_count`
+- `busco_missing_percent` / `busco_missing_count`
+- `busco_n_markers`、`busco_domain`、`busco_lineage_dataset`
+- 数据集日期、OrthoDB/数据集版本、物种数、NCBI taxid 和 BUSCO 报告版本
+
+这些值同时写入 `analysis_results` 和 `qc_results`，可直接在 QC profile 中引用。例如：
+
+```yaml
+required:
+  - metric: busco_complete_percent
+    operator: ">="
+    value: 95
+    code: LOW_BUSCO_COMPLETENESS
+warnings:
+  - metric: busco_duplicated_percent
+    operator: ">"
+    value: 20
+    code: HIGH_BUSCO_DUPLICATION
+```
+
+## 8. 如何运行外部工具并保留 provenance
+
+```bash
+operon run-external \
+  --step quast \
+  --parameter-set quast_v1 \
+  --entity-type assembly \
+  --entity-id ASM_000001 \
+  --expected-output qc/assemblies/ASM_000001/quast/report.tsv \
+  --command 'quast -o qc/assemblies/ASM_000001/quast raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta'
+```
+
+- `--command` 使用 shell 风格引号解析，但不经过 shell，可避免注入。
+- stdout/stderr 保存到 `logs/<WF_ID>.stdout.log` 和 `.stderr.log`。
+- 运行记录同时写入 `logs/workflow.jsonl` 与 `workflow_runs` 表。
+- 只有退出码为 0 且所有 `--expected-output` 存在且非空，才记录 `completed`；否则记录 `failed` 并返回非零。
+
+## 9. 如何导入外部 QC 结果
+
+把 BUSCO/QUAST/FastQC/fastp 等输出整理为 TSV：
+
+```text
+entity_type	entity_id	file_id	qc_stage	metric_name	metric_value	metric_unit	tool	tool_version	parameter_set
+assembly	ASM_000001	FIL_000001	busco	complete_percent	96.4	percent	busco	5.8.2	embryophyta_odb12
+assembly	ASM_000001	FIL_000001	quast	contig_n50	2845913	bp	quast	5.2.0	default
+```
+
+必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set`。
+
+可选列：
+
+- `file_id`：必须是 manifest 中存在的文件，且其 entity 与行中的 entity 一致。
+- `file_sha256`：如果给出，必须与 manifest 中该文件的 SHA-256 一致。
+
+导入：
+
+```bash
+operon import-qc --file external_qc.tsv
+```
+
+## 10. 如何创建新的 QC profile
+
+在 `config/profiles/` 下添加 YAML 文件，例如 `phylogenomics_v1.yaml`：
+
+```yaml
+version: 1
+description: 系统发育基因组学准入规则
+applies_to: [assembly]
+required:
+  - metric: sha256_match
+    operator: "=="
+    value: 1
+    code: SHA256_MISMATCH
+  - metric: parseable
+    operator: "=="
+    value: 1
+    code: FORMAT_INVALID
+  - metric: busco_complete_percent
+    operator: ">="
+    value: 90
+    code: LOW_BUSCO_COMPLETENESS
+  - metric: contamination_percent
+    operator: "<="
+    value: 3
+    code: HIGH_CONTAMINATION
+warnings:
+  - metric: busco_duplicated_percent
+    operator: ">"
+    value: 20
+    code: HIGH_BUSCO_DUPLICATION
+```
+
+支持的运算符：`>=`、`<=`、`>`、`<`、`==`、`!=`、`between`（需 `min`/`max`）、`in`/`not_in`（需 `values`）、`exists`。
+
+运行：
+
+```bash
+operon evaluate --profile phylogenomics_v1
+operon decisions --profile phylogenomics_v1
+```
+
+每次 evaluate 都会保存 profile 内容快照，并追加 decision 历史。
+
+## 11. 如何人工覆盖判定而不丢失审计
+
+```bash
+operon curate \
+  --entity-type assembly --entity-id ASM_000003 \
+  --profile assembly_production_v1 \
+  --decision PASS \
+  --reviewer "zhang.san" \
+  --reason "N 含量偏高来自已知着丝粒，不影响本研究" \
+  --evidence "见 cytology report 2026-08-01"
+```
+
+规则：
+
+- 只修改该 entity/profile 的**最新** decision 的 `curated_*` 字段。
+- 自动判定与更早的历史 decision 保持原样。
+- 修改同时写入 `changes` 审计表。
+- 状态机按策展后的 decision 更新为 ACCEPTED/REJECTED/REVIEW。
+
+## 12. 如何用 SQL 查询
+
+`query` 是只读的。常用查询示例：
+
+```bash
+# 所有 PASS/FAIL 状态
+operon query "SELECT entity_type, entity_id, decision, reason_codes FROM current_decisions"
+
+# 一个 assembly 及其文件
+operon query "
+SELECT a.assembly_id, f.file_id, f.file_role, f.relative_path, f.sha256
+FROM assemblies a JOIN files f ON f.entity_id=a.assembly_id
+WHERE a.assembly_id='ASM_000001'
+"
+
+# QC 指标宽表式查看
+operon query "
+SELECT entity_id, metric_name, metric_numeric, metric_unit, evaluated_at
+FROM qc_results
+WHERE entity_type='assembly' AND qc_stage='assembly_basic'
+ORDER BY entity_id, metric_name
+"
+
+# 查看数据库内 schema 版本标记
+operon query "SELECT entity_id, state, message FROM entity_state WHERE entity_type='database'"
+```
+
+`SELECT`、`PRAGMA table_info` 等只读操作可用；`UPDATE`、`INSERT`、`DROP`、`PRAGMA user_version=...`、`ATTACH` 等会被拒绝。
+
+## 13. 如何备份和迁移项目
+
+日常备份只需包含：
+
+```text
+project.yaml
+config/
+metadata/            # 或直接备份 operon.sqlite
+operon.sqlite      # 注意连同 -wal/-shm 一起或先干净关闭
+raw/                 # 不可替代数据
+standardized/        # 按需（可由 raw 重建）
+releases/            # 按需（可由 raw + 数据库重建）
+```
+
+更稳妥的做法是定期创建 release，并在 release 目录执行 `sha256sum -c checksums.sha256`。
+
+备份策略可按重建成本分级：
+
+| 类型 | 示例 | 策略 |
+|---|---|---|
+| 不可替代 | 原始 FASTQ、外部原始下载、人工整理的元数据 | 多副本备份、checksum、不可变 |
+| 重建昂贵 | assembly、注释、全基因组比对 | 保存并备份 |
+| 易于重建 | 临时索引、中间排序文件、缓存 | 可清理，但保留生成规则 |
+
+该原则成立的前提是工具环境与数据库版本都能重建，否则“可重建”只是理论上的。
+
+旧版 v1 数据库**无需手工迁移**：当前程序打开数据库时会自动迁移 `qc_results` 与 `decisions` 到 v2 结构，旧 QC 数据以 `legacy:` 输入身份保留，旧 decision 可继续通过 `current_decisions` 读取。
+
+## 14. 如何续跑失败任务
+
+所有核心步骤都幂等：
+
+- 同一文件重复 `ingest`：相同 SHA-256 返回同一 `FIL_`，不重复复制。
+- `standardize`：目标已存在且 checksum 相同则跳过。
+- `qc`：同一 `input_identity + stage + metric + tool/version/parameter_set` upsert，不产生重复行。
+- `evaluate`：追加新 decision，不覆盖历史。
+- `release`：版本目录已存在时拒绝重复创建，不会悄悄覆盖。
+
+因此从中断处直接重跑相同命令即可。可通过 `status` 查看每个实体当前处于哪个状态。
+
+## 15. 如何排查 checksum 与格式问题
+
+```bash
+operon verify          # 找 MISSING / CHECKSUM_FAILED
+operon status          # 看实体级状态
+operon query "SELECT file_id, entity_type, entity_id, file_role, status, relative_path FROM files WHERE status != 'CHECKSUM_VERIFIED'"
+```
+
+典型处理：
+
+| 状态 | 建议 |
+|---|---|
+| `MISSING` | 恢复文件到 `relative_path`，或从源头重新归档为新实体版本 |
+| `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
+| `QC_FAILED` | 查看 `operon qc-table` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |
+| 格式解析失败 | 用外部工具（如 `seqkit stats`、GFF3 validator）检查；修复后作为新版本归档，不要覆盖 raw |
