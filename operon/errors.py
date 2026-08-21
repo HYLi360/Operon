@@ -31,3 +31,7 @@ class QCError(OperonError):
 
 class ExternalToolError(OperonError):
     """An external analysis tool is missing, misconfigured or failed."""
+
+
+class RemoteError(OperonError):
+    """A remote execution or storage operation failed."""

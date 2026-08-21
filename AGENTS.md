@@ -26,6 +26,11 @@ for the principle-to-implementation mapping.
   - `operon/adapters/` — external source adapters (currently NCBI Datasets).
   - `operon/qc_module/` — streaming FASTA/FASTQ/GFF3/protein parsers and
     built-in QC stages.
+  - `operon/execution.py` — execution backends for external commands:
+    `local` subprocess, `slurm` (sbatch submit + squeue poll), and `ssh`
+    (Paramiko; HPC head nodes and cloud VMs, optionally through remote Slurm).
+  - `operon/remotes.py` — SFTP remote storage mirrors (push/pull with
+    checksum verification) and `sftp://` / `remote://` URL fetching.
 - `tests/` — pytest suite organized as `unit/`, `integration/`,
   `regression/`, `compatibility/`, with shared fixtures in `tests/helpers.py`.
 - `docs/` — full user and architecture documentation, written in Chinese.
@@ -54,8 +59,10 @@ the user explicitly asks.
 ## Conventions
 
 - Python 3.10+; runtime dependencies are limited to `PyYAML`, `requests`,
-  `aiohttp`, and `Biopython`. Do not add new dependencies without surfacing
-  it to the user first, unless user has indicated any dependency can add.
+  `aiohttp`, and `Biopython`. The optional `remote` extra adds `Paramiko`
+  (lazy-imported only by the SSH/SFTP code paths; keep it optional). Do not
+  add new dependencies without surfacing it to the user first, unless user
+  has indicated any dependency can add.
 - Documentation language: `docs/` and `README.md` are written in Chinese;
   code, comments, docstrings, and commit messages are in English.
 - Naming in prose: headings use the stylized `Operon`; body text refers to
@@ -82,5 +89,5 @@ layout, update the corresponding doc in the same change:
 - `tools.yaml` recipes/placeholders/parsers → `docs/recipe-reference.md`
 - Onboarding flows → `docs/getting-started.md`; navigation → `docs/index.md`
 
-Version markers in docs (`operon` 0.2.2, database schema 2.1, metadata
-schema 1.1) must match `pyproject.toml` and the code.
+Version markers in docs (`operon` 0.3.0, database schema 2.2, metadata
+schema 1.2) must match `pyproject.toml` and the code.

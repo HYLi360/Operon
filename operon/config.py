@@ -46,6 +46,31 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "default_threads": 4,
         "max_memory_gb": 64,
     },
+    "execution": {
+        "backend": "local",
+        "slurm": {
+            "partition": "",
+            "time": "24:00:00",
+            "mem_gb": 0,
+            "extra_sbatch": [],
+            "setup_commands": [],
+            "poll_interval": 15,
+        },
+        "ssh": {
+            "host": "",
+            "user": "",
+            "port": 22,
+            "key_file": "",
+            "remote_root": "",
+            "storage_remote": "",
+            "scheduler": "none",
+            "connect_timeout": 30,
+            "known_hosts": "",
+            "host_key_sha256": "",
+            "insecure_accept_unknown_host": False,
+        },
+    },
+    "remotes": {},
 }
 
 

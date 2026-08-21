@@ -136,8 +136,8 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("next-id", help="allocate the next stable internal ID for an entity type")
     p.add_argument("entity_type", choices=["organism", "sample", "run", "assembly", "annotation", "file"])
 
-    p = sub.add_parser("ingest", help="archive a file or directory into raw/ with a content hash and manifest record")
-    p.add_argument("--source", required=True)
+    p = sub.add_parser("ingest", help="archive a file or directory (local path, sftp:// or remote:// URL) into raw/ with a content hash and manifest record")
+    p.add_argument("--source", required=True, help="local path, sftp://[user@]host[:port]/path, or remote://<name>/<path>")
     p.add_argument("--entity-type", required=True, choices=["organism", "sample", "run", "assembly", "annotation"])
     p.add_argument("--entity-id", required=True)
     p.add_argument("--role", required=True)
@@ -171,6 +171,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--expected-output", action="append", default=[], help="path that must exist and be non-empty")
     p.add_argument("--cwd")
     p.add_argument("--timeout", type=float)
+    p.add_argument("--backend", choices=["local", "slurm", "ssh"],
+                   help="execution backend (default: execution.backend in project.yaml)")
 
     p = sub.add_parser("tools-check", help="detect configured external tools and their versions")
     p = sub.add_parser("analyze", help="run a configured external-tool recipe over matching manifest artifacts")
@@ -181,6 +183,25 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="only process the first N matching files")
     p.add_argument("--dry-run", action="store_true", help="show planned commands and cache status without executing")
     p.add_argument("--force", action="store_true", help="re-run even when a completed cached job exists")
+    p.add_argument("--backend", choices=["local", "slurm", "ssh"],
+                   help="execution backend (default: execution.backend in project.yaml)")
+
+    p = sub.add_parser("remotes", help="list configured remotes (project.yaml remotes:) and test connectivity")
+
+    p = sub.add_parser("push", help="upload manifest files to a configured remote mirror (SFTP, checksum-verified, idempotent)")
+    p.add_argument("--remote", required=True, help="remote name from the project.yaml remotes: section")
+    p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: all)")
+
+    p = sub.add_parser("evict", help="remove local bytes after an exact remote mirror copy is verified")
+    p.add_argument("--remote", required=True, help="remote name holding the verified copy")
+    p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: all)")
+
+    p = sub.add_parser("locations", help="show local/remote residency for manifest files")
+    p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files")
+
+    p = sub.add_parser("pull", help="restore manifest files from a configured remote mirror (SFTP, checksum-verified)")
+    p.add_argument("--remote", required=True, help="remote name from the project.yaml remotes: section")
+    p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: everything in the remote manifest)")
 
     p = sub.add_parser("analysis-results", help="show analysis summaries/hits synchronized to SQLite")
     p.add_argument("--analysis")
@@ -522,17 +543,33 @@ def _cmd_next_id(args: argparse.Namespace, db: Database) -> int:
 
 
 def _cmd_ingest(args: argparse.Namespace, project: Project, db: Database) -> int:
-    row = ingest_file(
-        db, project, args.source, args.entity_type, args.entity_id, args.role,
-        fmt=args.fmt, compression=args.compression, source_url=args.source_url, move=args.move,
-    )
+    source = args.source
+    source_url = args.source_url
+    temp_path: Path | None = None
+    if source.startswith(("sftp://", "remote://")):
+        from operon.remotes import fetch_url_to_temp
+        temp_path = fetch_url_to_temp(project, source)
+        source = str(temp_path)
+        source_url = source_url or args.source
+    try:
+        row = ingest_file(
+            db, project, source, args.entity_type, args.entity_id, args.role,
+            fmt=args.fmt, compression=args.compression, source_url=source_url, move=args.move,
+        )
+    finally:
+        if temp_path is not None:
+            if temp_path.is_dir() and not temp_path.is_symlink():
+                import shutil
+                shutil.rmtree(temp_path, ignore_errors=True)
+            else:
+                temp_path.unlink(missing_ok=True)
     print(f"registered {row['file_id']} -> {row['relative_path']} (sha256 {row['sha256'][:16]}...)")
     return 0
 
 
 def _cmd_verify(args: argparse.Namespace, project: Project, db: Database) -> int:
     results = verify_files(db, project, args.file_id or None)
-    failed = [r for r in results if r["status"] not in {"CHECKSUM_VERIFIED"}]
+    failed = [r for r in results if r["status"] not in {"CHECKSUM_VERIFIED", "REMOTE_ONLY"}]
     print(format_table(["file_id", "relative_path", "status", "current_sha256", "error"], (
         [r["file_id"], r["relative_path"], r["status"], r["current_sha256"] or "", r["error"] or ""] for r in results
     )))
@@ -634,6 +671,7 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
         db, project, argv, step=args.step, entity_type=args.entity_type,
         entity_id=args.entity_id, parameter_set=args.parameter_set,
         expected_outputs=args.expected_output, cwd=args.cwd, timeout=args.timeout,
+        backend=args.backend,
     )
     print(json.dumps({k: record.get(k) for k in ("run_id", "step", "status", "exit_code", "finished_at")}, ensure_ascii=False))
     return 0
@@ -652,7 +690,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         project, db, args.analysis,
         entity_type=args.entity_type, entity_id=args.entity_id,
         dry_run=args.dry_run, force=args.force, limit=args.limit,
-        threads=args.threads,
+        threads=args.threads, backend=args.backend,
     )
     headers = ["file_id", "entity", "analysis", "status", "tool_version", "output", "error"]
     rows = []
@@ -736,6 +774,72 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
     else:
         print(format_table(list(rows[0].keys()), ([r[c] for c in rows[0].keys()] for r in rows)))
     return 0
+
+
+def _cmd_remotes(args: argparse.Namespace, project: Project) -> int:
+    from operon.remotes import check_remote, list_remotes
+    names = sorted(list_remotes(project))
+    if not names:
+        print("no remotes configured; add a 'remotes:' section to project.yaml")
+        return 0
+    results = [check_remote(project, name) for name in names]
+    print(format_table(
+        ["name", "type", "address", "root", "files", "status", "error"],
+        ([r["name"], r["type"], r["address"], r["root"], r["files"], r["status"], r["error"]] for r in results),
+    ))
+    return 0 if all(r["status"] == "ok" for r in results) else 1
+
+
+def _cmd_push(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.remotes import push
+    results = push(db, project, args.remote, file_ids=args.file_id or None)
+    return _print_sync_results("push", args.remote, results)
+
+
+def _cmd_pull(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.remotes import pull
+    results = pull(db, project, args.remote, file_ids=args.file_id or None)
+    return _print_sync_results("pull", args.remote, results)
+
+
+def _cmd_evict(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.remotes import evict_local
+    results = evict_local(db, project, args.remote, file_ids=args.file_id or None)
+    return _print_sync_results("evict", args.remote, results)
+
+
+def _cmd_locations(args: argparse.Namespace, project: Project, db: Database) -> int:
+    params: list[Any] = []
+    where = ""
+    if args.file_id:
+        where = f"WHERE f.file_id IN ({', '.join('?' for _ in args.file_id)})"
+        params.extend(args.file_id)
+    rows = db.conn.execute(
+        "SELECT f.file_id, f.relative_path, f.status AS local_status, "
+        "COALESCE(l.location_name, '') AS remote, COALESCE(l.status, '') AS remote_status, "
+        "COALESCE(l.verified_at, '') AS verified_at "
+        "FROM files f LEFT JOIN file_locations l ON l.file_id=f.file_id "
+        f"{where} ORDER BY f.file_id, l.location_name",
+        params,
+    ).fetchall()
+    print(format_table(
+        ["file_id", "relative_path", "local_status", "remote", "remote_status", "verified_at"],
+        ([row[column] for column in row.keys()] for row in rows),
+    ))
+    return 0
+
+
+def _print_sync_results(action: str, remote: str, results: list[dict[str, Any]]) -> int:
+    print(format_table(["file_id", "relative_path", "status", "error"], (
+        [r.get("file_id", ""), r["relative_path"], r["status"], r.get("error") or ""] for r in results
+    )))
+    errors = sum(1 for r in results if r["status"] == "error")
+    counts: dict[str, int] = {}
+    for r in results:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    summary = ", ".join(f"{status}: {count}" for status, count in sorted(counts.items()))
+    print(f"{action} {remote}: {summary}")
+    return 1 if errors else 0
 
 
 def _reason_list(reason_codes: Any) -> list[str]:
@@ -860,6 +964,11 @@ def main(argv: list[str] | None = None) -> int:
                 "tools-check": lambda: _cmd_tools_check(project),
                 "analyze": lambda: _cmd_analyze(args, project, db),
                 "analysis-results": lambda: _cmd_analysis_results(args, db),
+                "remotes": lambda: _cmd_remotes(args, project),
+                "push": lambda: _cmd_push(args, project, db),
+                "pull": lambda: _cmd_pull(args, project, db),
+                "evict": lambda: _cmd_evict(args, project, db),
+                "locations": lambda: _cmd_locations(args, project, db),
                 "evaluate": lambda: _cmd_evaluate(args, project, db),
                 "curate": lambda: _cmd_curate(args, project, db),
                 "release": lambda: _cmd_release(args, project, db),

@@ -18,6 +18,13 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 `Database._ensure_current_schema_objects()` 不属于兼容代码。它负责当前版本仍需要的
 索引与 `current_decisions` 视图，1.0 中必须保留。
 
+`Database._migrate_remote_schema_2_2()` 也不属于上述“开发期 v1 兼容层”。它把 2.1
+数据库按纯加法升级为 2.2：给 `workflow_runs` 增加 `executor`、
+`scheduler_job_id`、`execution_details`，并创建 `file_locations`。只要仍支持打开 2.1
+项目就必须保留；若未来停止兼容，应通过正式数据库迁移策略取代，不能随
+`_migrate_pre_1_0_schema()` 一起删除。对应测试为
+`test_schema_2_2_adds_remote_location_and_executor_provenance`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。
@@ -37,6 +44,11 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 对应测试是 `tests/integration/test_ncbi_datasets_adapter.py` 中所有调用
 `_make_schema_legacy()` 的用例；移除兼容层时需一并改成“旧 schema 被明确拒绝”的
 测试。
+
+metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。新项目直接生成 1.2；
+旧项目第一次执行通过远端/本地身份预检的 `operon evict` 时，会以保留自定义字段的方式只追加该允许值并
+把版本提升到 1.2。该升级属于当前远程驻留功能的必要契约，不是 NCBI adapter 的
+1.0/1.1 兼容投影。
 
 ## 不在本清单中的兼容行为
 

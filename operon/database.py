@@ -18,7 +18,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 MANUAL_TABLES = [
     "organisms",
@@ -197,7 +197,22 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     log_file TEXT,
     stdout_file TEXT,
     stderr_file TEXT,
+    executor TEXT,
+    scheduler_job_id TEXT,
+    execution_details TEXT,
     error TEXT
+);
+CREATE TABLE IF NOT EXISTS file_locations (
+    file_id TEXT NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
+    location_name TEXT NOT NULL,
+    location_type TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    verified_at TEXT,
+    PRIMARY KEY (file_id, location_name)
 );
 CREATE TABLE IF NOT EXISTS releases (
     version TEXT PRIMARY KEY,
@@ -296,6 +311,7 @@ CREATE INDEX IF NOT EXISTS idx_qc_metric ON qc_results(metric_name);
 CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_decisions_current ON decisions(entity_type, entity_id, profile, decision_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_entity ON workflow_runs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_file_locations_status ON file_locations(location_name, status);
 """
 
 CURRENT_DECISIONS_VIEW = """
@@ -337,6 +353,7 @@ class Database:
         # TODO(1.0): remove the pre-1.0 migration call after the final release
         # stops accepting databases created by development versions.
         self._migrate_pre_1_0_schema()
+        self._migrate_remote_schema_2_2()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -438,6 +455,36 @@ class Database:
                 DROP TABLE decisions_v1;
                 """
             )
+
+    def _migrate_remote_schema_2_2(self) -> None:
+        """Add structured remote-location and executor provenance fields.
+
+        Databases created before 0.3 already have ``workflow_runs``; SQLite's
+        ``CREATE TABLE IF NOT EXISTS`` cannot add the new columns, so keep this
+        small additive migration separate from the pre-1.0 compatibility shim.
+        """
+        workflow_columns = set(self.table_columns("workflow_runs"))
+        for column in ("executor", "scheduler_job_id", "execution_details"):
+            if column not in workflow_columns:
+                self._conn.execute(f'ALTER TABLE workflow_runs ADD COLUMN "{column}" TEXT')
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS file_locations (
+                file_id TEXT NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
+                location_name TEXT NOT NULL,
+                location_type TEXT NOT NULL,
+                uri TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                verified_at TEXT,
+                PRIMARY KEY (file_id, location_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_file_locations_status
+                ON file_locations(location_name, status);
+            """
+        )
 
     def _ensure_current_schema_objects(self) -> None:
         """Create current indexes and rebuild the latest-decision view."""

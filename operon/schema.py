@@ -176,11 +176,11 @@ def default_schemas() -> dict[str, Any]:
                 "size_bytes": {"type": "integer", "required": True, "min": 0, "description": "File size in bytes"},
                 "sha256": {"type": "string", "required": True, "pattern": r"^[a-f0-9]{64}$", "description": "SHA-256 of the stored bytes"},
                 "downloaded_at": {"type": "datetime", "description": "When the file was archived"},
-                "status": {"type": "string", "required": True, "allowed": ["DISCOVERED", "DOWNLOADED", "CHECKSUM_VERIFIED", "STANDARDIZED", "MISSING", "CHECKSUM_FAILED", "CONFLICT"], "description": "File-level status"},
+                "status": {"type": "string", "required": True, "allowed": ["DISCOVERED", "DOWNLOADED", "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY", "MISSING", "CHECKSUM_FAILED", "CONFLICT"], "description": "File-level status"},
             },
         },
     }
-    return {"schema_version": "1.1", "tables": fields}
+    return {"schema_version": "1.2", "tables": fields}
 
 
 @dataclass

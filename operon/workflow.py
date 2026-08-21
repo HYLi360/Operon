@@ -7,6 +7,7 @@ not guessed from a folder or screen log.
 from __future__ import annotations
 
 import json
+import shlex
 import os
 import subprocess
 import time
@@ -17,7 +18,7 @@ from typing import Any, Iterable
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ConflictError
+from operon.errors import ConflictError, OperonError
 from operon.utils import append_jsonl, now_iso, path_is_nonempty
 
 VALID_STATES = {
@@ -112,6 +113,7 @@ def log_run(db: Database, project: Project, record: dict[str, Any]) -> None:
         "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
         "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
         "log_file", "stdout_file", "stderr_file", "error",
+        "executor", "scheduler_job_id", "execution_details",
     ]
     with db.transaction():
         db.conn.execute(
@@ -133,12 +135,21 @@ def run_external_command(
     timeout: float | None = None,
     tool: str | None = None,
     tool_version: str | None = None,
+    backend: str | None = None,
+    threads: int | None = None,
+    stage_inputs: Iterable[str | Path] = (),
+    executor: Any = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 
     stdout/stderr are preserved as files, exit code is captured, and the run is
     recorded as structured JSON.  Completion is only recorded after all expected
     outputs exist and are non-empty.
+
+    Execution goes through the configured backend (`execution.backend` in
+    project.yaml, overridable per call): `local` subprocess, `slurm` job
+    submission, or `ssh` remote execution (HPC/cloud host). All backends keep
+    the same provenance contract.
     """
     started = now_iso()
     started_monotonic = time.monotonic()
@@ -152,24 +163,40 @@ def run_external_command(
         "entity_type": entity_type,
         "entity_id": entity_id,
         "step": step,
-        "command": " ".join(str(a) for a in argv),
+        "command": shlex.join(str(a) for a in argv),
         "parameter_set": parameter_set,
         "started_at": started,
         "tool": tool,
         "tool_version": tool_version,
+        "threads": threads,
     }
+    base = Path(cwd) if cwd else project.root
+    resolved_outputs: list[Path] = []
+    for output in expected_outputs or []:
+        path = Path(output)
+        if not path.is_absolute():
+            path = base / path
+        resolved_outputs.append(path)
     try:
-        with open(stdout_file, "wb") as out, open(stderr_file, "wb") as err:
-            completed = subprocess.run(argv, cwd=str(cwd) if cwd else None, stdout=out, stderr=err, timeout=timeout)
-        record.update(exit_code=completed.returncode, status="completed" if completed.returncode == 0 else "failed")
-        if completed.returncode != 0:
-            record["error"] = f"exit code {completed.returncode}"
+        if executor is None:
+            from operon.execution import get_executor
+            executor = get_executor(project, backend)
+        record["executor"] = executor.describe()
+        result = executor.run(
+            argv, cwd=cwd, stdout_path=stdout_file, stderr_path=stderr_file,
+            timeout=timeout, threads=threads, run_id=run_id,
+            stage_inputs=stage_inputs, expected_outputs=resolved_outputs,
+        )
+        record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
+        record["scheduler_job_id"] = result.scheduler_job_id
+        record["execution_details"] = json.dumps(result.details, ensure_ascii=False, sort_keys=True)
+        if result.exit_code != 0:
+            record["error"] = result.error or f"exit code {result.exit_code}"
             record["status"] = "failed"
-        base = Path(cwd) if cwd else project.root
-        for output in expected_outputs or []:
-            path = Path(output)
-            if not path.is_absolute():
-                path = base / path
+        elif result.error:
+            record["status"] = "failed"
+            record["error"] = result.error
+        for path in resolved_outputs:
             if not path_is_nonempty(path):
                 record["status"] = "failed"
                 record["error"] = f"expected output missing or empty: {path}"
@@ -178,6 +205,12 @@ def run_external_command(
         record.update(status="failed", error=f"timeout after {timeout}s", exit_code=None)
     except OSError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
+    except OperonError as exc:
+        record.update(status="failed", error=str(exc), exit_code=None)
+    except Exception as exc:
+        record.update(
+            status="failed", error=f"{type(exc).__name__}: {exc}", exit_code=None,
+        )
     record.update(
         finished_at=now_iso(),
         stdout_file=str(stdout_file),

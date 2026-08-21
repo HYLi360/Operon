@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "operon"
-version = "0.2.2"
+version = "0.3.0"
 description = "Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"
 authors = [
     { name = "hyli360", email = "lihuanyu2003@gmail.com" }
@@ -32,8 +32,9 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
-build = ["cx-Freeze>=8.4"]
-dev = ["pytest>=8.0", "cx-Freeze>=8.4"]
+build = ["cx-Freeze>=8.4", "paramiko>=3.4"]
+remote = ["paramiko>=3.4"]
+dev = ["pytest>=8.0", "cx-Freeze>=8.4", "paramiko>=3.4"]
 
 [project.scripts]
 operon = "operon.cli:main"
@@ -48,7 +49,7 @@ executables = [
 
 [tool.cxfreeze.build_exe]
 build_exe = "build/release"
-packages = ["operon", "yaml", "requests", "aiohttp", "Bio"]
+packages = ["operon", "yaml", "requests", "aiohttp", "Bio", "paramiko"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["docs", "share/doc/operon/docs"],

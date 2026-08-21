@@ -280,7 +280,14 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
         path = project.root / record["relative_path"]
         result = {"file_id": record["file_id"], "relative_path": record["relative_path"], "status": "", "recorded_sha256": record["sha256"], "current_sha256": None, "error": None}
         if not path.exists():
-            result.update(status="MISSING", error="file not found at recorded path")
+            remote = db.conn.execute(
+                "SELECT location_name FROM file_locations WHERE file_id=? AND status='AVAILABLE' "
+                "ORDER BY verified_at DESC LIMIT 1", (record["file_id"],),
+            ).fetchone()
+            if remote:
+                result.update(status="REMOTE_ONLY", error=None, remote=remote["location_name"])
+            else:
+                result.update(status="MISSING", error="file not found at recorded path")
         else:
             current = sha256_path(path)
             result["current_sha256"] = current
@@ -306,6 +313,11 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
     record = dict(row)
     source = project.root / record["relative_path"]
     if not source.exists():
+        if record.get("status") == "REMOTE_ONLY":
+            raise ChecksumError(
+                f"{record['file_id']}: artifact is remote-only; run `operon pull --remote NAME "
+                f"--file-id {record['file_id']}` before standardizing"
+            )
         raise ChecksumError(f"{record['file_id']}: source missing: {source}")
     if sha256_path(source) != record["sha256"]:
         db.set_entity_state(record["entity_type"], record["entity_id"], "CHECKSUM_FAILED", f"{file_id} changed after manifest registration")

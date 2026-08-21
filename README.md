@@ -8,6 +8,7 @@
 - **NCBI Datasets 适配器**：离线优先导入 JSON/JSONL、ZIP 或解包目录，也可在线下载 genome package 并自动归档
 - **纯 Python 流式解析与内置 QC**：FASTA / FASTQ / GFF3 / protein FASTA 不整体读入内存；指标写入长表，判定交给版本化 YAML profile 规则引擎
 - **封装式外部分析**：`config/tools.yaml` 声明 BLAST/HMMER/BUSCO 的启动方式、artifact 类型、版本探测、缓存与结果回写；`analyze` 一键执行全库或指定类目
+- **本地控制、远程存算**：本地保留 SQLite/配置/provenance，原始大文件可驻留在经校验的 SFTP 镜像；执行后端支持本地、Slurm、SSH 与远端 Slurm
 - **通用执行器**：结构化命令执行器与 `import-qc` 可接入 QUAST、FastQC、fastp、CheckM2 等任意外部工具
 - **不可变 release**：带 manifest、checksum、排除报告与 provenance 的数据集快照，可 `sha256sum -c` 验证
 
@@ -15,7 +16,7 @@
 
 - Python 3.10 及以上版本
 - 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython`
-- 可选 extras：`test`（pytest）、`build`（cx_Freeze）、`dev`（两者）
+- 可选 extras：`test`（pytest）、`remote`（Paramiko）、`build`（cx_Freeze 与远程功能）、`dev`（全部开发/构建依赖）
 
 ## 安装
 
@@ -24,6 +25,9 @@
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
+
+# 需要 SSH/SFTP 远程存算时
+python -m pip install -e '.[remote]'
 ```
 
 如需构建不依赖 Python 环境的独立可执行应用（cx_Freeze），见

@@ -24,6 +24,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -369,21 +370,32 @@ def tool_command(tool: ToolSpec, config: dict[str, Any]) -> list[str]:
     return [*launcher_prefix(tool, config), tool.executable]
 
 
-def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0) -> tuple[str, str]:
+def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0,
+                               executor: Any = None) -> tuple[str, str]:
     """Run version_args; return (parsed_version, raw_output_for_provenance)."""
     if not tool.version_args:
         return "unknown", "version_args not configured"
     command = [*tool_command(tool, config), *tool.version_args]
-    cache_key = json.dumps(command + [tool.version_pattern], sort_keys=True)
+    executor_identity = (
+        executor.cache_identity() if executor is not None and hasattr(executor, "cache_identity")
+        else (executor.describe() if executor is not None else "local")
+    )
+    cache_key = json.dumps(
+        {"command": command, "pattern": tool.version_pattern, "executor": executor_identity},
+        sort_keys=True,
+    )
     if cache_key in _VERSION_CACHE:
         return _VERSION_CACHE[cache_key]
-    try:
-        proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-    except FileNotFoundError as exc:
-        raise ExternalToolError(f"cannot launch {tool.name}: {exc}; check config/tools.yaml run_method/executable") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ExternalToolError(f"{tool.name} version detection timed out after {timeout}s") from exc
-    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    if executor is not None and executor.name != "local":
+        combined = _version_output_via_executor(executor, command, timeout)
+    else:
+        try:
+            proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        except FileNotFoundError as exc:
+            raise ExternalToolError(f"cannot launch {tool.name}: {exc}; check config/tools.yaml run_method/executable") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ExternalToolError(f"{tool.name} version detection timed out after {timeout}s") from exc
+        combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     pattern = tool.version_pattern or ""
     if pattern:
         match = re.search(pattern, combined, flags=re.IGNORECASE)
@@ -404,6 +416,25 @@ def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: 
         f"could not determine version of {tool.name} (command: {' '.join(command)}); "
         f"set 'version_pattern' in config/tools.yaml"
     )
+
+
+def _version_output_via_executor(executor: Any, command: list[str], timeout: float) -> str:
+    """Capture version output through a non-local execution backend."""
+    temp_parent = getattr(getattr(executor, "project", None), "logs_root", None)
+    if temp_parent is not None:
+        Path(temp_parent).mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="operon-version-", dir=temp_parent) as tmpdir:
+        stdout_path = Path(tmpdir) / "stdout.log"
+        stderr_path = Path(tmpdir) / "stderr.log"
+        result = executor.run(command, cwd=None, stdout_path=stdout_path,
+                              stderr_path=stderr_path, timeout=timeout)
+        if result.exit_code != 0:
+            raise ExternalToolError(
+                f"version detection via {executor.describe()} failed: "
+                f"{result.error or f'exit code {result.exit_code}'}"
+            )
+        return (stdout_path.read_text(encoding="utf-8", errors="replace")
+                + "\n" + stderr_path.read_text(encoding="utf-8", errors="replace"))
 
 
 def detect_tool_version(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0) -> str:
@@ -455,7 +486,7 @@ def _directory_fingerprint(path: Path) -> str:
     return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
 
 
-def database_identity(project: Project, recipe: Recipe) -> str:
+def database_identity(project: Project, recipe: Recipe, location_identity: str = "") -> str:
     """Deterministic identity for the reference database used by a recipe."""
     path = _resolve_database_path(project, recipe)
     database_mode = str(recipe.raw.get("database_mode", "reference") or "reference")
@@ -472,6 +503,7 @@ def database_identity(project: Project, recipe: Recipe) -> str:
         "checksum": str(recipe.raw.get("database_checksum", "") or ""),
         "version": recipe.database_version,
         "mode": database_mode,
+        "location": location_identity,
     }, sort_keys=True)
     if cache_key in _DATABASE_IDENTITY_CACHE:
         return _DATABASE_IDENTITY_CACHE[cache_key]
@@ -497,6 +529,7 @@ def database_identity(project: Project, recipe: Recipe) -> str:
         "digest": digest,
         "database_version": recipe.database_version,
         "database_mode": database_mode,
+        "location": location_identity,
     }
     identity = hashlib.sha256(json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     _DATABASE_IDENTITY_CACHE[cache_key] = identity
@@ -573,7 +606,7 @@ def find_cached_job(db: Database, analysis_name: str, file_id: str, parameter_sh
 def run_analysis(project: Project, db: Database, analysis_name: str,
                  entity_type: str | None = None, entity_id: str | None = None,
                  dry_run: bool = False, force: bool = False, limit: int | None = None,
-                 threads: int | None = None) -> list[dict[str, Any]]:
+                 threads: int | None = None, backend: str | None = None) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files."""
     recipe = get_recipe(project, analysis_name)
     tool = get_tool(project, recipe.tool_name)
@@ -592,7 +625,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
         try:
             result = run_analysis_for_file(
                 project, db, recipe, tool, config, file_record,
-                dry_run=dry_run, force=force, threads=threads,
+                dry_run=dry_run, force=force, threads=threads, backend=backend,
             )
         except Exception as exc:
             result = {
@@ -658,29 +691,60 @@ def _remove_output_artifact(project: Project, output_path: Path) -> None:
 def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
                           config: dict[str, Any], file_record: dict[str, Any],
                           dry_run: bool = False, force: bool = False,
-                          threads: int = 4) -> dict[str, Any]:
+                          threads: int = 4, backend: str | None = None) -> dict[str, Any]:
+    from operon.execution import get_executor
+    recipe_slurm = recipe.raw.get("slurm")
+    executor = get_executor(
+        project, backend,
+        slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
+    )
+    remote_only = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
     input_rel = file_record["relative_path"]
     input_path = project.root / input_rel
     manifest_sha = str(file_record["sha256"]).lower()
+    input_is_remote = False
     if not input_path.exists():
-        raise ExternalToolError(f"{file_record['file_id']}: input missing at {input_path}")
-    _require_artifact_kind(input_path, recipe.input_kind, f"{file_record['file_id']} input")
-    actual_sha = sha256_path(input_path).lower()
-    if actual_sha != manifest_sha:
-        raise ExternalToolError(
-            f"{file_record['file_id']}: input checksum mismatch "
-            f"(manifest={manifest_sha[:12]}..., actual={actual_sha[:12]}...); raw data was modified"
-        )
+        storage_remote = str(getattr(executor, "storage_remote", "") or "")
+        if executor.name != "ssh" or not storage_remote:
+            raise ExternalToolError(
+                f"{file_record['file_id']}: input missing at {input_path}; hydrate it locally or "
+                "configure execution.ssh.storage_remote"
+            )
+        if not dry_run:
+            from operon.remotes import verify_remote_record
+            verify_remote_record(project, storage_remote, file_record, db=db)
+        input_is_remote = True
+        actual_sha = manifest_sha
+    else:
+        _require_artifact_kind(input_path, recipe.input_kind, f"{file_record['file_id']} input")
+        actual_sha = sha256_path(input_path).lower()
+        if actual_sha != manifest_sha:
+            raise ExternalToolError(
+                f"{file_record['file_id']}: input checksum mismatch "
+                f"(manifest={manifest_sha[:12]}..., actual={actual_sha[:12]}...); raw data was modified"
+            )
 
     database_path = _resolve_database_path(project, recipe)
     database_mode = str(recipe.raw.get("database_mode", "reference") or "reference")
-    if database_path is not None and database_mode == "mutable_cache" and not dry_run:
+    if database_path is not None and database_mode == "mutable_cache" and not dry_run and not remote_only:
         database_path.mkdir(parents=True, exist_ok=True)
-    if recipe.database and database_path is not None and not database_path.exists() and not dry_run:
+    if recipe.database and database_path is not None and not database_path.exists() and not dry_run and not remote_only:
         raise ExternalToolError(
             f"{recipe.name}: reference database not found: {database_path}; edit config/tools.yaml"
         )
-    db_identity = database_identity(project, recipe)
+    if remote_only and recipe.database and database_mode == "reference" and not recipe.raw.get("database_checksum"):
+        raise ValidationError(
+            f"{recipe.name}: remote reference databases require database_checksum so cache identity "
+            "does not depend on a missing local path"
+        )
+    if remote_only and database_path is not None and not dry_run:
+        executor.prepare_database(
+            database_path, mutable_cache=database_mode == "mutable_cache",
+        )
+    executor_identity = (
+        executor.cache_identity() if hasattr(executor, "cache_identity") else executor.describe()
+    )
+    db_identity = database_identity(project, recipe, executor_identity if remote_only else "")
     output_dir = project.analysis_root / recipe.output_subdir / file_record["entity_id"]
     output_name = _render_output_name(recipe, file_record, input_path)
     output_path = output_dir / output_name
@@ -701,7 +765,13 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         database_path=database_path, threads=threads, file_record=file_record,
     )
     try:
-        version, version_raw = detect_tool_version_record(tool, config)
+        if dry_run and executor.name != "local":
+            # Do not submit cluster jobs or open SSH connections for a dry run;
+            # the cache verdict below may be approximate without the version.
+            version = f"not probed (backend={executor.describe()})"
+            version_raw = ""
+        else:
+            version, version_raw = detect_tool_version_record(tool, config, executor=executor)
     except ExternalToolError as exc:
         if not dry_run:
             raise
@@ -755,7 +825,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         "tool": tool.name,
         "tool_version": version,
         "tool_version_raw": version_raw,
-        "launcher": tool.run_method,
+        "launcher": tool.run_method if executor.name == "local" else f"{tool.run_method} [{executor.describe()}]",
         "command": " ".join(command),
         "parameter_set": json.dumps({"arguments": rendered_args, "threads": threads}, ensure_ascii=False),
         "parameter_sha256": parameter_sha,
@@ -785,6 +855,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             cwd=project.root,
             tool=tool.name,
             tool_version=version,
+            backend=backend,
+            threads=threads,
+            stage_inputs=[input_path] if executor.name == "ssh" and not input_is_remote else (),
+            executor=executor,
         )
         _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
         output_sha = sha256_path(output_path)

@@ -17,13 +17,16 @@
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
+
+# 需要 SSH/SFTP 远程存储或计算时
+python -m pip install -e '.[remote]'
 ```
 
 验证安装：
 
 ```bash
 operon --version
-# 输出：operon 0.2.2
+# 输出：operon 0.3.0
 
 operon --help
 ```

@@ -58,6 +58,11 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     for member in members:
         source = project.root / member["relative_path"]
         if not source.exists():
+            if member.get("status") == "REMOTE_ONLY":
+                raise FileNotFoundError(
+                    f"release member {member['file_id']} is remote-only; hydrate it with "
+                    f"`operon pull --remote NAME --file-id {member['file_id']}` before release"
+                )
             raise FileNotFoundError(f"release member missing: {source}")
         if sha256_path(source) != member["sha256"]:
             raise RuntimeError(f"release member checksum mismatch: {source}")

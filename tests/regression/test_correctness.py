@@ -251,3 +251,27 @@ class TestCorrectnessRegressions(PytestAssertions):
         decision = migrated.query("SELECT decision FROM current_decisions")
         self.assertEqual(decision[0]["decision"], "PASS")
 
+    def test_schema_2_2_adds_remote_location_and_executor_provenance(self):
+        old_path = self.root / "schema-2.1.sqlite"
+        conn = sqlite3.connect(old_path)
+        conn.executescript(
+            """
+            CREATE TABLE workflow_runs (
+                run_id TEXT PRIMARY KEY, parent_run_id TEXT, entity_type TEXT, entity_id TEXT,
+                step TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL,
+                finished_at TEXT, exit_code INTEGER, command TEXT, tool TEXT,
+                tool_version TEXT, parameter_set TEXT, input_sha256 TEXT,
+                output_sha256 TEXT, threads INTEGER, max_rss_mb REAL, log_file TEXT,
+                stdout_file TEXT, stderr_file TEXT, error TEXT
+            );
+            """
+        )
+        conn.close()
+        migrated = Database(old_path)
+        self.addCleanup(migrated.close)
+        columns = set(migrated.table_columns("workflow_runs"))
+        self.assertTrue({"executor", "scheduler_job_id", "execution_details"}.issubset(columns))
+        tables = {row["name"] for row in migrated.query(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        self.assertIn("file_locations", tables)

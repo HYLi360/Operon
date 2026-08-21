@@ -31,6 +31,11 @@ run-external  执行外部命令并记录 provenance
 tools-check   检测外部程序与版本
 analyze       执行配置文件中封装的 BLAST/HMMER/BUSCO 等分析
 analysis-results  查看同步到数据库的分析汇总/hits
+remotes       列出配置的远程端并测试连通性
+push          上传 manifest 文件到远程镜像
+pull          从远程镜像恢复 manifest 文件
+evict         验证远端副本后删除本地大文件
+locations     查看文件的本地/远程驻留位置
 evaluate      运行规则引擎
 curate        人工策展判定
 release       创建 release
@@ -193,6 +198,14 @@ operon ingest \
 ```
 
 - `--role` 常用值：`genome_fasta`、`annotation_gff3`、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`。
+- `--source` 除本地路径外，还支持 `sftp://[user@]host[:port]/path` 与
+  `remote://<remote名>/<相对远端root路径>`（`remote://` 引用 `project.yaml` 的
+  `remotes:` 配置）；会先经 SFTP 下载到临时文件再走原归档流程。未显式给出
+  `--source-url` 时，自动把该 URL 记录为 `source_url`。SFTP 来源需要安装可选
+  依赖 `operon[remote]`（paramiko）。
+- `remote://` 路径必须是安全的 root 相对路径，并且已存在于该远端的
+  `operon-manifest.json`；下载前后验证清单 SHA-256/size。裸 `sftp://` 没有镜像清单
+  可对照，下载后由 ingest 计算并登记新的本地身份。
 - 自动识别 `.gz` 等压缩；源文件有 `gzip` 后缀但不是 gzip magic 时报错。
 - 同实体同角色不同 SHA-256 会拒绝归档。
 - `--move` 移动而非复制源文件。
@@ -204,7 +217,9 @@ operon ingest \
 operon verify [--file-id FIL_...]...
 ```
 
-逐个检查 manifest 路径与 SHA-256；不指定 `--file-id` 时检查全部。失败返回非零。
+逐个检查 manifest 路径与 SHA-256；不指定 `--file-id` 时检查全部。拥有已验证
+`file_locations` 但本地字节已显式 evict 的对象显示 `REMOTE_ONLY`，不视为损坏；
+其他缺失或校验失败返回非零。
 
 ## standardize
 
@@ -245,12 +260,15 @@ operon run-external \
   --step STEP --command 'CMD ARGS' \
   [--entity-type TYPE] [--entity-id ID] \
   [--parameter-set PS] [--expected-output PATH ...] \
-  [--cwd DIR] [--timeout SECONDS]
+  [--cwd DIR] [--timeout SECONDS] [--backend {local,slurm,ssh}]
 ```
 
 - 命令用 shlex 解析，不经过 shell。
 - 记录退出码、stdout/stderr 文件、起止时间到 `workflow_runs` 与 `logs/workflow.jsonl`。
 - 仅当退出码为 0 且所有 `--expected-output` 非空时才判定成功。
+- `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认，
+  本地子进程）、`slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上
+  执行）。配置与前提见 [How-to 操作手册](howto.md)第 9 节。
 
 ## tools-check
 
@@ -264,7 +282,7 @@ operon tools-check
 ## analyze
 
 ```bash
-operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force]
+operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--backend {local,slurm,ssh}]
 ```
 
 按 recipe 自动完成：
@@ -283,6 +301,12 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 `busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON summary，写入 BUSCO
 完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
 
+`--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认）、
+`slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上执行）；工具版本探测
+也经同一后端执行。配置、前提与日志位置见 [How-to 操作手册](howto.md)第 9 节。
+若 SSH 配置了 `storage_remote`，本地缺失但状态为 `REMOTE_ONLY` 的候选输入会先严格
+验证远端清单和实际内容，再在远端原位使用。
+
 默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`（可自行增删）。
 `config/tools.yaml` 的完整字段和执行语义见 [Recipe 配置参考](recipe-reference.md)。
 
@@ -295,6 +319,72 @@ operon analysis-results [--analysis NAME] [--entity-type TYPE] [--entity-id ID] 
 - 默认显示 `analysis_results` 汇总指标。
 - `--hits` 显示 `analysis_hits` 中的 top hits。
 - `--limit` 默认 20。
+
+## remotes
+
+```bash
+operon remotes
+```
+
+- 列出 `project.yaml` 的 `remotes:` 配置段中的远程端，并逐个测试连通性。
+- 输出表格：`name` / `type` / `address` / `root` / `files`（远端清单条目数）/
+  `status` / `error`。
+- 任一远程端有 `error` 时返回退出码 1。
+- 需要安装可选依赖 `operon[remote]`（paramiko）；未安装时只在使用 SSH/SFTP
+  功能时报配置错误。
+- 默认拒绝未知 SSH 主机密钥；通过 `known_hosts` 或 `host_key_sha256` 建立信任。
+
+## push
+
+```bash
+operon push --remote NAME [--file-id FIL_...]...
+```
+
+- 把本地 manifest 文件上传到指定远程端（SFTP 镜像）；不指定 `--file-id` 时
+  推送全部 manifest 文件。
+- 文件和目录 artifact 均按 sha256 + size 校验；远端没有 `sha256sum` 时通过 SFTP
+  流式哈希，绝不只比较大小。内容一致跳过；已有同路径不同内容会报
+  `ConflictError`，绝不静默覆盖。
+- 每次传输写入 `workflow_runs`（step 为 `push:<name>`）；远端维护原子更新的
+  `operon-manifest.json` 清单。
+- 每个文件输出 `uploaded` / `indexed`（远端字节已存在并被纳入清单）/
+  `skipped` / `error`。
+
+## pull
+
+```bash
+operon pull --remote NAME [--file-id FIL_...]...
+```
+
+- 从指定远程镜像恢复文件；不指定 `--file-id` 时按远端清单遍历，但每条记录仍必须
+  与本地 SQLite 中同一 `file_id + relative_path + sha256 + size_bytes` 完全一致；
+  远端多出的未知对象不会被导入本地数据库。
+- 同样按 sha256 + size 校验、幂等；本地已有不同字节时拒绝覆盖（`ConflictError`）。
+- 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`；传输记录
+  写入 `workflow_runs`（step 为 `pull:<name>`）。
+
+## evict
+
+```bash
+operon evict --remote NAME [--file-id FIL_...]...
+```
+
+- 这是显式删除本地归档字节的操作；不指定 `--file-id` 时处理全部 manifest 文件。
+- 删除前再次核对本地身份、远端清单身份和远端实际 SHA-256/目录树哈希；任一步不一致
+  都拒绝删除。
+- 成功后 `files.status` 为 `REMOTE_ONLY`，位置写入 `file_locations`，状态变化写入
+  `changes`，并在 `.operon/placeholders/<file_id>.json` 写人类可读的小型指针。
+- `standardize` 和 `release` 前需先 `pull`；配置 `execution.ssh.storage_remote` 后，
+  `analyze --backend ssh` 可直接使用远端输入。
+
+## locations
+
+```bash
+operon locations [--file-id FIL_...]...
+```
+
+联合显示 `files` 与 `file_locations` 中的本地状态、远端名称、远端状态和最近校验时间。
+该命令只读，不连接远端；实时复核由 `push`、`pull`、`evict` 或远端分析前置检查完成。
 
 ## evaluate
 

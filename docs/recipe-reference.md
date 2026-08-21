@@ -363,6 +363,21 @@ database_mode: mutable_cache
 如果目标是严格冻结与离线复现，应预先下载指定 lineage，把 BUSCO 改为
 `--lineage_dataset ... --offline`，再使用 `reference` 模式并维护版本或 checksum。
 
+### 7.3 SSH 远程数据库
+
+当 SSH 使用非空 `remote_root` 时，`${database}` 中位于本地项目根下的路径会映射到
+远端 root；项目根之外的绝对路径保持原样。`operon` 不会把大型参考库随每个任务上传：
+
+- `reference` 必须由管理员预先放到远端目标路径，并配置 `database_checksum`；运行前
+  检查路径存在。显式 checksum 与 SSH 主机/root 一起进入数据库缓存身份；
+- `mutable_cache` 必须有 `database_version`，目标目录不存在时通过 SFTP 创建；
+- 本地存在同名数据库不代表远端已经部署，反之亦然；缺失会在提交分析前明确报错；
+- 不同 SSH 主机/root 不共享分析缓存身份，避免在内容位置不明时跨集群复用结果。
+
+这里的 `database_checksum` 是 recipe 对冻结数据库发布身份的显式声明。对于需要逐字节
+审计的参考库，应在部署阶段另外执行发布方校验或生成 Operon 可复核的清单；运行期不会
+为每个候选输入反复遍历数 TB 数据库。
+
 ## 8. 缓存到底比较什么
 
 一次已完成分析只有在以下身份全部相同时才会复用：
@@ -395,7 +410,43 @@ operon --project . analyze \
   --dry-run
 ```
 
-## 9. result parser
+## 9. recipe 级 Slurm 资源覆盖
+
+当项目使用 Slurm 执行后端（`project.yaml` 的 `execution.backend: slurm`，或命令行
+`--backend slurm`）时，所有 recipe 默认共享 `execution.slurm` 的资源设置。单个
+recipe 可以用 `slurm:` mapping 覆盖其中的同名字段（空值与空字符串不会覆盖），
+例如给 BUSCO 单独调整内存与时限：
+
+```yaml
+tools:
+  busco:
+    executable: busco
+    run_method: ""
+    version_args: ["--version"]
+    version_pattern: 'BUSCO\s+([^\s]+)'
+    recipes:
+      busco_autolineage:
+        # ... 其余字段不变 ...
+        slurm:
+          mem_gb: 64
+          time: "72:00:00"
+```
+
+可覆盖字段与 `execution.slurm` 一致：
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `partition` | 空 | Slurm 分区；空表示不写 `--partition` |
+| `time` | `24:00:00` | 作业时限 |
+| `mem_gb` | `0` | 内存上限（GB）；`0` 表示不写 `--mem` |
+| `extra_sbatch` | `[]` | 追加的 `#SBATCH` 行，如 `["--gres=gpu:1"]` |
+| `setup_commands` | `[]` | 插入在命令前的行，如 `["module load blast/2.15"]` |
+| `poll_interval` | `15` | `squeue` 轮询间隔（秒） |
+
+未列出的字段继承 `execution.slurm`。线程数始终来自 `--threads`（映射为
+`--cpus-per-task`），不在 recipe 覆盖范围内。
+
+## 10. result parser
 
 `result_parser` 控制成功的输出怎样进入 SQLite：
 
@@ -410,7 +461,7 @@ operon --project . analyze \
 `qc_results`；因此它们会自然出现在 `qc-table` 宽表中，也可以直接被 QC profile 使用。
 top hits 另外写入 `analysis_hits`。
 
-### 9.1 `blast_tabular`
+### 10.1 `blast_tabular`
 
 至少需要声明两列：
 
@@ -434,7 +485,7 @@ max_hits_per_query: 5
 其余列作为 hit metric；上述专用字段可以覆盖。输入顺序决定 hit rank，因此应让工具按
 希望保留的优先级输出。
 
-### 9.2 `hmmer_tblout`
+### 10.2 `hmmer_tblout`
 
 该 parser 按标准 HMMER tblout 读取 target、query、full-sequence E-value 和 score，忽略
 注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。
@@ -451,7 +502,7 @@ result_parser: hmmer_tblout
 max_hits_per_query: 5
 ```
 
-### 9.3 `busco_json`
+### 10.3 `busco_json`
 
 BUSCO 通常使用目录输出：
 
@@ -471,7 +522,7 @@ result_glob: short_summary*.json
 - lineage 名称、创建日期、BUSCO 数与物种数；
 - datasets/OrthoDB/dataset 版本、NCBI taxid 与 BUSCO 软件版本。
 
-## 10. 完整 BUSCO recipe
+## 11. 完整 BUSCO recipe
 
 ```yaml
 tools:
@@ -545,7 +596,7 @@ operon --project . analysis-results \
   --entity-id ANN_000001
 ```
 
-## 11. 目录输入与目录输出示例
+## 12. 目录输入与目录输出示例
 
 下面的示例假设 wrapper 接收一个目录，创建一个非空结果目录。对原生只接受单文件的
 程序，不应仅靠把 `input_kind` 改成 `directory` 来假装支持目录；应让 wrapper 明确遍历
@@ -577,7 +628,7 @@ tools:
         result_parser: none
 ```
 
-## 12. 接入新工具的推荐顺序
+## 13. 接入新工具的推荐顺序
 
 不要一次把所有字段都填满。按下面顺序通常最容易排错：
 
@@ -591,7 +642,7 @@ tools:
 8. 最后启用 parser，核对 `analysis-results` 与 `qc-table`；
 9. 再扩大到全部候选实体。
 
-## 13. 常见错误速查
+## 14. 常见错误速查
 
 | 现象 | 常见原因 | 处理 |
 |---|---|---|
@@ -606,7 +657,7 @@ tools:
 | BUSCO/SEPP 出现 `protein_jplace` 路径 | 输出路径含 `fasta` | 使用 `output_name: ${file_id}.busco`，并检查父目录 |
 | 加 `--force` 仍失败 | 不是缓存问题，而是命令、输出或工具错误 | 先修 recipe；`--force` 只控制 completed cache |
 
-## 14. 最小检查清单
+## 15. 最小检查清单
 
 保存新 recipe 前逐项确认：
 

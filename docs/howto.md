@@ -448,7 +448,210 @@ operon run-external \
 - 运行记录同时写入 `logs/workflow.jsonl` 与 `workflow_runs` 表。
 - 只有退出码为 0 且所有 `--expected-output` 存在且非空，才记录 `completed`；否则记录 `failed` 并返回非零。
 
-## 9. 如何导入外部 QC 结果
+## 9. 如何在 Slurm 集群或 SSH 远程主机上运行外部分析
+
+`run-external` 与 `analyze` 默认在本地以子进程执行外部命令（`local` 后端）。通过
+`project.yaml` 的 `execution:` 段可把执行后端切换为本地 Slurm 集群（`slurm`）或
+SSH 远程主机（`ssh`，HPC 头节点与云虚拟机均适用）。所有后端共用同一份 provenance
+契约：退出码、起止时间、日志路径照常写入 `workflow_runs` 与 `logs/workflow.jsonl`，
+成功判定（退出码 0 且 `--expected-output` 非空）与输入/输出 SHA-256 校验不变。
+
+配置示例（全部字段可选，旧项目无需修改）：
+
+```yaml
+# project.yaml
+execution:
+  backend: local            # local | slurm | ssh
+  slurm:
+    partition: ""
+    time: "24:00:00"
+    mem_gb: 0               # 0 = 不写 --mem
+    extra_sbatch: []        # 追加的 #SBATCH 行，如 ["--gres=gpu:1"]
+    setup_commands: []      # 如 ["module load blast/2.15"]
+    poll_interval: 15       # squeue 轮询间隔（秒）
+  ssh:
+    host: ""
+    user: ""
+    port: 22
+    key_file: ""            # 空 = SSH agent / 默认密钥；不支持密码
+    remote_root: ""         # 项目在远端的绝对 POSIX 路径；空 = 共享文件系统
+    storage_remote: ""      # REMOTE_ONLY 输入所在的 remotes: 名称
+    scheduler: none         # none | slurm
+    connect_timeout: 30
+    known_hosts: ""         # 可选额外 known_hosts 文件
+    host_key_sha256: ""     # 可选 SHA256:... 主机密钥指纹固定
+    insecure_accept_unknown_host: false
+```
+
+命令行 `--backend {local,slurm,ssh}` 可单次覆盖 `execution.backend`：
+
+```bash
+operon analyze --analysis blastn_nt --backend slurm
+operon run-external --step quast --backend ssh \
+  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta' \
+  --expected-output qc/quast_out/report.tsv
+```
+
+Slurm 后端的前提与行为：
+
+- 项目目录必须位于与计算节点共享的文件系统上；`sbatch`/`squeue` 需在 PATH 中，
+  缺失时报配置错误。
+- 每个 run 在 `logs/` 下生成 `<run_id>.sbatch` 批处理脚本（`--cpus-per-task` 取
+  线程数，可选 `--time`/`--partition`/`--mem` 与 `extra_sbatch`；`setup_commands`
+  插入在命令前），以 `sbatch --parsable` 提交并按 `poll_interval` 轮询 `squeue`；
+  作业消失后读取脚本末尾写入的 `<run_id>.exitcode` 退出码文件（失败时回退
+  `sacct`）。stdout/stderr 指向 `logs/` 下的 `<run_id>.stdout.log` /
+  `<run_id>.stderr.log`。
+- 超时按 `--timeout`（秒）控制，超时尝试 `scancel`。
+
+SSH 后端的前提与行为：
+
+- 需要可选依赖 paramiko：`pip install 'operon[remote]'`（或
+  `pip install paramiko`）；未安装时只在使用 SSH/SFTP 功能时报配置错误。
+- `execution.ssh.scheduler: slurm` 时改为在远端主机走 sbatch/squeue 提交与轮询；
+  否则直接在远端执行，并把 stdout/stderr 流式回传到本地日志文件。
+- 配置绝对 POSIX `remote_root` 后，argv/cwd 中经过根目录包含性校验的项目路径前缀会
+  改写为该远端路径；`..`/符号链接造成的路径逃逸会被拒绝。留空表示远端与本地共享
+  文件系统。
+- 默认拒绝 known_hosts 中没有的主机。首次使用前应由管理员核对主机公钥后写入
+  `~/.ssh/known_hosts`，或配置 `known_hosts` / `host_key_sha256`；
+  `insecure_accept_unknown_host: true` 只适合明确接受风险的临时测试环境。
+- `analyze` 自动把尚在本地的输入经 SFTP 上传到远端；远端没有 `sha256sum` 时会
+  通过 SFTP 流式计算 SHA-256，目录则计算完整树哈希，不会退化为 size 校验。
+  已有不同内容时拒绝覆盖。
+- 配置 `storage_remote` 后，本地状态为 `REMOTE_ONLY` 的输入会先对照本地 SQLite、
+  远端清单和远端实际内容，再直接在远端 root 原位读取，不会先下载到个人电脑。
+- 运行前只删除严格限定在 `remote_root` 内的精确 expected-output 路径，避免旧结果
+  冒充本次输出；拉回后再次比较本地/远端内容。已有本地输出不同则报冲突。
+- 远端 `reference` 数据库必须预先放在 recipe 的 `database` 路径并声明
+  `database_checksum`；身份同时包含远端执行位置。`mutable_cache` 仍要求
+  `database_version`，不存在时在远端自动建目录。
+
+工具版本探测（`version_args + version_pattern`）在非 `local` 后端时也通过同一
+后端执行，无需在远端手工准备。
+
+单个 recipe 可用 `slurm:` mapping 覆盖 `execution.slurm` 的同名字段，例如给
+BUSCO 单独调整内存与时间（完整字段见 [Recipe 配置参考](recipe-reference.md)）：
+
+```yaml
+recipes:
+  busco_autolineage:
+    slurm:
+      mem_gb: 64
+      time: "72:00:00"
+```
+
+## 10. 如何用远程存储备份与恢复归档
+
+除第 15 节的本地备份外，`project.yaml` 的 `remotes:` 段可以配置一个或多个 SFTP
+远程镜像，用于把 manifest 文件按内容校验地同步到远端：
+
+```yaml
+# project.yaml
+remotes:
+  mycluster:
+    type: sftp
+    host: hpc.example.org
+    user: hyli360
+    port: 22
+    key_file: ~/.ssh/id_rsa
+    root: /data/operon-mirror
+    known_hosts: ~/.ssh/known_hosts
+    # 也可固定管理员提供的指纹：host_key_sha256: SHA256:base64...
+    insecure_accept_unknown_host: false
+```
+
+SFTP 功能需要可选依赖 paramiko：`pip install 'operon[remote]'`。
+
+先列出配置并测试连通性（任一远程端报错时退出码为 1）：
+
+```bash
+operon remotes
+```
+
+推送与恢复：
+
+```bash
+# 全部 manifest 文件上传到远端镜像
+operon push --remote mycluster
+
+# 只推送指定文件
+operon push --remote mycluster --file-id FIL_000001 --file-id FIL_000002
+
+# 从远端镜像恢复（缺省恢复远端清单全部条目）
+operon pull --remote mycluster
+
+# 查看每个 file_id 的本地/远程驻留状态
+operon locations
+```
+
+语义与本地的 raw 不变量一致：
+
+- 普通文件和目录 artifact 全部按 sha256 + size 校验且幂等；目录哈希包含相对路径、
+  空目录、文件内容和符号链接目标。远端已有不同字节时报 `ConflictError`；
+- 远端维护带 `project_id` 的 `operon-manifest.json` v2 清单。清单原子替换要求
+  SFTP 服务器支持 OpenSSH `posix-rename@openssh.com` 扩展；不支持时失败关闭，不会
+  退化成先删除旧清单再写新清单；
+- 远端相对路径必须安全地位于 root 下；默认 pull 对每条记录重新核对本地 SQLite
+  的 `file_id + relative_path + sha256 + size_bytes`，远端清单不能改写本地身份；
+- 每次传输都写入 `workflow_runs` provenance（step 为 `push:<name>` /
+  `pull:<name>`），成功位置写入 `file_locations`；
+- `pull` 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`。
+
+### 10.1 本地只保留控制面，远端保存并计算大文件
+
+这是个人电脑控制 HPC 最常见的推荐流程：
+
+```bash
+# 1. 首次归档仍在本地建立可信身份
+operon ingest --source ASM.fna.gz \
+  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
+
+# 2. 推到远端；push 会校验实际远端内容并登记 file_locations
+operon push --remote mycluster --file-id FIL_000001
+
+# 3. 再次验证远端后删除本地大文件，留下 SQLite + 小型指针
+operon evict --remote mycluster --file-id FIL_000001
+operon locations --file-id FIL_000001
+
+# 4. 本地发命令；输入在远端原位消费，结果和 provenance 回到本地
+operon analyze --analysis blastn_nt --backend ssh \
+  --entity-type assembly --entity-id ASM_000001
+
+# 5. 本地流程确实需要字节时再 hydrate
+operon pull --remote mycluster --file-id FIL_000001
+```
+
+配置时令执行端引用同一个远端镜像：
+
+```yaml
+execution:
+  backend: ssh
+  ssh:
+    storage_remote: mycluster   # 自动继承 host/user/port/key/root/host-key 策略
+    scheduler: slurm            # 或 none，直接在 SSH 主机执行
+```
+
+`evict` 是显式删除本地字节的命令；不指定 `--file-id` 会处理全部 manifest 对象。
+它只在远端清单身份和远端实际内容均通过严格校验后执行，并在 `changes` 中审计状态
+变化。`standardize` 与 `release` 仍需要本地字节，应先 `pull`；外部 `analyze` 则可
+直接消费 REMOTE_ONLY 输入。
+
+也可以不经镜像配置，直接从 URL 归档远程文件（未显式给 `--source-url` 时自动
+记录该 URL）：
+
+```bash
+operon ingest --source sftp://hyli360@hpc.example.org:22/data/ASM.fna.gz \
+  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
+
+operon ingest --source remote://mycluster/raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz \
+  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
+```
+
+分工：本节是“按内容校验的远端镜像”；第 15 节仍是针对 `operon.sqlite`、`config/`
+等本地目录的整体备份与迁移。
+
+## 11. 如何导入外部 QC 结果
 
 把 BUSCO/QUAST/FastQC/fastp 等输出整理为 TSV：
 
@@ -471,7 +674,7 @@ assembly	ASM_000001	FIL_000001	quast	contig_n50	2845913	bp	quast	5.2.0	default
 operon import-qc --file external_qc.tsv
 ```
 
-## 10. 如何创建新的 QC profile
+## 12. 如何创建新的 QC profile
 
 在 `config/profiles/` 下添加 YAML 文件，例如 `phylogenomics_v1.yaml`：
 
@@ -514,7 +717,7 @@ operon decisions --profile phylogenomics_v1
 
 每次 evaluate 都会保存 profile 内容快照，并追加 decision 历史。
 
-## 11. 如何人工覆盖判定而不丢失审计
+## 13. 如何人工覆盖判定而不丢失审计
 
 ```bash
 operon curate \
@@ -533,7 +736,7 @@ operon curate \
 - 修改同时写入 `changes` 审计表。
 - 状态机按策展后的 decision 更新为 ACCEPTED/REJECTED/REVIEW。
 
-## 12. 如何用 SQL 查询
+## 14. 如何用 SQL 查询
 
 `query` 是只读的。常用查询示例：
 
@@ -562,7 +765,7 @@ operon query "SELECT entity_id, state, message FROM entity_state WHERE entity_ty
 
 `SELECT`、`PRAGMA table_info` 等只读操作可用；`UPDATE`、`INSERT`、`DROP`、`PRAGMA user_version=...`、`ATTACH` 等会被拒绝。
 
-## 13. 如何备份和迁移项目
+## 15. 如何备份和迁移项目
 
 日常备份只需包含：
 
@@ -572,9 +775,14 @@ config/
 metadata/            # 或直接备份 operon.sqlite
 operon.sqlite      # 注意连同 -wal/-shm 一起或先干净关闭
 raw/                 # 不可替代数据
+.operon/placeholders/ # 可选；REMOTE_ONLY 的人类可读指针（可由 SQLite 重建）
 standardized/        # 按需（可由 raw 重建）
 releases/            # 按需（可由 raw + 数据库重建）
 ```
+
+若使用 `REMOTE_ONLY`，本地备份还必须覆盖含 `file_locations` 的 SQLite；远端应独立
+备份镜像 root（包括 `operon-manifest.json`）和实际对象。占位符本身不是恢复依据，
+只有本地 `files` 身份与远端清单/字节同时保留，才能在新电脑上安全 hydrate。
 
 更稳妥的做法是定期创建 release，并在 release 目录执行 `sha256sum -c checksums.sha256`。
 
@@ -590,7 +798,7 @@ releases/            # 按需（可由 raw + 数据库重建）
 
 旧版 v1 数据库**无需手工迁移**：当前程序打开数据库时会自动迁移 `qc_results` 与 `decisions` 到 v2 结构，旧 QC 数据以 `legacy:` 输入身份保留，旧 decision 可继续通过 `current_decisions` 读取。
 
-## 14. 如何续跑失败任务
+## 16. 如何续跑失败任务
 
 所有核心步骤都幂等：
 
@@ -602,7 +810,7 @@ releases/            # 按需（可由 raw + 数据库重建）
 
 因此从中断处直接重跑相同命令即可。可通过 `status` 查看每个实体当前处于哪个状态。
 
-## 15. 如何排查 checksum 与格式问题
+## 17. 如何排查 checksum 与格式问题
 
 ```bash
 operon verify          # 找 MISSING / CHECKSUM_FAILED
@@ -614,6 +822,7 @@ operon query "SELECT file_id, entity_type, entity_id, file_role, status, relativ
 
 | 状态 | 建议 |
 |---|---|
+| `REMOTE_ONLY` | 预期状态；用 `operon locations` 查看驻留位置，需本地字节时执行 `pull` |
 | `MISSING` | 恢复文件到 `relative_path`，或从源头重新归档为新实体版本 |
 | `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
 | `QC_FAILED` | 查看 `operon qc-table` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |

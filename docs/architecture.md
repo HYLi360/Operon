@@ -1,7 +1,7 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.2.2，数据库内部 schema 版本 `2.1`，
-> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.1`。
+> 本文对应代码库当前状态：`operon` 0.3.0，数据库内部 schema 版本 `2.2`，
+> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.2`。
 
 ## 1. 设计目标
 
@@ -44,6 +44,8 @@
 │  tools.py       外部分析工具配置、版本探测、缓存执行、结果同步      │
 │  release.py     release 快照生成                              │
 │  workflow.py    状态机、JSONL 日志、外部命令执行器               │
+│  execution.py   执行后端抽象（local/slurm/ssh）                  │
+│  remotes.py     SFTP 远程镜像（push/pull、远端清单）              │
 ├────────────────────────────────────────────────────────────┤
 │ 数据层                                                       │
 │  schema.py      YAML 字段契约与 TSV 校验/规范化                │
@@ -68,7 +70,7 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、TSV 读取/写出、类型校验与规范化 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、schema v1→v2 自动迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
 | `../operon/qc_module/parsers.py` | 纯 Python 流式解析 FASTA、FASTQ、GFF3、蛋白 FASTA |
@@ -76,6 +78,8 @@
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
 | `operon/tools.py` | 读取 `config/tools.yaml`，封装外部程序启动方式、版本探测、输入校验、缓存执行与结果回写 |
 | `operon/workflow.py` | 合法状态迁移、`workflow.jsonl` 结构化日志、外部命令执行 |
+| `operon/execution.py` | 执行后端抽象：`local`/`slurm`/`ssh`，sbatch 脚本生成与轮询、SSH/SFTP 传输、路径映射 |
+| `operon/remotes.py` | SFTP 远程镜像：远端清单维护、按内容校验的幂等 push/pull、`sftp://`/`remote://` 下载 |
 | `operon/release.py` | 生成不可变 release 目录与校验和 |
 | `operon/reports.py` | QC 长表/宽表导出、状态与判定报表 |
 | `operon/demo.py` | 生成确定性的合成演示项目 |
@@ -103,6 +107,7 @@ project/
 ├── analysis/                 # 分析工作区（外部工具输出、下游分析）
 ├── reports/                  # decisions、汇总导出
 ├── logs/workflow.jsonl       # 机器可读工作流日志
+├── .operon/placeholders/     # REMOTE_ONLY 文件的小型、非权威指针
 └── releases/                 # 不可变数据集发布快照
 ```
 
@@ -187,6 +192,7 @@ input_identity 唯一输入标识：
 |---|---|
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应） |
+| `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
@@ -262,6 +268,58 @@ email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 ac
 6. 归档后再校验一次 checksum，成功才登记 manifest 并回填 `assemblies.fasta_file_id`、`annotations.*_file_id` 等关系。
 
 `standardize` 默认**复制**到 `standardized/`，使 raw、standardized、release 三层互不共享可写 inode；`--link hardlink` 或 `--link symlink` 是显式兼容选项。
+
+### 7.1 远程镜像（SFTP）
+
+`project.yaml` 的 `remotes:` 段可配置一个或多个 SFTP 远程镜像（`operon/remotes.py`），
+把 manifest 文件同步到远端而不破坏本节的不变量：
+
+- 普通文件与目录 artifact 全部按 `sha256 + size_bytes` 校验；服务器没有
+  `sha256sum` 时通过 SFTP 流式计算 SHA-256，绝不退化为仅比较大小；目录使用与
+  本地完全相同的确定性树哈希（含空目录和符号链接目标）；
+- 远端维护 `operon-manifest.json` v2 清单（project_id + relative_path →
+  file_id/sha256/size/kind/synced_at），清单更新要求服务器支持 OpenSSH POSIX rename
+  扩展，以“临时文件 + 原子替换”发布；
+- 所有相对路径在本地和远端均做根目录约束，拒绝绝对路径、`..` 与路径逃逸；远端
+  清单的 `project_id` 和每条身份都必须与本地 SQLite 一致；
+- 每次传输复用 `workflow_runs` 记录 provenance（step 为 `push:<name>` /
+  `pull:<name>`）；成功位置同时缓存到 `file_locations`；
+- `pull` 恢复本地缺失文件后把 `files.status` 恢复为 `CHECKSUM_VERIFIED`；
+- `ingest --source` 也可直接接受 `sftp://[user@]host[:port]/path` 与
+  `remote://<name>/<path>`；后者必须存在于远端清单并先校验身份，前者下载后由
+  ingest 计算新身份，再走与本地文件完全相同的归档流程。
+
+paramiko 是可选依赖（`pip install 'operon[remote]'`），代码内惰性导入；核心依赖与
+本地功能不受影响。cx_Freeze 的 `build` extra 和发布包包含 paramiko。
+
+### 7.2 本地控制面与远程数据面
+
+`operon` 0.3 的远程模型把“存、算、执行”拆为三个可组合角色：
+
+```text
+本地电脑：CLI + project.yaml + tools.yaml + SQLite + logs
+                          │ SSH/SFTP
+                          ▼
+远程登录/调度节点：直接执行或提交 Slurm
+                          │ 共享文件系统
+                          ▼
+远程数据面：raw/reference DB/临时分析输出
+```
+
+`push` 在远端建立经过身份校验的副本；`evict` 只有在再次验证远端实际内容后才删除
+本地字节，把 `files.status` 置为 `REMOTE_ONLY`，在 `file_locations` 记录位置，并于
+`.operon/placeholders/<file_id>.json` 写一个便于人查看的指针。指针不是事实来源，
+`files` 与 `file_locations` 才是机器判定依据。`pull` 可随时把对象 hydrate 回逻辑
+`relative_path`。
+
+这里“raw 不可变”约束的是一个 `file_id` 的内容身份不能被另一组字节替换，并不要求
+每台控制端永久保存一份物理副本。`evict` 是经校验的位置迁移：至少一个远端副本仍以
+同一 SHA-256/size 存在，逻辑 raw 身份不变；远端副本不可信或缺失时绝不删除本地字节。
+
+当 `execution.ssh.storage_remote` 指向同一远程文件系统时，`analyze` 遇到本地缺失的
+输入不会先下载；它先核对远端清单和实际 SHA-256，再把本地逻辑路径映射到远端 root，
+让远端命令直接读取该对象。当前要求计算节点通过 SSH 主机或其 Slurm 节点能看到该
+remote root；“对象存储与完全不同的计算集群之间服务器端搬运”尚未实现。
 
 ## 8. QC 流水线
 
@@ -357,6 +415,30 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 `database_mode: mutable_cache` 用于 BUSCO 等会逐步下载 lineage 的共享缓存，以显式
 `database_version` 标识其逻辑版本；不可变参考库仍使用默认的 `reference` 内容身份。
 
+外部命令的实际执行由 `execution.py` 的后端抽象接管，`run_external_command` 通过
+`get_executor(project, backend)` 选择后端：
+
+- `local`（默认）：原有本地子进程行为，完全不变；
+- `slurm`：本地 Slurm 集群。在 `logs/` 下生成 `<run_id>.sbatch` 批处理脚本
+  （`--cpus-per-task` 取线程数，可选 `--time`/`--partition`/`--mem`、
+  `extra_sbatch` 与 `setup_commands`），用 `sbatch --parsable` 提交并按
+  `poll_interval` 轮询 `squeue`，作业消失后读取脚本写入的 `<run_id>.exitcode`
+  退出码文件（失败时回退 `sacct`）；前提是项目目录位于与计算节点共享的
+  文件系统上；
+- `ssh`：通过 paramiko（可选依赖 `operon[remote]`，惰性导入）在 SSH 远程主机
+  （HPC 头节点/云虚拟机）上执行；`execution.ssh.scheduler: slurm` 时改为在远端
+  走 sbatch/squeue。支持 `remote_root` 路径映射（空表示共享文件系统）；输入
+  文件经 SFTP 上传（内容一致跳过，严格 SHA-256/目录树哈希；不同内容拒绝覆盖）；
+  若配置 `storage_remote`，REMOTE_ONLY 输入在远端原位消费。运行前清除精确计算出的
+  远端旧输出，expected outputs 经临时文件拉回并与远端内容再次比对；已有本地输出
+  只有内容完全相同时才接受。
+
+三个后端共用同一份 provenance 与正确性契约：退出码、起止时间、日志照常写入
+`workflow_runs` 与 `logs/workflow.jsonl`；SQLite 额外保存 executor、scheduler job ID
+与资源/脚本详情，成功判定与输入/输出 SHA-256 校验不变；
+工具版本探测在非 `local` 后端时也经同一后端执行。单个 recipe 可用 `slurm:`
+mapping 覆盖 `execution.slurm` 的同名字段（如给 BUSCO 单独调内存/时间）。
+
 日常使用见 [How-to 操作手册](howto.md)；字段、占位符、artifact、数据库身份、缓存和
 parser 的完整契约见 [Recipe 配置参考](recipe-reference.md)。
 
@@ -377,10 +459,18 @@ JSON summary parser 原生接入；QUAST、Merqury、Kraken2、CheckM2 等尚未
 规模方面，SQLite WAL + 索引适合百万级元数据行，序列解析全部流式；如明确接受
 inode 共享，可对 `standardized/` 或 release 显式使用硬链接。
 
+执行后端按 `execution.py` 的抽象扩展：当前提供 `local`、`slurm` 与 `ssh` 三种，
+新增后端只需实现同一 executor 接口即可接入 `run-external`/`analyze`。暂不支持
+云厂商 SDK（AWS Batch、GCP Batch 等）与 Slurm 数组作业；远程存储目前仅有 SFTP
+镜像，对象存储（S3 等）同样属于扩展方向。
+
 ## 15. 应用发布文件结构
 
 项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。执行
 `python -m cx_Freeze build` 后，发布内容固定落在：
+
+Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF 依赖的构建期工具，
+不属于 `operon` 的 Python 运行时依赖。缺少时 cx_Freeze 会在 `build_exe` 阶段直接停止。
 
 ```text
 build/release/
