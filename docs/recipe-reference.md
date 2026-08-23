@@ -441,7 +441,7 @@ tools:
 | `mem_gb` | `0` | 内存上限（GB）；`0` 表示不写 `--mem` |
 | `extra_sbatch` | `[]` | 追加的 `#SBATCH` 行，如 `["--gres=gpu:1"]` |
 | `setup_commands` | `[]` | 插入在命令前的行，如 `["module load blast/2.15"]` |
-| `poll_interval` | `15` | `squeue` 轮询间隔（秒） |
+| `poll_interval` | `15` | `squeue` 轮询间隔（秒）；本地与远端 Slurm 都完整遵守该值（仅下限 0.1 秒） |
 
 未列出的字段继承 `execution.slurm`。线程数始终来自 `--threads`（映射为
 `--cpus-per-task`），不在 recipe 覆盖范围内。

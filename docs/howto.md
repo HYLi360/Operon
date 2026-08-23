@@ -501,7 +501,8 @@ Slurm 后端的前提与行为：
   插入在命令前），以 `sbatch --parsable` 提交并按 `poll_interval` 轮询 `squeue`；
   作业消失后读取脚本末尾写入的 `<run_id>.exitcode` 退出码文件（失败时回退
   `sacct`）。stdout/stderr 指向 `logs/` 下的 `<run_id>.stdout.log` /
-  `<run_id>.stderr.log`。
+  `<run_id>.stderr.log`。本地和远端 Slurm 都遵守所配置的完整轮询间隔；exitcode
+  在共享文件系统上短暂不可见时会先重试，提交输出前有警告行也能解析最终 job ID。
 - 超时按 `--timeout`（秒）控制，超时尝试 `scancel`。
 
 SSH 后端的前提与行为：
@@ -510,9 +511,14 @@ SSH 后端的前提与行为：
   `pip install paramiko`）；未安装时只在使用 SSH/SFTP 功能时报配置错误。
 - `execution.ssh.scheduler: slurm` 时改为在远端主机走 sbatch/squeue 提交与轮询；
   否则直接在远端执行，并把 stdout/stderr 流式回传到本地日志文件。
+- 常见的“先 SSH 登录节点，再进入计算节点”不需要第二次交互式 SSH：把登录节点配置
+  为 `host`，设置 `scheduler: slurm`，`operon` 在登录节点运行 `sbatch`，Slurm 再把
+  作业派发到计算节点。前提是登录节点与计算节点都能看到同一 `remote_root`。如果集群
+  没有调度器、计算节点只能经 SSH 跳板访问，当前后端尚未提供第二跳命令配置。
 - 配置绝对 POSIX `remote_root` 后，argv/cwd 中经过根目录包含性校验的项目路径前缀会
   改写为该远端路径；`..`/符号链接造成的路径逃逸会被拒绝。留空表示远端与本地共享
-  文件系统。
+  文件系统。配置 `storage_remote` 时默认继承其 root；若又显式设置不同的
+  `remote_root`，初始化执行器时即报配置错误，避免“存储验证通过但计算路径不存在”。
 - 默认拒绝 known_hosts 中没有的主机。首次使用前应由管理员核对主机公钥后写入
   `~/.ssh/known_hosts`，或配置 `known_hosts` / `host_key_sha256`；
   `insecure_accept_unknown_host: true` 只适合明确接受风险的临时测试环境。
@@ -521,8 +527,16 @@ SSH 后端的前提与行为：
   已有不同内容时拒绝覆盖。
 - 配置 `storage_remote` 后，本地状态为 `REMOTE_ONLY` 的输入会先对照本地 SQLite、
   远端清单和远端实际内容，再直接在远端 root 原位读取，不会先下载到个人电脑。
+- 同一分析批次复用一个惰性 SSH 连接完成工具版本探测、远端输入验证、数据库预检和
+  各文件命令，批次结束后关闭；不会为每个文件的每一步重新握手。
 - 运行前只删除严格限定在 `remote_root` 内的精确 expected-output 路径，避免旧结果
   冒充本次输出；拉回后再次比较本地/远端内容。已有本地输出不同则报冲突。
+- SSH 直连命令超时时，`operon` 使用权限收紧的远端 PID 文件向该命令的进程组发送
+  TERM，必要时再发送 KILL；若 PID 文件或终止命令不可用，错误会明确说明远端进程
+  可能仍在运行。远端 Slurm 则使用 `scancel`。
+- SSH 直连模式要求远端主机提供 util-linux 的 `setsid`（用于以独立进程组运行命令
+  并可靠回传退出码）。Linux 发行版默认包含；macOS/BSD 远端没有该命令，直连命令会
+  以 127 失败，此类远端应使用支持 Slurm 的 Linux 主机或本地后端。
 - 远端 `reference` 数据库必须预先放在 recipe 的 `database` 路径并声明
   `database_checksum`；身份同时包含远端执行位置。`mutable_cache` 仍要求
   `database_version`，不存在时在远端自动建目录。
@@ -540,6 +554,11 @@ recipes:
       mem_gb: 64
       time: "72:00:00"
 ```
+
+> **测试说明**：Slurm 与 SSH 后端的自动化测试基于模拟环境（fake sbatch/squeue
+> 与内存态 SSH/SFTP 实现），尚未在真实 HPC 集群上实测。首次在生产集群使用前，
+> 建议先用一个短时小任务（如 `run-external --backend slurm/ssh` 跑一条
+> `--command 'echo ok'`）验证提交、轮询与输出拉回链路。
 
 ## 10. 如何用远程存储备份与恢复归档
 
@@ -591,12 +610,17 @@ operon locations
   空目录、文件内容和符号链接目标。远端已有不同字节时报 `ConflictError`；
 - 远端维护带 `project_id` 的 `operon-manifest.json` v2 清单。清单原子替换要求
   SFTP 服务器支持 OpenSSH `posix-rename@openssh.com` 扩展；不支持时失败关闭，不会
-  退化成先删除旧清单再写新清单；
+  退化成先删除旧清单再写新清单。一次 push 批次只重写一次清单，并以远端原子目录
+  `.operon-manifest.lock` 保护读—改—写；若进程崩溃留下锁，报错会提示精确路径，
+  只能在确认没有活跃 push 后人工移除；
 - 远端相对路径必须安全地位于 root 下；默认 pull 对每条记录重新核对本地 SQLite
   的 `file_id + relative_path + sha256 + size_bytes`，远端清单不能改写本地身份；
 - 每次传输都写入 `workflow_runs` provenance（step 为 `push:<name>` /
   `pull:<name>`），成功位置写入 `file_locations`；
-- `pull` 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`。
+- push/pull/evict 的单个条目失败不会中止整个批次；每项都会输出结果并写 provenance，
+  其余条目继续，任一项为 `error` 时命令最终返回退出码 1；
+- `pull` 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`，变化写入
+  `changes` 审计。
 
 ### 10.1 本地只保留控制面，远端保存并计算大文件
 
@@ -613,6 +637,9 @@ operon push --remote mycluster --file-id FIL_000001
 # 3. 再次验证远端后删除本地大文件，留下 SQLite + 小型指针
 operon evict --remote mycluster --file-id FIL_000001
 operon locations --file-id FIL_000001
+
+# locations 是缓存视图；verify 会重新连接远端并核对清单与实际内容
+operon verify --file-id FIL_000001
 
 # 4. 本地发命令；输入在远端原位消费，结果和 provenance 回到本地
 operon analyze --analysis blastn_nt --backend ssh \
@@ -636,6 +663,11 @@ execution:
 它只在远端清单身份和远端实际内容均通过严格校验后执行，并在 `changes` 中审计状态
 变化。`standardize` 与 `release` 仍需要本地字节，应先 `pull`；外部 `analyze` 则可
 直接消费 REMOTE_ONLY 输入。
+
+本地缺失对象运行 `verify` 时也会实时检查远端，而不是把 `file_locations` 的
+`AVAILABLE` 当作永久证明。远端对象已被带外删除或损坏时返回 `MISSING` 并更新缓存；
+SSH 暂时不可达时返回检查结果 `REMOTE_UNVERIFIED` 和退出码 1，但保留最近一次持久
+状态，避免把网络故障误判为数据丢失。
 
 也可以不经镜像配置，直接从 URL 归档远程文件（未显式给 `--source-url` 时自动
 记录该 URL）：
@@ -822,7 +854,8 @@ operon query "SELECT file_id, entity_type, entity_id, file_role, status, relativ
 
 | 状态 | 建议 |
 |---|---|
-| `REMOTE_ONLY` | 预期状态；用 `operon locations` 查看驻留位置，需本地字节时执行 `pull` |
+| `REMOTE_ONLY` | 预期状态；用 `operon locations` 看缓存位置、用 `operon verify` 实时复核，需本地字节时执行 `pull` |
+| `REMOTE_UNVERIFIED`（仅 verify 输出） | 远端暂时不可达，未确认副本是否仍在；检查 SSH/网络后重试 `verify` |
 | `MISSING` | 恢复文件到 `relative_path`，或从源头重新归档为新实体版本 |
 | `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
 | `QC_FAILED` | 查看 `operon qc-table` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |

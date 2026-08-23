@@ -23,7 +23,7 @@ add-accession 添加外部 accession 映射
 ncbi-datasets 离线导入或在线下载 NCBI Datasets genome package
 next-id       查看下一个稳定 ID
 ingest        归档文件到 raw 并登记 manifest
-verify        校验 manifest 文件的存在性与 SHA-256
+verify        校验本地对象，或实时复核远端驻留对象的清单与实际内容
 standardize   生成 standardized 视图
 qc            运行内置 QC
 import-qc     导入外部 QC 指标
@@ -217,9 +217,15 @@ operon ingest \
 operon verify [--file-id FIL_...]...
 ```
 
-逐个检查 manifest 路径与 SHA-256；不指定 `--file-id` 时检查全部。拥有已验证
-`file_locations` 但本地字节已显式 evict 的对象显示 `REMOTE_ONLY`，不视为损坏；
-其他缺失或校验失败返回非零。
+逐个检查 manifest 路径与 SHA-256；不指定 `--file-id` 时检查全部。本地字节缺失时，
+不会只信任 `file_locations` 的缓存状态，而会连接每个标记为 `AVAILABLE` 的远程端，
+重新核对远端清单和实际 SHA-256/目录树身份。至少一个实时副本通过时显示
+`REMOTE_ONLY`；远端对象确定缺失或损坏时显示 `MISSING`，并同步更新
+`file_locations` 与 `files.status`。SSH 暂时不可达、无法作出数据丢失判断时显示
+`REMOTE_UNVERIFIED`，保留原 `files.status`。后两种情况及本地校验失败均返回非零。
+
+`verify` 引起的 `files.status` 变化写入 `changes` 审计；旧 metadata schema 1.0/1.1
+项目首次确认 `REMOTE_ONLY` 时会保留自定义字段并升级到 1.2。
 
 ## standardize
 
@@ -345,8 +351,11 @@ operon push --remote NAME [--file-id FIL_...]...
 - 文件和目录 artifact 均按 sha256 + size 校验；远端没有 `sha256sum` 时通过 SFTP
   流式哈希，绝不只比较大小。内容一致跳过；已有同路径不同内容会报
   `ConflictError`，绝不静默覆盖。
-- 每次传输写入 `workflow_runs`（step 为 `push:<name>`）；远端维护原子更新的
-  `operon-manifest.json` 清单。
+- 一次批量 push 只发布一次 `operon-manifest.json`。读—改—写期间通过远端原子目录
+  `.operon-manifest.lock` 串行化写者，清单本身仍以唯一临时文件 + POSIX rename
+  原子替换；写者异常退出会保留锁，错误会给出需人工核查的精确路径。
+- 每次传输写入 `workflow_runs`（step 为 `push:<name>`）。单个文件失败不会中止其余
+  文件；命令输出每项结果，任一项为 `error` 时整条命令最终返回退出码 1。
 - 每个文件输出 `uploaded` / `indexed`（远端字节已存在并被纳入清单）/
   `skipped` / `error`。
 
@@ -361,7 +370,8 @@ operon pull --remote NAME [--file-id FIL_...]...
   远端多出的未知对象不会被导入本地数据库。
 - 同样按 sha256 + size 校验、幂等；本地已有不同字节时拒绝覆盖（`ConflictError`）。
 - 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`；传输记录
-  写入 `workflow_runs`（step 为 `pull:<name>`）。
+  写入 `workflow_runs`（step 为 `pull:<name>`），状态变化写入 `changes`。
+- 单个条目失败后继续处理批内其他条目；只要存在 `error`，命令最终返回退出码 1。
 
 ## evict
 
@@ -374,6 +384,8 @@ operon evict --remote NAME [--file-id FIL_...]...
   都拒绝删除。
 - 成功后 `files.status` 为 `REMOTE_ONLY`，位置写入 `file_locations`，状态变化写入
   `changes`，并在 `.operon/placeholders/<file_id>.json` 写人类可读的小型指针。
+- 单个条目校验或删除失败后继续处理批内其他条目；只要存在 `error`，命令最终返回
+  退出码 1。
 - `standardize` 和 `release` 前需先 `pull`；配置 `execution.ssh.storage_remote` 后，
   `analyze --backend ssh` 可直接使用远端输入。
 
@@ -384,7 +396,8 @@ operon locations [--file-id FIL_...]...
 ```
 
 联合显示 `files` 与 `file_locations` 中的本地状态、远端名称、远端状态和最近校验时间。
-该命令只读，不连接远端；实时复核由 `push`、`pull`、`evict` 或远端分析前置检查完成。
+该命令只读，不连接远端；需要实时复核时运行 `verify`（也会在 `push`、`pull`、
+`evict` 或远端分析前置检查中按相应操作重新校验）。
 
 ## evaluate
 

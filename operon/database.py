@@ -818,6 +818,28 @@ class Database:
                  str(new_value) if new_value is not None else None, reason, evidence, actor, now_iso()),
             )
 
+    def set_file_status(self, file_id: str, status: str, *, reason: str,
+                        actor: str, evidence: str | None = None) -> bool:
+        """Set one file status and append its audit row in the same transaction."""
+        from operon.utils import now_iso
+        row = self._conn.execute("SELECT status FROM files WHERE file_id=?", (file_id,)).fetchone()
+        if row is None:
+            raise EntityNotFoundError(f"file {file_id} does not exist")
+        old_status = str(row["status"])
+        if old_status == status:
+            return False
+        with self.transaction():
+            self._conn.execute("UPDATE files SET status=? WHERE file_id=?", (status, file_id))
+            self._conn.execute(
+                "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, "
+                "evidence, actor, changed_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (
+                    "files", file_id, "status", old_status, status, reason,
+                    evidence, actor, now_iso(),
+                ),
+            )
+        return True
+
     def record_profile(self, name: str, version: int, sha256: str, document: str, recorded_at: str) -> int:
         with self.transaction():
             self._conn.execute(

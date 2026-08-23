@@ -146,7 +146,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--source-url")
     p.add_argument("--move", action="store_true", help="move source instead of copying")
 
-    p = sub.add_parser("verify", help="verify every manifest path and SHA-256")
+    p = sub.add_parser(
+        "verify",
+        help="verify local artifacts and live-check recorded remotes for remote-only files",
+    )
     p.add_argument("--file-id", action="append", default=[])
 
     p = sub.add_parser("standardize", help="create standardized/ links or copies from verified raw files")
@@ -570,8 +573,9 @@ def _cmd_ingest(args: argparse.Namespace, project: Project, db: Database) -> int
 def _cmd_verify(args: argparse.Namespace, project: Project, db: Database) -> int:
     results = verify_files(db, project, args.file_id or None)
     failed = [r for r in results if r["status"] not in {"CHECKSUM_VERIFIED", "REMOTE_ONLY"}]
-    print(format_table(["file_id", "relative_path", "status", "current_sha256", "error"], (
-        [r["file_id"], r["relative_path"], r["status"], r["current_sha256"] or "", r["error"] or ""] for r in results
+    print(format_table(["file_id", "relative_path", "status", "remote", "current_sha256", "error"], (
+        [r["file_id"], r["relative_path"], r["status"], r.get("remote") or "",
+         r["current_sha256"] or "", r["error"] or ""] for r in results
     )))
     if failed:
         return 1

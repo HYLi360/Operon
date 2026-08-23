@@ -19,18 +19,21 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shlex
 import shutil
 import stat as stat_module
 import subprocess
+import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
 from operon.config import Project
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
-from operon.utils import sha256_file, sha256_path
+from operon.utils import iter_directory_entries, sha256_file, sha256_path
 
 VALID_BACKENDS = ("local", "slurm", "ssh")
 
@@ -178,14 +181,20 @@ class LocalExecutor:
         return ExecResult(exit_code=completed.returncode, details={"backend": "local"})
 
 
+def _parse_sbatch_job_id(output: str) -> str:
+    """Parse the final --parsable job-id line, tolerating preceding warnings."""
+    for line in reversed(output.splitlines()):
+        token = line.strip().split(";", 1)[0].strip()
+        if re.fullmatch(r"[0-9]+(?:_[0-9]+)?", token):
+            return token
+    raise ExternalToolError(f"could not parse sbatch job id from {output!r}")
+
+
 def _submit_slurm_job(sbatch: str, script_path: Path) -> str:
     proc = subprocess.run([sbatch, "--parsable", str(script_path)], capture_output=True, text=True)
     if proc.returncode != 0:
         raise ExternalToolError(f"sbatch submission failed: {proc.stderr.strip() or proc.stdout.strip()}")
-    job_id = proc.stdout.strip().split(";")[0].strip()
-    if not job_id:
-        raise ExternalToolError(f"could not parse sbatch job id from {proc.stdout!r}")
-    return job_id
+    return _parse_sbatch_job_id(proc.stdout)
 
 
 def _squeue_job_gone(squeue: str, job_id: str) -> bool:
@@ -316,11 +325,17 @@ class SSHExecutor:
                 raise ValidationError("execution.ssh.user differs from storage remote user")
             if self.port != storage.port and cfg.get("port") not in (None, "", 22):
                 raise ValidationError("execution.ssh.port differs from storage remote port")
+            storage_root = posixpath.normpath(storage.root)
+            if self.remote_root and self.remote_root != storage_root:
+                raise ValidationError(
+                    f"execution.ssh.remote_root {self.remote_root!r} differs from storage remote "
+                    f"{self.storage_remote!r} root {storage_root!r}"
+                )
             self.host = storage.host
             self.user = self.user or storage.user
             self.port = storage.port
             self.key_file = self.key_file or storage.key_file
-            self.remote_root = self.remote_root or posixpath.normpath(storage.root)
+            self.remote_root = self.remote_root or storage_root
             self.known_hosts = self.known_hosts or storage.known_hosts
             self.host_key_sha256 = self.host_key_sha256 or storage.host_key_sha256
             self.insecure_accept_unknown_host = (
@@ -332,6 +347,8 @@ class SSHExecutor:
             )
         self.slurm = slurm
         self._client_factory = client_factory
+        self._client: Any = None
+        self._prepared_databases: set[tuple[str, bool]] = set()
 
     def describe(self) -> str:
         return f"ssh:{self.user + '@' if self.user else ''}{self.host}"
@@ -344,13 +361,28 @@ class SSHExecutor:
         )
 
     def _connect(self) -> Any:
-        if self._client_factory is not None:
-            return self._client_factory(self)
-        from operon.remotes import connect_ssh
-        return connect_ssh(self.host, user=self.user, port=self.port,
-                           key_file=self.key_file, connect_timeout=self.connect_timeout,
-                           known_hosts=self.known_hosts, host_key_sha256=self.host_key_sha256,
-                           insecure_accept_unknown_host=self.insecure_accept_unknown_host)
+        if self._client is None:
+            if self._client_factory is not None:
+                self._client = self._client_factory(self)
+            else:
+                from operon.remotes import connect_ssh
+                self._client = connect_ssh(
+                    self.host, user=self.user, port=self.port,
+                    key_file=self.key_file, connect_timeout=self.connect_timeout,
+                    known_hosts=self.known_hosts, host_key_sha256=self.host_key_sha256,
+                    insecure_accept_unknown_host=self.insecure_accept_unknown_host,
+                )
+        return self._client
+
+    @property
+    def client(self) -> Any:
+        """Return the executor's reusable, lazily-created SSH connection."""
+        return self._connect()
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+            self._client = None
 
     def _rewrite(self, value: Any) -> str:
         return rewrite_remote_path(str(value), self.project.root, self.remote_root)
@@ -358,24 +390,25 @@ class SSHExecutor:
     def prepare_database(self, path: str | Path, *, mutable_cache: bool) -> str:
         """Require a pre-provisioned remote reference or create a mutable cache dir."""
         remote = self._rewrite(Path(path))
+        cache_key = (remote, bool(mutable_cache))
+        if cache_key in self._prepared_databases:
+            return remote
         client = self._connect()
+        sftp = client.open_sftp()
         try:
-            sftp = client.open_sftp()
-            try:
-                if mutable_cache:
-                    from operon.remotes import sftp_makedirs
-                    sftp_makedirs(sftp, remote)
-                else:
-                    try:
-                        sftp.stat(remote)
-                    except IOError as exc:
-                        raise RemoteError(
-                            f"remote reference database is not provisioned at {remote}"
-                        ) from exc
-            finally:
-                sftp.close()
+            if mutable_cache:
+                from operon.remotes import sftp_makedirs
+                sftp_makedirs(sftp, remote)
+            else:
+                try:
+                    sftp.stat(remote)
+                except IOError as exc:
+                    raise RemoteError(
+                        f"remote reference database is not provisioned at {remote}"
+                    ) from exc
         finally:
-            client.close()
+            sftp.close()
+        self._prepared_databases.add(cache_key)
         return remote
 
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
@@ -383,30 +416,27 @@ class SSHExecutor:
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
             expected_outputs: Iterable[Any] = ()) -> ExecResult:
         client = self._connect()
+        sftp = client.open_sftp()
         try:
-            sftp = client.open_sftp()
-            try:
-                self._stage_inputs(client, sftp, stage_inputs)
-                self._reset_outputs(sftp, expected_outputs)
-                if self.scheduler == "slurm":
-                    result = self._run_via_slurm(
-                        client, sftp, [str(a) for a in argv], cwd=cwd,
-                        stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                        timeout=timeout, threads=threads, run_id=run_id,
-                    )
-                else:
-                    result = self._run_direct(
-                        client, [str(a) for a in argv], cwd=cwd,
-                        stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                        timeout=timeout,
-                    )
-                if result.exit_code == 0:
-                    self._pull_outputs(client, sftp, expected_outputs)
-                return result
-            finally:
-                sftp.close()
+            self._stage_inputs(client, sftp, stage_inputs)
+            self._reset_outputs(sftp, expected_outputs)
+            if self.scheduler == "slurm":
+                result = self._run_via_slurm(
+                    client, sftp, [str(a) for a in argv], cwd=cwd,
+                    stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
+                    timeout=timeout, threads=threads, run_id=run_id,
+                )
+            else:
+                result = self._run_direct(
+                    client, [str(a) for a in argv], cwd=cwd,
+                    stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
+                    timeout=timeout, run_id=run_id,
+                )
+            if result.exit_code == 0:
+                self._pull_outputs(client, sftp, expected_outputs)
+            return result
         finally:
-            client.close()
+            sftp.close()
 
     # -- staging -----------------------------------------------------------
 
@@ -431,13 +461,17 @@ class SSHExecutor:
                 raise ConflictError(
                     f"remote input already exists with different bytes; refusing to overwrite: {remote}"
                 )
-            tmp = f"{remote}.operon-tmp"
-            sftp.put(str(local), tmp)
-            sftp.rename(tmp, remote)
-            from operon.remotes import remote_sha256
-            digest = remote_sha256(client, remote, sftp=sftp)
-            if digest != sha256_file(local):
-                raise RemoteError(f"staged input verification failed for {remote}")
+            from operon.remotes import _remove_remote_tree, remote_sha256
+            tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
+            try:
+                sftp.put(str(local), tmp)
+                sftp.rename(tmp, remote)
+                digest = remote_sha256(client, remote, sftp=sftp)
+                if digest != sha256_file(local):
+                    raise RemoteError(f"staged input verification failed for {remote}")
+            except BaseException:
+                _remove_remote_tree(sftp, tmp)
+                raise
 
     def _reset_outputs(self, sftp: Any, expected_outputs: Iterable[Any]) -> None:
         from operon.remotes import _remove_remote_tree, sftp_makedirs
@@ -474,11 +508,10 @@ class SSHExecutor:
                 f"remote directory input already exists with different content: {remote}"
             )
         sftp_makedirs(sftp, posixpath.dirname(remote))
-        tmp = f"{remote}.operon-tmp"
-        _remove_remote_tree(sftp, tmp)
+        tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
         sftp.mkdir(tmp)
         try:
-            for path in sorted(local.rglob("*"), key=lambda p: p.relative_to(local).as_posix()):
+            for path in iter_directory_entries(local):
                 rel = posixpath.join(tmp, path.relative_to(local).as_posix())
                 if path.is_symlink():
                     sftp_makedirs(sftp, posixpath.dirname(rel))
@@ -513,12 +546,22 @@ class SSHExecutor:
 
     def _run_direct(self, client: Any, argv: list[str], *, cwd: str | Path | None,
                     stdout_path: Path, stderr_path: Path,
-                    timeout: float | None) -> ExecResult:
+                    timeout: float | None, run_id: str | None) -> ExecResult:
         command = shlex.join(self._rewrite(a) for a in argv)
         remote_cwd = self._rewrite(cwd) if cwd else self.remote_root
         if remote_cwd:
             command = f"cd {shlex.quote(remote_cwd)} && {command}"
-        _, stdout, _ = client.exec_command(command)
+        label = re.sub(r"[^A-Za-z0-9_.-]", "_", run_id or uuid.uuid4().hex)
+        pidfile = f"/tmp/operon-{label}-{uuid.uuid4().hex}.pid"
+        payload = (
+            f"umask 077; echo $$ > {shlex.quote(pidfile)}; "
+            f"trap 'rm -f {shlex.quote(pidfile)}' EXIT; {command}"
+        )
+        # --wait makes setsid propagate the payload's exit status even when
+        # setsid itself is already a process group leader and has to fork
+        # (util-linux setsid exits 0 immediately in that case otherwise).
+        wrapped_command = f"setsid --wait sh -c {shlex.quote(payload)}"
+        _, stdout, _ = client.exec_command(wrapped_command)
         channel = stdout.channel
         deadline = time.monotonic() + timeout if timeout else None
         with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
@@ -530,8 +573,25 @@ class SSHExecutor:
                 if channel.exit_status_ready():
                     break
                 if deadline is not None and time.monotonic() > deadline:
+                    signaled, termination_error = self._terminate_remote_process(client, pidfile)
                     channel.close()
-                    return ExecResult(exit_code=None, error=f"timeout after {timeout}s")
+                    if signaled:
+                        error = (
+                            f"timeout after {timeout}s; termination signals were sent to the "
+                            "remote process group"
+                        )
+                    else:
+                        error = (
+                            f"timeout after {timeout}s; remote process may still be running: "
+                            f"{termination_error}"
+                        )
+                    return ExecResult(
+                        exit_code=None, error=error,
+                        details={
+                            "backend": "ssh", "scheduler": "none", "host": self.host,
+                            "pidfile": pidfile, "termination_signaled": signaled,
+                        },
+                    )
                 time.sleep(0.05)
             while channel.recv_ready():
                 out.write(channel.recv(65536))
@@ -542,13 +602,33 @@ class SSHExecutor:
             details={"backend": "ssh", "scheduler": "none", "host": self.host},
         )
 
+    def _terminate_remote_process(self, client: Any, pidfile: str) -> tuple[bool, str]:
+        command = (
+            f"if test -s {shlex.quote(pidfile)}; then "
+            f"pid=$(cat {shlex.quote(pidfile)}); "
+            "kill -TERM -- -\"$pid\" 2>/dev/null || kill -TERM \"$pid\" 2>/dev/null || true; "
+            "sleep 1; "
+            "if kill -0 \"$pid\" 2>/dev/null; then "
+            "kill -KILL -- -\"$pid\" 2>/dev/null || kill -KILL \"$pid\" 2>/dev/null || true; "
+            "fi; "
+            f"rm -f {shlex.quote(pidfile)}; exit 0; "
+            "else exit 2; fi"
+        )
+        try:
+            rc, output = self._remote_exec(client, command, timeout=max(5.0, self.connect_timeout))
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+        if rc == 0:
+            return True, ""
+        return False, output.strip() or f"termination command exited {rc}"
+
     # -- remote slurm ------------------------------------------------------
 
     def _run_via_slurm(self, client: Any, sftp: Any, argv: list[str], *,
                        cwd: str | Path | None, stdout_path: Path, stderr_path: Path,
                        timeout: float | None, threads: int | None,
                        run_id: str | None) -> ExecResult:
-        from operon.remotes import sftp_makedirs
+        from operon.remotes import _remove_remote_tree, sftp_makedirs
         label = run_id or f"job_{int(time.time() * 1000)}"
         remote_stdout = self._rewrite(stdout_path)
         remote_stderr = self._rewrite(stderr_path)
@@ -563,15 +643,23 @@ class SSHExecutor:
             exitcode_path=remote_exitcode, threads=threads, slurm=self.slurm,
         )
         sftp_makedirs(sftp, remote_dir)
-        with sftp.open(f"{remote_script}.operon-tmp", "w") as handle:
-            handle.write(script)
-        sftp.rename(f"{remote_script}.operon-tmp", remote_script)
+        _remove_remote_tree(sftp, remote_exitcode)
+        _remove_remote_tree(sftp, remote_script)
+        script_tmp = f"{remote_script}.operon-tmp-{uuid.uuid4().hex}"
+        try:
+            with sftp.open(script_tmp, "w") as handle:
+                handle.write(script)
+            sftp.rename(script_tmp, remote_script)
+        except BaseException:
+            _remove_remote_tree(sftp, script_tmp)
+            raise
         rc, out = self._remote_exec(client, f"sbatch --parsable {shlex.quote(remote_script)}")
         if rc != 0:
             raise RemoteError(f"remote sbatch submission failed: {out.strip()}")
-        job_id = out.strip().split(";")[0].strip().splitlines()[-1]
-        if not job_id:
-            raise RemoteError(f"could not parse remote sbatch job id from {out!r}")
+        try:
+            job_id = _parse_sbatch_job_id(out)
+        except ExternalToolError as exc:
+            raise RemoteError(str(exc)) from exc
         deadline = time.monotonic() + timeout if timeout else None
         while True:
             rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
@@ -586,19 +674,21 @@ class SSHExecutor:
                 return ExecResult(exit_code=None,
                                   error=f"timeout after {timeout}s waiting for remote slurm job {job_id}",
                                   scheduler_job_id=job_id)
-            time.sleep(min(self.slurm.poll_interval, 5.0))
+            time.sleep(max(0.1, self.slurm.poll_interval))
         self._sftp_get_if_exists(sftp, remote_stdout, stdout_path)
         self._sftp_get_if_exists(sftp, remote_stderr, stderr_path)
-        rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
-        if rc == 0:
-            try:
-                return ExecResult(
-                    exit_code=int(out.strip()), scheduler_job_id=job_id,
-                    details={"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                             "script": remote_script},
-                )
-            except ValueError:
-                pass
+        for _ in range(5):
+            rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
+            if rc == 0:
+                try:
+                    return ExecResult(
+                        exit_code=int(out.strip()), scheduler_job_id=job_id,
+                        details={"backend": "ssh", "scheduler": "slurm", "host": self.host,
+                                 "script": remote_script},
+                    )
+                except ValueError:
+                    pass
+            time.sleep(1)
         rc, out = self._remote_exec(client, f"sacct -n -o ExitCode -j {shlex.quote(job_id)}")
         for line in out.splitlines():
             token = line.strip()
@@ -615,8 +705,11 @@ class SSHExecutor:
                           error=f"remote slurm job {job_id} finished but its exit code is unavailable",
                           scheduler_job_id=job_id)
 
-    def _remote_exec(self, client: Any, command: str) -> tuple[int, str]:
-        _, stdout, stderr = client.exec_command(command)
+    def _remote_exec(self, client: Any, command: str,
+                     timeout: float | None = None) -> tuple[int, str]:
+        _, stdout, stderr = client.exec_command(
+            command, timeout=timeout if timeout is not None else self.connect_timeout,
+        )
         output = stdout.read().decode("utf-8", "replace")
         error = stderr.read().decode("utf-8", "replace")
         combined = output + (("\n" if output and error else "") + error if error else "")
@@ -628,9 +721,15 @@ class SSHExecutor:
         except IOError:
             return False
         local.parent.mkdir(parents=True, exist_ok=True)
-        fd_tmp = local.parent / f".{local.name}.operon-tmp"
-        sftp.get(remote, str(fd_tmp))
-        os.replace(fd_tmp, local)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent)
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            sftp.get(remote, str(tmp))
+            os.replace(tmp, local)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
         return True
 
     # -- output retrieval --------------------------------------------------
@@ -678,9 +777,8 @@ class SSHExecutor:
                 raise RemoteError(f"retrieved output checksum mismatch: {local}")
 
     def _pull_directory(self, sftp: Any, remote: str, local: Path) -> None:
-        tmp = local.parent / f".{local.name}.operon-tmp"
-        shutil.rmtree(tmp, ignore_errors=True)
-        tmp.mkdir(parents=True)
+        local.parent.mkdir(parents=True, exist_ok=True)
+        tmp = Path(tempfile.mkdtemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent))
         try:
             self._pull_directory_into(sftp, remote, tmp)
             os.replace(tmp, local)

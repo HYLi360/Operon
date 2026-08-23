@@ -37,6 +37,31 @@ def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def iter_directory_entries(path: str | Path) -> Iterator[Path]:
+    """Yield a directory tree in stable path order without following symlinks.
+
+    ``Path.rglob`` changed its directory-symlink traversal behavior across
+    supported Python versions. Artifact identity must not depend on the Python
+    interpreter, so walk with ``os.scandir(..., follow_symlinks=False)`` and
+    sort the complete relative-path inventory explicitly.
+    """
+    root = Path(path)
+    if not root.is_dir():
+        raise NotADirectoryError(root)
+    entries: list[Path] = []
+
+    def walk(directory: Path) -> None:
+        with os.scandir(directory) as children:
+            for child in children:
+                item = Path(child.path)
+                entries.append(item)
+                if child.is_dir(follow_symlinks=False):
+                    walk(item)
+
+    walk(root)
+    yield from sorted(entries, key=lambda entry: entry.relative_to(root).as_posix())
+
+
 def sha256_directory(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     """Return a deterministic content hash for a directory tree.
 
@@ -48,7 +73,7 @@ def sha256_directory(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     if not root.is_dir():
         raise NotADirectoryError(root)
     digest = hashlib.sha256()
-    for entry in sorted(root.rglob("*"), key=lambda p: p.relative_to(root).as_posix()):
+    for entry in iter_directory_entries(root):
         relative = entry.relative_to(root).as_posix().encode("utf-8", errors="surrogateescape")
         if entry.is_symlink():
             target = os.readlink(entry).encode("utf-8", errors="surrogateescape")
@@ -86,7 +111,11 @@ def path_size_bytes(path: str | Path) -> int:
     """Return file size or the sum of regular-file bytes in a directory."""
     artifact = Path(path)
     if artifact.is_dir():
-        return sum(p.stat().st_size for p in artifact.rglob("*") if p.is_file() and not p.is_symlink())
+        return sum(
+            entry.stat().st_size
+            for entry in iter_directory_entries(artifact)
+            if entry.is_file() and not entry.is_symlink()
+        )
     if artifact.is_file():
         return artifact.stat().st_size
     raise FileNotFoundError(f"artifact does not exist or has unsupported type: {artifact}")

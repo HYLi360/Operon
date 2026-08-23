@@ -279,12 +279,16 @@ email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 ac
   本地完全相同的确定性树哈希（含空目录和符号链接目标）；
 - 远端维护 `operon-manifest.json` v2 清单（project_id + relative_path →
   file_id/sha256/size/kind/synced_at），清单更新要求服务器支持 OpenSSH POSIX rename
-  扩展，以“临时文件 + 原子替换”发布；
+  扩展，以“唯一临时文件 + 原子替换”发布；一次 push 批次只发布一次清单，读—改—写
+  由远端原子目录 `.operon-manifest.lock` 串行化，避免多控制端并发 push 丢失条目；
 - 所有相对路径在本地和远端均做根目录约束，拒绝绝对路径、`..` 与路径逃逸；远端
   清单的 `project_id` 和每条身份都必须与本地 SQLite 一致；
 - 每次传输复用 `workflow_runs` 记录 provenance（step 为 `push:<name>` /
   `pull:<name>`）；成功位置同时缓存到 `file_locations`；
-- `pull` 恢复本地缺失文件后把 `files.status` 恢复为 `CHECKSUM_VERIFIED`；
+- push/pull/evict 采用逐条结果语义：单项失败写入 `error` 后继续批内其余对象，CLI
+  在存在任一错误时返回非零；
+- `pull` 恢复本地缺失文件后把 `files.status` 恢复为 `CHECKSUM_VERIFIED`，该变化与
+  `verify`/`evict` 的状态变化一样写入 `changes`；
 - `ingest --source` 也可直接接受 `sftp://[user@]host[:port]/path` 与
   `remote://<name>/<path>`；后者必须存在于远端清单并先校验身份，前者下载后由
   ingest 计算新身份，再走与本地文件完全相同的归档流程。
@@ -311,6 +315,11 @@ paramiko 是可选依赖（`pip install 'operon[remote]'`），代码内惰性�
 `.operon/placeholders/<file_id>.json` 写一个便于人查看的指针。指针不是事实来源，
 `files` 与 `file_locations` 才是机器判定依据。`pull` 可随时把对象 hydrate 回逻辑
 `relative_path`。
+
+`file_locations.status=AVAILABLE` 只是本地驻留缓存，不是永久可用性的证明。`verify`
+在本地字节缺失时必须实时读取远端清单并核对实际内容；确认丢失/损坏后把文件置为
+`MISSING`，暂时无法连接时只返回失败的 `REMOTE_UNVERIFIED` 检查结果而不武断改写
+持久状态。确认仍可用时刷新远端位置并维持 `REMOTE_ONLY`。
 
 这里“raw 不可变”约束的是一个 `file_id` 的内容身份不能被另一组字节替换，并不要求
 每台控制端永久保存一份物理副本。`evict` 是经校验的位置迁移：至少一个远端副本仍以
@@ -431,7 +440,12 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
   文件经 SFTP 上传（内容一致跳过，严格 SHA-256/目录树哈希；不同内容拒绝覆盖）；
   若配置 `storage_remote`，REMOTE_ONLY 输入在远端原位消费。运行前清除精确计算出的
   远端旧输出，expected outputs 经临时文件拉回并与远端内容再次比对；已有本地输出
-  只有内容完全相同时才接受。
+  只有内容完全相同时才接受。`storage_remote` 与显式 `remote_root` 必须指向同一 root；
+  一个分析批次以一个惰性 SSH client 完成版本探测、远端输入验证、数据库预检和所有
+  命令，结束时统一关闭。直连命令以 util-linux `setsid --wait` 在独立进程组中运行
+  （保证退出码可靠回传），超时时根据受限 PID 文件向远端进程组发送 TERM/KILL，
+  无法发出终止请求时在错误与 provenance 中明确提示进程可能仍在运行。远端 Slurm
+  严格按 `poll_interval` 轮询，并对作业消失后短暂不可见的 exitcode 文件重试。
 
 三个后端共用同一份 provenance 与正确性契约：退出码、起止时间、日志照常写入
 `workflow_runs` 与 `logs/workflow.jsonl`；SQLite 额外保存 executor、scheduler job ID

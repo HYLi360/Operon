@@ -620,24 +620,36 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
               f"(entity_type={recipe.entity_type or 'any'}, file_role={recipe.file_role}, format={recipe.fmt})")
         return []
 
+    from operon.execution import get_executor
+    recipe_slurm = recipe.raw.get("slurm")
+    executor = get_executor(
+        project, backend,
+        slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
+    )
     results: list[dict[str, Any]] = []
-    for file_record in files:
-        try:
-            result = run_analysis_for_file(
-                project, db, recipe, tool, config, file_record,
-                dry_run=dry_run, force=force, threads=threads, backend=backend,
-            )
-        except Exception as exc:
-            result = {
-                "file_id": file_record["file_id"],
-                "entity_type": file_record["entity_type"],
-                "entity_id": file_record["entity_id"],
-                "analysis": recipe.name,
-                "cached": False,
-                "status": "error",
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-        results.append(result)
+    try:
+        for file_record in files:
+            try:
+                result = run_analysis_for_file(
+                    project, db, recipe, tool, config, file_record,
+                    dry_run=dry_run, force=force, threads=threads, backend=backend,
+                    executor=executor,
+                )
+            except Exception as exc:
+                result = {
+                    "file_id": file_record["file_id"],
+                    "entity_type": file_record["entity_type"],
+                    "entity_id": file_record["entity_id"],
+                    "analysis": recipe.name,
+                    "cached": False,
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            results.append(result)
+    finally:
+        close = getattr(executor, "close", None)
+        if close is not None:
+            close()
     return results
 
 
@@ -691,13 +703,25 @@ def _remove_output_artifact(project: Project, output_path: Path) -> None:
 def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
                           config: dict[str, Any], file_record: dict[str, Any],
                           dry_run: bool = False, force: bool = False,
-                          threads: int = 4, backend: str | None = None) -> dict[str, Any]:
-    from operon.execution import get_executor
-    recipe_slurm = recipe.raw.get("slurm")
-    executor = get_executor(
-        project, backend,
-        slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
-    )
+                          threads: int = 4, backend: str | None = None,
+                          executor: Any = None) -> dict[str, Any]:
+    if executor is None:
+        from operon.execution import get_executor
+        recipe_slurm = recipe.raw.get("slurm")
+        owned_executor = get_executor(
+            project, backend,
+            slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
+        )
+        try:
+            return run_analysis_for_file(
+                project, db, recipe, tool, config, file_record,
+                dry_run=dry_run, force=force, threads=threads, backend=backend,
+                executor=owned_executor,
+            )
+        finally:
+            close = getattr(owned_executor, "close", None)
+            if close is not None:
+                close()
     remote_only = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
     input_rel = file_record["relative_path"]
     input_path = project.root / input_rel
@@ -712,7 +736,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             )
         if not dry_run:
             from operon.remotes import verify_remote_record
-            verify_remote_record(project, storage_remote, file_record, db=db)
+            verify_remote_record(
+                project, storage_remote, file_record, db=db,
+                client=getattr(executor, "client", None),
+            )
         input_is_remote = True
         actual_sha = manifest_sha
     else:

@@ -18,6 +18,7 @@ from operon.execution import (
     SSHExecutor,
     SlurmConfig,
     SlurmExecutor,
+    _parse_sbatch_job_id,
     get_executor,
     load_slurm_config,
     render_slurm_script,
@@ -77,6 +78,7 @@ class FakeSSHClient:
         self.remote_dir = remote_dir
         self.sftp = FakeSFTP()
         self.commands: list[str] = []
+        self.close_calls = 0
 
     def open_sftp(self) -> "FakeSFTP":
         return self.sftp
@@ -88,7 +90,7 @@ class FakeSSHClient:
         return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
 
     def close(self) -> None:
-        pass
+        self.close_calls += 1
 
 
 class _FakeStat:
@@ -118,11 +120,13 @@ class FakeSFTP:
         return obj
 
     def put(self, local: str, remote: str) -> None:
-        Path(remote).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(remote).parent.is_dir():
+            raise IOError(f"no such directory: {Path(remote).parent}")
         Path(remote).write_bytes(Path(local).read_bytes())
 
     def get(self, remote: str, local: str) -> None:
-        Path(local).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(local).parent.is_dir():
+            raise IOError(f"no such local directory: {Path(local).parent}")
         Path(local).write_bytes(Path(remote).read_bytes())
 
     def rename(self, src: str, dst: str) -> None:
@@ -135,7 +139,7 @@ class FakeSFTP:
         os.replace(src, dst)
 
     def mkdir(self, path: str) -> None:
-        Path(path).mkdir(exist_ok=True)
+        Path(path).mkdir()
 
     def remove(self, path: str) -> None:
         Path(path).unlink()
@@ -151,7 +155,8 @@ class FakeSFTP:
         return os.readlink(path)
 
     def open(self, path: str, mode: str = "r"):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(path).parent.is_dir():
+            raise IOError(f"no such directory: {Path(path).parent}")
         return open(path, mode)
 
     def listdir_attr(self, path: str):
@@ -163,7 +168,9 @@ class FakeSFTP:
 
 class _FakeStatEntry(_FakeStat):
     def __init__(self, path: Path):
-        super().__init__(path)
+        obj = path.lstat()
+        self.st_size = obj.st_size
+        self.st_mode = obj.st_mode
         self.filename = path.name
 
 
@@ -203,6 +210,39 @@ class TestExecutionConfig(PytestAssertions):
         cfg = {"host": "hpc.example.org", "remote_root": "relative/project"}
         with self.assertRaisesRegex(ValidationError, "absolute POSIX"):
             SSHExecutor(self.project, cfg, SlurmConfig())
+
+    def test_ssh_backend_rejects_storage_and_execution_root_mismatch(self):
+        self.project.config["remotes"] = {
+            "mirror": {
+                "type": "sftp", "host": "hpc.example.org", "root": "/data/project",
+            },
+        }
+        cfg = {
+            "storage_remote": "mirror", "remote_root": "/scratch/different-project",
+        }
+        with self.assertRaisesRegex(ValidationError, "differs from storage remote"):
+            SSHExecutor(self.project, cfg, SlurmConfig())
+
+    def test_sbatch_parser_tolerates_warnings_and_cluster_suffix(self):
+        self.assertEqual(
+            _parse_sbatch_job_id("warning: using default account\n4242;cluster-a\n"), "4242"
+        )
+        self.assertEqual(_parse_sbatch_job_id("4242_7\n"), "4242_7")
+        with self.assertRaisesRegex(Exception, "could not parse"):
+            _parse_sbatch_job_id("warning only\n")
+
+    def test_local_backend_does_not_load_paramiko(self, monkeypatch):
+        monkeypatch.setattr(
+            "operon.remotes.import_paramiko",
+            lambda: (_ for _ in ()).throw(AssertionError("Paramiko should not be loaded")),
+        )
+        stdout = self.root / "logs" / "local-no-paramiko.stdout.log"
+        stderr = self.root / "logs" / "local-no-paramiko.stderr.log"
+        stdout.parent.mkdir(exist_ok=True)
+        result = LocalExecutor().run(
+            ["true"], cwd=self.root, stdout_path=stdout, stderr_path=stderr,
+        )
+        self.assertEqual(result.exit_code, 0)
 
     def test_slurm_config_merge_with_recipe_overrides(self):
         self.project.config["execution"] = {
@@ -372,6 +412,81 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(result.exit_code, 3)
         self.assertEqual(err_log.read_text().strip(), "oops")
 
+    def test_direct_timeout_attempts_remote_process_group_termination(self):
+        class HangingChannel:
+            closed = False
+
+            def recv_ready(self):
+                return False
+
+            def recv_stderr_ready(self):
+                return False
+
+            def exit_status_ready(self):
+                return False
+
+            def close(self):
+                self.closed = True
+
+        class HangingStream:
+            def __init__(self, channel):
+                self.channel = channel
+
+        client = FakeSSHClient()
+        hanging = HangingChannel()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("setsid "):
+                stream = HangingStream(hanging)
+                return None, stream, stream
+            proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+        result = self._executor(client=client).run(
+            ["sleep", "30"], cwd=self.root,
+            stdout_path=self.root / "logs" / "timeout.stdout.log",
+            stderr_path=self.root / "logs" / "timeout.stderr.log",
+            timeout=0.001, run_id="WF_TIMEOUT",
+        )
+        self.assertIsNone(result.exit_code)
+        self.assertIn("termination signals were sent", result.error)
+        self.assertTrue(hanging.closed)
+        self.assertTrue(any("kill -TERM" in command for command in client.commands))
+        self.assertEqual(result.details["termination_signaled"], True)
+        # setsid must wait for the payload so its exit status is propagated
+        # even when setsid itself is already a process group leader.
+        setsid_commands = [c for c in client.commands if c.startswith("setsid ")]
+        self.assertTrue(setsid_commands)
+        self.assertTrue(all(c.startswith("setsid --wait ") for c in setsid_commands))
+
+    def test_executor_reuses_one_ssh_connection_until_closed(self):
+        client = FakeSSHClient()
+        connections = 0
+
+        def factory(_executor):
+            nonlocal connections
+            connections += 1
+            return client
+
+        cfg = {"host": "fake.example.org", "scheduler": "none"}
+        executor = SSHExecutor(
+            self.project, cfg, SlurmConfig(poll_interval=0.05), client_factory=factory,
+        )
+        for suffix in ("one", "two"):
+            result = executor.run(
+                ["true"], cwd=self.root,
+                stdout_path=self.root / "logs" / f"{suffix}.stdout.log",
+                stderr_path=self.root / "logs" / f"{suffix}.stderr.log",
+            )
+            self.assertEqual(result.exit_code, 0)
+        self.assertEqual(connections, 1)
+        self.assertEqual(client.close_calls, 0)
+        executor.close()
+        self.assertEqual(client.close_calls, 1)
+
     def test_stage_and_pull_with_remote_root(self):
         remote_root = self.root / "remote-mirror"
         remote_root.mkdir()
@@ -425,7 +540,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(remote, str(remote_root / "resources" / "reference-db"))
         self.assertTrue(Path(remote).is_dir())
 
-    def test_remote_slurm_submission_flow(self):
+    def test_remote_slurm_submission_flow(self, monkeypatch):
         remote_root = self.root / "remote-slurm"
         remote_root.mkdir()
         client = FakeSSHClient()
@@ -436,9 +551,18 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         out_log = self.root / "logs" / "r.stdout.log"
         err_log = self.root / "logs" / "r.stderr.log"
         output = self.root / "analysis" / "slurm-out.txt"
+        stale_exitcode = remote_root / "logs" / "WF_TEST_1.exitcode"
+        stale_exitcode.parent.mkdir(parents=True, exist_ok=True)
+        stale_exitcode.write_text("99\n", encoding="utf-8")
+        executor.slurm.poll_interval = 7.25
+        sleep_calls: list[float] = []
+        monkeypatch.setattr("operon.execution.time.sleep", sleep_calls.append)
+        queue_checks = 0
+        exitcode_checks = 0
         # Fake remote: sbatch executes the script synchronously, squeue says
         # the job is gone; both are just shell commands to the fake client.
         def fake_exec(command, timeout=None):
+            nonlocal queue_checks, exitcode_checks
             client.commands.append(command)
             if command.startswith("sbatch "):
                 script = command.split()[-1]
@@ -451,9 +575,21 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                         err = line.split("=", 1)[1]
                 with open(out, "wb") as o, open(err, "wb") as e:
                     subprocess.run(["bash", script], stdout=o, stderr=e)
-                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+                proc = subprocess.CompletedProcess(
+                    command, 0, b"warning: default account selected\n4242;cluster-a\n", b""
+                )
             elif command.startswith("squeue "):
-                proc = subprocess.CompletedProcess(command, 0, b"", b"")
+                queue_checks += 1
+                output = b"4242\n" if queue_checks == 1 else b""
+                proc = subprocess.CompletedProcess(command, 0, output, b"")
+            elif command.startswith("cat ") and command.endswith(".exitcode"):
+                exitcode_checks += 1
+                if exitcode_checks < 3:
+                    proc = subprocess.CompletedProcess(command, 1, b"", b"not visible yet")
+                else:
+                    proc = subprocess.CompletedProcess(
+                        command, 0, stale_exitcode.read_bytes(), b""
+                    )
             else:
                 proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
             channel = _FakeChannel(proc)
@@ -468,6 +604,8 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(output.read_text(), "via-slurm")
         self.assertTrue(any(c.startswith("sbatch ") for c in client.commands))
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
+        self.assertEqual([seconds for seconds in sleep_calls if seconds >= 1], [7.25, 1, 1])
+        self.assertEqual(exitcode_checks, 3)
         # The uploaded batch script must live in and reference the mirror.
         script = remote_root / "logs" / "WF_TEST_1.sbatch"
         self.assertTrue(script.exists())

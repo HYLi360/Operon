@@ -177,6 +177,7 @@ def run_external_command(
         if not path.is_absolute():
             path = base / path
         resolved_outputs.append(path)
+    owns_executor = executor is None
     try:
         if executor is None:
             from operon.execution import get_executor
@@ -211,6 +212,11 @@ def run_external_command(
         record.update(
             status="failed", error=f"{type(exc).__name__}: {exc}", exit_code=None,
         )
+    finally:
+        if owns_executor and executor is not None:
+            close = getattr(executor, "close", None)
+            if close is not None:
+                close()
     record.update(
         finished_at=now_iso(),
         stdout_file=str(stdout_file),

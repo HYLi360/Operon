@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -268,36 +269,116 @@ def _link_file_to_entity(db: Database, entity_type: str, entity_id: str, role: s
 
 
 def verify_files(db: Database, project: Project, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
-    """Check every manifest path and return one result per file."""
+    """Verify local bytes or live-check at least one recorded remote copy."""
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
         rows = db.conn.execute(f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids).fetchall()
     else:
         rows = db.conn.execute("SELECT * FROM files").fetchall()
     results: list[dict[str, Any]] = []
-    for row in rows:
-        record = dict(row)
-        path = project.root / record["relative_path"]
-        result = {"file_id": record["file_id"], "relative_path": record["relative_path"], "status": "", "recorded_sha256": record["sha256"], "current_sha256": None, "error": None}
-        if not path.exists():
-            remote = db.conn.execute(
-                "SELECT location_name FROM file_locations WHERE file_id=? AND status='AVAILABLE' "
-                "ORDER BY verified_at DESC LIMIT 1", (record["file_id"],),
-            ).fetchone()
-            if remote:
-                result.update(status="REMOTE_ONLY", error=None, remote=remote["location_name"])
+    from operon.remotes import (
+        SFTPStore,
+        _ensure_remote_only_schema,
+        get_remote,
+        placeholder_path,
+        verify_remote_record,
+    )
+    stores: dict[str, SFTPStore] = {}
+    manifests: dict[str, dict[str, Any]] = {}
+    connection_errors: dict[str, str] = {}
+    with ExitStack() as stack:
+        for row in rows:
+            record = dict(row)
+            path = project.root / record["relative_path"]
+            result = {
+                "file_id": record["file_id"], "relative_path": record["relative_path"],
+                "status": "", "recorded_sha256": record["sha256"],
+                "current_sha256": None, "error": None, "remote": "",
+            }
+            if not path.exists():
+                locations = db.conn.execute(
+                    "SELECT location_name FROM file_locations WHERE file_id=? AND status='AVAILABLE' "
+                    "ORDER BY verified_at DESC", (record["file_id"],),
+                ).fetchall()
+                remote_errors: list[str] = []
+                remote_verified = ""
+                unavailable = False
+                for location in locations:
+                    name = str(location["location_name"])
+                    if name in connection_errors:
+                        unavailable = True
+                        remote_errors.append(f"{name}: {connection_errors[name]}")
+                        continue
+                    opening_store = name not in stores
+                    try:
+                        if name not in stores:
+                            stores[name] = stack.enter_context(SFTPStore(get_remote(project, name)))
+                        if name not in manifests:
+                            manifests[name] = stores[name].read_manifest()
+                        verify_remote_record(
+                            project, name, record, db=db, store=stores[name],
+                            manifest=manifests[name],
+                        )
+                    except Exception as exc:
+                        if opening_store and name not in stores:
+                            connection_errors[name] = f"{type(exc).__name__}: {exc}"
+                        location_status = db.conn.execute(
+                            "SELECT status FROM file_locations WHERE file_id=? AND location_name=?",
+                            (record["file_id"], name),
+                        ).fetchone()
+                        if location_status is None or location_status["status"] == "AVAILABLE":
+                            unavailable = True
+                        remote_errors.append(f"{name}: {type(exc).__name__}: {exc}")
+                        continue
+                    remote_verified = name
+                    break
+
+                if remote_verified:
+                    _ensure_remote_only_schema(project)
+                    result.update(status="REMOTE_ONLY", remote=remote_verified)
+                    db.set_file_status(
+                        record["file_id"], "REMOTE_ONLY",
+                        reason=f"local bytes absent; live remote copy verified on {remote_verified}",
+                        actor="operon verify",
+                        evidence=f"remote://{remote_verified}/{record['relative_path']}",
+                    )
+                elif unavailable:
+                    result.update(
+                        status="REMOTE_UNVERIFIED",
+                        error="; ".join(remote_errors) or "recorded remote copy could not be verified",
+                    )
+                else:
+                    result.update(
+                        status="MISSING",
+                        error=("local bytes absent and no verified remote copy remains"
+                               + (f": {'; '.join(remote_errors)}" if remote_errors else "")),
+                    )
+                    db.set_file_status(
+                        record["file_id"], "MISSING",
+                        reason="local bytes absent and live remote verification found no usable copy",
+                        actor="operon verify",
+                    )
             else:
-                result.update(status="MISSING", error="file not found at recorded path")
-        else:
-            current = sha256_path(path)
-            result["current_sha256"] = current
-            if current.lower() == str(record["sha256"]).lower():
-                result["status"] = "CHECKSUM_VERIFIED"
-            else:
-                result.update(status="CHECKSUM_FAILED", error="checksum differs from manifest")
-        db.conn.execute("UPDATE files SET status=? WHERE file_id=?", (result["status"], record["file_id"]))
-        results.append(result)
-    db.conn.commit()
+                current = sha256_path(path)
+                result["current_sha256"] = current
+                if current.lower() == str(record["sha256"]).lower():
+                    result["status"] = "CHECKSUM_VERIFIED"
+                    if record.get("status") != "STANDARDIZED":
+                        db.set_file_status(
+                            record["file_id"], "CHECKSUM_VERIFIED",
+                            reason="local artifact checksum verified",
+                            actor="operon verify",
+                        )
+                    placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
+                else:
+                    result.update(status="CHECKSUM_FAILED", error="checksum differs from manifest")
+                    db.set_file_status(
+                        record["file_id"], "CHECKSUM_FAILED",
+                        reason="local artifact checksum differs from manifest",
+                        actor="operon verify",
+                        evidence=f"recorded={record['sha256']}; actual={current}",
+                    )
+            results.append(result)
     return results
 
 
