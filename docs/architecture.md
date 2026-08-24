@@ -467,6 +467,9 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 3. 探测程序版本（`version_args + version_pattern`）并记录到 `analysis_jobs`；
 4. 计算参考数据库身份（单文件 SHA-256 / 目录指纹 / 显式 checksum）；
 5. 按 `analysis_name + file_id + 输入 SHA + 参数指纹 + 工具版本 + 数据库身份` 查找已完成缓存，命中则跳过；
+   未命中时进入第二级续跑：同一 `(analysis, file_id)` 的旧 `completed` 作业若输入内容哈希一致且
+   记录的输出 artifact 逐字节验证通过，则收养该输出（以当前指纹插入新 `completed` 行并在
+   `changes` 审计表留痕，状态记为 `adopted`），否则才重算；
 6. 未命中时以 `conda run`、容器前缀或直接路径启动程序；文件与目录输出都必须存在且非空，stdout/stderr 落盘；
 7. 计算文件或目录内容哈希，解析 top hits 或 BUSCO JSON summary 写入
    `analysis_hits`/`analysis_results`，并同步同名指标到 `qc_results`。

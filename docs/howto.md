@@ -325,7 +325,10 @@ operon report analysis --analysis blastn_nt --hits
 
 避免重复执行：缓存键由 `analysis_name + file_id + 输入 SHA-256 + 参数指纹 +
 工具版本 + 数据库身份` 组成。所有条件都匹配时直接返回缓存；用 `--force` 才会重跑。
-旧 completed 作业会被标记为 `superseded`，历史不丢失。
+旧 completed 作业会被标记为 `superseded`，历史不丢失。精确指纹未命中时还有第二级
+续跑：同一 `(analysis, file_id)` 的旧完成结果若输入未变且输出哈希验证一致，会被收养
+（`adopted`）进当前指纹并在 `changes` 表留痕，不会重算——软件升级或 recipe 调整后
+历史结果仍然可用。
 
 每次运行前系统还会重新校验输入文件 SHA-256 或目录树哈希与 manifest 一致；被改动过
 的 raw 输入会被直接拒绝，不会进入外部程序。
@@ -886,6 +889,9 @@ releases/            # 按需（可由 raw + 数据库重建）
 - `release`：版本目录已存在时拒绝重复创建，不会悄悄覆盖。
 - `taxonomy compile`：相同 profile/taxonomy/TSV 复用；身份相同而内容不同则拒绝覆盖。
 - `report coverage`：输入成员、profile 和 reference-set 身份相同则校验并复用旧报告。
+- `analyze`：Ctrl+C/SIGTERM 优雅停机后，当前作业记为 `interrupted`、半成品输出被清理；
+  重跑时已完成文件走缓存，输入未变且输出验证一致的旧结果会被收养（`adopted`），只有
+  真正未完成的文件才重新计算。
 
 因此从中断处直接重跑相同命令即可。可通过 `status` 查看每个实体当前处于哪个状态。
 

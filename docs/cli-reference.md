@@ -298,7 +298,8 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 4. 渲染参数；除 `${input}`、`${output}`、`${database}`、`${threads}` 外，还支持
    `${input_parent}`、`${input_name}`、`${input_stem}`、`${output_parent}`、
    `${output_name}`、`${output_stem}`、`${file_id}`、`${file_role}`、`${entity_type}`、`${entity_id}`；
-5. 命中 `analysis_jobs` 完成缓存时直接跳过，除非 `--force`；
+5. 命中 `analysis_jobs` 完成缓存时直接跳过，除非 `--force`；精确指纹未命中但存在
+   输入相同、输出哈希验证一致的旧完成结果时，收养该结果（状态 `adopted`）而非重算；
 6. 按 `output_kind: file|directory` 校验输出存在/非空并计算内容哈希；
 7. 解析结果写入 `analysis_hits`/`analysis_results`，并同步汇总指标到 `qc_results`。
 

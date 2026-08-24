@@ -488,7 +488,13 @@ def _directory_fingerprint(path: Path) -> str:
 
 
 def database_identity(project: Project, recipe: Recipe, location_identity: str = "") -> str:
-    """Deterministic identity for the reference database used by a recipe."""
+    """Deterministic identity for the reference database used by a recipe.
+
+    ``location_identity`` distinguishes the same logical database staged on
+    different execution locations (e.g. an SSH remote mirror); it is only
+    mixed into the digest when non-empty, so local runs keep the digest
+    scheme introduced before execution backends existed.
+    """
     path = _resolve_database_path(project, recipe)
     database_mode = str(recipe.raw.get("database_mode", "reference") or "reference")
     if database_mode not in {"reference", "mutable_cache"}:
@@ -530,8 +536,9 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
         "digest": digest,
         "database_version": recipe.database_version,
         "database_mode": database_mode,
-        "location": location_identity,
     }
+    if location_identity:
+        canonical["location"] = location_identity
     identity = hashlib.sha256(json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     _DATABASE_IDENTITY_CACHE[cache_key] = identity
     return identity
@@ -602,6 +609,37 @@ def find_cached_job(db: Database, analysis_name: str, file_id: str, parameter_sh
         (analysis_name, file_id, parameter_sha, input_sha, database_id),
     ).fetchone()
     return dict(row) if row else None
+
+
+def find_adoptable_job(db: Database, analysis_name: str, file_id: str) -> dict[str, Any] | None:
+    """Latest completed job for (analysis, file), ignoring the cache fingerprint."""
+    row = db.conn.execute(
+        "SELECT * FROM analysis_jobs WHERE analysis_name=? AND file_id=? AND status='completed' "
+        "ORDER BY job_id DESC LIMIT 1",
+        (analysis_name, file_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def _find_verified_adoptee(db: Database, project: Project, analysis_name: str,
+                           file_id: str, input_sha: str) -> tuple[dict[str, Any], Path] | None:
+    """Completed job whose recorded output still exists on disk, byte-identical.
+
+    Resume tier 2: the exact cache fingerprint may change across versions or
+    recipe edits, but a verified output for the same input content is still a
+    valid result and can be adopted instead of recomputed.
+    """
+    adoptee = find_adoptable_job(db, analysis_name, file_id)
+    if adoptee is None or adoptee["input_sha256"] != input_sha:
+        return None
+    if not adoptee["output_relative_path"] or not adoptee["output_sha256"]:
+        return None
+    output = project.root / adoptee["output_relative_path"]
+    if not output.exists():
+        return None
+    if sha256_path(output).lower() != str(adoptee["output_sha256"]).lower():
+        return None
+    return adoptee, output
 
 
 def _sweep_stale_running_jobs(db: Database) -> int:
@@ -836,11 +874,14 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     command = [*tool_command(tool, config), *rendered_args]
 
     if dry_run:
+        adoptee = find_adoptable_job(db, recipe.name, file_record["file_id"])
         return {
             "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
             "entity_id": file_record["entity_id"], "analysis": recipe.name,
             "cached": cached is not None, "tool_version": version,
             "command": " ".join(command),
+            "adoptable": cached is None and adoptee is not None
+            and adoptee["input_sha256"] == actual_sha,
             "dry_run": True,
         }
 
@@ -863,6 +904,62 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         with db.transaction() as conn:
             conn.execute("UPDATE analysis_jobs SET status='superseded' WHERE job_id=?", (cached["job_id"],))
         cached = None
+
+    if cached is None and not force:
+        # Resume tier 2: adopt a verified existing output instead of
+        # recomputing when the exact cache fingerprint changed (version
+        # upgrade, recipe rename) but the input content is unchanged.
+        verified = _find_verified_adoptee(db, project, recipe.name, file_record["file_id"], actual_sha)
+        if verified is not None:
+            adoptee, _adoptee_output = verified
+            finished = now_iso()
+            columns = _job_columns()
+            adopted_job = {
+                "analysis_name": recipe.name,
+                "entity_type": file_record["entity_type"],
+                "entity_id": file_record["entity_id"],
+                "file_id": file_record["file_id"],
+                "tool": tool.name,
+                "tool_version": version,
+                "tool_version_raw": version_raw,
+                "launcher": tool.run_method if executor.name == "local" else f"{tool.run_method} [{executor.describe()}]",
+                "command": " ".join(command),
+                "parameter_set": json.dumps({"arguments": rendered_args, "threads": threads}, ensure_ascii=False),
+                "parameter_sha256": parameter_sha,
+                "input_sha256": actual_sha,
+                "database_identity": db_identity,
+                "status": "completed",
+                "output_relative_path": adoptee["output_relative_path"],
+                "output_sha256": adoptee["output_sha256"],
+                "stdout_file": adoptee["stdout_file"],
+                "stderr_file": adoptee["stderr_file"],
+                "started_at": finished,
+                "finished_at": finished,
+                "workflow_run_id": adoptee["workflow_run_id"],
+            }
+            with db.transaction() as conn:
+                cursor = conn.execute(
+                    f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    [adopted_job.get(c) for c in columns],
+                )
+                adopted_job_id = int(cursor.lastrowid)
+                conn.execute(
+                    "INSERT INTO changes(object_type, object_id, field, old_value, new_value, "
+                    "reason, evidence, actor, changed_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    ("analysis_job", str(adopted_job_id), "status", None, "completed",
+                     f"adopted verified output from job {adoptee['job_id']} "
+                     "after cache fingerprint change",
+                     f"output_sha256={adoptee['output_sha256']}", "operon analyze", finished),
+                )
+            print(f"{file_record['file_id']}: adopting verified output from job "
+                  f"{adoptee['job_id']} for {recipe.name} (cache fingerprint changed)")
+            return {
+                "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
+                "entity_id": file_record["entity_id"], "analysis": recipe.name,
+                "cached": True, "adopted": True, "job_id": adopted_job_id,
+                "tool_version": version, "command": " ".join(command),
+                "output": adoptee["output_relative_path"], "status": "adopted",
+            }
 
     output_dir.mkdir(parents=True, exist_ok=True)
     # Force/uncached runs must produce a fresh output; an old file from a
