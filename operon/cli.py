@@ -727,9 +727,12 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
     headers = ["file_id", "entity", "analysis", "status", "tool_version", "output", "error"]
     rows = []
     errors = 0
+    planned = 0
     for r in results:
         if r.get("status") in {"error", "failed"}:
             errors += 1
+        if r.get("status") == "planned":
+            planned += 1
         rows.append([
             r.get("file_id", ""),
             f"{r.get('entity_type', '')} {r.get('entity_id', '')}",
@@ -741,7 +744,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         ])
     print(format_table(headers, rows))
     if args.dry_run:
-        print(f"dry-run: {len(results)} planned job(s), no command executed")
+        print(f"dry-run: {len(results)} planned job(s), {planned} job(s) left. no command executed")
     else:
         print(f"analysis {args.analysis}: {len(results) - errors}/{len(results)} succeeded")
     return 1 if errors else 0
