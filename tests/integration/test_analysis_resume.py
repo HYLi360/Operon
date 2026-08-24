@@ -160,3 +160,22 @@ class TestAnalysisResume(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt", dry_run=True)
         self.assertFalse(results[0]["cached"])
         self.assertTrue(results[0]["adoptable"])
+        self.assertEqual(results[0]["status"], "adoptable")
+        self.assertTrue(results[0]["output"].endswith(".out.tsv"))
+
+    def test_dry_run_reports_planned_and_cached_status(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        self._add_assembly()
+        results = run_analysis(self.project, self.db, "fake_nt", dry_run=True)
+        self.assertEqual(results[0]["status"], "planned")
+        self.assertTrue(results[0]["output"].endswith(".out.tsv"))
+        self.assertFalse(results[0]["cached"])
+        self.assertFalse(results[0]["adoptable"])
+
+        run_analysis(self.project, self.db, "fake_nt")
+        results = run_analysis(self.project, self.db, "fake_nt", dry_run=True)
+        self.assertEqual(results[0]["status"], "cached")
+        # --force supersedes the cache, so the dry run plans a re-run.
+        results = run_analysis(self.project, self.db, "fake_nt", dry_run=True, force=True)
+        self.assertEqual(results[0]["status"], "planned")

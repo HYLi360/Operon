@@ -875,13 +875,20 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
 
     if dry_run:
         adoptee = find_adoptable_job(db, recipe.name, file_record["file_id"])
+        adoptable = (cached is None and not force and adoptee is not None
+                     and adoptee["input_sha256"] == actual_sha)
+        if cached is not None and not force:
+            status = "cached"
+        elif adoptable:
+            status = "adoptable"
+        else:
+            status = "planned"
         return {
             "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
             "entity_id": file_record["entity_id"], "analysis": recipe.name,
             "cached": cached is not None, "tool_version": version,
-            "command": " ".join(command),
-            "adoptable": cached is None and adoptee is not None
-            and adoptee["input_sha256"] == actual_sha,
+            "command": " ".join(command), "adoptable": adoptable,
+            "status": status, "output": output_rel,
             "dry_run": True,
         }
 

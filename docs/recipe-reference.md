@@ -403,7 +403,8 @@ analysis name
 `workflow_run_id`），在 `changes` 审计表记录收养原因，并把该文件标记为 `adopted`。
 这覆盖了软件升级导致指纹公式变化、recipe 改名等场景。输出被修改或输入内容变化时
 不收养，照常重算。收养只针对有验证过的输出的完成结果；`--force` 语义不变，始终
-重算。dry-run 输出中的 `adoptable: true` 表示该文件会走收养路径。
+重算。dry-run 输出中 status 列为 `cached`/`adoptable`/`planned`，分别表示命中
+完成缓存、会走收养路径、将实际执行；`--force` 下原本命中的缓存也显示为 `planned`。
 
 `--force` 只表示忽略一个本来有效的 completed cache。它会保留历史作业记录、将旧记录
 标为 `superseded`，删除精确的旧输出目标，然后创建新作业。它不能修复错误参数、错误

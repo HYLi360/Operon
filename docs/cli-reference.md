@@ -313,6 +313,10 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 若 SSH 配置了 `storage_remote`，本地缺失但状态为 `REMOTE_ONLY` 的候选输入会先严格
 验证远端清单和实际内容，再在远端原位使用。
 
+`--dry-run` 只列出计划不执行：表格的 status 列为 `cached`（命中完成缓存）、
+`adoptable`（将收养已验证的旧输出）或 `planned`（将实际执行），output 列为
+计划输出路径，tool_version 为探测到的版本。
+
 中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`analyze` 会优雅停机——
 
 - 当前步骤的作业进程被完整终止：本地后端按进程组（含孙进程）先 SIGTERM 后
