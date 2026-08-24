@@ -236,7 +236,7 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
            entity_id: str | None = None, file_id: str | None = None,
            sample_size: int = 1000000) -> list[dict[str, Any]]:
     """Run QC for selected manifest files; one failure does not abort the batch."""
-    sql = "SELECT file_id FROM files WHERE 1=1"
+    sql = "SELECT file_id FROM files WHERE entity_type IN ('organism','sample','run','assembly','annotation')"
     params: list[Any] = []
     if entity_type:
         sql += " AND entity_type=?"

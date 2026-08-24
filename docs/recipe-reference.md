@@ -458,7 +458,7 @@ tools:
 | `busco_json` | BUSCO 输出目录或 JSON 文件 | 完整率、单拷贝/重复、碎片/缺失、lineage 与版本元数据 |
 
 所有汇总 metric 写入 `analysis_results`，并以 `qc_stage: analysis:<recipe>` 同步到
-`qc_results`；因此它们会自然出现在 `qc-table` 宽表中，也可以直接被 QC profile 使用。
+`qc_results`；因此它们会自然出现在 `report qc` 宽表导出中，也可以直接被 QC profile 使用。
 top hits 另外写入 `analysis_hits`。
 
 ### 10.1 `blast_tabular`
@@ -591,7 +591,7 @@ operon --project . analyze \
   --analysis busco_autolineage \
   --entity-id ANN_000001 \
   --threads 24
-operon --project . analysis-results \
+operon --project . report analysis \
   --analysis busco_autolineage \
   --entity-id ANN_000001
 ```
@@ -639,7 +639,7 @@ tools:
 5. 加入数据库路径和版本策略；
 6. 用 `analyze --dry-run --limit 1` 检查完整命令；
 7. 对一个小输入实际运行，检查 stdout、stderr、`analysis_jobs` 和输出结构；
-8. 最后启用 parser，核对 `analysis-results` 与 `qc-table`；
+8. 最后启用 parser，核对 `report analysis` 与 `report qc`；
 9. 再扩大到全部候选实体。
 
 ## 14. 常见错误速查
@@ -669,4 +669,4 @@ tools:
 - tool version、数据库逻辑版本和 parser 已明确；
 - `tools-check` 通过；
 - `analyze --dry-run --limit 1` 的完整命令符合预期；
-- 单个小输入实跑并核对 `analysis-results` 与 `qc-table` 后，再批量运行。
+- 单个小输入实跑并核对 `report analysis` 与 `report qc` 后，再批量运行。

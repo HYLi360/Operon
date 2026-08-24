@@ -25,6 +25,13 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 `_migrate_pre_1_0_schema()` 一起删除。对应测试为
 `test_schema_2_2_adds_remote_location_and_executor_provenance`。
 
+`Database._migrate_taxonomy_schema_2_3()` 同样是当前功能所需的纯加法迁移，不属于
+`_migrate_pre_1_0_schema()`：它为 2.2 项目创建 `taxonomy_snapshots`、
+`taxonomy_nodes`、`taxonomy_aliases`、`taxonomy_reference_sets`、
+`coverage_reports` 与 `coverage_report_metrics` 及相关索引，不修改既有业务行。
+只要仍支持打开 2.2 项目就必须保留。对应回归测试为
+`test_schema_2_3_adds_taxonomy_coverage_history`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。
@@ -45,11 +52,20 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 `_make_schema_legacy()` 的用例；移除兼容层时需一并改成“旧 schema 被明确拒绝”的
 测试。
 
-metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。新项目直接生成 1.2；
+metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。当前新项目直接生成 1.3，
+并包含该受控词汇；
 旧项目第一次执行通过远端/本地身份预检的 `operon evict`，或在本地字节缺失时由
 `operon verify` 实时确认远端副本，都会以保留自定义字段的方式只追加该允许值并把
 版本提升到 1.2。该升级属于当前远程驻留功能的必要契约，不是 NCBI adapter 的
 1.0/1.1 兼容投影。
+
+文件：`operon/taxonomy.py`
+
+metadata schema 1.3 为 taxonomy 原包 manifest 增加 `taxonomy_snapshot` entity type、
+`TAX_` ID 前缀和 `taxonomy_package` role。新项目直接生成 1.3；旧项目第一次成功执行
+`operon taxonomy import` 前，`_ensure_taxonomy_metadata_schema()` 会保留自定义字段，
+只追加这些受控词汇并把版本提升到 1.3。这是 taxonomy 快照文件身份所需的当前契约，
+不能随 NCBI genome adapter 的 1.0/1.1 兼容投影一并删除。
 
 ## 不在本清单中的兼容行为
 

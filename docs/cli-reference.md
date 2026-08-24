@@ -30,7 +30,6 @@ import-qc     导入外部 QC 指标
 run-external  执行外部命令并记录 provenance
 tools-check   检测外部程序与版本
 analyze       执行配置文件中封装的 BLAST/HMMER/BUSCO 等分析
-analysis-results  查看同步到数据库的分析汇总/hits
 remotes       列出配置的远程端并测试连通性
 push          上传 manifest 文件到远程镜像
 pull          从远程镜像恢复 manifest 文件
@@ -40,8 +39,8 @@ evaluate      运行规则引擎
 curate        人工策展判定
 release       创建 release
 run-pipeline  单文件一站式流水线
-qc-table      查看/导出 QC 表
-decisions     查看当前判定
+taxonomy      导入 NCBI Taxonomy 快照并编译覆盖率分母
+report        查看 QC、判定、分析结果或 taxonomy 覆盖率报告
 query         只读 SQL 查询
 set-state     人工设置状态（审计）
 ```
@@ -316,10 +315,11 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`（可自行增删）。
 `config/tools.yaml` 的完整字段和执行语义见 [Recipe 配置参考](recipe-reference.md)。
 
-## analysis-results
+## report analysis
 
 ```bash
-operon analysis-results [--analysis NAME] [--entity-type TYPE] [--entity-id ID]   [--hits] [--limit N]
+operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
+  [--hits] [--limit N]
 ```
 
 - 默认显示 `analysis_results` 汇总指标。
@@ -442,21 +442,54 @@ operon run-pipeline \
 
 依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。
 
-## qc-table
+## taxonomy
 
 ```bash
-operon qc-table [--entity-type TYPE] [--entity-id ID] [--export]
+operon taxonomy import --input PATH --version VERSION
+operon taxonomy list
+operon taxonomy compile --profile NAME --taxonomy-version VERSION
+operon taxonomy reference-sets
 ```
 
-- 打印长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与 `qc_results.wide.tsv`。
+- `import`：归档并导入 NCBI Datasets `taxonomy_report.jsonl`/package，或至少含
+  `nodes.dmp`、`names.dmp` 的官方 NCBI taxdump ZIP/tar；可选的
+  `merged.dmp`/`delnodes.dmp` 会转成 TaxID alias；`--version` 是显式、不可变的
+  taxonomy 版本标签。
+- `list`：列出来源文件身份、版本、节点数和导入状态。
+- `compile`：读取 `config/profiles/<NAME>.yaml` 中 `kind: taxonomy_coverage` 的作用域、
+  rank、排除规则与阈值，生成
+  `taxonomy/reference_sets/<NAME>@<VERSION>.tsv` 及 provenance sidecar。
+- `reference-sets`：列出已冻结分母的 family/genus 行数、SHA-256 和编译时间。
+- 同一 taxonomy 版本不同字节、同一 reference-set 身份不同 profile/结果都作为冲突
+  拒绝；相同输入重复执行则幂等复用。
 
-## decisions
+完整 profile 格式与不变量见 [NCBI Taxonomy 覆盖率](taxonomy-coverage.md)。
+
+## report
 
 ```bash
-operon decisions [--profile NAME]
+operon report qc [--entity-type TYPE] [--entity-id ID] [--export]
+operon report decisions [--profile NAME]
+operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
+  [--hits] [--limit N]
+operon report coverage --reference-set NAME@TAXONOMY_VERSION [--scope metadata]
+operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
 ```
 
-显示 `current_decisions`（每个 entity/profile 的最新判定）。
+- `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
+  `qc_results.wide.tsv`。
+- `decisions`：显示 `current_decisions`（每个 entity/profile 的最新判定）。
+- `analysis`：显示同步到数据库的分析汇总；`--hits` 改为显示 top hits，`--limit`
+  默认 20。
+- `coverage`：只对指定的冻结 taxonomy reference set 计算 family/genus 覆盖率。
+  默认 `--scope metadata` 审计当前 `organisms`；`--release VERSION` 改为沿
+  `release_members` 和 release 内冻结元数据统计已发布数据集，并复核创建时保存的
+  metadata SHA-256。二者互斥。
+- coverage 报告写入 `reports/coverage/COV_<input-hash>/`，包括分子/分母、完整目标、
+  缺失清单、纳入/排除观察和 provenance。完全相同输入会校验并复用既有报告。
+
+coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功生成但至少一个 rank
+未达标时返回 1。阈值不写死在命令或代码中。
 
 ## query
 
@@ -481,5 +514,5 @@ operon set-state --entity-type TYPE --entity-id ID --state STATE \
 | 退出码 | 含义 |
 |---|---|
 | `0` | 成功 |
-| `1` | 运行期/数据库/命令执行失败（如 verify 失败、QC 失败、外部命令失败） |
+| `1` | 命令完成但检查未通过，或运行期失败（如 coverage 未达 YAML 阈值、verify/QC/外部命令失败） |
 | `2` | `operon` 领域错误（配置错误、校验失败、实体不存在、冲突等） |

@@ -1,7 +1,7 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.3.0，数据库内部 schema 版本 `2.2`，
-> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.2`。
+> 本文对应代码库当前状态：`operon` 0.3.0，数据库内部 schema 版本 `2.3`，
+> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.3`。
 
 ## 1. 设计目标
 
@@ -24,6 +24,7 @@
 | 路径不是文件身份 | `files.file_id + sha256 + size_bytes` |
 | QC 分层 | `file_integrity/reads_basic/assembly_basic/annotation_basic` |
 | 指标与判定分离 | `qc_results` 长表 + YAML profile 规则引擎 |
+| taxonomy 覆盖率不随上游升级漂移 | NCBI taxonomy 快照 + 编译后的 reference-set TSV + SHA-256 |
 | 自动化状态机、失败显式、幂等续跑 | `entity_state` + 严格迁移 + 原子操作 |
 | provenance 机器可读 | `logs/workflow.jsonl` + `workflow_runs` 表 |
 | 人工修改可审计 | `changes` 表 + `curate` 命令 |
@@ -41,6 +42,8 @@
 │  adapters/      外部数据库来源解析、下载、字段映射与归档编排       │
 │  qc/            流式 FASTA/FASTQ/GFF3/蛋白解析与指标计算        │
 │  rules.py       YAML profile 规则引擎与判定                    │
+│  taxonomy.py    NCBI taxonomy 快照与覆盖率分母编译               │
+│  coverage.py    metadata/release 分类覆盖率报告                  │
 │  tools.py       外部分析工具配置、版本探测、缓存执行、结果同步      │
 │  release.py     release 快照生成                              │
 │  workflow.py    状态机、JSONL 日志、外部命令执行器               │
@@ -56,7 +59,7 @@
 │  project.yaml   项目路径与默认参数                             │
 │  config/schemas.yaml   元数据字段定义                         │
 │  config/tools.yaml     外部分析程序与 recipe 配置              │
-│  config/profiles/*.yaml   版本化 QC 判定规则                  │
+│  config/profiles/*.yaml   版本化 QC/coverage profile          │
 ├────────────────────────────────────────────────────────────┤
 │ 文件系统层                                                   │
 │  metadata/ raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ │
@@ -70,12 +73,14 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、TSV 读取/写出、类型校验与规范化 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
 | `../operon/qc_module/parsers.py` | 纯 Python 流式解析 FASTA、FASTQ、GFF3、蛋白 FASTA |
 | `../operon/qc_module/__init__.py` | 组装内置 QC stage，把指标写入 `qc_results` |
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
+| `operon/taxonomy.py` | 归档/导入不可变 NCBI Taxonomy，按 coverage profile 编译冻结分母及 provenance |
+| `operon/coverage.py` | 校验 reference set，对 metadata 或 release 冻结范围计算 family/genus 覆盖率与缺失清单 |
 | `operon/tools.py` | 读取 `config/tools.yaml`，封装外部程序启动方式、版本探测、输入校验、缓存执行与结果回写 |
 | `operon/workflow.py` | 合法状态迁移、`workflow.jsonl` 结构化日志、外部命令执行 |
 | `operon/execution.py` | 执行后端抽象：`local`/`slurm`/`ssh`，sbatch 脚本生成与轮询、SSH/SFTP 传输、路径映射 |
@@ -99,13 +104,15 @@ project/
 │       ├── file_integrity_v1.yaml
 │       ├── assembly_production_v1.yaml
 │       ├── annotation_release_v1.yaml
-│       └── reads_qc_v1.yaml
+│       ├── reads_qc_v1.yaml
+│       └── coverage_viridiplantae_v1.yaml
 ├── metadata/                 # 人工可编辑 TSV 交换文件（导入/导出的源）
-├── raw/                      # 不可变原始归档；metadata/ncbi_datasets 保存来源 report/ZIP
+├── raw/                      # 不可变原始归档；metadata/ 下保存 NCBI 来源 report/package
 ├── standardized/             # 稳定 ID 命名的处理视图（默认独立副本）
 ├── qc/                       # QC 输出与 aggregate/ 汇总表
 ├── analysis/                 # 分析工作区（外部工具输出、下游分析）
-├── reports/                  # decisions、汇总导出
+├── reports/                  # decisions、汇总导出及 coverage 报告
+├── taxonomy/reference_sets/  # 编译后的不可变 family/genus 分母与 provenance
 ├── logs/workflow.jsonl       # 机器可读工作流日志
 ├── .operon/placeholders/     # REMOTE_ONLY 文件的小型、非权威指针
 └── releases/                 # 不可变数据集发布快照
@@ -196,6 +203,10 @@ input_identity 唯一输入标识：
 | `releases` / `release_members` | release 元数据与成员文件清单 |
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
+| `taxonomy_snapshots` | NCBI Taxonomy 版本、来源 manifest 身份、节点数与导入状态 |
+| `taxonomy_nodes` / `taxonomy_aliases` | 冻结的分类树节点与 secondary/merged TaxID 映射 |
+| `taxonomy_reference_sets` | coverage profile 与 taxonomy 版本编译出的分母 TSV 身份和各 rank 行数 |
+| `coverage_reports` / `coverage_report_metrics` | 不可变输入身份对应的覆盖率报告历史与 family/genus 指标 |
 | `changes` | 人工修改审计日志 |
 
 ## 6. 元数据流
@@ -255,6 +266,38 @@ email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 ac
 `raw/metadata/ncbi_datasets/`；导入摘要写入 `changes` 和 workflow provenance。
 旧项目在正式导入时会以合并方式补齐 adapter 自有字段并把 metadata schema 1.0
 升级为 1.1；自定义字段保留，dry-run 只使用内存中的升级后 schema。
+
+### 6.2 NCBI Taxonomy coverage 快照
+
+taxonomy coverage 与 NCBI genome adapter 分离：前者读取 NCBI Datasets
+`taxonomy_report.jsonl`/package，或含 `nodes.dmp`、`names.dmp`（以及可选
+`merged.dmp`/`delnodes.dmp`）的官方 taxdump archive，原包按 SHA-256 归档到
+`raw/metadata/ncbi_taxonomy/`，再把树节点和 secondary TaxID 导入
+`taxonomy_snapshots/nodes/aliases`。版本标签必须由调用者显式指定；同一版本不同字节
+作为冲突拒绝。
+
+`config/profiles/*.yaml` 由必填 `kind` 区分 `qc` 与 `taxonomy_coverage`。coverage
+profile 声明一个或多个根 TaxID、family/genus 目标 rank、extinct/排除子树/名称正则和
+各 rank 阈值。`taxonomy compile` 对一个具体 taxonomy 版本遍历后代，产生确定性排序的
+`taxonomy/reference_sets/<profile>@<taxonomy_version>.tsv`。TSV、taxonomy 原包和
+profile 均记录 SHA-256；相同输入幂等复用，不同内容绝不覆盖；首次编译进入
+`changes` 审计。
+
+Datasets JSON 的 extinct 布尔值可支持 `exclude_extinct`；传统 taxdump 没有该字段，
+其节点以 unknown 保存。如果 profile 请求 extinct 排除，compiler 会拒绝这种组合，
+要求使用明确的排除子树/名称规则或具有 extinct 标注的快照，避免静默改变计算口径。
+
+`report coverage` 只读取该 TSV 分母：
+
+- metadata 口径直接读取 `organisms`，表达“库中登记采了什么”；
+- release 口径校验 `release_members` 与 release manifest，并沿 release 目录内冻结的
+  metadata 表回溯 organism，表达“已发布数据集覆盖了什么”。
+
+分子是投影到 reference set 后互异的 family/genus TaxID 数，而不是 organism 数。
+secondary TaxID 可按同一 taxonomy 快照的 alias 映射；非 NCBI、缺失/未知 TaxID 和
+profile 排除项进入排除清单，不进行名称猜测。报告输出汇总、完整目标、缺失目标、
+纳入/排除观察与 provenance；输入身份相同时校验并复用，metadata/release 成员变化时
+追加新报告。详细契约见 [NCBI Taxonomy 覆盖率](taxonomy-coverage.md)。
 
 ## 7. 文件归档与标准化
 
@@ -348,6 +391,7 @@ remote root；“对象存储与完全不同的计算集群之间服务器端搬
 阈值不在 QC 代码中，而在 `config/profiles/*.yaml`：
 
 ```yaml
+kind: qc
 version: 1
 applies_to: [assembly]
 required:
@@ -397,6 +441,10 @@ software_versions.tsv / README.md / 元数据表快照 / data/ 成员文件
 ```
 
 release 默认 `copy`，保证与 raw/standardized 不共享 inode；`--link hardlink` 是显式空间优化选项。
+coverage 的 release 口径读取这里冻结的 metadata，而不是当前活动数据库中的 TaxID；
+release summary/provenance 保存每张 metadata TSV 的 SHA-256，coverage 计算前复核这些
+身份，因此 release 创建后的活动 metadata 修改不会重写历史覆盖率，release 目录内的
+快照篡改也会被拒绝。
 
 ## 12. 关键正确性保证
 
@@ -404,6 +452,7 @@ release 默认 `copy`，保证与 raw/standardized 不共享 inode；`--link har
 - **原子导入**：metadata import 在单事务内完成，失败整体回滚。
 - **幂等**：相同输入重复执行不会产生重复文件或覆盖正确结果；不同输入被明确拒绝。
 - **可追溯**：provenance 同时写入 `logs/workflow.jsonl` 和 `workflow_runs`。
+- **冻结分母**：coverage 仅对带 SHA-256 的 reference-set TSV 计算；taxonomy 升级不能静默改变历史数字。
 - **自动迁移**：打开旧版 v1 数据库时，`qc_results` 和 `decisions` 会自动迁移到 v2 结构，旧数据不丢失（旧 QC 以 `legacy:` 身份保留）。
 
 ## 13. 封装式外部分析
@@ -458,7 +507,8 @@ parser 的完整契约见 [Recipe 配置参考](recipe-reference.md)。
 
 ## 14. 扩展边界
 
-当前内置来源适配器先覆盖 NCBI Datasets；ENA 等来源仍属于后续扩展边界。内置 QC
+当前内置来源适配器先覆盖 NCBI Datasets；ENA 等来源仍属于后续扩展边界。taxonomy
+coverage 当前只支持 NCBI Taxonomy；GTDB 及 NCBI↔GTDB crosswalk 尚未实现。内置 QC
 覆盖文件级、reads 基础、assembly 结构与 annotation 结构。BUSCO 已通过目录输出和
 JSON summary parser 原生接入；QUAST、Merqury、Kraken2、CheckM2 等尚未提供 parser
 的工具仍可通过 `run-external` + `import-qc` 接入。下游比较基因组分析在 `analysis/`
@@ -515,3 +565,6 @@ Python 3.10 语法与运行时门禁、schema 校验与受控词汇、metadata r
 checksum 篡改检测、demo 端到端流水线与 release 校验、NCBI Datasets adapter、
 BLAST/HMMER/BUSCO 封装执行、目录 artifact、JSON summary、conda run 前缀解析、
 缓存命中/强制重跑、结果回写与输入篡改拒绝。
+taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile 类型/内容冲突、
+排除规则、secondary TaxID、分母/报告幂等，以及活动 metadata 修改不影响 release
+冻结口径。

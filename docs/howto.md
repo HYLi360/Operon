@@ -310,8 +310,8 @@ operon analyze --analysis blastn_nt --dry-run
 查看同步结果：
 
 ```bash
-operon analysis-results --analysis blastn_nt
-operon analysis-results --analysis blastn_nt --hits
+operon report analysis --analysis blastn_nt
+operon report analysis --analysis blastn_nt --hits
 ```
 
 结果去向：
@@ -395,7 +395,7 @@ tools:
 operon tools-check
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24 --dry-run
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24
-operon analysis-results --analysis busco_autolineage --entity-id ANN_000001
+operon report analysis --analysis busco_autolineage --entity-id ANN_000001
 ```
 
 完整目录类似：
@@ -711,6 +711,7 @@ operon import-qc --file external_qc.tsv
 在 `config/profiles/` 下添加 YAML 文件，例如 `phylogenomics_v1.yaml`：
 
 ```yaml
+kind: qc
 version: 1
 description: 系统发育基因组学准入规则
 applies_to: [assembly]
@@ -744,12 +745,56 @@ warnings:
 
 ```bash
 operon evaluate --profile phylogenomics_v1
-operon decisions --profile phylogenomics_v1
+operon report decisions --profile phylogenomics_v1
 ```
 
 每次 evaluate 都会保存 profile 内容快照，并追加 decision 历史。
 
-## 13. 如何人工覆盖判定而不丢失审计
+## 13. 如何审计科与属的 taxonomy 覆盖率
+
+新项目带有 `config/profiles/coverage_viridiplantae_v1.yaml` 示例。先根据研究范围修改
+clade 根 TaxID、family/genus 层级、extinct/environmental/unclassified 等排除规则与
+覆盖率阈值，并以新的版本化文件名保存。coverage profile 必须声明
+`kind: taxonomy_coverage`；阈值不会从代码默认值补入。
+
+导入一个显式版本的 NCBI Taxonomy（Datasets `taxonomy_report.jsonl`/package 或官方
+taxdump archive），并把 profile 编译成不可变分母：
+
+```bash
+operon taxonomy import \
+  --input /data/taxonomy/2026-08-01/taxonomy_report.jsonl \
+  --version 2026-08-01
+operon taxonomy compile \
+  --profile coverage_viridiplantae_v1 \
+  --taxonomy-version 2026-08-01
+```
+
+传统 taxdump 没有 extinct 布尔字段；若 profile 使用 `exclude_extinct: true`，compile
+会明确拒绝该组合。应显式改用化石 TaxID 子树/名称规则，或导入带 extinct 标注的
+Datasets taxonomy report，不能让排除规则静默失效。
+
+默认从当前 `organisms` 元数据审计“库里采了什么”：
+
+```bash
+operon report coverage \
+  --reference-set coverage_viridiplantae_v1@2026-08-01
+```
+
+审计一个已发布数据集时，改用 release 口径：
+
+```bash
+operon report coverage \
+  --reference-set coverage_viridiplantae_v1@2026-08-01 \
+  --release 2026.08
+```
+
+报告给出 family/genus 的分子、分母、覆盖率、阈值与缺失清单。release 口径读取
+release 内冻结的元数据并以 `release_members` 和创建时保存的 metadata SHA-256 校验，
+不受活动库后续 TaxID 修改影响；release 内快照被改动则明确拒绝。
+完整 profile 字段、快照身份、幂等/冲突规则、输出文件和 GTDB 局限见
+[NCBI Taxonomy 覆盖率](taxonomy-coverage.md)。
+
+## 14. 如何人工覆盖判定而不丢失审计
 
 ```bash
 operon curate \
@@ -768,7 +813,7 @@ operon curate \
 - 修改同时写入 `changes` 审计表。
 - 状态机按策展后的 decision 更新为 ACCEPTED/REJECTED/REVIEW。
 
-## 14. 如何用 SQL 查询
+## 15. 如何用 SQL 查询
 
 `query` 是只读的。常用查询示例：
 
@@ -797,7 +842,7 @@ operon query "SELECT entity_id, state, message FROM entity_state WHERE entity_ty
 
 `SELECT`、`PRAGMA table_info` 等只读操作可用；`UPDATE`、`INSERT`、`DROP`、`PRAGMA user_version=...`、`ATTACH` 等会被拒绝。
 
-## 15. 如何备份和迁移项目
+## 16. 如何备份和迁移项目
 
 日常备份只需包含：
 
@@ -830,7 +875,7 @@ releases/            # 按需（可由 raw + 数据库重建）
 
 旧版 v1 数据库**无需手工迁移**：当前程序打开数据库时会自动迁移 `qc_results` 与 `decisions` 到 v2 结构，旧 QC 数据以 `legacy:` 输入身份保留，旧 decision 可继续通过 `current_decisions` 读取。
 
-## 16. 如何续跑失败任务
+## 17. 如何续跑失败任务
 
 所有核心步骤都幂等：
 
@@ -839,10 +884,12 @@ releases/            # 按需（可由 raw + 数据库重建）
 - `qc`：同一 `input_identity + stage + metric + tool/version/parameter_set` upsert，不产生重复行。
 - `evaluate`：追加新 decision，不覆盖历史。
 - `release`：版本目录已存在时拒绝重复创建，不会悄悄覆盖。
+- `taxonomy compile`：相同 profile/taxonomy/TSV 复用；身份相同而内容不同则拒绝覆盖。
+- `report coverage`：输入成员、profile 和 reference-set 身份相同则校验并复用旧报告。
 
 因此从中断处直接重跑相同命令即可。可通过 `status` 查看每个实体当前处于哪个状态。
 
-## 17. 如何排查 checksum 与格式问题
+## 18. 如何排查 checksum 与格式问题
 
 ```bash
 operon verify          # 找 MISSING / CHECKSUM_FAILED
@@ -858,5 +905,5 @@ operon query "SELECT file_id, entity_type, entity_id, file_role, status, relativ
 | `REMOTE_UNVERIFIED`（仅 verify 输出） | 远端暂时不可达，未确认副本是否仍在；检查 SSH/网络后重试 `verify` |
 | `MISSING` | 恢复文件到 `relative_path`，或从源头重新归档为新实体版本 |
 | `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
-| `QC_FAILED` | 查看 `operon qc-table` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |
+| `QC_FAILED` | 查看 `operon report qc` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |
 | 格式解析失败 | 用外部工具（如 `seqkit stats`、GFF3 validator）检查；修复后作为新版本归档，不要覆盖 raw |

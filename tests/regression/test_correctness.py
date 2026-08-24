@@ -275,3 +275,13 @@ class TestCorrectnessRegressions(PytestAssertions):
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
         self.assertIn("file_locations", tables)
+
+    def test_schema_2_3_adds_taxonomy_and_coverage_history(self):
+        db = self._db()
+        tables = {row["name"] for row in db.query(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        self.assertTrue({
+            "taxonomy_snapshots", "taxonomy_nodes", "taxonomy_aliases",
+            "taxonomy_reference_sets", "coverage_reports", "coverage_report_metrics",
+        }.issubset(tables))

@@ -12,6 +12,7 @@ from typing import Any
 
 from operon import __version__
 from operon.config import Project, load_project
+from operon.coverage import report_coverage
 from operon.database import Database
 from operon.errors import OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
@@ -25,6 +26,12 @@ from operon.schema import (
     Schema,
     read_tsv,
     write_tsv,
+)
+from operon.taxonomy import (
+    compile_reference_set,
+    import_ncbi_taxonomy,
+    list_reference_sets,
+    list_taxonomy_snapshots,
 )
 from operon.utils import format_table, parse_key_values
 from operon.workflow import set_state
@@ -206,13 +213,6 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--remote", required=True, help="remote name from the project.yaml remotes: section")
     p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: everything in the remote manifest)")
 
-    p = sub.add_parser("analysis-results", help="show analysis summaries/hits synchronized to SQLite")
-    p.add_argument("--analysis")
-    p.add_argument("--entity-type")
-    p.add_argument("--entity-id")
-    p.add_argument("--hits", action="store_true", help="show top-hit rows instead of job summaries")
-    p.add_argument("--limit", type=int, default=20)
-
     p = sub.add_parser("evaluate", help="apply a versioned QC profile and record decisions")
     p.add_argument("--profile")
     p.add_argument("--entity-type")
@@ -245,13 +245,39 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--source-url")
     p.add_argument("--profile")
 
-    p = sub.add_parser("qc-table", help="print long QC table")
-    p.add_argument("--entity-type")
-    p.add_argument("--entity-id")
-    p.add_argument("--export", action="store_true", help="write qc/aggregate TSV files")
+    p = sub.add_parser("taxonomy", help="manage immutable NCBI Taxonomy snapshots and denominators")
+    taxonomy_sub = p.add_subparsers(dest="taxonomy_command", required=True)
+    tp = taxonomy_sub.add_parser("import", help="archive and import an NCBI Datasets taxonomy package")
+    tp.add_argument(
+        "--input", required=True,
+        help="taxonomy_report.jsonl/Datasets package or official NCBI taxdump archive",
+    )
+    tp.add_argument("--version", required=True, help="explicit immutable taxonomy version label")
+    taxonomy_sub.add_parser("list", help="list imported NCBI Taxonomy snapshots")
+    tp = taxonomy_sub.add_parser("compile", help="compile a coverage profile into a frozen denominator")
+    tp.add_argument("--profile", required=True)
+    tp.add_argument("--taxonomy-version", required=True)
+    taxonomy_sub.add_parser("reference-sets", help="list compiled taxonomy reference sets")
 
-    p = sub.add_parser("decisions", help="print recorded QC decisions")
-    p.add_argument("--profile")
+    p = sub.add_parser("report", help="render queryable project and release reports")
+    report_sub = p.add_subparsers(dest="report_kind", required=True)
+    rp = report_sub.add_parser("qc", help="show or export long-form QC results")
+    rp.add_argument("--entity-type")
+    rp.add_argument("--entity-id")
+    rp.add_argument("--export", action="store_true", help="write qc/aggregate TSV files")
+    rp = report_sub.add_parser("decisions", help="show current QC decisions")
+    rp.add_argument("--profile")
+    rp = report_sub.add_parser("analysis", help="show synchronized analysis summaries or hits")
+    rp.add_argument("--analysis")
+    rp.add_argument("--entity-type")
+    rp.add_argument("--entity-id")
+    rp.add_argument("--hits", action="store_true", help="show top-hit rows instead of job summaries")
+    rp.add_argument("--limit", type=int, default=20)
+    rp = report_sub.add_parser("coverage", help="measure NCBI family/genus coverage against a frozen reference set")
+    rp.add_argument("--reference-set", required=True)
+    scope = rp.add_mutually_exclusive_group()
+    scope.add_argument("--scope", choices=["metadata"], default="metadata")
+    scope.add_argument("--release", help="restrict observations to one immutable release")
 
     p = sub.add_parser("query", help="run arbitrary read-only SQL against the file database")
     p.add_argument("sql")
@@ -291,7 +317,7 @@ def _cmd_init_demo(args: argparse.Namespace) -> int:
     from operon.demo import init_demo
     result = init_demo(Path(args.path), project_id=args.project_id)
     print(f"demo project ready at {result.root}")
-    print("run `operon --project . status` or `operon --project . qc-table` to inspect it")
+    print("run `operon --project . status` or `operon --project . report qc` to inspect it")
     return 0
 
 
@@ -921,6 +947,66 @@ def _cmd_decisions(args: argparse.Namespace, project: Project, db: Database) -> 
     return 0
 
 
+def _cmd_taxonomy(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.taxonomy_command == "import":
+        result = import_ncbi_taxonomy(db, project, args.input, args.version)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.taxonomy_command == "compile":
+        result = compile_reference_set(db, project, args.profile, args.taxonomy_version)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.taxonomy_command == "list":
+        rows = list_taxonomy_snapshots(db)
+        print(format_table(
+            ["snapshot_id", "source", "version", "nodes", "status", "sha256", "imported_at"],
+            ([
+                row["taxonomy_snapshot_id"], row["source"], row["taxonomy_version"],
+                row["node_count"], row["status"], row["source_sha256"], row["imported_at"],
+            ] for row in rows),
+        ))
+        return 0
+    if args.taxonomy_command == "reference-sets":
+        rows = list_reference_sets(db)
+        print(format_table(
+            ["reference_set", "taxonomy", "profile", "family", "genus", "sha256", "compiled_at"],
+            ([
+                row["reference_set_id"], row["taxonomy_version"], row["profile_name"],
+                row["family_count"], row["genus_count"], row["tsv_sha256"], row["compiled_at"],
+            ] for row in rows),
+        ))
+        return 0
+    raise ValidationError(f"unknown taxonomy command {args.taxonomy_command!r}")
+
+
+def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.report_kind == "qc":
+        return _cmd_qc_table(args, project, db)
+    if args.report_kind == "decisions":
+        return _cmd_decisions(args, project, db)
+    if args.report_kind == "analysis":
+        return _cmd_analysis_results(args, db)
+    if args.report_kind == "coverage":
+        result = report_coverage(db, project, args.reference_set, release_version=args.release)
+        scope_text = result["scope_kind"]
+        if result.get("scope_value"):
+            scope_text += f":{result['scope_value']}"
+        print(f"reference set: {result['reference_set_id']}")
+        print(f"scope: {scope_text}")
+        print(format_table(
+            ["rank", "numerator", "denominator", "coverage_pct", "threshold_pct", "decision"],
+            ([
+                metric["rank"], metric["numerator"], metric["denominator"],
+                f"{float(metric['coverage_percent']):.4f}",
+                f"{float(metric['threshold_percent']):.4f}", metric["decision"],
+            ] for metric in result["metrics"]),
+        ))
+        print(f"decision: {result['decision']}")
+        print(f"report: {result['path']}")
+        return int(result["exit_code"])
+    raise ValidationError(f"unknown report kind {args.report_kind!r}")
+
+
 def _cmd_query(args: argparse.Namespace, db: Database) -> int:
     try:
         rows = db.readonly_query(args.sql)
@@ -967,7 +1053,6 @@ def main(argv: list[str] | None = None) -> int:
                 "run-external": lambda: _cmd_run_external(args, project, db),
                 "tools-check": lambda: _cmd_tools_check(project),
                 "analyze": lambda: _cmd_analyze(args, project, db),
-                "analysis-results": lambda: _cmd_analysis_results(args, db),
                 "remotes": lambda: _cmd_remotes(args, project),
                 "push": lambda: _cmd_push(args, project, db),
                 "pull": lambda: _cmd_pull(args, project, db),
@@ -977,8 +1062,8 @@ def main(argv: list[str] | None = None) -> int:
                 "curate": lambda: _cmd_curate(args, project, db),
                 "release": lambda: _cmd_release(args, project, db),
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),
-                "qc-table": lambda: _cmd_qc_table(args, project, db),
-                "decisions": lambda: _cmd_decisions(args, project, db),
+                "taxonomy": lambda: _cmd_taxonomy(args, project, db),
+                "report": lambda: _cmd_report(args, project, db),
                 "query": lambda: _cmd_query(args, db),
                 "set-state": lambda: _cmd_set_state(args, db),
             }

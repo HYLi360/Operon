@@ -48,10 +48,15 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     release_root.mkdir(parents=True, exist_ok=False)
 
     # Metadata snapshots (small, copied).
-    for table in ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]:
+    metadata_tables = ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]
+    for table in metadata_tables:
         columns = db.table_columns(table)
         rows = db.export_rows(table, columns)
         write_tsv(release_root / f"{table}.tsv", columns, rows)
+    metadata_sha256 = {
+        f"{table}.tsv": sha256_file(release_root / f"{table}.tsv")
+        for table in metadata_tables
+    }
 
     members = release_files_for(db, profile)
     manifest_rows: list[dict[str, Any]] = []
@@ -148,6 +153,7 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         "created_by": "operon.release",
         "package_version": __version__,
         "storage_mode": link_kind,
+        "metadata_sha256": metadata_sha256,
     }
     (release_root / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -178,6 +184,7 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         "accepted_file_count": len(manifest_rows),
         "excluded_entity_count": len(excluded),
         "manifest_sha256": sha256_file(manifest_path),
+        "metadata_sha256": metadata_sha256,
     }
     db.conn.execute(
         "INSERT INTO releases(version, created_at, profile, path, manifest_sha256, summary) VALUES(?,?,?,?,?,?)",

@@ -31,6 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "reports_root": "reports",
         "logs_root": "logs",
         "releases_root": "releases",
+        "taxonomy_root": "taxonomy",
     },
     "database": {
         "path": "operon.sqlite",
@@ -134,6 +135,14 @@ class Project:
     def releases_root(self) -> Path:
         return self._resolve(self.config["storage"]["releases_root"])
 
+    @property
+    def taxonomy_root(self) -> Path:
+        return self._resolve(self.config["storage"].get("taxonomy_root", "taxonomy"))
+
+    @property
+    def taxonomy_reference_sets_dir(self) -> Path:
+        return self.taxonomy_root / "reference_sets"
+
     def _resolve(self, value: str | Path) -> Path:
         path = Path(value)
         if not path.is_absolute():
@@ -159,6 +168,7 @@ class Project:
             self.reports_root,
             self.logs_root,
             self.releases_root,
+            self.taxonomy_reference_sets_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

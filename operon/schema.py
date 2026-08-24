@@ -44,6 +44,7 @@ ENTITY_PREFIXES: dict[str, str] = {
     "annotation": "ANN",
     "file": "FIL",
 }
+FILE_ENTITY_TYPES = [*ENTITY_TABLES.keys(), "taxonomy_snapshot"]
 MISSING_VALUES = {"", "na", "n/a", "null", "none"}
 
 
@@ -163,11 +164,12 @@ def default_schemas() -> dict[str, Any]:
             "description": "File manifest: path is only the current location; identity is file_id + sha256 + size.",
             "fields": {
                 "file_id": {"type": "id", "pattern": r"^FIL_\d{6}$", "required": True, "description": "Internal stable file ID"},
-                "entity_type": {"type": "string", "required": True, "allowed": list(ENTITY_TABLES.keys()), "description": "Entity type this file belongs to"},
-                "entity_id": {"type": "id", "pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$", "required": True, "description": "Internal entity ID"},
+                "entity_type": {"type": "string", "required": True, "allowed": FILE_ENTITY_TYPES, "description": "Entity type this file belongs to"},
+                "entity_id": {"type": "id", "pattern": r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$", "required": True, "description": "Internal entity ID"},
                 "file_role": {"type": "string", "required": True, "allowed": [
                     "genome_fasta", "cds_fasta", "protein_fasta", "annotation_gff3",
-                    "reads_r1", "reads_r2", "reads_single", "assembly_report", "other",
+                    "reads_r1", "reads_r2", "reads_single", "assembly_report",
+                    "taxonomy_package", "other",
                 ], "description": "Biological role of the file"},
                 "format": {"type": "string", "required": True, "allowed": ["fasta", "fastq", "gff3", "bam", "cram", "tsv", "txt", "html", "json", "directory", "other"], "description": "File or directory artifact format"},
                 "compression": {"type": "string", "required": True, "allowed": ["none", "gzip", "bgzip"], "description": "Compression type"},
@@ -180,7 +182,7 @@ def default_schemas() -> dict[str, Any]:
             },
         },
     }
-    return {"schema_version": "1.2", "tables": fields}
+    return {"schema_version": "1.3", "tables": fields}
 
 
 @dataclass

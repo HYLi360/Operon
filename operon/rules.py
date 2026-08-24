@@ -15,7 +15,7 @@ from typing import Any
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
-from operon.profiles import load_profiles
+from operon.profiles import load_profile
 from operon.utils import now_iso
 from operon.workflow import set_state_bulk
 
@@ -76,10 +76,7 @@ def _describe_rule(rule: dict[str, Any]) -> str:
 def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id: str,
                     profile_name: str | None = None) -> dict[str, Any]:
     profile_name = profile_name or project.config["qc"]["default_profile"]
-    profiles = load_profiles(project.profiles_dir)
-    if profile_name not in profiles:
-        raise ValidationError(f"QC profile {profile_name!r} not found in {project.profiles_dir}")
-    profile = profiles[profile_name]
+    profile = load_profile(project.profiles_dir, profile_name, expected_kind="qc")
     profile_document = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     profile_sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
     profile_version = int(profile.get("version", 1))
@@ -153,8 +150,8 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
 def evaluate_all(db: Database, project: Project, profile_name: str | None = None,
                  entity_type: str | None = None) -> list[dict[str, Any]]:
     profile_name = profile_name or project.config["qc"]["default_profile"]
-    profiles = load_profiles(project.profiles_dir)
-    applies_to = set(profiles.get(profile_name, {}).get("applies_to", ["assembly", "annotation", "run"]))
+    profile = load_profile(project.profiles_dir, profile_name, expected_kind="qc")
+    applies_to = set(profile.get("applies_to", ["assembly", "annotation", "run"]))
     sql = "SELECT DISTINCT entity_type, entity_id FROM qc_results WHERE 1=1"
     params: list[Any] = []
     if entity_type:

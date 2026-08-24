@@ -54,8 +54,8 @@ operon init-demo ./demo-project --project-id PRJ_DEMO_001
 
 ```bash
 operon --project ./demo-project status
-operon --project ./demo-project decisions
-operon --project ./demo-project qc-table --entity-type assembly
+operon --project ./demo-project report decisions
+operon --project ./demo-project report qc --entity-type assembly
 ```
 
 演示预期：`ASM_000002` 因 `LOW_CONTIGUITY` 被 FAIL；`ANN_000003` 因 `CDS_NOT_MULTIPLE_OF_3` 与 `BROKEN_GFF3_PARENTS` 被 FAIL；其他实体 PASS。
@@ -80,9 +80,9 @@ cd ./my-genome-project
 
 ```text
 project.yaml         项目配置
-config/              schema、QC profiles 与外部工具配置 tools.yaml
+config/              schema、QC/coverage profiles 与外部工具配置 tools.yaml
 metadata/            空表头 TSV 文件
-raw/ standardized/ qc/ analysis/ reports/ logs/ releases/
+raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 ```
 
 `operon.sqlite` 不会在 init 时创建，第一次执行需要数据库的命令时自动创建。
@@ -253,13 +253,13 @@ operon qc --entity-type assembly --entity-id ASM_000001
 查看 QC 长表：
 
 ```bash
-operon qc-table --entity-type assembly
+operon report qc --entity-type assembly
 ```
 
 导出长表和宽表：
 
 ```bash
-operon qc-table --export
+operon report qc --export
 # 生成 qc/aggregate/qc_results.tsv 与 qc_results.wide.tsv
 ```
 
@@ -326,15 +326,15 @@ operon analyze --analysis blastn_nt --dry-run
 查看同步到数据库的汇总和 top hits：
 
 ```bash
-operon analysis-results --analysis blastn_nt
-operon analysis-results --analysis blastn_nt --hits
+operon report analysis --analysis blastn_nt
+operon report analysis --analysis blastn_nt --hits
 ```
 
 对 annotation 蛋白文件执行 HMMER：
 
 ```bash
 operon analyze --analysis hmmsearch_pfam
-operon analysis-results --analysis hmmsearch_pfam --hits
+operon report analysis --analysis hmmsearch_pfam --hits
 ```
 
 BUSCO 使用目录输出，并直接读取 `short_summary*.json`：
@@ -346,7 +346,7 @@ BUSCO 使用目录输出，并直接读取 `short_summary*.json`：
 # database_mode: mutable_cache
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24 --dry-run
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24
-operon analysis-results --analysis busco_autolineage --entity-id ANN_000001
+operon report analysis --analysis busco_autolineage --entity-id ANN_000001
 ```
 
 BUSCO 的 recipe 将 `output_name` 设为 `${file_id}.busco`；`-o` 使用
@@ -363,7 +363,7 @@ offline 数据集冻结方案见 How-to 第 7 节。
 
 ```bash
 operon evaluate --profile assembly_production_v1
-operon decisions
+operon report decisions
 ```
 
 判定与原因示例：
@@ -374,7 +374,9 @@ assembly     ASM_000001  assembly_production_v1  PASS      -
 assembly     ASM_000002  assembly_production_v1  FAIL      LOW_CONTIGUITY
 ```
 
-修改 `config/profiles/*.yaml` 后重新 evaluate 不会覆盖旧判定，而会追加新的 decision；`decisions` 默认展示最新一条。
+修改 `config/profiles/*.yaml` 后重新 evaluate 不会覆盖旧判定，而会追加新的 decision；
+`report decisions` 默认展示最新一条。profile 必须用 `kind: qc` 与同目录中的
+`kind: taxonomy_coverage` 覆盖率画像区分。
 
 ### 3.12 人工策展（可选，但必须留痕）
 
@@ -462,11 +464,11 @@ operon qc
 operon import-qc --file ...
 operon tools-check
 operon analyze --analysis blastn_nt
-operon analysis-results --analysis blastn_nt
+operon report analysis --analysis blastn_nt
 
 # 5. 判定与发布
 operon evaluate --profile ...
-operon decisions
+operon report decisions
 operon release --version ... --profile ...
 ```
 

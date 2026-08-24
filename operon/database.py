@@ -18,7 +18,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.2"
+SCHEMA_VERSION = "2.3"
 
 MANUAL_TABLES = [
     "organisms",
@@ -327,6 +327,91 @@ WHERE d.decision_id = (
 )
 """
 
+TAXONOMY_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS taxonomy_snapshots (
+    taxonomy_snapshot_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    taxonomy_version TEXT NOT NULL,
+    source_file_id TEXT NOT NULL REFERENCES files(file_id),
+    source_sha256 TEXT NOT NULL,
+    source_size_bytes INTEGER NOT NULL,
+    imported_at TEXT NOT NULL,
+    node_count INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    UNIQUE (source, taxonomy_version)
+);
+CREATE TABLE IF NOT EXISTS taxonomy_nodes (
+    taxonomy_snapshot_id TEXT NOT NULL REFERENCES taxonomy_snapshots(taxonomy_snapshot_id) ON DELETE CASCADE,
+    taxid INTEGER NOT NULL,
+    parent_taxid INTEGER,
+    rank TEXT NOT NULL,
+    scientific_name TEXT NOT NULL,
+    is_extinct INTEGER,
+    is_formal INTEGER,
+    PRIMARY KEY (taxonomy_snapshot_id, taxid)
+);
+CREATE TABLE IF NOT EXISTS taxonomy_aliases (
+    taxonomy_snapshot_id TEXT NOT NULL REFERENCES taxonomy_snapshots(taxonomy_snapshot_id) ON DELETE CASCADE,
+    alias_taxid INTEGER NOT NULL,
+    current_taxid INTEGER,
+    status TEXT NOT NULL,
+    PRIMARY KEY (taxonomy_snapshot_id, alias_taxid)
+);
+CREATE TABLE IF NOT EXISTS taxonomy_reference_sets (
+    reference_set_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    taxonomy_snapshot_id TEXT NOT NULL REFERENCES taxonomy_snapshots(taxonomy_snapshot_id),
+    taxonomy_version TEXT NOT NULL,
+    relative_path TEXT NOT NULL UNIQUE,
+    tsv_sha256 TEXT NOT NULL,
+    tsv_size_bytes INTEGER NOT NULL,
+    profile_name TEXT NOT NULL,
+    profile_version INTEGER NOT NULL,
+    profile_sha256 TEXT NOT NULL,
+    profile_document TEXT NOT NULL,
+    family_count INTEGER NOT NULL,
+    genus_count INTEGER NOT NULL,
+    compiled_at TEXT NOT NULL,
+    workflow_run_id TEXT,
+    UNIQUE (name, taxonomy_version)
+);
+CREATE TABLE IF NOT EXISTS coverage_reports (
+    report_id TEXT PRIMARY KEY,
+    reference_set_id TEXT NOT NULL REFERENCES taxonomy_reference_sets(reference_set_id),
+    reference_set_sha256 TEXT NOT NULL,
+    scope_kind TEXT NOT NULL,
+    scope_value TEXT,
+    scope_membership_sha256 TEXT NOT NULL,
+    input_sha256 TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    decision TEXT,
+    reason_codes TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    relative_path TEXT,
+    result_sha256 TEXT,
+    created_at TEXT NOT NULL,
+    workflow_run_id TEXT
+);
+CREATE TABLE IF NOT EXISTS coverage_report_metrics (
+    report_id TEXT NOT NULL REFERENCES coverage_reports(report_id) ON DELETE CASCADE,
+    rank TEXT NOT NULL,
+    numerator INTEGER NOT NULL,
+    denominator INTEGER NOT NULL,
+    coverage_percent REAL NOT NULL,
+    threshold_percent REAL NOT NULL,
+    decision TEXT NOT NULL,
+    PRIMARY KEY (report_id, rank)
+);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_nodes_parent
+    ON taxonomy_nodes(taxonomy_snapshot_id, parent_taxid);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_nodes_rank
+    ON taxonomy_nodes(taxonomy_snapshot_id, rank);
+CREATE INDEX IF NOT EXISTS idx_taxonomy_aliases_current
+    ON taxonomy_aliases(taxonomy_snapshot_id, current_taxid);
+CREATE INDEX IF NOT EXISTS idx_coverage_reports_reference
+    ON coverage_reports(reference_set_id, scope_kind, scope_value);
+"""
+
 
 class Database:
     """Thin wrapper around sqlite3 with Operon-specific helpers."""
@@ -354,6 +439,7 @@ class Database:
         # stops accepting databases created by development versions.
         self._migrate_pre_1_0_schema()
         self._migrate_remote_schema_2_2()
+        self._migrate_taxonomy_schema_2_3()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -485,6 +571,10 @@ class Database:
                 ON file_locations(location_name, status);
             """
         )
+
+    def _migrate_taxonomy_schema_2_3(self) -> None:
+        """Add NCBI taxonomy snapshots, frozen denominators and coverage history."""
+        self._conn.executescript(TAXONOMY_SCHEMA_DDL)
 
     def _ensure_current_schema_objects(self) -> None:
         """Create current indexes and rebuild the latest-decision view."""

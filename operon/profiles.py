@@ -18,6 +18,7 @@ from operon.errors import ValidationError
 def default_profiles() -> dict[str, Any]:
     return {
         "file_integrity_v1": {
+            "kind": "qc",
             "version": 1,
             "description": "Every registered file must parse and match its recorded checksum.",
             "applies_to": ["assembly", "annotation", "run"],
@@ -28,6 +29,7 @@ def default_profiles() -> dict[str, Any]:
             "warnings": [],
         },
         "assembly_production_v1": {
+            "kind": "qc",
             "version": 1,
             "description": "Generic assembly profile for comparative genomics (tune per taxon/purpose).",
             "applies_to": ["assembly"],
@@ -45,6 +47,7 @@ def default_profiles() -> dict[str, Any]:
             ],
         },
         "annotation_release_v1": {
+            "kind": "qc",
             "version": 1,
             "description": "Annotation release sanity checks before using proteins/genes in analysis.",
             "applies_to": ["annotation"],
@@ -63,6 +66,7 @@ def default_profiles() -> dict[str, Any]:
             ],
         },
         "reads_qc_v1": {
+            "kind": "qc",
             "version": 1,
             "description": "Raw read QC gate before assembly or variant calling.",
             "applies_to": ["run"],
@@ -77,6 +81,30 @@ def default_profiles() -> dict[str, Any]:
                 {"metric": "overrepresented_sequence_count", "operator": ">", "value": 1, "code": "OVERREPRESENTED_SEQUENCES"},
             ],
         },
+        "coverage_viridiplantae_v1": {
+            "kind": "taxonomy_coverage",
+            "version": 1,
+            "name": "coverage_viridiplantae_v1",
+            "description": (
+                "Example NCBI Taxonomy coverage denominator for Viridiplantae; "
+                "review the scope, exclusions, and thresholds before use."
+            ),
+            "taxonomy": {"source": "NCBI"},
+            "scope": {"root_taxids": [33090]},
+            "targets": {"ranks": ["family", "genus"]},
+            "filters": {
+                "exclude_extinct": True,
+                "exclude_subtrees": [],
+                "exclude_name_patterns": [
+                    r"(?i)^unclassified(?:\s|$)",
+                    r"(?i)environmental samples$",
+                ],
+            },
+            "thresholds": {
+                "family": {"min_coverage_percent": 80},
+                "genus": {"min_coverage_percent": 80},
+            },
+        },
     }
 
 
@@ -86,13 +114,15 @@ def write_default_profiles(directory: str | Path) -> None:
     for name, profile in default_profiles().items():
         path = directory / f"{name}.yaml"
         path.write_text(
-            f"# QC profile {name} (versioned; do not edit thresholds silently)\n"
+            f"# Operon {profile['kind']} profile {name} "
+            "(versioned; review and rename before changing a frozen definition)\n"
             + yaml.safe_dump(profile, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
 
 
-def load_profiles(directory: str | Path) -> dict[str, dict[str, Any]]:
+def load_profiles(directory: str | Path, *, kind: str = "qc") -> dict[str, dict[str, Any]]:
+    """Load only profiles of one explicit kind from the shared directory."""
     directory = Path(directory)
     profiles: dict[str, dict[str, Any]] = {}
     if not directory.exists():
@@ -100,7 +130,27 @@ def load_profiles(directory: str | Path) -> dict[str, dict[str, Any]]:
     for path in sorted(directory.glob("*.yaml")):
         with open(path, encoding="utf-8") as handle:
             doc = yaml.safe_load(handle) or {}
-        if not isinstance(doc, dict) or "version" not in doc:
-            raise ValidationError(f"invalid QC profile {path}: missing 'version'")
-        profiles[path.stem] = doc
+        if not isinstance(doc, dict) or "version" not in doc or "kind" not in doc:
+            raise ValidationError(f"invalid profile {path}: explicit 'kind' and 'version' are required")
+        if str(doc["kind"]) == kind:
+            profiles[path.stem] = doc
     return profiles
+
+
+def load_profile(directory: str | Path, name: str, *, expected_kind: str) -> dict[str, Any]:
+    """Load one named profile and reject cross-kind use with a clear error."""
+    if not name or Path(name).name != name or name in {".", ".."}:
+        raise ValidationError(f"invalid profile name {name!r}")
+    path = Path(directory) / f"{name}.yaml"
+    if not path.exists():
+        raise ValidationError(f"profile {name!r} not found in {Path(directory)}")
+    with open(path, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle) or {}
+    if not isinstance(doc, dict) or "kind" not in doc or "version" not in doc:
+        raise ValidationError(f"invalid profile {path}: explicit 'kind' and 'version' are required")
+    actual_kind = str(doc["kind"])
+    if actual_kind != expected_kind:
+        raise ValidationError(
+            f"profile {name!r} has kind {actual_kind!r}, expected {expected_kind!r}"
+        )
+    return doc
