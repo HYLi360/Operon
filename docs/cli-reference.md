@@ -287,7 +287,7 @@ operon tools-check
 ## analyze
 
 ```bash
-operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--backend {local,slurm,ssh}]
+operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--backend {local,slurm,ssh}]
 ```
 
 按 recipe 自动完成：
@@ -311,6 +311,20 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 也经同一后端执行。配置、前提与日志位置见 [How-to 操作手册](howto.md)第 9 节。
 若 SSH 配置了 `storage_remote`，本地缺失但状态为 `REMOTE_ONLY` 的候选输入会先严格
 验证远端清单和实际内容，再在远端原位使用。
+
+中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`analyze` 会优雅停机——
+
+- 当前步骤的作业进程被完整终止：本地后端按进程组（含孙进程）先 SIGTERM 后
+  SIGKILL；`slurm` 后端对排队/运行中的作业执行 `scancel`；`ssh` 后端终止远端
+  `setsid` 进程组或对远端 Slurm 作业执行 `scancel`；
+- 当前文件的 `analysis_jobs` 行被置为 `interrupted`（不会污染完成缓存），其半成品
+  输出被删除（stdout/stderr 日志保留用于排查；加 `--keep-partial` 可保留半成品输出）；
+- 批次不再处理后续文件，进程以退出码 130 退出；重跑同一命令即可从未完成的文件
+  继续（`interrupted` 行不参与缓存命中）；
+- 清理期间再次发送信号会立即强制退出（退出码 128+signum）。
+
+若进程被 SIGKILL 等无法捕获的方式杀死，残留的 `RUNNING` 行会在下一次 `analyze`
+启动时被清扫为 `interrupted`。
 
 默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`（可自行增删）。
 `config/tools.yaml` 的完整字段和执行语义见 [Recipe 配置参考](recipe-reference.md)。

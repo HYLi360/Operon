@@ -34,6 +34,7 @@ import yaml
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ExternalToolError, ValidationError
+from operon.shutdown import ShutdownRequested, graceful_shutdown
 from operon.utils import now_iso, sha256_file, sha256_path
 
 _VERSION_CACHE: dict[str, tuple[str, str]] = {}
@@ -603,10 +604,27 @@ def find_cached_job(db: Database, analysis_name: str, file_id: str, parameter_sh
     return dict(row) if row else None
 
 
+def _sweep_stale_running_jobs(db: Database) -> int:
+    """Mark jobs left RUNNING by a killed process as interrupted.
+
+    Resume only ever reuses ``completed`` rows, so this is bookkeeping
+    hygiene for the crash-only case (e.g. SIGKILL) where the graceful
+    shutdown path never got a chance to finalize the row.
+    """
+    with db.transaction() as conn:
+        cursor = conn.execute(
+            "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? "
+            "WHERE status='RUNNING'",
+            (now_iso(), "swept at startup: previous run terminated abnormally"),
+        )
+        return cursor.rowcount
+
+
 def run_analysis(project: Project, db: Database, analysis_name: str,
                  entity_type: str | None = None, entity_id: str | None = None,
                  dry_run: bool = False, force: bool = False, limit: int | None = None,
-                 threads: int | None = None, backend: str | None = None) -> list[dict[str, Any]]:
+                 threads: int | None = None, backend: str | None = None,
+                 keep_partial: bool = False) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files."""
     recipe = get_recipe(project, analysis_name)
     tool = get_tool(project, recipe.tool_name)
@@ -628,24 +646,31 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
     )
     results: list[dict[str, Any]] = []
     try:
-        for file_record in files:
-            try:
-                result = run_analysis_for_file(
-                    project, db, recipe, tool, config, file_record,
-                    dry_run=dry_run, force=force, threads=threads, backend=backend,
-                    executor=executor,
-                )
-            except Exception as exc:
-                result = {
-                    "file_id": file_record["file_id"],
-                    "entity_type": file_record["entity_type"],
-                    "entity_id": file_record["entity_id"],
-                    "analysis": recipe.name,
-                    "cached": False,
-                    "status": "error",
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            results.append(result)
+        with graceful_shutdown():
+            if not dry_run:
+                _sweep_stale_running_jobs(db)
+            for file_record in files:
+                try:
+                    result = run_analysis_for_file(
+                        project, db, recipe, tool, config, file_record,
+                        dry_run=dry_run, force=force, threads=threads, backend=backend,
+                        executor=executor, keep_partial=keep_partial,
+                    )
+                except ShutdownRequested:
+                    # Bookkeeping already finalized in run_analysis_for_file;
+                    # stop the batch here and let the CLI report exit 130.
+                    raise
+                except Exception as exc:
+                    result = {
+                        "file_id": file_record["file_id"],
+                        "entity_type": file_record["entity_type"],
+                        "entity_id": file_record["entity_id"],
+                        "analysis": recipe.name,
+                        "cached": False,
+                        "status": "error",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                results.append(result)
     finally:
         close = getattr(executor, "close", None)
         if close is not None:
@@ -704,7 +729,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                           config: dict[str, Any], file_record: dict[str, Any],
                           dry_run: bool = False, force: bool = False,
                           threads: int = 4, backend: str | None = None,
-                          executor: Any = None) -> dict[str, Any]:
+                          executor: Any = None, keep_partial: bool = False) -> dict[str, Any]:
     if executor is None:
         from operon.execution import get_executor
         recipe_slurm = recipe.raw.get("slurm")
@@ -716,7 +741,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             return run_analysis_for_file(
                 project, db, recipe, tool, config, file_record,
                 dry_run=dry_run, force=force, threads=threads, backend=backend,
-                executor=owned_executor,
+                executor=owned_executor, keep_partial=keep_partial,
             )
         finally:
             close = getattr(owned_executor, "close", None)
@@ -909,6 +934,18 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             "query_with_hit_count": query_with_hit_count,
             "metric_count": metric_count,
         }
+    except ShutdownRequested as exc:
+        # Graceful shutdown: finalize the job row, drop the partial output
+        # (unless --keep-partial), then abort the batch.  Partial stdout/
+        # stderr logs are kept for diagnosis.
+        with db.transaction() as conn:
+            conn.execute(
+                "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? WHERE job_id=?",
+                (now_iso(), f"interrupted by signal {exc.signum}", job_id),
+            )
+        if not keep_partial:
+            _remove_output_artifact(project, output_path)
+        raise
     except Exception as exc:
         with db.transaction() as conn:
             conn.execute(

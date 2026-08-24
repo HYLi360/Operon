@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from tests.helpers import PytestAssertions
@@ -24,6 +27,7 @@ from operon.execution import (
     render_slurm_script,
     rewrite_remote_path,
 )
+from operon.shutdown import ShutdownRequested
 from operon.tools import ToolSpec, detect_tool_version_record
 from operon.workflow import run_external_command
 
@@ -610,3 +614,201 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         script = remote_root / "logs" / "WF_TEST_1.sbatch"
         self.assertTrue(script.exists())
         self.assertIn(str(remote_root / "analysis" / "slurm-out.txt"), script.read_text())
+
+
+FAKE_SBATCH_OK = """\
+#!/usr/bin/env bash
+echo "12345"
+"""
+
+FAKE_SQUEUE_BUSY = """\
+#!/usr/bin/env bash
+# Job always present in the queue.
+echo "12345"
+"""
+
+FAKE_SCANCEL = """\
+#!/usr/bin/env bash
+echo "$@" >> "$SCANCEL_LOG"
+"""
+
+
+class TestShutdownCleanup(PytestAssertions):
+    """Interrupt (KeyboardInterrupt/ShutdownRequested) cleanup per backend."""
+
+    def setup_method(self):
+        super().setup_method()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SHUT_001"]), 0)
+        self.project = load_project(self.root)
+        self.db = Database(self.project.db_path)
+        self.addCleanup(self.db.close)
+
+    def _wait_until_dead(self, pid: int) -> bool:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_local_interrupt_kills_whole_process_group(self, monkeypatch):
+        pidfile = self.root / "grandchild.pid"
+        out_log = self.root / "logs" / "int.stdout.log"
+        err_log = self.root / "logs" / "int.stderr.log"
+        executor = LocalExecutor()
+        real_wait = subprocess.Popen.wait
+        interrupted = {"done": False}
+
+        def interrupting_wait(process, timeout=None):
+            if not interrupted["done"]:
+                interrupted["done"] = True
+                # Let the child actually spawn its grandchild first.
+                deadline = time.monotonic() + 5
+                while not pidfile.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                raise ShutdownRequested(signal.SIGINT)
+            return real_wait(process, timeout)
+
+        monkeypatch.setattr(subprocess.Popen, "wait", interrupting_wait)
+        with self.assertRaises(ShutdownRequested):
+            executor.run(
+                ["bash", "-c", f"sleep 60 & echo $! > {pidfile}; wait"],
+                cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+            )
+        grandchild = int(pidfile.read_text().strip())
+        # SIGTERM went to the whole group: the grandchild sleep must be gone.
+        self.assertTrue(self._wait_until_dead(grandchild))
+
+    def test_slurm_interrupt_cancels_cluster_job(self, monkeypatch):
+        bin_dir = self.root / "fakebin"
+        bin_dir.mkdir()
+        scancel_log = self.root / "scancel.log"
+        for name, content in (("sbatch", FAKE_SBATCH_OK), ("squeue", FAKE_SQUEUE_BUSY),
+                              ("scancel", FAKE_SCANCEL)):
+            script = bin_dir / name
+            script.write_text(content, encoding="utf-8")
+            script.chmod(0o755)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", old_path))
+        os.environ["SCANCEL_LOG"] = str(scancel_log)
+        self.addCleanup(lambda: os.environ.pop("SCANCEL_LOG", None))
+
+        executor = SlurmExecutor(self.project, SlurmConfig(poll_interval=0.05))
+
+        def interrupting_sleep(_seconds):
+            raise ShutdownRequested(signal.SIGTERM)
+
+        monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
+        with self.assertRaises(ShutdownRequested):
+            executor.run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "s.stdout.log",
+                stderr_path=self.root / "logs" / "s.stderr.log",
+                run_id="WF_SLURM_INT",
+            )
+        self.assertEqual(scancel_log.read_text().strip(), "12345")
+
+
+class _HangingChannel:
+    def __init__(self):
+        self.closed = False
+
+    def recv_ready(self):
+        return False
+
+    def recv_stderr_ready(self):
+        return False
+
+    def exit_status_ready(self):
+        return False
+
+    def close(self):
+        self.closed = True
+
+
+class _HangingStream:
+    def __init__(self, channel):
+        self.channel = channel
+
+
+class TestSSHShutdownCleanup(PytestAssertions):
+    def setup_method(self):
+        super().setup_method()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SSHI_001"]), 0)
+        self.project = load_project(self.root)
+        self.db = Database(self.project.db_path)
+        self.addCleanup(self.db.close)
+
+    def _executor(self, scheduler: str, client: FakeSSHClient) -> SSHExecutor:
+        cfg = {"host": "fake.example.org", "user": "tester", "scheduler": scheduler}
+        return SSHExecutor(self.project, cfg, SlurmConfig(poll_interval=0.05),
+                           client_factory=lambda _self: client)
+
+    def test_direct_interrupt_terminates_remote_process_group(self, monkeypatch):
+        client = FakeSSHClient()
+        hanging = _HangingChannel()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("setsid "):
+                stream = _HangingStream(hanging)
+                return None, stream, stream
+            proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+
+        def interrupting_sleep(_seconds):
+            raise ShutdownRequested(signal.SIGINT)
+
+        monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
+        with self.assertRaises(ShutdownRequested):
+            self._executor("none", client).run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "i.stdout.log",
+                stderr_path=self.root / "logs" / "i.stderr.log",
+                run_id="WF_SSH_INT",
+            )
+        # The setsid payload would survive connection teardown, so the
+        # shutdown path must actively kill the remote process group.
+        self.assertTrue(any("kill -TERM" in command for command in client.commands))
+        self.assertTrue(hanging.closed)
+
+    def test_remote_slurm_interrupt_cancels_job(self, monkeypatch):
+        client = FakeSSHClient()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("sbatch "):
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            elif command.startswith("squeue "):
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            else:
+                proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+
+        def interrupting_sleep(_seconds):
+            raise ShutdownRequested(signal.SIGTERM)
+
+        monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
+        with self.assertRaises(ShutdownRequested):
+            self._executor("slurm", client).run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "rs.stdout.log",
+                stderr_path=self.root / "logs" / "rs.stderr.log",
+                run_id="WF_RSLURM_INT",
+            )
+        self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))

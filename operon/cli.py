@@ -193,6 +193,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="only process the first N matching files")
     p.add_argument("--dry-run", action="store_true", help="show planned commands and cache status without executing")
     p.add_argument("--force", action="store_true", help="re-run even when a completed cached job exists")
+    p.add_argument("--keep-partial", action="store_true",
+                   help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it")
     p.add_argument("--backend", choices=["local", "slurm", "ssh"],
                    help="execution backend (default: execution.backend in project.yaml)")
 
@@ -720,7 +722,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         project, db, args.analysis,
         entity_type=args.entity_type, entity_id=args.entity_id,
         dry_run=args.dry_run, force=args.force, limit=args.limit,
-        threads=args.threads, backend=args.backend,
+        threads=args.threads, backend=args.backend, keep_partial=args.keep_partial,
     )
     headers = ["file_id", "entity", "analysis", "status", "tool_version", "output", "error"]
     rows = []
@@ -1070,6 +1072,12 @@ def main(argv: list[str] | None = None) -> int:
             return handlers[args.command]()
         finally:
             db.close()
+    except KeyboardInterrupt:
+        # SIGINT/SIGTERM during a batch command (ShutdownRequested included):
+        # bookkeeping was already finalized on the way up; just report.
+        print("interrupted: progress so far was saved; re-run the same command to resume",
+              file=sys.stderr)
+        return 130
     except OperonError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

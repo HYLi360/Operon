@@ -48,6 +48,7 @@
 │  release.py     release 快照生成                              │
 │  workflow.py    状态机、JSONL 日志、外部命令执行器               │
 │  execution.py   执行后端抽象（local/slurm/ssh）                  │
+│  shutdown.py    SIGINT/SIGTERM 优雅停机与中断收尾                │
 │  remotes.py     SFTP 远程镜像（push/pull、远端清单）              │
 ├────────────────────────────────────────────────────────────┤
 │ 数据层                                                       │
@@ -84,6 +85,7 @@
 | `operon/tools.py` | 读取 `config/tools.yaml`，封装外部程序启动方式、版本探测、输入校验、缓存执行与结果回写 |
 | `operon/workflow.py` | 合法状态迁移、`workflow.jsonl` 结构化日志、外部命令执行 |
 | `operon/execution.py` | 执行后端抽象：`local`/`slurm`/`ssh`，sbatch 脚本生成与轮询、SSH/SFTP 传输、路径映射 |
+| `operon/shutdown.py` | 把 SIGINT/SIGTERM 转换为 `ShutdownRequested`，驱动各后端进程/作业清理与二次信号强制退出 |
 | `operon/remotes.py` | SFTP 远程镜像：远端清单维护、按内容校验的幂等 push/pull、`sftp://`/`remote://` 下载 |
 | `operon/release.py` | 生成不可变 release 目录与校验和 |
 | `operon/reports.py` | QC 长表/宽表导出、状态与判定报表 |
@@ -501,6 +503,15 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 与资源/脚本详情，成功判定与输入/输出 SHA-256 校验不变；
 工具版本探测在非 `local` 后端时也经同一后端执行。单个 recipe 可用 `slurm:`
 mapping 覆盖 `execution.slurm` 的同名字段（如给 BUSCO 单独调内存/时间）。
+
+优雅停机（`shutdown.py`）：`analyze` 批次运行期间安装 SIGINT/SIGTERM 处理器，信号被
+转换为 `ShutdownRequested`（`KeyboardInterrupt` 子类）在主线程抛出，沿常规异常路径
+完成清理——`local` 后端子进程以 `start_new_session` 独立进程组启动，中断/超时时对整个
+进程组（含孙进程）先 TERM 后 KILL；`slurm` 与远端 Slurm 后端在中断时 `scancel` 当前
+作业；`ssh` 直连后端复用超时路径的远端进程组 TERM/KILL。当前 `analysis_jobs` 行被置为
+`interrupted`（不参与完成缓存命中），半成品输出默认删除（`--keep-partial` 保留），批次
+随即以退出码 130 终止；清理期间第二次信号立即强制退出。被 SIGKILL 杀死的进程留下的
+`RUNNING` 行会在下一次 `analyze` 启动时清扫为 `interrupted`，保证续跑语义始终成立。
 
 日常使用见 [How-to 操作手册](howto.md)；字段、占位符、artifact、数据库身份、缓存和
 parser 的完整契约见 [Recipe 配置参考](recipe-reference.md)。

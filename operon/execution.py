@@ -22,6 +22,7 @@ import posixpath
 import re
 import shlex
 import shutil
+import signal
 import stat as stat_module
 import subprocess
 import tempfile
@@ -160,6 +161,30 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
     return "\n".join(lines) + "\n"
 
 
+def _terminate_process_group(process: subprocess.Popen, grace: float = 3.0) -> None:
+    """SIGTERM the child's process group, then SIGKILL if it survives.
+
+    Children are started with ``start_new_session=True``, so the process
+    group id equals the child pid and the whole tree (including
+    grandchildren) is signaled.
+    """
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        process.terminate()
+    deadline = time.monotonic() + grace
+    while process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+    process.wait()
+
+
 class LocalExecutor:
     name = "local"
 
@@ -173,12 +198,22 @@ class LocalExecutor:
             stderr_path: Path, timeout: float | None = None, threads: int | None = None,
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
             expected_outputs: Iterable[Any] = ()) -> ExecResult:
+        command = [str(a) for a in argv]
         with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
-            completed = subprocess.run(
-                [str(a) for a in argv], cwd=str(cwd) if cwd else None,
-                stdout=out, stderr=err, timeout=timeout,
+            # A dedicated process group lets shutdown (or timeout) terminate
+            # the tool and any children it spawned, without orphaning them.
+            process = subprocess.Popen(
+                command, cwd=str(cwd) if cwd else None,
+                stdout=out, stderr=err, start_new_session=True,
             )
-        return ExecResult(exit_code=completed.returncode, details={"backend": "local"})
+            try:
+                process.wait(timeout=timeout)
+            except BaseException:
+                # TimeoutExpired, ShutdownRequested/KeyboardInterrupt or any
+                # other abort: kill the whole group, then re-raise unchanged.
+                _terminate_process_group(process)
+                raise
+        return ExecResult(exit_code=process.returncode, details={"backend": "local"})
 
 
 def _parse_sbatch_job_id(output: str) -> str:
@@ -205,6 +240,17 @@ def _squeue_job_gone(squeue: str, job_id: str) -> bool:
             return True
         raise ExternalToolError(f"squeue failed for job {job_id}: {proc.stderr.strip()}")
     return not proc.stdout.strip()
+
+
+def _scancel_slurm_job(job_id: str) -> None:
+    """Best-effort scancel; never raises (used on timeout and shutdown)."""
+    scancel = shutil.which("scancel")
+    if not scancel:
+        return
+    try:
+        subprocess.run([scancel, job_id], capture_output=True)
+    except OSError:
+        pass
 
 
 def _read_slurm_exit_code(exitcode_path: Path, job_id: str, retries: int = 5) -> ExecResult:
@@ -268,17 +314,20 @@ class SlurmExecutor:
         exitcode_path.unlink(missing_ok=True)
         job_id = _submit_slurm_job(sbatch, script_path)
         deadline = time.monotonic() + timeout if timeout else None
-        while True:
-            if _squeue_job_gone(squeue, job_id):
-                break
-            if deadline is not None and time.monotonic() > deadline:
-                scancel = shutil.which("scancel")
-                if scancel:
-                    subprocess.run([scancel, job_id], capture_output=True)
-                return ExecResult(exit_code=None,
-                                  error=f"timeout after {timeout}s waiting for slurm job {job_id}",
-                                  scheduler_job_id=job_id)
-            time.sleep(max(0.1, self.slurm.poll_interval))
+        try:
+            while True:
+                if _squeue_job_gone(squeue, job_id):
+                    break
+                if deadline is not None and time.monotonic() > deadline:
+                    _scancel_slurm_job(job_id)
+                    return ExecResult(exit_code=None,
+                                      error=f"timeout after {timeout}s waiting for slurm job {job_id}",
+                                      scheduler_job_id=job_id)
+                time.sleep(max(0.1, self.slurm.poll_interval))
+        except KeyboardInterrupt:
+            # Shutdown must not abandon a queued/running cluster job.
+            _scancel_slurm_job(job_id)
+            raise
         result = _read_slurm_exit_code(exitcode_path, job_id)
         result.scheduler_job_id = job_id
         result.details = {"backend": "slurm", "script": str(script_path)}
@@ -565,34 +614,44 @@ class SSHExecutor:
         channel = stdout.channel
         deadline = time.monotonic() + timeout if timeout else None
         with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
-            while True:
-                while channel.recv_ready():
-                    out.write(channel.recv(65536))
-                while channel.recv_stderr_ready():
-                    err.write(channel.recv_stderr(65536))
-                if channel.exit_status_ready():
-                    break
-                if deadline is not None and time.monotonic() > deadline:
-                    signaled, termination_error = self._terminate_remote_process(client, pidfile)
-                    channel.close()
-                    if signaled:
-                        error = (
-                            f"timeout after {timeout}s; termination signals were sent to the "
-                            "remote process group"
+            try:
+                while True:
+                    while channel.recv_ready():
+                        out.write(channel.recv(65536))
+                    while channel.recv_stderr_ready():
+                        err.write(channel.recv_stderr(65536))
+                    if channel.exit_status_ready():
+                        break
+                    if deadline is not None and time.monotonic() > deadline:
+                        signaled, termination_error = self._terminate_remote_process(client, pidfile)
+                        channel.close()
+                        if signaled:
+                            error = (
+                                f"timeout after {timeout}s; termination signals were sent to the "
+                                "remote process group"
+                            )
+                        else:
+                            error = (
+                                f"timeout after {timeout}s; remote process may still be running: "
+                                f"{termination_error}"
+                            )
+                        return ExecResult(
+                            exit_code=None, error=error,
+                            details={
+                                "backend": "ssh", "scheduler": "none", "host": self.host,
+                                "pidfile": pidfile, "termination_signaled": signaled,
+                            },
                         )
-                    else:
-                        error = (
-                            f"timeout after {timeout}s; remote process may still be running: "
-                            f"{termination_error}"
-                        )
-                    return ExecResult(
-                        exit_code=None, error=error,
-                        details={
-                            "backend": "ssh", "scheduler": "none", "host": self.host,
-                            "pidfile": pidfile, "termination_signaled": signaled,
-                        },
-                    )
-                time.sleep(0.05)
+                    time.sleep(0.05)
+            except KeyboardInterrupt:
+                # The remote payload runs under setsid and would survive
+                # connection teardown, so terminate its process group first.
+                try:
+                    self._terminate_remote_process(client, pidfile)
+                except Exception:
+                    pass
+                channel.close()
+                raise
             while channel.recv_ready():
                 out.write(channel.recv(65536))
             while channel.recv_stderr_ready():
@@ -661,20 +720,28 @@ class SSHExecutor:
         except ExternalToolError as exc:
             raise RemoteError(str(exc)) from exc
         deadline = time.monotonic() + timeout if timeout else None
-        while True:
-            rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
-            if rc != 0:
-                if "Invalid job id" in out:
+        try:
+            while True:
+                rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
+                if rc != 0:
+                    if "Invalid job id" in out:
+                        break
+                    raise RemoteError(f"remote squeue failed for job {job_id}: {out.strip()}")
+                if not out.strip():
                     break
-                raise RemoteError(f"remote squeue failed for job {job_id}: {out.strip()}")
-            if not out.strip():
-                break
-            if deadline is not None and time.monotonic() > deadline:
+                if deadline is not None and time.monotonic() > deadline:
+                    self._remote_exec(client, f"scancel {shlex.quote(job_id)}")
+                    return ExecResult(exit_code=None,
+                                      error=f"timeout after {timeout}s waiting for remote slurm job {job_id}",
+                                      scheduler_job_id=job_id)
+                time.sleep(max(0.1, self.slurm.poll_interval))
+        except KeyboardInterrupt:
+            # Shutdown must not abandon the queued/running remote cluster job.
+            try:
                 self._remote_exec(client, f"scancel {shlex.quote(job_id)}")
-                return ExecResult(exit_code=None,
-                                  error=f"timeout after {timeout}s waiting for remote slurm job {job_id}",
-                                  scheduler_job_id=job_id)
-            time.sleep(max(0.1, self.slurm.poll_interval))
+            except Exception:
+                pass
+            raise
         self._sftp_get_if_exists(sftp, remote_stdout, stdout_path)
         self._sftp_get_if_exists(sftp, remote_stderr, stderr_path)
         for _ in range(5):
