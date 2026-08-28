@@ -174,11 +174,7 @@ def init_demo(path: str | Path, project_id: str = "PRJ_DEMO_001") -> Project:
         export_qc_tsv(db, project)
         create_release(db, project, version="2026.08.demo", profile="assembly_production_v1")
 
-        from operon.schema import Schema, write_tsv
-        schema = Schema.from_file(project.schema_path)
-        for table in ["organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files"]:
-            columns = schema.columns(table)
-            write_tsv(project.metadata_dir / schema.tables[table]["file"], columns, db.export_rows(table, columns))
+        from operon.schema import write_tsv
         decisions = db.export_rows("decisions", ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256", "decision", "curated_decision", "reason_codes", "observed", "thresholds", "evaluated_at", "curated_by", "curated_reason", "curated_evidence", "curated_at"])
         write_tsv(project.reports_root / "decisions.tsv", list(decisions[0].keys()) if decisions else ["entity_type", "entity_id", "profile"], decisions)
     finally:

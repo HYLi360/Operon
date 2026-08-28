@@ -117,7 +117,7 @@ def log_run(db: Database, project: Project, record: dict[str, Any]) -> None:
     ]
     with db.transaction():
         db.conn.execute(
-            f"INSERT OR REPLACE INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
             [record.get(c) for c in columns],
         )
 

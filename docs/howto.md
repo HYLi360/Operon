@@ -4,27 +4,49 @@
 
 ## 1. 如何批量录入元数据
 
-小规模数据可用 `add`；成百上千条记录建议编辑 TSV 后导入。
+小规模数据可用 `add`；成百上千条记录使用受控 CSV/XLSX 表格导入。先生成模板：
 
 ```bash
-# 用文本编辑器或脚本填写 metadata/organisms.tsv、samples.tsv、assemblies.tsv ...
-operon import-metadata --replace
+operon import table --table organisms --template organisms.xlsx
+operon import table --table samples --template samples.csv
+```
+
+填写后先预览并确认：
+
+```bash
+operon import table --table organisms --file organisms.xlsx
+
+# 自动化环境必须显式确认碰撞策略
+operon import table --table organisms --file organisms.csv \
+  --on-conflict update --yes
 ```
 
 导入行为：
 
-- 默认（不带 `--replace`）：按主键合并，已有行更新，新行插入。
-- `--replace`：把 metadata TSV 当作完整快照，在**一个事务**中重建相关表；header-only 空表会清空对应表。推荐首次建库和批量刷新时使用。
-- 任一表校验或写入失败会整体回滚。
+- 只允许人工管理的 entity/accession 表；`files`、QC、decision 等系统表不可覆盖。
+- 先完成 schema、受控词汇和外键校验，再显示每行 `insert/update/unchanged`。
+- `--on-conflict error` 拒绝修改已有行，`skip` 跳过，`update` 更新并记录逐字段审计。
+- 不提供删除或“完整快照替换”语义；任一写入失败时该表的整个事务回滚。
+- XLSX 的第一张 `data` 工作表用于导入；模板的第二张 `schema` 工作表仅供查看。
 
-TSV 示例 `metadata/assemblies.tsv`：
+CSV 示例：
 
 ```text
-assembly_idassembly_accessionassembly_versionassembly_levelassembly_methodreference_status...
-ASM_000001GCA_0000000011chromosomeSPAdes v4.0.0representative
+assembly_id,sample_id,assembly_accession,assembly_version,assembly_level,assembly_method
+ASM_000001,SMP_000001,GCA_000000001,1,chromosome,SPAdes v4.0.0
 ```
 
 所有可用列请用 `operon schema --dump` 查看。
+
+若要连同文件一起导入一个完整数据集，使用：
+
+```bash
+operon import dataset
+```
+
+向导界面暂时全部使用英文。source、taxonomy ID、sequencing、genome FASTA 或部分 annotation
+文件都可以跳过；汇总审阅会保留醒目的 warning。选择 `Edit ...` 修改某一章节后会直接
+回到汇总审阅，而不会接着运行原向导的后续章节。最终确认前不会修改 SQLite 或归档文件。
 
 ## 2. 如何扩展元数据字段
 
@@ -40,10 +62,10 @@ tables:
         description: 项目自定义来源备注
 ```
 
-3. 运行任意会打开数据库的命令（如 `operon import-metadata`），系统会自动在 SQLite 表上增加该列（`ensure_metadata_columns`）。
-4. 编辑 TSV 或使用 `add --field provenance_note=...` 写入。
+3. 运行 `operon add ... --field provenance_note=...` 或 `operon import table ...`；系统会自动在 SQLite 表上增加该列（`ensure_metadata_columns`）。
+4. 使用 `operon report metadata` 检查派生导出。
 
-注意：TSV 中的未知列仍会被拒绝；必须先改 schema，再导入数据。
+注意：CSV/XLSX 中的未知列会被拒绝；必须先改 schema，再导入数据。
 
 ## 3. 如何导入或下载 NCBI Datasets 组装
 
@@ -977,24 +999,40 @@ operon query "SELECT entity_id, state, message FROM entity_state WHERE entity_ty
 
 `SELECT`、`PRAGMA table_info` 等只读操作可用；`UPDATE`、`INSERT`、`DROP`、`PRAGMA user_version=...`、`ATTACH` 等会被拒绝。
 
+如果目标是从一个 organism 根 accession 查看完整数据树，不必手写 JOIN：
+
+```bash
+operon show NCBI_Taxonomy:3702
+operon show ORG_000001
+operon show GCF_000001405.40 --json
+```
+
+`show` 会把匹配到的任意实体向上解析到 organism，再列出其全部 sample、run、assembly、
+annotation、accession 和 file。裸 accession 有歧义时使用 `namespace:accession`。
+
 ## 16. 如何备份和迁移项目
 
-日常备份只需包含：
+推荐由 `backup` 命令创建 SQLite 一致快照，而不是在数据库运行期间直接复制文件：
 
-```text
-project.yaml
-config/
-metadata/            # 或直接备份 operon.sqlite
-operon.sqlite      # 注意连同 -wal/-shm 一起或先干净关闭
-raw/                 # 不可替代数据
-.operon/placeholders/ # 可选；REMOTE_ONLY 的人类可读指针（可由 SQLite 重建）
-standardized/        # 按需（可由 raw 重建）
-releases/            # 按需（可由 raw + 数据库重建）
+```bash
+# 配置、SQLite、审计与 workflow 日志
+operon backup create --output /backups/my-project-control --scope control
+
+# 另加 QC、analysis、reports、taxonomy、releases
+operon backup create --output /backups/my-project-results --scope results
+
+# 再加 raw、standardized 和本地占位符等全部项目管理数据
+operon backup create --output /backups/my-project-full --scope full
+
+operon backup verify --input /backups/my-project-full
 ```
 
 若使用 `REMOTE_ONLY`，本地备份还必须覆盖含 `file_locations` 的 SQLite；远端应独立
 备份镜像 root（包括 `operon-manifest.json`）和实际对象。占位符本身不是恢复依据，
 只有本地 `files` 身份与远端清单/字节同时保留，才能在新电脑上安全 hydrate。
+
+`report metadata` 不是备份：它只导出便于浏览和交换的 metadata/manifest TSV，不包含
+完整 QC、decision、changes、workflow、remote location 和数据库迁移状态。
 
 更稳妥的做法是定期创建 release，并在 release 目录执行 `sha256sum -c checksums.sha256`。
 

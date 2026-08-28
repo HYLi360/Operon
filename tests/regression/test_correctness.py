@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -17,7 +18,7 @@ from operon.files import ingest_file, standardize_file
 from operon.qc_module import qc_all, qc_file
 from operon.release import create_release
 from operon.rules import curate_decision, evaluate_entity
-from operon.schema import Schema, write_tsv
+from operon.schema import Schema
 
 
 def _fasta(length: int = 2500) -> str:
@@ -48,7 +49,7 @@ class TestCorrectnessRegressions(PytestAssertions):
             "assembly_level": "contig", "assembly_version": 1,
         })
 
-    def test_metadata_export_import_round_trip_including_files_and_custom_fields(self):
+    def test_metadata_report_includes_files_and_custom_fields_without_becoming_an_import_source(self):
         db = self._db()
         self._add_assembly(db)
         source = self.root / "assembly.fa"
@@ -65,53 +66,69 @@ class TestCorrectnessRegressions(PytestAssertions):
         db.conn.execute("UPDATE organisms SET provenance_note='kept exactly' WHERE organism_id='ORG_000001'")
         db.conn.commit()
 
-        self.assertEqual(main(["--project", str(self.root), "export-metadata"]), 0)
-        schema = Schema.from_file(self.project.schema_path)
-        before = {
-            table: db.export_rows(table, schema.columns(table))
-            for table in ("organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files")
-        }
-        # Mutations made after export must disappear when the TSV snapshot is
-        # restored, including rows in a header-only table.
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000002", "scientific_name": "Post export", "taxonomy_source": "NCBI",
-        })
-        db.insert_row("accessions", {
-            "internal_type": "assembly", "internal_id": "ASM_000001",
-            "namespace": "TEST", "accession": "POST_EXPORT",
-        })
-        self.assertEqual(main(["--project", str(self.root), "import-metadata", "--replace"]), 0)
-        after = {
-            table: db.export_rows(table, schema.columns(table))
-            for table in ("organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files")
-        }
-        self.assertEqual(after, before)
-        self.assertEqual(after["organisms"][0]["provenance_note"], "kept exactly")
+        self.assertEqual(main(["--project", str(self.root), "report", "metadata"]), 0)
+        organisms = (self.root / "reports" / "metadata" / "organisms.tsv").read_text(encoding="utf-8")
+        files = (self.root / "reports" / "metadata" / "files.tsv").read_text(encoding="utf-8")
+        self.assertIn("provenance_note", organisms)
+        self.assertIn("kept exactly", organisms)
+        self.assertIn(file_row["file_id"], files)
+        self.assertEqual(db.query("SELECT provenance_note FROM organisms")[0]["provenance_note"], "kept exactly")
 
-    def test_metadata_replace_is_atomic_on_late_database_failure(self):
+    def test_idempotent_ingest_repairs_missing_entity_file_link(self):
         db = self._db()
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Original", "taxonomy_source": "NCBI",
+        self._add_assembly(db)
+        source = self.root / "assembly.fa"
+        source.write_text(_fasta(), encoding="utf-8")
+        first = ingest_file(db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        db.conn.execute("UPDATE assemblies SET fasta_file_id=NULL WHERE assembly_id='ASM_000001'")
+        db.conn.commit()
+
+        second = ingest_file(db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+
+        self.assertEqual(second["file_id"], first["file_id"])
+        linked = db.query("SELECT fasta_file_id FROM assemblies WHERE assembly_id='ASM_000001'")[0]
+        self.assertEqual(linked["fasta_file_id"], first["file_id"])
+
+    def test_rapid_ingests_keep_distinct_workflow_rows(self):
+        db = self._db()
+        self._add_assembly(db)
+        first = self.root / "assembly.fa"
+        first.write_text(_fasta(), encoding="utf-8")
+        annotation = self.root / "annotation.gff3"
+        annotation.write_text("##gff-version 3\n", encoding="utf-8")
+        db.insert_row("annotations", {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+            "annotation_source": "test", "annotation_version": 1,
         })
+
+        ingest_file(db, self.project, first, "assembly", "ASM_000001", "genome_fasta")
+        ingest_file(db, self.project, annotation, "annotation", "ANN_000001", "annotation_gff3")
+
+        rows = db.query("SELECT run_id, command FROM workflow_runs WHERE step='ingest' ORDER BY command")
+        self.assertEqual(len(rows), 2)
+        self.assertNotEqual(rows[0]["run_id"], rows[1]["run_id"])
+
+    def test_table_import_is_atomic_on_late_database_failure(self):
+        db = self._db()
         db.conn.execute(
-            "CREATE TRIGGER reject_sample_import BEFORE INSERT ON samples "
-            "BEGIN SELECT RAISE(ABORT, 'synthetic late import failure'); END"
+            "CREATE TRIGGER reject_second_organism BEFORE INSERT ON organisms "
+            "WHEN NEW.organism_id='ORG_000002' BEGIN SELECT RAISE(ABORT, 'synthetic late import failure'); END"
         )
         db.conn.commit()
-        schema = Schema.from_file(self.project.schema_path)
-        write_tsv(
-            self.project.metadata_dir / "organisms.tsv", schema.columns("organisms"),
-            [{"organism_id": "ORG_000002", "scientific_name": "Replacement", "taxonomy_source": "NCBI"}],
-        )
-        write_tsv(
-            self.project.metadata_dir / "samples.tsv", schema.columns("samples"),
-            [{"sample_id": "SMP_000002", "organism_id": "ORG_000002"}],
-        )
+        path = self.root / "organisms.csv"
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["organism_id", "scientific_name", "taxonomy_source"])
+            writer.writeheader()
+            writer.writerows([
+                {"organism_id": "ORG_000001", "scientific_name": "First", "taxonomy_source": "NCBI"},
+                {"organism_id": "ORG_000002", "scientific_name": "Second", "taxonomy_source": "NCBI"},
+            ])
 
-        self.assertEqual(main(["--project", str(self.root), "import-metadata", "--replace"]), 1)
-        rows = db.query("SELECT organism_id, scientific_name FROM organisms ORDER BY organism_id")
-        self.assertEqual([tuple(row) for row in rows], [("ORG_000001", "Original")])
-        self.assertEqual(db.query("SELECT COUNT(*) FROM samples")[0][0], 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "import", "table", "--table", "organisms",
+            "--file", str(path), "--yes",
+        ]), 1)
+        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"], 0)
 
     def test_raw_standardized_and_release_are_independent_copies_by_default(self):
         db = self._db()

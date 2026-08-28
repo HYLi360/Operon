@@ -118,7 +118,8 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 self.assertEqual(assembly["bioproject_accession"], "PRJNA31257")
             finally:
                 db.close()
-            self.assertIn("GCF_000001405.40", (root / "metadata" / "assemblies.tsv").read_text())
+            self.assertEqual(main(["--project", str(root), "report", "metadata"]), 0)
+            self.assertIn("GCF_000001405.40", (root / "reports" / "metadata" / "assemblies.tsv").read_text())
             upgraded_schema = yaml.safe_load((root / "config" / "schemas.yaml").read_text())
             self.assertEqual(upgraded_schema["schema_version"], "1.1")
             self.assertIn("bioproject_accession", upgraded_schema["tables"]["assemblies"]["fields"])

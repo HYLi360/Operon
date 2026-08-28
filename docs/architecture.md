@@ -1,6 +1,6 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.3.0，数据库内部 schema 版本 `2.3`，
+> 本文对应代码库当前状态：`operon` 0.4.0，数据库内部 schema 版本 `2.3`，
 > `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.3`。
 
 ## 1. 设计目标
@@ -29,7 +29,7 @@
 | provenance 机器可读 | `logs/workflow.jsonl` + `workflow_runs` 表 |
 | 人工修改可审计 | `changes` 表 + `curate` 命令 |
 | 数据集版本化发布 | `release` + checksums + exclusions + provenance |
-| 代码/配置/元数据/数据分离 | `operon/` 代码、`project.yaml`、`metadata/`、`raw/` |
+| 代码/配置/元数据/数据分离 | `operon/` 代码、`project.yaml`、`operon.sqlite`、`raw/` |
 
 ## 2. 总体分层
 
@@ -73,9 +73,13 @@
 |---|---|
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
-| `operon/schema.py` | 内置元数据字段定义、TSV 读取/写出、类型校验与规范化 |
+| `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
 | `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
+| `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |
+| `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
+| `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
+| `operon/backup.py` | SQLite 一致备份、control/results/full scope、checksum manifest 校验 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
 | `../operon/qc_module/parsers.py` | 纯 Python 流式解析 FASTA、FASTQ、GFF3、蛋白 FASTA |
 | `../operon/qc_module/__init__.py` | 组装内置 QC stage，把指标写入 `qc_results` |
@@ -88,7 +92,7 @@
 | `operon/shutdown.py` | 把 SIGINT/SIGTERM 转换为 `ShutdownRequested`，驱动各后端进程/作业清理与二次信号强制退出 |
 | `operon/remotes.py` | SFTP 远程镜像：远端清单维护、按内容校验的幂等 push/pull、`sftp://`/`remote://` 下载 |
 | `operon/release.py` | 生成不可变 release 目录与校验和 |
-| `operon/reports.py` | QC 长表/宽表导出、状态与判定报表 |
+| `operon/reports.py` | QC 长表/宽表导出、metadata 派生快照、状态与判定报表 |
 | `operon/demo.py` | 生成确定性的合成演示项目 |
 
 ## 4. 项目目录结构
@@ -108,7 +112,7 @@ project/
 │       ├── annotation_release_v1.yaml
 │       ├── reads_qc_v1.yaml
 │       └── coverage_viridiplantae_v1.yaml
-├── metadata/                 # 人工可编辑 TSV 交换文件（导入/导出的源）
+├── metadata/                 # 旧项目布局兼容说明；不再作为读写数据源
 ├── raw/                      # 不可变原始归档；metadata/ 下保存 NCBI 来源 report/package
 ├── standardized/             # 稳定 ID 命名的处理视图（默认独立副本）
 ├── qc/                       # QC 输出与 aggregate/ 汇总表
@@ -198,7 +202,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 3. 把新的自动判定**追加**到 `decisions`，不覆盖旧判定；
 4. `current_decisions` 视图返回每个 `(entity_type, entity_id, profile)` 的最新一条 decision。
 
-因此修改 profile 阈值后重新 evaluate 会形成新的 decision 历史，release 和 `decisions` 命令默认读取 `current_decisions`，而 `export-metadata --include-generated` 会导出完整 history。
+因此修改 profile 阈值后重新 evaluate 会形成新的 decision 历史，release 和 `report decisions` 默认读取 `current_decisions`；需要表格快照时使用对应的 `report` 子命令。
 
 规则的阈值既可由标量 `value` 给出，也可通过 `value_by` 根据同一来源中的另一个指标
 选择。例如 BUSCO complete 门限由 `busco_lineage_dataset` 映射。selector 未出现在映射
@@ -223,24 +227,28 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 ## 6. 元数据流
 
 ```text
-编辑 metadata/*.tsv
+交互式 import / import table / 专用 adapter / add
         │
         ▼
-schema.validate_and_normalize()   类型、必填、允许值、正则、唯一性
+Draft 或输入表预览                 不修改项目
         │
         ▼
-交叉引用校验                       外键、file_id 引用
+schema + 交叉引用 + 冲突预检       类型、必填、允许值、外键、既有主键
         │
         ▼
-ensure_metadata_columns()          把 schema 中新增字段自动加到 SQLite 表
+用户确认                           汇总审阅或表格 diff
         │
         ▼
-单事务写入 SQLite
+受控事务写入 SQLite + changes      SQLite 是唯一可写事实来源
+        │
+        ├─> ingest ─> raw/files manifest
+        └─> report metadata ─> 派生只读 TSV 快照
 ```
 
-- `import-metadata` 默认是**合并式 upsert**：已有记录按主键更新，新记录插入。
-- `import-metadata --replace` 是**快照式替换**：在单一 SQLite 事务中，先删子表再删父表，再按依赖顺序重建；header-only 空表也会清空对应表。任一步失败整体回滚。
-- `export-metadata` 将数据库内容写回 `metadata/*.tsv`，可用于版本控制或人工编辑。
+- `operon import dataset` 使用纯英文 questionary 向导建立 Draft；最终确认前不写项目。汇总页进入任一章节修改后直接回到汇总页。
+- `operon import table` 只接受人工管理的 metadata 表，支持 CSV/XLSX 模板、预览、碰撞策略与逐字段审计；不允许导入系统管理的 `files` manifest。
+- `operon report metadata` 从 SQLite 生成带行数和 SHA-256 manifest 的只读 TSV 快照。修改这些 report 不会改变数据库。
+- `metadata/` 目录仅为旧布局保留，不自动读写 TSV。
 
 ### 6.1 NCBI Datasets adapter
 
@@ -248,7 +256,7 @@ ensure_metadata_columns()          把 schema 中新增字段自动加到 SQLite
 
 ```text
 已有 JSON/JSONL/TSV/ZIP/目录 ─┐
-                              ├─> report parser ─> 规范化映射 ─> schema 校验 ─> SQLite/TSV
+                              ├─> report parser ─> 规范化映射 ─> schema 校验 ─> SQLite
 NCBI Datasets v2 下载 ────────┘                         │
                                                        └─> ingest ─> files manifest/raw
 ```

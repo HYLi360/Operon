@@ -165,11 +165,15 @@ def ingest_file(
     if existing is not None:
         target = project.root / existing["relative_path"]
         if target.exists() and sha256_path(target) == source_sha:
-            db.conn.execute(
-                "UPDATE files SET status='CHECKSUM_VERIFIED', downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
-                (now_iso(), source_url, existing["file_id"]),
-            )
-            db.conn.commit()
+            with db.transaction():
+                db.conn.execute(
+                    "UPDATE files SET status='CHECKSUM_VERIFIED', downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
+                    (now_iso(), source_url, existing["file_id"]),
+                )
+                # Idempotency must also repair a missing denormalized entity
+                # link.  Older TSV round-trips could clear these columns while
+                # leaving the immutable file manifest row intact.
+                _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
             db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {existing['file_id']} already archived and verified")
             _workflow_log(db, project, run_id, "ingest", entity_type, entity_id, "completed", command=f"ingest {source}", input_sha256=source_sha)
             return dict(existing)
@@ -454,9 +458,10 @@ def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> 
 
 def _workflow_log(db: Database, project: Project, run_id: str | None, step: str,
                   entity_type: str, entity_id: str, status: str, **extra: Any) -> None:
-    from operon.workflow import log_run
+    from operon.workflow import log_run, new_run_id
     log_run(db, project, {
-        "run_id": run_id or f"WF_{now_iso().replace('-', '').replace(':', '').replace('T', '_')}",
+        "run_id": new_run_id(),
+        "parent_run_id": run_id,
         "entity_type": entity_type,
         "entity_id": entity_id,
         "step": step,

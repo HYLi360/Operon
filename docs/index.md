@@ -2,7 +2,7 @@
 
 `operon` 是一个基于 Python 的、面向大规模基因组数据的**基于文件的数据库**。它用于完成基因组数据的归档、元数据管理、质控（QC）、规则判定、自动化处理与版本化发布。其设计遵循五条核心原则：结构化元数据是唯一事实来源、原始数据不可修改、文件身份由校验和与稳定 ID 决定、指标与判定分离、所有处理由确定性工作流执行（详见[架构说明](architecture.md)）。
 
-本目录中的文档均以中文编写，并已按当前代码库（`operon` 0.3.0、数据库内部 schema 2.3、metadata schema 1.3、pytest 测试套件）重新核对。
+本目录中的文档均以中文编写，并已按当前代码库（`operon` 0.4.0、数据库内部 schema 2.3、metadata schema 1.3、pytest 测试套件）重新核对。
 
 ## 文档导航
 
@@ -44,7 +44,7 @@ operon --project ./demo-project analyze --analysis blastn_nt --dry-run
 
 ## 核心概念一句话版
 
-- **元数据**：受 YAML schema 约束的规范化 TSV 表，导入后进入 SQLite 文件数据库。
+- **元数据**：受 YAML schema 约束并保存在 SQLite 中的规范化记录；CSV/XLSX 是受控导入介质，TSV 是派生 report，不是第二事实来源。
 - **来源适配**：NCBI Datasets report/package 可离线导入，也可按 accession 在线下载后自动归档。
 - **内部稳定 ID**：`ORG_/SMP_/RUN_/ASM_/ANN_/FIL_` 前缀；外部 accession 只作为映射保存。
 - **文件身份**：`file_id + sha256 + size_bytes`；`relative_path` 只是当前位置。

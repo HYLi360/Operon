@@ -11,13 +11,15 @@ from pathlib import Path
 from typing import Any
 
 from operon import __version__
+from operon.backup import create_backup, verify_backup
 from operon.config import Project, load_project
 from operon.coverage import report_coverage
 from operon.database import Database
+from operon.entity_view import organism_graph
 from operon.errors import OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
-from operon.reports import export_qc_tsv, print_decisions, print_qc_table, print_status
+from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table, print_status
 from operon.rules import curate_decision, evaluate_all, evaluate_entity
 from operon.schema import (
     ENTITY_ID_COLUMNS,
@@ -25,13 +27,18 @@ from operon.schema import (
     ENTITY_TABLES,
     Schema,
     read_tsv,
-    write_tsv,
 )
 from operon.taxonomy import (
     compile_reference_set,
     import_ncbi_taxonomy,
     list_reference_sets,
     list_taxonomy_snapshots,
+)
+from operon.table_import import (
+    IMPORTABLE_TABLES,
+    apply_table_import,
+    preview_table_import,
+    write_table_template,
 )
 from operon.utils import format_table, parse_key_values
 from operon.workflow import set_state
@@ -64,11 +71,17 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("schema", help="show schema path or dump it")
     p.add_argument("--dump", action="store_true")
 
-    p = sub.add_parser("import-metadata", help="validate and import metadata/*.tsv into SQLite")
-    p.add_argument("--replace", action="store_true", help="replace manual tables before import")
-
-    p = sub.add_parser("export-metadata", help="export SQLite manual tables back to metadata/*.tsv")
-    p.add_argument("--include-generated", action="store_true", help="also export qc_results and decisions to reports/")
+    p = sub.add_parser("import", help="import a dataset interactively or load one controlled metadata table")
+    import_sub = p.add_subparsers(dest="import_kind", required=True)
+    import_sub.add_parser("dataset", help="launch the English interactive dataset-import wizard")
+    ip = import_sub.add_parser("table", help="generate or import a CSV/XLSX metadata table")
+    ip.add_argument("--table", required=True, choices=IMPORTABLE_TABLES)
+    source = ip.add_mutually_exclusive_group(required=True)
+    source.add_argument("--template", metavar="OUTPUT", help="write an empty .csv or .xlsx template")
+    source.add_argument("--file", metavar="INPUT", help="preview and import an existing .csv or .xlsx file")
+    ip.add_argument("--on-conflict", choices=["error", "skip", "update"],
+                    help="how to handle existing rows after preview")
+    ip.add_argument("--yes", action="store_true", help="apply the preview without an interactive confirmation")
 
     p = sub.add_parser("add", help="add one metadata record")
     p.add_argument("entity_type", choices=MANUAL_METADATA_ENTITIES)
@@ -284,9 +297,23 @@ def _parser() -> argparse.ArgumentParser:
     scope = rp.add_mutually_exclusive_group()
     scope.add_argument("--scope", choices=["metadata"], default="metadata")
     scope.add_argument("--release", help="restrict observations to one immutable release")
+    rp = report_sub.add_parser("metadata", help="export a derived read-only metadata TSV snapshot")
+    rp.add_argument("--output", help="output directory (default: reports/metadata)")
 
     p = sub.add_parser("query", help="run arbitrary read-only SQL against the file database")
     p.add_argument("sql")
+
+    p = sub.add_parser("show", help="show an organism and all descendant samples, runs, assemblies, annotations and files")
+    p.add_argument("identifier", help="internal ID, accession, or NAMESPACE:ACCESSION")
+    p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+    p = sub.add_parser("backup", help="create or verify a checksum-manifested project backup")
+    backup_sub = p.add_subparsers(dest="backup_command", required=True)
+    bp = backup_sub.add_parser("create", help="create a consistent SQLite-centered backup")
+    bp.add_argument("--output", required=True)
+    bp.add_argument("--scope", choices=["control", "results", "full"], default="control")
+    bp = backup_sub.add_parser("verify", help="verify every file in an existing backup")
+    bp.add_argument("--input", required=True)
 
     p = sub.add_parser("set-state", help="manually set workflow state (audited; use --force for non-standard transition)")
     p.add_argument("--entity-type", required=True)
@@ -312,10 +339,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
     project = Project.init(args.path, project_id=args.project_id, name=args.name)
     print(f"initialized Operon project {project.project_id} at {project.root}")
     print("next steps:")
-    print("  1. edit metadata/*.tsv (or use `operon add ...`)")
-    print("  2. operon import-metadata --replace")
-    print("  3. operon ingest --source genome.fa --entity-type assembly --entity-id ASM_000001 --role genome_fasta")
-    print("  4. operon run-pipeline ...")
+    print("  1. operon import dataset")
+    print("  2. operon import table --table samples --template samples.xlsx")
+    print("  3. operon report metadata")
     return 0
 
 
@@ -353,132 +379,6 @@ def _cmd_schema(args: argparse.Namespace, project: Project) -> int:
     return 0
 
 
-def _cmd_import_metadata(args: argparse.Namespace, project: Project, db: Database) -> int:
-    schema = Schema.from_file(project.schema_path)
-    loaded: dict[str, list[dict[str, Any]]] = {}
-    for table, spec in schema.tables.items():
-        path = project.metadata_dir / spec["file"]
-        if not path.exists():
-            continue
-        rows = read_tsv(path)
-        normalized, _ = schema.validate_and_normalize(table, rows)
-        loaded[table] = normalized
-    with db.transaction() as conn:
-        if args.replace:
-            conn.execute("PRAGMA defer_foreign_keys=ON")
-        db.ensure_metadata_columns(schema)
-        _validate_cross_references(db, loaded, replace=args.replace)
-        import_order = ["organisms", "samples", "runs", "assemblies", "annotations", "files", "accessions"]
-        if args.replace:
-            # Delete children before parents, then rebuild the complete TSV
-            # snapshot in dependency order. Empty header-only TSVs therefore
-            # correctly clear their corresponding tables.
-            for table in ["accessions", "files", "annotations", "runs", "assemblies", "samples", "organisms"]:
-                if table in loaded:
-                    conn.execute(f"DELETE FROM {table}")
-            replaced_types = [entity_type for entity_type, table in ENTITY_TABLES.items() if table in loaded]
-            if replaced_types:
-                placeholders = ", ".join("?" for _ in replaced_types)
-                conn.execute(f"DELETE FROM entity_state WHERE entity_type IN ({placeholders})", replaced_types)
-        for table in import_order:
-            if table not in loaded:
-                continue
-            columns = schema.columns(table)
-            placeholders = ", ".join("?" for _ in columns)
-            if args.replace:
-                sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
-            else:
-                primary_keys = db._primary_keys(table)
-                assignments = ", ".join(f"{c}=excluded.{c}" for c in columns if c not in primary_keys)
-                sql = (
-                    f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) "
-                    f"ON CONFLICT({','.join(primary_keys)}) DO UPDATE SET {assignments}"
-                )
-            conn.executemany(sql, [[row.get(c) for c in columns] for row in loaded[table]])
-        updated_at = _now_for_cli()
-        for entity_type, table in ENTITY_TABLES.items():
-            if table not in loaded:
-                continue
-            id_col = ENTITY_ID_COLUMNS[entity_type]
-            conn.executemany(
-                "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) VALUES(?,?,?,?,?) "
-                "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, updated_at=excluded.updated_at",
-                [(entity_type, row[id_col], "METADATA_VALIDATED", "metadata imported and schema-validated", updated_at)
-                 for row in loaded[table]],
-            )
-    print(f"imported {sum(len(v) for v in loaded.values())} metadata rows into {db.path}")
-    return 0
-
-
-def _validate_cross_references(db: Database, loaded: dict[str, list[dict[str, Any]]], replace: bool = False) -> None:
-    errors: list[str] = []
-    final_rows: dict[str, list[dict[str, Any]]] = {}
-    for table in ["organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files"]:
-        incoming = loaded.get(table)
-        if replace and incoming is not None:
-            final_rows[table] = incoming
-            continue
-        current = db.export_rows(table)
-        if incoming is None:
-            final_rows[table] = current
-            continue
-        keys = db._primary_keys(table)
-        by_key = {tuple(row.get(key) for key in keys): row for row in current}
-        for row in incoming:
-            by_key[tuple(row.get(key) for key in keys)] = row
-        final_rows[table] = list(by_key.values())
-
-    entity_ids = {
-        entity_type: {row[ENTITY_ID_COLUMNS[entity_type]] for row in final_rows[table]}
-        for entity_type, table in ENTITY_TABLES.items()
-    }
-    for row in final_rows["samples"]:
-        if row.get("organism_id") and row["organism_id"] not in entity_ids["organism"]:
-            errors.append(f"samples {row['sample_id']}: organism_id {row['organism_id']} does not exist")
-    for row in final_rows["runs"]:
-        if row.get("sample_id") and row["sample_id"] not in entity_ids["sample"]:
-            errors.append(f"runs {row['run_id']}: sample_id {row['sample_id']} does not exist")
-    for row in final_rows["assemblies"]:
-        if row.get("sample_id") and row["sample_id"] not in entity_ids["sample"]:
-            errors.append(f"assemblies {row['assembly_id']}: sample_id {row['sample_id']} does not exist")
-    for row in final_rows["annotations"]:
-        if row.get("assembly_id") and row["assembly_id"] not in entity_ids["assembly"]:
-            errors.append(f"annotations {row['annotation_id']}: assembly_id {row['assembly_id']} does not exist")
-    for row in final_rows["accessions"]:
-        entity_type = row["internal_type"]
-        if entity_type in entity_ids and row["internal_id"] not in entity_ids[entity_type]:
-            errors.append(f"accessions {row['namespace']}:{row['accession']}: internal_id {row['internal_id']} does not exist")
-    for row in final_rows["files"]:
-        if row["entity_type"] in entity_ids and row["entity_id"] not in entity_ids[row["entity_type"]]:
-            errors.append(f"files {row['file_id']}: {row['entity_type']} {row['entity_id']} does not exist")
-    file_ids = {row["file_id"] for row in final_rows["files"]}
-    for row in final_rows["assemblies"]:
-        if row.get("fasta_file_id") and row["fasta_file_id"] not in file_ids:
-            errors.append(f"assemblies {row['assembly_id']}: fasta_file_id {row['fasta_file_id']} does not exist")
-    for row in final_rows["annotations"]:
-        for field in ("gff_file_id", "cds_file_id", "protein_file_id"):
-            if row.get(field) and row[field] not in file_ids:
-                errors.append(f"annotations {row['annotation_id']}: {field} {row[field]} does not exist")
-    if errors:
-        raise ValidationError("\n".join(errors))
-
-
-def _cmd_export_metadata(args: argparse.Namespace, project: Project, db: Database) -> int:
-    schema = Schema.from_file(project.schema_path)
-    total = 0
-    for table in ["organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files"]:
-        columns = schema.columns(table)
-        rows = db.export_rows(table, columns)
-        write_tsv(project.metadata_dir / schema.tables[table]["file"], columns, rows)
-        total += len(rows)
-    if args.include_generated:
-        export_qc_tsv(db, project)
-        decisions = db.export_rows("decisions", ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256", "decision", "curated_decision", "reason_codes", "observed", "thresholds", "evaluated_at", "curated_by", "curated_reason", "curated_evidence", "curated_at"])
-        write_tsv(project.reports_root / "decisions.tsv", list(decisions[0].keys()) if decisions else ["entity_type", "entity_id", "profile"], decisions)
-    print(f"exported {total} rows to {project.metadata_dir}")
-    return 0
-
-
 def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
     entity_type = args.entity_type
     table = ENTITY_TABLES[entity_type]
@@ -496,7 +396,6 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
     row = normalized[0]
     _check_fks_for_row(db, entity_type, row, require_target=True)
     db.insert_row(table, row)
-    _append_metadata_tsv(project, table, row)
     db.set_entity_state(entity_type, record_id, "METADATA_VALIDATED", "record added via CLI and schema-validated")
     db.record_change(entity_type, record_id, None, None, json.dumps({k: str(v) for k, v in row.items()}), "record added", actor=os.environ.get("USER"))
     print(f"added {entity_type} {record_id}")
@@ -517,19 +416,6 @@ def _check_fks_for_row(db: Database, entity_type: str, row: dict[str, Any], requ
             raise ValidationError(f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: {field} {row[field]} does not exist")
 
 
-def _append_metadata_tsv(project: Project, table: str, row: dict[str, Any]) -> None:
-    schema = Schema.from_file(project.schema_path)
-    path = project.metadata_dir / schema.tables[table]["file"]
-    columns = schema.columns(table)
-    existed = path.exists()
-    with open(path, "a", encoding="utf-8", newline="") as handle:
-        import csv
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        if not existed or path.stat().st_size == 0:
-            writer.writerow(columns)
-        writer.writerow(["" if row.get(c) is None else row.get(c) for c in columns])
-
-
 def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database) -> int:
     db.require_entity(args.internal_type, args.internal_id)
     row = {
@@ -541,7 +427,11 @@ def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database)
         "is_primary": 1 if args.primary else None,
     }
     db.insert_row("accessions", row)
-    _append_metadata_tsv(project, "accessions", row)
+    db.record_change(
+        "accession", f"{args.namespace}:{args.accession}", None, None,
+        json.dumps(row, ensure_ascii=False, sort_keys=True), "accession added",
+        actor=os.environ.get("USER"),
+    )
     print(f"mapped {args.namespace}:{args.accession} -> {args.internal_type} {args.internal_id}")
     return 0
 
@@ -1017,7 +907,109 @@ def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int
         print(f"decision: {result['decision']}")
         print(f"report: {result['path']}")
         return int(result["exit_code"])
+    if args.report_kind == "metadata":
+        path = export_metadata_report(db, project, args.output)
+        print(f"wrote metadata report to {path}")
+        return 0
     raise ValidationError(f"unknown report kind {args.report_kind!r}")
+
+
+def _cmd_import(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.import_kind == "dataset":
+        from operon.import_wizard import run_dataset_wizard
+        result = run_dataset_wizard(db, project)
+        if result is None:
+            print("Import cancelled; no project data was changed.")
+            return 0
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.import_kind != "table":
+        raise ValidationError(f"unknown import kind {args.import_kind!r}")
+    schema = Schema.from_file(project.schema_path)
+    if args.template:
+        path = write_table_template(schema, args.table, args.template)
+        print(f"wrote {args.table} template to {path}")
+        return 0
+    preview = preview_table_import(db, schema, args.table, args.file)
+    print(format_table(
+        ["key", "action", "changed_fields"],
+        ([": ".join(str(value) for value in item["key"]), item["action"], ", ".join(item["differences"])]
+         for item in preview["items"]),
+    ))
+    print(
+        f"preview: {preview['insert']} insert, {preview['update']} update, "
+        f"{preview['unchanged']} unchanged"
+    )
+    on_conflict = args.on_conflict
+    if preview["update"] and on_conflict is None:
+        if args.yes:
+            raise ValidationError("--on-conflict is required with --yes when existing rows would change")
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValidationError("existing rows would change; pass --on-conflict error, skip or update")
+        import questionary
+        on_conflict = questionary.select(
+            "Existing rows differ. How should they be handled?",
+            choices=[
+                questionary.Choice("Cancel", value="cancel"),
+                questionary.Choice("Skip existing rows", value="skip"),
+                questionary.Choice("Update existing rows (audited)", value="update"),
+            ],
+        ).ask()
+        if on_conflict in {None, "cancel"}:
+            print("Import cancelled; no rows were changed.")
+            return 0
+    on_conflict = on_conflict or "error"
+    if not args.yes:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValidationError("table import requires --yes outside an interactive terminal")
+        import questionary
+        confirmed = questionary.confirm(
+            f"Apply this {args.table} import with on-conflict={on_conflict}?", default=False
+        ).ask()
+        if not confirmed:
+            print("Import cancelled; no rows were changed.")
+            return 0
+    result = apply_table_import(
+        db, schema, preview, on_conflict=on_conflict, actor=os.environ.get("USER")
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_show(args: argparse.Namespace, db: Database) -> int:
+    graph = organism_graph(db, args.identifier)
+    if args.json:
+        print(json.dumps(graph, ensure_ascii=False, indent=2))
+        return 0
+    organism = graph["organism"]
+    print(f"Organism: {organism['organism_id']}  {organism['scientific_name']}")
+    print(f"Matched:  {graph['matched']['entity_type']} {graph['matched']['entity_id']}")
+    accession_rows = [row for row in graph["accessions"] if row["internal_id"] == organism["organism_id"]]
+    if accession_rows:
+        print("Accessions: " + ", ".join(f"{row['namespace']}:{row['accession']}" for row in accession_rows))
+    sections = [
+        ("Samples", graph["samples"], ["sample_id", "isolate", "strain", "biosample_accession"]),
+        ("Runs", graph["runs"], ["run_id", "sample_id", "run_accession", "platform", "instrument_model"]),
+        ("Assemblies", graph["assemblies"], ["assembly_id", "sample_id", "assembly_accession", "assembly_name", "assembly_level"]),
+        ("Annotations", graph["annotations"], ["annotation_id", "assembly_id", "annotation_source", "annotation_version"]),
+        ("Files", graph["files"], ["file_id", "entity_type", "entity_id", "file_role", "status", "relative_path"]),
+    ]
+    for title, rows, columns in sections:
+        print(f"\n{title} ({len(rows)})")
+        print(format_table(columns, ([row.get(column) for column in columns] for row in rows)) if rows else "(none)")
+    return 0
+
+
+def _cmd_backup(args: argparse.Namespace, project: Project, db: Database) -> int:
+    result = create_backup(db, project, args.output, scope=args.scope)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_backup_verify(args: argparse.Namespace) -> int:
+    result = verify_backup(args.input)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["ok"] else 1
 
 
 def _cmd_query(args: argparse.Namespace, db: Database) -> int:
@@ -1047,13 +1039,14 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_init(args)
         if args.command == "init-demo":
             return _cmd_init_demo(args)
+        if args.command == "backup" and args.backup_command == "verify":
+            return _cmd_backup_verify(args)
         project, db = _open_project(args)
         try:
             handlers = {
                 "status": lambda: _cmd_status(args, db),
                 "schema": lambda: _cmd_schema(args, project),
-                "import-metadata": lambda: _cmd_import_metadata(args, project, db),
-                "export-metadata": lambda: _cmd_export_metadata(args, project, db),
+                "import": lambda: _cmd_import(args, project, db),
                 "add": lambda: _cmd_add(args, project, db),
                 "add-accession": lambda: _cmd_add_accession(args, project, db),
                 "ncbi-datasets": lambda: _cmd_ncbi_datasets(args, project, db),
@@ -1078,6 +1071,8 @@ def main(argv: list[str] | None = None) -> int:
                 "taxonomy": lambda: _cmd_taxonomy(args, project, db),
                 "report": lambda: _cmd_report(args, project, db),
                 "query": lambda: _cmd_query(args, db),
+                "show": lambda: _cmd_show(args, db),
+                "backup": lambda: _cmd_backup(args, project, db),
                 "set-state": lambda: _cmd_set_state(args, db),
             }
             return handlers[args.command]()

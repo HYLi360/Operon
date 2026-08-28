@@ -2,13 +2,53 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 from operon.config import Project
 from operon.database import Database
 from operon.schema import write_tsv
-from operon.utils import format_table
+from operon.utils import format_table, now_iso, sha256_file
+
+
+METADATA_REPORT_TABLES = [
+    "organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files",
+]
+
+
+def export_metadata_report(db: Database, project: Project, output: str | Path | None = None) -> Path:
+    """Write a derived, read-only metadata snapshot from SQLite.
+
+    The report is deliberately one-way: exported TSV files are not a live
+    mirror and are never read back automatically.
+    """
+    from operon.schema import Schema
+
+    out = Path(output).resolve() if output else project.reports_root / "metadata"
+    out.mkdir(parents=True, exist_ok=True)
+    schema = Schema.from_file(project.schema_path)
+    manifest: dict[str, Any] = {
+        "report_type": "operon_metadata",
+        "created_at": now_iso(),
+        "metadata_schema_version": schema.version,
+        "database": str(db.path),
+        "tables": {},
+    }
+    for table in METADATA_REPORT_TABLES:
+        columns = schema.columns(table)
+        rows = db.export_rows(table, columns)
+        path = out / f"{table}.tsv"
+        write_tsv(path, columns, rows)
+        manifest["tables"][path.name] = {
+            "row_count": len(rows),
+            "sha256": sha256_file(path),
+        }
+    (out / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return out
 
 
 def qc_rows(db: Database, entity_type: str | None = None, entity_id: str | None = None) -> list[dict[str, Any]]:

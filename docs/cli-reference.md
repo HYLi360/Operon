@@ -16,8 +16,7 @@ init          初始化项目
 init-demo     生成合成演示项目并跑完流水线
 status        查看实体状态
 schema        查看/导出 schema
-import-metadata   校验并导入 metadata TSV
-export-metadata   导出 metadata TSV
+import        交互式导入数据集，或从 CSV/XLSX 导入一张受控 metadata 表
 add           新增 organism/sample/run/assembly/annotation
 add-accession 添加外部 accession 映射
 ncbi-datasets 离线导入或在线下载 NCBI Datasets genome package
@@ -40,8 +39,10 @@ curate        人工策展判定
 release       创建 release
 run-pipeline  单文件一站式流水线
 taxonomy      导入 NCBI Taxonomy 快照并编译覆盖率分母
-report        查看 QC、判定、分析结果或 taxonomy 覆盖率报告
+report        查看 QC、判定、分析、metadata 或 taxonomy 覆盖率报告
 query         只读 SQL 查询
+show          按内部 ID 或 accession 展开 organism 及全部下游实体
+backup        创建或校验分级项目备份
 set-state     人工设置状态（审计）
 ```
 
@@ -51,7 +52,7 @@ set-state     人工设置状态（审计）
 operon init [path] [--project-id PRJ_000001] [--name NAME]
 ```
 
-创建 `project.yaml`、`config/`、`metadata/` 和生命周期目录。已存在 `project.yaml` 时报错。
+创建 `project.yaml`、`config/` 和生命周期目录。`metadata/` 仅保留 0.4 迁移说明，不再生成可反向导入的空 TSV。已存在 `project.yaml` 时报错。
 
 ## init-demo
 
@@ -76,26 +77,22 @@ operon schema            # 打印 schema 文件路径
 operon schema --dump     # 打印 schema 全文
 ```
 
-## import-metadata
+## import
 
 ```bash
-operon import-metadata [--replace]
+operon import dataset
+
+operon import table --table TABLE --template template.xlsx
+operon import table --table TABLE --file data.csv \
+  [--on-conflict {error,skip,update}] [--yes]
 ```
 
-- 读取 `metadata/*.tsv`，按 `config/schemas.yaml` 校验规范化。
-- 默认按主键 upsert 合并；`--replace` 在单事务中重建完整快照，空表会清空对应表。
-- 校验交叉引用（sample→organism、run→sample、assembly→sample、annotation→assembly、accession→实体、file→实体、文件 ID 引用）。
-- 自动为 schema 中新增字段扩展 SQLite 列。
-- 成功后相关实体状态设为 `METADATA_VALIDATED`。
-
-## export-metadata
-
-```bash
-operon export-metadata [--include-generated]
-```
-
-- 导出 7 张手动元数据表到 `metadata/`。
-- `--include-generated` 额外导出 QC 长表/宽表到 `qc/aggregate/`、decision 完整历史到 `reports/decisions.tsv`。
+- `dataset`：启动纯英文 questionary 向导。可跳过可选字段或文件；汇总页会持续显示缺失警告。进入任一章节修改后直接返回汇总页，不会继续原始线性流程。最终确认前不修改项目。
+- `table --template`：生成 `.csv` 或 `.xlsx` 空模板。XLSX 同时包含只读的 `schema` 工作表，列出类型、必填项、允许值与字段说明。
+- `table --file`：读取 CSV 或 XLSX 第一张工作表，执行 schema/外键校验并打印逐行预览。
+- 可导入表为 `organisms`、`samples`、`runs`、`assemblies`、`annotations`、`accessions`；系统管理的 `files` 不可由表格覆盖。
+- 碰撞时 `error` 拒绝、`skip` 跳过已有行、`update` 逐字段更新并写入 `changes` 审计。非交互执行必须加 `--yes`；存在更新时还必须显式指定 `--on-conflict`。
+- SQLite 是唯一可写 metadata 事实来源；旧的 `import-metadata`/`export-metadata` 已移除。
 
 ## add
 
@@ -106,7 +103,7 @@ operon add {organism|sample|run|assembly|annotation} \
 
 - `--field` 可重复。
 - 不指定 `--id` 时自动分配下一个内部稳定 ID。
-- 写入 SQLite，同时追加到对应 `metadata/*.tsv`，并记录审计。
+- 写入 SQLite 并记录审计；不会维护第二份可写 TSV 镜像。
 - 示例：`operon add organism --field scientific_name="Escherichia coli" --field taxonomy_source=NCBI`。
 
 ## add-accession
@@ -149,7 +146,7 @@ operon ncbi-datasets \
 - 完整版本化 accession 是 assembly 身份的一部分，新版本不会覆盖旧版本；
 - ZIP/report 原件按 SHA-256 保存到 `raw/metadata/ncbi_datasets/`；
 - 包内生物文件通过正常 `ingest` 路径进入 raw 和 files manifest；
-- 更新 `metadata/*.tsv`、实体状态、changes 审计与 workflow provenance。
+- 更新 SQLite、实体状态、changes 审计与 workflow provenance。
 
 常用变体：
 
@@ -506,6 +503,7 @@ operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
   [--hits] [--limit N]
 operon report coverage --reference-set NAME@TAXONOMY_VERSION [--scope metadata]
 operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
+operon report metadata [--output DIRECTORY]
 ```
 
 - `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
@@ -519,6 +517,9 @@ operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
   metadata SHA-256。二者互斥。
 - coverage 报告写入 `reports/coverage/COV_<input-hash>/`，包括分子/分母、完整目标、
   缺失清单、纳入/排除观察和 provenance。完全相同输入会校验并复用既有报告。
+- `metadata`：从当前 SQLite 导出 `organisms/samples/runs/assemblies/annotations/accessions/files`
+  的只读 TSV 快照，并生成包含行数与 SHA-256 的 `manifest.json`；默认写入
+  `reports/metadata/`。它是派生 report，不是备份，也不能反向覆盖数据库。
 
 coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功生成但至少一个 rank
 未达标时返回 1。阈值不写死在命令或代码中。
@@ -530,6 +531,37 @@ operon query "SQL"
 ```
 
 只读 SQL。允许 SELECT 与只读 PRAGMA（如 `table_info`、`foreign_key_list`）；拒绝 DML/DDL/写 PRAGMA/ATTACH/VACUUM 等。
+
+## show
+
+```bash
+operon show ORG_000001
+operon show LAB:HX-ROOT
+operon show GCF_000001405.40 --json
+```
+
+解析内部稳定 ID、裸 accession 或 `NAMESPACE:ACCESSION`。无论匹配到 organism、sample、
+run、assembly 还是 annotation，都会向上解析到 organism，并展开该 organism 下的全部
+sample、run、assembly、annotation、accession 和文件。裸 accession 对应多个实体时拒绝并
+要求使用带 namespace 的写法。`--json` 输出完整机器可读对象。
+
+## backup
+
+```bash
+operon backup create --output /backups/project-2026-08-28 --scope control
+operon backup create --output /backups/project-full --scope full
+operon backup verify --input /backups/project-2026-08-28
+```
+
+`create` 使用 SQLite backup API 生成一致数据库快照，目标必须位于项目目录之外且不能已存在。
+每个备份包含 `backup-manifest.json`，记录全部成员的 size 与 SHA-256。
+
+- `control`（默认）：`project.yaml`、`config/`、一致的 `operon.sqlite`、`logs/`。
+- `results`：control 加 `qc/analysis/reports/taxonomy/releases`，不复制 raw 与 standardized 大文件。
+- `full`：results 加 `raw/standardized/.operon/metadata/examples`。
+
+`verify` 不需要打开原项目，逐文件检查路径安全性、大小与 SHA-256。远程镜像仍应独立备份；
+control/results scope 只保存 `file_locations` 等控制面记录，不复制远端实际字节。
 
 ## set-state
 

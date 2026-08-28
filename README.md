@@ -6,7 +6,7 @@
 
 ## 特色
 
-- **基于文件的数据库**：单个 SQLite 文件（`operon.sqlite`），元数据交换格式为 TSV，字段契约由 YAML schema 定义
+- **基于文件的数据库**：单个 SQLite 文件（`operon.sqlite`）是唯一可写事实来源；CSV/XLSX 用于受控导入，TSV report 用于只读交换，字段契约由 YAML schema 定义
 - **NCBI Datasets 适配器**：离线优先导入 JSON/JSONL、ZIP 或解包目录，也可在线下载 genome package 并自动归档
 - **冻结的 NCBI Taxonomy 覆盖率**：版本化 YAML profile 编译为带 SHA-256 的 family/genus 分母，可分别审计当前 metadata 与不可变 release，并输出缺失采样清单
 - **纯 Python 流式解析与内置 QC**：FASTA / FASTQ / GFF3 / protein FASTA 不整体读入内存；指标写入长表，判定交给版本化 YAML profile 规则引擎；`value_by` 可按 BUSCO auto-lineage 等分类指标选择门限

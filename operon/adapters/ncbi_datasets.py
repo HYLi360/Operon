@@ -42,7 +42,6 @@ from operon.schema import (
     ENTITY_TABLES,
     Schema,
     default_schemas,
-    write_tsv,
 )
 from operon.utils import atomic_copy, atomic_write_text, now_iso, sha256_file
 from operon.workflow import log_run, new_run_id
@@ -674,7 +673,6 @@ def run_ncbi_datasets_adapter(
         summary["assembly_records"] = len(observed_assembly_groups)
         if dry_run:
             return summary
-        _export_metadata(db, project)
         evidence = ", ".join(
             item["preserved_path"] for item in summary["sources"] if item["preserved_path"]
         ) or None
@@ -1675,17 +1673,6 @@ def _format_bytes(value: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{size:.1f} TiB"
-
-
-def _export_metadata(db: Database, project: Project) -> None:
-    schema = Schema.from_file(project.schema_path)
-    for table in ("organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files"):
-        columns = schema.columns(table)
-        write_tsv(
-            project.metadata_dir / schema.tables[table]["file"],
-            columns,
-            db.export_rows(table, columns),
-        )
 
 
 def _open_source(path: Path, project: Project, preserve: bool, label: str | None = None) -> SourceBundle:

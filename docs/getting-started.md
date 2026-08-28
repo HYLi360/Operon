@@ -26,7 +26,7 @@ python -m pip install -e '.[remote]'
 
 ```bash
 operon --version
-# 输出：operon 0.3.0
+# 输出：operon 0.4.0
 
 operon --help
 ```
@@ -81,7 +81,7 @@ cd ./my-genome-project
 ```text
 project.yaml         项目配置
 config/              schema、QC/coverage profiles 与外部工具配置 tools.yaml
-metadata/            空表头 TSV 文件
+metadata/            旧布局兼容说明（SQLite 是唯一可写 metadata 来源）
 raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 ```
 
@@ -90,7 +90,20 @@ raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 > 提示：全局选项 `--project` 必须放在子命令之前。进入项目目录后可以省略它；
 > 在项目外则使用 `operon --project /path/to/my-genome-project <子命令>`。
 
-### 3.2 从 NCBI Datasets 一步导入（推荐用于公开组装）
+### 3.2 使用交互式导入向导
+
+对于合作方交付、本地 pipeline 或其他非 NCBI 数据，直接启动纯英文向导：
+
+```bash
+operon import dataset
+```
+
+向导依次收集 source、organism、sample、sequencing、assembly、annotation 和文件；可选项
+可以跳过，但最终汇总会持续显示缺失警告。汇总页可选择 `Edit source`、`Edit files`
+等章节；修改完成后会直接回到汇总页，不会继续原先的线性问题序列。只有选择
+`Execute import` 并确认剩余警告后才会写 SQLite 和归档文件。
+
+### 3.3 从 NCBI Datasets 一步导入（推荐用于公开组装）
 
 如果已有 NCBI Datasets report 或 genome package，不需要逐字段执行 `add`：
 
@@ -120,7 +133,7 @@ operon ncbi-datasets --accession-file accessions.txt \
 GCA/GCF/BioSample/Taxonomy 映射，并把 ZIP 原件保存到
 `raw/metadata/ncbi_datasets/`。若使用此方式，可直接跳到“校验归档”。
 
-### 3.3 手工录入元数据
+### 3.4 手工录入元数据
 
 `operon` 至少需要建立如下关系链：
 
@@ -174,16 +187,18 @@ operon add run \
 
 如果只有组装没有 reads，跳过 run 即可。
 
-### 3.4 查看和导出元数据
+### 3.5 查看和导出元数据
 
 ```bash
 operon query "SELECT * FROM assemblies"
-operon export-metadata
+operon report metadata
 ```
 
-`export-metadata` 会把数据库内容写回 `metadata/*.tsv`，适合用 Git 管理或人工批量编辑。
+`report metadata` 会从 SQLite 生成 `reports/metadata/*.tsv` 和带 SHA-256 的
+`manifest.json`。这些文件是只读派生快照，适合浏览、交换或版本控制；修改它们不会
+改变数据库。批量写入应使用 `operon import table` 的 CSV/XLSX 模板与预览流程。
 
-### 3.5 手工归档文件到 raw
+### 3.6 手工归档文件到 raw
 
 以组装 FASTA 为例：
 
@@ -220,7 +235,7 @@ operon ingest --source /data/SRR999999999_2.fastq.gz \
   --entity-type run --entity-id RUN_000001 --role reads_r2
 ```
 
-### 3.6 校验归档
+### 3.7 校验归档
 
 ```bash
 operon verify
@@ -228,7 +243,7 @@ operon verify
 
 正常时每个文件状态为 `CHECKSUM_VERIFIED`。如果文件被移动、删除或篡改，会显示 `MISSING` 或 `CHECKSUM_FAILED`，且命令返回非零退出码。
 
-### 3.7 标准化
+### 3.8 标准化
 
 ```bash
 operon standardize
@@ -240,7 +255,7 @@ operon standardize
 operon standardize --link hardlink
 ```
 
-### 3.8 运行内置 QC
+### 3.9 运行内置 QC
 
 ```bash
 # 全部已归档文件
@@ -263,7 +278,7 @@ operon report qc --export
 # 生成 qc/aggregate/qc_results.tsv 与 qc_results.wide.tsv
 ```
 
-### 3.9 外部 QC 指标（可选）
+### 3.10 外部 QC 指标（可选）
 
 例如 BUSCO 结果整理为 TSV 后：
 
@@ -280,7 +295,7 @@ tool, tool_version, parameter_set
 
 可选列 `file_id`、`file_sha256`；提供时会与 manifest 交叉校验。具体格式见 How-to 手册。
 
-### 3.10 运行封装式 BLAST / HMMER / BUSCO 分析
+### 3.11 运行封装式 BLAST / HMMER / BUSCO 分析
 
 外部分析程序在 `config/tools.yaml` 中配置。默认模板提供 `blastn_nt`、
 `blastp_nr`、`hmmsearch_pfam` 与 `busco_autolineage` recipe，需先按本机环境修改
@@ -374,7 +389,7 @@ operon evaluate --profile annotation_busco_viridiplantae_odb12_v1 \
 内容哈希。文件和目录都受相同缓存校验；相同输入、参数、工具版本和数据库身份会自动命中缓存而跳过执行；
 `--force` 可强制重跑。
 
-### 3.11 运行规则引擎
+### 3.12 运行规则引擎
 
 ```bash
 operon evaluate --profile assembly_production_v1
@@ -393,7 +408,7 @@ assembly     ASM_000002  assembly_production_v1  FAIL      LOW_CONTIGUITY
 `report decisions` 默认展示最新一条。profile 必须用 `kind: qc` 与同目录中的
 `kind: taxonomy_coverage` 覆盖率画像区分。
 
-### 3.12 人工策展（可选，但必须留痕）
+### 3.13 人工策展（可选，但必须留痕）
 
 ```bash
 operon curate \
@@ -408,7 +423,7 @@ operon curate \
 
 自动判定不会被覆盖，策展写入 `curated_*` 字段和 `changes` 审计表。
 
-### 3.13 只读 SQL 查询
+### 3.14 只读 SQL 查询
 
 ```bash
 # 一个 protein 文件属于哪个 assembly/sample/organism
@@ -426,7 +441,7 @@ WHERE f.file_role='protein_fasta'
 
 `query` 使用只读连接和 authorizer：`SELECT` 与只读 schema PRAGMA 可用，DML、DDL、写 PRAGMA、ATTACH/VACUUM 会被拒绝。
 
-### 3.14 创建 release
+### 3.15 创建 release
 
 ```bash
 operon release --version 2026.08 --profile assembly_production_v1
@@ -464,8 +479,9 @@ ingest -> standardize（含 checksum 复核） -> QC -> evaluate
 
 ```bash
 # 1. 录入/更新元数据并校验
-operon add ...                       # 或编辑 metadata/*.tsv 后
-operon import-metadata --replace
+operon import dataset               # 交互式完整数据集
+operon add ...                       # 精确新增一个实体
+operon import table --table ...     # CSV/XLSX 批量表格
 
 # 2. 归档新数据
 operon ingest ...
@@ -494,8 +510,8 @@ operon release --version ... --profile ...
 | `no project.yaml found` | 当前目录不在项目内；用 `--project /path` 或先 `cd` 到项目根目录 |
 | `already has FIL_... for role ... with sha256 ...` | 同实体同角色已有不同字节文件；raw 不可变，应为新数据建新 assembly/run 版本，而不是覆盖 |
 | `CHECKSUM_FAILED` | 文件被改动；恢复原始文件或重新从源头归档（新实体版本） |
-| metadata 导入报字段错误 | 阅读错误中的行号/字段；修改 TSV，或先在 `config/schemas.yaml` 中扩展字段 |
-| `query` 拒绝 UPDATE/PRAGMA | 这是设计行为；修改数据请使用受控命令（`add`、`import-metadata`、`curate` 等） |
+| table 导入报字段错误 | 阅读错误中的行号/字段；修改 CSV/XLSX，或先在 `config/schemas.yaml` 中扩展字段 |
+| `query` 拒绝 UPDATE/PRAGMA | 这是设计行为；修改数据请使用受控命令（`add`、`import table`、`curate` 等） |
 | `tools-check` 报 `cannot launch ...` | 修改 `config/tools.yaml` 的 `executable`/`run_method`；conda 环境写法见 How-to 手册 |
 | `analyze` 报数据库不存在 | 把 recipe 的 `database` 改为真实 BLAST/HMM 数据库路径 |
 

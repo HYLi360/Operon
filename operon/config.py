@@ -197,8 +197,8 @@ class Project:
         )
         from operon.profiles import write_default_profiles
         write_default_profiles(project.profiles_dir)
-        from operon.metadata_files import create_empty_metadata_files
-        create_empty_metadata_files(project.metadata_dir)
+        from operon.metadata_files import initialize_metadata_directory
+        initialize_metadata_directory(project.metadata_dir)
         from operon.tools import ensure_tools_config
         ensure_tools_config(project)
         return project
