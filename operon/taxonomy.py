@@ -636,20 +636,23 @@ def import_ncbi_taxonomy(
             "command": f"taxonomy import {source_path}",
         })
     except Exception as exc:
-        log_run(db, project, {
-            "run_id": run_id,
-            "entity_type": "taxonomy_snapshot",
-            "entity_id": snapshot_id,
-            "step": "taxonomy_import",
-            "status": "failed",
-            "started_at": imported_at,
-            "finished_at": now_iso(),
-            "tool": "operon.taxonomy",
-            "tool_version": __version__,
-            "parameter_set": taxonomy_version,
-            "input_sha256": source_sha,
-            "error": f"{type(exc).__name__}: {exc}",
-        })
+        try:
+            log_run(db, project, {
+                "run_id": run_id,
+                "entity_type": "taxonomy_snapshot",
+                "entity_id": snapshot_id,
+                "step": "taxonomy_import",
+                "status": "failed",
+                "started_at": imported_at,
+                "finished_at": now_iso(),
+                "tool": "operon.taxonomy",
+                "tool_version": __version__,
+                "parameter_set": taxonomy_version,
+                "input_sha256": source_sha,
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        except Exception:
+            pass
         raise
     return {
         "taxonomy_snapshot_id": snapshot_id,

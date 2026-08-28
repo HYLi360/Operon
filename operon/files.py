@@ -121,6 +121,7 @@ def ingest_file(
     move: bool = False,
     run_id: str | None = None,
     actor: str | None = None,
+    provenance_buffer: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Archive one file or directory into raw/ and register it in the manifest.
 
@@ -175,7 +176,11 @@ def ingest_file(
                 # leaving the immutable file manifest row intact.
                 _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
             db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {existing['file_id']} already archived and verified")
-            _workflow_log(db, project, run_id, "ingest", entity_type, entity_id, "completed", command=f"ingest {source}", input_sha256=source_sha)
+            _workflow_log(
+                db, project, run_id, "ingest", entity_type, entity_id, "completed",
+                provenance_buffer=provenance_buffer,
+                command=f"ingest {source}", input_sha256=source_sha,
+            )
             return dict(existing)
 
     target_dir = project.raw_root / raw_bucket(entity_type) / entity_id
@@ -185,7 +190,11 @@ def ingest_file(
         if target_sha == source_sha:
             row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, source_sha, source_size)
             db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} matched existing target")
-            _workflow_log(db, project, run_id, "ingest", entity_type, entity_id, "completed", command=f"ingest {source}", input_sha256=source_sha)
+            _workflow_log(
+                db, project, run_id, "ingest", entity_type, entity_id, "completed",
+                provenance_buffer=provenance_buffer,
+                command=f"ingest {source}", input_sha256=source_sha,
+            )
             return row
         raise ConflictError(
             f"target {target} already exists with a different checksum "
@@ -219,7 +228,11 @@ def ingest_file(
         raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
     row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha, target_size)
     db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} archived and checksum verified")
-    _workflow_log(db, project, run_id, "ingest", entity_type, entity_id, "completed", command=f"ingest {source}", input_sha256=target_sha)
+    _workflow_log(
+        db, project, run_id, "ingest", entity_type, entity_id, "completed",
+        provenance_buffer=provenance_buffer,
+        command=f"ingest {source}", input_sha256=target_sha,
+    )
     return row
 
 
@@ -457,7 +470,9 @@ def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> 
 
 
 def _workflow_log(db: Database, project: Project, run_id: str | None, step: str,
-                  entity_type: str, entity_id: str, status: str, **extra: Any) -> None:
+                  entity_type: str, entity_id: str, status: str,
+                  provenance_buffer: list[dict[str, Any]] | None = None,
+                  **extra: Any) -> None:
     from operon.workflow import log_run, new_run_id
     log_run(db, project, {
         "run_id": new_run_id(),
@@ -469,4 +484,4 @@ def _workflow_log(db: Database, project: Project, run_id: str | None, step: str,
         "started_at": now_iso(),
         "finished_at": now_iso(),
         **extra,
-    })
+    }, jsonl_buffer=provenance_buffer)

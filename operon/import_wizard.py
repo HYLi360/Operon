@@ -17,6 +17,7 @@ from operon.errors import ConflictError, ValidationError
 from operon.files import canonical_filename, detect_compression, detect_format, ingest_file, raw_bucket
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
 from operon.utils import now_iso, sha256_path
+from operon.workflow import flush_run_log, log_run, new_run_id
 
 
 def _required(value: str) -> bool | str:
@@ -346,6 +347,9 @@ def _preflight(db: Database, project: Project, draft: dict[str, Any]) -> list[tu
 def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, Any]:
     rows = _preflight(db, project, draft)
     actor = os.environ.get("USER")
+    run_id = new_run_id()
+    started_at = now_iso()
+    provenance_buffer: list[dict[str, Any]] = []
     new_targets: list[Path] = []
     for item in draft.get("files", []):
         entity_id = draft[item["entity_type"]]["id"]
@@ -376,16 +380,41 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                 entity_id = draft[item["entity_type"]]["id"]
                 file_rows.append(ingest_file(
                     db, project, item["path"], item["entity_type"], entity_id, item["role"],
-                    source_url=source_url, actor=actor,
+                    source_url=source_url, actor=actor, run_id=run_id,
+                    provenance_buffer=provenance_buffer,
                 ))
-    except Exception:
+            log_run(db, project, {
+                "run_id": run_id,
+                "step": "interactive_dataset_import",
+                "status": "completed",
+                "started_at": started_at,
+                "finished_at": now_iso(),
+                "tool": "operon.import_wizard",
+                "command": "import dataset",
+            }, jsonl_buffer=provenance_buffer)
+    except Exception as exc:
         for target in new_targets:
             if target.is_file() or target.is_symlink():
                 target.unlink(missing_ok=True)
             elif target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
+        try:
+            log_run(db, project, {
+                "run_id": run_id,
+                "step": "interactive_dataset_import",
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": now_iso(),
+                "tool": "operon.import_wizard",
+                "command": "import dataset",
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+        except Exception:
+            pass
         raise
+    flush_run_log(project, provenance_buffer)
     return {
+        "run_id": run_id,
         "entities": {name: item["id"] for name, item in draft.items() if name in ENTITY_TABLES and item},
         "files": [{"file_id": row["file_id"], "role": row["file_role"], "sha256": row["sha256"]} for row in file_rows],
         "warnings": _warnings(db, draft),

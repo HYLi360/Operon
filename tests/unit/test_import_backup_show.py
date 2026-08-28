@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from operon.backup import create_backup, verify_backup
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.entity_view import organism_graph
+from operon.errors import EntityNotFoundError
 from operon.import_wizard import _commit, _synchronize_new_entity_links, run_dataset_wizard
+from operon.workflow import log_run
 
 
 def _project(tmp_path: Path) -> tuple[object, Database]:
@@ -42,6 +47,47 @@ def test_show_resolves_organism_accession_and_descendants(tmp_path: Path):
         db.close()
 
 
+def test_show_reports_orphaned_organism_reference(tmp_path: Path):
+    _project_config, db = _project(tmp_path)
+    try:
+        db.conn.execute("PRAGMA foreign_keys=OFF")
+        db.conn.execute(
+            "INSERT INTO samples(sample_id, organism_id) VALUES(?, ?)",
+            ("SMP_000001", "ORG_999999"),
+        )
+        db.conn.commit()
+        db.conn.execute("PRAGMA foreign_keys=ON")
+        with pytest.raises(EntityNotFoundError, match=(
+            "sample SMP_000001 refers to missing organism ORG_999999"
+        )):
+            organism_graph(db, "SMP_000001")
+    finally:
+        db.close()
+
+
+def test_show_reports_null_organism_in_malformed_schema():
+    class MalformedDatabase:
+        def __init__(self):
+            self.conn = sqlite3.connect(":memory:")
+            self.conn.row_factory = sqlite3.Row
+            self.conn.executescript(
+                "CREATE TABLE samples(sample_id TEXT PRIMARY KEY, organism_id TEXT);"
+                "INSERT INTO samples(sample_id, organism_id) VALUES('SMP_000001', NULL);"
+            )
+
+        def require_entity(self, _entity_type: str, _entity_id: str) -> None:
+            return None
+
+    db = MalformedDatabase()
+    try:
+        with pytest.raises(
+            EntityNotFoundError, match="sample SMP_000001 has no organism reference"
+        ):
+            organism_graph(db, "SMP_000001")
+    finally:
+        db.conn.close()
+
+
 def test_backup_control_scope_is_consistent_and_detects_tampering(tmp_path: Path):
     project_root = tmp_path / "project"
     backup_root = tmp_path / "backup"
@@ -54,8 +100,37 @@ def test_backup_control_scope_is_consistent_and_detects_tampering(tmp_path: Path
         db.close()
     verified = verify_backup(backup_root)
     assert verified["ok"] is True
+    unexpected = backup_root / "unexpected.txt"
+    unexpected.write_text("not in manifest\n", encoding="utf-8")
+    extra_result = verify_backup(backup_root)
+    assert extra_result["ok"] is False
+    assert extra_result["unexpected"] == 1
+    assert {tuple(item.values()) for item in extra_result["failures"]} >= {
+        ("unexpected.txt", "unexpected file")
+    }
+    unexpected.unlink()
     (backup_root / "project.yaml").write_text("tampered\n", encoding="utf-8")
     assert verify_backup(backup_root)["ok"] is False
+
+
+def test_log_run_rejects_duplicate_without_appending_phantom_jsonl(tmp_path: Path):
+    project, db = _project(tmp_path)
+    run_id = "WF_DUPLICATE_TEST"
+    try:
+        record = {"run_id": run_id, "step": "duplicate_test", "status": "completed"}
+        log_run(db, project, record)
+        with pytest.raises(sqlite3.IntegrityError, match="workflow_runs.run_id"):
+            log_run(db, project, record)
+        assert db.conn.execute(
+            "SELECT COUNT(*) FROM workflow_runs WHERE run_id=?", (run_id,)
+        ).fetchone()[0] == 1
+        records = [
+            json.loads(line)
+            for line in (project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        assert sum(item.get("run_id") == run_id for item in records) == 1
+    finally:
+        db.close()
 
 
 class _TTY:
@@ -132,6 +207,79 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
         ingest_runs = db.query("SELECT run_id, parent_run_id FROM workflow_runs WHERE step='ingest'")
         assert len(ingest_runs) == 3
         assert len({row["run_id"] for row in ingest_runs}) == 3
+        assert {row["parent_run_id"] for row in ingest_runs} == {result["run_id"]}
+        parent = db.query(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+        )[0]
+        assert parent["status"] == "completed"
+    finally:
+        db.close()
+
+
+def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monkeypatch):
+    project, db = _project(tmp_path)
+    gff = tmp_path / "input.gff3"
+    cds = tmp_path / "input.cds.fna"
+    gff.write_text("##gff-version 3\n", encoding="utf-8")
+    cds.write_text(">cds1\nATG\n", encoding="utf-8")
+    draft = {
+        "source": {"provider": "Lab", "record_url": ""},
+        "organism": {"action": "create", "id": "ORG_000001", "row": {
+            "organism_id": "ORG_000001", "scientific_name": "Rollbackus testii",
+        }},
+        "sample": {"action": "create", "id": "SMP_000001", "row": {
+            "sample_id": "SMP_000001", "organism_id": "ORG_000001",
+        }},
+        "run": None,
+        "assembly": {"action": "create", "id": "ASM_000001", "row": {
+            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
+        }},
+        "annotation": {"action": "create", "id": "ANN_000001", "row": {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+        }},
+        "files": [
+            {"label": "GFF3", "role": "annotation_gff3", "entity_type": "annotation", "path": str(gff)},
+            {"label": "CDS FASTA", "role": "cds_fasta", "entity_type": "annotation", "path": str(cds)},
+        ],
+    }
+    import operon.import_wizard as wizard
+
+    original_ingest = wizard.ingest_file
+    calls = 0
+
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("forced second-file failure")
+        return original_ingest(*args, **kwargs)
+
+    monkeypatch.setattr(wizard, "ingest_file", fail_second)
+    try:
+        with pytest.raises(RuntimeError, match="forced second-file failure"):
+            _commit(db, project, draft)
+        assert db.conn.execute(
+            "SELECT COUNT(*) FROM organisms WHERE organism_id='ORG_000001'"
+        ).fetchone()[0] == 0
+        assert db.conn.execute(
+            "SELECT COUNT(*) FROM files WHERE entity_id='ANN_000001'"
+        ).fetchone()[0] == 0
+        runs = [dict(row) for row in db.conn.execute(
+            "SELECT step, status, error FROM workflow_runs ORDER BY started_at"
+        ).fetchall()]
+        assert runs == [{
+            "step": "interactive_dataset_import",
+            "status": "failed",
+            "error": "RuntimeError: forced second-file failure",
+        }]
+        jsonl_records = [
+            json.loads(line)
+            for line in (project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        assert [(item["step"], item["status"]) for item in jsonl_records] == [
+            ("interactive_dataset_import", "failed")
+        ]
+        assert not any(path.is_file() for path in project.raw_root.rglob("*"))
     finally:
         db.close()
 

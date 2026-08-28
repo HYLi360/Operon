@@ -99,15 +99,31 @@ def new_run_id() -> str:
     return f"WF_{now_iso().replace('-', '').replace(':', '').replace('T', '_')}_{uuid.uuid4().hex[:8]}"
 
 
-def log_run(db: Database, project: Project, record: dict[str, Any]) -> None:
-    """Append a machine-readable workflow record to logs/workflow.jsonl and SQLite."""
+def flush_run_log(project: Project, records: Iterable[dict[str, Any]]) -> None:
+    """Append workflow records after the transaction that produced them is final."""
+    for record in records:
+        append_jsonl(project.logs_root / "workflow.jsonl", record)
+
+
+def log_run(
+    db: Database,
+    project: Project,
+    record: dict[str, Any],
+    *,
+    jsonl_buffer: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Store a workflow run and append JSONL only after its DB write succeeds.
+
+    Transactional callers can supply ``jsonl_buffer`` and flush it only after
+    their outer transaction commits.  If that transaction rolls back, its
+    buffered completed records must be discarded.
+    """
     record = dict(record)
     record.setdefault("run_id", new_run_id())
     record.setdefault("status", "completed")
     record.setdefault("started_at", now_iso())
     record.setdefault("finished_at", now_iso())
     record.setdefault("tool_version", __version__)
-    append_jsonl(project.logs_root / "workflow.jsonl", record)
     columns = [
         "run_id", "parent_run_id", "entity_type", "entity_id", "step", "status",
         "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
@@ -120,6 +136,11 @@ def log_run(db: Database, project: Project, record: dict[str, Any]) -> None:
             f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
             [record.get(c) for c in columns],
         )
+    if jsonl_buffer is None:
+        flush_run_log(project, [record])
+    else:
+        jsonl_buffer.append(record)
+    return record
 
 
 def run_external_command(

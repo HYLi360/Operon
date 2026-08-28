@@ -98,8 +98,11 @@ def verify_backup(path: str | Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValidationError(f"cannot read backup manifest: {exc}") from exc
     failures: list[dict[str, str]] = []
-    for item in manifest.get("files", []):
+    manifest_files = manifest.get("files", [])
+    expected_paths: set[str] = set()
+    for item in manifest_files:
         relative = str(item.get("relative_path", ""))
+        expected_paths.add(relative)
         candidate = (path / relative).resolve()
         try:
             candidate.relative_to(path)
@@ -114,10 +117,21 @@ def verify_backup(path: str | Path) -> dict[str, Any]:
             continue
         if sha256_file(candidate) != item["sha256"]:
             failures.append({"relative_path": relative, "error": "checksum mismatch"})
+    actual_paths = {
+        candidate.relative_to(path).as_posix()
+        for candidate in path.rglob("*")
+        if candidate.is_file() and candidate != manifest_path
+    }
+    unexpected_paths = sorted(actual_paths - expected_paths)
+    failures.extend(
+        {"relative_path": relative, "error": "unexpected file"}
+        for relative in unexpected_paths
+    )
     return {
         "path": str(path),
         "scope": manifest.get("scope"),
-        "checked": len(manifest.get("files", [])),
+        "checked": len(manifest_files),
+        "unexpected": len(unexpected_paths),
         "ok": not failures,
         "failures": failures,
     }

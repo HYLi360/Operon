@@ -560,8 +560,9 @@ operon backup verify --input /backups/project-2026-08-28
 - `results`：control 加 `qc/analysis/reports/taxonomy/releases`，不复制 raw 与 standardized 大文件。
 - `full`：results 加 `raw/standardized/.operon/metadata/examples`。
 
-`verify` 不需要打开原项目，逐文件检查路径安全性、大小与 SHA-256。远程镜像仍应独立备份；
-control/results scope 只保存 `file_locations` 等控制面记录，不复制远端实际字节。
+`verify` 不需要打开原项目，逐文件检查路径安全性、大小与 SHA-256，并比较目录中的实际文件
+集合与 manifest：缺失、被修改或未列入 manifest 的额外文件都会使验证失败。远程镜像仍应
+独立备份；control/results scope 只保存 `file_locations` 等控制面记录，不复制远端实际字节。
 
 ## set-state
 

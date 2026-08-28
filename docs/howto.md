@@ -1027,6 +1027,10 @@ operon backup create --output /backups/my-project-full --scope full
 operon backup verify --input /backups/my-project-full
 ```
 
+`backup verify` 按精确快照校验：除检查 manifest 所列文件的大小与 SHA-256 外，也会拒绝
+备份目录中任何未列入 manifest 的额外文件。不要把注释、临时文件或恢复记录直接放进备份
+目录；需要附加说明时放在备份目录之外。
+
 若使用 `REMOTE_ONLY`，本地备份还必须覆盖含 `file_locations` 的 SQLite；远端应独立
 备份镜像 root（包括 `operon-manifest.json`）和实际对象。占位符本身不是恢复依据，
 只有本地 `files` 身份与远端清单/字节同时保留，才能在新电脑上安全 hydrate。

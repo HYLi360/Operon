@@ -70,13 +70,23 @@ def _organism_for(db: Database, entity_type: str, entity_id: str) -> str:
         row = None
     if row is None:
         raise EntityNotFoundError(f"cannot resolve organism for {entity_type} {entity_id}")
-    return str(row["organism_id"])
+    organism_id = row["organism_id"]
+    if organism_id is None or not str(organism_id).strip():
+        raise EntityNotFoundError(f"{entity_type} {entity_id} has no organism reference")
+    return str(organism_id)
 
 
 def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
     matched_type, matched_id = resolve_identifier(db, identifier)
     organism_id = _organism_for(db, matched_type, matched_id)
-    organism = dict(db.conn.execute("SELECT * FROM organisms WHERE organism_id=?", (organism_id,)).fetchone())
+    organism_row = db.conn.execute(
+        "SELECT * FROM organisms WHERE organism_id=?", (organism_id,)
+    ).fetchone()
+    if organism_row is None:
+        raise EntityNotFoundError(
+            f"{matched_type} {matched_id} refers to missing organism {organism_id}"
+        )
+    organism = dict(organism_row)
     samples = [dict(row) for row in db.conn.execute(
         "SELECT * FROM samples WHERE organism_id=? ORDER BY sample_id", (organism_id,)
     ).fetchall()]

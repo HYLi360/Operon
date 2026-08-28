@@ -58,11 +58,17 @@ the user explicitly asks.
 
 ## Conventions
 
-- Python 3.10+; runtime dependencies are limited to `PyYAML`, `requests`,
-  `aiohttp`, and `Biopython`. The optional `remote` extra adds `Paramiko`
-  (lazy-imported only by the SSH/SFTP code paths; keep it optional). Do not
-  add new dependencies without surfacing it to the user first, unless user
-  has indicated any dependency can add.
+- Python 3.10+. Treat `pyproject.toml` as the authoritative dependency list:
+  `[project.dependencies]` contains core runtime dependencies, while
+  `[project.optional-dependencies]` contains separately installable test,
+  build, development, and runtime-feature extras. Runtime-feature extras must
+  remain lazy-imported by their feature paths; test/build extras must stay out
+  of normal runtime paths. Do not promote an extra dependency to core, or add a
+  new core runtime dependency, unless the user explicitly authorizes that
+  dependency. Approval for one dependency does not authorize others unless the
+  user grants a broader allowance. Merely informing the user is not
+  authorization; new optional dependencies must still be surfaced and kept in
+  the narrowest appropriate extra.
 - Documentation language: `docs/` and `README.md` are written in Chinese;
   code, comments, docstrings, and commit messages are in English.
 - Naming in prose: headings use the stylized `Operon`; body text refers to

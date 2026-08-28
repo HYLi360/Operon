@@ -470,7 +470,10 @@ release summary/provenance 保存每张 metadata TSV 的 SHA-256，coverage 计�
 - **只读查询**：`query` 使用独立只读 SQLite 连接 + authorizer，拒绝 DML、DDL、写 PRAGMA、ATTACH/VACUUM 等副作用操作。
 - **原子导入**：metadata import 在单事务内完成，失败整体回滚。
 - **幂等**：相同输入重复执行不会产生重复文件或覆盖正确结果；不同输入被明确拒绝。
-- **可追溯**：provenance 同时写入 `logs/workflow.jsonl` 和 `workflow_runs`。
+- **可追溯**：provenance 同时写入 `logs/workflow.jsonl` 和 `workflow_runs`。交互导入等事务型
+  调用先在同一 SQLite 事务内写入 `workflow_runs` 并缓存 JSONL 记录，待事务最终提交后才
+  append；事务失败时丢弃尚未提交的完成事件，并在回滚后记录父级失败事件，避免日志声称
+  已完成的对象实际不存在。
 - **冻结分母**：coverage 仅对带 SHA-256 的 reference-set TSV 计算；taxonomy 升级不能静默改变历史数字。
 - **自动迁移**：打开旧版 v1 数据库时，`qc_results` 和 `decisions` 会自动迁移到 v2 结构，旧数据不丢失（旧 QC 以 `legacy:` 身份保留）。
 
