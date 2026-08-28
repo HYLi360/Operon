@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import tempfile
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from operon.database import Database
 from operon.files import ingest_file
 from operon.qc_module import qc_all
 from operon.rules import evaluate_entity
+from operon.utils import now_iso
 
 
 def _fasta_text(seqs):
@@ -100,3 +102,75 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(decision["decision"], "FAIL")
         self.assertIn("CDS_NOT_MULTIPLE_OF_3", decision["reason_codes"])
 
+    def _insert_busco_metrics(self, stage, lineage, complete, fragmented=1.0, duplicated=1.0):
+        for name, value, numeric in [
+            ("busco_lineage_dataset", lineage, None),
+            ("busco_complete_percent", str(complete), complete),
+            ("busco_fragmented_percent", str(fragmented), fragmented),
+            ("busco_duplicated_percent", str(duplicated), duplicated),
+        ]:
+            self.db.insert_qc_result({
+                "entity_type": "annotation", "entity_id": "ANN_000001",
+                "input_identity": "file:FIL_000001:test", "qc_stage": stage,
+                "metric_name": name, "metric_value": value, "metric_numeric": numeric,
+                "metric_unit": "percent" if name.endswith("_percent") else None,
+                "tool": "busco", "tool_version": "6.1.0",
+                "parameter_set": stage, "evaluated_at": now_iso(),
+            })
+
+    def test_busco_value_by_uses_declared_qc_stage(self):
+        self.db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Testus",
+            "taxonomy_source": "NCBI",
+        })
+        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        self.db.insert_row("assemblies", {
+            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
+            "assembly_level": "scaffold", "assembly_version": 1,
+        })
+        self.db.insert_row("annotations", {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+            "annotation_version": 1,
+        })
+        self._insert_busco_metrics(
+            "analysis:busco_autolineage", "fabales_odb12.2", 74.0,
+        )
+        # A newer fixed-lineage result must not silently replace the source
+        # selected by the profile.
+        self._insert_busco_metrics(
+            "analysis:busco_lineage:lineage_dataset=brassicales_odb12.2",
+            "brassicales_odb12.2", 99.0,
+        )
+        decision = evaluate_entity(
+            self.db, self.project, "annotation", "ANN_000001",
+            "annotation_busco_viridiplantae_odb12_v1",
+        )
+        self.assertEqual(decision["decision"], "FAIL")
+        self.assertIn("BUSCO_COMPLETENESS_FAIL", decision["reason_codes"])
+        snapshot = json.loads(decision["observed"])
+        self.assertEqual(
+            snapshot["_rule_sources"]["analysis:busco_autolineage"]
+            ["busco_complete_percent"],
+            74.0,
+        )
+
+        self._insert_busco_metrics(
+            "analysis:busco_autolineage", "fabales_odb12.2", 80.0,
+        )
+        decision = evaluate_entity(
+            self.db, self.project, "annotation", "ANN_000001",
+            "annotation_busco_viridiplantae_odb12_v1",
+        )
+        self.assertEqual(decision["decision"], "PASS_WITH_WARNINGS")
+        self.assertIn("BUSCO_COMPLETENESS_WARNING", decision["reason_codes"])
+
+    def test_busco_value_by_unknown_lineage_warns(self):
+        self._insert_busco_metrics(
+            "analysis:busco_autolineage", "new_lineage_odb12.2", 99.0,
+        )
+        decision = evaluate_entity(
+            self.db, self.project, "annotation", "ANN_000001",
+            "annotation_busco_viridiplantae_odb12_v1",
+        )
+        self.assertEqual(decision["decision"], "PASS_WITH_WARNINGS")
+        self.assertIn("BUSCO_LINEAGE_UNCONFIGURED", decision["reason_codes"])

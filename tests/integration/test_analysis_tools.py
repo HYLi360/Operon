@@ -86,6 +86,10 @@ class TestAnalysisTools(PytestAssertions):
             download_path.mkdir(parents=True, exist_ok=True)
             output = out_path / run_name
             output.mkdir(parents=True, exist_ok=False)
+            lineage = (
+                args[args.index('--lineage_dataset') + 1]
+                if '--lineage_dataset' in args else 'brassicales_odb12.2'
+            )
             generic = {
                 'results': {'Complete percentage': 1.0, 'n_markers': 1}
             }
@@ -96,7 +100,7 @@ class TestAnalysisTools(PytestAssertions):
                     'dataset_version': '01', 'ncbi_taxid': '3699'
                 },
                 'lineage_dataset': {
-                    'name': 'brassicales_odb12.2', 'creation_date': '2026-05-13',
+                    'name': lineage, 'creation_date': '2026-05-13',
                     'number_of_buscos': '7083', 'number_of_species': '10'
                 },
                 'versions': {'busco': '6.1.0', 'hmmsearch': 3.4},
@@ -110,7 +114,7 @@ class TestAnalysisTools(PytestAssertions):
                     'n_markers': 7083, 'domain': 'eukaryota'
                 }
             }
-            (output / 'short_summary.specific.brassicales_odb12.2.json').write_text(
+            (output / f'short_summary.specific.{lineage}.json').write_text(
                 json.dumps(summary)
             )
             (output / 'logs').mkdir()
@@ -412,3 +416,77 @@ class TestAnalysisTools(PytestAssertions):
             "--threads", "8", "--dry-run",
         ]), 1)
 
+    def test_busco_runtime_lineages_coexist_without_adopting_each_other(self):
+        script = self._write_fake_busco()
+        file_row = self._add_annotation()
+        config = {
+            "version": 1,
+            "tools": {
+                "busco": {
+                    "executable": str(script), "run_method": sys.executable,
+                    "version_args": ["--version"], "version_pattern": r"BUSCO\s+([^\s]+)",
+                    "recipes": {
+                        "busco_lineage": {
+                            "entity_type": "annotation", "file_role": "protein_fasta",
+                            "format": "fasta", "input_kind": "file",
+                            "parameters": {
+                                "lineage_dataset": {
+                                    "required": True,
+                                    "pattern": r"[A-Za-z0-9][A-Za-z0-9_.-]*",
+                                }
+                            },
+                            "database": "resources/busco_downloads",
+                            "database_version": "odb12.2", "database_mode": "mutable_cache",
+                            "output_subdir": "busco_lineage", "output_kind": "directory",
+                            "output_name": "${file_id}.${lineage_dataset}.busco",
+                            "arguments": [
+                                "-m", "protein", "-i", "${input}", "-o", "${output_name}",
+                                "--out_path", "${output_parent}",
+                                "--download_path", "${database}",
+                                "--lineage_dataset", "${lineage_dataset}",
+                                "-c", "${threads}",
+                            ],
+                            "result_parser": "busco_json",
+                            "result_glob": "short_summary.specific.*.json",
+                        }
+                    },
+                }
+            },
+        }
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False), encoding="utf-8",
+        )
+
+        base = ["--project", str(self.root), "analyze", "--analysis", "busco_lineage"]
+        self.assertEqual(main([*base, "--param", "lineage_dataset=fabales_odb12.2"]), 0)
+        self.assertEqual(main([*base, "--param", "lineage_dataset=poales_odb12.2"]), 0)
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual(len(jobs), 2)
+        outputs = {row["output_relative_path"] for row in jobs}
+        self.assertEqual(outputs, {
+            f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.fabales_odb12.2.busco",
+            f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.poales_odb12.2.busco",
+        })
+        lineages = {
+            row["metric_value"] for row in self.db.query(
+                "SELECT metric_value FROM analysis_results "
+                "WHERE metric_name='busco_lineage_dataset'"
+            )
+        }
+        self.assertEqual(lineages, {"fabales_odb12.2", "poales_odb12.2"})
+        stages = {
+            row["qc_stage"] for row in self.db.query(
+                "SELECT DISTINCT qc_stage FROM qc_results WHERE metric_name LIKE 'busco_%'"
+            )
+        }
+        self.assertEqual(stages, {
+            "analysis:busco_lineage:lineage_dataset=fabales_odb12.2",
+            "analysis:busco_lineage:lineage_dataset=poales_odb12.2",
+        })
+
+        # Exact parameter reruns hit their own cache; a different lineage is
+        # never adopted as if it were an equivalent prior output.
+        self.assertEqual(main([*base, "--param", "lineage_dataset=fabales_odb12.2"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
+        self.assertEqual(main(base), 2)
+        self.assertEqual(main([*base, "--param", "unknown=x"]), 2)

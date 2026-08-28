@@ -287,7 +287,7 @@ operon tools-check
 ## analyze
 
 ```bash
-operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--backend {local,slurm,ssh}]
+operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE] [--entity-id ID]   [--threads N] [--limit N] [--dry-run] [--force] [--keep-partial] [--backend {local,slurm,ssh}]
 ```
 
 按 recipe 自动完成：
@@ -295,9 +295,10 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 1. 从 files manifest 中选取匹配 `entity_type + file_role + format` 的文件或目录输入；
 2. 按 `input_kind` 重新校验文件 SHA-256 或目录内容树哈希；
 3. 探测并记录外部程序版本；
-4. 渲染参数；除 `${input}`、`${output}`、`${database}`、`${threads}` 外，还支持
+4. 校验 recipe `parameters` 中声明的 `--param NAME=VALUE`，再渲染参数；除 `${input}`、`${output}`、`${database}`、`${threads}` 外，还支持
    `${input_parent}`、`${input_name}`、`${input_stem}`、`${output_parent}`、
    `${output_name}`、`${output_stem}`、`${file_id}`、`${file_role}`、`${entity_type}`、`${entity_id}`；
+   以及声明后的 `${<parameter>}`；运行参数同时进入输出命名和缓存指纹；
 5. 命中 `analysis_jobs` 完成缓存时直接跳过，除非 `--force`；精确指纹未命中但存在
    输入相同、输出哈希验证一致的旧完成结果时，收养该结果（状态 `adopted`）而非重算；
 6. 按 `output_kind: file|directory` 校验输出存在/非空并计算内容哈希；
@@ -316,6 +317,16 @@ operon analyze --analysis NAME   [--entity-type TYPE] [--entity-id ID]   [--thre
 `--dry-run` 只列出计划不执行：表格的 status 列为 `cached`（命中完成缓存）、
 `adoptable`（将收养已验证的旧输出）或 `planned`（将实际执行），output 列为
 计划输出路径，tool_version 为探测到的版本。
+
+`--param` 只能设置 recipe 明确声明的参数。缺少 required 参数、未知参数、重复参数或不
+满足 recipe 的 `pattern`/`choices` 时返回配置错误。默认 `busco_lineage` 用法：
+
+```bash
+operon analyze --analysis busco_lineage \
+  --param lineage_dataset=fabales_odb12.2
+```
+
+`report analysis` 显示所有仍为 `completed` 的参数变体；不会只保留同 recipe 的最新一条。
 
 中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`analyze` 会优雅停机——
 
@@ -427,6 +438,8 @@ operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID]
 - 默认 profile 来自 `project.yaml` 的 `qc.default_profile`。
 - 指定 `--entity-id` 时必须同时指定 `--entity-type`。
 - 保存 profile SHA-256 快照，追加 decision；状态机按判定更新。
+- 规则支持 `value_by.metric + value_by.values` 动态选择门限，并用 `unknown` 指定未知
+  selector 的策略；`source.qc_stage` 可把规则绑定到一个明确的 QC/analysis 来源。
 
 ## curate
 

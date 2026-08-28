@@ -184,6 +184,11 @@ input_identity 唯一输入标识：
 
 这保证同一实体的 R1、R2、GFF3、蛋白 FASTA 等不同输入文件的同名指标不会互相覆盖。查询 `latest_metrics()` 时，对 `file_exists`、`sha256_match`、`parseable`、`paired_read_count_match` 这些“任一文件失败即失败”的指标取多个输入中的最小值（保守值）。
 
+外部分析的不同 recipe/运行参数以不同 `qc_stage` 和 `parameter_set` 共存。例如固定
+BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完整保留这些
+结果；宽表因每个 metric 只能有一列，仅提供最近值的浏览视图。规则引擎可通过
+`source.qc_stage` 只读取指定 stage，避免正式判定被另一个分析变体的“最新值”改变。
+
 ### 5.4 qc_profiles 与 decisions：可追溯判定
 
 规则引擎每次 `evaluate` 都会：
@@ -194,6 +199,10 @@ input_identity 唯一输入标识：
 4. `current_decisions` 视图返回每个 `(entity_type, entity_id, profile)` 的最新一条 decision。
 
 因此修改 profile 阈值后重新 evaluate 会形成新的 decision 历史，release 和 `decisions` 命令默认读取 `current_decisions`，而 `export-metadata --include-generated` 会导出完整 history。
+
+规则的阈值既可由标量 `value` 给出，也可通过 `value_by` 根据同一来源中的另一个指标
+选择。例如 BUSCO complete 门限由 `busco_lineage_dataset` 映射。selector 未出现在映射
+中时，profile 显式规定 `warning`、`fail`、`not_evaluated` 或 `ignore`；没有隐式分类回退。
 
 ### 5.5 其他系统表
 

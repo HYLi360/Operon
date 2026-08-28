@@ -214,6 +214,7 @@ operon --project . analyze \
 | `output_kind` | `file` | 输出必须是 `file` 或 `directory` |
 | `output_suffix` | 文件输出为 `.tsv`；目录输出为空 | 只用于默认 artifact 名称 |
 | `output_name` | 空 | 可选的单层名称模板；设置后覆盖默认命名公式 |
+| `parameters` | 空 mapping | recipe 明确允许从 CLI 传入的运行时参数；未声明参数会被拒绝 |
 
 没有 `output_name` 时：
 
@@ -258,6 +259,43 @@ analysis/busco/ANN_000001/FIL_000003.busco/
 
 ## 6. 参数与占位符
 
+### 6.1 声明安全的运行时参数
+
+当一个 recipe 需要在每次运行时选择一个值（例如 BUSCO lineage），不要允许任意参数
+直接追加到命令末尾。recipe 必须先通过 `parameters` 声明名字、是否必需和约束：
+
+```yaml
+parameters:
+  lineage_dataset:
+    description: BUSCO lineage dataset name
+    required: true
+    pattern: '[A-Za-z0-9][A-Za-z0-9_.-]*'
+```
+
+支持的参数约束：
+
+| 字段 | 含义 |
+|---|---|
+| `description` | 人类可读说明 |
+| `required` | 未提供且没有 default 时是否报错 |
+| `default` | 可选默认值 |
+| `pattern` | 整个值必须匹配的正则表达式 |
+| `choices` | 可选的允许值列表 |
+
+运行时使用可重复的 `--param NAME=VALUE`：
+
+```bash
+operon analyze --analysis busco_lineage \
+  --param lineage_dataset=fabales_odb12.2
+```
+
+运行参数可以作为 `${lineage_dataset}` 一样的占位符用于 `arguments` 和
+`output_name`。参数值会进入参数指纹；未声明、缺少必需值、不符合 pattern/choices、
+重复传值或仍有未解析占位符时，命令在启动外部程序前失败。
+
+带运行时参数的 recipe 不使用跨指纹“输出收养”：只有完全相同的参数指纹才能命中
+缓存。这样不会把某个 lineage 的现有输出当成另一个 lineage 的等价结果。
+
 `arguments` 是参数数组，不是 shell 命令字符串。每个 YAML list item 对应一个 argv：
 
 ```yaml
@@ -276,7 +314,7 @@ arguments:
 - "--cpu ${threads}"
 ```
 
-### 6.1 arguments 中可用的占位符
+### 6.2 arguments 中可用的占位符
 
 | 占位符 | 渲染内容 |
 |---|---|
@@ -294,6 +332,7 @@ arguments:
 | `${file_role}` | 当前 manifest 文件角色 |
 | `${entity_type}` | 当前实体类型 |
 | `${entity_id}` | 当前实体 ID |
+| `${<parameter>}` | recipe 在 `parameters` 中声明并解析后的运行时参数 |
 
 占位符可以嵌入一个参数：
 
@@ -304,7 +343,7 @@ arguments:
 但不会执行 shell 的环境变量、`~`、glob 或命令替换。路径本身不需要人工加 shell 引号，
 因为 `operon` 直接传递 argv 数组。
 
-### 6.2 `output_name` 中可用的占位符
+### 6.3 `output_name` 中可用的占位符
 
 `output_name` 在完整输出路径建立之前先渲染，因此只支持：
 
@@ -315,6 +354,7 @@ ${entity_type}
 ${entity_id}
 ${input_name}
 ${input_stem}
+${<parameter>}
 ```
 
 它不能引用 `${output}`、`${output_parent}` 或 `${output_name}` 本身。无法识别的占位符会
@@ -387,6 +427,7 @@ analysis name
 + file_id
 + 输入内容哈希
 + 渲染后的 arguments
++ 解析后的运行时参数
 + threads
 + tool version
 + parser/output 相关 recipe 设置
@@ -405,6 +446,7 @@ analysis name
 不收养，照常重算。收养只针对有验证过的输出的完成结果；`--force` 语义不变，始终
 重算。dry-run 输出中 status 列为 `cached`/`adoptable`/`planned`，分别表示命中
 完成缓存、会走收养路径、将实际执行；`--force` 下原本命中的缓存也显示为 `planned`。
+声明了运行时参数的 recipe 禁用第二级收养，只允许精确缓存命中。
 
 `--force` 只表示忽略一个本来有效的 completed cache。它会保留历史作业记录、将旧记录
 标为 `superseded`，删除精确的旧输出目标，然后创建新作业。它不能修复错误参数、错误
@@ -605,6 +647,85 @@ operon --project . report analysis \
   --analysis busco_autolineage \
   --entity-id ANN_000001
 ```
+
+### 11.1 显式 lineage recipe 与结果共存
+
+`busco_lineage` 使用声明式运行参数接受 `--lineage_dataset`：
+
+```yaml
+busco_lineage:
+  description: BUSCO protein mode with an explicitly selected lineage
+  entity_type: annotation
+  file_role: protein_fasta
+  format: fasta
+  input_kind: file
+  parameters:
+    lineage_dataset:
+      required: true
+      pattern: '[A-Za-z0-9][A-Za-z0-9_.-]*'
+  database: resources/busco_downloads
+  database_version: odb12
+  database_mode: mutable_cache
+  output_subdir: busco_lineage
+  output_kind: directory
+  output_name: ${file_id}.${lineage_dataset}.busco
+  arguments:
+    - -m
+    - protein
+    - -i
+    - ${input}
+    - -o
+    - ${output_name}
+    - --out_path
+    - ${output_parent}
+    - --download_path
+    - ${database}
+    - --lineage_dataset
+    - ${lineage_dataset}
+    - -c
+    - ${threads}
+    - --opt-out-run-stats
+    - --tar
+  result_parser: busco_json
+  result_glob: short_summary.specific.*.json
+```
+
+运行示例：
+
+```bash
+operon analyze --analysis busco_lineage \
+  --entity-id ANN_000001 \
+  --param lineage_dataset=fabales_odb12.2
+operon analyze --analysis busco_lineage \
+  --entity-id ANN_000001 \
+  --param lineage_dataset=eudicotyledons_odb12.2
+```
+
+两次结果不会“以最新覆盖旧值”，而是分别保存：
+
+```text
+analysis/busco_lineage/ANN_000001/FIL_000003.fabales_odb12.2.busco/
+analysis/busco_lineage/ANN_000001/FIL_000003.eudicotyledons_odb12.2.busco/
+```
+
+它们拥有不同参数指纹、output artifact、`analysis_jobs`/`analysis_results` 行和 QC stage：
+
+```text
+analysis:busco_lineage:lineage_dataset=fabales_odb12.2
+analysis:busco_lineage:lineage_dataset=eudicotyledons_odb12.2
+```
+
+`report analysis --analysis busco_lineage` 展示全部仍为 `completed` 的参数变体；同一精确
+参数被 `--force` 重跑时，旧 job 标记为 `superseded`，新 job 成为该变体的有效结果。
+
+`qc_results` 长表是事实来源，能够完整表达共存结果。`qc_results.wide.tsv` 只适合浏览和
+探索性统计：同名 metric 必须折叠成一列，因此会显示最近的一个值。正式 QC profile 不应
+依赖这种隐式“最新值”，而应使用 `source.qc_stage` 指明要采用 auto-lineage 还是某个
+固定-lineage stage。
+
+对覆盖整个绿色植物的研究范围，推荐把 `busco_autolineage` 作为全库统一 QC 输入；固定
+lineage recipe 用于某个分类子集的复核、同标尺比较或异常诊断，而不是要求整个项目使用
+同一个 lineage。
 
 ## 12. 目录输入与目录输出示例
 

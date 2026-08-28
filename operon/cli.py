@@ -187,6 +187,10 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("tools-check", help="detect configured external tools and their versions")
     p = sub.add_parser("analyze", help="run a configured external-tool recipe over matching manifest artifacts")
     p.add_argument("--analysis", required=True, help="recipe name, e.g. blastn_nt / hmmsearch_pfam / busco_autolineage")
+    p.add_argument(
+        "--param", action="append", default=[], metavar="NAME=VALUE",
+        help="set a runtime parameter declared by the recipe; repeat for multiple values",
+    )
     p.add_argument("--entity-type", help="restrict to entity type")
     p.add_argument("--entity-id", help="restrict to one entity")
     p.add_argument("--threads", type=int, help="override default threads")
@@ -716,6 +720,21 @@ def _cmd_tools_check(project: Project) -> int:
     return 0 if all_ok else 1
 
 
+def _parse_runtime_parameters(items: list[str]) -> dict[str, str]:
+    parameters: dict[str, str] = {}
+    for item in items:
+        if "=" not in item:
+            raise ValidationError(f"--param must use NAME=VALUE syntax, got {item!r}")
+        name, value = item.split("=", 1)
+        name = name.strip()
+        if not name or not value:
+            raise ValidationError(f"--param must use non-empty NAME=VALUE syntax, got {item!r}")
+        if name in parameters:
+            raise ValidationError(f"duplicate --param {name!r}")
+        parameters[name] = value
+    return parameters
+
+
 def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.tools import run_analysis
     results = run_analysis(
@@ -723,6 +742,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         entity_type=args.entity_type, entity_id=args.entity_id,
         dry_run=args.dry_run, force=args.force, limit=args.limit,
         threads=args.threads, backend=args.backend, keep_partial=args.keep_partial,
+        runtime_parameters=_parse_runtime_parameters(args.param),
     )
     headers = ["file_id", "entity", "analysis", "status", "tool_version", "output", "error"]
     rows = []
@@ -758,12 +778,6 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             FROM analysis_hits h
             JOIN analysis_jobs j ON j.job_id = h.job_id
             WHERE j.status='completed'
-              AND j.job_id = (
-                  SELECT MAX(j2.job_id) FROM analysis_jobs j2
-                  WHERE j2.status='completed'
-                    AND j2.analysis_name=h.analysis_name
-                    AND j2.file_id=h.file_id
-              )
         """
     else:
         sql = """
@@ -772,12 +786,6 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             FROM analysis_results r
             JOIN analysis_jobs j ON j.job_id = r.job_id
             WHERE j.status='completed'
-              AND j.job_id = (
-                  SELECT MAX(j2.job_id) FROM analysis_jobs j2
-                  WHERE j2.status='completed'
-                    AND j2.analysis_name=r.analysis_name
-                    AND j2.file_id=r.file_id
-              )
         """
     params: list[Any] = []
     if args.analysis:

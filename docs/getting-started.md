@@ -347,6 +347,10 @@ BUSCO 使用目录输出，并直接读取 `short_summary*.json`：
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24 --dry-run
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24
 operon report analysis --analysis busco_autolineage --entity-id ANN_000001
+
+# 对一个分类子集用显式 lineage 复核；不同 lineage 结果会共存
+operon analyze --analysis busco_lineage --entity-id ANN_000001 --threads 24 \
+  --param lineage_dataset=fabales_odb12.2
 ```
 
 BUSCO 的 recipe 将 `output_name` 设为 `${file_id}.busco`；`-o` 使用
@@ -354,6 +358,17 @@ BUSCO 的 recipe 将 `output_name` 设为 `${file_id}.busco`；`-o` 使用
 `fasta` 错换为 `jplace` 的缺陷。完整结果位于
 `analysis/busco/<ANN_ID>/<FIL_ID>.busco/`。完整配置、JSON 指标名和
 offline 数据集冻结方案见 How-to 第 7 节。
+
+覆盖整个绿色植物时，建议继续以 auto-lineage 作为统一 QC 来源，再用内置的经验门限
+profile 按实际 lineage 选择阈值：
+
+```bash
+operon evaluate --profile annotation_busco_viridiplantae_odb12_v1 \
+  --entity-type annotation
+```
+
+该 profile 明确读取 `analysis:busco_autolineage`；后续固定-lineage复核不会静默改变判定。
+门限来源、`value_by` 和结果共存语义见 How-to 第 12 节与 Recipe 配置参考。
 
 每次成功执行都会记录工具、版本、完整命令、输入内容哈希、数据库身份与输出
 内容哈希。文件和目录都受相同缓存校验；相同输入、参数、工具版本和数据库身份会自动命中缓存而跳过执行；

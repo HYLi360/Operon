@@ -212,7 +212,7 @@ operon qc
 外部程序统一在 `config/tools.yaml` 中配置，不再每次手工拼接命令。新项目由
 `operon init` 自动生成；旧项目在第一次运行 `tools-check` 或 `analyze` 时若文件缺失
 也会自动补建，不会覆盖已有配置。默认模板给出 `blastn_nt`、`blastp_nr`、
-`hmmsearch_pfam` 和 `busco_autolineage` recipe；需要按本机环境修改启动方式与数据库路径。
+`hmmsearch_pfam`、`busco_autolineage` 和 `busco_lineage` recipe；需要按本机环境修改启动方式与数据库路径。
 本文保留日常操作所需的速查；完整执行模型、全部字段、占位符、缓存身份、parser 专用
 选项和接入新工具的检查清单见 [Recipe 配置参考](recipe-reference.md)。
 
@@ -257,6 +257,7 @@ recipe 关键字段：
 | `database_checksum` | 可选；提供后作为严格数据库身份 |
 | `database_mode` | `reference`（默认，按内容识别）或 `mutable_cache`（共享可增长下载区，要求 `database_version`） |
 | `arguments` | 命令参数；占位符见下表 |
+| `parameters` | 允许由 `analyze --param NAME=VALUE` 设置的受约束运行参数 |
 | `result_parser` | `blast_tabular`、`hmmer_tblout`、`busco_json` 或 `none` |
 | `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
 | `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
@@ -433,6 +434,31 @@ warnings:
     value: 20
     code: HIGH_BUSCO_DUPLICATION
 ```
+
+#### 指定 lineage、保留多个 BUSCO 结果
+
+绿色植物跨度很大，不适合把整个项目强制到同一个 lineage。默认仍建议全库运行
+`busco_autolineage`；需要对某个类群按固定标尺复核时使用 `busco_lineage`：
+
+```bash
+operon analyze --analysis busco_lineage \
+  --entity-id ANN_000001 \
+  --threads 24 \
+  --param lineage_dataset=fabales_odb12.2
+```
+
+`lineage_dataset` 必须由 recipe 的 `parameters` 声明并通过 pattern 校验，不能借此注入
+任意额外命令参数。lineage 同时进入输出名和缓存指纹，所以同一 annotation 的多个固定
+lineage 结果并存，不以最新输出覆盖：
+
+```text
+analysis/busco_lineage/ANN_000001/FIL_000003.fabales_odb12.2.busco/
+analysis/busco_lineage/ANN_000001/FIL_000003.eudicotyledons_odb12.2.busco/
+```
+
+QC 长表也使用带 lineage 的 stage 保存。宽表因同名指标只能有一列，会折叠为最近值，
+所以正式判定应在 profile 中写 `source.qc_stage`；默认 BUSCO QC profile明确绑定
+`analysis:busco_autolineage`，不会被后来运行的固定 lineage 结果静默替换。
 
 ## 8. 如何运行外部工具并保留 provenance
 
@@ -752,6 +778,112 @@ operon report decisions --profile phylogenomics_v1
 ```
 
 每次 evaluate 都会保存 profile 内容快照，并追加 decision 历史。
+
+### 12.1 按分类器指标选择门限：`value_by`
+
+当一个数值指标的合理门限取决于另一个指标时，可用 `value_by`。绿色植物 BUSCO
+auto-lineage 是典型场景：整个 Viridiplantae 不适合使用同一个 lineage，也不应要求用户
+逐物种查询 taxonomy 后手工选择；先让 BUSCO 自动选择 lineage，再让 profile 根据实际
+`busco_lineage_dataset` 选择完整率门限：
+
+```yaml
+kind: qc
+version: 1
+description: BUSCO 6.1.0 / odb12.2 auto-lineage gates for Viridiplantae
+applies_to: [annotation]
+
+required:
+  - metric: busco_complete_percent
+    operator: ">="
+    value_by:
+      metric: busco_lineage_dataset
+      values:
+        eudicotyledons_odb12.2: 70
+        poales_odb12.2: 80
+        fabales_odb12.2: 75
+        lamiales_odb12.2: 70
+        embryophyta_odb12.2: 70
+        liliopsida_odb12.2: 75
+        brassicales_odb12.2: 80
+        solanales_odb12.2: 75
+        malpighiales_odb12.2: 75
+        rosaceae_odb12.2: 85
+        chlorophyceae_odb12.2: 60
+        viridiplantae_odb12.2: 65
+        rosales_odb12.2: 90
+        trebouxiophyceae_odb12.2: 80
+        chlorophyta_odb12.2: 85
+      unknown: warning
+    source:
+      qc_stage: analysis:busco_autolineage
+    code: BUSCO_COMPLETENESS_FAIL
+    unknown_code: BUSCO_LINEAGE_UNCONFIGURED
+```
+
+`value_by.metric` 和被判定的 `metric` 从同一个来源读取。selector 的字符串值命中
+`values` 后，所选数值临时成为普通 `value`，再执行原有 operator。
+
+未知 selector 的策略：
+
+| `unknown` | required rule 的行为 |
+|---|---|
+| `warning` | 不判 required 失败，但产生 warning；适合 BUSCO 新增 lineage |
+| `fail` | required 失败 |
+| `not_evaluated` | 视为缺少可用门限，最终 `NOT_EVALUATED` |
+| `ignore` | 跳过该规则 |
+
+warning rule 主要使用 `warning` 或 `ignore`；其他策略不会把 warning 提升为 required
+失败。缺省策略为 `not_evaluated`，避免遇到未配置类别时静默放行。
+
+### 12.2 用 `source.qc_stage` 固定指标来源
+
+同一实体可以同时拥有 auto-lineage 和多个固定-lineage BUSCO 结果。正式判定不能依赖
+“同名指标里最后写入哪一条”，因此规则可显式限定来源：
+
+```yaml
+source:
+  qc_stage: analysis:busco_autolineage
+```
+
+如果该 stage 没有 required metric，结果为缺少指标/`NOT_EVALUATED`；不会回退到其他
+stage 的同名结果。固定 lineage 也可以作为 profile 来源，例如：
+
+```yaml
+source:
+  qc_stage: analysis:busco_lineage:lineage_dataset=fabales_odb12.2
+```
+
+### 12.3 内置绿色植物 BUSCO profile
+
+新项目会生成：
+
+```text
+config/profiles/annotation_busco_viridiplantae_odb12_v1.yaml
+```
+
+它明确绑定 `analysis:busco_autolineage`，包含四类判定：
+
+1. lineage-specific complete 下限：低于下限 `FAIL`；
+2. complete 未达到建议 PASS 线：`PASS_WITH_WARNINGS`；
+3. fragmented 超过 lineage 经验高位：`BUSCO_FRAGMENTED_HIGH`；
+4. duplicated 超过 lineage 经验高位：`BUSCO_DUPLICATION_REVIEW`，只复核、不直接 FAIL。
+
+门限来自 2026-08-27 对 532 个绿色植物 annotation 的 BUSCO 6.1.0/odb12.2 分布分析，
+是当前研究集合的经验 profile，不是 BUSCO 官方通用标准。升级 BUSCO/OrthoDB、改变物种
+范围或研究用途时，应复制为新的版本化 profile 并重新估计，不能静默修改旧 profile。
+
+运行：
+
+```bash
+operon evaluate \
+  --profile annotation_busco_viridiplantae_odb12_v1 \
+  --entity-type annotation
+operon report decisions \
+  --profile annotation_busco_viridiplantae_odb12_v1
+```
+
+旧项目的 `operon init` 配置不会被自动覆盖；需要从新项目模板复制该 profile，或按本文
+示例在原项目 `config/profiles/` 中创建同名版本化 YAML。
 
 ## 13. 如何审计科与属的 taxonomy 覆盖率
 

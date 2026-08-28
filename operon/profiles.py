@@ -16,6 +16,46 @@ from operon.errors import ValidationError
 
 
 def default_profiles() -> dict[str, Any]:
+    busco_fail_thresholds = {
+        "eudicotyledons_odb12.2": 70, "poales_odb12.2": 80,
+        "fabales_odb12.2": 75, "lamiales_odb12.2": 70,
+        "embryophyta_odb12.2": 70, "liliopsida_odb12.2": 75,
+        "brassicales_odb12.2": 80, "solanales_odb12.2": 75,
+        "malpighiales_odb12.2": 75, "rosaceae_odb12.2": 85,
+        "chlorophyceae_odb12.2": 60, "viridiplantae_odb12.2": 65,
+        "rosales_odb12.2": 90, "trebouxiophyceae_odb12.2": 80,
+        "chlorophyta_odb12.2": 85,
+    }
+    busco_pass_thresholds = {
+        "eudicotyledons_odb12.2": 90, "poales_odb12.2": 90,
+        "fabales_odb12.2": 90, "lamiales_odb12.2": 85,
+        "embryophyta_odb12.2": 85, "liliopsida_odb12.2": 85,
+        "brassicales_odb12.2": 90, "solanales_odb12.2": 88,
+        "malpighiales_odb12.2": 85, "rosaceae_odb12.2": 90,
+        "chlorophyceae_odb12.2": 80, "viridiplantae_odb12.2": 80,
+        "rosales_odb12.2": 95, "trebouxiophyceae_odb12.2": 90,
+        "chlorophyta_odb12.2": 90,
+    }
+    busco_fragmented_thresholds = {
+        "eudicotyledons_odb12.2": 8, "poales_odb12.2": 3,
+        "fabales_odb12.2": 4, "lamiales_odb12.2": 10,
+        "embryophyta_odb12.2": 10, "liliopsida_odb12.2": 5,
+        "brassicales_odb12.2": 2, "solanales_odb12.2": 3,
+        "malpighiales_odb12.2": 4, "rosaceae_odb12.2": 2,
+        "chlorophyceae_odb12.2": 14, "viridiplantae_odb12.2": 11,
+        "rosales_odb12.2": 3, "trebouxiophyceae_odb12.2": 12,
+        "chlorophyta_odb12.2": 2,
+    }
+    busco_duplicated_thresholds = {
+        "eudicotyledons_odb12.2": 75, "poales_odb12.2": 98,
+        "fabales_odb12.2": 80, "lamiales_odb12.2": 60,
+        "embryophyta_odb12.2": 70, "liliopsida_odb12.2": 90,
+        "brassicales_odb12.2": 96, "solanales_odb12.2": 90,
+        "malpighiales_odb12.2": 80, "rosaceae_odb12.2": 70,
+        "chlorophyceae_odb12.2": 20, "viridiplantae_odb12.2": 20,
+        "rosales_odb12.2": 35, "trebouxiophyceae_odb12.2": 20,
+        "chlorophyta_odb12.2": 20,
+    }
     return {
         "file_integrity_v1": {
             "kind": "qc",
@@ -63,6 +103,60 @@ def default_profiles() -> dict[str, Any]:
                 {"metric": "internal_stop_count", "operator": ">", "value": 0, "code": "INTERNAL_STOP_CODONS"},
                 {"metric": "protein_duplicate_id_count", "operator": ">", "value": 0, "code": "DUPLICATE_PROTEIN_ID"},
                 {"metric": "seqid_mismatch_count", "operator": ">", "value": 0, "code": "SEQID_NOT_IN_FASTA"},
+            ],
+        },
+        "annotation_busco_viridiplantae_odb12_v1": {
+            "kind": "qc",
+            "version": 1,
+            "description": (
+                "Empirical BUSCO 6.1.0/odb12.2 auto-lineage gates for a broad "
+                "Viridiplantae annotation collection; review when datasets change."
+            ),
+            "applies_to": ["annotation"],
+            "required": [
+                {
+                    "metric": "busco_complete_percent", "operator": ">=",
+                    "value_by": {
+                        "metric": "busco_lineage_dataset",
+                        "values": busco_fail_thresholds,
+                        "unknown": "warning",
+                    },
+                    "source": {"qc_stage": "analysis:busco_autolineage"},
+                    "code": "BUSCO_COMPLETENESS_FAIL",
+                    "unknown_code": "BUSCO_LINEAGE_UNCONFIGURED",
+                },
+            ],
+            "warnings": [
+                {
+                    "metric": "busco_complete_percent", "operator": "<",
+                    "value_by": {
+                        "metric": "busco_lineage_dataset",
+                        "values": busco_pass_thresholds,
+                        "unknown": "ignore",
+                    },
+                    "source": {"qc_stage": "analysis:busco_autolineage"},
+                    "code": "BUSCO_COMPLETENESS_WARNING",
+                },
+                {
+                    "metric": "busco_fragmented_percent", "operator": ">",
+                    "value_by": {
+                        "metric": "busco_lineage_dataset",
+                        "values": busco_fragmented_thresholds,
+                        "unknown": "ignore",
+                    },
+                    "source": {"qc_stage": "analysis:busco_autolineage"},
+                    "code": "BUSCO_FRAGMENTED_HIGH",
+                },
+                {
+                    "metric": "busco_duplicated_percent", "operator": ">",
+                    "value_by": {
+                        "metric": "busco_lineage_dataset",
+                        "values": busco_duplicated_thresholds,
+                        "unknown": "ignore",
+                    },
+                    "source": {"qc_stage": "analysis:busco_autolineage"},
+                    "code": "BUSCO_DUPLICATION_REVIEW",
+                },
             ],
         },
         "reads_qc_v1": {

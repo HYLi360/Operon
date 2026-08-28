@@ -70,7 +70,47 @@ def _describe_rule(rule: dict[str, Any]) -> str:
         return f"{operator} {rule.get('values')}"
     if operator == "exists":
         return "metric exists"
+    if "value_by" in rule:
+        selector = rule["value_by"].get("metric", "?")
+        return f"value {operator} threshold selected by {selector}"
     return f"value {operator} {rule.get('value')}"
+
+
+def _rule_metrics(db: Database, entity_type: str, entity_id: str,
+                  rule: dict[str, Any], default: dict[str, Any]) -> dict[str, Any]:
+    source = rule.get("source")
+    if source is None:
+        return default
+    if not isinstance(source, dict) or not source.get("qc_stage"):
+        raise ValidationError("rule source must be a mapping with a non-empty qc_stage")
+    return db.latest_metrics(entity_type, entity_id, qc_stage=str(source["qc_stage"]))
+
+
+def _resolve_value_by(rule: dict[str, Any], observed: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """Return an effective scalar rule, or an unknown-selector policy."""
+    value_by = rule.get("value_by")
+    if value_by is None:
+        return rule, None
+    if not isinstance(value_by, dict) or not value_by.get("metric"):
+        raise ValidationError("value_by must be a mapping with a non-empty metric")
+    selector_name = str(value_by["metric"])
+    values = value_by.get("values")
+    if not isinstance(values, dict):
+        raise ValidationError(f"value_by for {selector_name!r} requires a values mapping")
+    selector_value = observed.get(selector_name)
+    key = str(selector_value) if selector_value is not None else None
+    if key is None or key not in {str(k) for k in values}:
+        policy = str(value_by.get("unknown", "not_evaluated"))
+        if policy not in {"warning", "fail", "not_evaluated", "ignore"}:
+            raise ValidationError(
+                f"value_by unknown policy must be warning, fail, not_evaluated, or ignore; got {policy!r}"
+            )
+        return None, policy
+    expected = next(value for candidate, value in values.items() if str(candidate) == key)
+    effective = dict(rule)
+    effective.pop("value_by", None)
+    effective["value"] = expected
+    return effective, None
 
 
 def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id: str,
@@ -84,6 +124,8 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
         profile_name, profile_version, profile_sha256, profile_document, now_iso()
     )
     observed = db.latest_metrics(entity_type, entity_id)
+    decision_observed: dict[str, Any] = dict(observed)
+    source_snapshots: dict[str, dict[str, Any]] = {}
 
     reasons: list[str] = []
     details: list[dict[str, Any]] = []
@@ -92,31 +134,82 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
     warnings_triggered = 0
 
     for rule in profile.get("required", []):
+        rule_observed = _rule_metrics(db, entity_type, entity_id, rule, observed)
+        if rule.get("source"):
+            stage = str(rule["source"]["qc_stage"])
+            source_snapshots[stage] = dict(rule_observed)
         name = rule["metric"]
-        if name not in observed or observed[name] is None:
+        if name not in rule_observed or rule_observed[name] is None:
             missing_required += 1
             reasons.append(f"MISSING_METRIC:{name}")
-            details.append({"metric": name, "rule": _describe_rule(rule), "observed": None, "code": f"MISSING_{name.upper()}", "kind": "required"})
+            details.append({"metric": name, "rule": _describe_rule(rule), "observed": None,
+                            "source": rule.get("source"), "code": f"MISSING_{name.upper()}",
+                            "kind": "required"})
             continue
-        value = observed[name]
-        if not _satisfies(value, rule):
+        effective_rule, unknown_policy = _resolve_value_by(rule, rule_observed)
+        if unknown_policy is not None:
+            selector = str(rule.get("value_by", {}).get("metric", "selector"))
+            selector_value = rule_observed.get(selector)
+            code = rule.get("unknown_code", f"{selector.upper()}_UNKNOWN")
+            kind = f"value_by_unknown_{unknown_policy}"
+            details.append({"metric": name, "rule": _describe_rule(rule),
+                            "observed": rule_observed[name], "selector": selector,
+                            "selector_value": selector_value, "source": rule.get("source"),
+                            "code": code, "kind": kind})
+            if unknown_policy == "warning":
+                warnings_triggered += 1
+                reasons.append(code)
+            elif unknown_policy == "fail":
+                required_failed += 1
+                reasons.append(code)
+            elif unknown_policy == "not_evaluated":
+                missing_required += 1
+                reasons.append(code)
+            continue
+        value = rule_observed[name]
+        assert effective_rule is not None
+        if not _satisfies(value, effective_rule):
             required_failed += 1
             code = rule.get("code", f"{name.upper()}_FAILED")
             reasons.append(code)
-            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value, "threshold": rule, "code": code, "kind": "required"})
+            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value,
+                            "threshold": effective_rule, "source": rule.get("source"),
+                            "code": code, "kind": "required"})
         else:
-            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value, "code": rule.get("code", ""), "kind": "required_pass"})
+            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value,
+                            "threshold": effective_rule, "source": rule.get("source"),
+                            "code": rule.get("code", ""), "kind": "required_pass"})
 
     for rule in profile.get("warnings", []):
+        rule_observed = _rule_metrics(db, entity_type, entity_id, rule, observed)
+        if rule.get("source"):
+            stage = str(rule["source"]["qc_stage"])
+            source_snapshots[stage] = dict(rule_observed)
         name = rule["metric"]
-        value = observed.get(name)
+        value = rule_observed.get(name)
         if value is None:
             continue
-        if _satisfies(value, rule):
+        effective_rule, unknown_policy = _resolve_value_by(rule, rule_observed)
+        if unknown_policy is not None:
+            if unknown_policy == "warning":
+                selector = str(rule.get("value_by", {}).get("metric", "selector"))
+                code = rule.get("unknown_code", f"{selector.upper()}_UNKNOWN")
+                warnings_triggered += 1
+                reasons.append(code)
+                details.append({"metric": name, "rule": _describe_rule(rule),
+                                "observed": value, "selector": selector,
+                                "selector_value": rule_observed.get(selector),
+                                "source": rule.get("source"), "code": code,
+                                "kind": "value_by_unknown_warning"})
+            continue
+        assert effective_rule is not None
+        if _satisfies(value, effective_rule):
             warnings_triggered += 1
             code = rule.get("code", f"{name.upper()}_WARNING")
             reasons.append(code)
-            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value, "threshold": rule, "code": code, "kind": "warning"})
+            details.append({"metric": name, "rule": _describe_rule(rule), "observed": value,
+                            "threshold": effective_rule, "source": rule.get("source"),
+                            "code": code, "kind": "warning"})
 
     if required_failed:
         decision = "FAIL"
@@ -127,6 +220,9 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
     else:
         decision = "PASS"
 
+    if source_snapshots:
+        decision_observed["_rule_sources"] = source_snapshots
+
     row = {
         "entity_type": entity_type,
         "entity_id": entity_id,
@@ -136,7 +232,7 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
         "profile_sha256": profile_sha256,
         "decision": decision,
         "reason_codes": json.dumps(reasons, ensure_ascii=False),
-        "observed": json.dumps(observed, ensure_ascii=False),
+        "observed": json.dumps(decision_observed, ensure_ascii=False),
         "thresholds": json.dumps(profile, ensure_ascii=False),
         "evaluated_at": now_iso(),
     }

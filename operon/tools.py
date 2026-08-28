@@ -170,6 +170,39 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     ],
                     "result_parser": "busco_json",
                     "result_glob": "short_summary.specific.*.json",
+                },
+                "busco_lineage": {
+                    "description": "BUSCO protein mode with an explicitly selected lineage",
+                    "entity_type": "annotation",
+                    "file_role": "protein_fasta",
+                    "format": "fasta",
+                    "input_kind": "file",
+                    "parameters": {
+                        "lineage_dataset": {
+                            "description": "BUSCO lineage dataset name, e.g. fabales_odb12.2",
+                            "required": True,
+                            "pattern": r"[A-Za-z0-9][A-Za-z0-9_.-]*",
+                        }
+                    },
+                    "database": "resources/busco_downloads",
+                    "database_version": "odb12",
+                    "database_mode": "mutable_cache",
+                    "output_subdir": "busco_lineage",
+                    "output_kind": "directory",
+                    "output_name": "${file_id}.${lineage_dataset}.busco",
+                    "arguments": [
+                        "-m", "protein",
+                        "-i", "${input}",
+                        "-o", "${output_name}",
+                        "--out_path", "${output_parent}",
+                        "--download_path", "${database}",
+                        "--lineage_dataset", "${lineage_dataset}",
+                        "-c", "${threads}",
+                        "--opt-out-run-stats",
+                        "--tar",
+                    ],
+                    "result_parser": "busco_json",
+                    "result_glob": "short_summary.specific.*.json",
                 }
             },
         },
@@ -232,6 +265,7 @@ class Recipe:
     output_name_template: str
     output_suffix: str
     arguments: list[str]
+    parameters: dict[str, dict[str, Any]]
     result_parser: str
     max_hits_per_query: int
     raw: dict[str, Any]
@@ -315,6 +349,23 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                 )
             default_suffix = "" if output_kind == "directory" else ".tsv"
             output_suffix = str(raw["output_suffix"]) if "output_suffix" in raw else default_suffix
+            raw_parameters = raw.get("parameters", {}) or {}
+            if not isinstance(raw_parameters, dict):
+                raise ValidationError(f"analysis {analysis_name!r}: parameters must be a mapping")
+            parameters: dict[str, dict[str, Any]] = {}
+            for parameter_name, parameter_spec in raw_parameters.items():
+                name = str(parameter_name)
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+                    raise ValidationError(
+                        f"analysis {analysis_name!r}: invalid parameter name {name!r}"
+                    )
+                if parameter_spec is None:
+                    parameter_spec = {}
+                if not isinstance(parameter_spec, dict):
+                    raise ValidationError(
+                        f"analysis {analysis_name!r}: parameter {name!r} must be a mapping"
+                    )
+                parameters[name] = dict(parameter_spec)
             return Recipe(
                 name=analysis_name,
                 tool_name=tool_name,
@@ -330,6 +381,7 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                 output_name_template=str(raw.get("output_name", "") or ""),
                 output_suffix=output_suffix,
                 arguments=[str(x) for x in raw.get("arguments", [])],
+                parameters=parameters,
                 result_parser=str(raw.get("result_parser", "none") or "none"),
                 max_hits_per_query=int(raw.get("max_hits_per_query", 5) or 5),
                 raw=raw,
@@ -544,9 +596,58 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
     return identity
 
 
+def resolve_runtime_parameters(recipe: Recipe,
+                               supplied: dict[str, str] | None = None) -> dict[str, str]:
+    """Validate caller-supplied values against the recipe declaration."""
+    supplied = dict(supplied or {})
+    unknown = sorted(set(supplied) - set(recipe.parameters))
+    if unknown:
+        raise ValidationError(
+            f"{recipe.name}: undeclared runtime parameter(s): {', '.join(unknown)}; "
+            f"declared: {', '.join(sorted(recipe.parameters)) or '(none)'}"
+        )
+    resolved: dict[str, str] = {}
+    for name, spec in recipe.parameters.items():
+        if name in supplied:
+            value: Any = supplied[name]
+        elif "default" in spec:
+            value = spec["default"]
+        elif bool(spec.get("required", False)):
+            raise ValidationError(
+                f"{recipe.name}: missing required runtime parameter {name!r}; "
+                f"pass --param {name}=VALUE"
+            )
+        else:
+            continue
+        if isinstance(value, (dict, list)) or value is None:
+            raise ValidationError(f"{recipe.name}: parameter {name!r} must be a scalar value")
+        rendered = str(value)
+        choices = spec.get("choices")
+        if choices is not None:
+            if not isinstance(choices, list):
+                raise ValidationError(
+                    f"{recipe.name}: parameter {name!r} choices must be a list"
+                )
+            allowed = {str(choice) for choice in choices}
+            if rendered not in allowed:
+                raise ValidationError(
+                    f"{recipe.name}: parameter {name!r} must be one of "
+                    f"{', '.join(sorted(allowed))}, got {rendered!r}"
+                )
+        pattern = str(spec.get("pattern", "") or "")
+        if pattern and re.fullmatch(pattern, rendered) is None:
+            raise ValidationError(
+                f"{recipe.name}: parameter {name!r} value {rendered!r} "
+                f"does not match pattern {pattern!r}"
+            )
+        resolved[name] = rendered
+    return resolved
+
+
 def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
                      database_path: Path | None, threads: int,
-                     file_record: dict[str, Any]) -> list[str]:
+                     file_record: dict[str, Any],
+                     runtime_parameters: dict[str, str] | None = None) -> list[str]:
     context = {
         "input": str(input_path),
         "input_parent": str(input_path.parent),
@@ -563,21 +664,30 @@ def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
         "entity_type": str(file_record["entity_type"]),
         "entity_id": str(file_record["entity_id"]),
     }
+    context.update(runtime_parameters or {})
     rendered: list[str] = []
     for arg in recipe.arguments:
         value = arg
         for key, replacement in context.items():
             value = value.replace("${" + key + "}", replacement)
+        unresolved = re.findall(r"\$\{[^}]+\}", value)
+        if unresolved:
+            raise ValidationError(
+                f"{recipe.name}: unresolved placeholder(s) in arguments: "
+                f"{', '.join(unresolved)}"
+            )
         rendered.append(value)
     return rendered
 
 
-def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_version: str) -> str:
+def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_version: str,
+                          runtime_parameters: dict[str, str] | None = None) -> str:
     payload = {
         "analysis_name": recipe.name,
         "tool": recipe.tool_name,
         "tool_version": tool_version,
         "arguments": args,
+        "runtime_parameters": runtime_parameters or {},
         "threads": threads,
         "parser": recipe.result_parser,
         "max_hits_per_query": recipe.max_hits_per_query,
@@ -662,9 +772,11 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                  entity_type: str | None = None, entity_id: str | None = None,
                  dry_run: bool = False, force: bool = False, limit: int | None = None,
                  threads: int | None = None, backend: str | None = None,
-                 keep_partial: bool = False) -> list[dict[str, Any]]:
+                 keep_partial: bool = False,
+                 runtime_parameters: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files."""
     recipe = get_recipe(project, analysis_name)
+    resolved_parameters = resolve_runtime_parameters(recipe, runtime_parameters)
     tool = get_tool(project, recipe.tool_name)
     config = load_tools_config(project)
     threads = int(threads or project.config.get("resources", {}).get("default_threads", 4) or 4)
@@ -693,6 +805,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                         project, db, recipe, tool, config, file_record,
                         dry_run=dry_run, force=force, threads=threads, backend=backend,
                         executor=executor, keep_partial=keep_partial,
+                        runtime_parameters=resolved_parameters,
                     )
                 except ShutdownRequested:
                     # Bookkeeping already finalized in run_analysis_for_file;
@@ -723,7 +836,8 @@ def _require_artifact_kind(path: Path, kind: str, label: str) -> None:
         raise ExternalToolError(f"{label} must be a directory: {path}")
 
 
-def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path: Path) -> str:
+def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path: Path,
+                        runtime_parameters: dict[str, str] | None = None) -> str:
     if not recipe.output_name_template:
         return f"{file_record['file_id']}.{recipe.file_role}{recipe.output_suffix}"
     context = {
@@ -734,6 +848,7 @@ def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path:
         "input_name": input_path.name,
         "input_stem": input_path.stem,
     }
+    context.update(runtime_parameters or {})
     output_name = recipe.output_name_template
     for key, replacement in context.items():
         output_name = output_name.replace("${" + key + "}", replacement)
@@ -767,7 +882,8 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                           config: dict[str, Any], file_record: dict[str, Any],
                           dry_run: bool = False, force: bool = False,
                           threads: int = 4, backend: str | None = None,
-                          executor: Any = None, keep_partial: bool = False) -> dict[str, Any]:
+                          executor: Any = None, keep_partial: bool = False,
+                          runtime_parameters: dict[str, str] | None = None) -> dict[str, Any]:
     if executor is None:
         from operon.execution import get_executor
         recipe_slurm = recipe.raw.get("slurm")
@@ -780,6 +896,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 project, db, recipe, tool, config, file_record,
                 dry_run=dry_run, force=force, threads=threads, backend=backend,
                 executor=owned_executor, keep_partial=keep_partial,
+                runtime_parameters=runtime_parameters,
             )
         finally:
             close = getattr(owned_executor, "close", None)
@@ -836,7 +953,9 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     )
     db_identity = database_identity(project, recipe, executor_identity if remote_only else "")
     output_dir = project.analysis_root / recipe.output_subdir / file_record["entity_id"]
-    output_name = _render_output_name(recipe, file_record, input_path)
+    output_name = _render_output_name(
+        recipe, file_record, input_path, runtime_parameters=runtime_parameters,
+    )
     output_path = output_dir / output_name
     if (
         tool.name == "busco"
@@ -853,6 +972,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     rendered_args = render_arguments(
         recipe, input_path=input_path, output_path=output_path,
         database_path=database_path, threads=threads, file_record=file_record,
+        runtime_parameters=runtime_parameters,
     )
     try:
         if dry_run and executor.name != "local":
@@ -867,14 +987,19 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             raise
         version = f"unavailable ({exc})"
         version_raw = str(exc)
-    parameter_sha = parameter_fingerprint(recipe, rendered_args, threads, version)
+    parameter_sha = parameter_fingerprint(
+        recipe, rendered_args, threads, version, runtime_parameters=runtime_parameters,
+    )
     cached = find_cached_job(
         db, recipe.name, file_record["file_id"], parameter_sha, actual_sha, db_identity
     )
     command = [*tool_command(tool, config), *rendered_args]
 
     if dry_run:
-        adoptee = find_adoptable_job(db, recipe.name, file_record["file_id"])
+        adoptee = (
+            None if runtime_parameters
+            else find_adoptable_job(db, recipe.name, file_record["file_id"])
+        )
         adoptable = (cached is None and not force and adoptee is not None
                      and adoptee["input_sha256"] == actual_sha)
         if cached is not None and not force:
@@ -912,7 +1037,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             conn.execute("UPDATE analysis_jobs SET status='superseded' WHERE job_id=?", (cached["job_id"],))
         cached = None
 
-    if cached is None and not force:
+    if cached is None and not force and not runtime_parameters:
         # Resume tier 2: adopt a verified existing output instead of
         # recomputing when the exact cache fingerprint changed (version
         # upgrade, recipe rename) but the input content is unchanged.
@@ -931,7 +1056,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 "tool_version_raw": version_raw,
                 "launcher": tool.run_method if executor.name == "local" else f"{tool.run_method} [{executor.describe()}]",
                 "command": " ".join(command),
-                "parameter_set": json.dumps({"arguments": rendered_args, "threads": threads}, ensure_ascii=False),
+                "parameter_set": json.dumps({
+                    "arguments": rendered_args, "threads": threads,
+                    "runtime_parameters": runtime_parameters or {},
+                }, ensure_ascii=False),
                 "parameter_sha256": parameter_sha,
                 "input_sha256": actual_sha,
                 "database_identity": db_identity,
@@ -983,7 +1111,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         "tool_version_raw": version_raw,
         "launcher": tool.run_method if executor.name == "local" else f"{tool.run_method} [{executor.describe()}]",
         "command": " ".join(command),
-        "parameter_set": json.dumps({"arguments": rendered_args, "threads": threads}, ensure_ascii=False),
+        "parameter_set": json.dumps({
+            "arguments": rendered_args, "threads": threads,
+            "runtime_parameters": runtime_parameters or {},
+        }, ensure_ascii=False),
         "parameter_sha256": parameter_sha,
         "input_sha256": actual_sha,
         "database_identity": db_identity,
@@ -1019,7 +1150,8 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
         output_sha = sha256_path(output_path)
         hit_count, query_count, query_with_hit_count, metric_count = parse_and_store_results(
-            db, project, recipe, tool, version, file_record, job_id, output_path, output_sha
+            db, project, recipe, tool, version, file_record, job_id, output_path, output_sha,
+            runtime_parameters=runtime_parameters,
         )
         finished = now_iso()
         with db.transaction() as conn:
@@ -1061,7 +1193,8 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
 
 def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool: ToolSpec,
                             tool_version: str, file_record: dict[str, Any], job_id: int,
-                            output_path: Path, output_sha: str) -> tuple[int, int, int, int]:
+                            output_path: Path, output_sha: str,
+                            runtime_parameters: dict[str, str] | None = None) -> tuple[int, int, int, int]:
     """Parse tool output and synchronize summary + top hits into SQLite."""
     hits = list(parse_hits(output_path, recipe))
     metrics: list[dict[str, Any]] = []
@@ -1082,6 +1215,13 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
                 best_evalue = hit["metric_numeric"] if best_evalue is None else min(best_evalue, hit["metric_numeric"])
         if best_evalue is not None:
             metrics.append(_result_metric("best_evalue", best_evalue))
+
+    qc_stage = f"analysis:{recipe.name}"
+    if runtime_parameters:
+        suffix = ",".join(
+            f"{name}={runtime_parameters[name]}" for name in sorted(runtime_parameters)
+        )
+        qc_stage = f"{qc_stage}:{suffix}"
 
     with db.transaction() as conn:
         conn.execute("DELETE FROM analysis_results WHERE job_id=?", (job_id,))
@@ -1116,7 +1256,7 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
                 "entity_id": file_record["entity_id"],
                 "file_id": file_record["file_id"],
                 "file_sha256": file_record["sha256"],
-                "qc_stage": f"analysis:{recipe.name}",
+                "qc_stage": qc_stage,
                 "metric_name": metric["metric_name"],
                 "metric_value": metric["metric_value"],
                 "metric_numeric": metric["metric_numeric"],

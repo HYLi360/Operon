@@ -801,23 +801,29 @@ class Database:
         rows = self._conn.execute(f"SELECT {', '.join(selected)} FROM {table}").fetchall()
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
 
-    def latest_metrics(self, entity_type: str, entity_id: str) -> dict[str, float | str]:
-        """Most recent metric value per metric name for an entity."""
+    def latest_metrics(self, entity_type: str, entity_id: str,
+                       qc_stage: str | None = None) -> dict[str, float | str]:
+        """Most recent metric value per name, optionally restricted to one QC stage."""
+        stage_filter = " AND qc_stage=?" if qc_stage is not None else ""
+        params: tuple[Any, ...] = (
+            (entity_type, entity_id, qc_stage)
+            if qc_stage is not None else (entity_type, entity_id)
+        )
         rows = self._conn.execute(
-            """
+            f"""
             WITH ranked AS (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY input_identity, metric_name
                     ORDER BY evaluated_at DESC, qc_result_id DESC
                 ) AS rn
                 FROM qc_results
-                WHERE entity_type=? AND entity_id=?
+                WHERE entity_type=? AND entity_id=?{stage_filter}
             )
             SELECT metric_name, metric_numeric, metric_value, evaluated_at, qc_result_id
             FROM ranked WHERE rn=1
             ORDER BY evaluated_at DESC, qc_result_id DESC
             """,
-            (entity_type, entity_id),
+            params,
         ).fetchall()
         result: dict[str, float | str] = {}
         conservative_min = {"file_exists", "sha256_match", "parseable", "paired_read_count_match"}
