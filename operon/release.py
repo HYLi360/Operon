@@ -48,7 +48,10 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     release_root.mkdir(parents=True, exist_ok=False)
 
     # Metadata snapshots (small, copied).
-    metadata_tables = ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]
+    metadata_tables = [
+        "organisms", "samples", "runs", "assemblies", "annotations", "accessions",
+        "data_sources", "source_links",
+    ]
     for table in metadata_tables:
         columns = db.table_columns(table)
         rows = db.export_rows(table, columns)

@@ -1,6 +1,6 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.4.0，数据库内部 schema 版本 `2.3`，
+> 本文对应代码库当前状态：`operon` 0.4.1，数据库内部 schema 版本 `2.4`，
 > `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.3`。
 
 ## 1. 设计目标
@@ -18,6 +18,7 @@
 | 设计原则 | 实现 |
 |---|---|
 | 实体分开建模，外部 accession 不作主键 | `organisms/samples/runs/assemblies/annotations/files/accessions` 表 |
+| 外部来源、引用与许可可追溯 | `data_sources/source_links`，非 INSDC 来源强制 citation + License |
 | 字段有类型、必填、允许值、含义 | YAML schema + 严格校验 |
 | raw 不可变、standardized 派生 | 原子 ingest + `ConflictError` + 默认独立副本 |
 | 文件名只含稳定 ID/角色/格式/压缩 | `canonical_filename()` |
@@ -74,7 +75,7 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3/2.4 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |
 | `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
@@ -214,6 +215,8 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 |---|---|
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应） |
+| `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
+| `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态 |
@@ -245,9 +248,13 @@ schema + 交叉引用 + 冲突预检       类型、必填、允许值、外键�
         └─> report metadata ─> 派生只读 TSV 快照
 ```
 
-- `operon import dataset` 使用纯英文 questionary 向导建立 Draft；最终确认前不写项目。汇总页进入任一章节修改后直接回到汇总页。
+- `operon import dataset` 使用纯英文 questionary 向导建立 Draft；已有 organism 以 scientific
+  name 自动补全选择。来源章节区分 INSDC 与非 INSDC，收集 database/repository、provider、
+  record URL、citation 和 License；非 INSDC 的 citation 与 License 为强制准入条件。最终确认
+  前不写项目，汇总页进入任一章节修改后直接回到汇总页。
 - `operon import table` 只接受人工管理的 metadata 表，支持 CSV/XLSX 模板、预览、碰撞策略与逐字段审计；不允许导入系统管理的 `files` manifest。
-- `operon report metadata` 从 SQLite 生成带行数和 SHA-256 manifest 的只读 TSV 快照。修改这些 report 不会改变数据库。
+- `operon report metadata` 从 SQLite 生成带行数和 SHA-256 manifest 的只读 TSV 快照，包含
+  `data_sources.tsv` 与 `source_links.tsv`。修改这些 report 不会改变数据库。
 - `metadata/` 目录仅为旧布局保留，不自动读写 TSV。
 
 ### 6.1 NCBI Datasets adapter

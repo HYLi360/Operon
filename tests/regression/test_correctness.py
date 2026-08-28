@@ -56,6 +56,13 @@ class TestCorrectnessRegressions(PytestAssertions):
         source.write_text(_fasta(), encoding="utf-8")
         file_row = ingest_file(db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
         self.assertTrue(qc_file(db, self.project, file_row["file_id"])["ok"])
+        data_source = db.register_data_source({
+            "source_type": "insdc", "provider": "NCBI",
+            "database_name": "GenBank", "record_url": "https://example.invalid/GCA_000001",
+        })
+        db.link_data_source(data_source["source_id"], [
+            ("assembly", "ASM_000001"), ("file", file_row["file_id"]),
+        ])
 
         schema_doc = yaml.safe_load(self.project.schema_path.read_text(encoding="utf-8"))
         schema_doc["tables"]["organisms"]["fields"]["provenance_note"] = {
@@ -69,9 +76,14 @@ class TestCorrectnessRegressions(PytestAssertions):
         self.assertEqual(main(["--project", str(self.root), "report", "metadata"]), 0)
         organisms = (self.root / "reports" / "metadata" / "organisms.tsv").read_text(encoding="utf-8")
         files = (self.root / "reports" / "metadata" / "files.tsv").read_text(encoding="utf-8")
+        sources = (self.root / "reports" / "metadata" / "data_sources.tsv").read_text(encoding="utf-8")
+        source_links = (self.root / "reports" / "metadata" / "source_links.tsv").read_text(encoding="utf-8")
         self.assertIn("provenance_note", organisms)
         self.assertIn("kept exactly", organisms)
         self.assertIn(file_row["file_id"], files)
+        self.assertIn(data_source["source_id"], sources)
+        self.assertIn("GenBank", sources)
+        self.assertIn(file_row["file_id"], source_links)
         self.assertEqual(db.query("SELECT provenance_note FROM organisms")[0]["provenance_note"], "kept exactly")
 
     def test_idempotent_ingest_repairs_missing_entity_file_link(self):
@@ -302,3 +314,30 @@ class TestCorrectnessRegressions(PytestAssertions):
             "taxonomy_snapshots", "taxonomy_nodes", "taxonomy_aliases",
             "taxonomy_reference_sets", "coverage_reports", "coverage_report_metrics",
         }.issubset(tables))
+
+    def test_schema_2_4_adds_normalized_source_provenance(self):
+        old_path = self.root / "schema-2.3.sqlite"
+        sqlite3.connect(old_path).close()
+        db = Database(old_path)
+        self.addCleanup(db.close)
+        tables = {row["name"] for row in db.query(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        self.assertTrue({"data_sources", "source_links"}.issubset(tables))
+        source = db.register_data_source({
+            "source_type": "non_insdc",
+            "provider": "Example Institute",
+            "database_name": "Genome Portal",
+            "record_url": "https://example.invalid/record/1",
+            "citation": "doi:10.0000/example",
+            "license_name": "CC-BY-4.0",
+        })
+        reused = db.register_data_source({
+            "source_type": "non_insdc",
+            "provider": "Example Institute",
+            "database_name": "Genome Portal",
+            "record_url": "https://example.invalid/record/1",
+            "citation": "doi:10.0000/example",
+            "license_name": "CC-BY-4.0",
+        })
+        self.assertEqual(reused["source_id"], source["source_id"])

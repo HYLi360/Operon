@@ -8,6 +8,7 @@ database; only their manifest records, QC metrics and provenance do.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -18,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.4"
 
 MANUAL_TABLES = [
     "organisms",
@@ -412,6 +413,42 @@ CREATE INDEX IF NOT EXISTS idx_coverage_reports_reference
     ON coverage_reports(reference_set_id, scope_kind, scope_value);
 """
 
+SOURCE_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS data_sources (
+    source_id TEXT PRIMARY KEY,
+    identity_sha256 TEXT NOT NULL UNIQUE,
+    source_type TEXT NOT NULL CHECK (source_type IN ('insdc', 'non_insdc')),
+    provider TEXT NOT NULL,
+    database_name TEXT NOT NULL,
+    record_url TEXT,
+    citation TEXT,
+    license_name TEXT,
+    license_url TEXT,
+    created_at TEXT NOT NULL,
+    workflow_run_id TEXT,
+    CHECK (
+        source_type = 'insdc'
+        OR (
+            length(trim(COALESCE(citation, ''))) > 0
+            AND length(trim(COALESCE(license_name, ''))) > 0
+        )
+    )
+);
+CREATE TABLE IF NOT EXISTS source_links (
+    source_id TEXT NOT NULL REFERENCES data_sources(source_id) ON DELETE CASCADE,
+    object_type TEXT NOT NULL CHECK (
+        object_type IN ('organism', 'sample', 'run', 'assembly', 'annotation', 'file')
+    ),
+    object_id TEXT NOT NULL,
+    relationship TEXT NOT NULL DEFAULT 'derived_from',
+    linked_at TEXT NOT NULL,
+    workflow_run_id TEXT,
+    PRIMARY KEY (source_id, object_type, object_id, relationship)
+);
+CREATE INDEX IF NOT EXISTS idx_source_links_object
+    ON source_links(object_type, object_id);
+"""
+
 
 class Database:
     """Thin wrapper around sqlite3 with Operon-specific helpers."""
@@ -440,6 +477,7 @@ class Database:
         self._migrate_pre_1_0_schema()
         self._migrate_remote_schema_2_2()
         self._migrate_taxonomy_schema_2_3()
+        self._migrate_source_schema_2_4()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -575,6 +613,10 @@ class Database:
     def _migrate_taxonomy_schema_2_3(self) -> None:
         """Add NCBI taxonomy snapshots, frozen denominators and coverage history."""
         self._conn.executescript(TAXONOMY_SCHEMA_DDL)
+
+    def _migrate_source_schema_2_4(self) -> None:
+        """Add normalized source, citation and license records and object links."""
+        self._conn.executescript(SOURCE_SCHEMA_DDL)
 
     def _ensure_current_schema_objects(self) -> None:
         """Create current indexes and rebuild the latest-decision view."""
@@ -733,13 +775,18 @@ class Database:
             raise EntityNotFoundError(f"{entity_type} {entity_id} does not exist")
 
     def next_id(self, entity_type: str) -> str:
-        if entity_type not in ENTITY_PREFIXES:
+        if entity_type == "source":
+            prefix = "SRC"
+        elif entity_type in ENTITY_PREFIXES:
+            prefix = ENTITY_PREFIXES[entity_type]
+        else:
             raise ValidationError(f"unknown entity type {entity_type!r}")
-        prefix = ENTITY_PREFIXES[entity_type]
         table = ENTITY_TABLES.get(entity_type)
+        if entity_type == "source":
+            table = "data_sources"
         max_n = 0
         if table:
-            id_col = ENTITY_ID_COLUMNS[entity_type]
+            id_col = "source_id" if entity_type == "source" else ENTITY_ID_COLUMNS[entity_type]
             try:
                 rows = self._conn.execute(f"SELECT {id_col} AS id FROM {table}").fetchall()
             except sqlite3.OperationalError:
@@ -759,6 +806,103 @@ class Database:
                 if match:
                     max_n = max(max_n, int(match.group(1)))
         return f"{prefix}_{max_n + 1:06d}"
+
+    def register_data_source(
+        self,
+        source: dict[str, Any],
+        *,
+        workflow_run_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Normalize and idempotently register one external data source."""
+        normalized = {
+            "source_type": str(source.get("source_type") or "").strip().lower(),
+            "provider": str(source.get("provider") or "").strip(),
+            "database_name": str(source.get("database_name") or "").strip(),
+            "record_url": str(source.get("record_url") or "").strip() or None,
+            "citation": str(source.get("citation") or "").strip() or None,
+            "license_name": str(source.get("license_name") or "").strip() or None,
+            "license_url": str(source.get("license_url") or "").strip() or None,
+        }
+        if normalized["source_type"] not in {"insdc", "non_insdc"}:
+            raise ValidationError("source_type must be 'insdc' or 'non_insdc'")
+        if not normalized["provider"]:
+            raise ValidationError("data source provider is required")
+        if not normalized["database_name"]:
+            raise ValidationError("data source database or repository is required")
+        if normalized["source_type"] == "non_insdc":
+            if not normalized["citation"]:
+                raise ValidationError("non-INSDC data requires a reference citation or DOI")
+            if not normalized["license_name"]:
+                raise ValidationError("non-INSDC data requires a License name or SPDX identifier")
+        identity_sha256 = hashlib.sha256(
+            json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        existing = self._conn.execute(
+            "SELECT * FROM data_sources WHERE identity_sha256=?", (identity_sha256,)
+        ).fetchone()
+        if existing is not None:
+            return dict(existing)
+        from operon.utils import now_iso
+
+        record = {
+            "source_id": self.next_id("source"),
+            "identity_sha256": identity_sha256,
+            **normalized,
+            "created_at": now_iso(),
+            "workflow_run_id": workflow_run_id,
+        }
+        columns = list(record)
+        with self.transaction():
+            self._conn.execute(
+                f"INSERT INTO data_sources ({', '.join(columns)}) "
+                f"VALUES ({', '.join('?' for _ in columns)})",
+                [record[column] for column in columns],
+            )
+        return record
+
+    def link_data_source(
+        self,
+        source_id: str,
+        objects: Iterable[tuple[str, str]],
+        *,
+        workflow_run_id: str | None = None,
+        relationship: str = "derived_from",
+    ) -> int:
+        """Link a registered source to entities or files, idempotently."""
+        allowed = {"organism", "sample", "run", "assembly", "annotation", "file"}
+        normalized = sorted({(str(kind), str(object_id)) for kind, object_id in objects})
+        unknown = sorted({kind for kind, _object_id in normalized} - allowed)
+        if unknown:
+            raise ValidationError(f"unsupported source link object type(s): {unknown}")
+        if self._conn.execute(
+            "SELECT 1 FROM data_sources WHERE source_id=?", (source_id,)
+        ).fetchone() is None:
+            raise EntityNotFoundError(f"data source {source_id} does not exist")
+        for kind, object_id in normalized:
+            exists = (
+                self._conn.execute(
+                    "SELECT 1 FROM files WHERE file_id=?", (object_id,)
+                ).fetchone() is not None
+                if kind == "file"
+                else self.entity_exists(kind, object_id)
+            )
+            if not exists:
+                raise EntityNotFoundError(f"{kind} {object_id} does not exist")
+        from operon.utils import now_iso
+
+        linked_at = now_iso()
+        before = self._conn.total_changes
+        with self.transaction():
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO source_links "
+                "(source_id, object_type, object_id, relationship, linked_at, workflow_run_id) "
+                "VALUES(?,?,?,?,?,?)",
+                [
+                    (source_id, kind, object_id, relationship, linked_at, workflow_run_id)
+                    for kind, object_id in normalized
+                ],
+            )
+        return self._conn.total_changes - before
 
     # ------------------------------------------------------------------
     # Metadata import/export

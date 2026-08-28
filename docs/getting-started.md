@@ -26,7 +26,7 @@ python -m pip install -e '.[remote]'
 
 ```bash
 operon --version
-# 输出：operon 0.4.0
+# 输出：operon 0.4.1
 
 operon --help
 ```
@@ -98,10 +98,12 @@ raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 operon import dataset
 ```
 
-向导依次收集 source、organism、sample、sequencing、assembly、annotation 和文件；可选项
-可以跳过，但最终汇总会持续显示缺失警告。汇总页可选择 `Edit source`、`Edit files`
-等章节；修改完成后会直接回到汇总页，不会继续原先的线性问题序列。只有选择
-`Execute import` 并确认剩余警告后才会写 SQLite 和归档文件。
+向导依次收集 source、organism、sample、sequencing、assembly、annotation 和文件。已有
+organism 使用 scientific name 自动补全选择。source 会明确区分 INSDC 与非 INSDC，并
+询问来源 database/repository、provider、记录 URL、引用文献与 License；非 INSDC 数据的
+引用文献和 License 不可跳过。其他可选项可以跳过，但最终汇总会持续显示缺失警告。
+汇总页可选择 `Edit source`、`Edit files` 等章节；修改完成后会直接回到汇总页，不会继续
+原先的线性问题序列。只有选择 `Execute import` 并确认剩余警告后才会写 SQLite 和归档文件。
 
 ### 3.3 从 NCBI Datasets 一步导入（推荐用于公开组装）
 
@@ -196,7 +198,8 @@ operon report metadata
 
 `report metadata` 会从 SQLite 生成 `reports/metadata/*.tsv` 和带 SHA-256 的
 `manifest.json`。这些文件是只读派生快照，适合浏览、交换或版本控制；修改它们不会
-改变数据库。批量写入应使用 `operon import table` 的 CSV/XLSX 模板与预览流程。
+改变数据库。快照还包含 `data_sources.tsv` 与 `source_links.tsv`，用于审阅来源、引用、
+License 及其关联对象。批量写入应使用 `operon import table` 的 CSV/XLSX 模板与预览流程。
 
 ### 3.6 手工归档文件到 raw
 
@@ -447,7 +450,9 @@ WHERE f.file_role='protein_fasta'
 operon release --version 2026.08 --profile assembly_production_v1
 ```
 
-默认 `copy` 模式。release 中包含 `manifest.tsv`、`exclusions.tsv`、`qc_summary.tsv`、`profile_history.tsv`、`provenance.json`、`checksums.sha256` 等。
+默认 `copy` 模式。release 中包含 `manifest.tsv`、`exclusions.tsv`、`qc_summary.tsv`、
+`profile_history.tsv`、`data_sources.tsv`、`source_links.tsv`、`provenance.json`、
+`checksums.sha256` 等。
 
 验证 release：
 

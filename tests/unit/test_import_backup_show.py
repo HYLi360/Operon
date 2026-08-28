@@ -16,7 +16,13 @@ from operon.config import load_project
 from operon.database import Database
 from operon.entity_view import organism_graph
 from operon.errors import EntityNotFoundError
-from operon.import_wizard import _commit, _synchronize_new_entity_links, run_dataset_wizard
+from operon.import_wizard import (
+    _ask_organism,
+    _commit,
+    _source_validation_errors,
+    _synchronize_new_entity_links,
+    run_dataset_wizard,
+)
 from operon.workflow import log_run
 
 
@@ -43,6 +49,43 @@ def test_show_resolves_organism_accession_and_descendants(tmp_path: Path):
         assert [row["run_id"] for row in graph["runs"]] == ["RUN_000001"]
         assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000001"]
         assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000001"]
+    finally:
+        db.close()
+
+
+def test_organism_selection_uses_scientific_name_autocomplete(tmp_path: Path, monkeypatch):
+    _project_config, db = _project(tmp_path)
+    captured: dict[str, object] = {}
+
+    class Prompt:
+        def ask(self):
+            return "Arabidopsis thaliana"
+
+    def fake_autocomplete(message, **kwargs):
+        captured["message"] = message
+        captured.update(kwargs)
+        return Prompt()
+
+    try:
+        db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Arabidopsis thaliana",
+            "taxon_id": 3702,
+        })
+        db.insert_row("organisms", {
+            "organism_id": "ORG_000002", "scientific_name": "Oryza sativa",
+            "taxon_id": 4530,
+        })
+        monkeypatch.setattr("operon.import_wizard.questionary.autocomplete", fake_autocomplete)
+        draft: dict[str, object] = {}
+        _ask_organism(db, draft)
+        assert captured["message"] == "Select the organism:"
+        assert captured["choices"] == [
+            "Create a new organism", "Arabidopsis thaliana", "Oryza sativa",
+        ]
+        assert captured["meta_information"]["Arabidopsis thaliana"] == (
+            "ORG_000001 | TaxID 3702"
+        )
+        assert draft["organism"] == {"action": "reuse", "id": "ORG_000001"}
     finally:
         db.close()
 
@@ -177,7 +220,12 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
     cds.write_text(">cds1\nATG\n", encoding="utf-8")
     protein.write_text(">p1\nM\n", encoding="utf-8")
     draft = {
-        "source": {"provider": "Lab", "record_url": "https://example.invalid/dataset/1"},
+        "source": {
+            "source_type": "non_insdc", "database_name": "Lab Genome Portal",
+            "provider": "Lab", "record_url": "https://example.invalid/dataset/1",
+            "citation": "doi:10.0000/example", "license_name": "CC-BY-4.0",
+            "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        },
         "organism": {"action": "create", "id": "ORG_000001", "row": {
             "organism_id": "ORG_000001", "scientific_name": "Wizardus testii", "taxonomy_source": "other",
         }},
@@ -212,8 +260,38 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
             "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
         )[0]
         assert parent["status"] == "completed"
+        source = dict(db.query(
+            "SELECT source_id, source_type, database_name, citation, license_name "
+            "FROM data_sources WHERE source_id=?", (result["source_id"],)
+        )[0])
+        assert source == {
+            "source_id": result["source_id"],
+            "source_type": "non_insdc",
+            "database_name": "Lab Genome Portal",
+            "citation": "doi:10.0000/example",
+            "license_name": "CC-BY-4.0",
+        }
+        links = db.query(
+            "SELECT object_type, object_id FROM source_links WHERE source_id=?",
+            (result["source_id"],),
+        )
+        assert len(links) == 7
+        graph = organism_graph(db, "ORG_000001")
+        assert [row["source_id"] for row in graph["sources"]] == [result["source_id"]]
+        assert len(graph["source_links"]) == 7
     finally:
         db.close()
+
+
+def test_non_insdc_source_requires_citation_and_license():
+    errors = _source_validation_errors({"source": {
+        "source_type": "non_insdc", "database_name": "Institutional repository",
+        "provider": "Example Institute",
+    }})
+    assert errors == [
+        "Non-INSDC data requires a reference citation or DOI.",
+        "Non-INSDC data requires a License name or SPDX identifier.",
+    ]
 
 
 def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monkeypatch):
@@ -223,7 +301,11 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
     gff.write_text("##gff-version 3\n", encoding="utf-8")
     cds.write_text(">cds1\nATG\n", encoding="utf-8")
     draft = {
-        "source": {"provider": "Lab", "record_url": ""},
+        "source": {
+            "source_type": "non_insdc", "database_name": "Lab delivery",
+            "provider": "Lab", "record_url": "",
+            "citation": "Internal delivery protocol v1", "license_name": "Proprietary",
+        },
         "organism": {"action": "create", "id": "ORG_000001", "row": {
             "organism_id": "ORG_000001", "scientific_name": "Rollbackus testii",
         }},
@@ -264,6 +346,8 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
         assert db.conn.execute(
             "SELECT COUNT(*) FROM files WHERE entity_id='ANN_000001'"
         ).fetchone()[0] == 0
+        assert db.conn.execute("SELECT COUNT(*) FROM data_sources").fetchone()[0] == 0
+        assert db.conn.execute("SELECT COUNT(*) FROM source_links").fetchone()[0] == 0
         runs = [dict(row) for row in db.conn.execute(
             "SELECT step, status, error FROM workflow_runs ORDER BY started_at"
         ).fetchall()]

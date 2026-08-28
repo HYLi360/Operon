@@ -44,9 +44,15 @@ ASM_000001,SMP_000001,GCA_000000001,1,chromosome,SPAdes v4.0.0
 operon import dataset
 ```
 
-向导界面暂时全部使用英文。source、taxonomy ID、sequencing、genome FASTA 或部分 annotation
-文件都可以跳过；汇总审阅会保留醒目的 warning。选择 `Edit ...` 修改某一章节后会直接
-回到汇总审阅，而不会接着运行原向导的后续章节。最终确认前不会修改 SQLite 或归档文件。
+向导界面暂时全部使用英文，已有 organism 使用 scientific name 自动补全。source 章节
+要求明确选择 INSDC 或非 INSDC，并记录 database/repository 与 provider，同时询问记录 URL、
+引用文献和 License。非 INSDC 数据必须提供 citation/DOI 与 License 名称或 SPDX identifier；
+INSDC 来源可将这两项留空。taxonomy ID、sequencing、genome FASTA 或部分 annotation 文件
+仍可跳过，汇总审阅会保留醒目的 warning。选择 `Edit ...` 修改某一章节后会直接回到汇总
+审阅，而不会接着运行原向导的后续章节。最终确认前不会修改 SQLite 或归档文件。
+
+成功导入后，规范化来源写入 `data_sources`，并通过 `source_links` 关联本次选择/创建的
+entity 与归档 file；相同来源内容按身份复用。`report metadata` 和 release 都会包含这两张表。
 
 ## 2. 如何扩展元数据字段
 

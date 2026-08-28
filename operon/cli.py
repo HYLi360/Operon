@@ -988,6 +988,9 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
     if accession_rows:
         print("Accessions: " + ", ".join(f"{row['namespace']}:{row['accession']}" for row in accession_rows))
     sections = [
+        ("Sources", graph["sources"], [
+            "source_id", "source_type", "database_name", "provider", "citation", "license_name"
+        ]),
         ("Samples", graph["samples"], ["sample_id", "isolate", "strain", "biosample_accession"]),
         ("Runs", graph["runs"], ["run_id", "sample_id", "run_accession", "platform", "instrument_model"]),
         ("Assemblies", graph["assemblies"], ["assembly_id", "sample_id", "assembly_accession", "assembly_name", "assembly_level"]),

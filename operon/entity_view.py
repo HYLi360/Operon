@@ -125,6 +125,25 @@ def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
         ).fetchall()]
     else:
         accessions, files = [], []
+    source_object_ids = [*entity_ids, *[row["file_id"] for row in files]]
+    if source_object_ids:
+        placeholders = ", ".join("?" for _ in source_object_ids)
+        source_links = [dict(row) for row in db.conn.execute(
+            f"SELECT * FROM source_links WHERE object_id IN ({placeholders}) "
+            "ORDER BY source_id, object_type, object_id",
+            source_object_ids,
+        ).fetchall()]
+    else:
+        source_links = []
+    source_ids = sorted({row["source_id"] for row in source_links})
+    if source_ids:
+        placeholders = ", ".join("?" for _ in source_ids)
+        sources = [dict(row) for row in db.conn.execute(
+            f"SELECT * FROM data_sources WHERE source_id IN ({placeholders}) ORDER BY source_id",
+            source_ids,
+        ).fetchall()]
+    else:
+        sources = []
     return {
         "query": identifier,
         "matched": {"entity_type": matched_type, "entity_id": matched_id},
@@ -135,4 +154,6 @@ def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
         "annotations": annotations,
         "accessions": accessions,
         "files": files,
+        "sources": sources,
+        "source_links": source_links,
     }

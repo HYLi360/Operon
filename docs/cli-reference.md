@@ -87,7 +87,11 @@ operon import table --table TABLE --file data.csv \
   [--on-conflict {error,skip,update}] [--yes]
 ```
 
-- `dataset`：启动纯英文 questionary 向导。可跳过可选字段或文件；汇总页会持续显示缺失警告。进入任一章节修改后直接返回汇总页，不会继续原始线性流程。最终确认前不修改项目。
+- `dataset`：启动纯英文 questionary 向导。已有 organism 按 scientific name 自动补全；source
+  明确区分 INSDC/非 INSDC，并请求 database/repository、provider、record URL、citation 与
+  License。非 INSDC 数据必须提供 citation/DOI 和 License。可跳过的其他字段或文件会在
+  汇总页持续显示警告；进入任一章节修改后直接返回汇总页，不继续原始线性流程。最终确认前
+  不修改项目。
 - `table --template`：生成 `.csv` 或 `.xlsx` 空模板。XLSX 同时包含只读的 `schema` 工作表，列出类型、必填项、允许值与字段说明。
 - `table --file`：读取 CSV 或 XLSX 第一张工作表，执行 schema/外键校验并打印逐行预览。
 - 可导入表为 `organisms`、`samples`、`runs`、`assemblies`、`annotations`、`accessions`；系统管理的 `files` 不可由表格覆盖。
@@ -459,6 +463,8 @@ operon release --version VERSION --profile NAME \
 - `--copy-files` 是 `--link copy` 的兼容别名。
 - 已存在的 version 目录会拒绝重复创建。
 - 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 的文件；其余实体写入 `exclusions.tsv`。
+- release 的 metadata 快照包含 `data_sources.tsv` 与 `source_links.tsv`，冻结来源、引用、
+  License 及对象关联，并纳入 release checksum/provenance。
 
 ## run-pipeline
 
@@ -518,7 +524,8 @@ operon report metadata [--output DIRECTORY]
 - coverage 报告写入 `reports/coverage/COV_<input-hash>/`，包括分子/分母、完整目标、
   缺失清单、纳入/排除观察和 provenance。完全相同输入会校验并复用既有报告。
 - `metadata`：从当前 SQLite 导出 `organisms/samples/runs/assemblies/annotations/accessions/files`
-  的只读 TSV 快照，并生成包含行数与 SHA-256 的 `manifest.json`；默认写入
+  以及规范化来源 `data_sources/source_links` 的只读 TSV 快照，并生成包含行数与 SHA-256
+  的 `manifest.json`；默认写入
   `reports/metadata/`。它是派生 report，不是备份，也不能反向覆盖数据库。
 
 coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功生成但至少一个 rank

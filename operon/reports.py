@@ -15,6 +15,7 @@ from operon.utils import format_table, now_iso, sha256_file
 METADATA_REPORT_TABLES = [
     "organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files",
 ]
+SOURCE_REPORT_TABLES = ["data_sources", "source_links"]
 
 
 def export_metadata_report(db: Database, project: Project, output: str | Path | None = None) -> Path:
@@ -37,6 +38,15 @@ def export_metadata_report(db: Database, project: Project, output: str | Path | 
     }
     for table in METADATA_REPORT_TABLES:
         columns = schema.columns(table)
+        rows = db.export_rows(table, columns)
+        path = out / f"{table}.tsv"
+        write_tsv(path, columns, rows)
+        manifest["tables"][path.name] = {
+            "row_count": len(rows),
+            "sha256": sha256_file(path),
+        }
+    for table in SOURCE_REPORT_TABLES:
+        columns = db.table_columns(table)
         rows = db.export_rows(table, columns)
         path = out / f"{table}.tsv"
         write_tsv(path, columns, rows)

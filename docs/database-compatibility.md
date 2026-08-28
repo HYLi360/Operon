@@ -32,6 +32,12 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 只要仍支持打开 2.2 项目就必须保留。对应回归测试为
 `test_schema_2_3_adds_taxonomy_coverage_history`。
 
+`Database._migrate_source_schema_2_4()` 是另一项当前功能所需的纯加法迁移：它为 2.3
+项目创建 `data_sources` 与 `source_links`，保存规范化的外部数据库/仓库、引用文献、
+License 和其关联对象。非 INSDC 来源必须同时包含 citation 与 License；来源内容通过
+SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应回归测试为
+`test_schema_2_4_adds_normalized_source_provenance`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。
