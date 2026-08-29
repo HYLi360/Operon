@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "operon"
-version = "0.5.0"
+version = "0.5.1"
 description = "Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"
 authors = [
     { name = "hyli360", email = "lihuanyu2003@gmail.com" }
@@ -50,7 +50,7 @@ executables = [
 ]
 
 [tool.cxfreeze.build_exe]
-build_exe = "build/release/v0.5.0"
+build_exe = "build/release/v0.5.1"
 packages = ["operon", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
