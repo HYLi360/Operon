@@ -14,24 +14,32 @@ from typing import Any
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
-from operon.qc_module.parsers import fasta_stats, fastq_stats, gff3_stats, protein_stats
+from operon.qc_module._parsers import (
+    fasta_stats,
+    fastq_record_count,
+    fastq_stats,
+    gff3_stats,
+    protein_stats,
+)
 from operon.utils import now_iso, sha256_file
 from operon.workflow import log_run, set_state_bulk
 
 TOOL_NAME = "operon.builtin"
 TOOL_VERSION = __version__
+PARSER_BACKEND = "cython"
+DEFAULT_PARAMETER_SET = "builtin_v2"
 
 ASSEMBLY_METRICS = [
     "sequence_count", "total_length", "min_sequence_length", "max_sequence_length",
     "mean_sequence_length", "median_sequence_length", "contig_n50", "contig_l50",
     "contig_n90", "contig_l90", "gc_percent", "n_percent", "ambiguous_base_percent",
     "invalid_base_count", "gap_count", "gap_percent", "empty_sequence_count",
-    "duplicate_sequence_id_count", "circular_sequence_count",
+    "duplicate_sequence_id_count", "duplicate_header_count", "circular_sequence_count",
 ]
 
 
 def metric(entity_type: str, entity_id: str, stage: str, name: str, value: Any,
-           unit: str | None = None, parameter_set: str = "builtin_v1") -> dict[str, Any] | None:
+           unit: str | None = None, parameter_set: str = DEFAULT_PARAMETER_SET) -> dict[str, Any] | None:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -81,7 +89,8 @@ def _file_ok(record: dict[str, Any], project: Project) -> tuple[bool, dict[str, 
 
 
 def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 1000000,
-            parameter_set: str = "builtin_v1") -> dict[str, Any]:
+            parameter_set: str = DEFAULT_PARAMETER_SET, phred_offset: int | str = 33,
+            read_count_cache: dict[tuple[str, str], int] | None = None) -> dict[str, Any]:
     """Run all applicable built-in QC stages for one manifest file."""
     row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
     if not row:
@@ -124,15 +133,20 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
                     metric(entity_type, entity_id, "sequence_basic", "duplicate_sequence_id_count", stats["duplicate_sequence_id_count"], parameter_set=parameter_set),
                 ])
         elif record["format"] == "fastq":
-            read_parameter_set = f"{parameter_set}:sample_{sample_size}"
-            stats = fastq_stats(path, sample_size=sample_size)
+            read_parameter_set = f"{parameter_set}:sample_{sample_size}:phred_{phred_offset}"
+            stats = fastq_stats(path, sample_size=sample_size, phred_offset=phred_offset)
+            if read_count_cache is not None:
+                read_count_cache[(record["file_id"], record["sha256"])] = int(stats["read_count"])
             for name, value in stats.items():
                 if value is None:
                     continue
                 unit = "bp" if name in {"total_bases", "read_length_min", "read_length_max", "read_length_mean", "read_length_n50"} else (
                     "percent" if name.endswith("percent") else None)
                 metrics.append(metric(entity_type, entity_id, "reads_basic", name, value, unit, read_parameter_set))
-            pairing = _pairing_metric(db, project, record, stats["read_count"], read_parameter_set)
+            pairing = _pairing_metric(
+                db, project, record, stats["read_count"], read_parameter_set,
+                read_count_cache=read_count_cache,
+            )
             if pairing is not None:
                 metrics.append(pairing)
         elif record["format"] == "gff3":
@@ -213,7 +227,9 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
     return metrics
 
 
-def _pairing_metric(db: Database, project: Project, record: dict[str, Any], own_count: int, parameter_set: str = "builtin_v1") -> dict[str, Any] | None:
+def _pairing_metric(db: Database, project: Project, record: dict[str, Any], own_count: int,
+                    parameter_set: str = DEFAULT_PARAMETER_SET,
+                    read_count_cache: dict[tuple[str, str], int] | None = None) -> dict[str, Any] | None:
     """When both R1 and R2 are archived, compare read counts from the actual files."""
     if record["file_role"] not in {"reads_r1", "reads_r2"}:
         return None
@@ -227,14 +243,20 @@ def _pairing_metric(db: Database, project: Project, record: dict[str, Any], own_
     sibling_path = project.root / sibling["relative_path"]
     if not sibling_path.exists():
         return None
-    sibling_count = fastq_stats(sibling_path, sample_size=1).get("read_count", 0)
+    cache_key = (str(sibling["file_id"]), str(sibling["sha256"]))
+    sibling_count = read_count_cache.get(cache_key) if read_count_cache is not None else None
+    if sibling_count is None:
+        sibling_count = fastq_record_count(sibling_path)
+        if read_count_cache is not None:
+            read_count_cache[cache_key] = int(sibling_count)
     matched = 1 if int(own_count) == int(sibling_count) else 0
     return metric(record["entity_type"], record["entity_id"], "reads_basic", "paired_read_count_match", matched, parameter_set=parameter_set)
 
 
 def qc_all(db: Database, project: Project, entity_type: str | None = None,
            entity_id: str | None = None, file_id: str | None = None,
-           sample_size: int = 1000000) -> list[dict[str, Any]]:
+           sample_size: int = 1000000, phred_offset: int | str = 33,
+           parameter_set: str = DEFAULT_PARAMETER_SET) -> list[dict[str, Any]]:
     """Run QC for selected manifest files; one failure does not abort the batch."""
     sql = "SELECT file_id FROM files WHERE entity_type IN ('organism','sample','run','assembly','annotation')"
     params: list[Any] = []
@@ -250,6 +272,11 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
     sql += " ORDER BY file_id"
     rows = db.conn.execute(sql, params).fetchall()
     results = []
+    read_count_cache: dict[tuple[str, str], int] = {}
     for row in rows:
-        results.append(qc_file(db, project, row["file_id"], sample_size=sample_size))
+        results.append(qc_file(
+            db, project, row["file_id"], sample_size=sample_size,
+            phred_offset=phred_offset, parameter_set=parameter_set,
+            read_count_cache=read_count_cache,
+        ))
     return results

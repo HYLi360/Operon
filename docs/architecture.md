@@ -82,8 +82,9 @@
 | `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
 | `operon/backup.py` | SQLite 一致备份、control/results/full scope、checksum manifest 校验 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
-| `../operon/qc_module/parsers.py` | 纯 Python 流式解析 FASTA、FASTQ、GFF3、蛋白 FASTA |
-| `../operon/qc_module/__init__.py` | 组装内置 QC stage，把指标写入 `qc_results` |
+| `../operon/qc_module/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
+| `../operon/qc_module/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
+| `../operon/qc_module/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
 | `operon/taxonomy.py` | 归档/导入不可变 NCBI Taxonomy，按 coverage profile 编译冻结分母及 provenance |
 | `operon/coverage.py` | 校验 reference set，对 metadata 或 release 冻结范围计算 family/genus 覆盖率与缺失清单 |
@@ -401,16 +402,26 @@ remote root；“对象存储与完全不同的计算集群之间服务器端搬
 
 ## 8. QC 流水线
 
-内置 QC 全部使用流式解析器，不把大文件整体读入内存：
+内置 QC 默认且必须加载 Cython 流式解析器；纯 Python 版本只作为逐指标、逐错误文本的
+行为对照。FASTA、FASTQ、GFF3 与 protein FASTA 都统一识别 LF、CRLF、lone-CR；
+序列与质量字段要求 ASCII，header/GFF3 文本按 UTF-8 校验。FASTQ 结构必须是完整的
+四行记录，截断、空 header、缺失 `+` 行或非法质量字符都会使 `parseable=0`。
 
 | stage | 适用输入 | 代表指标 |
 |---|---|---|
 | `file_integrity` | 所有文件 | `file_exists`、`size_bytes`、`sha256_match`、`parseable` |
-| `assembly_basic` | genome FASTA | `total_length`、`contig_n50/n90`、`contig_l50/l90`、`gc_percent`、`n_percent`、`gap_count`、`ambiguous_base_percent`、重复/空序列 |
-| `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
+| `assembly_basic` | genome FASTA | `total_length`、`contig_n50/n90`、`contig_l50/l90`、`gc_percent`、`n_percent`、`gap_count`、`ambiguous_base_percent`、重复 seqid/完整 header、circular/空序列 |
+| `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、采样数量/策略、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
 | `annotation_basic` | GFF3 (+组装 FASTA/蛋白 FASTA) | gene/mRNA/CDS 数量、CDS 三联体比例、ID/Parent 完整性、坐标错误、seqid 匹配、蛋白重复 ID、X 比例、内部终止密码子 |
 
 外部工具指标可通过 `import-qc` 进入同一长表，也可通过 `run-external` 以结构化方式执行并保存 provenance。
+
+FASTQ 在单次解析中累计 256 以内的质量字符直方图，再按显式 Phred offset 计算
+Q20/Q30，不二次读取或重复解压文件。默认 offset 为现代 Phred+33；`auto` 在可观察
+字符范围重叠时仍按 33 计算，但通过 `quality_encoding=ambiguous_assumed_phred33`
+保留不确定性。重复率使用确定性的前 N 条 reads 精确计数，记录
+`duplicate_sampled_read_count`、`duplicate_is_sampled` 和
+`duplicate_sampling_strategy=first_n`；配对 read count 在同一批 QC 中缓存复用。
 
 ## 9. 规则引擎
 

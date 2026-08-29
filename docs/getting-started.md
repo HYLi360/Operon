@@ -8,6 +8,7 @@
 
 - Python 3.10 或更高版本
 - Python 自带的 `venv` 与 `pip`
+- 可用的 C 编译工具链；`operon` 默认构建并使用 Cython 内置 QC 扩展
 - 可选：BUSCO、QUAST、FastQC、fastp 等外部工具（不在本指南中安装）
 
 安装 `operon`：
@@ -267,6 +268,10 @@ operon qc
 # 只处理某个 assembly
 operon qc --entity-type assembly --entity-id ASM_000001
 ```
+
+FASTQ 默认按现代 Phred+33 解释质量字符；确认输入是旧式 Phred+64 时，使用
+`operon qc --phred-offset 64`。重复率和 overrepresented 指标默认取前
+1,000,000 条 reads，可通过正整数 `--sample-size` 调整。
 
 查看 QC 长表：
 

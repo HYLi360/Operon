@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "cx-Freeze>=8.4"]
+requires = ["setuptools>=68", "cx-Freeze>=8.4", "Cython>=3.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "biopython>=1.85",
+    "Cython>=3.0",
     "PyYAML>=6.0",
     "questionary>=2.1",
     "requests>=2.32",

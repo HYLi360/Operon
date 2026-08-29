@@ -4,6 +4,8 @@ build/
 dist/
 __pycache__/
 *.py[cod]
+*.so
+operon/qc_module/_parsers.c
 *.egg-info/
 *.sqlite
 *.sqlite-wal

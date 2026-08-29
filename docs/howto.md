@@ -209,7 +209,10 @@ operon verify
 operon qc --entity-type run --entity-id RUN_000001
 ```
 
-R1 与 R2 的 `read_count` 会分别以各自的 `input_identity` 保存，同时系统会写入 `paired_read_count_match`。
+现代 FASTQ 默认按 Phred+33 计算 Q20/Q30。只有已确认是旧式 Phred+64 的数据才使用
+`--phred-offset 64`；不能确定时可用 `--phred-offset auto`，其模糊结果会明确记录为
+`ambiguous_assumed_phred33`。R1 与 R2 的 `read_count` 会分别以各自的
+`input_identity` 保存，同时系统会写入 `paired_read_count_match`。
 
 ## 5. 如何归档组装与注释
 

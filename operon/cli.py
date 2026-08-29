@@ -46,6 +46,13 @@ from operon.workflow import set_state
 MANUAL_METADATA_ENTITIES = ["organism", "sample", "run", "assembly", "annotation"]
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="operon",
@@ -180,7 +187,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--file-id")
     p.add_argument("--entity-type")
     p.add_argument("--entity-id")
-    p.add_argument("--sample-size", type=int, default=1000000)
+    p.add_argument("--sample-size", type=_positive_int, default=1000000)
+    p.add_argument(
+        "--phred-offset", choices=["33", "64", "auto"], default="33",
+        help="FASTQ quality offset (default: 33; auto assumes 33 when ambiguous)",
+    )
 
     p = sub.add_parser("import-qc", help="import external QC metrics (e.g. BUSCO, QUAST, FastQC) from TSV")
     p.add_argument("--file", dest="tsv_file", required=True)
@@ -521,7 +532,11 @@ def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -
 
 def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.qc_module import qc_all
-    results = qc_all(db, project, entity_type=args.entity_type, entity_id=args.entity_id, file_id=args.file_id, sample_size=args.sample_size)
+    results = qc_all(
+        db, project, entity_type=args.entity_type, entity_id=args.entity_id,
+        file_id=args.file_id, sample_size=args.sample_size,
+        phred_offset=args.phred_offset,
+    )
     ok = sum(1 for r in results if r["ok"])
     for r in results:
         if not r["ok"]:

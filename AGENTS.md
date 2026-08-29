@@ -25,7 +25,13 @@ for the principle-to-implementation mapping.
   `operon/__main__.py`).
   - `operon/adapters/` — external source adapters (currently NCBI Datasets).
   - `operon/qc_module/` — streaming FASTA/FASTQ/GFF3/protein parsers and
-    built-in QC stages.
+    built-in QC stages. `parsers.py` is the pure-Python reference
+    implementation; `_parsers.pyx` is the Cython-accelerated build of the
+    same API (compiled in place as `operon.qc_module._parsers`). The Cython
+    module is the required production backend; the pure-Python module is the
+    behavioral reference used by regression tests. Both must produce
+    identical metrics and error messages (enforced by
+    `tests/regression/test_cython_parser_parity.py`).
   - `operon/execution.py` — execution backends for external commands:
     `local` subprocess, `slurm` (sbatch submit + squeue poll), and `ssh`
     (Paramiko; HPC head nodes and cloud VMs, optionally through remote Slurm).
@@ -43,10 +49,13 @@ repo root; activate it or invoke `.venv/bin/python` explicitly).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev]'   # runtime + pytest + cx_Freeze
+python -m pip install -e '.[dev]'   # runtime + pytest + cx_Freeze + Cython;
+                                    # also compiles the qc parsers extension
 
 python -m pytest                    # full suite
 python -m pytest tests/unit         # by category
+
+python setup.py build_ext --inplace # rebuild only the Cython extension
 
 python -m cx_Freeze build           # standalone app -> build/release/
 build/release/operon --version

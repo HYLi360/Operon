@@ -6,6 +6,7 @@ import gzip
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.helpers import PytestAssertions
 
@@ -13,7 +14,8 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import qc_all
+import operon.qc_module as qc_module
+from operon.qc_module import PARSER_BACKEND, qc_all
 from operon.rules import evaluate_entity
 from operon.utils import now_iso
 
@@ -65,6 +67,23 @@ class TestQCAndRules(PytestAssertions):
         metrics = self.db.latest_metrics("assembly", "ASM_000001")
         self.assertEqual(metrics["duplicate_sequence_id_count"], 1.0)
 
+    def test_cython_backend_and_full_fasta_header_metrics_are_persisted(self):
+        self.assertEqual(PARSER_BACKEND, "cython")
+        self._add_organism_sample_assembly()
+        source = self.root / "headers.fa"
+        source.write_text(
+            ">same circular chromosome\nACGT\n"
+            ">same circular chromosome\nTGCA\n",
+            encoding="utf-8",
+        )
+        ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        result = qc_all(self.db, self.project, entity_type="assembly")[0]
+        self.assertTrue(result["ok"], result)
+        metrics = self.db.latest_metrics("assembly", "ASM_000001")
+        self.assertEqual(metrics["duplicate_sequence_id_count"], 1.0)
+        self.assertEqual(metrics["duplicate_header_count"], 1.0)
+        self.assertEqual(metrics["circular_sequence_count"], 2.0)
+
     def test_gzip_fasta_is_detected_and_parsed(self):
         self._add_organism_sample_assembly()
         source = self.root / "asm.fna.gz"
@@ -75,6 +94,26 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(row["compression"], "gzip")
         result = qc_all(self.db, self.project, entity_type="assembly")[0]
         self.assertTrue(result["ok"], result)
+
+    def test_paired_fastq_count_is_cached_within_qc_all(self):
+        self.db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Reads", "taxonomy_source": "NCBI",
+        })
+        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        self.db.insert_row("runs", {
+            "run_id": "RUN_000001", "sample_id": "SMP_000001", "library_layout": "PAIRED",
+        })
+        fastq = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
+        for role in ("reads_r1", "reads_r2"):
+            source = self.root / f"{role}.fastq"
+            source.write_text(fastq, encoding="utf-8")
+            ingest_file(self.db, self.project, source, "run", "RUN_000001", role)
+        with patch("operon.qc_module.fastq_record_count", wraps=qc_module.fastq_record_count) as counter:
+            results = qc_all(self.db, self.project, entity_type="run")
+        self.assertTrue(all(item["ok"] for item in results), results)
+        self.assertEqual(counter.call_count, 1)
+        metrics = self.db.latest_metrics("run", "RUN_000001")
+        self.assertEqual(metrics["paired_read_count_match"], 1.0)
 
     def test_annotation_qc_finds_broken_cds_and_parent(self):
         self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})

@@ -241,11 +241,12 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 
 ```bash
 operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
-            [--sample-size N]
+            [--sample-size N] [--phred-offset {33,64,auto}]
 ```
 
 - 默认处理所有 manifest 文件。
-- `--sample-size` 控制 FASTQ 重复率/overrepresented 统计的采样上限，默认 1,000,000。
+- `--sample-size` 控制 FASTQ 重复率/overrepresented 统计的前 N 条 reads 采样上限，必须为正整数，默认 1,000,000。
+- `--phred-offset` 控制 FASTQ 质量分数解释，默认 `33`。只有明确的旧式数据才应指定 `64`；`auto` 在字符范围重叠、无法可靠区分时按现代 Phred+33 计算，并把 `quality_encoding` 记为 `ambiguous_assumed_phred33`。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
 - 成功后实体状态为 `QC_COMPLETE`；失败为 `QC_FAILED` 并返回非零。
 

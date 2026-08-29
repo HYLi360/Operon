@@ -18,7 +18,7 @@
 ## 依赖
 
 - Python 3.10 及以上版本
-- 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython`
+- 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython`、`Cython`（构建并默认使用内置 QC 加速扩展）
 - 可选 extras：`test`（pytest）、`remote`（Paramiko）、`build`（cx_Freeze 与远程功能）、`dev`（全部开发/构建依赖）
 
 ## 安装

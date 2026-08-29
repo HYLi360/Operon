@@ -1,0 +1,160 @@
+"""Parity regressions: the Cython parsers must match the pure-Python ones.
+
+`operon.qc_module._parsers` is the required production backend, while
+`operon.qc_module.parsers` is its behavioral reference. Both backends must
+produce byte-identical metric dicts and identical QCError messages, because QC
+metrics feed the versioned rule profiles.
+"""
+
+from __future__ import annotations
+
+import gzip
+
+import pytest
+
+from operon.errors import QCError
+from operon.qc_module import parsers as py_parsers
+
+from operon.qc_module import _parsers as cy_parsers
+
+FASTA_TEXT = (
+    ">ctg1 circular\nACGTNacgtn--RY\nNNN\n"
+    ">ctg2\nCCGGTT\n"
+    ">ctg1 duplicate\nAAAA\n"
+    ">empty\n"
+)
+
+FASTQ_TEXT = (
+    "@r1\nACGTN\n+\nIIIII\n"
+    "@r2\nacgt\n+r2\nIIII\n"
+    "@r1\nACGT\n+\n!!!!\n"
+)
+
+GFF3_TEXT = (
+    "##gff-version 3\n# comment\n"
+    "ctg1\tsrc\tgene\t1\t14\t.\t+\t.\tID=g1\n"
+    "ctg1\tsrc\tmRNA\t1\t14\t.\t+\t.\tID=m1;Parent=g1\n"
+    "ctg1\tsrc\tCDS\t1\t9\t.\t+\t0\tID=c1;Parent=m1,missing\n"
+    "ctg1\tsrc\tCDS\t10\t14\t.\t+\t.\tID=c2;Parent=m1\n"
+    "ctgX\tsrc\tgene\t1\t5\t.\t+\t.\tParent=none\n"
+    "bad\tline\n"
+)
+
+PROTEIN_TEXT = ">p1\nMKT*X\n>p1\nMMA*\n>p2\nXXX\n>p3\n\n"
+
+
+@pytest.fixture
+def fasta_file(tmp_path):
+    path = tmp_path / "assembly.fa"
+    path.write_text(FASTA_TEXT, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def fastq_file(tmp_path):
+    path = tmp_path / "reads.fq"
+    path.write_text(FASTQ_TEXT, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def gff3_file(tmp_path):
+    path = tmp_path / "annotation.gff3"
+    path.write_text(GFF3_TEXT, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def protein_file(tmp_path):
+    path = tmp_path / "proteins.fa"
+    path.write_text(PROTEIN_TEXT, encoding="utf-8")
+    return path
+
+
+def test_fasta_stats_parity(fasta_file):
+    assert py_parsers.fasta_stats(fasta_file) == cy_parsers.fasta_stats(fasta_file)
+
+
+def test_fastq_stats_parity(fastq_file):
+    for sample_size in (1, 2, 1000000):
+        assert py_parsers.fastq_stats(fastq_file, sample_size=sample_size) == \
+            cy_parsers.fastq_stats(fastq_file, sample_size=sample_size)
+
+
+def test_gff3_stats_parity(gff3_file, fasta_file):
+    assert py_parsers.gff3_stats(gff3_file, fasta_file) == cy_parsers.gff3_stats(gff3_file, fasta_file)
+    assert py_parsers.gff3_stats(gff3_file) == cy_parsers.gff3_stats(gff3_file)
+
+
+def test_protein_stats_parity(protein_file):
+    assert py_parsers.protein_stats(protein_file, cds_count=4) == \
+        cy_parsers.protein_stats(protein_file, cds_count=4)
+    assert py_parsers.protein_stats(protein_file) == cy_parsers.protein_stats(protein_file)
+
+
+def test_fasta_helpers_parity(fasta_file):
+    assert py_parsers.fasta_lengths(fasta_file) == cy_parsers.fasta_lengths(fasta_file)
+    assert py_parsers.fasta_record_count(fasta_file) == cy_parsers.fasta_record_count(fasta_file)
+    assert list(py_parsers.iter_fasta(fasta_file)) == list(cy_parsers.iter_fasta(fasta_file))
+
+
+def test_fastq_iterator_parity(fastq_file):
+    assert list(py_parsers.iter_fastq(fastq_file)) == list(cy_parsers.iter_fastq(fastq_file))
+    assert py_parsers.fastq_record_count(fastq_file) == cy_parsers.fastq_record_count(fastq_file)
+
+
+def test_parse_attributes_parity():
+    attribute_string = "ID=g1;Note=a%20b;empty=;noequals;x=."
+    assert py_parsers.parse_attributes(attribute_string) == cy_parsers.parse_attributes(attribute_string)
+
+
+def test_gzip_inputs_parity(tmp_path, fasta_file, fastq_file):
+    fasta_gz = tmp_path / "assembly.fa.gz"
+    with gzip.open(fasta_gz, "wt", encoding="utf-8") as handle:
+        handle.write(FASTA_TEXT)
+    fastq_gz = tmp_path / "reads.fq.gz"
+    with gzip.open(fastq_gz, "wt", encoding="utf-8") as handle:
+        handle.write(FASTQ_TEXT)
+    assert py_parsers.fasta_stats(fasta_gz) == cy_parsers.fasta_stats(fasta_gz)
+    assert py_parsers.fastq_stats(fastq_gz) == cy_parsers.fastq_stats(fastq_gz)
+
+
+@pytest.mark.parametrize("content,loader", [
+    ("ACGT\n>h\nACGT\n", "fasta"),          # sequence before first header
+    (">h1\nACGT\n>\nAC\n", "fasta"),        # empty header
+    ("r1\nACGT\n+\nIIII\n", "fastq"),       # header missing '@'
+    ("@r1\nACGT\n+\nIII\n", "fastq"),       # sequence/quality length mismatch
+    ("@r1\nACGT\nplus\nIIII\n", "fastq"),   # malformed plus line
+])
+def test_error_message_parity(tmp_path, content, loader):
+    path = tmp_path / ("bad.fa" if loader == "fasta" else "bad.fq")
+    path.write_text(content, encoding="utf-8")
+    py_stats = py_parsers.fasta_stats if loader == "fasta" else py_parsers.fastq_stats
+    cy_stats = cy_parsers.fasta_stats if loader == "fasta" else cy_parsers.fastq_stats
+    with pytest.raises(QCError) as py_exc:
+        py_stats(path)
+    with pytest.raises(QCError) as cy_exc:
+        cy_stats(path)
+    assert str(py_exc.value) == str(cy_exc.value)
+
+
+def test_empty_files_parity(tmp_path):
+    fasta = tmp_path / "empty.fa"
+    fasta.write_text("", encoding="utf-8")
+    fastq = tmp_path / "empty.fq"
+    fastq.write_text("", encoding="utf-8")
+    assert py_parsers.fasta_stats(fasta) == cy_parsers.fasta_stats(fasta)
+    assert py_parsers.fastq_stats(fastq) == cy_parsers.fastq_stats(fastq)
+
+
+def test_fasta_iterator_validates_the_next_header_lazily(tmp_path):
+    path = tmp_path / "lazy.fa"
+    path.write_bytes(b">ok\nAC\n>\xff\nGT\n")
+    py_iter = py_parsers.iter_fasta(path)
+    cy_iter = cy_parsers.iter_fasta(path)
+    assert next(py_iter) == next(cy_iter) == ("ok", "AC")
+    with pytest.raises(QCError) as py_exc:
+        next(py_iter)
+    with pytest.raises(QCError) as cy_exc:
+        next(cy_iter)
+    assert str(py_exc.value) == str(cy_exc.value)
