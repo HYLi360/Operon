@@ -39,6 +39,10 @@ def _select(message: str, choices: list[Any], *, default: Any = None) -> Any:
     return _answer(questionary.select(message, choices=choices, default=default))
 
 
+def _path(message: str, *, default: str = "") -> str:
+    return str(_answer(questionary.path(message, default=default)))
+
+
 def _autocomplete(
     message: str,
     choices: list[str],
@@ -232,7 +236,7 @@ def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
 
 def _ask_path(label: str, current: str = "") -> str:
     while True:
-        value = _text(f"{label} path (optional):", current)
+        value = _path(f"{label} path (optional):", default=current)
         if not value or Path(value).expanduser().is_file():
             return str(Path(value).expanduser().resolve()) if value else ""
         print(f"File does not exist: {value}")
