@@ -453,26 +453,28 @@ def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database)
 
 def _cmd_ncbi_datasets(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.adapters.ncbi_datasets import DEFAULT_INCLUDES, run_ncbi_datasets_adapter
+    from operon.shutdown import graceful_shutdown
 
-    result = run_ncbi_datasets_adapter(
-        db,
-        project,
-        inputs=args.inputs,
-        accessions=args.accession,
-        accession_file=args.accession_file,
-        includes=args.include or DEFAULT_INCLUDES,
-        archive_files=not args.no_archive_files,
-        standardize=args.standardize,
-        dry_run=args.dry_run,
-        preserve_sources=not args.no_preserve_source,
-        email=args.email or os.environ.get("NCBI_EMAIL"),
-        api_key=args.api_key or os.environ.get("NCBI_API_KEY"),
-        timeout=args.timeout,
-        batch_size=args.batch_size,
-        download_workers=args.download_workers,
-        max_retries=args.retries,
-        retry_backoff=args.retry_backoff,
-    )
+    with graceful_shutdown():
+        result = run_ncbi_datasets_adapter(
+            db,
+            project,
+            inputs=args.inputs,
+            accessions=args.accession,
+            accession_file=args.accession_file,
+            includes=args.include or DEFAULT_INCLUDES,
+            archive_files=not args.no_archive_files,
+            standardize=args.standardize,
+            dry_run=args.dry_run,
+            preserve_sources=not args.no_preserve_source,
+            email=args.email or os.environ.get("NCBI_EMAIL"),
+            api_key=args.api_key or os.environ.get("NCBI_API_KEY"),
+            timeout=args.timeout,
+            batch_size=args.batch_size,
+            download_workers=args.download_workers,
+            max_retries=args.retries,
+            retry_backoff=args.retry_backoff,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

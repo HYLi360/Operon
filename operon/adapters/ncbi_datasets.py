@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import os
+import queue
 import random
 import re
 import shutil
@@ -712,6 +713,32 @@ def run_ncbi_datasets_adapter(
             ),
         })
         return summary
+    except KeyboardInterrupt as exc:
+        # SIGINT/SIGTERM (ShutdownRequested included): record the interruption
+        # so an aborted run is visible in the audit trail instead of looking
+        # like it never happened.
+        if not dry_run:
+            try:
+                signum = getattr(exc, "signum", None)
+                log_run(db, project, {
+                    "run_id": run_id,
+                    "step": "ncbi_datasets_import",
+                    "status": "interrupted",
+                    "started_at": started_at,
+                    "finished_at": now_iso(),
+                    "tool": "NCBI Datasets adapter",
+                    "parameter_set": ",".join(includes),
+                    "command": (
+                        "offline import" if not requested
+                        else f"download {len(requested)} accession(s) "
+                             f"(workers={download_workers}, retries={max_retries})"
+                    ),
+                    "error": (f"interrupted by signal {signum}" if signum is not None
+                              else "interrupted"),
+                })
+            except Exception:
+                pass
+        raise
     except Exception as exc:
         reported_exc: Exception = exc
         if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
@@ -1018,7 +1045,6 @@ def download_ncbi_datasets_parallel(
     are processed normally, then an aggregate ValidationError is raised unless
     `on_error` is provided to collect failures instead.
     """
-    import queue
     import threading
 
     staging_dir = Path(staging_dir)
@@ -1048,9 +1074,20 @@ def download_ncbi_datasets_parallel(
         except BaseException as exc:
             runner_errors.append(exc)
         finally:
-            completed_queue.put(sentinel)
+            # Give up once the consumer has gone (error/shutdown): a blocking
+            # sentinel put on the full bounded queue would deadlock this
+            # thread and hang the consumer's join.
+            while not cancel_event.is_set():
+                try:
+                    completed_queue.put(sentinel, timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
 
-    thread = threading.Thread(target=runner, name="operon-ncbi-download", daemon=False)
+    # daemon=True is only a last-resort backstop: the finally below cancels
+    # pending work and joins this thread promptly on any exit path, but the
+    # interpreter must never hang on it during process teardown.
+    thread = threading.Thread(target=runner, name="operon-ncbi-download", daemon=True)
     thread.start()
     completed: list[Path] = []
     failures: list[tuple[Sequence[str], Exception]] = []
@@ -1134,12 +1171,31 @@ async def _download_batches_async(
             batch, zip_path, error = await finished
             if error is None and zip_path is None:
                 continue
-            completed_queue.put((batch, zip_path, error))
+            # The consumer may have exited on error or shutdown without
+            # draining the bounded queue; a plain blocking put would then
+            # deadlock this thread forever (and hang process exit).
+            while not cancel_event.is_set():
+                try:
+                    completed_queue.put((batch, zip_path, error), timeout=0.2)
+                    break
+                except queue.Full:
+                    continue
     finally:
         for task in tasks:
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _interruptible_retry_sleep(seconds: float, cancel_event: Any) -> None:
+    """Backoff sleep that stays responsive to shutdown cancellation."""
+    remaining = seconds
+    while remaining > 0:
+        if cancel_event.is_set():
+            raise _DownloadCancelled()
+        step = min(0.2, remaining)
+        await asyncio.sleep(step)
+        remaining -= step
 
 
 async def _download_batch_aiohttp(
@@ -1178,8 +1234,13 @@ async def _download_batch_aiohttp(
     last_error: Exception | None = None
 
     for attempt in range(max_retries + 1):
+        if cancel_event.is_set():
+            raise _DownloadCancelled()
         if attempt:
-            await asyncio.sleep(retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5))
+            await _interruptible_retry_sleep(
+                retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5),
+                cancel_event,
+            )
         try:
             async with aiohttp.ClientSession(headers=headers, timeout=client_timeout) as session:
                 response = None

@@ -6,6 +6,8 @@ import asyncio
 import io
 import json
 import tempfile
+import threading
+import time
 import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -17,6 +19,8 @@ import requests
 import yaml
 
 from operon.adapters.ncbi_datasets import (
+    _DownloadCancelled,
+    _download_batch_aiohttp,
     _zip_package_diagnostic,
     download_ncbi_datasets_parallel,
     _read_report_file,
@@ -509,6 +513,91 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         self.assertEqual(len(consumed), 2)
         self.assertEqual(len(failures), 1)
         self.assertEqual(failures[0][0], ["GCF_BAD_000000.1"])
+
+    def test_parallel_download_consumer_interrupt_never_deadlocks(self):
+        async def fake_batch_download(batch, destination, **kwargs):
+            Path(destination).write_text("staged", encoding="utf-8")
+            return Path(destination)
+
+        consumed = [0]
+
+        def consume(batch, path):
+            consumed[0] += 1
+            path.unlink(missing_ok=True)
+            time.sleep(0.01)  # let the bounded completion queue fill up
+            if consumed[0] >= 2:
+                raise KeyboardInterrupt  # simulated Ctrl-C mid-batch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch(
+                "operon.adapters.ncbi_datasets._download_batch_aiohttp",
+                side_effect=fake_batch_download,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    download_ncbi_datasets_parallel(
+                        [[f"GCF_{number:09d}.1"] for number in range(1, 51)],
+                        Path(tmp),
+                        max_workers=2,
+                        max_retries=0,
+                        retry_backoff=0.0,
+                        on_complete=consume,
+                        on_error=lambda batch, error: None,
+                    )
+        # The download thread must be gone: a producer blocked on the full
+        # completion queue used to deadlock the consumer's thread join and
+        # hang interpreter shutdown ("Exception ignored while joining a
+        # thread in _thread._shutdown()").
+        leftovers = [t for t in threading.enumerate() if t.name == "operon-ncbi-download"]
+        deadline = time.time() + 5
+        while leftovers and time.time() < deadline:
+            time.sleep(0.05)
+            leftovers = [t for t in threading.enumerate() if t.name == "operon-ncbi-download"]
+        self.assertFalse(leftovers)
+
+    def test_download_batch_stops_immediately_when_cancelled(self):
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "dataset.zip"
+            with self.assertRaises(_DownloadCancelled):
+                asyncio.run(
+                    _download_batch_aiohttp(
+                        ["GCF_000001405.40"],
+                        destination,
+                        includes=["genome"],
+                        email=None,
+                        api_key=None,
+                        timeout=1.0,
+                        max_retries=4,
+                        retry_backoff=0.0,
+                        cancel_event=cancel_event,
+                    )
+                )
+            self.assertFalse(destination.exists())
+
+    def test_interrupted_download_run_is_audited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            project = load_project(root)
+            db = Database(project.db_path)
+            try:
+                with patch(
+                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                    side_effect=KeyboardInterrupt,
+                ):
+                    with self.assertRaises(KeyboardInterrupt):
+                        run_ncbi_datasets_adapter(
+                            db, project, accessions=["GCF_000001405.40"],
+                        )
+                rows = db.query(
+                    "SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["status"], "interrupted")
+            finally:
+                db.close()
 
     def test_empty_ncbi_package_diagnostic_identifies_bad_accession(self):
         with tempfile.TemporaryDirectory() as tmp:
