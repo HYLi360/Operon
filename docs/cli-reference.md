@@ -241,14 +241,21 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 
 ```bash
 operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
-            [--sample-size N] [--phred-offset {33,64,auto}]
+            [--sample-size N] [--phred-offset {33,64,auto}] [--rehash]
 ```
 
 - 默认处理所有 manifest 文件。
 - `--sample-size` 控制 FASTQ 重复率/overrepresented 统计的前 N 条 reads 采样上限，必须为正整数，默认 1,000,000。
 - `--phred-offset` 控制 FASTQ 质量分数解释，默认 `33`。只有明确的旧式数据才应指定 `64`；`auto` 在字符范围重叠、无法可靠区分时按现代 Phred+33 计算，并把 `quality_encoding` 记为 `ambiguous_assumed_phred33`。
+- 默认复用 ingest/`verify` 最近一次完整 SHA-256 已通过且 stat 指纹完全不变的结果；
+  指纹变化时自动重新计算 SHA-256。`--rehash` 无条件绕过该缓存，适合定期审计、迁移
+  存储后的首轮检查或性能基线中的冷校验测试。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
 - 成功后实体状态为 `QC_COMPLETE`；失败为 `QC_FAILED` 并返回非零。
+- 每个文件的 `logs/workflow.jsonl` 记录包含 `duration_seconds`、实际 parser backend、
+  主/关联输入身份及 `stage_timings_seconds`/`qc_timing` 分阶段高精度耗时；同一份详情
+  也写入 `workflow_runs.execution_details`。字段定义与代表性复测集合见
+  [内置 QC 性能诊断](qc-performance-diagnostics.md)。
 
 ## import-qc
 

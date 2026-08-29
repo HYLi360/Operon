@@ -341,3 +341,14 @@ class TestCorrectnessRegressions(PytestAssertions):
             "license_name": "CC-BY-4.0",
         })
         self.assertEqual(reused["source_id"], source["source_id"])
+
+    def test_schema_2_5_adds_local_file_verification_cache(self):
+        old_path = self.root / "schema-2.4.sqlite"
+        sqlite3.connect(old_path).close()
+        db = Database(old_path)
+        self.addCleanup(db.close)
+        columns = set(db.table_columns("local_file_verifications"))
+        self.assertEqual(columns, {
+            "file_id", "sha256", "size_bytes", "device", "inode",
+            "mtime_ns", "ctime_ns", "verified_at",
+        })

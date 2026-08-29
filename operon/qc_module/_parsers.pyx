@@ -10,6 +10,7 @@ import gzip
 from collections import Counter
 from math import ceil
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import unquote
 
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_GET_SIZE
@@ -619,102 +620,185 @@ def parse_attributes(attribute_string):
     return attrs
 
 
-def gff3_stats(path, fasta_path=None):
+cdef tuple _gff_ascii_id_parent(bytes attribute_bytes):
+    """Return ID/Parent presence and values without decoding common ASCII attributes."""
+    if attribute_bytes in {b"", b"."}:
+        return False, None, False, None
+    if b"%" in attribute_bytes:
+        attrs = parse_attributes(attribute_bytes.decode("ascii"))
+        return (
+            "ID" in attrs, attrs.get("ID").encode("utf-8") if "ID" in attrs else None,
+            "Parent" in attrs,
+            attrs.get("Parent").encode("utf-8") if "Parent" in attrs else None,
+        )
+    has_id = False
+    id_value = None
+    has_parent = False
+    parent_value = None
+    for chunk in attribute_bytes.split(b";"):
+        if not chunk or b"=" not in chunk:
+            continue
+        key, value = chunk.split(b"=", 1)
+        key = key.strip()
+        if key == b"ID":
+            has_id = True
+            id_value = value.strip()
+        elif key == b"Parent":
+            has_parent = True
+            parent_value = value.strip()
+    return has_id, id_value, has_parent, parent_value
+
+
+def gff3_stats(path, fasta_path=None, timings=None):
     """Structural GFF3 validation metrics.
 
     With `fasta_path`, seqid existence and end <= sequence length are checked.
-    ID/Parent integrity is always checked.
+    ID/Parent integrity is always checked.  When supplied, ``timings`` is
+    populated with non-overlapping diagnostic durations in seconds.
     """
     path = Path(path)
-    lengths = fasta_lengths(fasta_path) if fasta_path else {}
-    feature_counts = Counter()
+    if fasta_path:
+        lengths_started = perf_counter()
+        try:
+            lengths = fasta_lengths(fasta_path)
+        finally:
+            if timings is not None:
+                timings["assembly_fasta_lengths"] = perf_counter() - lengths_started
+    else:
+        lengths = {}
+    lengths_bytes = {key.encode("utf-8"): value for key, value in lengths.items()}
+    feature_types = set()
+    feature_count = 0
+    gene_count = 0
+    mrna_count = 0
+    exon_count = 0
     ids = set()
     duplicate_id = 0
-    parent_refs = Counter()
+    parent_refs = {}
     missing_id = 0
     coordinate_errors = 0
     seqid_mismatch = 0
     end_beyond_seq = 0
-    cds_phase = Counter()
+    cds_phase0 = 0
     cds_not_multiple3 = 0
     cds_count = 0
     directives = 0
     seqids = set()
-    for raw in _iter_binary_lines(path):
-        line = _decode_utf8(path, raw, "GFF3 line")
-        if not line.strip():
-            continue
-        if line.startswith("##FASTA"):
-            break
-        if line.startswith("#"):
-            directives += 1
-            continue
-        if line.startswith(">"):
-            continue
-        fields = line.split("\t")
-        if len(fields) != 9:
-            coordinate_errors += 1
-            continue
-        seqid, source, feature_type, start_s, end_s, score, strand, phase_s, attr_s = fields
-        seqids.add(seqid)
-        feature_counts[feature_type] += 1
-        try:
-            start = int(start_s)
-            end = int(end_s)
-        except ValueError:
-            coordinate_errors += 1
-            continue
-        if start < 1 or end < start:
-            coordinate_errors += 1
-        if lengths and seqid not in lengths:
-            seqid_mismatch += 1
-        elif lengths and end > lengths[seqid]:
-            end_beyond_seq += 1
-            coordinate_errors += 1
-        attrs = parse_attributes(attr_s)
-        if "ID" not in attrs:
-            missing_id += 1
-        else:
-            if attrs["ID"] in ids:
-                duplicate_id += 1
-            ids.add(attrs["ID"])
-        if "Parent" in attrs:
-            for parent in attrs["Parent"].split(","):
-                parent = parent.strip()
-                if parent:
-                    parent_refs[parent] += 1
-        if feature_type == "CDS":
-            cds_count += 1
-            if (end - start + 1) % 3 != 0:
-                cds_not_multiple3 += 1
+    scan_started = perf_counter()
+    try:
+        for raw in _iter_binary_lines(path):
+            if raw.isascii():
+                if not raw.strip():
+                    continue
+                if raw.startswith(b"##FASTA"):
+                    break
+                if raw.startswith(b"#"):
+                    directives += 1
+                    continue
+                if raw.startswith(b">"):
+                    continue
+                fields = raw.split(b"\t")
+                if len(fields) != 9:
+                    coordinate_errors += 1
+                    continue
+                seqid, source, feature_type, start_s, end_s, score, strand, phase_s, attr_s = fields
+                has_id, id_value, has_parent, parent_value = _gff_ascii_id_parent(attr_s)
+            else:
+                line = _decode_utf8(path, raw, "GFF3 line")
+                if not line.strip():
+                    continue
+                if line.startswith("##FASTA"):
+                    break
+                if line.startswith("#"):
+                    directives += 1
+                    continue
+                if line.startswith(">"):
+                    continue
+                fields = line.split("\t")
+                if len(fields) != 9:
+                    coordinate_errors += 1
+                    continue
+                seqid_s, source, feature_type_s, start_s, end_s, score, strand, phase_s, attr_s = fields
+                seqid = seqid_s.encode("utf-8")
+                feature_type = feature_type_s.encode("utf-8")
+                attrs = parse_attributes(attr_s)
+                has_id = "ID" in attrs
+                id_value = attrs.get("ID").encode("utf-8") if has_id else None
+                has_parent = "Parent" in attrs
+                parent_value = attrs.get("Parent").encode("utf-8") if has_parent else None
+            seqids.add(seqid)
+            feature_types.add(feature_type)
+            feature_count += 1
+            if feature_type == b"gene":
+                gene_count += 1
+            elif feature_type == b"mRNA" or feature_type == b"transcript":
+                mrna_count += 1
+            elif feature_type == b"exon":
+                exon_count += 1
             try:
-                phase = int(phase_s)
+                start = int(start_s)
+                end = int(end_s)
             except ValueError:
-                phase = -1
-            cds_phase[phase] += 1
-    missing_parent = sum(count for parent, count in parent_refs.items() if parent not in ids)
-    gene_count = feature_counts.get("gene", 0)
-    mrna_count = feature_counts.get("mRNA", 0) + feature_counts.get("transcript", 0)
-    cds_phase0 = cds_phase.get(0, 0)
-    return {
-        "directive_count": directives,
-        "feature_count": sum(feature_counts.values()),
-        "gene_count": gene_count,
-        "mrna_count": mrna_count,
-        "cds_count": cds_count,
-        "exon_count": feature_counts.get("exon", 0),
-        "feature_type_count": len(feature_counts),
-        "seqid_count": len(seqids),
-        "seqid_mismatch_count": seqid_mismatch,
-        "end_beyond_sequence_count": end_beyond_seq,
-        "coordinate_error_count": coordinate_errors,
-        "missing_id_count": missing_id,
-        "duplicate_id_count": duplicate_id,
-        "missing_parent_count": missing_parent,
-        "cds_length_multiple3_percent": pct(cds_count - cds_not_multiple3, cds_count),
-        "cds_phase0_percent": pct(cds_phase0, cds_count),
-        "cds_not_multiple3_count": cds_not_multiple3,
-    }
+                coordinate_errors += 1
+                continue
+            if start < 1 or end < start:
+                coordinate_errors += 1
+            if lengths_bytes and seqid not in lengths_bytes:
+                seqid_mismatch += 1
+            elif lengths_bytes and end > lengths_bytes[seqid]:
+                end_beyond_seq += 1
+                coordinate_errors += 1
+            if not has_id:
+                missing_id += 1
+            else:
+                if id_value in ids:
+                    duplicate_id += 1
+                ids.add(id_value)
+            if has_parent:
+                for parent in parent_value.split(b","):
+                    parent = parent.strip()
+                    if parent:
+                        parent_refs[parent] = parent_refs.get(parent, 0) + 1
+            if feature_type == b"CDS":
+                cds_count += 1
+                if (end - start + 1) % 3 != 0:
+                    cds_not_multiple3 += 1
+                try:
+                    phase = int(phase_s)
+                except ValueError:
+                    phase = -1
+                if phase == 0:
+                    cds_phase0 += 1
+    finally:
+        if timings is not None:
+            timings["gff3_scan"] = perf_counter() - scan_started
+
+    finalize_started = perf_counter()
+    try:
+        missing_parent = sum(count for parent, count in parent_refs.items() if parent not in ids)
+        result = {
+            "directive_count": directives,
+            "feature_count": feature_count,
+            "gene_count": gene_count,
+            "mrna_count": mrna_count,
+            "cds_count": cds_count,
+            "exon_count": exon_count,
+            "feature_type_count": len(feature_types),
+            "seqid_count": len(seqids),
+            "seqid_mismatch_count": seqid_mismatch,
+            "end_beyond_sequence_count": end_beyond_seq,
+            "coordinate_error_count": coordinate_errors,
+            "missing_id_count": missing_id,
+            "duplicate_id_count": duplicate_id,
+            "missing_parent_count": missing_parent,
+            "cds_length_multiple3_percent": pct(cds_count - cds_not_multiple3, cds_count),
+            "cds_phase0_percent": pct(cds_phase0, cds_count),
+            "cds_not_multiple3_count": cds_not_multiple3,
+        }
+    finally:
+        if timings is not None:
+            timings["gff3_finalize"] = perf_counter() - finalize_started
+    return result
 
 
 def protein_stats(path, cds_count=None):

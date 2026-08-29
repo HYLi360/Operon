@@ -13,6 +13,7 @@ from tests.helpers import PytestAssertions
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
+import operon.files as files_module
 from operon.files import ingest_file
 import operon.qc_module as qc_module
 from operon.qc_module import PARSER_BACKEND, qc_all
@@ -84,6 +85,54 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(metrics["duplicate_header_count"], 1.0)
         self.assertEqual(metrics["circular_sequence_count"], 2.0)
 
+    def test_qc_reuses_verified_immutable_file_fingerprint_and_rehash_bypasses_it(self):
+        self._add_organism_sample_assembly()
+        source = self.root / "cached.fa"
+        source.write_text(_fasta_text([("ctg1", "ACGT" * 100)]), encoding="utf-8")
+        row = ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta",
+        )
+
+        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+            cached = qc_all(self.db, self.project, file_id=row["file_id"])[0]
+            self.assertTrue(cached["ok"], cached)
+            self.assertEqual(hasher.call_count, 0)
+
+            rehashed = qc_all(
+                self.db, self.project, file_id=row["file_id"], force_checksum=True,
+            )[0]
+            self.assertTrue(rehashed["ok"], rehashed)
+            self.assertEqual(hasher.call_count, 1)
+
+        records = [
+            json.loads(line)
+            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            if '"step": "qc"' in line and row["file_id"] in line
+        ]
+        self.assertEqual(records[-2]["checksum_verification_method"], "cached_stat_fingerprint")
+        self.assertEqual(records[-1]["checksum_verification_method"], "full_sha256")
+        self.assertFalse(records[-2]["qc_timing"]["integrity"]["rehash_requested"])
+        self.assertTrue(records[-1]["qc_timing"]["integrity"]["rehash_requested"])
+
+    def test_changed_same_size_file_invalidates_qc_verification_cache(self):
+        self._add_organism_sample_assembly()
+        source = self.root / "changed.fa"
+        source.write_text(">ctg1\nAAAA\n", encoding="utf-8")
+        row = ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta",
+        )
+        archived = self.project.root / row["relative_path"]
+        archived.write_text(">ctg1\nTTTT\n", encoding="utf-8")
+
+        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+            result = qc_all(self.db, self.project, file_id=row["file_id"])[0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(hasher.call_count, 1)
+        cached = self.db.conn.execute(
+            "SELECT 1 FROM local_file_verifications WHERE file_id=?", (row["file_id"],),
+        ).fetchone()
+        self.assertIsNone(cached)
+
     def test_gzip_fasta_is_detected_and_parsed(self):
         self._add_organism_sample_assembly()
         source = self.root / "asm.fna.gz"
@@ -132,7 +181,12 @@ class TestQCAndRules(PytestAssertions):
             "ctg1\ttest\tmRNA\t900\t1000\t.\t-\t.\tID=orphan;Parent=ghost\n",
             encoding="utf-8",
         )
-        ingest_file(self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3")
+        gff_row = ingest_file(self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3")
+        protein = self.root / "proteins.faa"
+        protein.write_text(">p1\nMPEPTIDE*\n", encoding="utf-8")
+        protein_row = ingest_file(
+            self.db, self.project, protein, "annotation", "ANN_000001", "protein_fasta",
+        )
         qc_all(self.db, self.project, entity_type="annotation")
         metrics = self.db.latest_metrics("annotation", "ANN_000001")
         self.assertEqual(metrics["cds_length_multiple3_percent"], 0.0)
@@ -140,6 +194,57 @@ class TestQCAndRules(PytestAssertions):
         decision = evaluate_entity(self.db, self.project, "annotation", "ANN_000001", "annotation_release_v1")
         self.assertEqual(decision["decision"], "FAIL")
         self.assertIn("CDS_NOT_MULTIPLE_OF_3", decision["reason_codes"])
+
+        parseable = self.db.conn.execute(
+            "SELECT metric_unit, parameter_set FROM qc_results "
+            "WHERE file_id=? AND qc_stage='annotation_basic' AND metric_name='parseable'",
+            (gff_row["file_id"],),
+        ).fetchone()
+        self.assertIsNotNone(parseable)
+        self.assertIsNone(parseable["metric_unit"])
+        self.assertEqual(parseable["parameter_set"], "builtin_v2")
+
+        records = [
+            json.loads(line)
+            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        record = next(
+            item for item in records
+            if item.get("step") == "qc" and item.get("file_id") == gff_row["file_id"]
+        )
+        self.assertEqual(record["parser_backend"], "cython")
+        self.assertEqual(record["file_role"], "annotation_gff3")
+        self.assertEqual(record["input_size_bytes"], gff_row["size_bytes"])
+        self.assertGreaterEqual(record["duration_seconds"], 0.0)
+        timing = record["qc_timing"]
+        self.assertEqual(timing["schema_version"], 1)
+        self.assertEqual(timing["clock"], "perf_counter")
+        self.assertEqual(timing["input"]["file_id"], gff_row["file_id"])
+        self.assertEqual(
+            {item["kind"] for item in timing["related_inputs"]},
+            {"assembly_fasta", "protein_fasta"},
+        )
+        self.assertIn(
+            protein_row["file_id"],
+            {item["file_id"] for item in timing["related_inputs"]},
+        )
+        expected_stages = {
+            "state_qc_running", "file_integrity", "annotation_manifest_lookup",
+            "assembly_fasta_lengths", "gff3_scan", "gff3_finalize",
+            "protein_manifest_lookup", "protein_stats", "qc_results_write",
+            "state_qc_complete", "unattributed",
+        }
+        self.assertTrue(expected_stages.issubset(timing["stages_seconds"]))
+        self.assertTrue(all(value >= 0.0 for value in timing["stages_seconds"].values()))
+        self.assertEqual(record["stage_timings_seconds"], timing["stages_seconds"])
+
+        db_record = self.db.conn.execute(
+            "SELECT execution_details FROM workflow_runs "
+            "WHERE step='qc' AND entity_id=? AND command=? ORDER BY rowid DESC LIMIT 1",
+            ("ANN_000001", f"operon qc --file-id {gff_row['file_id']}"),
+        ).fetchone()
+        self.assertIsNotNone(db_record)
+        self.assertEqual(json.loads(db_record["execution_details"]), timing)
 
     def _insert_busco_metrics(self, stage, lineage, complete, fragmented=1.0, duplicated=1.0):
         for name, value, numeric in [

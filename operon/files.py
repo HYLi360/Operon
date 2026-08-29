@@ -58,6 +58,136 @@ FORMAT_EXTENSIONS = {
     "json": {".json", ".jsonl"},
 }
 
+
+def _local_file_fingerprint(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    return {
+        "size_bytes": int(stat.st_size),
+        "device": int(stat.st_dev),
+        "inode": int(stat.st_ino),
+        "mtime_ns": int(stat.st_mtime_ns),
+        "ctime_ns": int(stat.st_ctime_ns),
+    }
+
+
+def _same_local_fingerprint(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    return all(int(left[name]) == int(right[name]) for name in (
+        "size_bytes", "device", "inode", "mtime_ns", "ctime_ns",
+    ))
+
+
+def remember_local_file_verification(db: Database, record: dict[str, Any], path: Path,
+                                     *, verified_at: str | None = None) -> None:
+    """Cache a completed full-file checksum against a strong stat fingerprint."""
+    try:
+        if not path.is_file():
+            return
+        fingerprint = _local_file_fingerprint(path)
+    except OSError:
+        return
+    if fingerprint["size_bytes"] != int(record["size_bytes"]):
+        return
+    with db.transaction():
+        db.conn.execute(
+            "INSERT INTO local_file_verifications "
+            "(file_id, sha256, size_bytes, device, inode, mtime_ns, ctime_ns, verified_at) "
+            "VALUES(?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(file_id) DO UPDATE SET sha256=excluded.sha256, "
+            "size_bytes=excluded.size_bytes, device=excluded.device, inode=excluded.inode, "
+            "mtime_ns=excluded.mtime_ns, ctime_ns=excluded.ctime_ns, "
+            "verified_at=excluded.verified_at",
+            (
+                record["file_id"], record["sha256"], fingerprint["size_bytes"],
+                fingerprint["device"], fingerprint["inode"], fingerprint["mtime_ns"],
+                fingerprint["ctime_ns"], verified_at or now_iso(),
+            ),
+        )
+
+
+def clear_local_file_verification(db: Database, file_id: str) -> None:
+    with db.transaction():
+        db.conn.execute("DELETE FROM local_file_verifications WHERE file_id=?", (file_id,))
+
+
+def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path, *,
+                               rehash: bool = False) -> tuple[bool, dict[str, Any]]:
+    """Verify a local file, reusing a full-hash result only while its stat identity is unchanged.
+
+    The cache is derived data.  Any size/device/inode/mtime/ctime change forces a full SHA-256,
+    while ``rehash=True`` bypasses it unconditionally.
+    """
+    try:
+        exists = path.exists() and path.is_file()
+    except OSError:
+        exists = False
+    info: dict[str, Any] = {
+        "exists": exists,
+        "sha256_match": False,
+        "size_bytes": 0,
+        "verification_method": "missing",
+        "verification_cached_at": None,
+    }
+    if not info["exists"]:
+        clear_local_file_verification(db, str(record["file_id"]))
+        return False, info
+
+    try:
+        before = _local_file_fingerprint(path)
+    except OSError as exc:
+        info.update(verification_method="stat_error", error=f"{type(exc).__name__}: {exc}")
+        clear_local_file_verification(db, str(record["file_id"]))
+        return False, info
+    info["size_bytes"] = before["size_bytes"]
+    if before["size_bytes"] != int(record["size_bytes"]):
+        info["verification_method"] = "size_mismatch"
+        clear_local_file_verification(db, str(record["file_id"]))
+        return False, info
+
+    if not rehash:
+        cached = db.conn.execute(
+            "SELECT * FROM local_file_verifications WHERE file_id=?",
+            (record["file_id"],),
+        ).fetchone()
+        if cached is not None:
+            cached_record = dict(cached)
+            if (
+                str(cached_record["sha256"]).lower() == str(record["sha256"]).lower()
+                and _same_local_fingerprint(cached_record, before)
+            ):
+                info.update(
+                    sha256_match=True,
+                    verification_method="cached_stat_fingerprint",
+                    verification_cached_at=cached_record["verified_at"],
+                )
+                return True, info
+
+    try:
+        current_sha = sha256_path(path)
+        after = _local_file_fingerprint(path)
+    except OSError as exc:
+        info.update(verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}")
+        clear_local_file_verification(db, str(record["file_id"]))
+        return False, info
+    if not _same_local_fingerprint(before, after):
+        info.update(
+            size_bytes=after["size_bytes"],
+            verification_method="changed_during_sha256",
+        )
+        clear_local_file_verification(db, str(record["file_id"]))
+        return False, info
+
+    matched = current_sha.lower() == str(record["sha256"]).lower()
+    info.update(
+        sha256_match=matched,
+        verification_method="full_sha256",
+        current_sha256=current_sha,
+    )
+    if matched:
+        remember_local_file_verification(db, record, path)
+    else:
+        clear_local_file_verification(db, str(record["file_id"]))
+    return matched, info
+
 GZIP_SUFFIXES = {".gz", ".gzip", ".bgz", ".bgzf"}
 
 
@@ -175,13 +305,15 @@ def ingest_file(
                 # link.  Older TSV round-trips could clear these columns while
                 # leaving the immutable file manifest row intact.
                 _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
+            existing_record = dict(existing)
+            remember_local_file_verification(db, existing_record, target)
             db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {existing['file_id']} already archived and verified")
             _workflow_log(
                 db, project, run_id, "ingest", entity_type, entity_id, "completed",
                 provenance_buffer=provenance_buffer,
                 command=f"ingest {source}", input_sha256=source_sha,
             )
-            return dict(existing)
+            return existing_record
 
     target_dir = project.raw_root / raw_bucket(entity_type) / entity_id
     target = target_dir / canonical_filename(entity_id, role, fmt, compression)
@@ -189,6 +321,7 @@ def ingest_file(
         target_sha = sha256_path(target)
         if target_sha == source_sha:
             row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, source_sha, source_size)
+            remember_local_file_verification(db, row, target)
             db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} matched existing target")
             _workflow_log(
                 db, project, run_id, "ingest", entity_type, entity_id, "completed",
@@ -227,6 +360,7 @@ def ingest_file(
             target.unlink(missing_ok=True)
         raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
     row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha, target_size)
+    remember_local_file_verification(db, row, target)
     db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} archived and checksum verified")
     _workflow_log(
         db, project, run_id, "ingest", entity_type, entity_id, "completed",
@@ -313,6 +447,7 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                 "current_sha256": None, "error": None, "remote": "",
             }
             if not path.exists():
+                clear_local_file_verification(db, record["file_id"])
                 locations = db.conn.execute(
                     "SELECT location_name FROM file_locations WHERE file_id=? AND status='AVAILABLE' "
                     "ORDER BY verified_at DESC", (record["file_id"],),
@@ -380,6 +515,7 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                 result["current_sha256"] = current
                 if current.lower() == str(record["sha256"]).lower():
                     result["status"] = "CHECKSUM_VERIFIED"
+                    remember_local_file_verification(db, record, path)
                     if record.get("status") != "STANDARDIZED":
                         db.set_file_status(
                             record["file_id"], "CHECKSUM_VERIFIED",
@@ -389,6 +525,7 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                     placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
                 else:
                     result.update(status="CHECKSUM_FAILED", error="checksum differs from manifest")
+                    clear_local_file_verification(db, record["file_id"])
                     db.set_file_status(
                         record["file_id"], "CHECKSUM_FAILED",
                         reason="local artifact checksum differs from manifest",
@@ -418,8 +555,10 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
             )
         raise ChecksumError(f"{record['file_id']}: source missing: {source}")
     if sha256_path(source) != record["sha256"]:
+        clear_local_file_verification(db, file_id)
         db.set_entity_state(record["entity_type"], record["entity_id"], "CHECKSUM_FAILED", f"{file_id} changed after manifest registration")
         raise ChecksumError(f"{file_id}: source checksum does not match manifest")
+    remember_local_file_verification(db, record, source)
 
     bucket = raw_bucket(record["entity_type"])
     target = project.standardized_root / bucket / record["entity_id"] / Path(record["relative_path"]).name

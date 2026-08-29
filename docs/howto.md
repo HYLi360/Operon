@@ -214,6 +214,11 @@ operon qc --entity-type run --entity-id RUN_000001
 `ambiguous_assumed_phred33`。R1 与 R2 的 `read_count` 会分别以各自的
 `input_identity` 保存，同时系统会写入 `paired_read_count_match`。
 
+`ingest` 和 `operon verify` 已经完整核对过 SHA-256；文件的 size/device/inode/mtime/
+ctime 均未变化时，后续 `operon qc` 会复用这一结果，避免在大容量 HDD 上先完整读一遍
+校验和、再读一遍做解析。需要强制重新读取全部字节审计时使用 `operon qc --rehash`；
+`operon verify` 本身始终执行完整内容校验。
+
 ## 5. 如何归档组装与注释
 
 ```bash

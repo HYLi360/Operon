@@ -38,6 +38,12 @@ License 和其关联对象。非 INSDC 来源必须同时包含 citation 与 Lic
 SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应回归测试为
 `test_schema_2_4_adds_normalized_source_provenance`。
 
+`Database._migrate_integrity_cache_schema_2_5()` 为 2.4 项目增加
+`local_file_verifications`。该表只保存最近一次完整本地 SHA-256 通过时的 stat 指纹，
+可随时清空并由 ingest、`verify` 或 QC 重建；它不改变 `files` 中的内容身份。只要仍
+支持打开 2.4 项目就必须保留。对应回归测试为
+`test_schema_2_5_adds_local_file_verification_cache`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。

@@ -86,6 +86,32 @@ def test_gff3_stats_parity(gff3_file, fasta_file):
     assert py_parsers.gff3_stats(gff3_file) == cy_parsers.gff3_stats(gff3_file)
 
 
+def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
+    py_timings = {}
+    cy_timings = {}
+    assert py_parsers.gff3_stats(gff3_file, fasta_file, timings=py_timings) == \
+        cy_parsers.gff3_stats(gff3_file, fasta_file, timings=cy_timings)
+    expected = {"assembly_fasta_lengths", "gff3_scan", "gff3_finalize"}
+    assert set(py_timings) == set(cy_timings) == expected
+    assert all(value >= 0.0 for value in py_timings.values())
+    assert all(value >= 0.0 for value in cy_timings.values())
+
+
+def test_gff3_ascii_fast_path_preserves_percent_decoding_and_unicode_parity(tmp_path):
+    fasta = tmp_path / "unicode.fa"
+    fasta.write_text(">ctg\u03b1\n" + "A" * 30 + "\n", encoding="utf-8")
+    gff = tmp_path / "mixed.gff3"
+    gff.write_text(
+        "##gff-version 3\n"
+        "ctg\u03b1\tsource\tgene\t1\t30\t.\t+\t.\tID=g%20one;Note=\u03b2\n"
+        "ctg\u03b1\tsource\tmRNA\t1\t30\t.\t+\t.\tID=m1;Parent=g%20one\n"
+        "ctg\u03b1\tsource\tCDS\t1\t30\t.\t+\t0\tI%44=c1;Parent=m1\n"
+        "ctg\u03b1\tsource\texon\t1\t30\t.\t+\t.\tID=;Parent=m1,m%31\n",
+        encoding="utf-8",
+    )
+    assert py_parsers.gff3_stats(gff, fasta) == cy_parsers.gff3_stats(gff, fasta)
+
+
 def test_protein_stats_parity(protein_file):
     assert py_parsers.protein_stats(protein_file, cds_count=4) == \
         cy_parsers.protein_stats(protein_file, cds_count=4)

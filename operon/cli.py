@@ -192,6 +192,10 @@ def _parser() -> argparse.ArgumentParser:
         "--phred-offset", choices=["33", "64", "auto"], default="33",
         help="FASTQ quality offset (default: 33; auto assumes 33 when ambiguous)",
     )
+    p.add_argument(
+        "--rehash", action="store_true",
+        help="ignore the unchanged-file verification cache and recompute every input SHA-256",
+    )
 
     p = sub.add_parser("import-qc", help="import external QC metrics (e.g. BUSCO, QUAST, FastQC) from TSV")
     p.add_argument("--file", dest="tsv_file", required=True)
@@ -535,7 +539,7 @@ def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     results = qc_all(
         db, project, entity_type=args.entity_type, entity_id=args.entity_id,
         file_id=args.file_id, sample_size=args.sample_size,
-        phred_offset=args.phred_offset,
+        phred_offset=args.phred_offset, force_checksum=args.rehash,
     )
     ok = sum(1 for r in results if r["ok"])
     for r in results:

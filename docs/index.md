@@ -2,7 +2,7 @@
 
 `operon` 是一个基于 Python 的、面向大规模基因组数据的**基于文件的数据库**。它用于完成基因组数据的归档、元数据管理、质控（QC）、规则判定、自动化处理与版本化发布。其设计遵循五条核心原则：结构化元数据是唯一事实来源、原始数据不可修改、文件身份由校验和与稳定 ID 决定、指标与判定分离、所有处理由确定性工作流执行（详见[架构说明](architecture.md)）。
 
-本目录中的文档均以中文编写，并已按当前代码库（`operon` 0.4.1、数据库内部 schema 2.4、metadata schema 1.3、pytest 测试套件）重新核对。
+本目录中的文档均以中文编写，并已按当前代码库（`operon` 0.5.0、数据库内部 schema 2.5、metadata schema 1.3、pytest 测试套件）重新核对。
 
 ## 文档导航
 
@@ -15,6 +15,7 @@
 | [NCBI Taxonomy 覆盖率](taxonomy-coverage.md) | 多物种项目维护者、release 审计者 | coverage profile、taxonomy 快照导入、冻结分母编译、metadata/release 两种覆盖率口径与缺失清单 |
 | [Recipe 配置参考](recipe-reference.md) | 外部工具使用者、recipe 作者 | `tools.yaml` 心智模型、全部字段、占位符、文件/目录 artifact、输出命名、数据库身份、缓存、parser 与完整 BUSCO 示例 |
 | [命令参考](cli-reference.md) | 所有用户 | 全部 CLI 命令与参数速查 |
+| [内置 QC 性能诊断](qc-performance-diagnostics.md) | 开发者、性能测试人员 | workflow JSONL 分阶段计时字段、代表性实体清单、复测方法与热点判定 |
 
 ## 快速了解
 

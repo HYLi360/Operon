@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.4"
+SCHEMA_VERSION = "2.5"
 
 MANUAL_TABLES = [
     "organisms",
@@ -122,6 +122,16 @@ CREATE TABLE IF NOT EXISTS files (
     sha256 TEXT NOT NULL,
     downloaded_at TEXT,
     status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS local_file_verifications (
+    file_id TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
+    sha256 TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    device INTEGER NOT NULL,
+    inode INTEGER NOT NULL,
+    mtime_ns INTEGER NOT NULL,
+    ctime_ns INTEGER NOT NULL,
+    verified_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS qc_results (
     qc_result_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -478,6 +488,7 @@ class Database:
         self._migrate_remote_schema_2_2()
         self._migrate_taxonomy_schema_2_3()
         self._migrate_source_schema_2_4()
+        self._migrate_integrity_cache_schema_2_5()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -617,6 +628,23 @@ class Database:
     def _migrate_source_schema_2_4(self) -> None:
         """Add normalized source, citation and license records and object links."""
         self._conn.executescript(SOURCE_SCHEMA_DDL)
+
+    def _migrate_integrity_cache_schema_2_5(self) -> None:
+        """Add the rebuildable local checksum-verification cache."""
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS local_file_verifications (
+                file_id TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
+                sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                device INTEGER NOT NULL,
+                inode INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                ctime_ns INTEGER NOT NULL,
+                verified_at TEXT NOT NULL
+            );
+            """
+        )
 
     def _ensure_current_schema_objects(self) -> None:
         """Create current indexes and rebuild the latest-decision view."""

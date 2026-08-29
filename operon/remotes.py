@@ -772,6 +772,8 @@ def push(db: Database, project: Project, name: str,
 def pull(db: Database, project: Project, name: str,
          file_ids: list[str] | None = None) -> list[dict[str, Any]]:
     """Restore manifest files from a configured remote (idempotent, verified)."""
+    from operon.files import remember_local_file_verification
+
     spec = get_remote(project, name)
     records = _select_files(db, file_ids) if file_ids else []
     results: list[dict[str, Any]] = []
@@ -857,6 +859,7 @@ def pull(db: Database, project: Project, name: str,
                         evidence=f"remote://{name}/{rel}",
                     )
                 placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
+                remember_local_file_verification(db, record, local)
                 _record_remote_location(db, name, record, rel)
             except Exception as exc:
                 result.update(status="error", error=f"{type(exc).__name__}: {exc}")
@@ -957,6 +960,8 @@ def evict_local(db: Database, project: Project, name: str,
     ``.operon/placeholders``. The pointer is informational; SQLite remains the
     source of truth and the remote identity is stored in ``file_locations``.
     """
+    from operon.files import clear_local_file_verification
+
     records = _select_files(db, file_ids)
     spec = get_remote(project, name)
     results: list[dict[str, Any]] = []
@@ -993,6 +998,7 @@ def evict_local(db: Database, project: Project, name: str,
                     _ensure_remote_only_schema(project)
                     _write_placeholder(project, name, record)
                 _record_remote_location(db, name, record, rel)
+                clear_local_file_verification(db, record["file_id"])
                 db.set_file_status(
                     record["file_id"], "REMOTE_ONLY",
                     reason=f"local bytes evicted after verification on remote {name}",

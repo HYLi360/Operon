@@ -1,6 +1,6 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.4.1，数据库内部 schema 版本 `2.4`，
+> 本文对应代码库当前状态：`operon` 0.5.0，数据库内部 schema 版本 `2.5`，
 > `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.3`。
 
 ## 1. 设计目标
@@ -75,7 +75,7 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3/2.4 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3/2.4/2.5 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |
 | `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
@@ -219,6 +219,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
+| `local_file_verifications` | 最近一次完整本地 SHA-256 通过时的 stat 指纹；仅为可重建的 QC 加速缓存，不改变 manifest 文件身份 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
@@ -414,6 +415,12 @@ remote root；“对象存储与完全不同的计算集群之间服务器端搬
 | `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、采样数量/策略、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
 | `annotation_basic` | GFF3 (+组装 FASTA/蛋白 FASTA) | gene/mRNA/CDS 数量、CDS 三联体比例、ID/Parent 完整性、坐标错误、seqid 匹配、蛋白重复 ID、X 比例、内部终止密码子 |
 
+归档或显式 `verify` 完整计算 SHA-256 成功后，系统把 manifest SHA-256 与本地文件的
+`size + device + inode + mtime_ns + ctime_ns` 绑定到可重建缓存。后续内置 QC 只在这组
+指纹完全不变时复用校验结果；大小或任一 stat 字段变化都会自动回退到完整 SHA-256。
+`operon qc --rehash` 可无条件绕过缓存。文件身份仍始终是
+`file_id + sha256 + size_bytes`，指纹既不是新的身份，也不能替代周期性的显式 `verify`。
+
 外部工具指标可通过 `import-qc` 进入同一长表，也可通过 `run-external` 以结构化方式执行并保存 provenance。
 
 FASTQ 在单次解析中累计 256 以内的质量字符直方图，再按显式 Phred offset 计算
@@ -422,6 +429,13 @@ Q20/Q30，不二次读取或重复解压文件。默认 offset 为现代 Phred+3
 保留不确定性。重复率使用确定性的前 N 条 reads 精确计数，记录
 `duplicate_sampled_read_count`、`duplicate_is_sampled` 和
 `duplicate_sampling_strategy=first_n`；配对 read count 在同一批 QC 中缓存复用。
+
+每个内置 QC 文件任务还用单调高精度时钟记录完整耗时和不重叠的阶段耗时。JSONL
+记录通过 `qc_timing.schema_version` 版本化，并保存当前文件以及 annotation 运行时读取的
+assembly/protein 关联文件身份；同一结构序列化到 `workflow_runs.execution_details`。
+这使完整 SHA-256/指纹缓存、FASTA/FASTQ、assembly length、GFF3 scan/finalize、protein scan、SQLite
+写入与状态转换的成本可以分别聚合，而不改变 QC 指标语义。完整字段和复测方法见
+[内置 QC 性能诊断](qc-performance-diagnostics.md)。
 
 ## 9. 规则引擎
 
