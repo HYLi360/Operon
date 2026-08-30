@@ -16,10 +16,12 @@ init          初始化项目
 init-demo     生成合成演示项目并跑完流水线
 status        查看实体状态
 schema        查看/导出 schema
+migrate       显式应用纯加法数据库迁移并执行完整性检查
 import        交互式导入数据集，或从 CSV/XLSX 导入一张受控 metadata 表
 add           新增 organism/sample/run/assembly/annotation
 add-accession 添加外部 accession 映射
 ncbi-datasets 离线导入或在线下载 NCBI Datasets genome package
+ncbi-reconcile 预览或应用旧 NCBI adapter 异常的补偿式修复
 next-id       查看下一个稳定 ID
 ingest        归档文件到 raw 并登记 manifest
 verify        校验本地对象，或实时复核远端驻留对象的清单与实际内容
@@ -52,7 +54,9 @@ set-state     人工设置状态（审计）
 operon init [path] [--project-id PRJ_000001] [--name NAME]
 ```
 
-创建 `project.yaml`、`config/` 和生命周期目录。`metadata/` 仅保留 0.4 迁移说明，不再生成可反向导入的空 TSV。已存在 `project.yaml` 时报错。
+创建 `project.yaml`、当前 schema 的空 `operon.sqlite`、`config/` 和生命周期目录，因此初始化后
+可立即运行只读预览命令。`metadata/` 仅保留 0.4 迁移说明，不再生成可反向导入的空 TSV。
+已存在 `project.yaml` 时报错。
 
 ## init-demo
 
@@ -76,6 +80,16 @@ operon status [--entity-type TYPE] [--entity-id ID]
 operon schema            # 打印 schema 文件路径
 operon schema --dump     # 打印 schema 全文
 ```
+
+## migrate
+
+```bash
+operon --project /path/to/project migrate
+```
+
+应用当前版本的纯加法 database schema migration，然后输出目标版本、迁移账本、
+`PRAGMA integrity_check` 和外键违规数量。该命令不执行 `ncbi-reconcile` 等业务修复；
+迁移前应先运行只读的 `backup create`。
 
 ## import
 
@@ -132,7 +146,8 @@ operon ncbi-datasets \
   [--no-archive-files] [--standardize] [--dry-run] \
   [--no-preserve-source] [--email EMAIL] [--api-key API_KEY] \
   [--timeout SECONDS] [--batch-size N] \
-  [--download-workers N] [--retries N] [--retry-backoff SECONDS]
+  [--download-workers N] [--retries N] [--retry-backoff SECONDS] \
+  [--resume-run WF_ID] [--plan-only]
 ```
 
 至少提供一种来源：
@@ -146,7 +161,8 @@ operon ncbi-datasets \
 
 - 在线下载请求 genome FASTA、GFF、protein FASTA、CDS FASTA 和 sequence report；
 - 自动解析 organism、taxon、BioSample、BioProject、assembly 与 annotation 信息；
-- 自动分配/复用内部 ID，paired GCA/GCF 指向同一 assembly；
+- 自动分配/复用内部 ID，paired GCA/GCF 指向同一 assembly；已有 canonical accession
+  不因另一 alias 后到而改写，新 paired assembly 确定性优先 GCF；
 - 完整版本化 accession 是 assembly 身份的一部分，新版本不会覆盖旧版本；
 - ZIP/report 原件按 SHA-256 保存到 `raw/metadata/ncbi_datasets/`；
 - 包内生物文件通过正常 `ingest` 路径进入 raw 和 files manifest；
@@ -165,6 +181,10 @@ operon ncbi-datasets --input assembly_data_report.jsonl --no-archive-files
 operon ncbi-datasets --accession GCF_000005845.2 \
   --include genome --include gff3
 
+# 只计算缺失文件和下载分组，不下载、也不新增 workflow
+operon ncbi-datasets --accession-file accessions.txt \
+  --include genome --include sequence-report --plan-only
+
 # 归档后继续生成 standardized 副本
 operon ncbi-datasets --input ncbi_dataset.zip --standardize
 ```
@@ -175,7 +195,16 @@ Biopython Entrez 只在少数 package 缺少 assembly report 时作为元数据�
 
 `--batch-size` 默认 10、允许范围 1–100；`--download-workers` 默认 3、允许范围
 1–10，使用 aiohttp 并发下载多个批次。每完成一个批次立即导入、归档并清理该批次暂存
-ZIP。`--retries` 默认 4（允许范围 0–10），`--retry-backoff` 默认 1.0 秒并按指数退避；
+ZIP。下载前会查询 manifest 和文件状态，逐 accession 计算真正缺少的 include；具有相同
+缺失集合的 accession 才进入同一下载组。例如已有 GFF/CDS/protein、只缺 genome 与
+sequence report 时，请求只包含 `genome,sequence-report`。annotation 的角色必须共同存在于
+同一个未被 supersede 的 `ANN_`，不会从多个 annotation 拼出错误的“完整集合”。加
+`--standardize` 时还要求对应 standardized 副本存在；全部满足的 accession 计入 summary
+的 `skipped_existing`。`--plan-only` 仅支持 accession 下载来源，输出相同的
+`download_plan`/`skipped_existing`，并以只读连接运行：不下载、不迁移 schema、不写数据库、
+不新增 workflow；
+`--no-archive-files` 模式下此 manifest 筛选不生效。
+`--retries` 默认 4（允许范围 0–10），`--retry-backoff` 默认 1.0 秒并按指数退避；
 SSL record layer failure、连接中断、超时、429/5xx 等瞬时错误会自动重试。
 无效/撤回 accession 的 README-only package 会被识别并报告；其他批次继续导入，
 最后汇总失败并返回非零。ZIP report 直接读取，文件成员逐个暂存到项目所在文件系统，
@@ -184,10 +213,32 @@ SSL record layer failure、连接中断、超时、429/5xx 等瞬时错误会自
 
 中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`ncbi-datasets` 会优雅
 停机——并发下载被取消并停止接收新批次，当前批次的暂存 ZIP 被清理，本次运行会在
-workflow provenance 中记录为 `interrupted`，进程以退出码 130 退出。清理期间再次发送
-信号会立即强制退出（退出码 128+signum）。已完成批次的导入与归档都已提交且幂等，
-重跑同一命令即可继续；单个 ZIP 的落盘（临时文件 + 原子重命名 + 完整性校验）和
-元数据写入（单事务）都是原子的，中断不会留下半成品条目。
+workflow provenance 中记录为 `interrupted`，每个 accession 的 `pending/downloading/
+completed/failed/interrupted` 状态保存在 `adapter_run_items`。恢复时重跑相同请求并添加
+`--resume-run WF_ID`；新 workflow 通过 `resumes_run_id` 链接旧失败运行，旧运行不会被改写。
+请求指纹不同会被拒绝。已完成内容仍由 manifest 精确跳过。
+
+## ncbi-reconcile
+
+```bash
+operon ncbi-reconcile
+operon ncbi-reconcile --apply [--actor NAME]
+```
+
+默认只根据 SQLite 中的 metadata、文件 SHA-256、QC/analysis/release 引用生成修复计划，
+不读取 raw 生物学内容，也不修改业务行。`--apply` 会以独立 repair workflow 执行计划：
+
+- 相同 assembly/provider/version/date 且文件角色无不同 SHA 的重复 annotation 通过
+  `entity_supersessions` 逻辑归并，原 `ANN_`、`FIL_` 和 raw 字节均保留；
+- paired GCA/GCF 的 display canonical 恢复为已有文件证据指向的历史 canonical；没有历史
+  证据时保留有效的当前 canonical，再无可用证据时才确定性优先 GCF；
+- 非 canonical 来源的 assembly report/genome 使用
+  `assembly_report_genbank/refseq`、`genome_fasta_genbank/refseq` 独立角色；
+- 已有 QC 结果但被重导降级到早期状态的 annotation 恢复为 `QC_COMPLETE`；
+- 每个字段的 before/after、原因、证据和 repair run 写入 `changes`。
+
+出现同一目标来源角色不同 SHA 的冲突时，`--apply` 会拒绝执行，必须先人工审阅 dry-run。
+应用后再次 dry-run 会排除已存在的 supersession；无新增异常时 summary 全部为 0。
 
 ## next-id
 
@@ -575,7 +626,8 @@ operon backup create --output /backups/project-full --scope full
 operon backup verify --input /backups/project-2026-08-28
 ```
 
-`create` 使用 SQLite backup API 生成一致数据库快照，目标必须位于项目目录之外且不能已存在。
+`create` 使用只读数据库连接和 SQLite backup API 生成一致数据库快照，不会先触发新程序的
+自动迁移；目标必须位于项目目录之外且不能已存在。
 每个备份包含 `backup-manifest.json`，记录全部成员的 size 与 SHA-256。
 
 - `control`（默认）：`project.yaml`、`config/`、一致的 `operon.sqlite`、`logs/`。

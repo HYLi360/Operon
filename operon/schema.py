@@ -45,6 +45,13 @@ ENTITY_PREFIXES: dict[str, str] = {
     "file": "FIL",
 }
 FILE_ENTITY_TYPES = [*ENTITY_TABLES.keys(), "taxonomy_snapshot"]
+METADATA_SCHEMA_VERSION = "1.4"
+NCBI_SOURCE_FILE_ROLES = [
+    "genome_fasta_genbank",
+    "genome_fasta_refseq",
+    "assembly_report_genbank",
+    "assembly_report_refseq",
+]
 MISSING_VALUES = {"", "na", "n/a", "null", "none"}
 
 
@@ -169,6 +176,7 @@ def default_schemas() -> dict[str, Any]:
                 "file_role": {"type": "string", "required": True, "allowed": [
                     "genome_fasta", "cds_fasta", "protein_fasta", "annotation_gff3",
                     "reads_r1", "reads_r2", "reads_single", "assembly_report",
+                    *NCBI_SOURCE_FILE_ROLES,
                     "taxonomy_package", "other",
                 ], "description": "Biological role of the file"},
                 "format": {"type": "string", "required": True, "allowed": ["fasta", "fastq", "gff3", "bam", "cram", "tsv", "txt", "html", "json", "directory", "other"], "description": "File or directory artifact format"},
@@ -182,7 +190,7 @@ def default_schemas() -> dict[str, Any]:
             },
         },
     }
-    return {"schema_version": "1.3", "tables": fields}
+    return {"schema_version": METADATA_SCHEMA_VERSION, "tables": fields}
 
 
 @dataclass

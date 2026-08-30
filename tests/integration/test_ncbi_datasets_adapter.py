@@ -20,6 +20,7 @@ import yaml
 
 from operon.adapters.ncbi_datasets import (
     _DownloadCancelled,
+    _accession_from_path,
     _download_batch_aiohttp,
     _zip_package_diagnostic,
     download_ncbi_datasets_parallel,
@@ -33,6 +34,9 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ValidationError
+from operon.files import ingest_file
+from operon.ncbi_reconcile import apply_ncbi_reconciliation, plan_ncbi_reconciliation
+from operon.utils import now_iso
 
 
 def _report(accession: str = "GCF_000001405.40") -> dict:
@@ -125,7 +129,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             self.assertEqual(main(["--project", str(root), "report", "metadata"]), 0)
             self.assertIn("GCF_000001405.40", (root / "reports" / "metadata" / "assemblies.tsv").read_text())
             upgraded_schema = yaml.safe_load((root / "config" / "schemas.yaml").read_text())
-            self.assertEqual(upgraded_schema["schema_version"], "1.1")
+            self.assertEqual(upgraded_schema["schema_version"], "1.4")
             self.assertIn("bioproject_accession", upgraded_schema["tables"]["assemblies"]["fields"])
             self.assertTrue(any((root / "raw" / "metadata" / "ncbi_datasets").iterdir()))
 
@@ -575,6 +579,295 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 )
             self.assertFalse(destination.exists())
 
+    def test_accession_from_path_prefers_versioned_match(self):
+        # Real NCBI packages name members "<accession>_<description>.ext"; the
+        # versioned accession (from the per-accession directory) must win over
+        # the truncated unversioned match inside the filename.
+        path = Path("ncbi_dataset/data/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna")
+        self.assertEqual(_accession_from_path(path), "GCF_000001405.40")
+        self.assertEqual(_accession_from_path(Path("data/GCF_000001405/genomic.gff")), "GCF_000001405")
+
+    def test_already_archived_accessions_are_skipped_before_download(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            project = load_project(root)
+            accession = "GCF_000001405.40"
+            with_annotation = [False]
+            calls: list[tuple[list[str], tuple[str, ...]]] = []
+
+            def fake_parallel(batches, staging_dir, **kwargs):
+                on_complete = kwargs["on_complete"]
+                for batch in batches:
+                    calls.append((list(batch), tuple(kwargs["includes"])))
+                    destination = Path(staging_dir) / f"batch_{len(calls)}.zip"
+                    with zipfile.ZipFile(destination, "w") as archive:
+                        archive.writestr(
+                            "ncbi_dataset/data/assembly_data_report.jsonl",
+                            json.dumps(_report(accession)) + "\n",
+                        )
+                        prefix = f"ncbi_dataset/data/{accession}"
+                        archive.writestr(f"{prefix}/{accession}_genomic.fna", ">c1\nATGC\n")
+                        archive.writestr(f"{prefix}/sequence_report.jsonl", "{}\n")
+                        if with_annotation[0]:
+                            archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
+                    on_complete(batch, destination)
+                return []
+
+            db = Database(project.db_path)
+            try:
+                with patch(
+                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                    side_effect=fake_parallel,
+                ):
+                    first = run_ncbi_datasets_adapter(
+                        db, project, accessions=[accession],
+                        includes=["genome", "sequence-report"],
+                    )
+                    self.assertEqual(first["skipped_existing"], [])
+                    self.assertEqual(len(first["archived_files"]), 2)
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(calls[0][1], ("genome", "sequence-report"))
+
+                    # Same include set, fully archived: no download attempted.
+                    second = run_ncbi_datasets_adapter(
+                        db, project, accessions=[accession],
+                        includes=["genome", "sequence-report"],
+                    )
+                    self.assertEqual(second["skipped_existing"], [accession])
+                    self.assertEqual(len(calls), 1)
+
+                    preview = run_ncbi_datasets_adapter(
+                        db, project, accessions=[accession],
+                        includes=["genome", "sequence-report", "gff3"],
+                        plan_only=True,
+                    )
+                    self.assertTrue(preview["plan_only"])
+                    self.assertEqual(preview["download_plan"][0]["includes"], ["gff3"])
+                    self.assertEqual(len(calls), 1)
+
+                    # A widened include set downloads only the missing role.
+                    third = run_ncbi_datasets_adapter(
+                        db, project, accessions=[accession],
+                        includes=["genome", "sequence-report", "gff3"],
+                    )
+                    self.assertEqual(third["skipped_existing"], [])
+                    self.assertEqual(len(calls), 2)
+                    self.assertEqual(calls[1][1], ("gff3",))
+            finally:
+                db.close()
+
+    def test_non_ncbi_provider_reuses_annotation_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            report = _report()
+            report["annotationInfo"] = {
+                "provider": "National Institute of Genetics",
+                "version": 7,
+                "releaseDate": "2025-04-11",
+            }
+            report_path = root / "report.jsonl"
+            report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+            command = ["--project", str(root), "ncbi-datasets", "--input", str(report_path)]
+            self.assertEqual(main(command), 0)
+            self.assertEqual(main(command), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 1)
+                annotation = db.query("SELECT * FROM annotations")[0]
+                self.assertEqual(annotation["annotation_source"], "National Institute of Genetics")
+                self.assertEqual(annotation["annotation_version"], 7)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM ncbi_annotation_records")[0]["n"], 1,
+                )
+            finally:
+                db.close()
+
+    def test_paired_gca_gcf_keep_canonical_and_source_specific_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            gca = "GCA_000001405.29"
+            gcf = "GCF_000001405.40"
+
+            def make_package(path: Path, accession: str, paired: str, report_text: str) -> None:
+                report = _report(accession)
+                report["assemblyInfo"]["pairedAssembly"] = {"accession": paired}
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr(
+                        "ncbi_dataset/data/assembly_data_report.jsonl",
+                        json.dumps(report) + "\n",
+                    )
+                    prefix = f"ncbi_dataset/data/{accession}"
+                    archive.writestr(f"{prefix}/sequence_report.jsonl", report_text)
+
+            gca_package = root / "gca.zip"
+            gcf_package = root / "gcf.zip"
+            make_package(gca_package, gca, gcf, '{"source":"GenBank"}\n')
+            make_package(gcf_package, gcf, gca, '{"source":"RefSeq"}\n')
+            self.assertEqual(main([
+                "--project", str(root), "ncbi-datasets", "--input", str(gca_package),
+            ]), 0)
+            self.assertEqual(main([
+                "--project", str(root), "ncbi-datasets", "--input", str(gcf_package),
+            ]), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                assembly = db.query("SELECT * FROM assemblies")[0]
+                self.assertEqual(assembly["assembly_accession"], gcf)
+                files = db.query(
+                    "SELECT file_role FROM files WHERE entity_type='assembly' ORDER BY file_role"
+                )
+                self.assertEqual(
+                    [row["file_role"] for row in files],
+                    ["assembly_report", "assembly_report_genbank"],
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM ncbi_assembly_records")[0]["n"], 2,
+                )
+            finally:
+                db.close()
+
+    def test_reimport_does_not_demote_qc_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            package = root / "package.zip"
+            accession = "GCF_000001405.40"
+            prefix = f"ncbi_dataset/data/{accession}"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr(
+                    "ncbi_dataset/data/assembly_data_report.jsonl",
+                    json.dumps(_report(accession)) + "\n",
+                )
+                archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
+            command = ["--project", str(root), "ncbi-datasets", "--input", str(package)]
+            self.assertEqual(main(command), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                annotation_id = db.query("SELECT annotation_id FROM annotations")[0]["annotation_id"]
+                db.set_entity_state("annotation", annotation_id, "QC_COMPLETE", "test evidence")
+            finally:
+                db.close()
+            self.assertEqual(main(command), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                state = db.query(
+                    "SELECT state FROM entity_state WHERE entity_type='annotation'"
+                )[0]["state"]
+                self.assertEqual(state, "QC_COMPLETE")
+            finally:
+                db.close()
+
+    def test_reconcile_preserves_rows_and_records_compensating_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            report_path = root / "report.jsonl"
+            report = _report()
+            report["annotationInfo"]["provider"] = "National Institute of Genetics"
+            report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+            self.assertEqual(main([
+                "--project", str(root), "ncbi-datasets", "--input", str(report_path),
+            ]), 0)
+            project = load_project(root)
+            db = Database(project.db_path)
+            try:
+                assembly = dict(db.query("SELECT * FROM assemblies")[0])
+                original = dict(db.query("SELECT * FROM annotations")[0])
+                gcf_gff = root / "GCF_000001405.40_genomic.gff"
+                gcf_gff.write_text("##gff-version 3\n", encoding="utf-8")
+                ingest_file(
+                    db, project, gcf_gff, "annotation", original["annotation_id"],
+                    "annotation_gff3", source_url=(
+                        "ncbi-datasets:test:GCF_000001405.40/genomic.gff"
+                    ),
+                )
+                original = dict(db.query(
+                    "SELECT * FROM annotations WHERE annotation_id=?",
+                    (original["annotation_id"],),
+                )[0])
+                duplicate_id = db.next_id("annotation")
+                duplicate = dict(original)
+                duplicate["annotation_id"] = duplicate_id
+                db.insert_row("annotations", duplicate)
+                db.insert_qc_result({
+                    "entity_type": "annotation", "entity_id": original["annotation_id"],
+                    "qc_stage": "test", "metric_name": "parseable", "metric_value": "1",
+                    "metric_numeric": 1.0, "metric_unit": None, "tool": "test",
+                    "tool_version": "1", "parameter_set": "test", "evaluated_at": now_iso(),
+                })
+                db.set_entity_state(
+                    "annotation", original["annotation_id"], "CHECKSUM_VERIFIED", "simulated downgrade",
+                )
+                db.conn.execute(
+                    "UPDATE assemblies SET assembly_accession='GCA_000001405.29', "
+                    "source_database='GenBank' WHERE assembly_id=?",
+                    (assembly["assembly_id"],),
+                )
+                db.conn.commit()
+                sequence_report = root / "GCA_000001405.29_sequence_report.jsonl"
+                sequence_report.write_text("{}\n", encoding="utf-8")
+                report_file = ingest_file(
+                    db, project, sequence_report, "assembly", assembly["assembly_id"],
+                    "assembly_report", source_url=(
+                        "ncbi-datasets:test:GCA_000001405.29/sequence_report.jsonl"
+                    ),
+                )
+
+                preview = plan_ncbi_reconciliation(db)
+                self.assertEqual(len(preview["annotation_supersessions"]), 1)
+                self.assertEqual(len(preview["assembly_updates"]), 1)
+                self.assertEqual(len(preview["file_role_updates"]), 1)
+                result = apply_ncbi_reconciliation(db, project, actor="test")
+
+                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2)
+                supersession = db.query(
+                    "SELECT * FROM entity_supersessions WHERE object_type='annotation'"
+                )[0]
+                self.assertEqual(supersession["object_id"], duplicate_id)
+                self.assertEqual(supersession["superseded_by_id"], original["annotation_id"])
+                repaired = db.query(
+                    "SELECT assembly_accession, source_database FROM assemblies WHERE assembly_id=?",
+                    (assembly["assembly_id"],),
+                )[0]
+                self.assertEqual(repaired["assembly_accession"], "GCF_000001405.40")
+                self.assertEqual(repaired["source_database"], "RefSeq")
+                role = db.query(
+                    "SELECT file_role FROM files WHERE file_id=?", (report_file["file_id"],)
+                )[0]["file_role"]
+                self.assertEqual(role, "assembly_report_genbank")
+                state = db.get_entity_state("annotation", original["annotation_id"])
+                self.assertEqual(state, "QC_COMPLETE")
+                workflow = db.query(
+                    "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+                )[0]
+                self.assertEqual(workflow["status"], "completed")
+                self.assertGreater(
+                    db.query(
+                        "SELECT COUNT(*) n FROM changes WHERE workflow_run_id=?",
+                        (result["run_id"],),
+                    )[0]["n"],
+                    0,
+                )
+                repeated = plan_ncbi_reconciliation(db)
+                self.assertEqual(repeated["summary"], {
+                    "annotation_supersessions": 0,
+                    "assembly_updates": 0,
+                    "file_role_updates": 0,
+                    "accession_primary_updates": 0,
+                    "state_restorations": 0,
+                    "warnings": 0,
+                })
+            finally:
+                db.close()
+
     def test_interrupted_download_run_is_audited(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -592,10 +885,54 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                             db, project, accessions=["GCF_000001405.40"],
                         )
                 rows = db.query(
-                    "SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
+                    "SELECT run_id, status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
                 )
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]["status"], "interrupted")
+                interrupted_run = rows[0]["run_id"]
+                item = db.query(
+                    "SELECT status FROM adapter_run_items WHERE run_id=?",
+                    (interrupted_run,),
+                )[0]
+                self.assertEqual(item["status"], "pending")
+
+                def fake_parallel(batches, staging_dir, **kwargs):
+                    for batch in batches:
+                        accession = batch[0]
+                        destination = Path(staging_dir) / "resume.zip"
+                        with zipfile.ZipFile(destination, "w") as archive:
+                            archive.writestr(
+                                "ncbi_dataset/data/assembly_data_report.jsonl",
+                                json.dumps(_report(accession)) + "\n",
+                            )
+                            prefix = f"ncbi_dataset/data/{accession}"
+                            archive.writestr(f"{prefix}/genomic.fna", ">c1\nATGC\n")
+                            archive.writestr(f"{prefix}/sequence_report.jsonl", "{}\n")
+                            archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
+                            archive.writestr(f"{prefix}/protein.faa", ">p1\nMK\n")
+                            archive.writestr(f"{prefix}/cds_from_genomic.fna", ">c1\nATG\n")
+                        kwargs["on_complete"](batch, destination)
+                    return []
+
+                with patch(
+                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                    side_effect=fake_parallel,
+                ):
+                    result = run_ncbi_datasets_adapter(
+                        db, project, accessions=["GCF_000001405.40"],
+                        resume_run_id=interrupted_run,
+                    )
+                resumed = db.query(
+                    "SELECT status, resumes_run_id FROM workflow_runs WHERE run_id=?",
+                    (result["run_id"],),
+                )[0]
+                self.assertEqual(resumed["status"], "completed")
+                self.assertEqual(resumed["resumes_run_id"], interrupted_run)
+                resumed_item = db.query(
+                    "SELECT status FROM adapter_run_items WHERE run_id=?",
+                    (result["run_id"],),
+                )[0]
+                self.assertEqual(resumed_item["status"], "completed")
             finally:
                 db.close()
 

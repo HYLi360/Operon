@@ -125,7 +125,7 @@ def log_run(
     record.setdefault("finished_at", now_iso())
     record.setdefault("tool_version", __version__)
     columns = [
-        "run_id", "parent_run_id", "entity_type", "entity_id", "step", "status",
+        "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
         "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
         "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
         "log_file", "stdout_file", "stderr_file", "error",
@@ -140,6 +140,59 @@ def log_run(
         flush_run_log(project, [record])
     else:
         jsonl_buffer.append(record)
+    return record
+
+
+def start_run(db: Database, record: dict[str, Any]) -> dict[str, Any]:
+    """Create a durable running workflow row before any item can commit."""
+    record = dict(record)
+    record.setdefault("run_id", new_run_id())
+    record.setdefault("status", "running")
+    record.setdefault("started_at", now_iso())
+    record.setdefault("tool_version", __version__)
+    columns = [
+        "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
+        "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
+        "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
+        "log_file", "stdout_file", "stderr_file", "error",
+        "executor", "scheduler_job_id", "execution_details",
+    ]
+    with db.transaction():
+        db.conn.execute(
+            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            [record.get(column) for column in columns],
+        )
+    return record
+
+
+def finish_run(
+    db: Database,
+    project: Project,
+    run_id: str,
+    *,
+    status: str,
+    finished_at: str | None = None,
+    exit_code: int | None = None,
+    error: str | None = None,
+    output_sha256: str | None = None,
+    execution_details: str | None = None,
+) -> dict[str, Any]:
+    """Finalize a previously started run and append its immutable JSONL record."""
+    finished_at = finished_at or now_iso()
+    with db.transaction():
+        db.conn.execute(
+            "UPDATE workflow_runs SET status=?, finished_at=?, exit_code=?, error=?, "
+            "output_sha256=COALESCE(?, output_sha256), "
+            "execution_details=COALESCE(?, execution_details) WHERE run_id=?",
+            (status, finished_at, exit_code, error, output_sha256, execution_details, run_id),
+        )
+        row = db.conn.execute(
+            "SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)
+        ).fetchone()
+    if row is None:
+        raise ValueError(f"workflow run {run_id} does not exist")
+    record = dict(row)
+    flush_run_log(project, [record])
     return record
 
 

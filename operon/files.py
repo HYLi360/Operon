@@ -28,6 +28,8 @@ from operon.utils import (
 
 ROLE_FORMATS = {
     "genome_fasta": "fasta",
+    "genome_fasta_genbank": "fasta",
+    "genome_fasta_refseq": "fasta",
     "cds_fasta": "fasta",
     "protein_fasta": "fasta",
     "annotation_gff3": "gff3",
@@ -35,8 +37,28 @@ ROLE_FORMATS = {
     "reads_r2": "fastq",
     "reads_single": "fastq",
     "assembly_report": "txt",
+    "assembly_report_genbank": "txt",
+    "assembly_report_refseq": "txt",
     "other": "other",
 }
+
+_CHECKSUM_ADVANCE_FROM = {
+    None,
+    "DISCOVERED",
+    "METADATA_FETCHED",
+    "METADATA_VALIDATED",
+    "DOWNLOAD_PENDING",
+    "DOWNLOADED",
+    "DOWNLOAD_FAILED",
+    "CHECKSUM_FAILED",
+}
+
+
+def _advance_checksum_state(db: Database, entity_type: str, entity_id: str, message: str) -> None:
+    """Advance early/failure states without demoting completed QC or decisions."""
+    current = db.get_entity_state(entity_type, entity_id)
+    if current in _CHECKSUM_ADVANCE_FROM:
+        db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", message)
 
 ENTITY_BUCKETS = {
     "run": "reads",
@@ -307,7 +329,10 @@ def ingest_file(
                 _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
             existing_record = dict(existing)
             remember_local_file_verification(db, existing_record, target)
-            db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {existing['file_id']} already archived and verified")
+            _advance_checksum_state(
+                db, entity_type, entity_id,
+                f"file {existing['file_id']} already archived and verified",
+            )
             _workflow_log(
                 db, project, run_id, "ingest", entity_type, entity_id, "completed",
                 provenance_buffer=provenance_buffer,
@@ -322,7 +347,10 @@ def ingest_file(
         if target_sha == source_sha:
             row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, source_sha, source_size)
             remember_local_file_verification(db, row, target)
-            db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} matched existing target")
+            _advance_checksum_state(
+                db, entity_type, entity_id,
+                f"file {row['file_id']} matched existing target",
+            )
             _workflow_log(
                 db, project, run_id, "ingest", entity_type, entity_id, "completed",
                 provenance_buffer=provenance_buffer,
@@ -361,7 +389,10 @@ def ingest_file(
         raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
     row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha, target_size)
     remember_local_file_verification(db, row, target)
-    db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", f"file {row['file_id']} archived and checksum verified")
+    _advance_checksum_state(
+        db, entity_type, entity_id,
+        f"file {row['file_id']} archived and checksum verified",
+    )
     _workflow_log(
         db, project, run_id, "ingest", entity_type, entity_id, "completed",
         provenance_buffer=provenance_buffer,

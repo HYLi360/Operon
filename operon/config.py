@@ -201,6 +201,13 @@ class Project:
         initialize_metadata_directory(project.metadata_dir)
         from operon.tools import ensure_tools_config
         ensure_tools_config(project)
+        # A freshly initialized project must be immediately usable by
+        # read-only preview commands.  Create the current empty database as
+        # part of init instead of relying on the first later write command to
+        # materialize it as a side effect.
+        from operon.database import Database
+        database = Database(project.db_path)
+        database.close()
         return project
 
     @classmethod

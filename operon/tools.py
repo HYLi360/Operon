@@ -497,7 +497,11 @@ def detect_tool_version(tool: ToolSpec, config: dict[str, Any], timeout: float =
 
 def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None,
                     entity_id: str | None = None) -> list[dict[str, Any]]:
-    sql = "SELECT * FROM files WHERE file_role=? AND format=?"
+    sql = (
+        "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
+        "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
+        "AND s.object_id=files.entity_id)"
+    )
     params: list[Any] = [recipe.file_role, recipe.fmt]
     if recipe.entity_type:
         sql += " AND entity_type=?"

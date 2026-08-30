@@ -97,7 +97,10 @@ def _ensure_taxonomy_metadata_schema(project: Project) -> None:
         roles.insert(insert_at, "taxonomy_package")
         fields["file_role"]["allowed"] = roles
         changed = True
-    if str(document.get("schema_version")) != "1.3":
+    version_parts = tuple(
+        int(part) for part in re.findall(r"\d+", str(document.get("schema_version") or "0"))
+    )
+    if version_parts < (1, 3):
         document["schema_version"] = "1.3"
         changed = True
     if changed:

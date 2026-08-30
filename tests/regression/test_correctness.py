@@ -352,3 +352,81 @@ class TestCorrectnessRegressions(PytestAssertions):
             "file_id", "sha256", "size_bytes", "device", "inode",
             "mtime_ns", "ctime_ns", "verified_at",
         })
+
+    def test_schema_2_6_adds_resumable_adapter_and_repair_history(self):
+        old_path = self.root / "schema-2.5.sqlite"
+        conn = sqlite3.connect(old_path)
+        conn.executescript(
+            """
+            CREATE TABLE workflow_runs (
+                run_id TEXT PRIMARY KEY, parent_run_id TEXT, entity_type TEXT, entity_id TEXT,
+                step TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL,
+                finished_at TEXT, exit_code INTEGER, command TEXT, tool TEXT,
+                tool_version TEXT, parameter_set TEXT, input_sha256 TEXT,
+                output_sha256 TEXT, threads INTEGER, max_rss_mb REAL, log_file TEXT,
+                stdout_file TEXT, stderr_file TEXT, executor TEXT, scheduler_job_id TEXT,
+                execution_details TEXT, error TEXT
+            );
+            CREATE TABLE changes (
+                change_id INTEGER PRIMARY KEY AUTOINCREMENT, object_type TEXT NOT NULL,
+                object_id TEXT NOT NULL, field TEXT, old_value TEXT, new_value TEXT,
+                reason TEXT, evidence TEXT, actor TEXT, changed_at TEXT NOT NULL
+            );
+            """
+        )
+        conn.close()
+        db = Database(old_path)
+        self.addCleanup(db.close)
+        self.assertIn("resumes_run_id", set(db.table_columns("workflow_runs")))
+        self.assertTrue(
+            {"workflow_run_id", "reverts_change_id"}.issubset(db.table_columns("changes"))
+        )
+        tables = {row["name"] for row in db.query(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        self.assertTrue({
+            "schema_migrations", "adapter_run_items", "ncbi_assembly_records",
+            "ncbi_annotation_records", "entity_supersessions",
+        }.issubset(tables))
+        migration = db.query(
+            "SELECT migration_id FROM schema_migrations WHERE migration_id=?",
+            ("2.6-recovery-and-ncbi-identities",),
+        )
+        self.assertEqual(len(migration), 1)
+
+    def test_ncbi_preview_commands_do_not_apply_missing_schema_migrations(self):
+        conn = sqlite3.connect(self.project.db_path)
+        for table in (
+            "schema_migrations", "adapter_run_items", "ncbi_assembly_records",
+            "ncbi_annotation_records", "entity_supersessions",
+        ):
+            conn.execute(f'DROP TABLE "{table}"')
+        conn.commit()
+        conn.close()
+
+        with tempfile.TemporaryDirectory() as backup_parent:
+            self.assertEqual(main([
+                "--project", str(self.root), "backup", "create",
+                "--output", str(Path(backup_parent) / "control"), "--scope", "control",
+            ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "ncbi-datasets",
+            "--accession", "GCF_000005845.2", "--include", "genome", "--plan-only",
+        ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "ncbi-reconcile",
+        ]), 0)
+
+        conn = sqlite3.connect(self.project.db_path)
+        try:
+            tables = {
+                row[0] for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        finally:
+            conn.close()
+        self.assertFalse({
+            "schema_migrations", "adapter_run_items", "ncbi_assembly_records",
+            "ncbi_annotation_records", "entity_supersessions",
+        } & tables)

@@ -221,7 +221,9 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
     try:
         if record["format"] == "fasta":
             stats = _timed_call(timings, "fasta_stats", fasta_stats, path)
-            if record["file_role"] == "genome_fasta":
+            if record["file_role"] in {
+                "genome_fasta", "genome_fasta_genbank", "genome_fasta_refseq",
+            }:
                 metrics.extend(
                     metric(entity_type, entity_id, "assembly_basic", name, stats[name], unit="bp" if name.endswith("length") or name in {"contig_n50", "contig_n90"} else ("percent" if name.endswith("percent") else None), parameter_set=parameter_set)
                     for name in ASSEMBLY_METRICS
@@ -408,7 +410,12 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
            parameter_set: str = DEFAULT_PARAMETER_SET,
            force_checksum: bool = False) -> list[dict[str, Any]]:
     """Run QC for selected manifest files; one failure does not abort the batch."""
-    sql = "SELECT file_id FROM files WHERE entity_type IN ('organism','sample','run','assembly','annotation')"
+    sql = (
+        "SELECT file_id FROM files WHERE entity_type IN "
+        "('organism','sample','run','assembly','annotation') AND NOT EXISTS ("
+        "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
+        "AND s.object_id=files.entity_id)"
+    )
     params: list[Any] = []
     if entity_type:
         sql += " AND entity_type=?"

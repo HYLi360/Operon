@@ -44,6 +44,19 @@ SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应�
 支持打开 2.4 项目就必须保留。对应回归测试为
 `test_schema_2_5_adds_local_file_verification_cache`。
 
+`Database._migrate_recovery_schema_2_6()` 为 2.5 项目纯加法增加：
+
+- `workflow_runs.resumes_run_id`；
+- `changes.workflow_run_id` 与 `changes.reverts_change_id`；
+- `schema_migrations`、`adapter_run_items`；
+- `ncbi_assembly_records`、`ncbi_annotation_records`；
+- `entity_supersessions`。
+
+迁移不删除或重写已有 assembly、annotation、file、QC、analysis、release、workflow 或
+changes 行。旧 NCBI adapter 的业务异常由显式 `operon ncbi-reconcile` 处理，不能藏进
+schema migration。对应回归测试为
+`test_schema_2_6_adds_resumable_adapter_and_repair_history`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。
@@ -53,7 +66,7 @@ SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应�
 文件：`operon/adapters/ncbi_datasets.py`
 
 `_adapter_schema()` 当前会把 adapter 自有 assembly 字段合并进旧项目的
-`config/schemas.yaml`，并把 schema `1.0`/缺失版本提升到 `1.1`。正式版应改为明确
+`config/schemas.yaml`，追加 paired-source 文件角色并把旧版本提升到 `1.4`。正式版应改为明确
 要求受支持的 schema 版本，给出可操作的错误信息，不再静默修改旧项目 schema。
 
 `_validate_plan_rows()` 中按旧 schema 已知列投影 adapter 行的 `compatible_rows` 逻辑
@@ -64,7 +77,7 @@ SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应�
 `_make_schema_legacy()` 的用例；移除兼容层时需一并改成“旧 schema 被明确拒绝”的
 测试。
 
-metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。当前新项目直接生成 1.3，
+metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。当前新项目直接生成 1.4，
 并包含该受控词汇；
 旧项目第一次执行通过远端/本地身份预检的 `operon evict`，或在本地字节缺失时由
 `operon verify` 实时确认远端副本，都会以保留自定义字段的方式只追加该允许值并把
@@ -74,10 +87,15 @@ metadata schema 1.2 在 `files.status` 中增加 `REMOTE_ONLY`。当前新项目
 文件：`operon/taxonomy.py`
 
 metadata schema 1.3 为 taxonomy 原包 manifest 增加 `taxonomy_snapshot` entity type、
-`TAX_` ID 前缀和 `taxonomy_package` role。新项目直接生成 1.3；旧项目第一次成功执行
+`TAX_` ID 前缀和 `taxonomy_package` role。新项目直接生成 1.4；旧项目第一次成功执行
 `operon taxonomy import` 前，`_ensure_taxonomy_metadata_schema()` 会保留自定义字段，
 只追加这些受控词汇并把版本提升到 1.3。这是 taxonomy 快照文件身份所需的当前契约，
 不能随 NCBI genome adapter 的 1.0/1.1 兼容投影一并删除。
+
+metadata schema 1.4 为 paired GCA/GCF 来源文件增加
+`genome_fasta_genbank/refseq` 与 `assembly_report_genbank/refseq` 角色。NCBI adapter 或
+`ncbi-reconcile --apply` 只追加这些受控值并保留项目自定义字段；taxonomy 的 1.3 升级逻辑
+只在当前版本低于 1.3 时运行，不能把 1.4 降级回 1.3。
 
 ## 不在本清单中的兼容行为
 

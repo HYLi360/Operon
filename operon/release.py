@@ -29,6 +29,10 @@ def release_files_for(db: Database, profile: str) -> list[dict[str, Any]]:
         FROM files f
         JOIN current_decisions d ON d.entity_type=f.entity_type AND d.entity_id=f.entity_id
         WHERE d.profile=? AND COALESCE(d.curated_decision, d.decision) IN ('PASS','PASS_WITH_WARNINGS','ACCEPT_WITH_WARNING')
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_supersessions s
+              WHERE s.object_type=f.entity_type AND s.object_id=f.entity_id
+          )
         ORDER BY f.file_id
         """,
         (profile,),

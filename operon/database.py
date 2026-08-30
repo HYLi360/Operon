@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.5"
+SCHEMA_VERSION = "2.6"
 
 MANUAL_TABLES = [
     "organisms",
@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS entity_state (
 CREATE TABLE IF NOT EXISTS workflow_runs (
     run_id TEXT PRIMARY KEY,
     parent_run_id TEXT,
+    resumes_run_id TEXT,
     entity_type TEXT,
     entity_id TEXT,
     step TEXT NOT NULL,
@@ -253,7 +254,9 @@ CREATE TABLE IF NOT EXISTS changes (
     reason TEXT,
     evidence TEXT,
     actor TEXT,
-    changed_at TEXT NOT NULL
+    changed_at TEXT NOT NULL,
+    workflow_run_id TEXT,
+    reverts_change_id INTEGER REFERENCES changes(change_id)
 );
 CREATE TABLE IF NOT EXISTS analysis_jobs (
     job_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -459,6 +462,71 @@ CREATE INDEX IF NOT EXISTS idx_source_links_object
     ON source_links(object_type, object_id);
 """
 
+RECOVERY_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    migration_id TEXT PRIMARY KEY,
+    migration_sha256 TEXT NOT NULL,
+    applied_at TEXT NOT NULL,
+    workflow_run_id TEXT
+);
+CREATE TABLE IF NOT EXISTS adapter_run_items (
+    run_id TEXT NOT NULL REFERENCES workflow_runs(run_id) ON DELETE CASCADE,
+    item_key TEXT NOT NULL,
+    requested_includes TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('pending', 'downloading', 'completed', 'skipped', 'failed', 'interrupted')
+    ),
+    attempt INTEGER NOT NULL DEFAULT 1,
+    started_at TEXT,
+    finished_at TEXT,
+    error TEXT,
+    result_json TEXT,
+    PRIMARY KEY (run_id, item_key)
+);
+CREATE INDEX IF NOT EXISTS idx_adapter_run_items_status
+    ON adapter_run_items(run_id, status);
+CREATE TABLE IF NOT EXISTS ncbi_assembly_records (
+    accession TEXT PRIMARY KEY,
+    assembly_id TEXT NOT NULL REFERENCES assemblies(assembly_id),
+    source_database TEXT NOT NULL,
+    is_canonical INTEGER NOT NULL DEFAULT 0,
+    metadata_sha256 TEXT NOT NULL,
+    genome_file_id TEXT REFERENCES files(file_id),
+    report_file_id TEXT REFERENCES files(file_id),
+    workflow_run_id TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ncbi_assembly_records_assembly
+    ON ncbi_assembly_records(assembly_id, is_canonical);
+CREATE TABLE IF NOT EXISTS ncbi_annotation_records (
+    identity_sha256 TEXT PRIMARY KEY,
+    annotation_id TEXT NOT NULL REFERENCES annotations(annotation_id),
+    assembly_accession TEXT NOT NULL,
+    provider TEXT,
+    annotation_version INTEGER,
+    annotation_date TEXT,
+    workflow_run_id TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ncbi_annotation_records_annotation
+    ON ncbi_annotation_records(annotation_id);
+CREATE INDEX IF NOT EXISTS idx_ncbi_annotation_records_accession
+    ON ncbi_annotation_records(assembly_accession);
+CREATE TABLE IF NOT EXISTS entity_supersessions (
+    object_type TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    superseded_by_type TEXT NOT NULL,
+    superseded_by_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT,
+    workflow_run_id TEXT,
+    superseded_at TEXT NOT NULL,
+    PRIMARY KEY (object_type, object_id)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_supersessions_target
+    ON entity_supersessions(superseded_by_type, superseded_by_id);
+"""
+
 
 class Database:
     """Thin wrapper around sqlite3 with Operon-specific helpers."""
@@ -489,6 +557,7 @@ class Database:
         self._migrate_taxonomy_schema_2_3()
         self._migrate_source_schema_2_4()
         self._migrate_integrity_cache_schema_2_5()
+        self._migrate_recovery_schema_2_6()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -644,6 +713,28 @@ class Database:
                 verified_at TEXT NOT NULL
             );
             """
+        )
+
+    def _migrate_recovery_schema_2_6(self) -> None:
+        """Add resumable adapter items, source identities and repair provenance."""
+        workflow_columns = set(self.table_columns("workflow_runs"))
+        if "resumes_run_id" not in workflow_columns:
+            self._conn.execute('ALTER TABLE workflow_runs ADD COLUMN "resumes_run_id" TEXT')
+        change_columns = set(self.table_columns("changes"))
+        if "workflow_run_id" not in change_columns:
+            self._conn.execute('ALTER TABLE changes ADD COLUMN "workflow_run_id" TEXT')
+        if "reverts_change_id" not in change_columns:
+            self._conn.execute(
+                'ALTER TABLE changes ADD COLUMN "reverts_change_id" INTEGER REFERENCES changes(change_id)'
+            )
+        self._conn.executescript(RECOVERY_SCHEMA_DDL)
+        migration_document = "operon schema 2.6: resumable adapters and NCBI source identities"
+        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.6-recovery-and-ncbi-identities', ?, datetime('now'), NULL)",
+            (migration_sha256,),
         )
 
     def _ensure_current_schema_objects(self) -> None:
@@ -1076,15 +1167,75 @@ class Database:
         return row["state"] if row else None
 
     def record_change(self, object_type: str, object_id: str, field: str | None, old_value: Any, new_value: Any,
-                      reason: str, evidence: str | None = None, actor: str | None = None) -> None:
+                      reason: str, evidence: str | None = None, actor: str | None = None,
+                      workflow_run_id: str | None = None,
+                      reverts_change_id: int | None = None) -> int:
         from operon.utils import now_iso
         with self.transaction():
-            self._conn.execute(
-                "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, evidence, actor, changed_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?)",
+            cursor = self._conn.execute(
+                "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, "
+                "evidence, actor, changed_at, workflow_run_id, reverts_change_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (object_type, object_id, field, str(old_value) if old_value is not None else None,
-                 str(new_value) if new_value is not None else None, reason, evidence, actor, now_iso()),
+                 str(new_value) if new_value is not None else None, reason, evidence, actor, now_iso(),
+                 workflow_run_id, reverts_change_id),
             )
+        return int(cursor.lastrowid)
+
+    def upsert_adapter_run_item(
+        self,
+        run_id: str,
+        item_key: str,
+        requested_includes: str,
+        status: str,
+        *,
+        attempt: int = 1,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        error: str | None = None,
+        result_json: str | None = None,
+    ) -> None:
+        """Persist one resumable adapter item without rewriting older runs."""
+        with self.transaction():
+            self._conn.execute(
+                "INSERT INTO adapter_run_items "
+                "(run_id, item_key, requested_includes, status, attempt, started_at, finished_at, error, result_json) "
+                "VALUES(?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(run_id, item_key) DO UPDATE SET "
+                "requested_includes=excluded.requested_includes, status=excluded.status, "
+                "attempt=excluded.attempt, started_at=COALESCE(excluded.started_at, adapter_run_items.started_at), "
+                "finished_at=excluded.finished_at, error=excluded.error, result_json=excluded.result_json",
+                (
+                    run_id, item_key, requested_includes, status, attempt, started_at,
+                    finished_at, error, result_json,
+                ),
+            )
+
+    def supersede_entity(
+        self,
+        object_type: str,
+        object_id: str,
+        superseded_by_type: str,
+        superseded_by_id: str,
+        *,
+        reason: str,
+        evidence: str | None = None,
+        workflow_run_id: str | None = None,
+    ) -> bool:
+        """Append a logical supersession; original rows and artifacts remain intact."""
+        from operon.utils import now_iso
+        before = self._conn.total_changes
+        with self.transaction():
+            self._conn.execute(
+                "INSERT OR IGNORE INTO entity_supersessions "
+                "(object_type, object_id, superseded_by_type, superseded_by_id, reason, evidence, "
+                "workflow_run_id, superseded_at) VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    object_type, object_id, superseded_by_type, superseded_by_id,
+                    reason, evidence, workflow_run_id, now_iso(),
+                ),
+            )
+        return self._conn.total_changes > before
 
     def set_file_status(self, file_id: str, status: str, *, reason: str,
                         actor: str, evidence: str | None = None) -> bool:

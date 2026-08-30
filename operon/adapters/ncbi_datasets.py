@@ -36,16 +36,18 @@ from operon import __version__
 from operon.config import Project, project_rel
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.files import ingest_file, standardize_file
+from operon.files import ingest_file, raw_bucket, standardize_file
 from operon.schema import (
     ENTITY_ID_COLUMNS,
     ENTITY_PREFIXES,
     ENTITY_TABLES,
+    METADATA_SCHEMA_VERSION,
+    NCBI_SOURCE_FILE_ROLES,
     Schema,
     default_schemas,
 )
 from operon.utils import atomic_copy, atomic_write_text, now_iso, sha256_file
-from operon.workflow import log_run, new_run_id
+from operon.workflow import finish_run, new_run_id, start_run
 
 
 NCBI_DATASETS_API = "https://api.ncbi.nlm.nih.gov/datasets/v2"
@@ -128,6 +130,9 @@ class ImportPlan:
     assets: list[DatasetAsset] = field(default_factory=list)
     assembly_ids: dict[str, str] = field(default_factory=dict)
     annotation_ids: dict[str, str] = field(default_factory=dict)
+    canonical_accessions: dict[str, str] = field(default_factory=dict)
+    assembly_records: list[dict[str, Any]] = field(default_factory=list)
+    annotation_records: list[dict[str, Any]] = field(default_factory=list)
     new_ids: dict[str, int] = field(default_factory=lambda: {
         "organism": 0, "sample": 0, "assembly": 0, "annotation": 0,
     })
@@ -186,6 +191,17 @@ class _PlanBuilder:
             full = _canonical_accession(asset.accession)
             assembly_id = self.plan.assembly_ids.get(full)
             if not assembly_id:
+                # Fall back to the unversioned accession base (asset paths may
+                # carry only the base), but never when the base is ambiguous
+                # within this plan.
+                base = _split_accession(full)[0]
+                candidates = {
+                    aid for key, aid in self.plan.assembly_ids.items()
+                    if _split_accession(key)[0] == base
+                }
+                if len(candidates) == 1:
+                    assembly_id = next(iter(candidates))
+            if not assembly_id:
                 # An unpacked package can contain extra files that were not in
                 # its report.  Ignore those rather than attaching them to the
                 # wrong assembly.
@@ -194,11 +210,14 @@ class _PlanBuilder:
             target_id = assembly_id
             if asset.role in {"annotation_gff3", "cds_fasta", "protein_fasta"}:
                 target_type = "annotation"
-                target_id = self._ensure_annotation(assembly_id, full)
+                target_id = self._ensure_annotation(assembly_id, full, {})
+            else:
+                canonical = self.plan.canonical_accessions[assembly_id]
+                asset_role = _assembly_asset_role(asset.role, full, canonical)
             self.plan.assets.append(DatasetAsset(
                 path=asset.path,
                 accession=full,
-                role=asset.role,
+                role=(asset.role if target_type == "annotation" else asset_role),
                 source_url=asset.source_url,
                 archive_path=asset.archive_path,
                 archive_member=asset.archive_member,
@@ -237,25 +256,26 @@ class _PlanBuilder:
         organism_id = self._ensure_organism(meta)
         sample_id = self._ensure_sample(meta, organism_id, assembly_id)
         current = self._current("assemblies", assembly_id)
+        canonical = _select_canonical_assembly_accession(current, related, primary)
         assembly_row = _merge_nonempty(current, {
             "assembly_id": assembly_id,
             "sample_id": sample_id,
-            "assembly_accession": primary,
+            "assembly_accession": canonical,
             "assembly_name": meta.get("assembly_name"),
-            "assembly_version": _accession_version(primary) or 1,
+            "assembly_version": _accession_version(canonical) or 1,
             "assembly_level": _normalize_assembly_level(meta.get("assembly_level")),
             "assembly_method": meta.get("assembly_method"),
             "submitter": meta.get("submitter"),
             "release_date": _date_only(meta.get("release_date")),
             "reference_status": _normalize_reference_status(meta.get("reference_status")),
             "bioproject_accession": meta.get("bioproject_accession"),
-            "source_database": _normalize_source_database(meta.get("source_database"), primary),
+            "source_database": _normalize_source_database(None, canonical),
             "assembly_status": meta.get("assembly_status"),
             "assembly_type": meta.get("assembly_type"),
         })
         self._put("assemblies", assembly_id, assembly_row)
+        self.plan.canonical_accessions[assembly_id] = canonical
 
-        self.plan.assembly_ids[primary] = assembly_id
         for accession in related:
             if not accession:
                 continue
@@ -263,12 +283,19 @@ class _PlanBuilder:
             self.plan.assembly_ids[accession] = assembly_id
             namespace = _assembly_namespace(accession)
             self._put_accession("assembly", assembly_id, namespace, accession,
-                                _accession_version(accession), accession == primary)
-        self._put_accession("assembly", assembly_id, "NCBI_Assembly", primary,
-                            _accession_version(primary), True)
+                                _accession_version(accession), accession == canonical)
+            self.plan.assembly_records.append({
+                "accession": accession,
+                "assembly_id": assembly_id,
+                "source_database": _normalize_source_database(None, accession),
+                "is_canonical": 1 if accession == canonical else 0,
+                "metadata_sha256": _metadata_identity(meta, accession),
+            })
+        self._put_accession("assembly", assembly_id, "NCBI_Assembly", canonical,
+                            _accession_version(canonical), True)
         annotation = meta.get("annotation") or {}
         if any(annotation.values()):
-            annotation_id = self._ensure_annotation(assembly_id, primary)
+            annotation_id = self._ensure_annotation(assembly_id, primary, annotation)
             row = self._current("annotations", annotation_id)
             source_db = "RefSeq" if primary.startswith("GCF_") else "GenBank"
             self._put("annotations", annotation_id, _merge_nonempty(row, {
@@ -375,27 +402,66 @@ class _PlanBuilder:
             self._put_accession("sample", sample_id, "NCBI_BioSample", biosample, None, True)
         return sample_id
 
-    def _ensure_annotation(self, assembly_id: str, accession: str) -> str:
+    def _ensure_annotation(
+        self,
+        assembly_id: str,
+        accession: str,
+        annotation: dict[str, Any],
+    ) -> str:
         accession = _canonical_accession(accession)
         if accession in self.plan.annotation_ids:
             return self.plan.annotation_ids[accession]
         source_db = "RefSeq" if accession.startswith("GCF_") else "GenBank"
-        annotation_id = next((
-            aid for aid, row in {**self.rows["annotations"], **self.planned["annotations"]}.items()
-            if row.get("assembly_id") == assembly_id
-            and str(row.get("annotation_source") or "").casefold().startswith("ncbi")
-        ), "")
+        provider = str(annotation.get("provider") or f"NCBI {source_db}").strip()
+        version = _integer_or_none(annotation.get("version")) or 1
+        release_date = _date_only(annotation.get("release_date"))
+        identity_sha256 = _annotation_identity(
+            assembly_id, accession, provider, version, release_date,
+        )
+        mapped = (
+            self.db.conn.execute(
+                "SELECT annotation_id FROM ncbi_annotation_records WHERE identity_sha256=?",
+                (identity_sha256,),
+            ).fetchone()
+            if _table_exists(self.db, "ncbi_annotation_records") else None
+        )
+        annotation_id = str(mapped["annotation_id"]) if mapped else ""
+        if not annotation_id:
+            canonical = self.plan.canonical_accessions.get(assembly_id)
+            # Compatibility bridge for pre-2.6 rows: only reuse an exact
+            # metadata identity when this report is for the assembly's
+            # canonical accession.  Paired-source annotations remain distinct.
+            if canonical == accession:
+                annotation_id = next((
+                    aid for aid, row in {
+                        **self.rows["annotations"], **self.planned["annotations"],
+                    }.items()
+                    if row.get("assembly_id") == assembly_id
+                    and str(row.get("annotation_source") or "").strip().casefold()
+                    == provider.casefold()
+                    and (_integer_or_none(row.get("annotation_version")) or 1) == version
+                    and _date_only(row.get("annotation_date")) == release_date
+                ), "")
         if not annotation_id:
             annotation_id = self.ids.allocate("annotation")
             self.plan.new_ids["annotation"] += 1
         row = _merge_nonempty(self._current("annotations", annotation_id), {
             "annotation_id": annotation_id,
             "assembly_id": assembly_id,
-            "annotation_source": f"NCBI {source_db}",
-            "annotation_version": 1,
+            "annotation_source": provider,
+            "annotation_version": version,
+            "annotation_date": release_date,
         })
         self._put("annotations", annotation_id, row)
         self.plan.annotation_ids[accession] = annotation_id
+        self.plan.annotation_records.append({
+            "identity_sha256": identity_sha256,
+            "annotation_id": annotation_id,
+            "assembly_accession": accession,
+            "provider": provider,
+            "annotation_version": version,
+            "annotation_date": release_date,
+        })
         return annotation_id
 
     def _current(self, table: str, key: str) -> dict[str, Any]:
@@ -451,12 +517,16 @@ def run_ncbi_datasets_adapter(
     download_workers: int = 3,
     max_retries: int = 4,
     retry_backoff: float = 1.0,
+    resume_run_id: str | None = None,
+    plan_only: bool = False,
 ) -> dict[str, Any]:
     """Import existing NCBI Datasets outputs and optionally download packages."""
 
     requested = _collect_accessions(accessions, accession_file)
     if not inputs and not requested:
         raise ValidationError("provide at least one --input, --accession, or --accession-file")
+    if plan_only and inputs:
+        raise ValidationError("--plan-only supports accession requests, not offline --input packages")
     unknown_includes = sorted(set(includes) - set(INCLUDE_TYPES))
     if unknown_includes:
         raise ValidationError(f"unknown NCBI include type(s): {unknown_includes}")
@@ -505,7 +575,79 @@ def run_ncbi_datasets_adapter(
             "retry_backoff": retry_backoff,
         },
         "download_failures": [],
+        "skipped_existing": [],
     }
+
+    download_groups: dict[tuple[str, ...], list[str]] = {
+        tuple(includes): list(requested),
+    } if requested else {}
+    skipped_existing: list[str] = []
+    if requested and archive_files:
+        download_groups, skipped_existing = _plan_missing_downloads(
+            db, project, requested, includes, standardize=standardize,
+        )
+        summary["skipped_existing"] = skipped_existing
+    summary["download_plan"] = [
+        {"includes": list(signature), "accessions": list(values)}
+        for signature, values in download_groups.items()
+    ]
+    to_download_count = sum(len(values) for values in download_groups.values())
+    command_text = (
+        "offline import" if not requested
+        else f"download {to_download_count} accession(s) "
+             f"(workers={download_workers}, retries={max_retries})"
+             + (f"; skipped {len(skipped_existing)} already archived" if skipped_existing else "")
+    )
+    request_document = {
+        "inputs": [str(Path(value).resolve()) for value in inputs],
+        "accessions": requested,
+        "includes": list(includes),
+        "archive_files": archive_files,
+        "standardize": standardize,
+    }
+    request_sha256 = hashlib.sha256(
+        json.dumps(request_document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    if plan_only:
+        summary["plan_only"] = True
+        summary["request_sha256"] = request_sha256
+        return summary
+    if resume_run_id:
+        previous = db.conn.execute(
+            "SELECT run_id, input_sha256 FROM workflow_runs WHERE run_id=?",
+            (resume_run_id,),
+        ).fetchone()
+        if previous is None:
+            raise ValidationError(f"resume workflow run does not exist: {resume_run_id}")
+        if previous["input_sha256"] and previous["input_sha256"] != request_sha256:
+            raise ValidationError(
+                "--resume-run request differs from the original run; use the same inputs, "
+                "accessions, include set and archival options"
+            )
+    if not dry_run:
+        start_run(db, {
+            "run_id": run_id,
+            "resumes_run_id": resume_run_id,
+            "step": "ncbi_datasets_import",
+            "status": "running",
+            "started_at": started_at,
+            "tool": "NCBI Datasets adapter",
+            "parameter_set": ",".join(includes),
+            "command": command_text,
+            "input_sha256": request_sha256,
+            "execution_details": json.dumps(request_document, ensure_ascii=False, sort_keys=True),
+        })
+        for accession in requested:
+            status = "skipped" if accession in skipped_existing else "pending"
+            db.upsert_adapter_run_item(
+                run_id, accession, json.dumps(list(includes)), status,
+                started_at=started_at,
+                finished_at=now_iso() if status == "skipped" else None,
+                result_json=(
+                    json.dumps({"reason": "requested roles already archived"})
+                    if status == "skipped" else None
+                ),
+            )
 
     def process_source(
         source_path: Path,
@@ -513,7 +655,7 @@ def run_ncbi_datasets_adapter(
         label: str,
         requested_batch: Sequence[str] = (),
         already_preserved: Path | None = None,
-    ) -> None:
+    ) -> dict[str, Any]:
         nonlocal persisted_schema
         bundle = _open_source(source_path, project, False, label=label)
         try:
@@ -538,7 +680,7 @@ def run_ncbi_datasets_adapter(
             }
             summary["sources"].append(source_summary)
             if not bundle_reports:
-                return
+                return {}
 
             # Track report identity independently of allocated IDs.  This
             # keeps large --dry-run summaries correct even though dry runs do
@@ -571,7 +713,11 @@ def run_ncbi_datasets_adapter(
                 summary["new_ids"][entity_type] += count
             summary["discovered_files"] += len(plan.assets)
             if dry_run:
-                return
+                return {
+                    "assembly_ids": sorted(set(plan.assembly_ids.values())),
+                    "annotation_ids": sorted(set(plan.annotation_ids.values())),
+                    "file_ids": [],
+                }
 
             if preserve_sources and already_preserved is None and bundle.source.is_file():
                 bundle.preserved_path = _preserve_source(bundle.source, project)
@@ -579,7 +725,10 @@ def run_ncbi_datasets_adapter(
 
             if persisted_schema is None:
                 persisted_schema = _adapter_schema(project, persist=True)
-            _apply_plan(db, project, plan, persisted_schema)
+            _apply_plan(
+                db, project, plan, persisted_schema, workflow_run_id=run_id,
+            )
+            source_file_ids: list[str] = []
             if archive_files:
                 for asset in plan.assets:
                     accession = _canonical_accession(asset.accession)
@@ -599,8 +748,27 @@ def run_ncbi_datasets_adapter(
                         standardize=standardize,
                     )
                     summary["archived_files"].append(row["file_id"])
+                    source_file_ids.append(row["file_id"])
+                    if entity_type == "assembly":
+                        pointer = (
+                            "genome_file_id" if asset.role.startswith("genome_fasta")
+                            else "report_file_id" if asset.role.startswith("assembly_report")
+                            else None
+                        )
+                        if pointer:
+                            with db.transaction():
+                                db.conn.execute(
+                                    f"UPDATE ncbi_assembly_records SET {pointer}=?, "
+                                    "workflow_run_id=?, updated_at=? WHERE accession=?",
+                                    (row["file_id"], run_id, now_iso(), accession),
+                                )
                     if row.get("standardized_file_id"):
                         summary["standardized_files"].append(row["standardized_file_id"])
+            return {
+                "assembly_ids": sorted(set(plan.assembly_ids.values())),
+                "annotation_ids": sorted(set(plan.annotation_ids.values())),
+                "file_ids": source_file_ids,
+            }
         finally:
             # Critical for large accession lists: no source bundle or staging
             # directory is allowed to survive into the next batch.
@@ -610,59 +778,88 @@ def run_ncbi_datasets_adapter(
         for raw_input in inputs:
             source = Path(raw_input).resolve()
             process_source(source, label=str(source))
-        if requested:
-            batches = list(_chunks(requested, batch_size))
-
-            def consume_batch(batch: Sequence[str], zip_path: Path) -> None:
-                preserved_path: Path | None = None
-                source_path = zip_path
-                try:
-                    if preserve_sources and not dry_run:
-                        preserved_path = _preserve_source(zip_path, project, move=True)
-                        source_path = preserved_path
-                    process_source(
-                        source_path,
-                        label=f"download:{','.join(batch)}",
-                        requested_batch=batch,
-                        already_preserved=preserved_path,
-                    )
-                finally:
-                    # Downloaded ZIPs are staging artifacts.  Preserved sources
-                    # were moved out above; unprocessed leftovers must never
-                    # accumulate on the project filesystem.
-                    zip_path.unlink(missing_ok=True)
-
+        if download_groups:
             # Keep downloads off /tmp: it is commonly a small tmpfs.  The
             # staging directory lives on the project filesystem.  Batches are
             # downloaded concurrently and consumed as soon as each finishes.
             with tempfile.TemporaryDirectory(
                 prefix=".operon-ncbi-download-", dir=str(project.root)
             ) as temp_name:
-                def record_download_failure(batch: Sequence[str], error: BaseException) -> None:
-                    download_failures.append({
-                        "accessions": ",".join(batch),
-                        "error": f"{type(error).__name__}: {error}",
-                    })
-                    summary["download_failures"] = download_failures
+                for missing_signature, group_accessions in download_groups.items():
+                    batches = list(_chunks(group_accessions, batch_size))
 
-                download_ncbi_datasets_parallel(
-                    batches,
-                    Path(temp_name),
-                    includes=includes,
-                    email=email,
-                    api_key=api_key,
-                    timeout=timeout,
-                    max_workers=download_workers,
-                    max_retries=max_retries,
-                    retry_backoff=retry_backoff,
-                    on_complete=consume_batch,
-                    on_error=record_download_failure,
-                )
+                    def consume_batch(batch: Sequence[str], zip_path: Path) -> None:
+                        preserved_path: Path | None = None
+                        source_path = zip_path
+                        if not dry_run:
+                            for accession in batch:
+                                db.upsert_adapter_run_item(
+                                    run_id, accession, json.dumps(list(missing_signature)),
+                                    "downloading", started_at=now_iso(),
+                                )
+                        try:
+                            if preserve_sources and not dry_run:
+                                preserved_path = _preserve_source(zip_path, project, move=True)
+                                source_path = preserved_path
+                            result = process_source(
+                                source_path,
+                                label=f"download:{','.join(batch)}",
+                                requested_batch=batch,
+                                already_preserved=preserved_path,
+                            )
+                            if not dry_run:
+                                for accession in batch:
+                                    db.upsert_adapter_run_item(
+                                        run_id, accession, json.dumps(list(missing_signature)),
+                                        "completed", started_at=started_at, finished_at=now_iso(),
+                                        result_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
+                                    )
+                        except BaseException as exc:
+                            if not dry_run:
+                                status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+                                for accession in batch:
+                                    db.upsert_adapter_run_item(
+                                        run_id, accession, json.dumps(list(missing_signature)),
+                                        status, started_at=started_at, finished_at=now_iso(),
+                                        error=f"{type(exc).__name__}: {exc}",
+                                    )
+                            raise
+                        finally:
+                            zip_path.unlink(missing_ok=True)
+
+                    def record_download_failure(batch: Sequence[str], error: BaseException) -> None:
+                        download_failures.append({
+                            "accessions": ",".join(batch),
+                            "includes": ",".join(missing_signature),
+                            "error": f"{type(error).__name__}: {error}",
+                        })
+                        summary["download_failures"] = download_failures
+                        if not dry_run:
+                            for accession in batch:
+                                db.upsert_adapter_run_item(
+                                    run_id, accession, json.dumps(list(missing_signature)),
+                                    "failed", started_at=started_at, finished_at=now_iso(),
+                                    error=f"{type(error).__name__}: {error}",
+                                )
+
+                    download_ncbi_datasets_parallel(
+                        batches,
+                        Path(temp_name),
+                        includes=missing_signature,
+                        email=email,
+                        api_key=api_key,
+                        timeout=timeout,
+                        max_workers=download_workers,
+                        max_retries=max_retries,
+                        retry_backoff=retry_backoff,
+                        on_complete=consume_batch,
+                        on_error=record_download_failure,
+                    )
 
         if download_failures and dry_run:
             summary["assembly_records"] = len(observed_assembly_groups)
             return summary
-        if not imported_assembly_ids:
+        if not imported_assembly_ids and not skipped_existing:
             if download_failures:
                 details = "\n".join(
                     f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
@@ -686,6 +883,7 @@ def run_ncbi_datasets_adapter(
             "NCBI Datasets import",
             evidence=evidence,
             actor=os.environ.get("USER"),
+            workflow_run_id=run_id,
         )
         if download_failures:
             failed_count = len(download_failures)
@@ -698,20 +896,10 @@ def run_ncbi_datasets_adapter(
                 f"{failed_count} NCBI download batch(es) failed while other batches were imported successfully:\n"
                 + details
             )
-        log_run(db, project, {
-            "run_id": run_id,
-            "step": "ncbi_datasets_import",
-            "status": "completed",
-            "started_at": started_at,
-            "finished_at": now_iso(),
-            "tool": "NCBI Datasets adapter",
-            "parameter_set": ",".join(includes),
-            "command": (
-                "offline import" if not requested
-                else f"download {len(requested)} accession(s) "
-                     f"(workers={download_workers}, retries={max_retries})"
-            ),
-        })
+        finish_run(
+            db, project, run_id, status="completed", exit_code=0,
+            execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
+        )
         return summary
     except KeyboardInterrupt as exc:
         # SIGINT/SIGTERM (ShutdownRequested included): record the interruption
@@ -720,22 +908,12 @@ def run_ncbi_datasets_adapter(
         if not dry_run:
             try:
                 signum = getattr(exc, "signum", None)
-                log_run(db, project, {
-                    "run_id": run_id,
-                    "step": "ncbi_datasets_import",
-                    "status": "interrupted",
-                    "started_at": started_at,
-                    "finished_at": now_iso(),
-                    "tool": "NCBI Datasets adapter",
-                    "parameter_set": ",".join(includes),
-                    "command": (
-                        "offline import" if not requested
-                        else f"download {len(requested)} accession(s) "
-                             f"(workers={download_workers}, retries={max_retries})"
-                    ),
-                    "error": (f"interrupted by signal {signum}" if signum is not None
-                              else "interrupted"),
-                })
+                finish_run(
+                    db, project, run_id, status="interrupted", exit_code=130,
+                    error=(f"interrupted by signal {signum}" if signum is not None
+                           else "interrupted"),
+                    execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
+                )
             except Exception:
                 pass
         raise
@@ -745,21 +923,190 @@ def run_ncbi_datasets_adapter(
             reported_exc = _no_space_error(project.root, "NCBI Datasets import", exc)
         if not dry_run:
             try:
-                log_run(db, project, {
-                    "run_id": run_id,
-                    "step": "ncbi_datasets_import",
-                    "status": "failed",
-                    "started_at": started_at,
-                    "finished_at": now_iso(),
-                    "tool": "NCBI Datasets adapter",
-                    "parameter_set": ",".join(includes),
-                    "error": str(reported_exc),
-                })
+                finish_run(
+                    db, project, run_id, status="failed", exit_code=1,
+                    error=str(reported_exc),
+                    execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
+                )
             except Exception:
                 pass
         if reported_exc is not exc:
             raise reported_exc from exc
         raise
+
+
+_ANNOTATION_INCLUDE_ROLES = {
+    "gff3": "annotation_gff3",
+    "protein": "protein_fasta",
+    "cds": "cds_fasta",
+}
+
+
+def _table_exists(db: Database, table: str) -> bool:
+    return db.conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone() is not None
+
+
+def _find_archived_assembly(db: Database, accession: str) -> str | None:
+    """Resolve a requested accession to an existing assembly ID, if any.
+
+    The accessions table is the identity mapping written for every imported
+    assembly; a miss here simply means "download", which is always safe.
+    Unversioned requests match any archived version of the same accession.
+    """
+    accession = _canonical_accession(accession)
+    base, version = _split_accession(accession)
+    for namespace in ("NCBI_Assembly", _assembly_namespace(accession)):
+        if version is None:
+            row = db.conn.execute(
+                "SELECT internal_type, internal_id FROM accessions "
+                "WHERE namespace=? AND (accession=? OR accession LIKE ?) "
+                "ORDER BY accession DESC LIMIT 1",
+                (namespace, base, f"{base}.%"),
+            ).fetchone()
+        else:
+            row = db.conn.execute(
+                "SELECT internal_type, internal_id FROM accessions "
+                "WHERE namespace=? AND accession=? LIMIT 1",
+                (namespace, accession),
+            ).fetchone()
+        if row and row["internal_type"] == "assembly":
+            return str(row["internal_id"])
+    return None
+
+
+def _file_satisfies_include(
+    project: Project,
+    row: Any | None,
+    *,
+    entity_type: str,
+    standardize: bool,
+) -> bool:
+    if row is None or str(row["status"]) not in {
+        "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
+    }:
+        return False
+    local_path = project.root / str(row["relative_path"])
+    if str(row["status"]) != "REMOTE_ONLY" and not local_path.exists():
+        return False
+    if standardize:
+        standardized = (
+            project.standardized_root / raw_bucket(entity_type)
+            / str(row["entity_id"]) / Path(str(row["relative_path"])).name
+        )
+        if not standardized.exists():
+            return False
+    return True
+
+
+def _missing_includes(
+    db: Database,
+    project: Project,
+    accession: str,
+    assembly_id: str,
+    includes: Sequence[str],
+    *,
+    standardize: bool,
+) -> tuple[str, ...]:
+    """Return the exact requested include subset not already verified."""
+    accession = _canonical_accession(accession)
+    assembly = db.conn.execute(
+        "SELECT assembly_accession FROM assemblies WHERE assembly_id=?", (assembly_id,)
+    ).fetchone()
+    canonical = _canonical_accession(str(assembly["assembly_accession"])) if assembly else accession
+    missing: list[str] = []
+    for include in includes:
+        if include in {"genome", "sequence-report"}:
+            base_role = "genome_fasta" if include == "genome" else "assembly_report"
+            role = _assembly_asset_role(base_role, accession, canonical)
+            row = db.conn.execute(
+                "SELECT entity_id, relative_path, status FROM files "
+                "WHERE entity_type='assembly' AND entity_id=? AND file_role=? LIMIT 1",
+                (assembly_id, role),
+            ).fetchone()
+            if not _file_satisfies_include(
+                project, row, entity_type="assembly", standardize=standardize,
+            ):
+                missing.append(include)
+
+    requested_annotation = [
+        include for include in includes if include in _ANNOTATION_INCLUDE_ROLES
+    ]
+    if requested_annotation:
+        mapped_ids = (
+            [
+                str(row["annotation_id"])
+                for row in db.conn.execute(
+                    "SELECT DISTINCT annotation_id FROM ncbi_annotation_records "
+                    "WHERE assembly_accession=?",
+                    (accession,),
+                )
+            ]
+            if _table_exists(db, "ncbi_annotation_records") else []
+        )
+        if not mapped_ids and accession == canonical:
+            supersession_filter = (
+                "AND NOT EXISTS (SELECT 1 FROM entity_supersessions s "
+                "WHERE s.object_type='annotation' AND s.object_id=annotations.annotation_id)"
+                if _table_exists(db, "entity_supersessions") else ""
+            )
+            mapped_ids = [
+                str(row["annotation_id"])
+                for row in db.conn.execute(
+                    "SELECT annotation_id FROM annotations WHERE assembly_id=? "
+                    + supersession_filter,
+                    (assembly_id,),
+                )
+            ]
+        satisfied: set[str] = set()
+        # Roles must coexist on one annotation identity; never assemble a
+        # false complete set from unrelated ANN rows.
+        for annotation_id in mapped_ids:
+            present: set[str] = set()
+            for include in requested_annotation:
+                role = _ANNOTATION_INCLUDE_ROLES[include]
+                row = db.conn.execute(
+                    "SELECT entity_id, relative_path, status FROM files "
+                    "WHERE entity_type='annotation' AND entity_id=? AND file_role=? LIMIT 1",
+                    (annotation_id, role),
+                ).fetchone()
+                if _file_satisfies_include(
+                    project, row, entity_type="annotation", standardize=standardize,
+                ):
+                    present.add(include)
+            if len(present) > len(satisfied):
+                satisfied = present
+        missing.extend(
+            include for include in requested_annotation if include not in satisfied
+        )
+    return tuple(include for include in includes if include in set(missing))
+
+
+def _plan_missing_downloads(
+    db: Database,
+    project: Project,
+    accessions: Sequence[str],
+    includes: Sequence[str],
+    *,
+    standardize: bool,
+) -> tuple[dict[tuple[str, ...], list[str]], list[str]]:
+    """Group accessions by their exact missing include signature."""
+    groups: dict[tuple[str, ...], list[str]] = {}
+    already_archived: list[str] = []
+    for accession in accessions:
+        assembly_id = _find_archived_assembly(db, accession)
+        missing = (
+            _missing_includes(
+                db, project, accession, assembly_id, includes, standardize=standardize,
+            )
+            if assembly_id else tuple(includes)
+        )
+        if not missing:
+            already_archived.append(accession)
+        else:
+            groups.setdefault(missing, []).append(accession)
+    return groups, already_archived
 
 
 def _local_zip_entry_names(path: Path, limit: int = 200) -> list[str]:
@@ -1491,13 +1838,20 @@ def _validate_plan_rows(schema: Schema, plan: ImportPlan) -> dict[str, list[dict
             continue
         columns = set(schema.columns(table))
         # TODO(1.0): remove this field projection with old project-schema
-        # support; validated 1.1+ schemas contain every adapter-owned field.
+        # support; validated 1.4+ schemas contain every adapter-owned field.
         compatible_rows = [{key: value for key, value in row.items() if key in columns} for row in rows]
         normalized[table], _ = schema.validate_and_normalize(table, compatible_rows)
     return normalized
 
 
-def _apply_plan(db: Database, project: Project, plan: ImportPlan, schema: Schema) -> None:
+def _apply_plan(
+    db: Database,
+    project: Project,
+    plan: ImportPlan,
+    schema: Schema,
+    *,
+    workflow_run_id: str,
+) -> None:
     normalized = _validate_plan_rows(schema, plan)
     with db.transaction() as conn:
         db.ensure_metadata_columns(schema)
@@ -1513,8 +1867,62 @@ def _apply_plan(db: Database, project: Project, plan: ImportPlan, schema: Schema
                 f"VALUES ({', '.join('?' for _ in columns)}) "
                 f"ON CONFLICT({','.join(keys)}) DO UPDATE SET {assignments}"
             )
-            conn.executemany(sql, [[row.get(col) for col in columns] for row in rows])
+            keys = db._primary_keys(table)
+            for row in rows:
+                where = " AND ".join(f"{key}=?" for key in keys)
+                existing = conn.execute(
+                    f"SELECT * FROM {table} WHERE {where}", [row.get(key) for key in keys]
+                ).fetchone()
+                conn.execute(sql, [row.get(col) for col in columns])
+                before = dict(existing) if existing else {}
+                object_id = ":".join(str(row.get(key)) for key in keys)
+                for column in columns:
+                    old_value = before.get(column)
+                    new_value = row.get(column)
+                    if old_value == new_value:
+                        continue
+                    conn.execute(
+                        "INSERT INTO changes "
+                        "(object_type, object_id, field, old_value, new_value, reason, evidence, "
+                        "actor, changed_at, workflow_run_id, reverts_change_id) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?,NULL)",
+                        (
+                            table, object_id, column,
+                            str(old_value) if old_value is not None else None,
+                            str(new_value) if new_value is not None else None,
+                            "NCBI Datasets metadata import", None, os.environ.get("USER"),
+                            now_iso(), workflow_run_id,
+                        ),
+                    )
         timestamp = now_iso()
+        for record in plan.assembly_records:
+            conn.execute(
+                "INSERT INTO ncbi_assembly_records "
+                "(accession, assembly_id, source_database, is_canonical, metadata_sha256, "
+                "workflow_run_id, updated_at) VALUES(?,?,?,?,?,?,?) "
+                "ON CONFLICT(accession) DO UPDATE SET assembly_id=excluded.assembly_id, "
+                "source_database=excluded.source_database, is_canonical=excluded.is_canonical, "
+                "metadata_sha256=excluded.metadata_sha256, workflow_run_id=excluded.workflow_run_id, "
+                "updated_at=excluded.updated_at",
+                (
+                    record["accession"], record["assembly_id"], record["source_database"],
+                    record["is_canonical"], record["metadata_sha256"], workflow_run_id, timestamp,
+                ),
+            )
+        for record in plan.annotation_records:
+            conn.execute(
+                "INSERT INTO ncbi_annotation_records "
+                "(identity_sha256, annotation_id, assembly_accession, provider, annotation_version, "
+                "annotation_date, workflow_run_id, created_at) VALUES(?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(identity_sha256) DO UPDATE SET annotation_id=excluded.annotation_id, "
+                "workflow_run_id=excluded.workflow_run_id",
+                (
+                    record["identity_sha256"], record["annotation_id"],
+                    record["assembly_accession"], record["provider"],
+                    record["annotation_version"], record["annotation_date"],
+                    workflow_run_id, timestamp,
+                ),
+            )
         for entity_type, table in ENTITY_TABLES.items():
             if table not in normalized:
                 continue
@@ -1522,8 +1930,7 @@ def _apply_plan(db: Database, project: Project, plan: ImportPlan, schema: Schema
             for row in normalized[table]:
                 conn.execute(
                     "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) "
-                    "VALUES(?,?,?,?,?) ON CONFLICT(entity_type, entity_id) DO UPDATE SET "
-                    "state=excluded.state, message=excluded.message, updated_at=excluded.updated_at",
+                    "VALUES(?,?,?,?,?) ON CONFLICT(entity_type, entity_id) DO NOTHING",
                     (entity_type, row[id_col], "METADATA_VALIDATED",
                      "metadata imported by NCBI Datasets adapter", timestamp),
                 )
@@ -1532,7 +1939,7 @@ def _apply_plan(db: Database, project: Project, plan: ImportPlan, schema: Schema
 def _adapter_schema(project: Project, *, persist: bool) -> Schema:
     """Merge adapter fields into development-era schemas without data loss.
 
-    TODO(1.0): require metadata schema 1.1+ and remove this automatic upgrade
+    TODO(1.0): require metadata schema 1.4+ and remove this automatic upgrade
     after pre-1.0 project compatibility is retired.
     """
 
@@ -1552,8 +1959,16 @@ def _adapter_schema(project: Project, *, persist: bool) -> Schema:
         if name not in assembly_fields:
             assembly_fields[name] = dict(defaults[name])
             changed = True
-    if document.get("schema_version") in {None, "unknown", "1.0"}:
-        document["schema_version"] = "1.1"
+    try:
+        allowed_roles = document["tables"]["files"]["fields"]["file_role"]["allowed"]
+    except (KeyError, TypeError) as exc:
+        raise ValidationError("project schema has no files.file_role.allowed list") from exc
+    for role in NCBI_SOURCE_FILE_ROLES:
+        if role not in allowed_roles:
+            allowed_roles.append(role)
+            changed = True
+    if _version_tuple(document.get("schema_version")) < _version_tuple(METADATA_SCHEMA_VERSION):
+        document["schema_version"] = METADATA_SCHEMA_VERSION
         changed = True
     if persist and changed:
         atomic_write_text(
@@ -1998,11 +2413,22 @@ def _asset_role(path: Path) -> str | None:
 
 
 def _accession_from_path(path: Path) -> str:
+    # NCBI packages embed the accession in member filenames followed by an
+    # underscore suffix (e.g. "GCF_000001405.40_GRCh38.p14_genomic.fna"), where
+    # ACCESSION_RE can only match the unversioned base.  A versioned match in
+    # any path part (typically the per-accession directory) is more specific
+    # and wins over such truncated matches.
+    fallback = ""
     for part in reversed(path.parts):
         match = ACCESSION_RE.search(part)
-        if match:
-            return _canonical_accession(match.group(0))
-    return ""
+        if not match:
+            continue
+        value = _canonical_accession(match.group(0))
+        if _split_accession(value)[1] is not None:
+            return value
+        if not fallback:
+            fallback = value
+    return fallback
 
 
 def _deduplicate_reports(reports: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2053,6 +2479,66 @@ def _split_accession(value: str) -> tuple[str, int | None]:
     if not match:
         return str(value or "").strip().upper(), None
     return match.group(1), int(match.group(2)) if match.group(2) else None
+
+
+def _select_canonical_assembly_accession(
+    current: dict[str, Any],
+    related: Sequence[str],
+    primary: str,
+) -> str:
+    """Choose a stable canonical accession without arrival-order rewrites."""
+    normalized = [_canonical_accession(value) for value in related if value]
+    stored = str(current.get("assembly_accession") or "").strip().upper()
+    if stored and stored in normalized:
+        return stored
+    refseq = sorted(value for value in normalized if value.startswith("GCF_"))
+    if refseq:
+        return refseq[-1]
+    return _canonical_accession(primary)
+
+
+def _assembly_asset_role(role: str, accession: str, canonical: str) -> str:
+    """Give alternate GenBank/RefSeq assembly artifacts independent roles."""
+    if role not in {"genome_fasta", "assembly_report"}:
+        return role
+    accession = _canonical_accession(accession)
+    canonical = _canonical_accession(canonical)
+    if accession == canonical:
+        return role
+    suffix = "refseq" if accession.startswith("GCF_") else "genbank"
+    return f"{role}_{suffix}"
+
+
+def _annotation_identity(
+    assembly_id: str,
+    accession: str,
+    provider: str,
+    version: int,
+    release_date: str | None,
+) -> str:
+    document = {
+        "assembly_id": assembly_id,
+        "assembly_accession": _canonical_accession(accession),
+        "provider": provider.strip().casefold(),
+        "version": int(version),
+        "release_date": release_date,
+    }
+    return hashlib.sha256(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _metadata_identity(meta: dict[str, Any], accession: str) -> str:
+    document = dict(meta)
+    document["accession"] = _canonical_accession(accession)
+    return hashlib.sha256(
+        json.dumps(document, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _version_tuple(value: Any) -> tuple[int, ...]:
+    parts = re.findall(r"\d+", str(value or ""))
+    return tuple(int(part) for part in parts) if parts else (0,)
 
 
 def _accession_version(value: str) -> int | None:

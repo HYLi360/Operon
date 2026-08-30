@@ -1,7 +1,7 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.5.1，数据库内部 schema 版本 `2.5`，
-> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.3`。
+> 本文对应代码库当前状态：`operon` 0.5.1，数据库内部 schema 版本 `2.6`，
+> `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.4`。
 
 ## 1. 设计目标
 
@@ -75,7 +75,7 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2/2.3/2.4/2.5 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–2.6 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |
 | `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
@@ -218,6 +218,11 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应） |
 | `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
+| `schema_migrations` | 已应用数据库迁移的稳定 ID、脚本身份和应用时间 |
+| `adapter_run_items` | 可恢复 adapter 的 accession/item 级状态、尝试、错误与结果 write-set |
+| `ncbi_assembly_records` | GCA/GCF 来源记录到稳定 `ASM_` 的映射、canonical 标记及来源文件指针 |
+| `ncbi_annotation_records` | 来源 accession/provider/version/date 规范化得到的 annotation 身份 |
+| `entity_supersessions` | 不删除旧行的逻辑替代关系及 repair provenance |
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `local_file_verifications` | 最近一次完整本地 SHA-256 通过时的 stat 指纹；仅为可重建的 QC 加速缓存，不改变 manifest 文件身份 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
@@ -283,17 +288,27 @@ email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 ac
 身份与关系策略：
 
 - taxon ID、BioSample 和完整版本化 GCA/GCF 用于复用实体；
-- paired GCA/GCF 指向同一个 `ASM_`；
+- paired GCA/GCF 指向同一个 `ASM_`；canonical 不由到达顺序改写，新实体有 GCF 时
+  确定性优先 GCF；
 - `.1` → `.2` 被视为新的不可变 assembly 版本；
 - BioProject 是一对多普通字段，不进入唯一 accession 映射表；
 - 没有 BioSample 的记录使用 assembly 专属 sample；
-- annotation 文件自动归属到对应 `ANN_`。
+- annotation 身份包含来源 accession、provider、version 与 release date，文件自动归属到
+  对应 `ANN_`；pre-2.6 行用严格相同元数据接续，避免 provider 不是 `NCBI *` 时重复分配。
 
 在写元数据前，适配器会计算待归档文件 SHA-256，检查同一实体/角色的包内冲突和
-现有 manifest 冲突。原始 report/ZIP 按 SHA-256 保存到
+现有 manifest 冲突。paired 来源的 alternate genome/report 使用带 `_genbank`/`_refseq`
+后缀的受控角色，因此不同来源字节可以并存而不放宽同一实体同一角色的不可覆盖约束。
+原始 report/ZIP 按 SHA-256 保存到
 `raw/metadata/ncbi_datasets/`；导入摘要写入 `changes` 和 workflow provenance。
-旧项目在正式导入时会以合并方式补齐 adapter 自有字段并把 metadata schema 1.0
-升级为 1.1；自定义字段保留，dry-run 只使用内存中的升级后 schema。
+旧项目在正式导入时会以合并方式补齐 adapter 自有字段和来源文件角色并把 metadata
+schema 升级为 1.4；自定义字段保留，dry-run 只使用内存中的升级后 schema。
+
+adapter run 在开始处理前写入 `running` workflow；每个 accession 的状态保存在
+`adapter_run_items`。失败或中断运行保持原状态，恢复运行使用新的 run ID 和
+`resumes_run_id`，请求 SHA-256 不一致时拒绝恢复。元数据 upsert 的字段级 before/after
+通过 `changes.workflow_run_id` 关联具体运行。旧 adapter 异常由显式 `ncbi-reconcile`
+生成和应用补偿计划，使用 `entity_supersessions` 保留所有旧行和文件。
 
 ### 6.2 NCBI Taxonomy coverage 快照
 

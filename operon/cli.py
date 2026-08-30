@@ -78,6 +78,11 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("schema", help="show schema path or dump it")
     p.add_argument("--dump", action="store_true")
 
+    sub.add_parser(
+        "migrate",
+        help="apply additive database schema migrations and report integrity",
+    )
+
     p = sub.add_parser("import", help="import a dataset interactively or load one controlled metadata table")
     import_sub = p.add_subparsers(dest="import_kind", required=True)
     import_sub.add_parser("dataset", help="launch the English interactive dataset-import wizard")
@@ -159,6 +164,24 @@ def _parser() -> argparse.ArgumentParser:
         "--retry-backoff", type=float, default=1.0,
         help="initial retry backoff in seconds, doubled each attempt (default: 1.0)",
     )
+    p.add_argument(
+        "--resume-run", metavar="WF_ID",
+        help="link this attempt to a previous failed/interrupted NCBI import; request must match",
+    )
+    p.add_argument(
+        "--plan-only", action="store_true",
+        help="show missing-include download groups without downloading or writing workflow rows",
+    )
+
+    p = sub.add_parser(
+        "ncbi-reconcile",
+        help="preview or apply an audited repair of legacy NCBI adapter duplicates and paired-accession drift",
+    )
+    p.add_argument(
+        "--apply", action="store_true",
+        help="apply the freshly computed plan; default is database-only dry-run",
+    )
+    p.add_argument("--actor", help="actor recorded in changes (default: current user)")
 
     p = sub.add_parser("next-id", help="allocate the next stable internal ID for an entity type")
     p.add_argument("entity_type", choices=["organism", "sample", "run", "assembly", "annotation", "file"])
@@ -342,7 +365,13 @@ def _parser() -> argparse.ArgumentParser:
 
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
-    db = Database(project.db_path, read_only=args.command == "query")
+    read_only = (
+        args.command == "query"
+        or (args.command == "backup" and args.backup_command == "create")
+        or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
+        or (args.command == "ncbi-reconcile" and not args.apply)
+    )
+    db = Database(project.db_path, read_only=read_only)
     return project, db
 
 
@@ -392,6 +421,24 @@ def _cmd_schema(args: argparse.Namespace, project: Project) -> int:
     else:
         print(project.schema_path)
     return 0
+
+
+def _cmd_migrate(db: Database) -> int:
+    from operon.database import SCHEMA_VERSION
+    integrity = str(db.query("PRAGMA integrity_check")[0][0])
+    foreign_key_violations = len(db.query("PRAGMA foreign_key_check"))
+    migrations = [dict(row) for row in db.query(
+        "SELECT migration_id, migration_sha256, applied_at, workflow_run_id "
+        "FROM schema_migrations ORDER BY applied_at, migration_id"
+    )]
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "integrity_check": integrity,
+        "foreign_key_violations": foreign_key_violations,
+        "migrations": migrations,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if integrity == "ok" and foreign_key_violations == 0 else 1
 
 
 def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
@@ -474,8 +521,25 @@ def _cmd_ncbi_datasets(args: argparse.Namespace, project: Project, db: Database)
             download_workers=args.download_workers,
             max_retries=args.retries,
             retry_backoff=args.retry_backoff,
+            resume_run_id=args.resume_run,
+            plan_only=args.plan_only,
         )
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_ncbi_reconcile(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.ncbi_reconcile import apply_ncbi_reconciliation, plan_ncbi_reconciliation
+    result = (
+        apply_ncbi_reconciliation(db, project, actor=args.actor)
+        if args.apply else plan_ncbi_reconciliation(db)
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    if not args.apply:
+        print(
+            "dry-run: no business row or file was changed; rerun with --apply after review",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -1070,10 +1134,12 @@ def main(argv: list[str] | None = None) -> int:
             handlers = {
                 "status": lambda: _cmd_status(args, db),
                 "schema": lambda: _cmd_schema(args, project),
+                "migrate": lambda: _cmd_migrate(db),
                 "import": lambda: _cmd_import(args, project, db),
                 "add": lambda: _cmd_add(args, project, db),
                 "add-accession": lambda: _cmd_add_accession(args, project, db),
                 "ncbi-datasets": lambda: _cmd_ncbi_datasets(args, project, db),
+                "ncbi-reconcile": lambda: _cmd_ncbi_reconcile(args, project, db),
                 "next-id": lambda: _cmd_next_id(args, db),
                 "ingest": lambda: _cmd_ingest(args, project, db),
                 "verify": lambda: _cmd_verify(args, project, db),
