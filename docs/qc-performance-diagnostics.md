@@ -37,6 +37,7 @@ QC 记录保留原有的 `started_at`、`finished_at`、`tool`、`tool_version`�
 | `assembly_fasta_length_cache_lookup` | 查找并加载按内容身份键控的 seqid-length 索引 |
 | `assembly_fasta_lengths` | 缓存未命中时流式扫描 assembly FASTA 建立长度映射 |
 | `assembly_fasta_length_cache_write` | 原子写入可重建的长度索引 |
+| `assembly_fasta_length_map_prepare` | 为当前 parser backend 准备 seqid-length 查询映射；Cython 会将 str key 转为 bytes key |
 | `gff3_scan` | 逐行解析 GFF3、属性、坐标和 ID/Parent 引用 |
 | `gff3_finalize` | 汇总 missing Parent 和最终 GFF3 指标 |
 | `protein_manifest_lookup` | 查询关联 protein FASTA |
@@ -112,6 +113,13 @@ assembly，`assembly_fasta_lengths` 三轮分别为 417.9、403.7、403.4 秒，
 `related_inputs[].length_cache.status=hit` 并只承担索引加载成本。缓存损坏会自动删除并
 重建；缓存头中的 SHA-256 摘要还会检测格式合法但内容已变化的索引行。JSONL 中
 `built`、`hit` 或 `write_failed` 明确记录本轮行为。
+
+0.5.3 在同一 18 个实体、54 个文件、HDD 环境的三轮复测中，首轮 18 个缓存均为
+`built`，后两轮 36 次均为 `hit`。0.5.2 后两轮平均总耗时为 670.13 秒，0.5.3
+热缓存平均为 269.05 秒，耗时下降 59.85%，整体约 2.49 倍；annotation GFF3 文件
+合计由 588.51 秒降至 186.32 秒，约 3.16 倍。每轮约 403.6 秒的 assembly 扫描被
+约 4.43 秒的缓存加载取代。18 个索引合计约 114 MiB，相对于每轮 66.58 GB 的原始
+assembly 读取量很小。
 
 ## 判定优化热点
 

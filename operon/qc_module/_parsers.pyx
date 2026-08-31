@@ -660,6 +660,7 @@ def gff3_stats(path, fasta_path=None, timings=None, fasta_lengths_map=None):
     path = Path(path)
     if fasta_path is not None and fasta_lengths_map is not None:
         raise ValueError("provide either fasta_path or fasta_lengths_map, not both")
+    has_length_source = fasta_lengths_map is not None or bool(fasta_path)
     if fasta_lengths_map is not None:
         lengths = fasta_lengths_map
     elif fasta_path:
@@ -671,7 +672,15 @@ def gff3_stats(path, fasta_path=None, timings=None, fasta_lengths_map=None):
                 timings["assembly_fasta_lengths"] = perf_counter() - lengths_started
     else:
         lengths = {}
-    lengths_bytes = {key.encode("utf-8"): value for key, value in lengths.items()}
+    if has_length_source:
+        prepare_started = perf_counter()
+        try:
+            lengths_bytes = {key.encode("utf-8"): value for key, value in lengths.items()}
+        finally:
+            if timings is not None:
+                timings["assembly_fasta_length_map_prepare"] = perf_counter() - prepare_started
+    else:
+        lengths_bytes = {}
     feature_types = set()
     feature_count = 0
     gene_count = 0

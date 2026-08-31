@@ -91,7 +91,10 @@ def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
     cy_timings = {}
     assert py_parsers.gff3_stats(gff3_file, fasta_file, timings=py_timings) == \
         cy_parsers.gff3_stats(gff3_file, fasta_file, timings=cy_timings)
-    expected = {"assembly_fasta_lengths", "gff3_scan", "gff3_finalize"}
+    expected = {
+        "assembly_fasta_lengths", "assembly_fasta_length_map_prepare",
+        "gff3_scan", "gff3_finalize",
+    }
     assert set(py_timings) == set(cy_timings) == expected
     assert all(value >= 0.0 for value in py_timings.values())
     assert all(value >= 0.0 for value in cy_timings.values())
@@ -104,7 +107,9 @@ def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
     ) == cy_parsers.gff3_stats(
         gff3_file, timings=cy_cached_timings, fasta_lengths_map=lengths,
     )
-    expected_cached = {"gff3_scan", "gff3_finalize"}
+    expected_cached = {
+        "assembly_fasta_length_map_prepare", "gff3_scan", "gff3_finalize",
+    }
     assert set(py_cached_timings) == set(cy_cached_timings) == expected_cached
 
 

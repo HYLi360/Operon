@@ -389,7 +389,8 @@ class TestQCAndRules(PytestAssertions):
             "state_qc_running", "file_integrity", "annotation_manifest_lookup",
             "assembly_fasta_integrity", "assembly_fasta_length_cache_lookup",
             "assembly_fasta_lengths", "assembly_fasta_length_cache_write",
-            "gff3_scan", "gff3_finalize", "protein_manifest_lookup",
+            "assembly_fasta_length_map_prepare", "gff3_scan", "gff3_finalize",
+            "protein_manifest_lookup",
             "protein_fasta_integrity", "protein_stats", "qc_results_write",
             "state_qc_complete", "unattributed",
         }
