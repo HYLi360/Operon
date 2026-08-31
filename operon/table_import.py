@@ -189,7 +189,7 @@ def _read_xlsx(path: Path) -> list[dict[str, Any]]:
                     values[index] = value
                 width = max(values, default=-1) + 1
                 matrix.append([values.get(index, "") for index in range(width)])
-    except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError, ValueError) as exc:
+    except (IndexError, KeyError, OSError, zipfile.BadZipFile, ET.ParseError, ValueError) as exc:
         raise ValidationError(f"cannot read XLSX {path}: {exc}") from exc
     if not matrix:
         return []

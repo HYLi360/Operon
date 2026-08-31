@@ -20,3 +20,7 @@ releases/
 examples/
 metadata/*.tsv
 !metadata/README.md
+coverage.xml
+junit.xml
+.coverage
+htmlcov/

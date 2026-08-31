@@ -281,13 +281,15 @@ def _warnings(db: Database, draft: dict[str, Any]) -> list[str]:
         for label, role in (("GFF3", "annotation_gff3"), ("CDS FASTA", "cds_fasta"), ("Protein FASTA", "protein_fasta")):
             if not any(item["role"] == role for item in draft.get("files", [])):
                 warnings.append(f"{label} is missing from the annotation bundle.")
-    sample_id = draft.get("sample", {}).get("id")
-    if sample_id and draft.get("sample", {}).get("action") == "reuse":
+    sample = draft.get("sample") or {}
+    sample_id = sample.get("id")
+    if sample_id and sample.get("action") == "reuse":
         row = db.conn.execute("SELECT organism_id FROM samples WHERE sample_id=?", (sample_id,)).fetchone()
         if row and row["organism_id"] != draft.get("organism", {}).get("id"):
             warnings.append("The selected sample does not belong to the selected organism.")
-    assembly_id = draft.get("assembly", {}).get("id")
-    if assembly_id and draft.get("assembly", {}).get("action") == "reuse":
+    assembly = draft.get("assembly") or {}
+    assembly_id = assembly.get("id")
+    if assembly_id and assembly.get("action") == "reuse":
         row = db.conn.execute("SELECT sample_id FROM assemblies WHERE assembly_id=?", (assembly_id,)).fetchone()
         if row and row["sample_id"] != sample_id:
             warnings.append("The selected assembly does not belong to the selected sample.")

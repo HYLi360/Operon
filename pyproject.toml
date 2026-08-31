@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0"]
+test = ["pytest>=8.0", "coverage>=7.0", "pytest-cov>=7.0"]
 build = ["cx-Freeze>=8.4", "paramiko>=3.4"]
 remote = ["paramiko>=3.4"]
 dev = ["pytest>=8.0", "cx-Freeze>=8.4", "paramiko>=3.4"]
@@ -56,16 +56,35 @@ include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["docs", "share/doc/operon/docs"],
 ]
-excludes = ["pytest", "setuptools", "unittest"]
+excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov"]
 optimize = 1
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_classes = ["Test*"]
-addopts = ["--strict-config", "--strict-markers", "-ra"]
+addopts = [
+    "--cov=operon",
+    "--cov-branch",
+    "--cov-report=xml",
+    "--junitxml=junit.xml",
+    "--strict-config",
+    "--strict-markers",
+    "-ra",
+]
 markers = [
     "unit: isolated domain tests",
     "integration: tests spanning multiple components",
     "regression: correctness regressions",
     "compatibility: supported Python and database compatibility contracts",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["operon"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
 ]

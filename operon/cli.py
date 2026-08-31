@@ -47,7 +47,10 @@ MANUAL_METADATA_ENTITIES = ["organism", "sample", "run", "assembly", "annotation
 
 
 def _positive_int(value: str) -> int:
-    parsed = int(value)
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
