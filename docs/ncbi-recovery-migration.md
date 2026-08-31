@@ -103,8 +103,16 @@ cp -a "$OPERON_BACKUP" "$OPERON_STAGE"
 ```
 
 逐项审阅 `warnings`、`annotation_supersessions`、`assembly_updates`、`file_role_updates`、
-`accession_primary_updates` 和 `state_restorations`。任何 `alternate_role_conflict` 都是阻断项；
-不要应用，也不要手改 SQL 绕过。
+`file_path_repairs`、`accession_primary_updates` 和 `state_restorations`。任何
+`alternate_role_conflict` 都是阻断项；不要应用，也不要手改 SQL 绕过。
+
+`file_role_updates` 与 `file_path_repairs` 还会伴随物理文件移动：角色改名（如
+`assembly_report` → `assembly_report_genbank`）后，归档文件会被移到新角色的 canonical
+路径，并在同一事务中更新 `files.relative_path`、写入 `changes` 审计。若移动前发现目标
+路径已被不同字节占用，整个计划直接失败，不会移动任何文件；本地缺失（如 REMOTE_ONLY）
+的行只做记录不搬动，其 file_id 会列在结果的 `skipped_path_moves` 中。这一步是后续
+paired 下载能恢复的前提：只有腾空 plain canonical 路径，canonical 侧的 ingest 才不会
+撞上旧字节。
 
 计划合理后在 staging 应用：
 
@@ -199,6 +207,17 @@ workflow ID：
 新运行会在 `workflow_runs.resumes_run_id` 指向旧运行；旧运行不会被覆盖。每个 accession 的
 状态和 attempt 保存在 `adapter_run_items`。再次中断时，使用最新失败/中断运行的 ID 重跑同一
 请求；已成功的角色由 manifest 逐项跳过。
+
+恢复阶段的 ingest 对两类历史残留会自愈，而不是报 checksum 冲突：
+
+- 角色已改名但文件仍留在旧 canonical 路径（早期 reconcile 或手工 SQL 改名所致）：占用文件
+  的字节与 manifest 行一致时，会被搬到该行自己角色的 canonical 路径并更新
+  `files.relative_path`，新内容随即正常归档；
+- 无任何 manifest 行认领的孤儿文件（停机前的中断运行留下）：会被隔离为同目录下的
+  `<文件名>.orphan-<sha前12位>`，字节保留、写入 `changes` 审计，绝不静默覆盖。
+
+若占用字节与认领行的 checksum 也不一致，仍会抛出 `ConflictError`——这意味着归档内容本身
+不可信，必须人工核对，不要用删除文件的方式绕过。
 
 监控查询：
 

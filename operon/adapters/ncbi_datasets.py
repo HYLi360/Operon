@@ -432,11 +432,30 @@ class _PlanBuilder:
             # metadata identity when this report is for the assembly's
             # canonical accession.  Paired-source annotations remain distinct.
             if canonical == accession:
+                # Never bridge to an annotation already claimed by a
+                # different accession: paired GCA/GCF packages can carry
+                # identical annotationInfo with different GFF bytes, and
+                # reusing the paired source's annotation would collide at
+                # ingest time (and break re-import idempotency).
+                claimed: set[str] = {
+                    aid for other, aid in self.plan.annotation_ids.items()
+                    if other != accession
+                }
+                if _table_exists(self.db, "ncbi_annotation_records"):
+                    claimed.update(
+                        str(rec["annotation_id"])
+                        for rec in self.db.conn.execute(
+                            "SELECT annotation_id, assembly_accession "
+                            "FROM ncbi_annotation_records"
+                        )
+                        if _canonical_accession(str(rec["assembly_accession"])) != accession
+                    )
                 annotation_id = next((
                     aid for aid, row in {
                         **self.rows["annotations"], **self.planned["annotations"],
                     }.items()
-                    if row.get("assembly_id") == assembly_id
+                    if aid not in claimed
+                    and row.get("assembly_id") == assembly_id
                     and str(row.get("annotation_source") or "").strip().casefold()
                     == provider.casefold()
                     and (_integer_or_none(row.get("annotation_version")) or 1) == version

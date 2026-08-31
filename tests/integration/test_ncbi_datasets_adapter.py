@@ -34,9 +34,9 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ValidationError
-from operon.files import ingest_file
+from operon.files import canonical_filename, ingest_file
 from operon.ncbi_reconcile import apply_ncbi_reconciliation, plan_ncbi_reconciliation
-from operon.utils import now_iso
+from operon.utils import now_iso, sha256_file
 
 
 def _report(accession: str = "GCF_000001405.40") -> dict:
@@ -843,6 +843,11 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     "SELECT file_role FROM files WHERE file_id=?", (report_file["file_id"],)
                 )[0]["file_role"]
                 self.assertEqual(role, "assembly_report_genbank")
+                moved_rel = db.query(
+                    "SELECT relative_path FROM files WHERE file_id=?", (report_file["file_id"],)
+                )[0]["relative_path"]
+                self.assertIn("assembly_report_genbank", moved_rel)
+                self.assertTrue((root / moved_rel).exists())
                 state = db.get_entity_state("annotation", original["annotation_id"])
                 self.assertEqual(state, "QC_COMPLETE")
                 workflow = db.query(
@@ -861,10 +866,210 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     "annotation_supersessions": 0,
                     "assembly_updates": 0,
                     "file_role_updates": 0,
+                    "file_path_repairs": 0,
                     "accession_primary_updates": 0,
                     "state_restorations": 0,
                     "warnings": 0,
                 })
+            finally:
+                db.close()
+
+    def test_paired_packages_with_identical_annotation_info_get_distinct_annotations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init(root)
+            gca = "GCA_000001405.29"
+            gcf = "GCF_000001405.40"
+
+            def write_package(path: Path, accession: str, gff_body: str) -> None:
+                report = _report(accession)
+                report["assemblyInfo"]["pairedAssembly"] = {
+                    "accession": gcf if accession == gca else gca,
+                }
+                if accession == gca:
+                    report["assemblyInfo"].pop("refseqCategory", None)
+                prefix = f"ncbi_dataset/data/{accession}"
+                with zipfile.ZipFile(path, "w") as archive:
+                    archive.writestr(
+                        "ncbi_dataset/data/assembly_data_report.jsonl",
+                        json.dumps(report) + "\n",
+                    )
+                    archive.writestr(f"{prefix}/genomic.gff", gff_body)
+
+            gca_package = root / "gca.zip"
+            gcf_package = root / "gcf.zip"
+            write_package(
+                gca_package, gca,
+                "##gff-version 3\nchr1\tGenBank\tgene\t1\t4\t.\t+\t.\tID=gca1\n",
+            )
+            write_package(
+                gcf_package, gcf,
+                "##gff-version 3\nchr1\tRefSeq\tgene\t1\t9\t.\t+\t.\tID=gcf1\n",
+            )
+
+            # Identical annotationInfo but different GFF bytes: the paired
+            # import must not bridge onto the first package's annotation.
+            command = ["--project", str(root), "ncbi-datasets", "--input"]
+            self.assertEqual(main([*command, str(gca_package)]), 0)
+            self.assertEqual(main([*command, str(gcf_package)]), 0)
+            self.assertEqual(main([*command, str(gcf_package)]), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                self.assertEqual(db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1)
+                annotations = [dict(row) for row in db.query("SELECT * FROM annotations")]
+                self.assertEqual(len(annotations), 2)
+                for annotation in annotations:
+                    self.assertIsNotNone(annotation["gff_file_id"])
+                self.assertEqual(
+                    db.query(
+                        "SELECT COUNT(*) n FROM files WHERE file_role='annotation_gff3'"
+                    )[0]["n"],
+                    2,
+                )
+            finally:
+                db.close()
+
+    def test_single_package_with_paired_reports_keeps_annotations_distinct(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init(root)
+            gca = "GCA_000001405.29"
+            gcf = "GCF_000001405.40"
+            reports = []
+            for accession in (gca, gcf):
+                report = _report(accession)
+                report["assemblyInfo"]["pairedAssembly"] = {
+                    "accession": gcf if accession == gca else gca,
+                }
+                if accession == gca:
+                    report["assemblyInfo"].pop("refseqCategory", None)
+                reports.append(report)
+            package = root / "ncbi_dataset.zip"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr(
+                    "ncbi_dataset/data/assembly_data_report.jsonl",
+                    "".join(json.dumps(report) + "\n" for report in reports),
+                )
+                archive.writestr(
+                    f"ncbi_dataset/data/{gca}/genomic.gff",
+                    "##gff-version 3\nchr1\tGenBank\tgene\t1\t4\t.\t+\t.\tID=gca1\n",
+                )
+                archive.writestr(
+                    f"ncbi_dataset/data/{gcf}/genomic.gff",
+                    "##gff-version 3\nchr1\tRefSeq\tgene\t1\t9\t.\t+\t.\tID=gcf1\n",
+                )
+
+            command = ["--project", str(root), "ncbi-datasets", "--input", str(package)]
+            self.assertEqual(main(command), 0)
+            self.assertEqual(main(command), 0)
+            db = Database(root / "operon.sqlite")
+            try:
+                self.assertEqual(db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1)
+                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2)
+                self.assertEqual(
+                    db.query(
+                        "SELECT COUNT(*) n FROM files WHERE file_role='annotation_gff3'"
+                    )[0]["n"],
+                    2,
+                )
+            finally:
+                db.close()
+
+    def test_ingest_relocates_file_left_at_stale_path_after_role_rename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init(root)
+            accession = "GCF_000001405.40"
+            package = root / "ncbi_dataset.zip"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr(
+                    "ncbi_dataset/data/assembly_data_report.jsonl",
+                    json.dumps(_report()) + "\n",
+                )
+                archive.writestr(
+                    f"ncbi_dataset/data/{accession}/sequence_report.jsonl",
+                    '{"sequence_name":"chr1"}\n',
+                )
+            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(package)]), 0)
+            project = load_project(root)
+            db = Database(project.db_path)
+            try:
+                assembly = dict(db.query("SELECT * FROM assemblies")[0])
+                row = dict(db.query("SELECT * FROM files WHERE file_role LIKE 'assembly_report%'")[0])
+                old_path = root / row["relative_path"]
+                self.assertTrue(old_path.exists())
+                # Simulate a pre-fix reconciliation: role renamed in the
+                # manifest, but the file left at the plain canonical path.
+                db.conn.execute(
+                    "UPDATE files SET file_role='assembly_report_genbank' WHERE file_id=?",
+                    (row["file_id"],),
+                )
+                db.conn.commit()
+                # A later ingest of the plain role with different bytes must
+                # relocate the renamed file instead of raising ConflictError.
+                other = root / "other_sequence_report.jsonl"
+                other.write_text('{"sequence_name":"chr2"}\n', encoding="utf-8")
+                new_row = ingest_file(
+                    db, project, other, "assembly", assembly["assembly_id"], "assembly_report",
+                )
+                renamed_path = old_path.with_name(canonical_filename(
+                    assembly["assembly_id"], "assembly_report_genbank",
+                    row["format"], row["compression"],
+                ))
+                # The plain canonical path now holds the newly ingested bytes,
+                # while the renamed file keeps its own bytes at its own path.
+                self.assertEqual(sha256_file(old_path), sha256_file(other))
+                self.assertTrue(renamed_path.exists())
+                self.assertEqual(sha256_file(renamed_path), row["sha256"])
+                relocated = dict(db.query(
+                    "SELECT * FROM files WHERE file_id=?", (row["file_id"],),
+                )[0])
+                self.assertEqual(relocated["relative_path"], str(renamed_path.relative_to(root)))
+                self.assertEqual(new_row["file_role"], "assembly_report")
+                self.assertTrue((root / new_row["relative_path"]).exists())
+                audit = db.query(
+                    "SELECT * FROM changes WHERE object_type='files' AND object_id=? "
+                    "AND field='relative_path'",
+                    (row["file_id"],),
+                )
+                self.assertEqual(len(audit), 1)
+            finally:
+                db.close()
+
+    def test_ingest_quarantines_untracked_leftover_at_target_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init(root)
+            accession = "GCF_000001405.40"
+            package = root / "ncbi_dataset.zip"
+            with zipfile.ZipFile(package, "w") as archive:
+                archive.writestr(
+                    "ncbi_dataset/data/assembly_data_report.jsonl",
+                    json.dumps(_report()) + "\n",
+                )
+            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(package)]), 0)
+            project = load_project(root)
+            db = Database(project.db_path)
+            try:
+                assembly = dict(db.query("SELECT * FROM assemblies")[0])
+                entity_dir = root / "raw" / "assemblies" / assembly["assembly_id"]
+                entity_dir.mkdir(parents=True, exist_ok=True)
+                orphan = entity_dir / f"{assembly['assembly_id']}.assembly_report.json"
+                orphan.write_text('{"leftover": true}\n', encoding="utf-8")
+                orphan_sha = sha256_file(orphan)
+                report = root / "sequence_report.jsonl"
+                report.write_text('{"sequence_name":"chr1"}\n', encoding="utf-8")
+                row = ingest_file(
+                    db, project, report, "assembly", assembly["assembly_id"], "assembly_report",
+                )
+                quarantined = entity_dir / f"{orphan.name}.orphan-{orphan_sha[:12]}"
+                self.assertTrue(quarantined.exists())
+                self.assertEqual(quarantined.read_text(encoding="utf-8"), '{"leftover": true}\n')
+                # The canonical path now holds the newly ingested bytes.
+                self.assertEqual(sha256_file(orphan), sha256_file(report))
+                self.assertTrue((root / row["relative_path"]).exists())
+                audit = db.query("SELECT * FROM changes WHERE field='quarantined'")
+                self.assertEqual(len(audit), 1)
             finally:
                 db.close()
 

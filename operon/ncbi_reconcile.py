@@ -7,12 +7,14 @@ import json
 import os
 import re
 from collections import defaultdict
+from pathlib import PurePosixPath
 from typing import Any
 
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ConflictError
-from operon.utils import now_iso
+from operon.files import canonical_filename
+from operon.utils import now_iso, sha256_file
 from operon.workflow import finish_run, new_run_id, start_run
 
 
@@ -71,6 +73,7 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
         "annotation_supersessions": [],
         "assembly_updates": [],
         "file_role_updates": [],
+        "file_path_repairs": [],
         "accession_primary_updates": [],
         "state_restorations": [],
         "warnings": [],
@@ -174,7 +177,8 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                 "new_source_database": canonical_database,
             })
         for row in db.conn.execute(
-            "SELECT file_id, file_role, source_url, sha256 FROM files "
+            "SELECT file_id, file_role, source_url, sha256, relative_path, format, compression "
+            "FROM files "
             "WHERE entity_type='assembly' AND entity_id=? "
             "AND file_role IN ('genome_fasta','assembly_report')",
             (assembly_id,),
@@ -196,10 +200,19 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                     "existing_file_id": conflict["file_id"], "role": new_role,
                 })
                 continue
+            # The archived file must move to the renamed role's canonical
+            # path too, otherwise the plain name stays occupied and a later
+            # ingest of the canonical role collides with these bytes.
+            old_rel = str(row["relative_path"])
+            new_rel = str(PurePosixPath(old_rel).parent / canonical_filename(
+                str(assembly_id), new_role, str(row["format"]), str(row["compression"]),
+            ))
             plan["file_role_updates"].append({
                 "file_id": row["file_id"], "assembly_id": assembly_id,
                 "old_role": row["file_role"], "new_role": new_role,
                 "source_accession": source_accession,
+                "old_relative_path": old_rel,
+                "new_relative_path": new_rel,
                 "clear_fasta_link": bool(
                     row["file_role"] == "genome_fasta"
                     and assembly and assembly["fasta_file_id"] == row["file_id"]
@@ -218,6 +231,27 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                     "is_primary": desired,
                 })
 
+    # Rows renamed by an earlier reconciliation (or equivalent repair) whose
+    # files still sit at the pre-rename canonical path: align relative_path
+    # with the role-derived canonical name so future ingests of the plain
+    # role do not collide with these bytes.
+    for row in db.conn.execute(
+        "SELECT file_id, entity_id, file_role, format, compression, relative_path "
+        "FROM files WHERE file_role IN ('genome_fasta_genbank','genome_fasta_refseq',"
+        "'assembly_report_genbank','assembly_report_refseq')"
+    ):
+        old_rel = str(row["relative_path"])
+        expected = canonical_filename(
+            str(row["entity_id"]), str(row["file_role"]),
+            str(row["format"]), str(row["compression"]),
+        )
+        if PurePosixPath(old_rel).name != expected:
+            plan["file_path_repairs"].append({
+                "file_id": row["file_id"],
+                "old_relative_path": old_rel,
+                "new_relative_path": str(PurePosixPath(old_rel).parent / expected),
+            })
+
     for row in db.conn.execute(
         "SELECT e.entity_id, e.state FROM entity_state e WHERE e.entity_type='annotation' "
         "AND EXISTS (SELECT 1 FROM qc_results q WHERE q.entity_type='annotation' "
@@ -235,6 +269,44 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
         key: len(value) for key, value in plan.items() if isinstance(value, list)
     }
     return plan
+
+
+def _apply_path_move(
+    db: Database,
+    project: Project,
+    file_id: str,
+    old_rel: str,
+    new_rel: str,
+    *,
+    actor: str | None,
+    run_id: str,
+    reason: str,
+) -> bool:
+    """Move an archived file to its new canonical path and update the row.
+
+    Returns False when the local file is absent (e.g. REMOTE_ONLY): the
+    recorded path is left unchanged so remote mirrors stay consistent.
+    """
+    if old_rel == new_rel:
+        return True
+    old_path = project.root / old_rel
+    new_path = project.root / new_rel
+    if not old_path.exists():
+        return False
+    if new_path.exists() and sha256_file(new_path).lower() != sha256_file(old_path).lower():
+        raise ConflictError(
+            f"cannot move {old_path} to {new_path}: destination exists with different bytes"
+        )
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(old_path, new_path)
+    db.conn.execute(
+        "UPDATE files SET relative_path=? WHERE file_id=?", (new_rel, file_id)
+    )
+    db.record_change(
+        "files", file_id, "relative_path", old_rel, new_rel, reason,
+        actor=actor, workflow_run_id=run_id,
+    )
+    return True
 
 
 def apply_ncbi_reconciliation(
@@ -267,8 +339,43 @@ def apply_ncbi_reconciliation(
         "input_sha256": plan_sha256,
         "command": "operon ncbi-reconcile --apply",
     })
+    path_moves = [
+        (
+            item["file_id"], item["old_relative_path"], item["new_relative_path"],
+            "move renamed NCBI source-specific artifact to its canonical path",
+        )
+        for item in plan["file_role_updates"]
+    ] + [
+        (
+            item["file_id"], item["old_relative_path"], item["new_relative_path"],
+            "align archived path with reconciled source-specific role",
+        )
+        for item in plan["file_path_repairs"]
+    ]
+    skipped_path_moves: list[str] = []
     try:
+        # Validate every destination before touching anything: physical moves
+        # cannot be rolled back, so a conflict must fail before the first move.
+        for _file_id, old_rel, new_rel, _reason in path_moves:
+            if old_rel == new_rel:
+                continue
+            old_path = project.root / old_rel
+            new_path = project.root / new_rel
+            if (
+                old_path.exists() and new_path.exists()
+                and sha256_file(new_path).lower() != sha256_file(old_path).lower()
+            ):
+                raise ConflictError(
+                    f"cannot move {old_path} to {new_path}: "
+                    "destination exists with different bytes"
+                )
         with db.transaction():
+            for file_id, old_rel, new_rel, reason in path_moves:
+                if not _apply_path_move(
+                    db, project, file_id, old_rel, new_rel,
+                    actor=actor, run_id=run_id, reason=reason,
+                ):
+                    skipped_path_moves.append(file_id)
             for item in plan["annotation_supersessions"]:
                 inserted = db.supersede_entity(
                     "annotation", item["annotation_id"], "annotation", item["superseded_by"],
@@ -344,6 +451,7 @@ def apply_ncbi_reconciliation(
                     "restore state from existing QC results after idempotent re-import downgrade",
                     actor=actor, workflow_run_id=run_id,
                 )
+        plan["skipped_path_moves"] = skipped_path_moves
         db.record_change(
             "adapter_repair", run_id, None, None,
             json.dumps(plan["summary"], ensure_ascii=False, sort_keys=True),

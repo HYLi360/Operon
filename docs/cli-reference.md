@@ -233,7 +233,10 @@ operon ncbi-reconcile --apply [--actor NAME]
 - paired GCA/GCF 的 display canonical 恢复为已有文件证据指向的历史 canonical；没有历史
   证据时保留有效的当前 canonical，再无可用证据时才确定性优先 GCF；
 - 非 canonical 来源的 assembly report/genome 使用
-  `assembly_report_genbank/refseq`、`genome_fasta_genbank/refseq` 独立角色；
+  `assembly_report_genbank/refseq`、`genome_fasta_genbank/refseq` 独立角色，归档文件同时
+  物理移动到新角色的 canonical 路径（移动前统一校验所有目标路径，有字节冲突则整体拒绝；
+  本地缺失的行不搬动，列入结果的 `skipped_path_moves`）；历史上已改名但未移动的行由
+  `file_path_repairs` 通道补齐；
 - 已有 QC 结果但被重导降级到早期状态的 annotation 恢复为 `QC_COMPLETE`；
 - 每个字段的 before/after、原因、证据和 repair run 写入 `changes`。
 
@@ -266,6 +269,11 @@ operon ingest \
   可对照，下载后由 ingest 计算并登记新的本地身份。
 - 自动识别 `.gz` 等压缩；源文件有 `gzip` 后缀但不是 gzip magic 时报错。
 - 同实体同角色不同 SHA-256 会拒绝归档。
+- 目标 canonical 路径已被不同字节占用时不会直接报错：占用者若被另一 manifest 行认领且
+  字节一致（例如角色改名后遗留的文件），会先被搬到该行自己角色的 canonical 路径并更新
+  `relative_path`；无人认领的中断残留会隔离为同目录的 `<文件名>.orphan-<sha前12位>`。
+  两种情况都写入 `changes` 审计、保留原字节；占用字节与认领行 checksum 也不一致时才抛出
+  `ConflictError`。
 - `--move` 移动而非复制源文件。
 - 成功后实体状态为 `CHECKSUM_VERIFIED`，并回填相关实体的文件 ID 字段。
 

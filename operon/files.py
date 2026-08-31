@@ -2,8 +2,9 @@
 
 Path is a mutable property; identity is `file_id + sha256 + size_bytes` for
 both regular files and directory trees.
-Downloads/copies are atomic and idempotent (same checksum -> skip, different
-checksum at target -> hard conflict).
+Downloads/copies are atomic and idempotent (same checksum -> skip; different
+checksum at target -> relocate a manifest-claimed occupant to its own canonical
+path, quarantine an untracked leftover, else hard conflict).
 """
 
 from __future__ import annotations
@@ -279,7 +280,11 @@ def ingest_file(
 
     The function is idempotent:
       * target exists with same checksum -> existing manifest row is returned;
-      * target exists with different checksum -> ConflictError, never overwrite;
+      * target exists with different checksum -> the occupant is relocated to
+        its own canonical path when another manifest row claims those exact
+        bytes (e.g. a file left behind by a role rename), or quarantined
+        aside when no manifest row claims it (interrupted-run leftover);
+        anything else raises ConflictError, never overwrite;
       * otherwise copy to a temporary sibling and atomically rename.
     """
     source = Path(source)
@@ -357,10 +362,13 @@ def ingest_file(
                 command=f"ingest {source}", input_sha256=source_sha,
             )
             return row
-        raise ConflictError(
-            f"target {target} already exists with a different checksum "
-            f"({target_sha[:12]}... != {source_sha[:12]}...); refusing to overwrite"
-        )
+        if not target.is_dir():
+            _resolve_occupied_target(db, project, target, target_sha)
+        else:
+            raise ConflictError(
+                f"target {target} already exists with a different checksum "
+                f"({target_sha[:12]}... != {source_sha[:12]}...); refusing to overwrite"
+            )
 
     if move:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -399,6 +407,68 @@ def ingest_file(
         command=f"ingest {source}", input_sha256=target_sha,
     )
     return row
+
+
+def _resolve_occupied_target(db: Database, project: Project, target: Path, target_sha: str) -> None:
+    """Free an occupied canonical path without violating raw/ immutability.
+
+    Two occupants are recoverable:
+      * a file still claimed by another manifest row whose role was renamed
+        after archiving (e.g. NCBI source-specific reconciliation) — relocate
+        it to its own canonical path and update the row, audited;
+      * an untracked leftover from an interrupted run (no manifest row claims
+        the path) — quarantine it aside, bytes preserved, audited.
+
+    Anything else (a claimant whose recorded checksum does not match the
+    occupying bytes) still raises ConflictError.
+    """
+    rel = project_rel(project, target)
+    claimant = db.conn.execute(
+        "SELECT * FROM files WHERE relative_path=? LIMIT 1", (rel,)
+    ).fetchone()
+    if claimant is not None:
+        if str(claimant["sha256"]).lower() != target_sha.lower():
+            raise ConflictError(
+                f"target {target} already exists with a different checksum and its "
+                f"bytes do not match manifest row {claimant['file_id']} either; refusing to overwrite"
+            )
+        # The occupant is accounted for under another role; move it to its own
+        # canonical path so this role can take the name.
+        new_name = canonical_filename(
+            str(claimant["entity_id"]), str(claimant["file_role"]),
+            str(claimant["format"]), str(claimant["compression"]),
+        )
+        new_path = target.parent / new_name
+        if new_path == target:
+            raise ConflictError(
+                f"manifest row {claimant['file_id']} claims {target} under role "
+                f"{claimant['file_role']!r} whose canonical path is the same; refusing to overwrite"
+            )
+        if new_path.exists() and sha256_path(new_path).lower() != target_sha.lower():
+            raise ConflictError(
+                f"cannot relocate {target} to {new_path}: destination exists with "
+                "different bytes; refusing to overwrite"
+            )
+        os.replace(target, new_path)
+        new_rel = project_rel(project, new_path)
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE files SET relative_path=? WHERE file_id=?",
+                (new_rel, claimant["file_id"]),
+            )
+        db.record_change(
+            "files", claimant["file_id"], "relative_path", rel, new_rel,
+            "relocate file left at a stale canonical path after a role rename",
+            actor=os.environ.get("USER"),
+        )
+        return
+    quarantine = target.with_name(f"{target.name}.orphan-{target_sha[:12]}")
+    os.replace(target, quarantine)
+    db.record_change(
+        "raw_file", rel, "quarantined", None, project_rel(project, quarantine),
+        "untracked leftover (interrupted run) moved aside to archive new content",
+        evidence=target_sha, actor=os.environ.get("USER"),
+    )
 
 
 def _register_file(db: Database, project: Project, entity_type: str, entity_id: str, role: str,
