@@ -7,16 +7,21 @@ in operon.rules does that using versioned YAML profiles.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
 
 from operon import __version__
-from operon.config import Project
+from operon.config import Project, project_rel
 from operon.database import Database
+from operon.errors import QCError
 from operon.files import verify_local_file_identity
 from operon.qc_module._parsers import (
+    fasta_lengths,
     fasta_stats,
     fastq_record_count,
     fastq_stats,
@@ -30,6 +35,7 @@ TOOL_NAME = "operon.builtin"
 TOOL_VERSION = __version__
 PARSER_BACKEND = "cython"
 DEFAULT_PARAMETER_SET = "builtin_v2"
+FASTA_LENGTH_CACHE_FORMAT = "operon-fasta-lengths-v1"
 
 ASSEMBLY_METRICS = [
     "sequence_count", "total_length", "min_sequence_length", "max_sequence_length",
@@ -68,15 +74,44 @@ def metric(entity_type: str, entity_id: str, stage: str, name: str, value: Any,
     }
 
 
-def _write(db: Database, metrics: list[dict[str, Any] | None], file_record: dict[str, Any]) -> None:
+def _input_set_identity(file_record: dict[str, Any],
+                        related_inputs: list[dict[str, Any]]) -> str:
+    inputs = [{
+        "kind": "primary",
+        "file_id": file_record["file_id"],
+        "sha256": str(file_record["sha256"]).lower(),
+        "size_bytes": int(file_record["size_bytes"]),
+    }]
+    inputs.extend({
+        "kind": str(item["kind"]),
+        "file_id": str(item["file_id"]),
+        "sha256": str(item["sha256"]).lower(),
+        "size_bytes": int(item["size_bytes"]),
+    } for item in related_inputs)
+    payload = json.dumps(
+        sorted(inputs, key=lambda item: (item["kind"], item["file_id"])),
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    return f"input-set:v1:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+
+def _write(db: Database, metrics: list[dict[str, Any] | None], file_record: dict[str, Any],
+           related_inputs: list[dict[str, Any]] | None = None) -> None:
     prepared: list[dict[str, Any]] = []
+    related_inputs = related_inputs or []
+    primary_identity = f"file:{file_record['file_id']}:{file_record['sha256']}"
+    annotation_identity = (
+        _input_set_identity(file_record, related_inputs) if related_inputs else primary_identity
+    )
     for item in metrics:
         if item is None:
             continue
         row = dict(item)
         row["file_id"] = file_record["file_id"]
         row["file_sha256"] = file_record["sha256"]
-        row["input_identity"] = f"file:{file_record['file_id']}:{file_record['sha256']}"
+        row["input_identity"] = (
+            annotation_identity if row["qc_stage"] == "annotation_basic" else primary_identity
+        )
         prepared.append(row)
     db.insert_many_qc(prepared)
 
@@ -105,6 +140,162 @@ def _input_descriptor(record: dict[str, Any], *, kind: str,
         "file_role": record.get("file_role"),
         "format": record.get("format"),
         "compression": record.get("compression"),
+    }
+
+
+def _related_input_descriptor(record: dict[str, Any], info: dict[str, Any], *,
+                              kind: str) -> dict[str, Any]:
+    descriptor = _input_descriptor(record, kind=kind, size_bytes=info.get("size_bytes"))
+    descriptor["integrity"] = {
+        "verification_method": info.get("verification_method"),
+        "verification_cached_at": info.get("verification_cached_at"),
+    }
+    return descriptor
+
+
+def _verify_related_input(db: Database, project: Project, record: dict[str, Any], *,
+                          kind: str, stage: str, timings: dict[str, float],
+                          related_inputs: list[dict[str, Any]],
+                          rehash: bool) -> tuple[Path, dict[str, Any]]:
+    path = project.root / record["relative_path"]
+    ok, info = _timed_call(
+        timings, stage, verify_local_file_identity,
+        db, record, path, rehash=rehash,
+    )
+    descriptor = _related_input_descriptor(record, info, kind=kind)
+    related_inputs.append(descriptor)
+    if not ok:
+        method = info.get("verification_method") or "unknown"
+        raise QCError(
+            f"related {kind} {record['file_id']} is missing or does not match its manifest "
+            f"({method})"
+        )
+    return path, descriptor
+
+
+def _fasta_length_cache_path(project: Project, record: dict[str, Any]) -> Path:
+    return (
+        project.qc_root / "cache" / "fasta_lengths" /
+        f"{record['file_id']}.{str(record['sha256']).lower()}.v1.tsv"
+    )
+
+
+def _fasta_length_cache_row(seqid: str, length: int) -> str:
+    if not seqid or "\t" in seqid or "\n" in seqid or "\r" in seqid:
+        raise QCError(f"cannot cache invalid FASTA sequence identifier {seqid!r}")
+    normalized_length = int(length)
+    if normalized_length < 0:
+        raise QCError(f"cannot cache negative FASTA sequence length for {seqid!r}")
+    return f"{seqid}\t{normalized_length}\n"
+
+
+def _fasta_length_cache_digest(lengths: dict[str, int]) -> str:
+    digest = hashlib.sha256()
+    for seqid, length in lengths.items():
+        digest.update(_fasta_length_cache_row(seqid, length).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _load_fasta_length_cache(path: Path, record: dict[str, Any]) -> dict[str, int] | None:
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            header = json.loads(handle.readline())
+            expected = {
+                "cache_format": FASTA_LENGTH_CACHE_FORMAT,
+                "file_id": record["file_id"],
+                "sha256": str(record["sha256"]).lower(),
+                "size_bytes": int(record["size_bytes"]),
+            }
+            if any(header.get(key) != value for key, value in expected.items()):
+                raise ValueError("cache identity does not match the assembly manifest")
+            lengths: dict[str, int] = {}
+            digest = hashlib.sha256()
+            for line_number, line in enumerate(handle, 2):
+                line = line.rstrip("\n")
+                if not line:
+                    continue
+                seqid, separator, length_text = line.rpartition("\t")
+                if not separator or not seqid or seqid in lengths:
+                    raise ValueError(f"invalid FASTA length cache row {line_number}")
+                length = int(length_text)
+                if length < 0:
+                    raise ValueError(f"negative sequence length at cache row {line_number}")
+                lengths[seqid] = length
+                digest.update(_fasta_length_cache_row(seqid, length).encode("utf-8"))
+            if len(lengths) != int(header.get("sequence_count", -1)):
+                raise ValueError("FASTA length cache sequence count does not match its header")
+            if digest.hexdigest() != header.get("lengths_sha256"):
+                raise ValueError("FASTA length cache content digest does not match its header")
+            return lengths
+    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
+def _write_fasta_length_cache(path: Path, record: dict[str, Any],
+                              lengths: dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = {
+        "cache_format": FASTA_LENGTH_CACHE_FORMAT,
+        "file_id": record["file_id"],
+        "sha256": str(record["sha256"]).lower(),
+        "size_bytes": int(record["size_bytes"]),
+        "sequence_count": len(lengths),
+        "lengths_sha256": _fasta_length_cache_digest(lengths),
+    }
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(json.dumps(header, ensure_ascii=False, sort_keys=True) + "\n")
+            for seqid, length in lengths.items():
+                handle.write(_fasta_length_cache_row(seqid, length))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _cached_fasta_lengths(project: Project, record: dict[str, Any], path: Path,
+                          timings: dict[str, float]) -> tuple[dict[str, int], dict[str, Any]]:
+    cache_path = _fasta_length_cache_path(project, record)
+    lengths = _timed_call(
+        timings, "assembly_fasta_length_cache_lookup",
+        _load_fasta_length_cache, cache_path, record,
+    )
+    if lengths is not None:
+        return lengths, {
+            "status": "hit",
+            "cache_format": FASTA_LENGTH_CACHE_FORMAT,
+            "relative_path": project_rel(project, cache_path),
+            "sequence_count": len(lengths),
+        }
+    lengths = _timed_call(timings, "assembly_fasta_lengths", fasta_lengths, path)
+    try:
+        _timed_call(
+            timings, "assembly_fasta_length_cache_write",
+            _write_fasta_length_cache, cache_path, record, lengths,
+        )
+        cache_status = "built"
+        cache_error = None
+    except OSError as exc:
+        cache_status = "write_failed"
+        cache_error = f"{type(exc).__name__}: {exc}"
+    return lengths, {
+        "status": cache_status,
+        "cache_format": FASTA_LENGTH_CACHE_FORMAT,
+        "relative_path": project_rel(project, cache_path),
+        "sequence_count": len(lengths),
+        **({"error": cache_error} if cache_error else {}),
     }
 
 
@@ -206,7 +397,10 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
         parseable = 0
         error = "file missing or checksum mismatch"
         metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", 0, parameter_set=parameter_set))
-        _timed_call(timings, "qc_results_write", _write, db, metrics, record)
+        _timed_call(
+            timings, "qc_results_write", _write,
+            db, metrics, record, related_inputs,
+        )
         _timed_call(
             timings, "state_qc_failed", set_state_bulk,
             db, entity_type, entity_id, "QC_FAILED", error,
@@ -260,9 +454,13 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             metrics.extend(_annotation_metrics(
                 db, project, record, parameter_set,
                 timings=timings, related_inputs=related_inputs,
+                force_checksum=force_checksum,
             ))
         metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", parseable, parameter_set=parameter_set))
-        _timed_call(timings, "qc_results_write", _write, db, metrics, record)
+        _timed_call(
+            timings, "qc_results_write", _write,
+            db, metrics, record, related_inputs,
+        )
         _timed_call(
             timings, "state_qc_complete", set_state_bulk,
             db, entity_type, entity_id, "QC_COMPLETE", f"built-in QC complete for {file_id}",
@@ -277,7 +475,10 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
         parseable = 0
         error = f"{type(exc).__name__}: {exc}"
         metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", 0, parameter_set=parameter_set))
-        _timed_call(timings, "qc_results_write", _write, db, metrics, record)
+        _timed_call(
+            timings, "qc_results_write", _write,
+            db, metrics, record, related_inputs,
+        )
         _timed_call(
             timings, "state_qc_failed", set_state_bulk,
             db, entity_type, entity_id, "QC_FAILED", error,
@@ -292,7 +493,8 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
 
 def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, Any],
                         parameter_set: str, *, timings: dict[str, float] | None = None,
-                        related_inputs: list[dict[str, Any]] | None = None) -> list[dict[str, Any] | None]:
+                        related_inputs: list[dict[str, Any]] | None = None,
+                        force_checksum: bool = False) -> list[dict[str, Any] | None]:
     timings = timings if timings is not None else {}
     related_inputs = related_inputs if related_inputs is not None else []
     entity_id = gff_record["entity_id"]
@@ -301,8 +503,9 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
         lambda: db.conn.execute(
             """
             SELECT an.annotation_id, an.gff_file_id, an.cds_file_id, an.protein_file_id,
-                   a.assembly_id, af.relative_path AS assembly_path,
-                   af.file_id AS assembly_file_id, af.sha256 AS assembly_sha256,
+                   a.assembly_id, af.file_id AS assembly_file_id,
+                   af.relative_path AS assembly_relative_path,
+                   af.sha256 AS assembly_sha256,
                    af.size_bytes AS assembly_size_bytes, af.file_role AS assembly_file_role,
                    af.format AS assembly_format, af.compression AS assembly_compression
             FROM annotations an
@@ -316,20 +519,33 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
     if not row:
         return [metric("annotation", entity_id, "annotation_basic", "parseable", 0, parameter_set=parameter_set)]
     gff_path = project.root / gff_record["relative_path"]
-    assembly_path = project.root / row["assembly_path"] if row["assembly_path"] else None
+    assembly_lengths = None
     if row["assembly_file_id"]:
-        related_inputs.append({
-            "kind": "assembly_fasta",
+        assembly_record = {
             "file_id": row["assembly_file_id"],
+            "relative_path": row["assembly_relative_path"],
             "sha256": row["assembly_sha256"],
             "size_bytes": int(row["assembly_size_bytes"] or 0),
             "file_role": row["assembly_file_role"],
             "format": row["assembly_format"],
             "compression": row["assembly_compression"],
-        })
+        }
+        assembly_path, assembly_descriptor = _verify_related_input(
+            db, project, assembly_record, kind="assembly_fasta",
+            stage="assembly_fasta_integrity", timings=timings,
+            related_inputs=related_inputs,
+            rehash=force_checksum,
+        )
+        assembly_lengths, cache_info = _cached_fasta_lengths(
+            project, assembly_record, assembly_path, timings,
+        )
+        assembly_descriptor["length_cache"] = cache_info
     parser_timings: dict[str, float] = {}
     try:
-        stats = gff3_stats(gff_path, assembly_path, timings=parser_timings)
+        stats = gff3_stats(
+            gff_path, timings=parser_timings,
+            fasta_lengths_map=assembly_lengths,
+        )
     finally:
         for name, duration in parser_timings.items():
             timings[name] = timings.get(name, 0.0) + duration
@@ -355,9 +571,13 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
     )
     if prow:
         protein_record = dict(prow)
-        protein_file = project.root / protein_record["relative_path"]
-        related_inputs.append(_input_descriptor(protein_record, kind="protein_fasta"))
-    if protein_file and protein_file.exists():
+        protein_file, _protein_descriptor = _verify_related_input(
+            db, project, protein_record, kind="protein_fasta",
+            stage="protein_fasta_integrity", timings=timings,
+            related_inputs=related_inputs,
+            rehash=force_checksum,
+        )
+    if protein_file:
         pstats = _timed_call(
             timings, "protein_stats", protein_stats,
             protein_file, cds_count=stats["cds_count"],

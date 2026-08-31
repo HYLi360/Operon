@@ -33,10 +33,14 @@ QC 记录保留原有的 `started_at`、`finished_at`、`tool`、`tool_version`�
 | `fastq_stats` | 当前 FASTQ 的结构、质量和采样去重统计 |
 | `paired_read_check` | 查询配对文件；缓存未命中时还包括配对 FASTQ 计数 |
 | `annotation_manifest_lookup` | 查询 annotation、assembly 和关联文件身份 |
-| `assembly_fasta_lengths` | 为 GFF3 坐标校验扫描关联 assembly FASTA |
+| `assembly_fasta_integrity` | 校验关联 assembly FASTA 的 manifest 内容身份 |
+| `assembly_fasta_length_cache_lookup` | 查找并加载按内容身份键控的 seqid-length 索引 |
+| `assembly_fasta_lengths` | 缓存未命中时流式扫描 assembly FASTA 建立长度映射 |
+| `assembly_fasta_length_cache_write` | 原子写入可重建的长度索引 |
 | `gff3_scan` | 逐行解析 GFF3、属性、坐标和 ID/Parent 引用 |
 | `gff3_finalize` | 汇总 missing Parent 和最终 GFF3 指标 |
 | `protein_manifest_lookup` | 查询关联 protein FASTA |
+| `protein_fasta_integrity` | 校验关联 protein FASTA 的 manifest 内容身份 |
 | `protein_stats` | 扫描关联 protein FASTA |
 | `qc_results_write` | 批量写入 `qc_results` |
 | `state_qc_complete` / `state_qc_failed` | 写入最终状态及审计记录 |
@@ -101,13 +105,22 @@ SHA-256 的 stat 指纹；Cython GFF3 对常见 ASCII 行直接按 bytes 分割�
 `ID`/`Parent`，遇到非 ASCII 或百分号转义时回退到完整 UTF-8/属性解析。两条路径都由
 Python/Cython parity 回归覆盖，指标字典和错误信息契约不变。
 
+2026-08-31 补齐 assembly FASTA 后，同一 18 个实体在 HDD 上每轮需要读取约 66.58 GB
+assembly，`assembly_fasta_lengths` 三轮分别为 417.9、403.7、403.4 秒，约占总耗时
+60%。因此长度映射现按 assembly 的 `file_id + sha256 + size_bytes + cache format` 保存
+到 `qc/cache/fasta_lengths/`：首次仍执行完整扫描，后续进程记录
+`related_inputs[].length_cache.status=hit` 并只承担索引加载成本。缓存损坏会自动删除并
+重建；缓存头中的 SHA-256 摘要还会检测格式合法但内容已变化的索引行。JSONL 中
+`built`、`hit` 或 `write_failed` 明确记录本轮行为。
+
 ## 判定优化热点
 
 汇总时优先比较各实体、各阶段的中位数，而不是只比较总墙钟时间：
 
 1. `file_integrity` 高且 `verification_method=full_sha256`：完整 SHA-256 或存储吞吐占主导；
    指纹命中后该阶段应接近常数时间；
-2. `assembly_fasta_lengths` 高：关联 assembly 重复扫描或 FASTA length 路径占主导；
+2. `assembly_fasta_lengths` 高：本轮首次建立关联 assembly 长度索引；若重复运行仍出现
+   该阶段而不是 `assembly_fasta_length_cache_lookup`，应检查缓存路径或缓存损坏；
 3. `gff3_scan` 高：行分割、UTF-8 解码、字段/属性拆分、集合和 Counter 操作占主导；
 4. `gff3_finalize` 高：ID/Parent 集合汇总占主导；
 5. `protein_stats` 高：protein FASTA 扫描或记录拼接占主导；

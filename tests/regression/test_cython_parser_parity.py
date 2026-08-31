@@ -96,6 +96,25 @@ def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
     assert all(value >= 0.0 for value in py_timings.values())
     assert all(value >= 0.0 for value in cy_timings.values())
 
+    lengths = py_parsers.fasta_lengths(fasta_file)
+    py_cached_timings = {}
+    cy_cached_timings = {}
+    assert py_parsers.gff3_stats(
+        gff3_file, timings=py_cached_timings, fasta_lengths_map=lengths,
+    ) == cy_parsers.gff3_stats(
+        gff3_file, timings=cy_cached_timings, fasta_lengths_map=lengths,
+    )
+    expected_cached = {"gff3_scan", "gff3_finalize"}
+    assert set(py_cached_timings) == set(cy_cached_timings) == expected_cached
+
+
+def test_gff3_rejects_two_fasta_length_sources(gff3_file, fasta_file):
+    lengths = py_parsers.fasta_lengths(fasta_file)
+    with pytest.raises(ValueError, match="either fasta_path or fasta_lengths_map"):
+        py_parsers.gff3_stats(gff3_file, fasta_file, fasta_lengths_map=lengths)
+    with pytest.raises(ValueError, match="either fasta_path or fasta_lengths_map"):
+        cy_parsers.gff3_stats(gff3_file, fasta_file, fasta_lengths_map=lengths)
+
 
 def test_gff3_ascii_fast_path_preserves_percent_decoding_and_unicode_parity(tmp_path):
     fasta = tmp_path / "unicode.fa"

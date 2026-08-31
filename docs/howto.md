@@ -273,6 +273,12 @@ ctime 均未变化时，后续 `operon qc` 会复用这一结果，避免在大�
 校验和、再读一遍做解析。需要强制重新读取全部字节审计时使用 `operon qc --rehash`；
 `operon verify` 本身始终执行完整内容校验。
 
+annotation GFF3 还会验证并读取关联的 assembly/protein。assembly FASTA 第一次参与
+坐标检查时，`operon` 流式建立 `qc/cache/fasta_lengths/` 下的长度索引；后续运行无需
+再次扫描数 GB 的序列内容。索引由 assembly 的 `file_id + sha256 + size_bytes` 标识，
+损坏时自动重建，可安全删除。`--rehash` 会重新校验所有实际输入，但只要 assembly
+内容 SHA-256 未变，已验证的长度索引仍可继续使用。
+
 ## 5. 如何归档组装与注释
 
 ```bash

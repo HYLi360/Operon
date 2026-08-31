@@ -164,6 +164,7 @@ class Project:
             self.qc_root / "assemblies",
             self.qc_root / "annotations",
             self.qc_root / "aggregate",
+            self.qc_root / "cache" / "fasta_lengths",
             self.analysis_root,
             self.reports_root,
             self.logs_root,

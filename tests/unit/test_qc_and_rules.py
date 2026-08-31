@@ -46,6 +46,35 @@ class TestQCAndRules(PytestAssertions):
         self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001", "sex": "unknown"})
         self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "scaffold", "assembly_version": 1})
 
+    def _add_annotation_inputs(self):
+        self._add_organism_sample_assembly()
+        self.db.insert_row("annotations", {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+            "annotation_version": 1,
+        })
+        assembly = self.root / "annotation-assembly.fa"
+        assembly.write_text(">ctg1\n" + "A" * 120 + "\n>ctg2\n" + "C" * 80 + "\n", encoding="utf-8")
+        assembly_row = ingest_file(
+            self.db, self.project, assembly, "assembly", "ASM_000001", "genome_fasta",
+        )
+        gff = self.root / "annotation.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "ctg1\ttest\tgene\t1\t120\t.\t+\t.\tID=gene1\n"
+            "ctg1\ttest\tmRNA\t1\t120\t.\t+\t.\tID=mrna1;Parent=gene1\n"
+            "ctg1\ttest\tCDS\t1\t120\t.\t+\t0\tID=cds1;Parent=mrna1\n",
+            encoding="utf-8",
+        )
+        gff_row = ingest_file(
+            self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3",
+        )
+        protein = self.root / "annotation-proteins.faa"
+        protein.write_text(">p1\nMAAAAAAAAA*\n", encoding="utf-8")
+        protein_row = ingest_file(
+            self.db, self.project, protein, "annotation", "ANN_000001", "protein_fasta",
+        )
+        return assembly_row, gff_row, protein_row
+
     def test_assembly_structural_qc_and_profile(self):
         self._add_organism_sample_assembly()
         source = self.root / "asm.fa"
@@ -164,6 +193,134 @@ class TestQCAndRules(PytestAssertions):
         metrics = self.db.latest_metrics("run", "RUN_000001")
         self.assertEqual(metrics["paired_read_count_match"], 1.0)
 
+    def test_annotation_fasta_lengths_are_cached_across_qc_runs(self):
+        assembly_row, gff_row, protein_row = self._add_annotation_inputs()
+        with patch("operon.qc_module.fasta_lengths", wraps=qc_module.fasta_lengths) as scanner:
+            first = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+            second = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+            self.assertTrue(first["ok"], first)
+            self.assertTrue(second["ok"], second)
+            self.assertEqual(scanner.call_count, 1)
+
+            cache_files = list((self.project.qc_root / "cache" / "fasta_lengths").glob("*.tsv"))
+            self.assertEqual(len(cache_files), 1)
+            cache_lines = cache_files[0].read_text(encoding="utf-8").splitlines()
+            seqid, length = cache_lines[1].rsplit("\t", 1)
+            cache_lines[1] = f"{seqid}\t{int(length) + 1}"
+            cache_files[0].write_text("\n".join(cache_lines) + "\n", encoding="utf-8")
+            rebuilt = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+            self.assertTrue(rebuilt["ok"], rebuilt)
+            self.assertEqual(scanner.call_count, 2)
+
+        records = [
+            json.loads(line)
+            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            if '"step": "qc"' in line and gff_row["file_id"] in line
+        ]
+        self.assertEqual(len(records), 3)
+        cache_statuses = [
+            next(
+                item["length_cache"]["status"]
+                for item in record["qc_timing"]["related_inputs"]
+                if item["kind"] == "assembly_fasta"
+            )
+            for record in records
+        ]
+        self.assertEqual(cache_statuses, ["built", "hit", "built"])
+        self.assertIn("assembly_fasta_lengths", records[0]["stage_timings_seconds"])
+        self.assertFalse("assembly_fasta_lengths" in records[1]["stage_timings_seconds"])
+        self.assertIn("assembly_fasta_length_cache_lookup", records[1]["stage_timings_seconds"])
+
+        annotation_rows = self.db.conn.execute(
+            "SELECT DISTINCT input_identity FROM qc_results "
+            "WHERE file_id=? AND qc_stage='annotation_basic'",
+            (gff_row["file_id"],),
+        ).fetchall()
+        self.assertEqual(len(annotation_rows), 1)
+        self.assertTrue(annotation_rows[0]["input_identity"].startswith("input-set:v1:"))
+        integrity_rows = self.db.conn.execute(
+            "SELECT DISTINCT input_identity FROM qc_results "
+            "WHERE file_id=? AND qc_stage='file_integrity'",
+            (gff_row["file_id"],),
+        ).fetchall()
+        self.assertEqual(
+            {row["input_identity"] for row in integrity_rows},
+            {f"file:{gff_row['file_id']}:{gff_row['sha256']}"},
+        )
+        self.assertEqual(
+            {item["file_id"] for item in records[-1]["qc_timing"]["related_inputs"]},
+            {assembly_row["file_id"], protein_row["file_id"]},
+        )
+
+    def test_annotation_rehash_covers_primary_and_related_inputs(self):
+        _assembly_row, gff_row, _protein_row = self._add_annotation_inputs()
+        qc_all(self.db, self.project, file_id=gff_row["file_id"])
+        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+            result = qc_all(
+                self.db, self.project, file_id=gff_row["file_id"], force_checksum=True,
+            )[0]
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(hasher.call_count, 3)
+        records = [
+            json.loads(line)
+            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            if '"step": "qc"' in line and gff_row["file_id"] in line
+        ]
+        timing = records[-1]["qc_timing"]
+        self.assertTrue(timing["integrity"]["rehash_requested"])
+        self.assertEqual(
+            {item["integrity"]["verification_method"] for item in timing["related_inputs"]},
+            {"full_sha256"},
+        )
+
+    def test_annotation_qc_rejects_changed_related_protein(self):
+        _assembly_row, gff_row, protein_row = self._add_annotation_inputs()
+        protein_path = self.project.root / protein_row["relative_path"]
+        original = protein_path.read_text(encoding="utf-8")
+        protein_path.write_text(original.replace("A", "G"), encoding="utf-8")
+        result = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+        self.assertFalse(result["ok"])
+        self.assertIn("related protein_fasta", result["error"])
+        record = next(
+            json.loads(line)
+            for line in reversed(
+                (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            )
+            if gff_row["file_id"] in line and '"step": "qc"' in line
+        )
+        protein_input = next(
+            item for item in record["qc_timing"]["related_inputs"]
+            if item["kind"] == "protein_fasta"
+        )
+        self.assertEqual(protein_input["integrity"]["verification_method"], "full_sha256")
+
+    def test_annotation_qc_rejects_changed_related_assembly_before_cache_use(self):
+        assembly_row, gff_row, _protein_row = self._add_annotation_inputs()
+        assembly_path = self.project.root / assembly_row["relative_path"]
+        with patch("operon.qc_module.fasta_lengths", wraps=qc_module.fasta_lengths) as scanner:
+            first = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+            self.assertTrue(first["ok"], first)
+            original = assembly_path.read_text(encoding="utf-8")
+            assembly_path.write_text(original.replace("A", "G", 1), encoding="utf-8")
+            changed = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
+        self.assertFalse(changed["ok"])
+        self.assertIn("related assembly_fasta", changed["error"])
+        self.assertEqual(scanner.call_count, 1)
+
+        record = next(
+            json.loads(line)
+            for line in reversed(
+                (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            )
+            if gff_row["file_id"] in line and '"step": "qc"' in line
+        )
+        assembly_input = next(
+            item for item in record["qc_timing"]["related_inputs"]
+            if item["kind"] == "assembly_fasta"
+        )
+        self.assertEqual(assembly_input["integrity"]["verification_method"], "full_sha256")
+        assert "length_cache" not in assembly_input
+
     def test_annotation_qc_finds_broken_cds_and_parent(self):
         self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
         self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
@@ -230,13 +387,30 @@ class TestQCAndRules(PytestAssertions):
         )
         expected_stages = {
             "state_qc_running", "file_integrity", "annotation_manifest_lookup",
-            "assembly_fasta_lengths", "gff3_scan", "gff3_finalize",
-            "protein_manifest_lookup", "protein_stats", "qc_results_write",
+            "assembly_fasta_integrity", "assembly_fasta_length_cache_lookup",
+            "assembly_fasta_lengths", "assembly_fasta_length_cache_write",
+            "gff3_scan", "gff3_finalize", "protein_manifest_lookup",
+            "protein_fasta_integrity", "protein_stats", "qc_results_write",
             "state_qc_complete", "unattributed",
         }
         self.assertTrue(expected_stages.issubset(timing["stages_seconds"]))
         self.assertTrue(all(value >= 0.0 for value in timing["stages_seconds"].values()))
         self.assertEqual(record["stage_timings_seconds"], timing["stages_seconds"])
+        assembly_input = next(
+            item for item in timing["related_inputs"] if item["kind"] == "assembly_fasta"
+        )
+        self.assertEqual(assembly_input["length_cache"]["status"], "built")
+        self.assertEqual(
+            assembly_input["integrity"]["verification_method"],
+            "cached_stat_fingerprint",
+        )
+
+        annotation_identity = self.db.conn.execute(
+            "SELECT input_identity FROM qc_results WHERE file_id=? "
+            "AND qc_stage='annotation_basic' AND metric_name='parseable'",
+            (gff_row["file_id"],),
+        ).fetchone()
+        self.assertTrue(annotation_identity["input_identity"].startswith("input-set:v1:"))
 
         db_record = self.db.conn.execute(
             "SELECT execution_details FROM workflow_runs "

@@ -180,7 +180,14 @@ file_id        该指标对应的 manifest 文件（可为空）
 file_sha256    该输入文件的 SHA-256（可为空）
 input_identity 唯一输入标识：
                file:{file_id}:{sha256} 或 entity:{entity_type}:{entity_id}
+               读取关联输入的内置 annotation QC 使用 input-set:v1:{sha256}
 ```
+
+`input-set:v1` 的摘要由主 GFF3、assembly FASTA 和实际读取的 protein FASTA 的
+`kind + file_id + sha256 + size_bytes` 规范化后计算。校验缓存命中状态和长度索引路径不
+参与身份，因此同一组内容无论首次构建还是后续命中都 upsert 到同一结果；任一关联
+文件内容身份变化则生成新的 QC 输入身份，旧结果仍保留。assembly 长度索引作为可重建
+派生物，除绑定上述 manifest 内容身份外，还校验索引行自身的 SHA-256 摘要。
 
 唯一约束为：
 
@@ -435,6 +442,12 @@ remote root；“对象存储与完全不同的计算集群之间服务器端搬
 指纹完全不变时复用校验结果；大小或任一 stat 字段变化都会自动回退到完整 SHA-256。
 `operon qc --rehash` 可无条件绕过缓存。文件身份仍始终是
 `file_id + sha256 + size_bytes`，指纹既不是新的身份，也不能替代周期性的显式 `verify`。
+
+annotation QC 对运行时读取的 assembly/protein 关联输入执行同一身份校验；`--rehash`
+同时覆盖主输入和这些关联输入。assembly 的 `seqid -> length` 映射按
+`file_id + sha256 + size_bytes + cache format` 原子写入
+`qc/cache/fasta_lengths/`。该索引属于可删除、可重建的派生数据：首次缺失或损坏时
+流式扫描 FASTA 重建，内容身份不变时可跨进程复用，不进入 metadata 事实来源。
 
 外部工具指标可通过 `import-qc` 进入同一长表，也可通过 `run-external` 以结构化方式执行并保存 provenance。
 

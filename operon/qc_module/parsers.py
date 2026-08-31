@@ -445,15 +445,21 @@ def parse_attributes(attribute_string: str) -> dict[str, str]:
 
 
 def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
-               timings: dict[str, float] | None = None) -> dict[str, Any]:
+               timings: dict[str, float] | None = None,
+               fasta_lengths_map: dict[str, int] | None = None) -> dict[str, Any]:
     """Structural GFF3 validation metrics.
 
-    With `fasta_path`, seqid existence and end <= sequence length are checked.
+    With `fasta_path` or a precomputed `fasta_lengths_map`, seqid existence and
+    end <= sequence length are checked.
     ID/Parent integrity is always checked.  When supplied, ``timings`` is
     populated with non-overlapping diagnostic durations in seconds.
     """
     path = Path(path)
-    if fasta_path:
+    if fasta_path is not None and fasta_lengths_map is not None:
+        raise ValueError("provide either fasta_path or fasta_lengths_map, not both")
+    if fasta_lengths_map is not None:
+        lengths = fasta_lengths_map
+    elif fasta_path:
         lengths_started = perf_counter()
         try:
             lengths = fasta_lengths(fasta_path)
