@@ -155,6 +155,30 @@ class TestAnalysisShutdown(PytestAssertions):
         jobs = self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")
         self.assertEqual([j["status"] for j in jobs], ["interrupted", "completed"])
 
+    def test_failed_tool_marks_job_failed_and_records_error(self):
+        script = self.root / "fakeblast.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            args = sys.argv[1:]
+            if '-version' in args:
+                print('fakeblast: 9.8.7')
+                raise SystemExit(0)
+            raise SystemExit(3)
+        """).strip(), encoding="utf-8")
+        self._write_tool_config(script)
+        self._add_assembly()
+
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("failed", results[0]["error"])
+        jobs = self.db.query("SELECT * FROM analysis_jobs")
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["status"], "failed")
+        self.assertIsNotNone(jobs[0]["finished_at"])
+        self.assertTrue(jobs[0]["error"].startswith("RuntimeError: analysis:fake_nt failed"))
+        self.assertIn("exit code 3", jobs[0]["error"])
+        self.assertFalse("expected output missing" in jobs[0]["error"])
+
     def test_missing_local_input_is_an_error_not_a_remote_fetch(self):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py")

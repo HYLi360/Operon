@@ -100,10 +100,12 @@ def _resolve_value_by(rule: dict[str, Any], observed: dict[str, Any]) -> tuple[d
     selector_value = observed.get(selector_name)
     key = str(selector_value) if selector_value is not None else None
     if key is None or key not in {str(k) for k in values}:
-        policy = str(value_by.get("unknown", "not_evaluated"))
-        if policy not in {"warning", "fail", "not_evaluated", "ignore"}:
+        if "unknown" not in value_by:
+            return None, "not_evaluated"
+        policy = str(value_by["unknown"])
+        if policy not in {"warning", "fail", "ignore"}:
             raise ValidationError(
-                f"value_by unknown policy must be warning, fail, not_evaluated, or ignore; got {policy!r}"
+                f"value_by unknown policy must be warning, fail, or ignore; got {policy!r}"
             )
         return None, policy
     expected = next(value for candidate, value in values.items() if str(candidate) == key)
@@ -151,8 +153,11 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
         if unknown_policy is not None:
             selector = str(rule.get("value_by", {}).get("metric", "selector"))
             selector_value = rule_observed.get(selector)
-            code = rule.get("unknown_code", f"{selector.upper()}_UNKNOWN")
-            kind = f"value_by_unknown_{unknown_policy}"
+            default_code = (f"{selector.upper()}_IGNORED" if unknown_policy == "ignore"
+                            else f"{selector.upper()}_UNKNOWN")
+            code = rule.get("unknown_code", default_code)
+            kind = ("value_by_unknown_missing" if unknown_policy == "not_evaluated"
+                    else f"value_by_unknown_{unknown_policy}")
             details.append({"metric": name, "rule": _describe_rule(rule),
                             "observed": rule_observed[name], "selector": selector,
                             "selector_value": selector_value, "source": rule.get("source"),
@@ -165,6 +170,8 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
                 reasons.append(code)
             elif unknown_policy == "not_evaluated":
                 missing_required += 1
+                reasons.append(code)
+            elif unknown_policy == "ignore":
                 reasons.append(code)
             continue
         value = rule_observed[name]
@@ -202,6 +209,15 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
                                 "selector_value": rule_observed.get(selector),
                                 "source": rule.get("source"), "code": code,
                                 "kind": "value_by_unknown_warning"})
+            elif unknown_policy == "ignore":
+                selector = str(rule.get("value_by", {}).get("metric", "selector"))
+                code = rule.get("unknown_code", f"{selector.upper()}_IGNORED")
+                reasons.append(code)
+                details.append({"metric": name, "rule": _describe_rule(rule),
+                                "observed": value, "selector": selector,
+                                "selector_value": rule_observed.get(selector),
+                                "source": rule.get("source"), "code": code,
+                                "kind": "value_by_unknown_ignore"})
             continue
         assert effective_rule is not None
         if _satisfies(value, effective_rule):

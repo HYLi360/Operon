@@ -457,7 +457,11 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
                 timings=timings, related_inputs=related_inputs,
                 force_checksum=force_checksum,
             ))
-        metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", parseable, parameter_set=parameter_set))
+        # parseable=1 only when a format parser actually ran; formats without
+        # a parser (other, directory, bam, ...) leave parseable unmeasured so
+        # required `parseable == 1` gates stay NOT_EVALUATED for them.
+        if record["format"] in {"fasta", "fastq", "gff3"}:
+            metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", parseable, parameter_set=parameter_set))
         _timed_call(
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,

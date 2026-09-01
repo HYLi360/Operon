@@ -21,7 +21,7 @@ def test_fasta_record_boundaries_headers_and_lone_cr(tmp_path, backend):
     stats = backend.fasta_stats(path)
     assert stats["sequence_count"] == 3
     assert stats["total_length"] == 6
-    assert stats["gap_count"] == 2
+    assert stats["gap_count"] == 0
     assert stats["duplicate_sequence_id_count"] == 1
     assert stats["duplicate_header_count"] == 1
     assert stats["circular_sequence_count"] == 2
@@ -113,6 +113,53 @@ def test_all_text_parsers_recognize_lone_cr_and_gzip(tmp_path, backend):
         handle.write(b"##gff-version 3\rctg1\tsrc\tgene\t1\t4\t.\t+\t.\tID=g1\r")
     assert backend.fasta_record_count(fasta) == 1
     assert backend.gff3_stats(gff, fasta)["gene_count"] == 1
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_fasta_stats_crlf_golden_within_single_chunk(tmp_path, backend):
+    # The file is far smaller than the default 1 MiB chunk, so every CRLF is
+    # handled by the in-chunk branch of the line splitter (not the carry-over
+    # path exercised by test_line_splitter_handles_crlf_across_chunks).
+    path = tmp_path / "crlf.fa"
+    path.write_bytes(b">ctg1 circular\r\nACGTN\r\nNN\r\n>ctg2\r\nCCGGTT\r\n")
+    stats = backend.fasta_stats(path)
+    assert stats == {
+        "sequence_count": 2,
+        "total_length": 13,
+        "min_sequence_length": 6,
+        "max_sequence_length": 7,
+        "mean_sequence_length": 6.5,
+        "median_sequence_length": 6.5,
+        "contig_n50": 7.0,
+        "contig_l50": 1,
+        "contig_n90": 6.0,
+        "contig_l90": 2,
+        "gc_percent": 60.0,
+        "n_percent": 300.0 / 13,
+        "ambiguous_base_percent": 0.0,
+        "invalid_base_count": 0,
+        "gap_count": 0,
+        "gap_percent": 0.0,
+        "empty_sequence_count": 0,
+        "duplicate_sequence_id_count": 0,
+        "duplicate_header_count": 0,
+        "circular_sequence_count": 1,
+    }
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_fasta_stats_dash_gaps_are_separate_from_n(tmp_path, backend):
+    # `-` is an alignment gap character: it feeds gap runs and gap_percent but
+    # never n_percent, ambiguous_base_percent, or invalid_base_count.
+    path = tmp_path / "aligned.fa"
+    path.write_bytes(b">x\nAC-GT--N\r\n")
+    stats = backend.fasta_stats(path)
+    assert stats["total_length"] == 8
+    assert stats["n_percent"] == 12.5
+    assert stats["gap_count"] == 2
+    assert stats["gap_percent"] == 37.5
+    assert stats["ambiguous_base_percent"] == 0.0
+    assert stats["invalid_base_count"] == 0
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

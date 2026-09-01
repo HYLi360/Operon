@@ -524,7 +524,8 @@ operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID]
 - 指定 `--entity-id` 时必须同时指定 `--entity-type`。
 - 保存 profile SHA-256 快照，追加 decision；状态机按判定更新。
 - 规则支持 `value_by.metric + value_by.values` 动态选择门限，并用 `unknown` 指定未知
-  selector 的策略；`source.qc_stage` 可把规则绑定到一个明确的 QC/analysis 来源。
+  selector 的策略（`warning`/`fail`/`ignore`，缺省视为缺少门限即 `NOT_EVALUATED`）；
+  `source.qc_stage` 可把规则绑定到一个明确的 QC/analysis 来源。
 
 ## curate
 

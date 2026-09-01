@@ -173,6 +173,36 @@ class TestQCAndRules(PytestAssertions):
         result = qc_all(self.db, self.project, entity_type="assembly")[0]
         self.assertTrue(result["ok"], result)
 
+    def _add_other_format_file(self):
+        self._add_organism_sample_assembly()
+        source = self.root / "notes.dat"
+        source.write_text("not a sequence format\n", encoding="utf-8")
+        return ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "other")
+
+    def test_unparsed_format_records_integrity_without_parseable(self):
+        row = self._add_other_format_file()
+        self.assertEqual(row["format"], "other")
+        result = qc_module.qc_file(self.db, self.project, row["file_id"])
+        self.assertTrue(result["ok"], result)
+        self.assertIsNone(result["error"])
+        names = {
+            item["metric_name"]
+            for item in self.db.conn.execute(
+                "SELECT metric_name FROM qc_results WHERE file_id=?", (row["file_id"],),
+            ).fetchall()
+        }
+        self.assertTrue({"file_exists", "size_bytes", "sha256_match"}.issubset(names))
+        self.assertFalse("parseable" in names)
+        self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "QC_COMPLETE")
+
+    def test_unparsed_format_is_not_evaluated_by_integrity_profile(self):
+        row = self._add_other_format_file()
+        result = qc_module.qc_file(self.db, self.project, row["file_id"])
+        self.assertTrue(result["ok"], result)
+        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "file_integrity_v1")
+        self.assertEqual(decision["decision"], "NOT_EVALUATED")
+        self.assertIn("MISSING_METRIC:parseable", decision["reason_codes"])
+
     def test_paired_fastq_count_is_cached_within_qc_all(self):
         self.db.insert_row("organisms", {
             "organism_id": "ORG_000001", "scientific_name": "Reads", "taxonomy_source": "NCBI",

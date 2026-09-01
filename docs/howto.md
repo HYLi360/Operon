@@ -925,11 +925,12 @@ required:
 |---|---|
 | `warning` | 不判 required 失败，但产生 warning；适合 BUSCO 新增 lineage |
 | `fail` | required 失败 |
-| `not_evaluated` | 视为缺少可用门限，最终 `NOT_EVALUATED` |
-| `ignore` | 跳过该规则 |
+| `ignore` | 跳过该规则，decision 不受影响，但会把忽略 code 持久化到 reason_codes（不静默） |
 
 warning rule 主要使用 `warning` 或 `ignore`；其他策略不会把 warning 提升为 required
-失败。缺省策略为 `not_evaluated`，避免遇到未配置类别时静默放行。
+失败。缺省（不写 `unknown`）按缺少可用门限处理，最终 `NOT_EVALUATED`，避免遇到
+未配置类别时静默放行。`ignore` 的缺省 code 为 `{SELECTOR}_IGNORED`，可用
+`unknown_code` 覆盖。
 
 ### 12.2 用 `source.qc_stage` 固定指标来源
 

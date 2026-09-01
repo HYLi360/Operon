@@ -80,6 +80,31 @@ def test_external_command_result_failures_are_recorded(project_db, exit_code, er
         workflow.run_external_command(db, project, ["fake"], step="edge", executor=Executor())
 
 
+def test_failed_exit_code_is_not_masked_by_missing_output_check(project_db):
+    project, db = project_db
+
+    class Executor:
+        def describe(self):
+            return "fake"
+
+        def run(self, *_a, **_k):
+            return SimpleNamespace(
+                exit_code=3,
+                error=None,
+                scheduler_job_id=None,
+                details={"backend": "fake"},
+            )
+
+    with pytest.raises(RuntimeError, match="edge failed: exit code 3"):
+        workflow.run_external_command(
+            db, project, ["fake"], step="edge",
+            expected_outputs=[project.root / "missing.out"], executor=Executor(),
+        )
+    row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
+    assert row["status"] == "failed"
+    assert row["error"] == "exit code 3"
+
+
 @pytest.mark.parametrize(
     ("exc", "timeout", "expected_error"),
     [

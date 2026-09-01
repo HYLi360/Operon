@@ -273,11 +273,12 @@ def run_external_command(
         elif result.error:
             record["status"] = "failed"
             record["error"] = result.error
-        for path in resolved_outputs:
-            if not path_is_nonempty(path):
-                record["status"] = "failed"
-                record["error"] = f"expected output missing or empty: {path}"
-                break
+        else:
+            for path in resolved_outputs:
+                if not path_is_nonempty(path):
+                    record["status"] = "failed"
+                    record["error"] = f"expected output missing or empty: {path}"
+                    break
     except subprocess.TimeoutExpired as exc:
         record.update(status="failed", error=f"timeout after {timeout}s", exit_code=None)
     except OSError as exc:

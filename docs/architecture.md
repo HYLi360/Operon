@@ -218,7 +218,9 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 
 规则的阈值既可由标量 `value` 给出，也可通过 `value_by` 根据同一来源中的另一个指标
 选择。例如 BUSCO complete 门限由 `busco_lineage_dataset` 映射。selector 未出现在映射
-中时，profile 显式规定 `warning`、`fail`、`not_evaluated` 或 `ignore`；没有隐式分类回退。
+中时，profile 显式规定 `warning`、`fail` 或 `ignore`；缺省按缺少可用门限处理
+（`NOT_EVALUATED`），`ignore` 会在 decision 的 reason_codes 中留下持久化痕迹；
+没有隐式分类回退。
 
 ### 5.5 其他系统表
 
@@ -457,11 +459,13 @@ remote root；“对象存储与完全不同的计算集群之间服务器端搬
 行为对照。FASTA、FASTQ、GFF3 与 protein FASTA 都统一识别 LF、CRLF、lone-CR；
 序列与质量字段要求 ASCII，header/GFF3 文本按 UTF-8 校验。FASTQ 结构必须是完整的
 四行记录，截断、空 header、缺失 `+` 行或非法质量字符都会使 `parseable=0`。
+`parseable` 只反映格式解析器的真实执行结果；没有内置解析器的格式（`other`、目录等）
+不记录该指标，视为未评估。
 
 | stage | 适用输入 | 代表指标 |
 |---|---|---|
 | `file_integrity` | 所有文件 | `file_exists`、`size_bytes`、`sha256_match`、`parseable` |
-| `assembly_basic` | genome FASTA | `total_length`、`contig_n50/n90`、`contig_l50/l90`、`gc_percent`、`n_percent`、`gap_count`、`ambiguous_base_percent`、重复 seqid/完整 header、circular/空序列 |
+| `assembly_basic` | genome FASTA | `total_length`、`contig_n50/n90`、`contig_l50/l90`、`gc_percent`、`n_percent`（严格只统计 N）、`gap_count`/`gap_percent`（比对缺口字符 `-` 的连续段与占比）、`ambiguous_base_percent`、重复 seqid/完整 header、circular/空序列 |
 | `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、采样数量/策略、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
 | `annotation_basic` | GFF3 (+组装 FASTA/蛋白 FASTA) | gene/mRNA/CDS 数量、CDS 三联体比例、ID/Parent 完整性、坐标错误、seqid 匹配、蛋白重复 ID、X 比例、内部终止密码子 |
 

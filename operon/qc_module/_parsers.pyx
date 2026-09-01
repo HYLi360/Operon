@@ -27,6 +27,7 @@ cdef enum:
     _CLS_T = 4
     _CLS_N = 5
     _CLS_AMBIG = 6
+    _CLS_GAP = 7
 
 cdef unsigned char _BASE_CLASS[256]
 
@@ -47,6 +48,7 @@ def _init_base_class():
     _BASE_CLASS[116] = _CLS_T  # t
     _BASE_CLASS[78] = _CLS_N   # N
     _BASE_CLASS[110] = _CLS_N  # n
+    _BASE_CLASS[45] = _CLS_GAP  # -
 
 
 _init_base_class()
@@ -307,7 +309,7 @@ cdef class _FastaAccum:
     cdef set seqids
     cdef set headers
     cdef long long total, a, c, g, t, n, ambiguous, invalid
-    cdef long long empty, dup_seqid, dup_header, circular, gap_runs
+    cdef long long empty, dup_seqid, dup_header, circular, gap_runs, gap_bases
     cdef long long current_length
     cdef bint current_in_gap
 
@@ -337,13 +339,15 @@ cdef class _FastaAccum:
         self.total += length
         for i in range(length):
             cls = _BASE_CLASS[<unsigned char>s[i]]
-            if cls == _CLS_N:
-                self.n += 1
+            if cls == _CLS_GAP:
+                self.gap_bases += 1
                 if not self.current_in_gap:
                     self.gap_runs += 1
                     self.current_in_gap = True
             else:
-                if cls == _CLS_A:
+                if cls == _CLS_N:
+                    self.n += 1
+                elif cls == _CLS_A:
                     self.a += 1
                 elif cls == _CLS_C:
                     self.c += 1
@@ -393,7 +397,7 @@ cdef class _FastaAccum:
             "ambiguous_base_percent": pct(self.ambiguous, self.total),
             "invalid_base_count": self.invalid,
             "gap_count": self.gap_runs,
-            "gap_percent": pct(self.n, self.total),
+            "gap_percent": pct(self.gap_bases, self.total),
             "empty_sequence_count": self.empty,
             "duplicate_sequence_id_count": self.dup_seqid,
             "duplicate_header_count": self.dup_header,

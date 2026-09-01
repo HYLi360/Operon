@@ -155,6 +155,7 @@ def fasta_stats(path: str | Path) -> dict[str, Any]:
     duplicate_header = 0
     circular = 0
     gap_runs = 0
+    gap_bases = 0
     for header, seqid, sequence_bytes in _iter_fasta_records(path):
         sequence = sequence_bytes.decode("ascii")
         if seqid in seqids:
@@ -181,6 +182,8 @@ def fasta_stats(path: str | Path) -> dict[str, Any]:
                 t += 1
             elif base == "N":
                 n += 1
+            elif base == "-":
+                gap_bases += 1
                 if not in_gap:
                     gap_runs += 1
                     in_gap = True
@@ -221,7 +224,7 @@ def fasta_stats(path: str | Path) -> dict[str, Any]:
         "ambiguous_base_percent": pct(ambiguous, total),
         "invalid_base_count": invalid,
         "gap_count": gap_runs,
-        "gap_percent": pct(n, total),
+        "gap_percent": pct(gap_bases, total),
         "empty_sequence_count": empty,
         "duplicate_sequence_id_count": duplicate_seqid,
         "duplicate_header_count": duplicate_header,

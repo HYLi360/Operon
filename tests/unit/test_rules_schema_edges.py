@@ -69,6 +69,7 @@ def test_rule_satisfaction_descriptions_and_validation(project_db):
         ([], "must be a mapping"),
         ({"metric": "x", "values": []}, "requires a values mapping"),
         ({"metric": "x", "values": {}, "unknown": "bad"}, "unknown policy"),
+        ({"metric": "x", "values": {}, "unknown": "not_evaluated"}, "unknown policy"),
     ],
 )
 def test_value_by_validation(value_by, message):
@@ -126,7 +127,7 @@ def test_evaluate_entity_covers_missing_fail_warning_and_source_snapshots(projec
         }]}, "FAIL"),
         "unknown_missing": ({**base, "required": [{
             "metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "not_evaluated"},
+            "value_by": {"metric": "lineage", "values": {"known": 80}},
         }]}, "NOT_EVALUATED"),
         "unknown_ignore": ({**base, "warnings": [{
             "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
@@ -137,12 +138,83 @@ def test_evaluate_entity_covers_missing_fail_warning_and_source_snapshots(projec
         _write_profile(project, name, document)
         result = rules.evaluate_entity(db, project, "organism", "ORG_000001", name)
         assert result["decision"] == expected
+        if name == "unknown_missing":
+            assert result["details"][0]["kind"] == "value_by_unknown_missing"
+            assert json.loads(result["reason_codes"]) == ["LINEAGE_UNKNOWN"]
     observed = db.query(
         "SELECT observed FROM current_decisions "
         "WHERE entity_type = ? AND entity_id = ? AND profile = ?",
         ("organism", "ORG_000001", "unknown_ignore"),
     )[0]["observed"]
     assert "_rule_sources" in observed
+
+
+def _insert_unknown_lineage_metrics(db):
+    for metric, value, numeric in (("lineage", "unknown", None), ("score", "50", 50)):
+        db.insert_qc_result({
+            "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
+            "metric_name": metric, "metric_value": value, "metric_numeric": numeric,
+            "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+        })
+
+
+def test_required_rule_with_ignore_policy_leaves_persistent_trace(project_db):
+    project, db = project_db
+    _insert_unknown_lineage_metrics(db)
+    db.insert_qc_result({
+        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
+        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
+        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+    })
+    _write_profile(project, "required_ignore", {
+        "kind": "qc", "version": 1, "applies_to": ["organism"],
+        "required": [
+            {"metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
+             "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "ignore"}},
+            {"metric": "score", "operator": ">=", "value": 40},
+        ],
+    })
+    result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "required_ignore")
+    assert result["decision"] == "PASS"
+    persisted = db.query(
+        "SELECT reason_codes FROM current_decisions "
+        "WHERE entity_type = ? AND entity_id = ? AND profile = ?",
+        ("organism", "ORG_000001", "required_ignore"),
+    )[0]["reason_codes"]
+    assert json.loads(persisted) == ["LINEAGE_IGNORED"]
+    assert result["details"][0] == {
+        "metric": "score", "rule": "value >= threshold selected by lineage",
+        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
+        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_IGNORED",
+        "kind": "value_by_unknown_ignore",
+    }
+
+
+def test_warning_rule_with_ignore_policy_leaves_persistent_trace(project_db):
+    project, db = project_db
+    _insert_unknown_lineage_metrics(db)
+    _write_profile(project, "warn_ignore", {
+        "kind": "qc", "version": 1, "applies_to": ["organism"],
+        "warnings": [{
+            "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
+            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "ignore"},
+            "unknown_code": "LINEAGE_IGNORED_CUSTOM",
+        }],
+    })
+    result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "warn_ignore")
+    assert result["decision"] == "PASS"
+    persisted = db.query(
+        "SELECT reason_codes FROM current_decisions "
+        "WHERE entity_type = ? AND entity_id = ? AND profile = ?",
+        ("organism", "ORG_000001", "warn_ignore"),
+    )[0]["reason_codes"]
+    assert json.loads(persisted) == ["LINEAGE_IGNORED_CUSTOM"]
+    assert result["details"] == [{
+        "metric": "score", "rule": "value < threshold selected by lineage",
+        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
+        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_IGNORED_CUSTOM",
+        "kind": "value_by_unknown_ignore",
+    }]
 
 
 def test_warning_rule_with_unknown_selector_emits_warning_detail(project_db):
