@@ -369,6 +369,7 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
     if not row:
         raise FileNotFoundError(f"file {file_id} not found in manifest")
     record = dict(row)
+    db.require_active_entity(record["entity_type"], record["entity_id"])
     record["_qc_parameter_set"] = parameter_set
     record["_qc_force_checksum"] = force_checksum
     entity_type, entity_id = record["entity_type"], record["entity_id"]
@@ -634,7 +635,9 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
         "SELECT file_id FROM files WHERE entity_type IN "
         "('organism','sample','run','assembly','annotation') AND NOT EXISTS ("
         "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
-        "AND s.object_id=files.entity_id)"
+        "AND s.object_id=files.entity_id) AND NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r WHERE r.entity_type=files.entity_type "
+        "AND r.entity_id=files.entity_id)"
     )
     params: list[Any] = []
     if entity_type:

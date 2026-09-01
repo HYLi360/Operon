@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.6"
+SCHEMA_VERSION = "2.7"
 
 MANUAL_TABLES = [
     "organisms",
@@ -527,17 +527,124 @@ CREATE INDEX IF NOT EXISTS idx_entity_supersessions_target
     ON entity_supersessions(superseded_by_type, superseded_by_id);
 """
 
+LIFECYCLE_SCHEMA_DDL = """
+CREATE TABLE IF NOT EXISTS entity_lifecycle_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_type TEXT NOT NULL CHECK (
+        object_type IN ('organism', 'sample', 'run', 'assembly', 'annotation')
+    ),
+    object_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('RETIRE', 'RESTORE')),
+    reason_code TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evidence TEXT,
+    actor TEXT NOT NULL,
+    workflow_run_id TEXT,
+    occurred_at TEXT NOT NULL,
+    reverts_event_id INTEGER REFERENCES entity_lifecycle_events(event_id),
+    change_id INTEGER REFERENCES changes(change_id)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_lifecycle_object
+    ON entity_lifecycle_events(object_type, object_id, event_id);
+CREATE INDEX IF NOT EXISTS idx_entity_lifecycle_action
+    ON entity_lifecycle_events(action, occurred_at);
+"""
+
+CURRENT_ENTITY_LIFECYCLE_VIEW = """
+CREATE VIEW current_entity_lifecycle AS
+SELECT e.*
+FROM entity_lifecycle_events e
+WHERE e.event_id = (
+    SELECT MAX(newer.event_id)
+    FROM entity_lifecycle_events newer
+    WHERE newer.object_type=e.object_type
+      AND newer.object_id=e.object_id
+)
+"""
+
+EFFECTIVE_RETIRED_ENTITIES_VIEW = """
+CREATE VIEW effective_retired_entities AS
+WITH RECURSIVE retired(
+    entity_type, entity_id, retired_by_type, retired_by_id,
+    event_id, reason_code, reason, evidence, actor, workflow_run_id, retired_at
+) AS (
+    SELECT object_type, object_id, object_type, object_id,
+           event_id, reason_code, reason, evidence, actor, workflow_run_id, occurred_at
+    FROM current_entity_lifecycle
+    WHERE action='RETIRE'
+    UNION
+    SELECT 'sample', s.sample_id, r.retired_by_type, r.retired_by_id,
+           r.event_id, r.reason_code, r.reason, r.evidence, r.actor,
+           r.workflow_run_id, r.retired_at
+    FROM retired r
+    JOIN samples s ON r.entity_type='organism' AND s.organism_id=r.entity_id
+    UNION
+    SELECT 'run', child.run_id, r.retired_by_type, r.retired_by_id,
+           r.event_id, r.reason_code, r.reason, r.evidence, r.actor,
+           r.workflow_run_id, r.retired_at
+    FROM retired r
+    JOIN runs child ON r.entity_type='sample' AND child.sample_id=r.entity_id
+    UNION
+    SELECT 'assembly', child.assembly_id, r.retired_by_type, r.retired_by_id,
+           r.event_id, r.reason_code, r.reason, r.evidence, r.actor,
+           r.workflow_run_id, r.retired_at
+    FROM retired r
+    JOIN assemblies child ON r.entity_type='sample' AND child.sample_id=r.entity_id
+    UNION
+    SELECT 'annotation', child.annotation_id, r.retired_by_type, r.retired_by_id,
+           r.event_id, r.reason_code, r.reason, r.evidence, r.actor,
+           r.workflow_run_id, r.retired_at
+    FROM retired r
+    JOIN annotations child
+      ON r.entity_type='assembly' AND child.assembly_id=r.entity_id
+)
+SELECT * FROM retired
+"""
+
 
 class Database:
     """Thin wrapper around sqlite3 with Operon-specific helpers."""
+
+    @staticmethod
+    def _open_read_only(path: Path) -> sqlite3.Connection:
+        """Open read-only with locking, falling back for immutable media.
+
+        A WAL-mode database opened with ``mode=ro`` may still need to create
+        ``-shm`` beside the database.  Read-only mounts cannot do that, so
+        retry as immutable only for the two errors that indicate the locking
+        side files cannot be opened.  Writable projects keep normal SQLite
+        locking and observe concurrent WAL updates.
+        """
+        base_uri = f"file:{path.resolve().as_posix()}?mode=ro"
+        conn = sqlite3.connect(base_uri, uri=True, timeout=30)
+        try:
+            conn.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
+            return conn
+        except sqlite3.OperationalError as exc:
+            conn.close()
+            message = str(exc).lower()
+            if (
+                "attempt to write a readonly database" not in message
+                and "unable to open database file" not in message
+            ):
+                raise
+        wal_path = Path(f"{path}-wal")
+        if wal_path.is_file() and wal_path.stat().st_size > 0:
+            raise sqlite3.OperationalError(
+                "read-only database requires immutable mode but has a non-empty WAL; "
+                "checkpoint it on a writable mount before opening this copy"
+            )
+        immutable_uri = f"{base_uri}&immutable=1"
+        conn = sqlite3.connect(immutable_uri, uri=True, timeout=30)
+        conn.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
+        return conn
 
     def __init__(self, path: str | Path, read_only: bool = False):
         self.path = Path(path)
         self.read_only = read_only
         self._savepoint_counter = 0
         if read_only:
-            uri = f"file:{self.path.resolve().as_posix()}?mode=ro"
-            self._conn = sqlite3.connect(uri, uri=True, timeout=30)
+            self._conn = self._open_read_only(self.path)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.execute("PRAGMA query_only=ON")
@@ -558,6 +665,7 @@ class Database:
         self._migrate_source_schema_2_4()
         self._migrate_integrity_cache_schema_2_5()
         self._migrate_recovery_schema_2_6()
+        self._migrate_lifecycle_schema_2_7()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -737,9 +845,23 @@ class Database:
             (migration_sha256,),
         )
 
+    def _migrate_lifecycle_schema_2_7(self) -> None:
+        """Add append-only logical retirement and restoration history."""
+        self._conn.executescript(LIFECYCLE_SCHEMA_DDL)
+        migration_document = "operon schema 2.7: append-only entity lifecycle retirement"
+        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.7-entity-lifecycle-retirement', ?, datetime('now'), NULL)",
+            (migration_sha256,),
+        )
+
     def _ensure_current_schema_objects(self) -> None:
-        """Create current indexes and rebuild the latest-decision view."""
+        """Create current indexes and rebuild derived current-state views."""
         self._conn.execute("DROP VIEW IF EXISTS current_decisions")
+        self._conn.execute("DROP VIEW IF EXISTS effective_retired_entities")
+        self._conn.execute("DROP VIEW IF EXISTS current_entity_lifecycle")
         self._conn.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_qc_entity ON qc_results(entity_type, entity_id);
@@ -750,6 +872,8 @@ class Database:
             """
         )
         self._conn.execute(CURRENT_DECISIONS_VIEW)
+        self._conn.execute(CURRENT_ENTITY_LIFECYCLE_VIEW)
+        self._conn.execute(EFFECTIVE_RETIRED_ENTITIES_VIEW)
         self._conn.commit()
 
     def close(self) -> None:
@@ -839,8 +963,7 @@ class Database:
         writable PRAGMAs, ATTACH, VACUUM and extension loading cannot mutate
         the database (or another database as a side effect).
         """
-        uri = f"file:{self.path.resolve().as_posix()}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, timeout=30)
+        conn = self._open_read_only(self.path)
         conn.row_factory = sqlite3.Row
         denied = {
             getattr(sqlite3, name)
@@ -892,6 +1015,80 @@ class Database:
     def require_entity(self, entity_type: str, entity_id: str) -> None:
         if not self.entity_exists(entity_type, entity_id):
             raise EntityNotFoundError(f"{entity_type} {entity_id} does not exist")
+
+    def effective_retirements(
+        self, entity_type: str, entity_id: str
+    ) -> list[dict[str, Any]]:
+        """Return every direct or inherited retirement root for an entity."""
+        if entity_type not in ENTITY_TABLES or not self.lifecycle_schema_available():
+            return []
+        rows = self._conn.execute(
+            "SELECT * FROM effective_retired_entities "
+            "WHERE entity_type=? AND entity_id=? ORDER BY event_id",
+            (entity_type, entity_id),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def is_entity_retired(self, entity_type: str, entity_id: str) -> bool:
+        """Return whether an entity is directly or ancestrally retired."""
+        if entity_type not in ENTITY_TABLES or not self.lifecycle_schema_available():
+            return False
+        return self._conn.execute(
+            "SELECT 1 FROM effective_retired_entities "
+            "WHERE entity_type=? AND entity_id=? LIMIT 1",
+            (entity_type, entity_id),
+        ).fetchone() is not None
+
+    def require_active_entity(self, entity_type: str, entity_id: str) -> None:
+        """Require an existing entity that is not effectively retired."""
+        self.require_entity(entity_type, entity_id)
+        retirements = self.effective_retirements(entity_type, entity_id)
+        if retirements:
+            roots = ", ".join(
+                f"{row['retired_by_type']} {row['retired_by_id']}"
+                for row in retirements
+            )
+            raise ValidationError(
+                f"{entity_type} {entity_id} is retired by {roots}; "
+                "restore the retirement root before processing it"
+            )
+
+    def require_not_retired(self, entity_type: str, entity_id: str) -> None:
+        """Reject effective retirement without requiring a metadata row.
+
+        Some historical QC/decision APIs accept externally imported entity
+        keys that are not present in the normalized metadata tables.
+        """
+        retirements = self.effective_retirements(entity_type, entity_id)
+        if retirements:
+            roots = ", ".join(
+                f"{row['retired_by_type']} {row['retired_by_id']}"
+                for row in retirements
+            )
+            raise ValidationError(
+                f"{entity_type} {entity_id} is retired by {roots}; "
+                "restore the retirement root before processing it"
+            )
+
+    def current_lifecycle_event(
+        self, entity_type: str, entity_id: str
+    ) -> dict[str, Any] | None:
+        """Return the latest direct lifecycle event for one entity."""
+        if not self.lifecycle_schema_available():
+            return None
+        row = self._conn.execute(
+            "SELECT * FROM current_entity_lifecycle "
+            "WHERE object_type=? AND object_id=?",
+            (entity_type, entity_id),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def lifecycle_schema_available(self) -> bool:
+        """Return whether schema 2.7 lifecycle objects are present."""
+        return self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='view' "
+            "AND name='effective_retired_entities'"
+        ).fetchone() is not None
 
     def next_id(self, entity_type: str) -> str:
         if entity_type == "source":
@@ -1063,6 +1260,53 @@ class Database:
             return []
         rows = self._conn.execute(f"SELECT {', '.join(selected)} FROM {table}").fetchall()
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
+
+    def export_active_rows(
+        self, table: str, columns: list[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Export rows whose owning metadata entity is not effectively retired."""
+        if not self.lifecycle_schema_available():
+            return self.export_rows(table, columns)
+        cols = columns or self.table_columns(table)
+        existing = set(self.table_columns(table))
+        selected = [column for column in cols if column in existing]
+        if not selected:
+            return []
+        entity_type = next(
+            (kind for kind, entity_table in ENTITY_TABLES.items() if entity_table == table),
+            None,
+        )
+        projection = ", ".join(f't."{column}"' for column in selected)
+        sql = f'SELECT {projection} FROM "{table}" t'
+        if entity_type is not None:
+            id_column = ENTITY_ID_COLUMNS[entity_type]
+            sql += (
+                " WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                f"WHERE r.entity_type='{entity_type}' AND r.entity_id=t.\"{id_column}\")"
+            )
+        elif table == "accessions":
+            sql += (
+                " WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type=t.internal_type AND r.entity_id=t.internal_id)"
+            )
+        elif table == "files":
+            sql += (
+                " WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type=t.entity_type AND r.entity_id=t.entity_id)"
+            )
+        elif table == "source_links":
+            sql += (
+                " WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r WHERE "
+                "(r.entity_type=t.object_type AND r.entity_id=t.object_id) OR "
+                "(t.object_type='file' AND EXISTS (SELECT 1 FROM files f "
+                "WHERE f.file_id=t.object_id AND f.entity_type=r.entity_type "
+                "AND f.entity_id=r.entity_id)))"
+            )
+        rows = self._conn.execute(sql).fetchall()
+        return [
+            {column: row[column] if column in existing else None for column in cols}
+            for row in rows
+        ]
 
     def latest_metrics(self, entity_type: str, entity_id: str,
                        qc_stage: str | None = None) -> dict[str, float | str]:

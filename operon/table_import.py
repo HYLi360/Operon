@@ -253,14 +253,17 @@ def _validate_references(db: Database, table: str, rows: list[dict[str, Any]]) -
         } if ENTITY_TABLES.get(entity_type) == table else set()
         for row in rows:
             value = row.get(field)
-            if value and value not in incoming_ids and not db.entity_exists(entity_type, value):
-                raise ValidationError(f"{table}: {field} {value} does not exist")
+            if value and value not in incoming_ids:
+                if not db.entity_exists(entity_type, value):
+                    raise ValidationError(f"{table}: {field} {value} does not exist")
+                db.require_active_entity(entity_type, value)
     if table == "accessions":
         for row in rows:
             if not db.entity_exists(row["internal_type"], row["internal_id"]):
                 raise ValidationError(
                     f"accessions: {row['internal_type']} {row['internal_id']} does not exist"
                 )
+            db.require_active_entity(row["internal_type"], row["internal_id"])
 
 
 def preview_table_import(db: Database, schema: Schema, table: str, path: str | Path) -> dict[str, Any]:
@@ -307,6 +310,15 @@ def preview_table_import(db: Database, schema: Schema, table: str, path: str | P
     for row, supplied in zip(normalized, supplied_columns):
         key = tuple(row.get(column) for column in keys)
         current = existing.get(key)
+        if current is not None:
+            for entity_type, entity_table in ENTITY_TABLES.items():
+                if entity_table == table:
+                    entity_id = str(current[ENTITY_ID_COLUMNS[entity_type]])
+                    if db.is_entity_retired(entity_type, entity_id):
+                        raise ValidationError(
+                            f"{entity_type} {entity_id} is retired; restore it before table import"
+                        )
+                    break
         if current is None:
             action = "insert"
             differences: list[str] = []

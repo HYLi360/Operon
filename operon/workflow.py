@@ -225,6 +225,8 @@ def run_external_command(
     submission, or `ssh` remote execution (HPC/cloud host). All backends keep
     the same provenance contract.
     """
+    if entity_type and entity_id:
+        db.require_not_retired(entity_type, entity_id)
     started = now_iso()
     started_monotonic = time.monotonic()
     logs = project.logs_root

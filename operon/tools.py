@@ -500,7 +500,9 @@ def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None
     sql = (
         "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
         "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
-        "AND s.object_id=files.entity_id)"
+        "AND s.object_id=files.entity_id) AND NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r WHERE r.entity_type=files.entity_type "
+        "AND r.entity_id=files.entity_id)"
     )
     params: list[Any] = [recipe.file_role, recipe.fmt]
     if recipe.entity_type:

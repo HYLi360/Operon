@@ -313,7 +313,9 @@ class _PlanBuilder:
         for namespace in ("NCBI_Assembly", _assembly_namespace(accession)):
             row = self._accession(namespace, accession)
             if row and row["internal_type"] == "assembly":
-                return str(row["internal_id"])
+                assembly_id = str(row["internal_id"])
+                self._require_active_existing("assembly", assembly_id)
+                return assembly_id
         base, version = _split_accession(accession)
         for assembly_id, row in {**self.rows["assemblies"], **self.planned["assemblies"]}.items():
             stored = str(row.get("assembly_accession") or "").upper()
@@ -322,6 +324,7 @@ class _PlanBuilder:
             if stored == accession or (
                 stored_base == base and (stored_version or explicit_version) == version
             ):
+                self._require_active_existing("assembly", assembly_id)
                 return assembly_id
         return None
 
@@ -350,6 +353,7 @@ class _PlanBuilder:
                 raise ValidationError("NCBI Datasets record has neither organism name nor taxon ID")
             organism_id = self.ids.allocate("organism")
             self.plan.new_ids["organism"] += 1
+        self._require_active_existing("organism", organism_id)
         row = _merge_nonempty(self._current("organisms", organism_id), {
             "organism_id": organism_id,
             "scientific_name": scientific_name,
@@ -379,6 +383,7 @@ class _PlanBuilder:
         if not sample_id:
             sample_id = self.ids.allocate("sample")
             self.plan.new_ids["sample"] += 1
+        self._require_active_existing("sample", sample_id)
         sample_row = _merge_nonempty(self._current("samples", sample_id), {
             "sample_id": sample_id,
             "organism_id": organism_id,
@@ -464,6 +469,7 @@ class _PlanBuilder:
         if not annotation_id:
             annotation_id = self.ids.allocate("annotation")
             self.plan.new_ids["annotation"] += 1
+        self._require_active_existing("annotation", annotation_id)
         row = _merge_nonempty(self._current("annotations", annotation_id), {
             "annotation_id": annotation_id,
             "assembly_id": assembly_id,
@@ -485,6 +491,14 @@ class _PlanBuilder:
 
     def _current(self, table: str, key: str) -> dict[str, Any]:
         return dict(self.planned[table].get(key) or self.rows[table].get(key) or {})
+
+    def _require_active_existing(self, entity_type: str, entity_id: str) -> None:
+        table = ENTITY_TABLES[entity_type]
+        if entity_id in self.rows[table] and self.db.is_entity_retired(entity_type, entity_id):
+            raise ValidationError(
+                f"NCBI import resolved to retired {entity_type} {entity_id}; "
+                f"run `operon restore {entity_id} --reason TEXT --apply` before re-importing"
+            )
 
     def _put(self, table: str, key: str, row: dict[str, Any]) -> None:
         self.planned[table][key] = row
@@ -991,7 +1005,13 @@ def _find_archived_assembly(db: Database, accession: str) -> str | None:
                 (namespace, accession),
             ).fetchone()
         if row and row["internal_type"] == "assembly":
-            return str(row["internal_id"])
+            assembly_id = str(row["internal_id"])
+            if db.is_entity_retired("assembly", assembly_id):
+                raise ValidationError(
+                    f"accession {accession} belongs to retired assembly {assembly_id}; "
+                    f"run `operon restore {assembly_id} --reason TEXT --apply` before re-importing"
+                )
+            return assembly_id
     return None
 
 
@@ -1057,8 +1077,13 @@ def _missing_includes(
             [
                 str(row["annotation_id"])
                 for row in db.conn.execute(
-                    "SELECT DISTINCT annotation_id FROM ncbi_annotation_records "
-                    "WHERE assembly_accession=?",
+                    "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
+                    "WHERE n.assembly_accession=? "
+                    + (
+                        "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                        "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
+                        if db.lifecycle_schema_available() else ""
+                    ),
                     (accession,),
                 )
             ]
@@ -1070,11 +1095,16 @@ def _missing_includes(
                 "WHERE s.object_type='annotation' AND s.object_id=annotations.annotation_id)"
                 if _table_exists(db, "entity_supersessions") else ""
             )
+            retirement_filter = (
+                "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type='annotation' AND r.entity_id=annotations.annotation_id)"
+                if db.lifecycle_schema_available() else ""
+            )
             mapped_ids = [
                 str(row["annotation_id"])
                 for row in db.conn.execute(
                     "SELECT annotation_id FROM annotations WHERE assembly_id=? "
-                    + supersession_filter,
+                    + supersession_filter + retirement_filter,
                     (assembly_id,),
                 )
             ]

@@ -70,7 +70,10 @@ def _choice_rows(rows: list[dict[str, Any]], id_field: str, label: Callable[[dic
 
 def _ask_organism(db: Database, draft: dict[str, Any]) -> None:
     rows = [dict(row) for row in db.conn.execute(
-        "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version FROM organisms ORDER BY scientific_name, organism_id"
+        "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version "
+        "FROM organisms o WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
+        "ORDER BY scientific_name, organism_id"
     ).fetchall()]
     create_label = "Create a new organism"
     name_counts: dict[str, int] = {}
@@ -135,7 +138,9 @@ def _ask_source(_db: Database, draft: dict[str, Any]) -> None:
 def _ask_sample(db: Database, draft: dict[str, Any]) -> None:
     organism_id = draft["organism"]["id"]
     rows = [dict(row) for row in db.conn.execute(
-        "SELECT sample_id, isolate, strain, biosample_accession FROM samples WHERE organism_id=? ORDER BY sample_id",
+        "SELECT sample_id, isolate, strain, biosample_accession FROM samples s "
+        "WHERE organism_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type='sample' AND r.entity_id=s.sample_id) ORDER BY sample_id",
         (organism_id,),
     ).fetchall()]
     choices: list[Any] = [questionary.Choice("Create a new sample", value="__new__")]
@@ -180,7 +185,10 @@ def _ask_sequencing(db: Database, draft: dict[str, Any]) -> None:
 def _ask_assembly(db: Database, draft: dict[str, Any]) -> None:
     sample_id = draft["sample"]["id"]
     rows = [dict(row) for row in db.conn.execute(
-        "SELECT assembly_id, assembly_accession, assembly_name, assembly_version FROM assemblies WHERE sample_id=? ORDER BY assembly_id",
+        "SELECT assembly_id, assembly_accession, assembly_name, assembly_version "
+        "FROM assemblies a WHERE sample_id=? AND NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type='assembly' AND r.entity_id=a.assembly_id) ORDER BY assembly_id",
         (sample_id,),
     ).fetchall()]
     choices: list[Any] = [questionary.Choice("Create a new assembly", value="__new__")]
@@ -212,7 +220,10 @@ def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
         return
     assembly_id = draft["assembly"]["id"]
     rows = [dict(row) for row in db.conn.execute(
-        "SELECT annotation_id, annotation_source, annotation_version FROM annotations WHERE assembly_id=? ORDER BY annotation_id",
+        "SELECT annotation_id, annotation_source, annotation_version FROM annotations n "
+        "WHERE assembly_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id) "
+        "ORDER BY annotation_id",
         (assembly_id,),
     ).fetchall()]
     choices: list[Any] = [questionary.Choice("Create a new annotation", value="__new__")]

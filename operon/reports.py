@@ -18,7 +18,13 @@ METADATA_REPORT_TABLES = [
 SOURCE_REPORT_TABLES = ["data_sources", "source_links"]
 
 
-def export_metadata_report(db: Database, project: Project, output: str | Path | None = None) -> Path:
+def export_metadata_report(
+    db: Database,
+    project: Project,
+    output: str | Path | None = None,
+    *,
+    include_retired: bool = False,
+) -> Path:
     """Write a derived, read-only metadata snapshot from SQLite.
 
     The report is deliberately one-way: exported TSV files are not a live
@@ -38,7 +44,10 @@ def export_metadata_report(db: Database, project: Project, output: str | Path | 
     }
     for table in METADATA_REPORT_TABLES:
         columns = schema.columns(table)
-        rows = db.export_rows(table, columns)
+        rows = (
+            db.export_rows(table, columns)
+            if include_retired else db.export_active_rows(table, columns)
+        )
         path = out / f"{table}.tsv"
         write_tsv(path, columns, rows)
         manifest["tables"][path.name] = {
@@ -47,7 +56,10 @@ def export_metadata_report(db: Database, project: Project, output: str | Path | 
         }
     for table in SOURCE_REPORT_TABLES:
         columns = db.table_columns(table)
-        rows = db.export_rows(table, columns)
+        rows = (
+            db.export_rows(table, columns)
+            if include_retired else db.export_active_rows(table, columns)
+        )
         path = out / f"{table}.tsv"
         write_tsv(path, columns, rows)
         manifest["tables"][path.name] = {
@@ -61,9 +73,21 @@ def export_metadata_report(db: Database, project: Project, output: str | Path | 
     return out
 
 
-def qc_rows(db: Database, entity_type: str | None = None, entity_id: str | None = None) -> list[dict[str, Any]]:
+def qc_rows(
+    db: Database,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    *,
+    include_retired: bool = False,
+) -> list[dict[str, Any]]:
     sql = "SELECT * FROM qc_results WHERE 1=1"
     params: list[Any] = []
+    if not include_retired:
+        sql += (
+            " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type=qc_results.entity_type "
+            "AND r.entity_id=qc_results.entity_id)"
+        )
     if entity_type:
         sql += " AND entity_type=?"
         params.append(entity_type)
@@ -74,9 +98,11 @@ def qc_rows(db: Database, entity_type: str | None = None, entity_id: str | None 
     return [dict(r) for r in db.conn.execute(sql, params).fetchall()]
 
 
-def qc_wide(db: Database, entity_type: str | None = None) -> tuple[list[str], list[dict[str, Any]]]:
+def qc_wide(
+    db: Database, entity_type: str | None = None, *, include_retired: bool = False
+) -> tuple[list[str], list[dict[str, Any]]]:
     """Pivot long QC results into a wide table for browsing/statistics."""
-    rows = qc_rows(db, entity_type=entity_type)
+    rows = qc_rows(db, entity_type=entity_type, include_retired=include_retired)
     metric_names: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -93,8 +119,16 @@ def qc_wide(db: Database, entity_type: str | None = None) -> tuple[list[str], li
     return columns, list(by_entity.values())
 
 
-def print_qc_table(db: Database, entity_type: str | None = None, entity_id: str | None = None) -> str:
-    rows = qc_rows(db, entity_type, entity_id)
+def print_qc_table(
+    db: Database,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    *,
+    include_retired: bool = False,
+) -> str:
+    rows = qc_rows(
+        db, entity_type, entity_id, include_retired=include_retired
+    )
     headers = ["entity_type", "entity_id", "file_id", "qc_stage", "metric_name", "metric_value", "metric_unit", "tool", "evaluated_at"]
     return format_table(headers, ([r[h] for h in headers] for r in rows))
 
@@ -106,12 +140,23 @@ def print_status(db: Database) -> str:
     return format_table(["entity_type", "entity_id", "state", "message", "updated_at"], ([r[c] for c in r.keys()] for r in rows))
 
 
-def print_decisions(db: Database, profile: str | None = None) -> str:
+def print_decisions(
+    db: Database, profile: str | None = None, *, include_retired: bool = False
+) -> str:
     sql = "SELECT entity_type, entity_id, profile, profile_version, decision, COALESCE(curated_decision,'') AS curated_decision, reason_codes, evaluated_at FROM current_decisions"
     params: list[Any] = []
+    clauses: list[str] = []
     if profile:
-        sql += " WHERE profile=?"
+        clauses.append("profile=?")
         params.append(profile)
+    if not include_retired:
+        clauses.append(
+            "NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type=current_decisions.entity_type "
+            "AND r.entity_id=current_decisions.entity_id)"
+        )
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY entity_type, entity_id, profile"
     rows = db.conn.execute(sql, params).fetchall()
     import json as _json
@@ -126,12 +171,20 @@ def print_decisions(db: Database, profile: str | None = None) -> str:
     ))
 
 
-def export_qc_tsv(db: Database, project: Project, entity_type: str | None = None) -> Path:
+def export_qc_tsv(
+    db: Database,
+    project: Project,
+    entity_type: str | None = None,
+    *,
+    include_retired: bool = False,
+) -> Path:
     out = project.qc_root / "aggregate" / "qc_results.tsv"
     columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
-    rows = qc_rows(db, entity_type)
+    rows = qc_rows(db, entity_type, include_retired=include_retired)
     write_tsv(out, columns, rows)
-    columns_wide, rows_wide = qc_wide(db, entity_type)
+    columns_wide, rows_wide = qc_wide(
+        db, entity_type, include_retired=include_retired
+    )
     wide_out = project.qc_root / "aggregate" / "qc_results.wide.tsv"
     write_tsv(wide_out, columns_wide, rows_wide)
     return wide_out

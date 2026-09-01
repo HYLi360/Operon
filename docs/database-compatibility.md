@@ -16,7 +16,8 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 | 同一方法的 `decisions` 迁移段 | 把没有 `profile_snapshot_id` 的 v1 表迁移为可追加历史结构 | 删除 |
 
 `Database._ensure_current_schema_objects()` 不属于兼容代码。它负责当前版本仍需要的
-索引与 `current_decisions` 视图，1.0 中必须保留。
+索引，以及 `current_decisions`、`current_entity_lifecycle`、
+`effective_retired_entities` 视图，1.0 中必须保留。
 
 `Database._migrate_remote_schema_2_2()` 也不属于上述“开发期 v1 兼容层”。它把 2.1
 数据库按纯加法升级为 2.2：给 `workflow_runs` 增加 `executor`、
@@ -56,6 +57,15 @@ SHA-256 身份去重。只要仍支持打开 2.3 项目就必须保留。对应�
 changes 行。旧 NCBI adapter 的业务异常由显式 `operon ncbi-reconcile` 处理，不能藏进
 schema migration。对应回归测试为
 `test_schema_2_6_adds_resumable_adapter_and_repair_history`。
+
+`Database._migrate_lifecycle_schema_2_7()` 为 2.6 项目纯加法增加
+`entity_lifecycle_events`、`current_entity_lifecycle` 与
+`effective_retired_entities`。事件表只追加 `RETIRE`/`RESTORE`，恢复事件通过
+`reverts_event_id` 和对应的 `changes.reverts_change_id` 指回被撤销的直接退役；有效退役
+视图则沿 organism → sample → run/assembly → annotation 所有权关系传播状态。迁移不删除、
+移动或改写 metadata、file、QC、analysis、release、workflow 或归档字节。只要仍支持打开
+2.6 项目就必须保留。对应回归测试为
+`test_schema_2_7_adds_append_only_entity_lifecycle`。
 
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，

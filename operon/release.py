@@ -33,6 +33,10 @@ def release_files_for(db: Database, profile: str) -> list[dict[str, Any]]:
               SELECT 1 FROM entity_supersessions s
               WHERE s.object_type=f.entity_type AND s.object_id=f.entity_id
           )
+          AND NOT EXISTS (
+              SELECT 1 FROM effective_retired_entities r
+              WHERE r.entity_type=f.entity_type AND r.entity_id=f.entity_id
+          )
         ORDER BY f.file_id
         """,
         (profile,),
@@ -58,7 +62,7 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     ]
     for table in metadata_tables:
         columns = db.table_columns(table)
-        rows = db.export_rows(table, columns)
+        rows = db.export_active_rows(table, columns)
         write_tsv(release_root / f"{table}.tsv", columns, rows)
     metadata_sha256 = {
         f"{table}.tsv": sha256_file(release_root / f"{table}.tsv")
@@ -119,10 +123,21 @@ def create_release(db: Database, project: Project, version: str, profile: str,
 
     # QC summary and decisions.
     qc_columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
-    qc_rows = db.conn.execute("SELECT * FROM qc_results ORDER BY entity_type, entity_id, qc_stage, metric_name").fetchall()
+    qc_rows = db.conn.execute(
+        "SELECT q.* FROM qc_results q WHERE NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type=q.entity_type AND r.entity_id=q.entity_id) "
+        "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name"
+    ).fetchall()
     write_tsv(release_root / "qc_summary.tsv", qc_columns, [dict(r) for r in qc_rows])
     decision_cols = ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256", "decision", "curated_decision", "reason_codes", "evaluated_at", "curated_by", "curated_reason", "curated_evidence", "curated_at"]
-    decision_rows = db.conn.execute("SELECT * FROM current_decisions WHERE profile=? ORDER BY entity_type, entity_id", (profile,)).fetchall()
+    decision_rows = db.conn.execute(
+        "SELECT d.* FROM current_decisions d WHERE d.profile=? AND NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type=d.entity_type AND r.entity_id=d.entity_id) "
+        "ORDER BY d.entity_type, d.entity_id",
+        (profile,),
+    ).fetchall()
     write_tsv(release_root / "decisions.tsv", decision_cols, [dict(r) for r in decision_rows])
     profile_cols = ["profile_snapshot_id", "profile_name", "profile_version", "profile_sha256", "profile_document", "recorded_at"]
     profile_rows = db.conn.execute(
@@ -135,7 +150,12 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         """
         SELECT entity_type, entity_id, COALESCE(curated_decision, decision) AS effective_decision,
                reason_codes, evaluated_at
-        FROM current_decisions WHERE profile=? AND COALESCE(curated_decision, decision) NOT IN ('PASS','PASS_WITH_WARNINGS','ACCEPT_WITH_WARNING')
+        FROM current_decisions d WHERE profile=?
+          AND COALESCE(curated_decision, decision) NOT IN ('PASS','PASS_WITH_WARNINGS','ACCEPT_WITH_WARNING')
+          AND NOT EXISTS (
+              SELECT 1 FROM effective_retired_entities r
+              WHERE r.entity_type=d.entity_type AND r.entity_id=d.entity_id
+          )
         ORDER BY entity_type, entity_id
         """,
         (profile,),

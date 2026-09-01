@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -14,7 +15,7 @@ from operon.backup import create_backup, verify_backup
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.entity_view import organism_graph
+from operon.entity_view import entity_graph, organism_graph
 from operon.errors import EntityNotFoundError
 from operon.import_wizard import (
     _ask_organism,
@@ -51,6 +52,79 @@ def test_show_resolves_organism_accession_and_descendants(tmp_path: Path):
         assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000001"]
     finally:
         db.close()
+
+
+def test_show_matched_scope_excludes_siblings_and_superseded_descendants(tmp_path: Path):
+    _project_config, db = _project(tmp_path)
+    try:
+        db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Graphus testii",
+        })
+        for suffix in ("1", "2"):
+            db.insert_row("samples", {
+                "sample_id": f"SMP_00000{suffix}", "organism_id": "ORG_000001",
+            })
+            db.insert_row("assemblies", {
+                "assembly_id": f"ASM_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
+            })
+        db.insert_row("annotations", {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+        })
+        db.insert_row("annotations", {
+            "annotation_id": "ANN_000002", "assembly_id": "ASM_000001",
+        })
+        db.insert_row("annotations", {
+            "annotation_id": "ANN_000003", "assembly_id": "ASM_000002",
+        })
+        db.supersede_entity(
+            "annotation", "ANN_000001", "annotation", "ANN_000002",
+            reason="duplicate annotation",
+        )
+
+        graph = entity_graph(db, "ASM_000001")
+        assert graph["scope"] == "matched"
+        assert [row["sample_id"] for row in graph["samples"]] == ["SMP_000001"]
+        assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000001"]
+        assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000002"]
+        assert [row["object_id"] for row in graph["supersessions"]] == ["ANN_000001"]
+
+        organism_scope = entity_graph(db, "ASM_000001", scope="organism")
+        assert [row["assembly_id"] for row in organism_scope["assemblies"]] == [
+            "ASM_000001", "ASM_000002",
+        ]
+        assert [row["annotation_id"] for row in organism_scope["annotations"]] == [
+            "ANN_000002", "ANN_000003",
+        ]
+
+        history = entity_graph(
+            db, "ASM_000001", scope="organism", include_superseded=True,
+        )
+        assert [row["annotation_id"] for row in history["annotations"]] == [
+            "ANN_000001", "ANN_000002", "ANN_000003",
+        ]
+    finally:
+        db.close()
+
+
+def test_show_opens_database_read_only(tmp_path: Path, capsys):
+    project, db = _project(tmp_path)
+    try:
+        db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Readonly testii",
+        })
+    finally:
+        db.close()
+
+    original_dir_mode = tmp_path.stat().st_mode
+    original_db_mode = project.db_path.stat().st_mode
+    try:
+        os.chmod(project.db_path, 0o444)
+        os.chmod(tmp_path, 0o555)
+        assert main(["--project", str(tmp_path), "show", "ORG_000001"]) == 0
+        assert "Scope:    matched" in capsys.readouterr().out
+    finally:
+        os.chmod(tmp_path, original_dir_mode)
+        os.chmod(project.db_path, original_db_mode)
 
 
 def test_organism_selection_uses_scientific_name_autocomplete(tmp_path: Path, monkeypatch):

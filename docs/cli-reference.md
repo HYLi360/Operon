@@ -14,7 +14,7 @@ operon [--project PATH] [--version] <子命令> [参数]
 ```text
 init          初始化项目
 init-demo     生成合成演示项目并跑完流水线
-status        查看实体状态
+status        查看活动实体状态；可显式包含已退役实体
 schema        查看/导出 schema
 migrate       显式应用纯加法数据库迁移并执行完整性检查
 import        交互式导入数据集，或从 CSV/XLSX 导入一张受控 metadata 表
@@ -43,7 +43,10 @@ run-pipeline  单文件一站式流水线
 taxonomy      导入 NCBI Taxonomy 快照并编译覆盖率分母
 report        查看 QC、判定、分析、metadata 或 taxonomy 覆盖率报告
 query         只读 SQL 查询
-show          按内部 ID 或 accession 展开 organism 及全部下游实体
+show          按内部 ID 或 accession 展开命中 lineage/subtree
+retire        预览或应用可逆、受审计的逻辑退役
+restore       预览或反转目标的直接逻辑退役
+retired       列出当前直接/继承退役状态
 backup        创建或校验分级项目备份
 set-state     人工设置状态（审计）
 ```
@@ -69,10 +72,11 @@ operon init-demo [path] [--project-id PRJ_DEMO_001]
 ## status
 
 ```bash
-operon status [--entity-type TYPE] [--entity-id ID]
+operon status [--entity-type TYPE] [--entity-id ID] [--include-retired]
 ```
 
-打印 `entity_state` 中的实体状态与说明。
+打印 `entity_state` 中的实体状态与说明。默认不显示有效退役实体；
+`--include-retired` 用于历史审计。
 
 ## schema
 
@@ -108,7 +112,7 @@ operon import table --table TABLE --file data.csv \
   不修改项目。
 - `table --template`：生成 `.csv` 或 `.xlsx` 空模板。XLSX 同时包含只读的 `schema` 工作表，列出类型、必填项、允许值与字段说明。
 - `table --file`：读取 CSV 或 XLSX 第一张工作表，执行 schema/外键校验并打印逐行预览。
-- 可导入表为 `organisms`、`samples`、`runs`、`assemblies`、`annotations`、`accessions`；系统管理的 `files` 不可由表格覆盖。
+- 可导入表为 `organisms`、`samples`、`runs`、`assemblies`、`annotations`、`accessions`；系统管理的 `files` 不可由表格覆盖。表格更新或外键引用不能指向有效退役实体，应先显式 `restore`。
 - 碰撞时 `error` 拒绝、`skip` 跳过已有行、`update` 逐字段更新并写入 `changes` 审计。非交互执行必须加 `--yes`；存在更新时还必须显式指定 `--on-conflict`。
 - SQLite 是唯一可写 metadata 事实来源；旧的 `import-metadata`/`export-metadata` 已移除。
 
@@ -429,12 +433,13 @@ operon analyze --analysis busco_lineage \
 
 ```bash
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
-  [--hits] [--limit N]
+  [--hits] [--limit N] [--include-retired]
 ```
 
 - 默认显示 `analysis_results` 汇总指标。
 - `--hits` 显示 `analysis_hits` 中的 top hits。
 - `--limit` 默认 20。
+- 默认排除有效退役实体；`--include-retired` 显示历史结果。
 
 ## remotes
 
@@ -582,13 +587,13 @@ operon taxonomy reference-sets
 ## report
 
 ```bash
-operon report qc [--entity-type TYPE] [--entity-id ID] [--export]
-operon report decisions [--profile NAME]
+operon report qc [--entity-type TYPE] [--entity-id ID] [--export] [--include-retired]
+operon report decisions [--profile NAME] [--include-retired]
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
-  [--hits] [--limit N]
+  [--hits] [--limit N] [--include-retired]
 operon report coverage --reference-set NAME@TAXONOMY_VERSION [--scope metadata]
 operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
-operon report metadata [--output DIRECTORY]
+operon report metadata [--output DIRECTORY] [--include-retired]
 ```
 
 - `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
@@ -606,6 +611,9 @@ operon report metadata [--output DIRECTORY]
   以及规范化来源 `data_sources/source_links` 的只读 TSV 快照，并生成包含行数与 SHA-256
   的 `manifest.json`；默认写入
   `reports/metadata/`。它是派生 report，不是备份，也不能反向覆盖数据库。
+- `qc`、`decisions`、`analysis` 和 `metadata` 默认排除有效退役实体；审计完整历史时显式
+  使用 `--include-retired`。metadata scope 的 coverage 同样默认只统计活动 organism；
+  已有 release 使用创建时冻结的范围，不因后续退役而改变。
 
 coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功生成但至少一个 rank
 未达标时返回 1。阈值不写死在命令或代码中。
@@ -624,12 +632,82 @@ operon query "SQL"
 operon show ORG_000001
 operon show LAB:HX-ROOT
 operon show GCF_000001405.40 --json
+operon show GCF_000001405.40 --scope organism
+operon show ANN_000001 --include-superseded
+operon show ASM_000001 --include-retired
 ```
 
-解析内部稳定 ID、裸 accession 或 `NAMESPACE:ACCESSION`。无论匹配到 organism、sample、
-run、assembly 还是 annotation，都会向上解析到 organism，并展开该 organism 下的全部
-sample、run、assembly、annotation、accession 和文件。裸 accession 对应多个实体时拒绝并
-要求使用带 namespace 的写法。`--json` 输出完整机器可读对象。
+解析内部稳定 ID、裸 accession 或 `NAMESPACE:ACCESSION`。默认的 `--scope matched` 会显示
+命中实体的上游 lineage 和自己的下游 subtree，避免查询一个 assembly 时把同一 organism 下
+其他 sample/assembly 的数量一起算入：
+
+- organism：显示该 organism 的全部后代；
+- sample：显示 organism、该 sample 及其 run、assembly、annotation；
+- run：显示 organism、所属 sample 和该 run；
+- assembly：显示 organism、所属 sample、该 assembly 及其 annotation；
+- annotation：显示 organism、所属 sample、所属 assembly 和该 annotation。
+
+需要旧式的完整物种关系图时使用 `--scope organism`。默认不把
+`entity_supersessions` 中已经逻辑取代的后代计入各节数量及文件集合；输出仍列出相关
+`Supersessions`，便于解释隐藏的历史记录。`--include-superseded` 可显式恢复完整历史视图；
+直接按一个已 supersede 的实体查询时，该命中实体本身仍会显示。
+
+默认也不把有效退役的后代计入各节数量及文件集合；`Retirements` 节会说明它们由哪个直接
+退役根隔离。`--include-retired` 恢复完整历史视图。直接查询一个已退役目标时，目标本身与
+它的 subtree 仍显示，避免退役后失去审计入口。
+
+裸 accession 对应多个实体时拒绝并要求使用带 namespace 的写法。`--json` 输出完整机器可读
+对象，并包含 `scope`、`include_superseded`、`include_retired`、`supersessions` 和
+`retirements` 字段。`show` 使用 SQLite
+只读连接，因此可安全检查只读挂载或只读数据库副本。若只读介质上仍有非空
+`operon.sqlite-wal`，命令会拒绝 immutable 回退并要求先在可写挂载上 checkpoint，避免忽略
+未合并事务而显示过期数据。
+
+## retire
+
+```bash
+operon retire IDENTIFIER \
+  --reason-code {accidental_import,wrong_source,duplicate,withdrawn_upstream,policy_exclusion,metadata_error,other} \
+  --reason TEXT [--evidence TEXT] [--actor NAME]
+
+operon retire IDENTIFIER --reason-code accidental_import --reason TEXT \
+  --apply [--yes] [--evidence TEXT] [--actor NAME]
+```
+
+默认只输出 JSON 计划，不修改项目。计划解析内部 ID/accession，列出目标所有权 subtree、
+关联文件，以及 accession、QC、decision、analysis、workflow、source、remote location、
+release member/version 等引用计数；`physical_changes` 明确为零。旧于 schema 2.7 的数据库
+可先用 `operon migrate` 升级；只读旧副本不会被预览命令偷偷迁移。
+
+只有 `--apply` 才追加直接 `RETIRE`、`changes` 审计和 lifecycle workflow；非交互执行还要
+`--yes`。退役不删除/移动文件，不改 checksum，不删除 QC/analysis/workflow，也不改变已有
+release。有效状态沿所有权传播：organism → sample → run/assembly → annotation，sample →
+run/assembly → annotation，assembly → annotation。活动 ingest、QC、evaluate、analyze、
+`run-external`、report、NCBI 复用和新 release 默认拒绝或排除这些实体。
+
+## restore
+
+```bash
+operon restore IDENTIFIER --reason TEXT [--evidence TEXT] [--actor NAME]
+operon restore IDENTIFIER --reason TEXT --apply [--yes] [--evidence TEXT] [--actor NAME]
+```
+
+默认同样只预览。`--apply` 追加 `RESTORE`，并由 `reverts_event_id` 与
+`changes.reverts_change_id` 指回目标最近的直接退役；不会删除退役历史。它只恢复目标自己
+的直接退役：如果目标只是继承祖先的状态，应恢复计划中指出的退役根。子实体另有独立直接
+退役时，恢复父实体不会顺带恢复该子实体。
+
+## retired
+
+```bash
+operon retired [--direct-only] [--json]
+```
+
+默认列出所有当前有效退役实体，同时显示 `retired_by_type/id`，从而区分直接退役根与继承
+退役后代。`--direct-only` 只列直接退役根；`--json` 输出机器可读记录。该命令只读。
+
+当前没有 `purge` 命令。退役/恢复只建立安全隔离与完整逆过程；物理清除需要以后另行定义
+引用保护、保留期、远端副本和不可逆确认，不能用手工 SQL 或删除 raw 文件替代。
 
 ## backup
 

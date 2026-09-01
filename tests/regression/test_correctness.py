@@ -12,7 +12,7 @@ from tests.helpers import PytestAssertions
 import yaml
 
 from operon.cli import main
-from operon.config import load_project
+from operon.config import Project, load_project
 from operon.database import Database
 from operon.files import ingest_file, standardize_file
 from operon.qc_module import qc_all, qc_file
@@ -394,11 +394,48 @@ class TestCorrectnessRegressions(PytestAssertions):
         )
         self.assertEqual(len(migration), 1)
 
+    def test_schema_2_7_adds_append_only_entity_lifecycle(self):
+        lifecycle_root = self.root / "schema-2.6-project"
+        project = load_project(Project.init(lifecycle_root).root)
+        conn = sqlite3.connect(project.db_path)
+        conn.executescript(
+            """
+            DROP VIEW IF EXISTS effective_retired_entities;
+            DROP VIEW IF EXISTS current_entity_lifecycle;
+            DROP TABLE IF EXISTS entity_lifecycle_events;
+            DELETE FROM schema_migrations
+            WHERE migration_id='2.7-entity-lifecycle-retirement';
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db = Database(project.db_path)
+        self.addCleanup(db.close)
+        tables = {row["name"] for row in db.query(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        views = {row["name"] for row in db.query(
+            "SELECT name FROM sqlite_master WHERE type='view'"
+        )}
+        self.assertIn("entity_lifecycle_events", tables)
+        self.assertTrue({
+            "current_entity_lifecycle", "effective_retired_entities",
+        }.issubset(views))
+        migration = db.query(
+            "SELECT migration_id FROM schema_migrations WHERE migration_id=?",
+            ("2.7-entity-lifecycle-retirement",),
+        )
+        self.assertEqual(len(migration), 1)
+
     def test_ncbi_preview_commands_do_not_apply_missing_schema_migrations(self):
         conn = sqlite3.connect(self.project.db_path)
+        conn.execute("DROP VIEW effective_retired_entities")
+        conn.execute("DROP VIEW current_entity_lifecycle")
         for table in (
             "schema_migrations", "adapter_run_items", "ncbi_assembly_records",
             "ncbi_annotation_records", "entity_supersessions",
+            "entity_lifecycle_events",
         ):
             conn.execute(f'DROP TABLE "{table}"')
         conn.commit()
@@ -429,4 +466,5 @@ class TestCorrectnessRegressions(PytestAssertions):
         self.assertFalse({
             "schema_migrations", "adapter_run_items", "ncbi_assembly_records",
             "ncbi_annotation_records", "entity_supersessions",
+            "entity_lifecycle_events",
         } & tables)

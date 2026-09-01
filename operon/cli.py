@@ -15,7 +15,7 @@ from operon.backup import create_backup, verify_backup
 from operon.config import Project, load_project
 from operon.coverage import report_coverage
 from operon.database import Database
-from operon.entity_view import organism_graph
+from operon.entity_view import entity_graph
 from operon.errors import OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
@@ -41,7 +41,7 @@ from operon.table_import import (
     write_table_template,
 )
 from operon.utils import format_table, parse_key_values
-from operon.workflow import set_state
+from operon.workflow import flush_run_log, log_run, new_run_id, set_state
 
 MANUAL_METADATA_ENTITIES = ["organism", "sample", "run", "assembly", "annotation"]
 
@@ -77,6 +77,7 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="show entity states")
     p.add_argument("--entity-type")
     p.add_argument("--entity-id")
+    p.add_argument("--include-retired", action="store_true")
 
     p = sub.add_parser("schema", help="show schema path or dump it")
     p.add_argument("--dump", action="store_true")
@@ -325,14 +326,17 @@ def _parser() -> argparse.ArgumentParser:
     rp.add_argument("--entity-type")
     rp.add_argument("--entity-id")
     rp.add_argument("--export", action="store_true", help="write qc/aggregate TSV files")
+    rp.add_argument("--include-retired", action="store_true")
     rp = report_sub.add_parser("decisions", help="show current QC decisions")
     rp.add_argument("--profile")
+    rp.add_argument("--include-retired", action="store_true")
     rp = report_sub.add_parser("analysis", help="show synchronized analysis summaries or hits")
     rp.add_argument("--analysis")
     rp.add_argument("--entity-type")
     rp.add_argument("--entity-id")
     rp.add_argument("--hits", action="store_true", help="show top-hit rows instead of job summaries")
     rp.add_argument("--limit", type=int, default=20)
+    rp.add_argument("--include-retired", action="store_true")
     rp = report_sub.add_parser("coverage", help="measure NCBI family/genus coverage against a frozen reference set")
     rp.add_argument("--reference-set", required=True)
     scope = rp.add_mutually_exclusive_group()
@@ -340,13 +344,57 @@ def _parser() -> argparse.ArgumentParser:
     scope.add_argument("--release", help="restrict observations to one immutable release")
     rp = report_sub.add_parser("metadata", help="export a derived read-only metadata TSV snapshot")
     rp.add_argument("--output", help="output directory (default: reports/metadata)")
+    rp.add_argument("--include-retired", action="store_true")
 
     p = sub.add_parser("query", help="run arbitrary read-only SQL against the file database")
     p.add_argument("sql")
 
-    p = sub.add_parser("show", help="show an organism and all descendant samples, runs, assemblies, annotations and files")
+    p = sub.add_parser("show", help="show a matched entity lineage and its descendants")
     p.add_argument("identifier", help="internal ID, accession, or NAMESPACE:ACCESSION")
     p.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    p.add_argument(
+        "--scope", choices=["matched", "organism"], default="matched",
+        help="display only the matched lineage/subtree, or the complete organism graph",
+    )
+    p.add_argument(
+        "--include-superseded", action="store_true",
+        help="include logically superseded descendant entities and their files",
+    )
+    p.add_argument(
+        "--include-retired", action="store_true",
+        help="include logically retired descendants and their files",
+    )
+
+    p = sub.add_parser(
+        "retire", help="preview or apply an audited logical entity retirement",
+    )
+    p.add_argument("identifier", help="internal ID, accession, or NAMESPACE:ACCESSION")
+    p.add_argument(
+        "--reason-code", required=True,
+        choices=[
+            "accidental_import", "wrong_source", "duplicate", "withdrawn_upstream",
+            "policy_exclusion", "metadata_error", "other",
+        ],
+    )
+    p.add_argument("--reason", required=True)
+    p.add_argument("--evidence")
+    p.add_argument("--actor")
+    p.add_argument("--apply", action="store_true", help="append the RETIRE event")
+    p.add_argument("--yes", action="store_true", help="apply without interactive confirmation")
+
+    p = sub.add_parser(
+        "restore", help="preview or reverse a target's direct logical retirement",
+    )
+    p.add_argument("identifier", help="internal ID, accession, or NAMESPACE:ACCESSION")
+    p.add_argument("--reason", required=True)
+    p.add_argument("--evidence")
+    p.add_argument("--actor")
+    p.add_argument("--apply", action="store_true", help="append the RESTORE event")
+    p.add_argument("--yes", action="store_true", help="apply without interactive confirmation")
+
+    p = sub.add_parser("retired", help="list current logical retirements")
+    p.add_argument("--direct-only", action="store_true")
+    p.add_argument("--json", action="store_true")
 
     p = sub.add_parser("backup", help="create or verify a checksum-manifested project backup")
     backup_sub = p.add_subparsers(dest="backup_command", required=True)
@@ -370,6 +418,9 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
         args.command == "query"
+        or args.command == "show"
+        or args.command == "retired"
+        or (args.command in {"retire", "restore"} and not args.apply)
         or (args.command == "backup" and args.backup_command == "create")
         or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
         or (args.command == "ncbi-reconcile" and not args.apply)
@@ -403,6 +454,12 @@ def _cmd_init_demo(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace, db: Database) -> int:
     sql = "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state WHERE entity_type != 'database'"
     params: list[Any] = []
+    if not getattr(args, "include_retired", False):
+        sql += (
+            " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type=entity_state.entity_type "
+            "AND r.entity_id=entity_state.entity_id)"
+        )
     if args.entity_type:
         sql += " AND entity_type=?"
         params.append(args.entity_type)
@@ -469,20 +526,20 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 def _check_fks_for_row(db: Database, entity_type: str, row: dict[str, Any], require_target: bool) -> None:
     if entity_type == "sample" and row.get("organism_id"):
-        db.require_entity("organism", row["organism_id"])
+        db.require_active_entity("organism", row["organism_id"])
     elif entity_type == "run" and row.get("sample_id"):
-        db.require_entity("sample", row["sample_id"])
+        db.require_active_entity("sample", row["sample_id"])
     elif entity_type == "assembly" and row.get("sample_id"):
-        db.require_entity("sample", row["sample_id"])
+        db.require_active_entity("sample", row["sample_id"])
     elif entity_type == "annotation" and row.get("assembly_id"):
-        db.require_entity("assembly", row["assembly_id"])
+        db.require_active_entity("assembly", row["assembly_id"])
     for field in ("fasta_file_id", "gff_file_id", "cds_file_id", "protein_file_id"):
         if row.get(field) and db.conn.execute("SELECT 1 FROM files WHERE file_id=?", (row[field],)).fetchone() is None:
             raise ValidationError(f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: {field} {row[field]} does not exist")
 
 
 def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database) -> int:
-    db.require_entity(args.internal_type, args.internal_id)
+    db.require_active_entity(args.internal_type, args.internal_id)
     row = {
         "internal_type": args.internal_type,
         "internal_id": args.internal_id,
@@ -626,7 +683,7 @@ def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> 
         raise ValidationError(f"{args.tsv_file}: missing columns {missing}")
     count = 0
     for row in rows:
-        db.require_entity(row["entity_type"], row["entity_id"])
+        db.require_active_entity(row["entity_type"], row["entity_id"])
         file_id = (row.get("file_id") or "").strip() or None
         file_sha256 = (row.get("file_sha256") or "").strip() or None
         if file_id:
@@ -757,6 +814,11 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             JOIN analysis_jobs j ON j.job_id = h.job_id
             WHERE j.status='completed'
         """
+        if not getattr(args, "include_retired", False):
+            sql += (
+                " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
+                "WHERE er.entity_type=h.entity_type AND er.entity_id=h.entity_id)"
+            )
     else:
         sql = """
             SELECT r.entity_type, r.entity_id, r.analysis_name, r.metric_name,
@@ -765,6 +827,11 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             JOIN analysis_jobs j ON j.job_id = r.job_id
             WHERE j.status='completed'
         """
+        if not getattr(args, "include_retired", False):
+            sql += (
+                " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
+                "WHERE er.entity_type=r.entity_type AND er.entity_id=r.entity_id)"
+            )
     params: list[Any] = []
     if args.analysis:
         if args.hits:
@@ -926,15 +993,29 @@ def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) 
 
 
 def _cmd_qc_table(args: argparse.Namespace, project: Project, db: Database) -> int:
-    print(print_qc_table(db, args.entity_type, args.entity_id))
+    include_retired = getattr(args, "include_retired", False)
+    if include_retired:
+        table = print_qc_table(
+            db, args.entity_type, args.entity_id, include_retired=True,
+        )
+    else:
+        table = print_qc_table(db, args.entity_type, args.entity_id)
+    print(table)
     if args.export:
-        path = export_qc_tsv(db, project, args.entity_type)
+        path = (
+            export_qc_tsv(db, project, args.entity_type, include_retired=True)
+            if include_retired else export_qc_tsv(db, project, args.entity_type)
+        )
         print(f"wrote {path}")
     return 0
 
 
 def _cmd_decisions(args: argparse.Namespace, project: Project, db: Database) -> int:
-    print(print_decisions(db, args.profile))
+    if getattr(args, "include_retired", False):
+        output = print_decisions(db, args.profile, include_retired=True)
+    else:
+        output = print_decisions(db, args.profile)
+    print(output)
     return 0
 
 
@@ -996,7 +1077,11 @@ def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int
         print(f"report: {result['path']}")
         return int(result["exit_code"])
     if args.report_kind == "metadata":
-        path = export_metadata_report(db, project, args.output)
+        path = (
+            export_metadata_report(db, project, args.output, include_retired=True)
+            if getattr(args, "include_retired", False)
+            else export_metadata_report(db, project, args.output)
+        )
         print(f"wrote metadata report to {path}")
         return 0
     raise ValidationError(f"unknown report kind {args.report_kind!r}")
@@ -1065,13 +1150,20 @@ def _cmd_import(args: argparse.Namespace, project: Project, db: Database) -> int
 
 
 def _cmd_show(args: argparse.Namespace, db: Database) -> int:
-    graph = organism_graph(db, args.identifier)
+    graph = entity_graph(
+        db,
+        args.identifier,
+        scope=getattr(args, "scope", "matched"),
+        include_superseded=getattr(args, "include_superseded", False),
+        include_retired=getattr(args, "include_retired", False),
+    )
     if args.json:
         print(json.dumps(graph, ensure_ascii=False, indent=2))
         return 0
     organism = graph["organism"]
     print(f"Organism: {organism['organism_id']}  {organism['scientific_name']}")
     print(f"Matched:  {graph['matched']['entity_type']} {graph['matched']['entity_id']}")
+    print(f"Scope:    {graph['scope']}")
     accession_rows = [row for row in graph["accessions"] if row["internal_id"] == organism["organism_id"]]
     if accession_rows:
         print("Accessions: " + ", ".join(f"{row['namespace']}:{row['accession']}" for row in accession_rows))
@@ -1085,9 +1177,128 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
         ("Annotations", graph["annotations"], ["annotation_id", "assembly_id", "annotation_source", "annotation_version"]),
         ("Files", graph["files"], ["file_id", "entity_type", "entity_id", "file_role", "status", "relative_path"]),
     ]
+    if graph["supersessions"]:
+        sections.append(("Supersessions", graph["supersessions"], [
+            "object_type", "object_id", "superseded_by_type", "superseded_by_id",
+            "reason", "superseded_at",
+        ]))
+    if graph["retirements"]:
+        sections.append(("Retirements", graph["retirements"], [
+            "entity_type", "entity_id", "retired_by_type", "retired_by_id",
+            "reason_code", "reason", "actor", "retired_at",
+        ]))
     for title, rows, columns in sections:
         print(f"\n{title} ({len(rows)})")
         print(format_table(columns, ([row.get(column) for column in columns] for row in rows)) if rows else "(none)")
+    return 0
+
+
+def _cmd_lifecycle(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.lifecycle import apply_lifecycle_event, lifecycle_plan
+    from operon.utils import now_iso
+
+    action = "RETIRE" if args.command == "retire" else "RESTORE"
+    plan = lifecycle_plan(db, args.identifier, action=action)
+    if not args.apply:
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        return 0
+    if not plan["will_change"]:
+        if plan["blocker"]:
+            raise ValidationError(plan["blocker"])
+        print(json.dumps({**plan, "applied": False}, ensure_ascii=False, indent=2))
+        return 0
+    if not args.yes:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValidationError(
+                f"{args.command} --apply requires --yes outside an interactive terminal"
+            )
+        import questionary
+        target = plan["target"]
+        confirmed = questionary.confirm(
+            f"Apply {action} to {target['entity_type']} {target['entity_id']}? ",
+            default=False,
+        ).ask()
+        if not confirmed:
+            print(f"{args.command.capitalize()} cancelled; no rows were changed.")
+            return 0
+    actor = (args.actor or os.environ.get("USER") or "").strip()
+    if not actor:
+        raise ValidationError("--actor is required when USER is not set")
+    target = plan["target"]
+    run_id = new_run_id()
+    started_at = now_iso()
+    jsonl_buffer: list[dict[str, Any]] = []
+    with db.transaction():
+        result = apply_lifecycle_event(
+            db,
+            target["entity_type"],
+            target["entity_id"],
+            action=action,
+            reason=args.reason,
+            reason_code=getattr(args, "reason_code", None),
+            evidence=args.evidence,
+            actor=actor,
+            workflow_run_id=run_id,
+        )
+        log_run(
+            db,
+            project,
+            {
+                "run_id": run_id,
+                "entity_type": target["entity_type"],
+                "entity_id": target["entity_id"],
+                "step": f"lifecycle_{action.lower()}",
+                "status": "completed",
+                "started_at": started_at,
+                "finished_at": now_iso(),
+                "exit_code": 0,
+                "command": f"operon {args.command} {args.identifier}",
+                "tool": "operon",
+                "parameter_set": json.dumps({
+                    "reason_code": getattr(args, "reason_code", "manual_restore"),
+                    "reason": args.reason,
+                    "actor": actor,
+                }, ensure_ascii=False, sort_keys=True),
+                "execution_details": json.dumps({
+                    "entity_counts": plan["entity_counts"],
+                    "reference_counts": plan["reference_counts"],
+                    "physical_changes": plan["physical_changes"],
+                }, ensure_ascii=False, sort_keys=True),
+            },
+            jsonl_buffer=jsonl_buffer,
+        )
+    flush_run_log(project, jsonl_buffer)
+    refreshed = lifecycle_plan(db, args.identifier, action=action)
+    print(json.dumps({
+        "applied": True,
+        "action": action,
+        "target": target,
+        "event": result["event"],
+        "effectively_retired": db.is_entity_retired(
+            target["entity_type"], target["entity_id"]
+        ),
+        "plan": refreshed,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_retired(args: argparse.Namespace, db: Database) -> int:
+    from operon.lifecycle import list_retired_entities
+
+    rows = list_retired_entities(db, direct_only=args.direct_only)
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    elif not rows:
+        print("no retired entities")
+    else:
+        columns = [
+            "entity_type", "entity_id", "retired_by_type", "retired_by_id",
+            "reason_code", "reason", "actor", "retired_at",
+        ]
+        print(format_table(
+            columns,
+            ([row.get(column) for column in columns] for row in rows),
+        ))
     return 0
 
 
@@ -1116,6 +1327,7 @@ def _cmd_query(args: argparse.Namespace, db: Database) -> int:
 
 
 def _cmd_set_state(args: argparse.Namespace, db: Database) -> int:
+    db.require_active_entity(args.entity_type, args.entity_id)
     set_state(db, args.entity_type, args.entity_id, args.state, message=args.message, force=args.force,
               actor=os.environ.get("USER"))
     print(f"{args.entity_type} {args.entity_id} -> {args.state.upper()}")
@@ -1165,6 +1377,9 @@ def main(argv: list[str] | None = None) -> int:
                 "report": lambda: _cmd_report(args, project, db),
                 "query": lambda: _cmd_query(args, db),
                 "show": lambda: _cmd_show(args, db),
+                "retire": lambda: _cmd_lifecycle(args, project, db),
+                "restore": lambda: _cmd_lifecycle(args, project, db),
+                "retired": lambda: _cmd_retired(args, db),
                 "backup": lambda: _cmd_backup(args, project, db),
                 "set-state": lambda: _cmd_set_state(args, db),
             }

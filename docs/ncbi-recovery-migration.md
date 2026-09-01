@@ -1,6 +1,6 @@
 # NCBI adapter 恢复与迁移手册
 
-本文用于把长期运行的旧 `operon` 数据库迁移到 database schema 2.6、metadata schema 1.4，
+本文用于把长期运行的旧 `operon` 数据库迁移到 database schema 2.7、metadata schema 1.4，
 并修复旧 NCBI Datasets adapter 可能留下的 annotation 重复、GCA/GCF canonical 漂移和
 QC 状态降级。整个过程遵守以下边界：
 
@@ -24,8 +24,8 @@ QC 状态降级。整个过程遵守以下边界：
 ```bash
 OPERON_CODE=/path/to/Operon
 OPERON_PROJECT=/path/to/operon-project
-OPERON_BACKUP=/path/to/backups/operon-pre-2.6
-OPERON_STAGE=/path/to/staging/operon-2.6-rehearsal
+OPERON_BACKUP=/path/to/backups/operon-pre-2.7
+OPERON_STAGE=/path/to/staging/operon-2.7-rehearsal
 OPERON_ACTOR=database-maintainer
 
 cd "$OPERON_CODE"
@@ -90,10 +90,11 @@ cp -a "$OPERON_BACKUP" "$OPERON_STAGE"
 
 `migrate-result.json` 必须满足：
 
-- `schema_version` 为 `2.6`；
+- `schema_version` 为 `2.7`；
 - `integrity_check` 为 `ok`；
 - `foreign_key_violations` 为 `0`；
-- migration 账本包含 `2.6-recovery-and-ncbi-identities`。
+- migration 账本包含 `2.6-recovery-and-ncbi-identities` 与
+  `2.7-entity-lifecycle-retirement`（原库已处于 2.6 时只会新增后一项）。
 
 然后生成业务修复计划：
 
@@ -230,7 +231,7 @@ workflow ID：
 
 ## 9. 回退与恢复原则
 
-schema 2.6 迁移是纯加法，但 metadata schema 1.4 和补偿式修复仍应作为一个整体回退：
+schema 2.6/2.7 迁移都是纯加法，但 metadata schema 1.4 和补偿式修复仍应作为一个整体回退：
 
 1. 立即停止所有写进程；
 2. 不在原数据库上执行逆向 `DELETE`/`UPDATE`；当前版本没有自动反向修复命令；

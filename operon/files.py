@@ -290,7 +290,7 @@ def ingest_file(
     source = Path(source)
     if not source.exists() or not (source.is_file() or source.is_dir()):
         raise ValidationError(f"source artifact does not exist: {source}")
-    db.require_entity(entity_type, entity_id)
+    db.require_active_entity(entity_type, entity_id)
 
     fmt = fmt or detect_format(source, role)
     compression = compression or detect_compression(source)
@@ -647,6 +647,7 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
     if not row:
         raise EntityNotFoundError(f"file {file_id} does not exist")
     record = dict(row)
+    db.require_active_entity(record["entity_type"], record["entity_id"])
     source = project.root / record["relative_path"]
     if not source.exists():
         if record.get("status") == "REMOTE_ONLY":
@@ -699,7 +700,13 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
 
 
 def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> list[dict[str, Any]]:
-    rows = db.conn.execute("SELECT file_id FROM files WHERE status IN ('CHECKSUM_VERIFIED','STANDARDIZED') ORDER BY file_id").fetchall()
+    rows = db.conn.execute(
+        "SELECT file_id FROM files "
+        "WHERE status IN ('CHECKSUM_VERIFIED','STANDARDIZED') "
+        "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type=files.entity_type AND r.entity_id=files.entity_id) "
+        "ORDER BY file_id"
+    ).fetchall()
     results = []
     for row in rows:
         try:

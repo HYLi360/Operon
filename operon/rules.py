@@ -115,6 +115,7 @@ def _resolve_value_by(rule: dict[str, Any], observed: dict[str, Any]) -> tuple[d
 
 def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id: str,
                     profile_name: str | None = None) -> dict[str, Any]:
+    db.require_not_retired(entity_type, entity_id)
     profile_name = profile_name or project.config["qc"]["default_profile"]
     profile = load_profile(project.profiles_dir, profile_name, expected_kind="qc")
     profile_document = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -248,7 +249,11 @@ def evaluate_all(db: Database, project: Project, profile_name: str | None = None
     profile_name = profile_name or project.config["qc"]["default_profile"]
     profile = load_profile(project.profiles_dir, profile_name, expected_kind="qc")
     applies_to = set(profile.get("applies_to", ["assembly", "annotation", "run"]))
-    sql = "SELECT DISTINCT entity_type, entity_id FROM qc_results WHERE 1=1"
+    sql = (
+        "SELECT DISTINCT entity_type, entity_id FROM qc_results WHERE NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type=qc_results.entity_type AND r.entity_id=qc_results.entity_id)"
+    )
     params: list[Any] = []
     if entity_type:
         sql += " AND entity_type=?"
@@ -266,6 +271,7 @@ def evaluate_all(db: Database, project: Project, profile_name: str | None = None
 def curate_decision(db: Database, entity_type: str, entity_id: str, profile: str,
                     decision: str, reviewer: str, reason: str, evidence: str | None = None) -> None:
     """Record a human override as audited data, never as a silent edit."""
+    db.require_not_retired(entity_type, entity_id)
     row = db.conn.execute(
         "SELECT * FROM decisions WHERE entity_type=? AND entity_id=? AND profile=? "
         "ORDER BY decision_id DESC LIMIT 1",

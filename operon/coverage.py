@@ -111,7 +111,10 @@ def _load_reference_set(
 def _metadata_scope(db: Database) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     rows = [dict(row) for row in db.conn.execute(
         "SELECT organism_id, scientific_name, taxon_id, taxonomy_source "
-        "FROM organisms ORDER BY organism_id"
+        "FROM organisms o WHERE NOT EXISTS ("
+        "SELECT 1 FROM effective_retired_entities r "
+        "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
+        "ORDER BY organism_id"
     ).fetchall()]
     identity_rows = [
         [

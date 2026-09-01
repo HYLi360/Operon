@@ -76,7 +76,22 @@ def _organism_for(db: Database, entity_type: str, entity_id: str) -> str:
     return str(organism_id)
 
 
-def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
+def entity_graph(
+    db: Database,
+    identifier: str,
+    *,
+    scope: str = "matched",
+    include_superseded: bool = False,
+    include_retired: bool = False,
+) -> dict[str, Any]:
+    """Return an entity-centered graph, optionally expanded to the organism.
+
+    ``matched`` keeps only the lineage and descendants that belong to the
+    resolved entity.  ``organism`` preserves the original broad ``show``
+    behavior and returns every descendant of the owning organism.
+    """
+    if scope not in {"matched", "organism"}:
+        raise ValidationError(f"unknown entity graph scope {scope!r}")
     matched_type, matched_id = resolve_identifier(db, identifier)
     organism_id = _organism_for(db, matched_type, matched_id)
     organism_row = db.conn.execute(
@@ -110,6 +125,150 @@ def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
         ).fetchall()]
     else:
         annotations = []
+    if scope == "matched" and matched_type != "organism":
+        if matched_type == "sample":
+            selected_sample_ids = {matched_id}
+            selected_run_ids = {
+                row["run_id"] for row in runs if row["sample_id"] == matched_id
+            }
+            selected_assembly_ids = {
+                row["assembly_id"] for row in assemblies if row["sample_id"] == matched_id
+            }
+            selected_annotation_ids = {
+                row["annotation_id"] for row in annotations
+                if row["assembly_id"] in selected_assembly_ids
+            }
+        elif matched_type == "run":
+            matched_run = next(row for row in runs if row["run_id"] == matched_id)
+            selected_sample_ids = {matched_run["sample_id"]}
+            selected_run_ids = {matched_id}
+            selected_assembly_ids = set()
+            selected_annotation_ids = set()
+        elif matched_type == "assembly":
+            matched_assembly = next(
+                row for row in assemblies if row["assembly_id"] == matched_id
+            )
+            selected_sample_ids = {matched_assembly["sample_id"]}
+            selected_run_ids = set()
+            selected_assembly_ids = {matched_id}
+            selected_annotation_ids = {
+                row["annotation_id"] for row in annotations
+                if row["assembly_id"] == matched_id
+            }
+        else:  # annotation
+            matched_annotation = next(
+                row for row in annotations if row["annotation_id"] == matched_id
+            )
+            selected_assembly_ids = {matched_annotation["assembly_id"]}
+            parent_assembly = next(
+                row for row in assemblies
+                if row["assembly_id"] == matched_annotation["assembly_id"]
+            )
+            selected_sample_ids = {parent_assembly["sample_id"]}
+            selected_run_ids = set()
+            selected_annotation_ids = {matched_id}
+        samples = [row for row in samples if row["sample_id"] in selected_sample_ids]
+        runs = [row for row in runs if row["run_id"] in selected_run_ids]
+        assemblies = [
+            row for row in assemblies if row["assembly_id"] in selected_assembly_ids
+        ]
+        annotations = [
+            row for row in annotations if row["annotation_id"] in selected_annotation_ids
+        ]
+
+    candidate_pairs = [
+        ("organism", organism_id),
+        *(('sample', row["sample_id"]) for row in samples),
+        *(('run', row["run_id"]) for row in runs),
+        *(('assembly', row["assembly_id"]) for row in assemblies),
+        *(('annotation', row["annotation_id"]) for row in annotations),
+    ]
+    candidate_ids = [object_id for _object_type, object_id in candidate_pairs]
+    if candidate_ids:
+        placeholders = ", ".join("?" for _ in candidate_ids)
+        supersessions = [dict(row) for row in db.conn.execute(
+            f"SELECT * FROM entity_supersessions WHERE object_id IN ({placeholders}) "
+            "ORDER BY object_type, object_id",
+            candidate_ids,
+        ).fetchall()]
+    else:
+        supersessions = []
+    candidate_pair_set = set(candidate_pairs)
+    supersessions = [
+        row for row in supersessions
+        if (row["object_type"], row["object_id"]) in candidate_pair_set
+    ]
+    superseded_pairs = {
+        (row["object_type"], row["object_id"]) for row in supersessions
+    }
+    if not include_superseded:
+        def current(row: dict[str, Any], entity_type: str, id_column: str) -> bool:
+            pair = (entity_type, row[id_column])
+            return pair == (matched_type, matched_id) or pair not in superseded_pairs
+
+        samples = [row for row in samples if current(row, "sample", "sample_id")]
+        sample_ids = {row["sample_id"] for row in samples}
+        runs = [
+            row for row in runs
+            if row["sample_id"] in sample_ids and current(row, "run", "run_id")
+        ]
+        assemblies = [
+            row for row in assemblies
+            if row["sample_id"] in sample_ids
+            and current(row, "assembly", "assembly_id")
+        ]
+        assembly_ids = {row["assembly_id"] for row in assemblies}
+        annotations = [
+            row for row in annotations
+            if row["assembly_id"] in assembly_ids
+            and current(row, "annotation", "annotation_id")
+        ]
+
+    retirement_ids = [object_id for _object_type, object_id in candidate_pairs]
+    if retirement_ids and db.lifecycle_schema_available():
+        placeholders = ", ".join("?" for _ in retirement_ids)
+        retirements = [dict(row) for row in db.conn.execute(
+            f"SELECT * FROM effective_retired_entities "
+            f"WHERE entity_id IN ({placeholders}) "
+            "ORDER BY entity_type, entity_id, event_id",
+            retirement_ids,
+        ).fetchall()]
+    else:
+        retirements = []
+    candidate_pair_set = set(candidate_pairs)
+    retirements = [
+        row for row in retirements
+        if (row["entity_type"], row["entity_id"]) in candidate_pair_set
+    ]
+    retired_pairs = {
+        (row["entity_type"], row["entity_id"]) for row in retirements
+    }
+    matched_is_retired = (matched_type, matched_id) in retired_pairs
+    if not include_retired and not matched_is_retired:
+        samples = [
+            row for row in samples
+            if ("sample", row["sample_id"]) not in retired_pairs
+        ]
+        sample_ids = {row["sample_id"] for row in samples}
+        runs = [
+            row for row in runs
+            if row["sample_id"] in sample_ids
+            and ("run", row["run_id"]) not in retired_pairs
+        ]
+        assemblies = [
+            row for row in assemblies
+            if row["sample_id"] in sample_ids
+            and ("assembly", row["assembly_id"]) not in retired_pairs
+        ]
+        assembly_ids = {row["assembly_id"] for row in assemblies}
+        annotations = [
+            row for row in annotations
+            if row["assembly_id"] in assembly_ids
+            and ("annotation", row["annotation_id"]) not in retired_pairs
+        ]
+
+    sample_ids = [row["sample_id"] for row in samples]
+    assembly_ids = [row["assembly_id"] for row in assemblies]
     entity_ids = [organism_id, *sample_ids, *[row["run_id"] for row in runs], *assembly_ids,
                   *[row["annotation_id"] for row in annotations]]
     if entity_ids:
@@ -146,6 +305,9 @@ def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
         sources = []
     return {
         "query": identifier,
+        "scope": scope,
+        "include_superseded": include_superseded,
+        "include_retired": include_retired,
         "matched": {"entity_type": matched_type, "entity_id": matched_id},
         "organism": organism,
         "samples": samples,
@@ -156,4 +318,14 @@ def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
         "files": files,
         "sources": sources,
         "source_links": source_links,
+        "supersessions": supersessions,
+        "retirements": retirements,
     }
+
+
+def organism_graph(db: Database, identifier: str) -> dict[str, Any]:
+    """Return the complete owning-organism graph (legacy public API)."""
+    return entity_graph(
+        db, identifier, scope="organism", include_superseded=True,
+        include_retired=True,
+    )

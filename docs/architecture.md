@@ -1,6 +1,6 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.5.3，数据库内部 schema 版本 `2.6`，
+> 本文对应代码库当前状态：`operon` 0.5.3，数据库内部 schema 版本 `2.7`，
 > `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.4`。
 
 ## 1. 设计目标
@@ -29,6 +29,7 @@
 | 自动化状态机、失败显式、幂等续跑 | `entity_state` + 严格迁移 + 原子操作 |
 | provenance 机器可读 | `logs/workflow.jsonl` + `workflow_runs` 表 |
 | 人工修改可审计 | `changes` 表 + `curate` 命令 |
+| 误导入实体可逆退役 | append-only `RETIRE`/`RESTORE` 事件 + 层级有效状态视图；不删除归档 |
 | 数据集版本化发布 | `release` + checksums + exclusions + provenance |
 | 代码/配置/元数据/数据分离 | `operon/` 代码、`project.yaml`、`operon.sqlite`、`raw/` |
 
@@ -40,6 +41,7 @@
 ├────────────────────────────────────────────────────────────┤
 │ 业务层                                                       │
 │  files.py       不可变文件归档、校验、标准化                    │
+│  lifecycle.py   实体逻辑退役、恢复、影响预览与审计              │
 │  adapters/      外部数据库来源解析、下载、字段映射与归档编排       │
 │  qc/            流式 FASTA/FASTQ/GFF3/蛋白解析与指标计算        │
 │  rules.py       YAML profile 规则引擎与判定                    │
@@ -75,8 +77,9 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–2.6 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–2.7 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
+| `operon/lifecycle.py` | 退役/恢复计划、append-only 生命周期事件、层级传播与当前退役清单 |
 | `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |
 | `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
 | `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
@@ -230,6 +233,9 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `ncbi_assembly_records` | GCA/GCF 来源记录到稳定 `ASM_` 的映射、canonical 标记及来源文件指针 |
 | `ncbi_annotation_records` | 来源 accession/provider/version/date 规范化得到的 annotation 身份 |
 | `entity_supersessions` | 不删除旧行的逻辑替代关系及 repair provenance |
+| `entity_lifecycle_events` | 实体的 append-only `RETIRE`/`RESTORE` 历史、原因、证据、操作者、workflow 与反向事件指针 |
+| `current_entity_lifecycle` | 每个实体最新直接生命周期事件；只表达该实体自身，不传播祖先状态 |
+| `effective_retired_entities` | 当前有效退役集合；沿 organism → sample → run/assembly → annotation 传播，并保留根退役事件身份 |
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `local_file_verifications` | 最近一次完整本地 SHA-256 通过时的 stat 指纹；仅为可重建的 QC 加速缓存，不改变 manifest 文件身份 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
@@ -240,6 +246,28 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `taxonomy_reference_sets` | coverage profile 与 taxonomy 版本编译出的分母 TSV 身份和各 rank 行数 |
 | `coverage_reports` / `coverage_report_metrics` | 不可变输入身份对应的覆盖率报告历史与 family/genus 指标 |
 | `changes` | 人工修改审计日志 |
+
+### 5.6 实体退役与恢复：先隔离，再决定是否物理清除
+
+`retire` 是控制面状态变化，不是文件操作。它向 `entity_lifecycle_events` 追加一个直接
+`RETIRE` 事件，同时向 `changes` 追加审计行；不会删除数据库行、移动文件、修改 checksum、
+撤销既有 QC/analysis/workflow，也不会改写已经创建的 release。退役一个父实体会在
+`effective_retired_entities` 中使其所有权后代有效退役：organism 覆盖 sample、run、assembly
+和 annotation，sample 覆盖自己的 run、assembly 和 annotation，assembly 覆盖 annotation。
+
+`restore` 只反转目标自身最近的直接 `RETIRE`，并追加一个指回原事件/原审计行的
+`RESTORE`，不删除历史。由祖先继承退役的子实体不能单独恢复，必须先恢复造成隔离的根；
+反之，子实体若另有自己的直接退役，即使父实体恢复也仍保持退役。这使逆过程与原过程严格
+对应，不会把独立的人工决定一起抹掉。
+
+活动数据消费者默认排除有效退役实体，包括 `show` 的后代计数、status/report、批量 QC、
+规则判定、外部分析候选、metadata coverage、NCBI 重导入复用和新 release。显式查询历史时
+可用对应的 `--include-retired`；`retired` 列出当前直接及继承状态。备份、校验、远程驻留、
+只读 SQL、已有 release 和审计历史仍保留完整归档视角。
+
+当前架构没有 `purge`。退役计划会列出后代、文件及 QC/decision/analysis/workflow/source/
+remote/release 引用，并明确 `physical_changes` 全为零。未来若增加物理清除，必须以这份可审计
+状态和引用图为前置条件，另行定义保留期、release/远端引用保护、可恢复窗口和不可逆确认。
 
 ## 6. 元数据流
 
