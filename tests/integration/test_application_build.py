@@ -89,6 +89,11 @@ def test_pyproject_is_the_single_application_version_source():
     )
 
 
+def test_freeze_includes_importlib_metadata_email_dependency():
+    cxfreeze = application_build._load_pyproject()["tool"]["cxfreeze"]
+    assert "email" in cxfreeze["build_exe"]["packages"]
+
+
 def test_python_310_tomli_is_an_explicit_build_dependency():
     project = application_build._load_pyproject()["project"]
     for extra in ("build", "dev"):

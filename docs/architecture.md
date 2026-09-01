@@ -695,6 +695,11 @@ build/release/v0.5.4/
 控制，包含 Python/Cython 源码、构建脚本、测试、文档和许可证，排除 `.so`、`.pyd`、
 生成的 C 文件、缓存以及本地运行数据。
 
+运行时版本读取依赖 `importlib.metadata`，后者会通过标准库 `email` 解析分发元数据。
+cx_Freeze 的静态分析不能稳定发现这一间接导入，因此 `[tool.cxfreeze.build_exe].packages`
+显式包含整个 `email` 包；不要将其视为未使用模块删除，否则冻结程序可能在启动阶段因
+缺少 `email.header` 而退出。
+
 应用发布目录与 `operon release` 生成的数据集快照是两个不同概念：前者交付程序，
 后者交付经过筛选并可校验的数据。
 
