@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -30,8 +31,12 @@ def project_db(tmp_path: Path):
 @pytest.mark.parametrize(
     ("operator", "observed", "expected", "result"),
     [
-        (">=", 2, 1, True), ("<=", 1, 1, True), (">", 2, 1, True),
-        ("<", 1, 2, True), ("==", 1, 1, True), ("!=", 1, 2, True),
+        (">=", 2, 1, True), (">=", 1, 2, False),
+        ("<=", 1, 1, True), ("<=", 2, 1, False),
+        (">", 2, 1, True), (">", 1, 1, False),
+        ("<", 1, 2, True), ("<", 2, 2, False),
+        ("==", 1, 1, True), ("==", 1, 2, False),
+        ("!=", 1, 2, True), ("!=", 1, 1, False),
     ],
 )
 def test_compare_operators(operator, observed, expected, result):
@@ -138,6 +143,52 @@ def test_evaluate_entity_covers_missing_fail_warning_and_source_snapshots(projec
         ("organism", "ORG_000001", "unknown_ignore"),
     )[0]["observed"]
     assert "_rule_sources" in observed
+
+
+def test_warning_rule_with_unknown_selector_emits_warning_detail(project_db):
+    project, db = project_db
+    db.insert_qc_result({
+        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
+        "metric_name": "lineage", "metric_value": "unknown", "metric_numeric": None,
+        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+    })
+    db.insert_qc_result({
+        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
+        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
+        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+    })
+    _write_profile(project, "warn_unknown", {
+        "kind": "qc", "version": 1, "applies_to": ["organism"],
+        "warnings": [{
+            "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
+            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "warning"},
+            "unknown_code": "LINEAGE_UNKNOWN",
+        }],
+    })
+    result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "warn_unknown")
+    assert result["decision"] == "PASS_WITH_WARNINGS"
+    assert json.loads(result["reason_codes"]) == ["LINEAGE_UNKNOWN"]
+    assert result["details"] == [{
+        "metric": "score", "rule": "value < threshold selected by lineage",
+        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
+        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_UNKNOWN",
+        "kind": "value_by_unknown_warning",
+    }]
+
+
+def test_evaluate_all_skips_entities_outside_profile_applies_to(project_db):
+    project, db = project_db
+    db.insert_qc_result({
+        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
+        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
+        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+    })
+    _write_profile(project, "assemblies_only", {
+        "kind": "qc", "version": 1, "applies_to": ["assembly"],
+        "required": [{"metric": "score", "operator": ">=", "value": 1}],
+    })
+    assert rules.evaluate_all(db, project, "assemblies_only") == []
+    assert db.query("SELECT COUNT(*) FROM decisions")[0][0] == 0
 
 
 def test_evaluate_all_filter_and_curate_missing(project_db):

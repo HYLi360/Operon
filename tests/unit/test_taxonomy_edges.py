@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import tarfile
 import zipfile
 from pathlib import Path
@@ -15,7 +16,8 @@ from operon import taxonomy
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import ValidationError
+from operon.errors import ConflictError, ValidationError
+from operon.utils import sha256_file
 
 
 @pytest.fixture
@@ -346,3 +348,216 @@ def test_taxdump_rejects_alias_target_missing_from_nodes(project_db, tmp_path):
     })
     with pytest.raises(ValidationError, match="alias TaxID 99"):
         taxonomy.import_ncbi_taxonomy(db, project, package, "alias-1")
+
+
+def _legacy_schema_document() -> dict:
+    """Minimal metadata schema 1.2 document from before taxonomy snapshots existed."""
+    return {
+        "schema_version": "1.2",
+        "tables": {"files": {"fields": {
+            "entity_type": {"allowed": ["organism", "sample", "run", "assembly", "annotation"]},
+            "entity_id": {"pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$"},
+            "file_role": {"allowed": ["genome_fasta", "other"]},
+        }}},
+    }
+
+
+def _upgrade_legacy_schema(project, document: dict | None = None) -> str:
+    project.schema_path.write_text(
+        yaml.safe_dump(document or _legacy_schema_document()), encoding="utf-8"
+    )
+    taxonomy._ensure_taxonomy_metadata_schema(project)
+    return project.schema_path.read_text(encoding="utf-8")
+
+
+def _upgraded_file_fields(text: str) -> dict:
+    return yaml.safe_load(text)["tables"]["files"]["fields"]
+
+
+def test_schema_upgrade_allows_taxonomy_snapshot_entity_type(project_db):
+    project, _db = project_db
+    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
+    assert "taxonomy_snapshot" in fields["entity_type"]["allowed"]
+
+
+def test_schema_upgrade_extends_entity_id_pattern_to_taxonomy_ids(project_db):
+    project, _db = project_db
+    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
+    assert fields["entity_id"]["pattern"] == r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$"
+
+
+def test_schema_upgrade_inserts_taxonomy_package_role_before_other(project_db):
+    project, _db = project_db
+    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
+    assert fields["file_role"]["allowed"] == ["genome_fasta", "taxonomy_package", "other"]
+
+
+def test_schema_upgrade_bumps_legacy_version_to_1_3(project_db):
+    project, _db = project_db
+    document = yaml.safe_load(_upgrade_legacy_schema(project))
+    assert document["schema_version"] == "1.3"
+
+
+def test_schema_upgrade_writes_extended_schema_back_to_disk(project_db):
+    project, _db = project_db
+    legacy_text = yaml.safe_dump(_legacy_schema_document())
+    upgraded = _upgrade_legacy_schema(project)
+    assert upgraded != legacy_text
+    assert upgraded.startswith(
+        "# Operon metadata schema (YAML). Extended for NCBI Taxonomy snapshots.\n"
+    )
+
+
+def test_schema_upgrade_wraps_custom_entity_id_pattern_in_alternation(project_db):
+    project, _db = project_db
+    document = _legacy_schema_document()
+    document["tables"]["files"]["fields"]["entity_id"]["pattern"] = r"^X_\d+$"
+    fields = _upgraded_file_fields(_upgrade_legacy_schema(project, document))
+    pattern = fields["entity_id"]["pattern"]
+    assert re.fullmatch(pattern, "X_1")
+    assert re.fullmatch(pattern, "TAX_000001")
+
+
+def test_schema_upgrade_leaves_upgraded_schema_file_untouched(project_db):
+    project, _db = project_db
+    _upgrade_legacy_schema(project)
+    upgraded_once = project.schema_path.read_bytes()
+    taxonomy._ensure_taxonomy_metadata_schema(project)
+    assert project.schema_path.read_bytes() == upgraded_once
+
+
+def _minimal_taxonomy_jsonl(path: Path) -> Path:
+    records = [
+        {"taxId": 1, "rank": "no rank", "taxName": "root"},
+        {"taxId": 10, "parents": [1], "rank": "family", "taxName": "Fam"},
+        {"taxId": 11, "parents": [10], "rank": "genus", "taxName": "Gen"},
+    ]
+    path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    return path
+
+
+def test_reused_snapshot_rejects_missing_manifest_row(project_db, tmp_path):
+    project, db = project_db
+    source = _minimal_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
+    result = taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-1")
+    db.conn.execute("PRAGMA foreign_keys=OFF")
+    db.conn.execute("DELETE FROM files WHERE file_id=?", (result["source_file_id"],))
+    with pytest.raises(ConflictError, match="has no source manifest row"):
+        taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-1")
+
+
+def test_reused_snapshot_rejects_modified_archived_bytes(project_db, tmp_path):
+    project, db = project_db
+    source = _minimal_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
+    result = taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-2")
+    archived = Path(result["path"])
+    archived.write_bytes(archived.read_bytes() + b"tampered")
+    with pytest.raises(ConflictError, match="archived taxonomy source is missing or has changed"):
+        taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-2")
+
+
+def test_import_rejects_preserved_source_with_different_bytes(project_db, tmp_path):
+    project, db = project_db
+    source = _minimal_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
+    target = project.raw_root / "metadata" / "ncbi_taxonomy" / f"{sha256_file(source)}.jsonl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("different bytes", encoding="utf-8")
+    with pytest.raises(ConflictError, match="preserved taxonomy source conflicts"):
+        taxonomy.import_ncbi_taxonomy(db, project, source, "conflict-1")
+    assert db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"] == 0
+
+
+def test_compile_rejects_existing_target_with_different_bytes(project_db, tmp_path):
+    project, db = project_db
+    source = _minimal_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
+    taxonomy.import_ncbi_taxonomy(db, project, source, "compile-1")
+    profile = {
+        "kind": "taxonomy_coverage",
+        "version": 1,
+        "name": "plants",
+        "taxonomy": {"source": "NCBI"},
+        "scope": {"root_taxids": [1]},
+        "targets": {"ranks": ["family", "genus"]},
+        "thresholds": {
+            "family": {"min_coverage_percent": 50},
+            "genus": {"min_coverage_percent": 60},
+        },
+    }
+    (project.profiles_dir / "plants.yaml").write_text(
+        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+    )
+    target = project.taxonomy_reference_sets_dir / "plants@compile-1.tsv"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("stale bytes\n", encoding="utf-8")
+    with pytest.raises(ConflictError, match="already exists with different bytes"):
+        taxonomy.compile_reference_set(db, project, "plants", "compile-1")
+    assert db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"] == 0
+
+
+def test_taxdump_import_flushes_batches_larger_than_5000_rows(project_db, tmp_path):
+    project, db = project_db
+    node_count = 5002
+    package = tmp_path / "big-taxdump.tar.gz"
+    _tar(package, {
+        "nodes.dmp": "1 | 1 | no rank |\n" + "".join(
+            f"{taxid} | 1 | genus |\n" for taxid in range(2, node_count + 1)
+        ),
+        "names.dmp": "".join(
+            f"{taxid} | Name {taxid} | | scientific name |\n"
+            for taxid in range(1, node_count + 1)
+        ),
+        "merged.dmp": "".join(
+            f"{100000 + index} | {1 + index % node_count} |\n" for index in range(5001)
+        ),
+        "delnodes.dmp": "".join(f"{200000 + index} |\n" for index in range(5001)),
+    })
+    result = taxonomy.import_ncbi_taxonomy(db, project, package, "big-dump")
+    assert result["node_count"] == node_count
+    snapshot_id = result["taxonomy_snapshot_id"]
+    assert db.query(
+        "SELECT COUNT(*) AS n FROM taxonomy_nodes WHERE taxonomy_snapshot_id=?",
+        (snapshot_id,),
+    )[0]["n"] == node_count
+    alias_counts = {
+        row["status"]: row["n"]
+        for row in db.query(
+            "SELECT status, COUNT(*) AS n FROM taxonomy_aliases "
+            "WHERE taxonomy_snapshot_id=? GROUP BY status",
+            (snapshot_id,),
+        )
+    }
+    assert alias_counts == {"merged": 5001, "deleted": 5001}
+    # Rows past the first 5000-row flush must be imported too.
+    assert db.query(
+        "SELECT parent_taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid=?",
+        (snapshot_id, node_count),
+    )[0]["parent_taxid"] == 1
+
+
+def test_jsonl_import_flushes_node_and_alias_batches_over_5000_records(project_db, tmp_path):
+    project, db = project_db
+    record_count = 5002
+    records = [{"taxId": 1, "rank": "no rank", "taxName": "root"}]
+    records += [
+        {
+            "taxId": taxid,
+            "parents": [1],
+            "rank": "genus",
+            "taxName": f"Genus {taxid}",
+            "secondaryTaxIds": [900000 + taxid],
+        }
+        for taxid in range(2, record_count + 1)
+    ]
+    source = tmp_path / "big-taxonomy.jsonl"
+    source.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    result = taxonomy.import_ncbi_taxonomy(db, project, source, "big-jsonl")
+    assert result["node_count"] == record_count
+    snapshot_id = result["taxonomy_snapshot_id"]
+    assert db.query(
+        "SELECT COUNT(*) AS n FROM taxonomy_aliases WHERE taxonomy_snapshot_id=?",
+        (snapshot_id,),
+    )[0]["n"] == record_count - 1

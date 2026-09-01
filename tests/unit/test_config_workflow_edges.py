@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -76,6 +78,35 @@ def test_external_command_result_failures_are_recorded(project_db, exit_code, er
 
     with pytest.raises(RuntimeError, match=expected):
         workflow.run_external_command(db, project, ["fake"], step="edge", executor=Executor())
+
+
+@pytest.mark.parametrize(
+    ("exc", "timeout", "expected_error"),
+    [
+        (subprocess.TimeoutExpired(["fake"], 5), 5, "timeout after 5s"),
+        (OSError("no such device"), None, "no such device"),
+        (ValueError("bad response"), None, "ValueError: bad response"),
+    ],
+)
+def test_external_command_executor_exceptions_are_recorded_then_raised(
+    project_db, exc, timeout, expected_error,
+):
+    project, db = project_db
+
+    class Executor:
+        def describe(self):
+            return "fake"
+
+        def run(self, *_a, **_k):
+            raise exc
+
+    with pytest.raises(RuntimeError, match=re.escape(f"edge failed: {expected_error}")):
+        workflow.run_external_command(
+            db, project, ["fake"], step="edge", timeout=timeout, executor=Executor(),
+        )
+    row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
+    assert row["status"] == "failed"
+    assert row["error"] == expected_error
 
 
 def test_owned_executor_is_closed(project_db, monkeypatch):

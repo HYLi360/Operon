@@ -234,7 +234,7 @@ def test_warning_relationships_and_link_synchronization(project_db):
     assert linked["annotation"]["row"]["assembly_id"] == "ASM_NEW"
 
 
-def test_preflight_rejects_missing_source_target_conflicts_and_wrong_bytes(
+def test_preflight_rejects_missing_source_existing_id_and_missing_target(
     project_db, tmp_path
 ):
     project, db = project_db
@@ -268,7 +268,36 @@ def test_preflight_rejects_missing_source_target_conflicts_and_wrong_bytes(
         wizard._preflight(db, project, base)
 
 
-def test_wizard_execute_warning_decline_then_commit(project_db, monkeypatch):
+def test_preflight_rejects_same_role_different_bytes(project_db, tmp_path):
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "One"})
+    db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
+    db.insert_row("files", {
+        "file_id": "FIL_000001", "entity_type": "assembly", "entity_id": "ASM_000001",
+        "file_role": "genome_fasta", "format": "fasta", "compression": "none",
+        "relative_path": "raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta",
+        "size_bytes": 3, "sha256": "0" * 64, "status": "CHECKSUM_VERIFIED",
+    })
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    draft = {
+        "source": {"source_type": "insdc", "database_name": "NCBI", "provider": "NCBI"},
+        "organism": {"action": "reuse", "id": "ORG_000001"},
+        "sample": {"action": "reuse", "id": "SMP_000001"},
+        "run": None,
+        "assembly": {"action": "reuse", "id": "ASM_000001"},
+        "annotation": None,
+        "files": [{
+            "label": "Genome FASTA", "entity_type": "assembly", "role": "genome_fasta",
+            "path": str(source),
+        }],
+    }
+    with pytest.raises(ConflictError, match="already has different bytes"):
+        wizard._preflight(db, project, draft)
+
+
+def test_wizard_declined_warnings_reask_before_commit(project_db, monkeypatch):
     project, db = project_db
 
     class TTY:
@@ -286,7 +315,8 @@ def test_wizard_execute_warning_decline_then_commit(project_db, monkeypatch):
     monkeypatch.setattr(wizard, "_summary", lambda *_a: "summary")
     monkeypatch.setattr(wizard, "_preflight", lambda *_a: [])
     monkeypatch.setattr(wizard, "_warnings", lambda *_a: ["warning"])
-    monkeypatch.setattr(wizard, "_commit", lambda *_a: {"ok": True})
+    commits = []
+    monkeypatch.setattr(wizard, "_commit", lambda *_a: commits.append(1) or {"ok": True})
     for name in ("_ask_source", "_ask_organism", "_ask_sample", "_ask_sequencing",
                  "_ask_assembly", "_ask_annotation", "_ask_files"):
         monkeypatch.setattr(wizard, name, lambda *_a: None)
@@ -295,6 +325,8 @@ def test_wizard_execute_warning_decline_then_commit(project_db, monkeypatch):
     monkeypatch.setattr(wizard, "_select", lambda *_a, **_k: next(actions))
     monkeypatch.setattr(wizard, "_confirm", lambda *_a, **_k: next(confirms))
     assert wizard.run_dataset_wizard(db, project) == {"ok": True}
+    # The declined first pass must loop back to the action prompt, not commit.
+    assert commits == [1]
 
 
 def test_wizard_rejects_non_terminal(project_db, monkeypatch):

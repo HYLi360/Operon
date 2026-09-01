@@ -266,7 +266,7 @@ class TestExecutionConfig(PytestAssertions):
                             extra_sbatch=["--gres=gpu:1"], setup_commands=["module load blast/2.15"])
         script = render_slurm_script(
             job_name="operon_WF_1", command_line="blastn -query /p/in.fa -out /p/out.tsv",
-            cwd="/p", stdout_path="/p/logs/WF_1.stdout.log", stderr_path="/p/logs/WF_1.stderr.log",
+            cwd="/work dir", stdout_path="/p/logs/WF_1.stdout.log", stderr_path="/p/logs/WF_1.stderr.log",
             exitcode_path="/p/logs/WF_1.exitcode", threads=8, slurm=slurm,
         )
         self.assertIn("#SBATCH --job-name=operon_WF_1", script)
@@ -278,6 +278,7 @@ class TestExecutionConfig(PytestAssertions):
         self.assertIn("#SBATCH --mem=16G", script)
         self.assertIn("#SBATCH --gres=gpu:1", script)
         self.assertIn("module load blast/2.15", script)
+        self.assertIn("cd '/work dir'", script)
         self.assertIn("blastn -query /p/in.fa -out /p/out.tsv", script)
         self.assertIn("echo $rc > /p/logs/WF_1.exitcode", script)
         self.assertTrue(script.endswith("exit $rc\n"))
@@ -303,12 +304,17 @@ class TestExecutionConfig(PytestAssertions):
         self.assertEqual(
             rewrite_remote_path("/etc/other", root, "/remote/proj"), "/etc/other",
         )
+        self.assertEqual(rewrite_remote_path("--flag", root, "/remote/proj"), "--flag")
         self.assertEqual(
             rewrite_remote_path(str(root / "raw/x.fa"), root, ""), str(root / "raw/x.fa"),
         )
         self.assertEqual(rewrite_remote_path(str(root / "raw/x.fa"), root, "/"), "/raw/x.fa")
         with self.assertRaisesRegex(ValidationError, "escapes the project root"):
             rewrite_remote_path(str(root / ".." / "escape.fa"), root, "/remote/proj")
+        link = root / "link"
+        link.symlink_to(root.parent)
+        with self.assertRaisesRegex(ValidationError, "escapes the project root"):
+            rewrite_remote_path(str(link / "x"), root, "/remote/proj")
 
     def test_run_external_command_local_default_unchanged(self):
         output = self.root / "out.txt"

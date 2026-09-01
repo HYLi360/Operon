@@ -161,18 +161,29 @@ def test_pairing_metric_all_early_returns_cache_and_mismatch(tmp_path, monkeypat
     assert metric["metric_numeric"] == 1 and cache[("R2", "b")] == 1
 
 
-def test_qc_missing_file_and_qc_all_filters(tmp_path, monkeypatch):
+def test_qc_missing_file_and_qc_all_forwards_force_checksum(tmp_path, monkeypatch):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
     project = load_project(tmp_path)
     db = Database(project.db_path)
     try:
         with pytest.raises(FileNotFoundError, match="not found in manifest"):
             qc.qc_file(db, project, "FIL_999999")
+        db.insert_row("organisms", {"organism_id": "ORG_1", "scientific_name": "Example"})
+        db.insert_row("files", {
+            "file_id": "FIL_1", "entity_type": "organism", "entity_id": "ORG_1",
+            "file_role": "other", "format": "other", "compression": "none",
+            "relative_path": "x.bin", "size_bytes": 1, "sha256": "a" * 64,
+            "status": "CHECKSUM_VERIFIED",
+        })
         calls = []
         monkeypatch.setattr(qc, "qc_file", lambda *_a, **kwargs: calls.append(kwargs) or {"ok": True})
-        assert qc.qc_all(
-            db, project, entity_type="assembly", entity_id="ASM_1", file_id="FIL_1",
+        assert qc.qc_all(db, project, entity_type="assembly") == []
+        assert calls == []
+        results = qc.qc_all(
+            db, project, entity_type="organism", entity_id="ORG_1", file_id="FIL_1",
             force_checksum=True,
-        ) == []
+        )
+        assert results == [{"ok": True}]
+        assert len(calls) == 1 and calls[0]["force_checksum"] is True
     finally:
         db.close()

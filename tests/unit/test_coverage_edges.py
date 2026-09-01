@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
-from operon import coverage
+from operon import coverage, taxonomy
+from operon.cli import main
+from operon.config import load_project
+from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.schema import write_tsv
 from operon.taxonomy import canonical_document
@@ -312,3 +317,110 @@ def test_release_scope_rejects_unsupported_and_untraceable_members(tmp_path):
     _root, _release, project, db = _release_fixture(tmp2, [untraceable])
     with pytest.raises(ValidationError, match="cannot be traced"):
         coverage._release_scope(db, project, "v1")
+
+
+@pytest.fixture
+def project_db(tmp_path: Path):
+    assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
+    project = load_project(tmp_path)
+    db = Database(project.db_path)
+    try:
+        yield project, db
+    finally:
+        db.close()
+
+
+def test_resolve_taxids_classifies_exact_alias_deleted_and_unknown(project_db):
+    _project, db = project_db
+    db.conn.execute("PRAGMA foreign_keys=OFF")
+    db.conn.execute(
+        "INSERT INTO taxonomy_snapshots(taxonomy_snapshot_id, source, taxonomy_version, "
+        "source_file_id, source_sha256, source_size_bytes, node_count, status, imported_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?)",
+        ("TAX_000001", "NCBI", "v", "F", "sha", 1, 2, "READY", "now"),
+    )
+    db.conn.executemany(
+        "INSERT INTO taxonomy_nodes(taxonomy_snapshot_id,taxid,parent_taxid,rank,scientific_name,is_extinct) "
+        "VALUES(?,?,?,?,?,?)",
+        [
+            ("TAX_000001", 1, 1, "no_rank", "root", 0),
+            ("TAX_000001", 5, 1, "genus", "Gen", 0),
+        ],
+    )
+    db.conn.executemany(
+        "INSERT INTO taxonomy_aliases(taxonomy_snapshot_id,alias_taxid,current_taxid,status) "
+        "VALUES(?,?,?,?)",
+        [
+            ("TAX_000001", 7, 5, "merged"),
+            ("TAX_000001", 8, None, "deleted"),
+        ],
+    )
+    assert coverage._resolve_taxids(db, "TAX_000001", [1, 7, 8, 42]) == {
+        1: (1, "EXACT"),
+        7: (5, "MAPPED_ALIAS"),
+        8: (None, "DELETED_TAXID"),
+        42: (None, "UNKNOWN_TAXID"),
+    }
+
+
+def _metadata_coverage_report(project, db, tmp_path: Path) -> dict:
+    """Import a minimal taxonomy, compile a zero-threshold reference set, report once."""
+    source = tmp_path / "taxonomy.jsonl"
+    records = [
+        {"taxId": 1, "rank": "no rank", "taxName": "root"},
+        {"taxId": 10, "parents": [1], "rank": "family", "taxName": "Fam"},
+        {"taxId": 20, "parents": [10], "rank": "genus", "taxName": "Gen"},
+    ]
+    source.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    taxonomy.import_ncbi_taxonomy(db, project, source, "cov.1")
+    profile = {
+        "kind": "taxonomy_coverage",
+        "version": 1,
+        "name": "cov",
+        "taxonomy": {"source": "NCBI"},
+        "scope": {"root_taxids": [1]},
+        "targets": {"ranks": ["family", "genus"]},
+        "thresholds": {
+            "family": {"min_coverage_percent": 0},
+            "genus": {"min_coverage_percent": 0},
+        },
+    }
+    (project.profiles_dir / "cov.yaml").write_text(
+        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+    )
+    reference = taxonomy.compile_reference_set(db, project, "cov", "cov.1")
+    return coverage.report_coverage(db, project, reference["reference_set_id"])
+
+
+def test_cached_report_rejects_modified_result_bytes(project_db, tmp_path):
+    project, db = project_db
+    report = _metadata_coverage_report(project, db, tmp_path)
+    summary = Path(report["path"]) / "coverage_summary.tsv"
+    summary.write_bytes(summary.read_bytes() + b"tampered\n")
+    with pytest.raises(ConflictError, match="cached coverage report has changed"):
+        coverage.report_coverage(db, project, report["reference_set_id"])
+
+
+def test_cached_report_rejects_modified_provenance(project_db, tmp_path):
+    project, db = project_db
+    report = _metadata_coverage_report(project, db, tmp_path)
+    provenance_path = Path(report["path"]) / "provenance.json"
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    provenance["decision"] = "FAIL"
+    provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+    with pytest.raises(ConflictError, match="cached coverage report has changed"):
+        coverage.report_coverage(db, project, report["reference_set_id"])
+
+
+def test_report_rejects_leftover_directory_without_matching_history(project_db, tmp_path):
+    project, db = project_db
+    report = _metadata_coverage_report(project, db, tmp_path)
+    db.conn.execute("PRAGMA foreign_keys=OFF")
+    db.conn.execute("DELETE FROM coverage_report_metrics")
+    db.conn.execute("DELETE FROM coverage_reports")
+    with pytest.raises(ConflictError, match="already exists without matching history"):
+        coverage.report_coverage(db, project, report["reference_set_id"])
+    assert db.query("SELECT COUNT(*) AS n FROM coverage_reports")[0]["n"] == 0
+    assert Path(report["path"]).is_dir()

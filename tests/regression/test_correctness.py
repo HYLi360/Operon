@@ -235,6 +235,17 @@ class TestCorrectnessRegressions(PytestAssertions):
         self.assertIsNone(decisions[1]["curated_decision"])
         self.assertEqual(decisions[2]["curated_decision"], "PASS")
         self.assertEqual(db.effective_decision("assembly", "ASM_000001", "assembly_production_v1"), "PASS")
+        audit = db.query(
+            "SELECT object_id, field, old_value, new_value, reason, actor FROM changes "
+            "WHERE object_type='decision'"
+        )
+        self.assertEqual(len(audit), 1)
+        self.assertEqual(audit[0]["object_id"], "assembly:ASM_000001:assembly_production_v1")
+        self.assertEqual(audit[0]["field"], "curated_decision")
+        self.assertEqual(audit[0]["old_value"], "FAIL")
+        self.assertEqual(audit[0]["new_value"], "PASS")
+        self.assertEqual(audit[0]["reason"], "validated independently")
+        self.assertEqual(audit[0]["actor"], "reviewer")
 
     def test_v1_qc_and_decisions_migrate_without_data_loss(self):
         legacy_path = self.root / "legacy.sqlite"

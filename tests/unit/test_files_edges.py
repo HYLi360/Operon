@@ -12,6 +12,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
+from operon.remotes import placeholder_path
 from operon.utils import sha256_file, sha256_path
 
 
@@ -312,3 +313,101 @@ def test_standardize_missing_nonremote_target_conflict_and_postcopy_cleanup(proj
     with pytest.raises(ChecksumError, match="standardized target checksum mismatch"):
         files.standardize_file(db, project, row["file_id"])
     assert not target.exists()
+
+
+def test_verify_files_confirms_bytes_and_clears_placeholder(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    db.conn.execute(
+        "UPDATE files SET status='CHECKSUM_FAILED' WHERE file_id=?", (row["file_id"],)
+    )
+    db.conn.commit()
+    pointer = placeholder_path(project, row["file_id"])
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text("{}", encoding="utf-8")
+
+    (result,) = files.verify_files(db, project, [row["file_id"]])
+    assert result["status"] == "CHECKSUM_VERIFIED"
+    assert result["current_sha256"] == row["sha256"]
+    assert not pointer.exists()
+    stored = db.conn.execute(
+        "SELECT status FROM files WHERE file_id=?", (row["file_id"],)
+    ).fetchone()
+    assert stored["status"] == "CHECKSUM_VERIFIED"
+    audit = db.query(
+        "SELECT old_value, new_value, actor FROM changes "
+        "WHERE object_type='files' AND object_id=? AND field='status'",
+        (row["file_id"],),
+    )
+    assert [(row["old_value"], row["new_value"], row["actor"]) for row in audit] == [
+        ("CHECKSUM_FAILED", "CHECKSUM_VERIFIED", "operon verify")
+    ]
+
+
+def test_verify_files_does_not_demote_standardized(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    files.standardize_file(db, project, row["file_id"])
+
+    (result,) = files.verify_files(db, project, [row["file_id"]])
+    assert result["status"] == "CHECKSUM_VERIFIED"
+    stored = db.conn.execute(
+        "SELECT status FROM files WHERE file_id=?", (row["file_id"],)
+    ).fetchone()
+    assert stored["status"] == "STANDARDIZED"
+    assert db.query(
+        "SELECT * FROM changes WHERE object_type='files' AND object_id=?", (row["file_id"],)
+    ) == []
+
+
+def test_stale_cached_checksum_falls_back_to_full_hash(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    path = project.root / row["relative_path"]
+    db.conn.execute(
+        "UPDATE local_file_verifications SET sha256=? WHERE file_id=?",
+        ("0" * 64, row["file_id"]),
+    )
+    db.conn.commit()
+
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert matched and info["verification_method"] == "full_sha256"
+    cached = db.conn.execute(
+        "SELECT sha256 FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+    ).fetchone()
+    assert cached["sha256"] == row["sha256"]
+
+
+def test_same_size_modification_is_caught_by_full_rehash(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    path = project.root / row["relative_path"]
+    path.write_text(">x\nC\n", encoding="utf-8")
+
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "full_sha256"
+    assert info["current_sha256"] == sha256_path(path)
+    assert db.query(
+        "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+    ) == []
+
+
+def test_ingest_rearchives_bytes_missing_for_manifest_row(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    archived = project.root / row["relative_path"]
+    archived.unlink()
+
+    restored = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    assert restored["file_id"] == row["file_id"]
+    assert archived.read_bytes() == source.read_bytes()

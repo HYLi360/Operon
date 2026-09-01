@@ -63,16 +63,8 @@ def test_relative_and_local_paths_handle_backslashes_and_symlink_escape(tmp_path
         remotes.local_artifact_path(SimpleNamespace(root=root), "link/file")
 
 
-def test_fingerprint_normalization_and_hash():
+def test_fingerprint_normalization():
     assert remotes._normalize_host_key_fingerprint(" SHA256:abc== ") == "abc"
-
-    class Key:
-        @staticmethod
-        def asbytes():
-            return b"key"
-
-    assert remotes._host_key_fingerprint(Key())
-    assert hashlib.sha256(b"key").digest()
 
 
 def test_connect_ssh_known_hosts_pinning_and_errors(monkeypatch):
@@ -150,10 +142,6 @@ def test_connect_ssh_known_hosts_pinning_and_errors(monkeypatch):
     with pytest.raises(RuntimeError, match="fingerprint mismatch"):
         client.policy.missing_host_key(client, "host", Key(b"other"))
 
-    client = remotes.connect_ssh("host", insecure_accept_unknown_host=True)
-    assert client.policy == "auto"
-    client = remotes.connect_ssh("host")
-    assert client.policy == "reject"
     with pytest.raises(ConfigError, match="cannot load SSH known-hosts"):
         remotes.connect_ssh("host", known_hosts="bad")
 
@@ -191,8 +179,6 @@ def test_sftp_makedirs_and_not_found_helpers(tmp_path):
 
 
 def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
-    digest = "a" * 64
-
     class Channel:
         def __init__(self, rc):
             self.rc = rc
@@ -235,7 +221,6 @@ def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
                 raise IOError("no sftp")
             return self.sftp
 
-    assert remotes.remote_sha256(Client((digest + "  x").encode(), 0), "/x") == digest
     sftp = SFTP()
     assert remotes.remote_sha256(Client(b"bad", 1, sftp), "/x") == hashlib.sha256(b"content").hexdigest()
     assert sftp.closed

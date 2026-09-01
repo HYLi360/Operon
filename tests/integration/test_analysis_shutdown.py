@@ -18,6 +18,7 @@ from operon.database import Database
 from operon.execution import LocalExecutor
 from operon.files import ingest_file
 from operon.shutdown import ShutdownRequested
+from operon.tools import run_analysis
 
 
 class TestAnalysisShutdown(PytestAssertions):
@@ -45,7 +46,7 @@ class TestAnalysisShutdown(PytestAssertions):
         """).strip(), encoding="utf-8")
         return script
 
-    def _write_tool_config(self, executable: Path):
+    def _write_tool_config(self, executable: Path, database: str = ""):
         tool_config = {
             "version": 1,
             "tools": {
@@ -59,7 +60,7 @@ class TestAnalysisShutdown(PytestAssertions):
                             "entity_type": "assembly",
                             "file_role": "genome_fasta",
                             "format": "fasta",
-                            "database": "",
+                            "database": database,
                             "output_subdir": "fake_nt",
                             "output_suffix": ".out.tsv",
                             "arguments": ["-query", "${input}", "-out", "${output}", "-num_threads", "${threads}"],
@@ -153,3 +154,25 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertEqual(rc, 0)
         jobs = self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")
         self.assertEqual([j["status"] for j in jobs], ["interrupted", "completed"])
+
+    def test_missing_local_input_is_an_error_not_a_remote_fetch(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        file_row = self._add_assembly()
+        (self.root / file_row["relative_path"]).unlink()
+
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("input missing", results[0]["error"])
+        # The failure is pre-flight: no job row was ever inserted.
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+
+    def test_missing_reference_database_is_rejected_before_running(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", database="missing_db")
+        self._add_assembly()
+
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("reference database not found", results[0]["error"])
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)

@@ -30,6 +30,7 @@ def project(tmp_path: Path):
         root=tmp_path,
         tools_config_path=tmp_path / "tools.yaml",
         logs_root=tmp_path / "logs",
+        analysis_root=tmp_path / "analysis",
     )
 
 
@@ -152,7 +153,10 @@ def test_runtime_parameter_validation_and_argument_rendering(tmp_path):
             output_path=tmp_path / "o", database_path=None, threads=1,
             file_record=file_record,
         )
-    assert tools.parameter_fingerprint(r, ["a"], 1, "v") == tools.parameter_fingerprint(r, ["a"], 1, "v")
+    fingerprint = tools.parameter_fingerprint(r, ["a"], 1, "v")
+    assert fingerprint != tools.parameter_fingerprint(r, ["b"], 1, "v")
+    assert fingerprint != tools.parameter_fingerprint(r, ["a"], 2, "v")
+    assert fingerprint != tools.parameter_fingerprint(r, ["a"], 1, "w")
 
 
 def test_database_identity_modes_and_directory_fingerprint(tmp_path, monkeypatch):
@@ -161,7 +165,9 @@ def test_database_identity_modes_and_directory_fingerprint(tmp_path, monkeypatch
     directory = tmp_path / "db"
     directory.mkdir()
     (directory / "a").write_text("x", encoding="utf-8")
-    assert tools._directory_fingerprint(directory) == tools._directory_fingerprint(directory)
+    before = tools._directory_fingerprint(directory)
+    (directory / "b").write_text("y", encoding="utf-8")
+    assert tools._directory_fingerprint(directory) != before
     identities = {
         tools.database_identity(p, recipe(database="")),
         tools.database_identity(p, recipe(database="missing")),
@@ -180,6 +186,29 @@ def test_database_identity_modes_and_directory_fingerprint(tmp_path, monkeypatch
     assert tools.database_identity(
         p, recipe(database_version="v1", raw={"database_mode": "mutable_cache"})
     )
+
+
+def test_output_name_must_render_to_a_single_safe_component(tmp_path):
+    file_record = {"file_id": "F1", "file_role": "genome_fasta",
+                   "entity_type": "assembly", "entity_id": "A1"}
+    for template in ("sub/${file_id}.tsv", "../${file_id}.tsv", ".."):
+        with pytest.raises(ValidationError, match="one safe path component"):
+            tools._render_output_name(
+                recipe(output_name_template=template), file_record, tmp_path / "in.fna",
+            )
+
+
+def test_remove_output_artifact_refuses_paths_outside_analysis_root(tmp_path):
+    p = project(tmp_path)
+    p.analysis_root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x", encoding="utf-8")
+    with pytest.raises(ExternalToolError, match="outside analysis root"):
+        tools._remove_output_artifact(p, outside)
+    assert outside.read_text(encoding="utf-8") == "x"
+    with pytest.raises(ExternalToolError, match="outside analysis root"):
+        tools._remove_output_artifact(p, p.analysis_root)
+    assert p.analysis_root.is_dir()
 
 
 def tool_spec(**overrides):

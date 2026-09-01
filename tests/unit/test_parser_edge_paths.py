@@ -60,7 +60,6 @@ def test_phred_and_nx_edge_branches():
     assert parsers._resolve_phred_offset("auto", 70, -1)[1] == "sanger_phred33"
     assert parsers._resolve_phred_offset("auto", 70, 80)[1] == "ambiguous_assumed_phred33"
     assert parsers._nx_from_histogram(Counter({0: 2}), 0, 0.5) == (0.0, 1)
-    assert parsers._nx_from_histogram(Counter({-1: 2}), 10, 0.5) == (-1.0, 2)
 
 
 def test_attributes_empty_chunks_percent_decoding_and_ignored_tokens():

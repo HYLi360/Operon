@@ -12,6 +12,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
+from operon.lifecycle import apply_lifecycle_event
 from operon.schema import Schema
 from operon.table_import import (
     _column_index,
@@ -171,3 +172,39 @@ def test_apply_conflict_policies_and_state_updates(project_db, tmp_path):
     assert skipped["skipped"] == 1
     updated = apply_table_import(db, schema, changed, on_conflict="update", actor="tester")
     assert updated["updated"] == 1
+    audit = db.query(
+        "SELECT field, old_value, new_value, reason, actor FROM changes "
+        "WHERE object_type='organisms' AND object_id='ORG_000001' "
+        "AND reason='table import update'"
+    )
+    assert [(row["field"], row["old_value"], row["new_value"], row["actor"]) for row in audit] == [
+        ("scientific_name", "Before", "After", "tester")
+    ]
+
+
+def test_preview_rejects_updates_to_retired_entities(project_db, tmp_path):
+    _project, db, schema = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"})
+    apply_lifecycle_event(
+        db, "organism", "ORG_000001", action="RETIRE",
+        reason_code="accidental_import", reason="mistake", actor="tester",
+    )
+    source = _csv(tmp_path / "update.csv", ["organism_id", "scientific_name"],
+                  [{"organism_id": "ORG_000001", "scientific_name": "After"}])
+    with pytest.raises(ValidationError, match="is retired; restore it before table import"):
+        preview_table_import(db, schema, "organisms", source)
+
+
+def test_apply_skips_unchanged_rows_without_new_audit_rows(project_db, tmp_path):
+    _project, db, schema = project_db
+    source = _csv(tmp_path / "organisms.csv", ["organism_id", "scientific_name"],
+                  [{"organism_id": "ORG_000001", "scientific_name": "Before"}])
+    preview = preview_table_import(db, schema, "organisms", source)
+    apply_table_import(db, schema, preview, on_conflict="update")
+
+    again = preview_table_import(db, schema, "organisms", source)
+    assert [item["action"] for item in again["items"]] == ["unchanged"]
+    audited = db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"]
+    result = apply_table_import(db, schema, again, on_conflict="update")
+    assert result == {"inserted": 0, "updated": 0, "unchanged": 1, "skipped": 0}
+    assert db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"] == audited

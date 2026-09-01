@@ -106,6 +106,64 @@ def test_show_matched_scope_excludes_siblings_and_superseded_descendants(tmp_pat
         db.close()
 
 
+def _insert_two_sample_graph(db) -> None:
+    db.insert_row("organisms", {
+        "organism_id": "ORG_000001", "scientific_name": "Graphus testii",
+    })
+    for suffix in ("1", "2"):
+        db.insert_row("samples", {
+            "sample_id": f"SMP_00000{suffix}", "organism_id": "ORG_000001",
+        })
+        db.insert_row("runs", {
+            "run_id": f"RUN_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
+        })
+        db.insert_row("assemblies", {
+            "assembly_id": f"ASM_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
+        })
+        db.insert_row("annotations", {
+            "annotation_id": f"ANN_00000{suffix}", "assembly_id": f"ASM_00000{suffix}",
+        })
+
+
+def test_entity_graph_matched_sample_keeps_only_its_own_descendants(tmp_path: Path):
+    _project_config, db = _project(tmp_path)
+    try:
+        _insert_two_sample_graph(db)
+        graph = entity_graph(db, "SMP_000001")
+        assert [row["sample_id"] for row in graph["samples"]] == ["SMP_000001"]
+        assert [row["run_id"] for row in graph["runs"]] == ["RUN_000001"]
+        assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000001"]
+        assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000001"]
+    finally:
+        db.close()
+
+
+def test_entity_graph_matched_run_excludes_assemblies_and_annotations(tmp_path: Path):
+    _project_config, db = _project(tmp_path)
+    try:
+        _insert_two_sample_graph(db)
+        graph = entity_graph(db, "RUN_000001")
+        assert [row["run_id"] for row in graph["runs"]] == ["RUN_000001"]
+        assert [row["sample_id"] for row in graph["samples"]] == ["SMP_000001"]
+        assert graph["assemblies"] == []
+        assert graph["annotations"] == []
+    finally:
+        db.close()
+
+
+def test_entity_graph_matched_annotation_traces_back_to_parent_assembly(tmp_path: Path):
+    _project_config, db = _project(tmp_path)
+    try:
+        _insert_two_sample_graph(db)
+        graph = entity_graph(db, "ANN_000002")
+        assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000002"]
+        assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000002"]
+        assert [row["sample_id"] for row in graph["samples"]] == ["SMP_000002"]
+        assert graph["runs"] == []
+    finally:
+        db.close()
+
+
 def test_show_opens_database_read_only(tmp_path: Path, capsys):
     project, db = _project(tmp_path)
     try:

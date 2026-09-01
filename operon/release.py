@@ -15,7 +15,6 @@ from typing import Any
 from operon import __version__
 from operon.config import Project, project_rel
 from operon.database import Database
-from operon.rules import DECISION_STATES
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
 
@@ -224,8 +223,6 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     )
     db.conn.commit()
     for member in members:
-        if member["entity_type"] in DECISION_STATES:
-            pass
         # Release state is applied to accepted members.
         db.set_entity_state(member["entity_type"], member["entity_id"], "RELEASED", f"released in {version}")
     return {**summary, "path": str(release_root)}

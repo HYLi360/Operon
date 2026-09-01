@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import runpy
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -371,7 +370,7 @@ def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, ca
     assert main(["--project", str(project.root), "status"]) == 1
 
 
-def test_main_keyboard_interrupt_and_module_entrypoint(project_db, monkeypatch):
+def test_main_keyboard_interrupt(project_db, monkeypatch):
     project, _db = project_db
 
     class FakeDB:
@@ -381,11 +380,6 @@ def test_main_keyboard_interrupt_and_module_entrypoint(project_db, monkeypatch):
     monkeypatch.setattr(cli, "_open_project", lambda _args: (project, FakeDB()))
     monkeypatch.setattr(cli, "_cmd_status", lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
     assert main(["--project", str(project.root), "status"]) == 130
-
-    monkeypatch.setattr(cli, "main", lambda: 7)
-    with pytest.raises(SystemExit) as exc:
-        runpy.run_module("operon.__main__", run_name="__main__")
-    assert exc.value.code == 7
 
 
 @pytest.mark.parametrize("temporary_kind", ["file", "directory"])
@@ -497,14 +491,12 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(project_db, monk
     output = capsys.readouterr().out
     assert "T1" in output and "R1" in output
 
-    calls = []
-    monkeypatch.setattr(cli, "_cmd_qc_table", lambda *_a: calls.append("qc") or 11)
-    monkeypatch.setattr(cli, "_cmd_decisions", lambda *_a: calls.append("decisions") or 12)
-    monkeypatch.setattr(cli, "_cmd_analysis_results", lambda *_a: calls.append("analysis") or 13)
-    assert cli._cmd_report(ns(report_kind="qc"), project, db) == 11
-    assert cli._cmd_report(ns(report_kind="decisions"), project, db) == 12
-    assert cli._cmd_report(ns(report_kind="analysis"), project, db) == 13
-    assert calls == ["qc", "decisions", "analysis"]
+    for kind, handler in (("qc", "_cmd_qc_table"), ("decisions", "_cmd_decisions"),
+                          ("analysis", "_cmd_analysis_results")):
+        routed = []
+        monkeypatch.setattr(cli, handler, lambda *_a, routed=routed: routed.append(kind) or 7)
+        assert cli._cmd_report(ns(report_kind=kind), project, db) == 7
+        assert routed == [kind]
 
 
 def test_interactive_table_import_conflict_and_confirmation_paths(project_db, monkeypatch):
@@ -599,9 +591,6 @@ def test_remaining_cli_boolean_branches(project_db, monkeypatch, capsys, tmp_pat
     assert cli._cmd_locations(ns(file_id=["missing"]), project, db) == 0
     assert cli._cmd_show(ns(identifier="ORG_000001", json=False), db) == 0
     assert "NCBI_Taxonomy:123" in capsys.readouterr().out
-
-    monkeypatch.setattr(cli, "_cmd_backup_verify", lambda _args: 17)
-    assert main(["backup", "verify", "--input", str(tmp_path / "backup")]) == 17
 
     monkeypatch.setattr(cli, "_cmd_init", lambda _args: (_ for _ in ()).throw(OSError("disk")))
     assert main(["init", str(tmp_path / "other")]) == 1

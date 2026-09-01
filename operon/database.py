@@ -1243,15 +1243,6 @@ class Database:
                     self._conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlite_type}')
                     existing.add(column)
 
-    def replace_manual_table(self, table: str, rows: list[dict[str, Any]], columns: list[str]) -> None:
-        with self.transaction():
-            self._conn.execute(f"DELETE FROM {table}")
-            placeholders = ", ".join("?" for _ in columns)
-            self._conn.executemany(
-                f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",
-                [[row.get(c) for c in columns] for row in rows],
-            )
-
     def export_rows(self, table: str, columns: list[str] | None = None) -> list[dict[str, Any]]:
         cols = columns or self.table_columns(table)
         existing = set(self.table_columns(table))

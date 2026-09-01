@@ -38,35 +38,6 @@ def test_slurm_config_merging_and_validation(tmp_path):
             execution.load_slurm_config(project(tmp_path, {"slurm": raw}))
 
 
-def test_remote_path_rewriting_root_foreign_and_escape(tmp_path):
-    root = tmp_path / "project"
-    root.mkdir()
-    assert execution.rewrite_remote_path(str(root), root, "/remote") == "/remote"
-    assert execution.rewrite_remote_path(str(root / "a" / "b"), root, "/remote") == "/remote/a/b"
-    assert execution.rewrite_remote_path("--flag", root, "/remote") == "--flag"
-    assert execution.rewrite_remote_path(str(root / "a"), root, "") == str(root / "a")
-    outside = tmp_path / "outside"
-    link = root / "link"
-    link.symlink_to(outside)
-    with pytest.raises(ValidationError, match="escapes the project root"):
-        execution.rewrite_remote_path(str(link / "x"), root, "/remote")
-
-
-def test_slurm_script_optional_directives():
-    text = execution.render_slurm_script(
-        job_name="j", command_line="echo ok", cwd="/work dir", stdout_path="o",
-        stderr_path="e", exitcode_path="x", threads=0,
-        slurm=execution.SlurmConfig(
-            partition="p", time_limit="", mem_gb=4, extra_sbatch=["--qos=q"],
-            setup_commands=["module load x"],
-        ),
-    )
-    assert "--cpus-per-task=1" in text
-    assert "--partition=p" in text and "--mem=4G" in text and "--qos=q" in text
-    assert "#SBATCH --time" not in text
-    assert "cd '/work dir'" in text
-
-
 def test_process_group_termination_fallback_and_kill(monkeypatch):
     class Proc:
         pid = 10
@@ -422,3 +393,59 @@ def test_remote_slurm_submission_queue_and_exitcode_failures(tmp_path, monkeypat
     result = ssh._run_via_slurm(None, sftp, ["true"], cwd=root, stdout_path=out,
                                 stderr_path=err, timeout=1, threads=None, run_id="d")
     assert result.exit_code is None and any(command.startswith("scancel") for command in calls)
+
+
+def _remote_slurm_executor(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    remote_root = tmp_path / "remote"
+    (root / "logs").mkdir(parents=True)
+    remote_root.mkdir()
+    ssh = execution.SSHExecutor(
+        project(root), {"host": "host", "remote_root": str(remote_root), "scheduler": "slurm"},
+        execution.SlurmConfig(poll_interval=0.01),
+    )
+    monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
+    return ssh, root
+
+
+def test_remote_slurm_exitcode_falls_back_to_sacct(tmp_path, monkeypatch):
+    ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "42"
+        if command.startswith("squeue"):
+            return 0, ""  # job already left the queue
+        if command.startswith("cat "):
+            return 1, ""  # the exitcode file never becomes visible
+        if command.startswith("sacct"):
+            return 0, "bad\n4:0\n"
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    result = ssh._run_via_slurm(None, FakeSFTP(), ["true"], cwd=root,
+                                stdout_path=root / "logs" / "o", stderr_path=root / "logs" / "e",
+                                timeout=None, threads=None, run_id="sacct")
+    assert result.exit_code == 4 and result.scheduler_job_id == "42"
+
+
+def test_remote_slurm_exitcode_unavailable_is_terminal_failure(tmp_path, monkeypatch):
+    ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "42"
+        if command.startswith("squeue"):
+            return 0, ""
+        if command.startswith("cat "):
+            return 1, ""
+        if command.startswith("sacct"):
+            return 0, "bad:x\n"
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    result = ssh._run_via_slurm(None, FakeSFTP(), ["true"], cwd=root,
+                                stdout_path=root / "logs" / "o", stderr_path=root / "logs" / "e",
+                                timeout=None, threads=None, run_id="gone")
+    assert result.exit_code is None and "exit code is unavailable" in result.error
+    assert result.scheduler_job_id == "42"

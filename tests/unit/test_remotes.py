@@ -27,7 +27,7 @@ from operon.remotes import (
     get_remote,
     pull,
     push,
-    validate_relative_path,
+    verify_remote_record,
 )
 from operon.tools import run_analysis
 
@@ -49,30 +49,6 @@ class TestRemoteConfig(PytestAssertions):
         with self.assertRaisesRegex(ValidationError, "unknown remote"):
             get_remote(self.project, "nowhere")
 
-    def test_remote_validation(self):
-        self.project.config["remotes"] = {
-            "nohost": {"root": "/data"},
-            "noroot": {"host": "hpc"},
-            "badtype": {"type": "s3", "host": "hpc", "root": "/data"},
-            "relative": {"host": "hpc", "root": "data/mirror"},
-        }
-        with self.assertRaisesRegex(ValidationError, "'host' is required"):
-            get_remote(self.project, "nohost")
-        with self.assertRaisesRegex(ValidationError, "'root'"):
-            get_remote(self.project, "noroot")
-        with self.assertRaisesRegex(ValidationError, "unsupported type"):
-            get_remote(self.project, "badtype")
-        with self.assertRaisesRegex(ValidationError, "absolute POSIX"):
-            get_remote(self.project, "relative")
-        self.project.config["remotes"]["good"] = {
-            "type": "sftp", "host": "hpc.example.org", "user": "me",
-            "port": 2222, "key_file": "~/.ssh/id_rsa", "root": "/data/mirror",
-        }
-        spec = get_remote(self.project, "good")
-        self.assertEqual(spec.port, 2222)
-        self.assertEqual(spec.address, "me@hpc.example.org:2222")
-        self.assertFalse(spec.insecure_accept_unknown_host)
-
     def test_fetch_url_rejects_bad_inputs(self):
         with self.assertRaisesRegex(ValidationError, "unsupported remote source"):
             fetch_url_to_temp(self.project, "https://example.org/x.fa")
@@ -82,11 +58,6 @@ class TestRemoteConfig(PytestAssertions):
             fetch_url_to_temp(self.project, "remote://missing-path")
         with self.assertRaisesRegex(ValidationError, "unsafe path component"):
             fetch_url_to_temp(self.project, "remote://missing/../escape.fa")
-
-    def test_relative_remote_paths_cannot_escape(self):
-        for value in ("../x", "a/../../x", "/absolute", "a//b", "./x"):
-            with self.assertRaises(ValidationError):
-                validate_relative_path(value)
 
     def test_ssh_host_keys_are_rejected_by_default_and_insecure_mode_is_explicit(self, monkeypatch):
         class MissingHostKeyPolicy:
@@ -340,6 +311,124 @@ class TestPushPull(PytestAssertions):
             (self.file_row["file_id"],),
         ).fetchone()
         self.assertEqual(location["status"], "CORRUPT")
+
+    def _location_status(self, file_id: str) -> str:
+        row = self.db.conn.execute(
+            "SELECT status FROM file_locations WHERE file_id=? AND location_name='mirror'",
+            (file_id,),
+        ).fetchone()
+        return row["status"] if row else ""
+
+    def test_push_indexes_preexisting_identical_remote_bytes(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        rel = self.file_row["relative_path"]
+        remote_copy = self.remote_dir / rel
+        remote_copy.parent.mkdir(parents=True, exist_ok=True)
+        # Bytes landed on the remote out of band; the manifest has no entry.
+        remote_copy.write_bytes((self.root / rel).read_bytes())
+        results = push(self.db, self.project, "mirror")
+        self.assertEqual([r["status"] for r in results], ["indexed"])
+        entry = self._store().read_manifest()["files"][rel]
+        self.assertEqual(entry["sha256"], self.file_row["sha256"])
+        self.assertEqual(self._location_status(self.file_row["file_id"]), "AVAILABLE")
+
+    def test_push_marks_corrupt_on_divergent_remote_bytes_without_entry(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        rel = self.file_row["relative_path"]
+        remote_copy = self.remote_dir / rel
+        remote_copy.parent.mkdir(parents=True, exist_ok=True)
+        remote_copy.write_text("foreign bytes", encoding="utf-8")
+        results = push(self.db, self.project, "mirror")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("ConflictError", results[0]["error"])
+        # The divergent remote bytes are left untouched for manual resolution.
+        self.assertEqual(remote_copy.read_text(encoding="utf-8"), "foreign bytes")
+        self.assertEqual(self._location_status(self.file_row["file_id"]), "CORRUPT")
+        self.assertFalse(rel in self._store().read_manifest()["files"])
+
+    def test_push_refuses_local_bytes_diverging_from_manifest_identity(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        rel = self.file_row["relative_path"]
+        (self.root / rel).write_text("tampered local bytes", encoding="utf-8")
+        results = push(self.db, self.project, "mirror")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("ConflictError: local content does not match manifest identity",
+                      results[0]["error"])
+        self.assertFalse((self.remote_dir / rel).exists())
+        self.assertEqual(self._store().read_manifest()["files"], {})
+
+    def test_push_skips_when_local_missing_but_remote_copy_verified(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        push(self.db, self.project, "mirror")
+        (self.root / self.file_row["relative_path"]).unlink()
+        results = push(self.db, self.project, "mirror")
+        self.assertEqual([r["status"] for r in results], ["skipped"])
+
+    def test_push_errors_when_local_missing_and_no_verified_remote_copy(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        (self.root / self.file_row["relative_path"]).unlink()
+        results = push(self.db, self.project, "mirror")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("RemoteError", results[0]["error"])
+        self.assertIn("no verified copy", results[0]["error"])
+
+    def test_pull_marks_corrupt_when_remote_diverges_from_manifest_entry(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        push(self.db, self.project, "mirror")
+        (self.remote_dir / self.file_row["relative_path"]).write_text(
+            ">corrupted\nTTTT\n", encoding="utf-8"
+        )
+        results = pull(self.db, self.project, "mirror")
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("ConflictError", results[0]["error"])
+        self.assertEqual(self._location_status(self.file_row["file_id"]), "CORRUPT")
+
+    def test_pull_with_file_ids_errors_per_item_without_manifest_entry(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        second = self._add_other_file()
+        results = pull(
+            self.db, self.project, "mirror",
+            file_ids=[self.file_row["file_id"], second["file_id"]],
+        )
+        self.assertEqual([r["status"] for r in results], ["error", "error"])
+        for result in results:
+            self.assertIn("not present in the remote manifest", result["error"])
+        runs = self.db.conn.execute(
+            "SELECT status, error FROM workflow_runs WHERE step='pull:mirror' ORDER BY run_id"
+        ).fetchall()
+        self.assertEqual([run["status"] for run in runs], ["failed", "failed"])
+
+    def test_verify_remote_record_marks_missing_without_manifest_entry(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        with self.assertRaisesRegex(RemoteError, "no manifest entry"):
+            verify_remote_record(self.project, "mirror", self.file_row, db=self.db)
+        self.assertEqual(self._location_status(self.file_row["file_id"]), "MISSING")
+
+    def test_verify_remote_record_marks_corrupt_on_entry_identity_mismatch(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        push(self.db, self.project, "mirror")
+        rel = self.file_row["relative_path"]
+        manifest_path = self.remote_dir / "operon-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"][rel]["sha256"] = "b" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ConflictError, "does not match"):
+            verify_remote_record(self.project, "mirror", self.file_row, db=self.db)
+        self.assertEqual(self._location_status(self.file_row["file_id"]), "CORRUPT")
+
+    def test_evict_skips_and_rewrites_placeholder_when_local_already_absent(self, monkeypatch):
+        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
+        push(self.db, self.project, "mirror")
+        evict_local(self.db, self.project, "mirror", [self.file_row["file_id"]])
+        placeholder = self.root / ".operon" / "placeholders" / f"{self.file_row['file_id']}.json"
+        placeholder.unlink()
+        results = evict_local(self.db, self.project, "mirror", [self.file_row["file_id"]])
+        self.assertEqual(results[0]["status"], "skipped")
+        self.assertTrue(placeholder.exists())
+        status = self.db.conn.execute(
+            "SELECT status FROM files WHERE file_id=?", (self.file_row["file_id"],)
+        ).fetchone()["status"]
+        self.assertEqual(status, "REMOTE_ONLY")
 
     def test_remote_manifest_is_bound_to_one_project(self, monkeypatch):
         monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())

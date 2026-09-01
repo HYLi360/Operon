@@ -1141,6 +1141,118 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             finally:
                 db.close()
 
+    def _run_download_with_broken_ingest(self, root: Path) -> Database:
+        """Run one downloaded batch whose import stage raises; return the open DB."""
+        with redirect_stdout(io.StringIO()):
+            self._init(root)
+        project = load_project(root)
+        db = Database(project.db_path)
+
+        def fake_parallel(batches, staging_dir, **kwargs):
+            for batch in batches:
+                accession = batch[0]
+                destination = Path(staging_dir) / "batch.zip"
+                with zipfile.ZipFile(destination, "w") as archive:
+                    archive.writestr(
+                        "ncbi_dataset/data/assembly_data_report.jsonl",
+                        json.dumps(_report(accession)) + "\n",
+                    )
+                    archive.writestr(f"ncbi_dataset/data/{accession}/genomic.fna", ">c1\nATGC\n")
+                kwargs["on_complete"](batch, destination)
+            return []
+
+        try:
+            with patch(
+                "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                side_effect=fake_parallel,
+            ), patch(
+                "operon.adapters.ncbi_datasets._ingest_dataset_asset",
+                side_effect=RuntimeError("ingest boom"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    run_ncbi_datasets_adapter(
+                        db, project, accessions=["GCF_000001405.40"], includes=["genome"],
+                    )
+        except Exception:
+            db.close()
+            raise
+        return db
+
+    def test_failed_import_marks_run_failed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self._run_download_with_broken_ingest(Path(tmp))
+            try:
+                rows = db.query(
+                    "SELECT status, exit_code, error FROM workflow_runs "
+                    "WHERE step='ncbi_datasets_import'"
+                )
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["status"], "failed")
+                self.assertEqual(rows[0]["exit_code"], 1)
+                self.assertIn("ingest boom", rows[0]["error"])
+            finally:
+                db.close()
+
+    def test_failed_import_marks_accession_items_failed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = self._run_download_with_broken_ingest(Path(tmp))
+            try:
+                items = db.query("SELECT status, error FROM adapter_run_items")
+                self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]["status"], "failed")
+                self.assertIn("RuntimeError: ingest boom", items[0]["error"])
+            finally:
+                db.close()
+
+    def test_partial_batch_failure_raises_after_keeping_successes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with redirect_stdout(io.StringIO()):
+                self._init(root)
+            project = load_project(root)
+            db = Database(project.db_path)
+            good = "GCF_000001405.40"
+            bad = "GCF_000002035.6"
+
+            def fake_parallel(batches, staging_dir, **kwargs):
+                for batch in batches:
+                    accession = batch[0]
+                    if accession == bad:
+                        kwargs["on_error"](batch, ValidationError(f"{bad} not found"))
+                        continue
+                    destination = Path(staging_dir) / "batch.zip"
+                    with zipfile.ZipFile(destination, "w") as archive:
+                        archive.writestr(
+                            "ncbi_dataset/data/assembly_data_report.jsonl",
+                            json.dumps(_report(accession)) + "\n",
+                        )
+                        archive.writestr(
+                            f"ncbi_dataset/data/{accession}/genomic.fna", ">c1\nATGC\n"
+                        )
+                    kwargs["on_complete"](batch, destination)
+                return []
+
+            try:
+                with patch(
+                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                    side_effect=fake_parallel,
+                ):
+                    with self.assertRaises(ValidationError) as caught:
+                        run_ncbi_datasets_adapter(
+                            db, project, accessions=[good, bad],
+                            includes=["genome"], batch_size=1,
+                        )
+                message = str(caught.value)
+                self.assertIn("1 NCBI download batch(es) failed", message)
+                self.assertIn(bad, message)
+                # The successfully imported batch stays archived.
+                self.assertEqual(
+                    db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"],
+                    good,
+                )
+            finally:
+                db.close()
+
     def test_empty_ncbi_package_diagnostic_identifies_bad_accession(self):
         with tempfile.TemporaryDirectory() as tmp:
             package = Path(tmp) / "bad.zip"

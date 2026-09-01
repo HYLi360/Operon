@@ -151,6 +151,45 @@ class TestAnalysisResume(PytestAssertions):
         self.assertEqual([j["status"] for j in jobs], ["completed", "completed"])
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"], 0)
 
+    def _cached_output_path(self, file_id: str) -> Path:
+        return (self.project.analysis_root / "fake_nt" / "ASM_000001"
+                / f"{file_id}.genome_fasta.out.tsv")
+
+    def test_deleted_cached_output_is_superseded_and_recomputed(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        file_row = self._add_assembly()
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "completed", results[0].get("error"))
+
+        # Exact cache hit (fingerprint unchanged) whose output is gone.
+        self._cached_output_path(file_row["file_id"]).unlink()
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "completed", results[0].get("error"))
+        self.assertEqual(
+            self._cached_output_path(file_row["file_id"]).read_text(),
+            "q1\ts1\t99.0\t100\t1e-10\t500\n",
+        )
+        jobs = self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["superseded", "completed"])
+
+    def test_tampered_cached_output_is_superseded_and_recomputed(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        file_row = self._add_assembly()
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "completed", results[0].get("error"))
+
+        # Exact cache hit (fingerprint unchanged) whose output no longer
+        # matches the recorded sha256.
+        output = self._cached_output_path(file_row["file_id"])
+        output.write_text("tampered\n", encoding="utf-8")
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual(results[0]["status"], "completed", results[0].get("error"))
+        self.assertEqual(output.read_text(), "q1\ts1\t99.0\t100\t1e-10\t500\n")
+        jobs = self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["superseded", "completed"])
+
     def test_dry_run_reports_adoptable_candidates(self):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py")

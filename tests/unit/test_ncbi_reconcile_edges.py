@@ -138,3 +138,69 @@ def test_apply_reconciliation_blocks_alternate_role_conflicts(project_db, monkey
     monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: plan)
     with pytest.raises(ConflictError, match="alternate-role byte conflicts"):
         ncbi_reconcile.apply_ncbi_reconciliation(db, project)
+
+
+def _plan_with_path_repairs(repairs):
+    return {
+        "warnings": [], "annotation_supersessions": [], "assembly_updates": [],
+        "file_role_updates": [], "file_path_repairs": repairs,
+        "accession_primary_updates": [], "state_restorations": [], "summary": {},
+    }
+
+
+def test_apply_reconciliation_audits_failed_run(project_db, monkeypatch):
+    project, db = project_db
+    (project.root / "old").write_text("a", encoding="utf-8")
+    (project.root / "new").write_text("b", encoding="utf-8")
+    monkeypatch.setattr(
+        ncbi_reconcile, "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs([
+            {"file_id": "FIL_000001", "old_relative_path": "old", "new_relative_path": "new"},
+        ]),
+    )
+    with pytest.raises(ConflictError, match="different bytes"):
+        ncbi_reconcile.apply_ncbi_reconciliation(db, project)
+    run = db.query(
+        "SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
+    )[0]
+    assert run["status"] == "failed"
+    assert "different bytes" in run["error"]
+
+
+def test_apply_reconciliation_checks_every_destination_before_any_move(project_db, monkeypatch):
+    project, db = project_db
+    (project.root / "first-old").write_text("a", encoding="utf-8")
+    (project.root / "second-old").write_text("b", encoding="utf-8")
+    (project.root / "second-new").write_text("c", encoding="utf-8")
+    monkeypatch.setattr(
+        ncbi_reconcile, "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs([
+            {"file_id": "FIL_000001", "old_relative_path": "first-old",
+             "new_relative_path": "first-new"},
+            {"file_id": "FIL_000002", "old_relative_path": "second-old",
+             "new_relative_path": "second-new"},
+        ]),
+    )
+    with pytest.raises(ConflictError, match="different bytes"):
+        ncbi_reconcile.apply_ncbi_reconciliation(db, project)
+    # Physical moves cannot be rolled back, so the conflict must surface
+    # before the first move: the movable file is untouched.
+    assert (project.root / "first-old").exists()
+    assert not (project.root / "first-new").exists()
+
+
+def test_apply_reconciliation_records_skipped_move_for_absent_local_file(project_db, monkeypatch):
+    project, db = project_db
+    monkeypatch.setattr(
+        ncbi_reconcile, "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs([
+            {"file_id": "FIL_000001", "old_relative_path": "raw/missing.fa",
+             "new_relative_path": "raw/renamed.fa"},
+        ]),
+    )
+    result = ncbi_reconcile.apply_ncbi_reconciliation(db, project)
+    assert result["skipped_path_moves"] == ["FIL_000001"]
+    run = db.query(
+        "SELECT status FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
+    )[0]
+    assert run["status"] == "completed"

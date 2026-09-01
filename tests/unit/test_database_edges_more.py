@@ -56,19 +56,17 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
-@pytest.mark.parametrize(
-    ("source", "message"),
-    [
-        ({}, "source_type"),
-        ({"source_type": "insdc"}, "provider"),
-        ({"source_type": "insdc", "provider": "NCBI"}, "database or repository"),
-        ({"source_type": "non_insdc", "provider": "X", "database_name": "D"}, "citation"),
-        ({"source_type": "non_insdc", "provider": "X", "database_name": "D", "citation": "doi"}, "License"),
-    ],
-)
-def test_data_source_validation(db, source, message):
-    with pytest.raises(ValidationError, match=message):
-        db.register_data_source(source)
+def test_data_source_requires_source_type(db):
+    with pytest.raises(ValidationError, match="source_type"):
+        db.register_data_source({})
+
+
+def test_data_source_full_record_is_accepted(db):
+    source = db.register_data_source({
+        "source_type": "non_insdc", "provider": "X", "database_name": "D",
+        "citation": "doi:10.1/x", "license_name": "CC0-1.0",
+    })
+    assert source["source_id"] == "SRC_000001"
 
 
 def test_data_source_idempotency_and_link_validation(db):

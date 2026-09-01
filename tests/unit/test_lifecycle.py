@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from operon import qc_module, reports
+from operon import cli, qc_module, reports
 from operon.adapters.ncbi_datasets import _PlanBuilder, _find_archived_assembly
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.entity_view import entity_graph
 from operon.errors import ValidationError
-from operon.lifecycle import apply_lifecycle_event, lifecycle_plan
+from operon.files import ingest_file
+from operon.lifecycle import (
+    apply_lifecycle_event, entity_subtree, lifecycle_plan, list_retired_entities,
+)
 from operon.release import release_files_for
 from operon.tools import Recipe, candidate_files
 from operon.workflow import run_external_command
@@ -150,7 +155,6 @@ def test_plan_is_read_only_and_reports_references(lifecycle_project):
     assert plan["reference_counts"]["accessions"] == 1
     assert plan["reference_counts"]["remote_locations"] == 1
     assert plan["historical_release_versions"] == ["v1"]
-    assert plan["physical_changes"]["historical_releases_modified"] == 0
     assert set(plan["physical_changes"].values()) == {0}
     assert db.query("SELECT COUNT(*) AS n FROM entity_lifecycle_events")[0]["n"] == 0
 
@@ -253,3 +257,185 @@ def test_cli_retire_restore_records_workflow(lifecycle_project, capsys):
         assert not check.is_entity_retired("assembly", "ASM_000001")
     finally:
         check.close()
+
+
+def test_retire_same_entity_twice_is_idempotent(lifecycle_project):
+    _project, db = lifecycle_project
+    first = _retire(db, "assembly", "ASM_000001")
+    second = _retire(db, "assembly", "ASM_000001")
+    assert second["changed"] is False
+    assert second["event"]["event_id"] == first["event"]["event_id"]
+    assert db.query(
+        "SELECT COUNT(*) AS n FROM entity_lifecycle_events "
+        "WHERE object_type='assembly' AND object_id='ASM_000001'"
+    )[0]["n"] == 1
+
+
+def test_list_retired_entities_direct_only_excludes_inherited(lifecycle_project):
+    _project, db = lifecycle_project
+    _retire(db, "sample", "SMP_000001")
+    rows = list_retired_entities(db, direct_only=True)
+    assert [(row["entity_type"], row["entity_id"]) for row in rows] == [
+        ("sample", "SMP_000001"),
+    ]
+
+
+def test_list_retired_entities_effective_includes_inherited(lifecycle_project):
+    _project, db = lifecycle_project
+    _retire(db, "sample", "SMP_000001")
+    rows = list_retired_entities(db)
+    assert {(row["entity_type"], row["entity_id"]) for row in rows} == {
+        ("sample", "SMP_000001"),
+        ("assembly", "ASM_000001"),
+        ("assembly", "ASM_000002"),
+        ("annotation", "ANN_000001"),
+        ("annotation", "ANN_000002"),
+    }
+    assert {row["retired_by_id"] for row in rows} == {"SMP_000001"}
+
+
+def test_require_active_entity_rejects_retired_entity(lifecycle_project):
+    _project, db = lifecycle_project
+    db.require_active_entity("assembly", "ASM_000001")
+    _retire(db, "assembly", "ASM_000001")
+    with pytest.raises(ValidationError, match="retired by assembly ASM_000001"):
+        db.require_active_entity("assembly", "ASM_000001")
+    with pytest.raises(ValidationError, match="retired by assembly ASM_000001"):
+        db.require_active_entity("annotation", "ANN_000001")
+
+
+def test_ingest_file_rejects_retired_entity(lifecycle_project, tmp_path):
+    project, db = lifecycle_project
+    _retire(db, "assembly", "ASM_000001")
+    source = tmp_path / "genome.fa"
+    source.write_text(">seq\nACGT\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="retired by assembly ASM_000001"):
+        ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+
+
+def test_entity_subtree_from_organism_cascades_to_descendants(lifecycle_project):
+    _project, db = lifecycle_project
+    db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
+    assert entity_subtree(db, "organism", "ORG_000001") == {
+        "organism": ["ORG_000001"],
+        "sample": ["SMP_000001"],
+        "run": ["RUN_000001"],
+        "assembly": ["ASM_000001", "ASM_000002"],
+        "annotation": ["ANN_000001", "ANN_000002"],
+    }
+
+
+def test_entity_subtree_run_is_a_direct_target(lifecycle_project):
+    _project, db = lifecycle_project
+    db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
+    assert entity_subtree(db, "run", "RUN_000001") == {
+        "organism": [], "sample": [], "run": ["RUN_000001"],
+        "assembly": [], "annotation": [],
+    }
+
+
+def test_entity_subtree_annotation_is_a_direct_target(lifecycle_project):
+    _project, db = lifecycle_project
+    assert entity_subtree(db, "annotation", "ANN_000001") == {
+        "organism": [], "sample": [], "run": [], "assembly": [],
+        "annotation": ["ANN_000001"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"action": "DELETE"}, "unsupported lifecycle action"),
+        ({"reason": "  "}, "reason is required"),
+        ({"actor": " "}, "actor is required"),
+    ],
+)
+def test_apply_lifecycle_event_validates_action_reason_actor(
+    lifecycle_project, override, message,
+):
+    _project, db = lifecycle_project
+    kwargs = {
+        "action": "RETIRE", "reason": "mistake", "actor": "tester",
+        "reason_code": "accidental_import",
+    }
+    kwargs.update(override)
+    with pytest.raises(ValidationError, match=message):
+        apply_lifecycle_event(db, "assembly", "ASM_000001", **kwargs)
+
+
+def test_restore_of_active_entity_reports_already_active(lifecycle_project):
+    _project, db = lifecycle_project
+    with pytest.raises(ValidationError, match="already active"):
+        apply_lifecycle_event(
+            db, "assembly", "ASM_000001", action="RESTORE",
+            reason="not needed", actor="tester",
+        )
+
+
+def _lifecycle_args(**overrides):
+    values = {
+        "command": "retire", "identifier": "ASM_000001", "apply": True,
+        "yes": True, "actor": "tester", "reason": "mistake",
+        "reason_code": "accidental_import", "evidence": None,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_lifecycle_apply_raises_plan_blocker(lifecycle_project):
+    project, db = lifecycle_project
+    with pytest.raises(ValidationError, match="already active"):
+        cli._cmd_lifecycle(_lifecycle_args(command="restore"), project, db)
+
+
+def test_lifecycle_apply_requires_yes_outside_terminal(lifecycle_project):
+    project, db = lifecycle_project
+    with pytest.raises(ValidationError, match="requires --yes"):
+        cli._cmd_lifecycle(_lifecycle_args(yes=False), project, db)
+
+
+def test_lifecycle_apply_requires_actor_without_user_env(lifecycle_project, monkeypatch):
+    project, db = lifecycle_project
+    monkeypatch.delenv("USER", raising=False)
+    with pytest.raises(ValidationError, match="--actor is required"):
+        cli._cmd_lifecycle(_lifecycle_args(actor=None), project, db)
+
+
+def _fake_terminal(monkeypatch, confirmed):
+    class TTY:
+        def __init__(self):
+            self.writes = []
+
+        def isatty(self):
+            return True
+
+        def write(self, value):
+            self.writes.append(value)
+            return len(value)
+
+        def flush(self):
+            return None
+
+    out = TTY()
+    monkeypatch.setattr(sys, "stdin", TTY())
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setitem(sys.modules, "questionary", SimpleNamespace(
+        confirm=lambda *_a, **_k: SimpleNamespace(ask=lambda: confirmed),
+    ))
+    return out
+
+
+def test_lifecycle_apply_cancelled_via_prompt(lifecycle_project, monkeypatch):
+    project, db = lifecycle_project
+    out = _fake_terminal(monkeypatch, False)
+    assert cli._cmd_lifecycle(_lifecycle_args(yes=False), project, db) == 0
+    assert any("cancelled" in line for line in out.writes)
+    assert not db.is_entity_retired("assembly", "ASM_000001")
+    assert db.query("SELECT COUNT(*) AS n FROM entity_lifecycle_events")[0]["n"] == 0
+
+
+def test_lifecycle_apply_confirmed_via_prompt(lifecycle_project, monkeypatch):
+    project, db = lifecycle_project
+    _fake_terminal(monkeypatch, True)
+    assert cli._cmd_lifecycle(_lifecycle_args(yes=False), project, db) == 0
+    assert db.is_entity_retired("assembly", "ASM_000001")

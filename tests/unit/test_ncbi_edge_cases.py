@@ -22,6 +22,8 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
+from operon.lifecycle import apply_lifecycle_event
+from operon.workflow import start_run
 
 
 @pytest.fixture
@@ -350,10 +352,14 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
     assert ncbi.download_ncbi_dataset(
         ["GCF_000001405.40"], destination, session=object(), max_retries=1
     ) == destination
+    assert len(attempts) == 2
     with pytest.raises(ValidationError, match="no NCBI assembly accessions"):
         ncbi.download_ncbi_dataset([], destination, session=object())
 
-    def always_timeout(**_kwargs):
+    timeouts = []
+
+    def always_timeout(**kwargs):
+        timeouts.append(kwargs)
         raise requests.exceptions.Timeout("slow")
 
     monkeypatch.setattr(ncbi, "_download_ncbi_dataset_once", always_timeout)
@@ -361,6 +367,7 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
         ncbi.download_ncbi_dataset(
             ["GCF_000001405.40"], destination, session=object(), max_retries=1
         )
+    assert len(timeouts) == 2
 
 
 def test_single_download_falls_back_and_rejects_readme_package(tmp_path: Path):
@@ -411,15 +418,12 @@ def test_single_download_falls_back_and_rejects_readme_package(tmp_path: Path):
     assert primary.closed and fallback.closed
 
 
-def test_identity_helpers_are_deterministic():
+def test_annotation_identity_normalizes_provider_case():
     identity = ncbi._annotation_identity(
         "ASM_1", "GCF_000001405.40", " RefSeq ", 3, "2024-01-01"
     )
     assert identity == ncbi._annotation_identity(
         "ASM_1", "GCF_000001405.40", "refseq", 3, "2024-01-01"
-    )
-    assert ncbi._metadata_identity({"x": 1}, "GCF_000001405.40") == ncbi._metadata_identity(
-        {"x": 1}, "GCF_000001405.40"
     )
 
 
@@ -596,7 +600,6 @@ def test_parallel_download_wrapper_aggregates_or_reports_errors(tmp_path, monkey
 
 def test_interruptible_retry_sleep_cancel_and_completion(monkeypatch):
     event = threading.Event()
-    monkeypatch.setattr(asyncio, "sleep", lambda *_a: asyncio.sleep(0))
     # Avoid monkeypatching asyncio.sleep recursively by using a small custom awaitable.
     async def no_sleep(_seconds):
         return None
@@ -938,3 +941,95 @@ def test_entrez_fallback_validation_empty_and_complete_records(monkeypatch):
     assert [row["accession"] for row in reports] == ["GCF_000000003.1", "GCA_000000004.1"]
     assert reports[0]["sourceDatabase"] == "SOURCE_DATABASE_REFSEQ"
     assert reports[1]["sourceDatabase"] == "SOURCE_DATABASE_GENBANK"
+
+
+def test_preflight_assets_rejects_role_already_archived_with_different_bytes(tmp_path):
+    accession = "GCF_000001405.40"
+    path = tmp_path / "genomic.fna"
+    path.write_text(">x\nA\n", encoding="utf-8")
+    plan = ncbi.ImportPlan(
+        tables={},
+        assets=[ncbi.DatasetAsset(path, accession, "genome_fasta", source_url="x")],
+        assembly_ids={accession: "ASM_000001"},
+        annotation_ids={}, assembly_records=[], annotation_records=[],
+    )
+
+    class DB:
+        class Conn:
+            @staticmethod
+            def execute(*_a):
+                row = {"file_id": "FIL_000001", "sha256": "0" * 64}
+                return type("Cursor", (), {"fetchone": lambda self: row})()
+        conn = Conn()
+
+    with pytest.raises(ConflictError, match="different bytes"):
+        ncbi._preflight_assets(DB(), plan)
+
+
+def test_resume_run_rejects_unknown_workflow_run(project_db):
+    project, db = project_db
+    with pytest.raises(ValidationError, match="resume workflow run does not exist"):
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000000001.1"], resume_run_id="WF_missing",
+        )
+
+
+def test_resume_run_rejects_mismatched_request_fingerprint(project_db):
+    project, db = project_db
+    original = start_run(db, {
+        "step": "ncbi_datasets_import",
+        "command": "download 1 accession(s)",
+        "input_sha256": "0" * 64,
+    })
+    with pytest.raises(ValidationError, match="differs from the original run"):
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000000001.1"], resume_run_id=original["run_id"],
+        )
+
+
+def _seed_retired_assembly(db: Database) -> None:
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+    db.insert_row("assemblies", {
+        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
+        "assembly_accession": "GCF_000000001.1", "assembly_version": 1,
+    })
+    db.insert_row("accessions", {
+        "internal_type": "assembly", "internal_id": "ASM_000001",
+        "namespace": "NCBI_RefSeq_Assembly", "accession": "GCF_000000001.1",
+    })
+    apply_lifecycle_event(
+        db, "assembly", "ASM_000001", action="RETIRE",
+        reason_code="accidental_import", reason="imported by mistake", actor="tester",
+    )
+
+
+def test_find_archived_assembly_rejects_retired_assembly(project_db):
+    _project, db = project_db
+    _seed_retired_assembly(db)
+    with pytest.raises(ValidationError, match="belongs to retired assembly ASM_000001"):
+        ncbi._find_archived_assembly(db, "GCF_000000001.1")
+
+
+def test_plan_builder_rejects_report_resolving_to_retired_assembly(project_db):
+    _project, db = project_db
+    _seed_retired_assembly(db)
+    with pytest.raises(ValidationError, match="resolved to retired assembly ASM_000001"):
+        ncbi._PlanBuilder(db).build([_assembly_report()], [])
+
+
+def test_file_satisfies_include_treats_missing_local_file_as_unsatisfied(project_db):
+    project, _db = project_db
+    row = {
+        "status": "CHECKSUM_VERIFIED", "entity_id": "ASM_000001",
+        "relative_path": "raw/assemblies/ASM_000001/genomic.fna",
+    }
+    assert not ncbi._file_satisfies_include(
+        project, row, entity_type="assembly", standardize=False
+    )
+    local = project.root / row["relative_path"]
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(">x\nA\n", encoding="utf-8")
+    assert ncbi._file_satisfies_include(
+        project, row, entity_type="assembly", standardize=False
+    )
