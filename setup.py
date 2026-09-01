@@ -5,6 +5,11 @@ compiled modules so that `pip install -e .` and `python -m build` produce
 them. For a quick in-place build during development:
 
     python setup.py build_ext --inplace
+
+For a complete standalone application release, including licenses and the
+corresponding source archive, use:
+
+    python tools/build.py
 """
 
 from Cython.Build import cythonize

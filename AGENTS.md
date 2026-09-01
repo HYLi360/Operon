@@ -40,7 +40,8 @@ for the principle-to-implementation mapping.
 - `tests/` — pytest suite organized as `unit/`, `integration/`,
   `regression/`, `compatibility/`, with shared fixtures in `tests/helpers.py`.
 - `docs/` — full user and architecture documentation, written in Chinese.
-- `build/release/` — cx_Freeze standalone application output (generated).
+- `build/release/v<version>/` — complete cx_Freeze application releases
+  (generated), including third-party licenses and corresponding source.
 
 ## Setup, test, and build
 
@@ -57,9 +58,7 @@ python -m pytest tests/unit         # by category
 
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
-python tools/collect_licenses.py    # stage third-party licenses -> build/licenses/
-python -m cx_Freeze build           # standalone app -> build/release/
-build/release/operon --version
+python tools/build.py               # complete standalone release -> build/release/v<version>/
 ```
 
 Run the relevant test category after any change; run the full suite before
@@ -94,9 +93,11 @@ the user explicitly asks.
   before touching `operon/database.py` migrations or the NCBI adapter's
   schema-upgrade path.
 - The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
-  `tools/collect_licenses.py` collects third-party license texts into
-  `build/licenses/`; run it before every cx_Freeze build so the release
-  bundle always ships current license files.
+  `tools/build.py` is the only standalone-application release entry point. It
+  compiles the Cython parser, collects third-party license texts, builds the
+  corresponding-source sdist, freezes the application, assembles the
+  versioned directory, and runs the frozen executable smoke test. Do not call
+  cx_Freeze directly for a release bundle.
 
 ## Documentation sync
 

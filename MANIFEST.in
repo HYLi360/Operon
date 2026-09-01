@@ -1,2 +1,14 @@
+include .gitignore
+include AGENTS.md
 include LICENSE
-include operon/qc_module/_parsers.pyx
+include MANIFEST.in
+include README.md
+include pyproject.toml
+include setup.py
+recursive-include .github *.yml
+recursive-include benchmarks *.tsv
+recursive-include docs *.md
+recursive-include operon *.py *.pyx
+recursive-include tests *.py
+recursive-include tools *.py
+exclude operon/qc_module/_parsers.c

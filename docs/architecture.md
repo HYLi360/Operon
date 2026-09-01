@@ -656,22 +656,44 @@ inode 共享，可对 `standardized/` 或 release 显式使用硬链接。
 
 ## 15. 应用发布文件结构
 
-项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。构建前先执行
-`python tools/collect_licenses.py` 收集第三方依赖许可证到 `build/licenses/`，
-再执行 `python -m cx_Freeze build`；发布内容固定落在：
+项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。完整应用发布只有一个入口：
+
+```bash
+python -m pip install -e '.[build]'
+python tools/build.py
+```
+
+`build` extra 包含 cx_Freeze、远程功能所需的 Paramiko，以及 Python 3.10 读取
+`pyproject.toml` 所需的条件依赖 `tomli`；Python 3.11 及以上直接使用标准库
+`tomllib`，不会安装 `tomli`。因此 Python 3.10 和 3.11+ 使用相同的构建命令。
+
+`tools/build.py` 依次重建必需的 Cython parser、解析 `pyproject.toml` 中唯一的应用
+版本号、收集冻结运行时依赖的许可证、生成对应源码 sdist、调用 cx_Freeze、组装并验证
+最终目录。任一步失败都不会发布目标版本；已存在的同版本目录默认拒绝覆盖，只有显式
+传入 `--force` 才会替换。不要直接调用 cx_Freeze 制作正式发布包，因为那会跳过许可证、
+对应源码和最终 smoke test。
+
+发布内容固定落在版本化目录：
 
 Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF 依赖的构建期工具，
 不属于 `operon` 的 Python 运行时依赖。缺少时 cx_Freeze 会在 `build_exe` 阶段直接停止。
 
 ```text
-build/release/
+build/release/v0.5.4/
 ├── operon                  # 命令行可执行文件；Windows 为 operon.exe
 ├── lib/                    # Python 运行时、operon 包与第三方依赖
 ├── LICENSE                 # Operon 自身的许可证（AGPL-3.0-or-later）
 ├── licenses/               # THIRD_PARTY_NOTICES.md 与各第三方依赖的许可证全文
+├── source/
+│   └── operon-0.5.4.tar.gz # 对应本次二进制的完整项目源码 sdist
 ├── frozen_application_license.txt  # cx_Freeze 自动附带的冻结引导代码许可证
 └── share/doc/operon/       # README 和 docs/
 ```
+
+目录名和源码包名中的版本均动态读取 `[project].version`；代码中不维护第二份版本号。
+安装后的 `operon.__version__` 通过分发元数据读取同一值。源码包由 `MANIFEST.in`
+控制，包含 Python/Cython 源码、构建脚本、测试、文档和许可证，排除 `.so`、`.pyd`、
+生成的 C 文件、缓存以及本地运行数据。
 
 应用发布目录与 `operon release` 生成的数据集快照是两个不同概念：前者交付程序，
 后者交付经过筛选并可校验的数据。

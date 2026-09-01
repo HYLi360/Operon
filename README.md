@@ -36,6 +36,13 @@ python -m pip install -e '.[remote]'
 如需构建不依赖 Python 环境的独立可执行应用（cx_Freeze），见
 [架构说明 §15 应用发布文件结构](docs/architecture.md)。
 
+完整发布使用统一入口（自动编译 Cython 扩展、收集许可证、附带源码并验证产物）：
+
+```bash
+python -m pip install -e '.[build]'
+python tools/build.py
+```
+
 ## 文档
 
 完整中文文档位于 [`docs/`](docs/index.md)：

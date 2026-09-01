@@ -35,9 +35,18 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "coverage>=7.0", "pytest-cov>=7.0"]
-build = ["cx-Freeze>=8.4", "paramiko>=3.4"]
+build = [
+    "cx-Freeze>=8.4",
+    "paramiko>=3.4",
+    "tomli>=2.0; python_version < '3.11'",
+]
 remote = ["paramiko>=3.4"]
-dev = ["pytest>=8.0", "cx-Freeze>=8.4", "paramiko>=3.4"]
+dev = [
+    "pytest>=8.0",
+    "cx-Freeze>=8.4",
+    "paramiko>=3.4",
+    "tomli>=2.0; python_version < '3.11'",
+]
 
 [project.scripts]
 operon = "operon.cli:main"
@@ -51,15 +60,11 @@ executables = [
 ]
 
 [tool.cxfreeze.build_exe]
-build_exe = "build/release/v0.5.4"
 packages = ["operon", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["docs", "share/doc/operon/docs"],
-    # Operon's own AGPL text and the third-party licenses staged by
-    # tools/collect_licenses.py (run it before every cx_Freeze build).
     ["LICENSE", "LICENSE"],
-    ["build/licenses", "licenses"],
 ]
 excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov"]
 optimize = 1

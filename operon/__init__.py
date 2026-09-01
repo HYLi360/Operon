@@ -1,3 +1,8 @@
-"""Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"""
+"""Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data."""
 
-__version__ = "0.5.4"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("operon")
+except PackageNotFoundError:  # Direct use from an uninstalled source checkout.
+    __version__ = "0+unknown"
