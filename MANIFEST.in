@@ -1,1 +1,2 @@
+include LICENSE
 include operon/qc_module/_parsers.pyx

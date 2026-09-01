@@ -656,8 +656,9 @@ inode 共享，可对 `standardized/` 或 release 显式使用硬链接。
 
 ## 15. 应用发布文件结构
 
-项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。执行
-`python -m cx_Freeze build` 后，发布内容固定落在：
+项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。构建前先执行
+`python tools/collect_licenses.py` 收集第三方依赖许可证到 `build/licenses/`，
+再执行 `python -m cx_Freeze build`；发布内容固定落在：
 
 Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF 依赖的构建期工具，
 不属于 `operon` 的 Python 运行时依赖。缺少时 cx_Freeze 会在 `build_exe` 阶段直接停止。
@@ -666,6 +667,9 @@ Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF �
 build/release/
 ├── operon                  # 命令行可执行文件；Windows 为 operon.exe
 ├── lib/                    # Python 运行时、operon 包与第三方依赖
+├── LICENSE                 # Operon 自身的许可证（AGPL-3.0-or-later）
+├── licenses/               # THIRD_PARTY_NOTICES.md 与各第三方依赖的许可证全文
+├── frozen_application_license.txt  # cx_Freeze 自动附带的冻结引导代码许可证
 └── share/doc/operon/       # README 和 docs/
 ```
 

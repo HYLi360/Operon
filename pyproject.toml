@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "cx-Freeze>=8.4", "Cython>=3.0"]
+requires = ["setuptools>=77", "cx-Freeze>=8.4", "Cython>=3.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -20,8 +20,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 
-# We don't plan on making it FOSS just yet.
-# license = { text = "MIT" }
+
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
 
 dependencies = [
     "aiohttp>=3.9",
@@ -55,6 +56,10 @@ packages = ["operon", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questio
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["docs", "share/doc/operon/docs"],
+    # Operon's own AGPL text and the third-party licenses staged by
+    # tools/collect_licenses.py (run it before every cx_Freeze build).
+    ["LICENSE", "LICENSE"],
+    ["build/licenses", "licenses"],
 ]
 excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov"]
 optimize = 1

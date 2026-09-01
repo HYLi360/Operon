@@ -57,6 +57,7 @@ python -m pytest tests/unit         # by category
 
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
+python tools/collect_licenses.py    # stage third-party licenses -> build/licenses/
 python -m cx_Freeze build           # standalone app -> build/release/
 build/release/operon --version
 ```
@@ -92,6 +93,10 @@ the user explicitly asks.
   pre-1.0 databases and is scheduled for removal at the 1.0 release; check it
   before touching `operon/database.py` migrations or the NCBI adapter's
   schema-upgrade path.
+- The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
+  `tools/collect_licenses.py` collects third-party license texts into
+  `build/licenses/`; run it before every cx_Freeze build so the release
+  bundle always ships current license files.
 
 ## Documentation sync
 
