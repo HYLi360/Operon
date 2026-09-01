@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "operon"
-version = "0.5.4"
+version = "0.6.0"
 description = "Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"
 authors = [
     { name = "hyli360", email = "lihuanyu2003@gmail.com" }
@@ -19,7 +19,6 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
 ]
-
 
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]

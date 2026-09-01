@@ -1,6 +1,6 @@
 # Operon 基本架构
 
-> 本文对应代码库当前状态：`operon` 0.5.4，数据库内部 schema 版本 `2.7`，
+> 本文对应代码库当前状态：`operon` 0.6.0，数据库内部 schema 版本 `2.7`，
 > `config/schemas.yaml` 中的元数据字段 schema 版本为 `1.4`。
 
 ## 1. 设计目标
