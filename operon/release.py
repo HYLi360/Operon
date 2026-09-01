@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from operon import __version__
-from operon.config import Project, project_rel
+from operon.config import Project
 from operon.database import Database
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
@@ -121,7 +121,9 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     write_tsv(release_root / "manifest.tsv", manifest_cols, manifest_rows)
 
     # QC summary and decisions.
-    qc_columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
+    qc_columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name",
+                  "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set",
+                  "evaluated_at"]
     qc_rows = db.conn.execute(
         "SELECT q.* FROM qc_results q WHERE NOT EXISTS ("
         "SELECT 1 FROM effective_retired_entities r "
@@ -129,7 +131,9 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name"
     ).fetchall()
     write_tsv(release_root / "qc_summary.tsv", qc_columns, [dict(r) for r in qc_rows])
-    decision_cols = ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256", "decision", "curated_decision", "reason_codes", "evaluated_at", "curated_by", "curated_reason", "curated_evidence", "curated_at"]
+    decision_cols = ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id",
+                     "profile_sha256", "decision", "curated_decision", "reason_codes", "evaluated_at", "curated_by",
+                     "curated_reason", "curated_evidence", "curated_at"]
     decision_rows = db.conn.execute(
         "SELECT d.* FROM current_decisions d WHERE d.profile=? AND NOT EXISTS ("
         "SELECT 1 FROM effective_retired_entities r "
@@ -138,7 +142,8 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         (profile,),
     ).fetchall()
     write_tsv(release_root / "decisions.tsv", decision_cols, [dict(r) for r in decision_rows])
-    profile_cols = ["profile_snapshot_id", "profile_name", "profile_version", "profile_sha256", "profile_document", "recorded_at"]
+    profile_cols = ["profile_snapshot_id", "profile_name", "profile_version", "profile_sha256", "profile_document",
+                    "recorded_at"]
     profile_rows = db.conn.execute(
         "SELECT * FROM qc_profiles WHERE profile_name=? ORDER BY profile_snapshot_id", (profile,)
     ).fetchall()
@@ -181,12 +186,14 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         "storage_mode": link_kind,
         "metadata_sha256": metadata_sha256,
     }
-    (release_root / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (release_root / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n",
+                                                  encoding="utf-8")
 
     checksum_lines = []
     for manifest_row in manifest_rows:
         checksum_lines.append(f"{manifest_row['sha256']}  {manifest_row['release_relative_path']}")
-    (release_root / "checksums.sha256").write_text("\n".join(checksum_lines) + ("\n" if checksum_lines else ""), encoding="utf-8")
+    (release_root / "checksums.sha256").write_text("\n".join(checksum_lines) + ("\n" if checksum_lines else ""),
+                                                   encoding="utf-8")
 
     readme = (
         f"# Operon release {version}\n\n"
@@ -219,7 +226,8 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     db.conn.executemany(
         "INSERT OR REPLACE INTO release_members(release_version, file_id, entity_type, entity_id, release_path, sha256, size_bytes) "
         "VALUES(?,?,?,?,?,?,?)",
-        [(version, m["file_id"], m["entity_type"], m["entity_id"], m["release_relative_path"], m["sha256"], m["size_bytes"]) for m in manifest_rows],
+        [(version, m["file_id"], m["entity_type"], m["entity_id"], m["release_relative_path"], m["sha256"],
+          m["size_bytes"]) for m in manifest_rows],
     )
     db.conn.commit()
     for member in members:

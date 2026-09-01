@@ -7,8 +7,7 @@ what to do, project.yaml says how to do it for this project.
 from __future__ import annotations
 
 import os
-import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -151,25 +150,25 @@ class Project:
 
     def ensure_dirs(self) -> None:
         for directory in (
-            self.metadata_dir,
-            self.schema_path.parent,
-            self.profiles_dir,
-            self.raw_root / "reads",
-            self.raw_root / "assemblies",
-            self.raw_root / "annotations",
-            self.standardized_root / "reads",
-            self.standardized_root / "assemblies",
-            self.standardized_root / "annotations",
-            self.qc_root / "reads",
-            self.qc_root / "assemblies",
-            self.qc_root / "annotations",
-            self.qc_root / "aggregate",
-            self.qc_root / "cache" / "fasta_lengths",
-            self.analysis_root,
-            self.reports_root,
-            self.logs_root,
-            self.releases_root,
-            self.taxonomy_reference_sets_dir,
+                self.metadata_dir,
+                self.schema_path.parent,
+                self.profiles_dir,
+                self.raw_root / "reads",
+                self.raw_root / "assemblies",
+                self.raw_root / "annotations",
+                self.standardized_root / "reads",
+                self.standardized_root / "assemblies",
+                self.standardized_root / "annotations",
+                self.qc_root / "reads",
+                self.qc_root / "assemblies",
+                self.qc_root / "annotations",
+                self.qc_root / "aggregate",
+                self.qc_root / "cache" / "fasta_lengths",
+                self.analysis_root,
+                self.reports_root,
+                self.logs_root,
+                self.releases_root,
+                self.taxonomy_reference_sets_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

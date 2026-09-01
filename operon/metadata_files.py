@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+
 def initialize_metadata_directory(metadata_dir: str | Path) -> None:
     """Create a notice; SQLite is the only writable metadata source in 0.4+."""
     metadata_dir = Path(metadata_dir)

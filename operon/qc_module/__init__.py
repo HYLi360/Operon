@@ -15,11 +15,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from operon import __version__
-from operon.config import Project, project_rel
-from operon.database import Database
-from operon.errors import QCError
-from operon.files import verify_local_file_identity
 from operon.qc_module._parsers import (
     fasta_lengths,
     fasta_stats,
@@ -28,6 +23,12 @@ from operon.qc_module._parsers import (
     gff3_stats,
     protein_stats,
 )
+
+from operon import __version__
+from operon.config import Project, project_rel
+from operon.database import Database
+from operon.errors import QCError
+from operon.files import verify_local_file_identity
 from operon.utils import now_iso
 from operon.workflow import log_run, set_state_bulk
 
@@ -83,11 +84,11 @@ def _input_set_identity(file_record: dict[str, Any],
         "size_bytes": int(file_record["size_bytes"]),
     }]
     inputs.extend({
-        "kind": str(item["kind"]),
-        "file_id": str(item["file_id"]),
-        "sha256": str(item["sha256"]).lower(),
-        "size_bytes": int(item["size_bytes"]),
-    } for item in related_inputs)
+                      "kind": str(item["kind"]),
+                      "file_id": str(item["file_id"]),
+                      "sha256": str(item["sha256"]).lower(),
+                      "size_bytes": int(item["size_bytes"]),
+                  } for item in related_inputs)
     payload = json.dumps(
         sorted(inputs, key=lambda item: (item["kind"], item["file_id"])),
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -175,8 +176,8 @@ def _verify_related_input(db: Database, project: Project, record: dict[str, Any]
 
 def _fasta_length_cache_path(project: Project, record: dict[str, Any]) -> Path:
     return (
-        project.qc_root / "cache" / "fasta_lengths" /
-        f"{record['file_id']}.{str(record['sha256']).lower()}.v1.tsv"
+            project.qc_root / "cache" / "fasta_lengths" /
+            f"{record['file_id']}.{str(record['sha256']).lower()}.v1.tsv"
     )
 
 
@@ -392,7 +393,8 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
     metrics: list[dict[str, Any] | None] = [
         metric(entity_type, entity_id, "file_integrity", "file_exists", file_info["exists"]),
         metric(entity_type, entity_id, "file_integrity", "size_bytes", file_info["size_bytes"], "bytes", parameter_set),
-        metric(entity_type, entity_id, "file_integrity", "sha256_match", file_info["sha256_match"], parameter_set=parameter_set),
+        metric(entity_type, entity_id, "file_integrity", "sha256_match", file_info["sha256_match"],
+               parameter_set=parameter_set),
     ]
     if not exists_ok:
         parseable = 0
@@ -420,15 +422,21 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
                 "genome_fasta", "genome_fasta_genbank", "genome_fasta_refseq",
             }:
                 metrics.extend(
-                    metric(entity_type, entity_id, "assembly_basic", name, stats[name], unit="bp" if name.endswith("length") or name in {"contig_n50", "contig_n90"} else ("percent" if name.endswith("percent") else None), parameter_set=parameter_set)
+                    metric(entity_type, entity_id, "assembly_basic", name, stats[name],
+                           unit="bp" if name.endswith("length") or name in {"contig_n50", "contig_n90"} else (
+                               "percent" if name.endswith("percent") else None), parameter_set=parameter_set)
                     for name in ASSEMBLY_METRICS
                 )
             else:
                 metrics.extend([
-                    metric(entity_type, entity_id, "sequence_basic", "sequence_count", stats["sequence_count"], parameter_set=parameter_set),
-                    metric(entity_type, entity_id, "sequence_basic", "total_length", stats["total_length"], "bp", parameter_set),
-                    metric(entity_type, entity_id, "sequence_basic", "empty_sequence_count", stats["empty_sequence_count"], parameter_set=parameter_set),
-                    metric(entity_type, entity_id, "sequence_basic", "duplicate_sequence_id_count", stats["duplicate_sequence_id_count"], parameter_set=parameter_set),
+                    metric(entity_type, entity_id, "sequence_basic", "sequence_count", stats["sequence_count"],
+                           parameter_set=parameter_set),
+                    metric(entity_type, entity_id, "sequence_basic", "total_length", stats["total_length"], "bp",
+                           parameter_set),
+                    metric(entity_type, entity_id, "sequence_basic", "empty_sequence_count",
+                           stats["empty_sequence_count"], parameter_set=parameter_set),
+                    metric(entity_type, entity_id, "sequence_basic", "duplicate_sequence_id_count",
+                           stats["duplicate_sequence_id_count"], parameter_set=parameter_set),
                 ])
         elif record["format"] == "fastq":
             read_parameter_set = f"{parameter_set}:sample_{sample_size}:phred_{phred_offset}"
@@ -441,7 +449,8 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             for name, value in stats.items():
                 if value is None:
                     continue
-                unit = "bp" if name in {"total_bases", "read_length_min", "read_length_max", "read_length_mean", "read_length_n50"} else (
+                unit = "bp" if name in {"total_bases", "read_length_min", "read_length_max", "read_length_mean",
+                                        "read_length_n50"} else (
                     "percent" if name.endswith("percent") else None)
                 metrics.append(metric(entity_type, entity_id, "reads_basic", name, value, unit, read_parameter_set))
             pairing = _timed_call(
@@ -461,7 +470,8 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
         # a parser (other, directory, bam, ...) leave parseable unmeasured so
         # required `parseable == 1` gates stay NOT_EVALUATED for them.
         if record["format"] in {"fasta", "fastq", "gff3"}:
-            metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", parseable, parameter_set=parameter_set))
+            metrics.append(
+                metric(entity_type, entity_id, "file_integrity", "parseable", parseable, parameter_set=parameter_set))
         _timed_call(
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,
@@ -566,7 +576,8 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
     }
     for name, value in stats.items():
         if name in unit_map:
-            metrics.append(metric("annotation", entity_id, "annotation_basic", name, value, unit_map[name], parameter_set))
+            metrics.append(
+                metric("annotation", entity_id, "annotation_basic", name, value, unit_map[name], parameter_set))
     protein_file = None
     prow = _timed_call(
         timings, "protein_manifest_lookup",
@@ -626,7 +637,8 @@ def _pairing_metric(db: Database, project: Project, record: dict[str, Any], own_
         if read_count_cache is not None:
             read_count_cache[cache_key] = int(sibling_count)
     matched = 1 if int(own_count) == int(sibling_count) else 0
-    return metric(record["entity_type"], record["entity_id"], "reads_basic", "paired_read_count_match", matched, parameter_set=parameter_set)
+    return metric(record["entity_type"], record["entity_id"], "reads_basic", "paired_read_count_match", matched,
+                  parameter_set=parameter_set)
 
 
 def qc_all(db: Database, project: Project, entity_type: str | None = None,

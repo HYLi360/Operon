@@ -67,13 +67,15 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                         "-db", "${database}",
                         "-query", "${input}",
                         "-out", "${output}",
-                        "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-outfmt",
+                        "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                         "-max_target_seqs", "5",
                         "-evalue", "1e-5",
                         "-num_threads", "${threads}",
                     ],
                     "result_parser": "blast_tabular",
-                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore"],
+                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend",
+                                       "sstart", "send", "evalue", "bitscore"],
                     "hit_metric_columns": ["pident", "length", "evalue", "bitscore"],
                     "max_hits_per_query": 5,
                 }
@@ -99,13 +101,15 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                         "-db", "${database}",
                         "-query", "${input}",
                         "-out", "${output}",
-                        "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
+                        "-outfmt",
+                        "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
                         "-max_target_seqs", "5",
                         "-evalue", "1e-5",
                         "-num_threads", "${threads}",
                     ],
                     "result_parser": "blast_tabular",
-                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore"],
+                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend",
+                                       "sstart", "send", "evalue", "bitscore"],
                     "hit_metric_columns": ["pident", "length", "evalue", "bitscore"],
                     "max_hits_per_query": 5,
                 }
@@ -445,7 +449,8 @@ def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: 
         try:
             proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError as exc:
-            raise ExternalToolError(f"cannot launch {tool.name}: {exc}; check config/tools.yaml run_method/executable") from exc
+            raise ExternalToolError(
+                f"cannot launch {tool.name}: {exc}; check config/tools.yaml run_method/executable") from exc
         except subprocess.TimeoutExpired as exc:
             raise ExternalToolError(f"{tool.name} version detection timed out after {timeout}s") from exc
         combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -964,10 +969,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     )
     output_path = output_dir / output_name
     if (
-        tool.name == "busco"
-        and any(arg in {"--auto-lineage", "--auto-lineage-euk", "--auto-lineage-prok"}
-                for arg in recipe.arguments)
-        and "fasta" in output_path.as_posix()
+            tool.name == "busco"
+            and any(arg in {"--auto-lineage", "--auto-lineage-euk", "--auto-lineage-prok"}
+                    for arg in recipe.arguments)
+            and "fasta" in output_path.as_posix()
     ):
         raise ValidationError(
             f"{recipe.name}: BUSCO auto-lineage output path contains 'fasta', which SEPP "

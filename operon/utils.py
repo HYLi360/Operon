@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator, TextIO
+from typing import Any, Iterable, Iterator
 
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 GZIP_MAGIC = b"\x1f\x8b"
@@ -218,8 +218,10 @@ def format_table(headers: Iterable[str], rows: Iterable[Iterable[Any]]) -> str:
     for row in strings:
         for i, value in enumerate(row):
             widths[i] = max(widths[i], len(value))
+
     def fmt(row: list[str]) -> str:
         return "  ".join(value.ljust(widths[i]) for i, value in enumerate(row))
+
     lines = [fmt([str(h) for h in headers]), "  ".join("-" * w for w in widths)]
     lines.extend(fmt(row) for row in strings)
     return "\n".join(lines)

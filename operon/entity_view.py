@@ -7,8 +7,6 @@ from typing import Any
 
 from operon.database import Database
 from operon.errors import EntityNotFoundError, ValidationError
-from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES
-
 
 INTERNAL_ID_RE = re.compile(r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$", re.IGNORECASE)
 PREFIX_TYPES = {"ORG": "organism", "SMP": "sample", "RUN": "run", "ASM": "assembly", "ANN": "annotation"}
@@ -77,12 +75,12 @@ def _organism_for(db: Database, entity_type: str, entity_id: str) -> str:
 
 
 def entity_graph(
-    db: Database,
-    identifier: str,
-    *,
-    scope: str = "matched",
-    include_superseded: bool = False,
-    include_retired: bool = False,
+        db: Database,
+        identifier: str,
+        *,
+        scope: str = "matched",
+        include_superseded: bool = False,
+        include_retired: bool = False,
 ) -> dict[str, Any]:
     """Return an entity-centered graph, optionally expanded to the organism.
 
@@ -215,13 +213,13 @@ def entity_graph(
         assemblies = [
             row for row in assemblies
             if row["sample_id"] in sample_ids
-            and current(row, "assembly", "assembly_id")
+               and current(row, "assembly", "assembly_id")
         ]
         assembly_ids = {row["assembly_id"] for row in assemblies}
         annotations = [
             row for row in annotations
             if row["assembly_id"] in assembly_ids
-            and current(row, "annotation", "annotation_id")
+               and current(row, "annotation", "annotation_id")
         ]
 
     retirement_ids = [object_id for _object_type, object_id in candidate_pairs]
@@ -253,18 +251,18 @@ def entity_graph(
         runs = [
             row for row in runs
             if row["sample_id"] in sample_ids
-            and ("run", row["run_id"]) not in retired_pairs
+               and ("run", row["run_id"]) not in retired_pairs
         ]
         assemblies = [
             row for row in assemblies
             if row["sample_id"] in sample_ids
-            and ("assembly", row["assembly_id"]) not in retired_pairs
+               and ("assembly", row["assembly_id"]) not in retired_pairs
         ]
         assembly_ids = {row["assembly_id"] for row in assemblies}
         annotations = [
             row for row in annotations
             if row["assembly_id"] in assembly_ids
-            and ("annotation", row["annotation_id"]) not in retired_pairs
+               and ("annotation", row["annotation_id"]) not in retired_pairs
         ]
 
     sample_ids = [row["sample_id"] for row in samples]

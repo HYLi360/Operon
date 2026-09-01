@@ -19,26 +19,25 @@ from operon.entity_view import entity_graph
 from operon.errors import OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
-from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table, print_status
+from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table
 from operon.rules import curate_decision, evaluate_all, evaluate_entity
 from operon.schema import (
     ENTITY_ID_COLUMNS,
-    ENTITY_PREFIXES,
     ENTITY_TABLES,
     Schema,
     read_tsv,
-)
-from operon.taxonomy import (
-    compile_reference_set,
-    import_ncbi_taxonomy,
-    list_reference_sets,
-    list_taxonomy_snapshots,
 )
 from operon.table_import import (
     IMPORTABLE_TABLES,
     apply_table_import,
     preview_table_import,
     write_table_template,
+)
+from operon.taxonomy import (
+    compile_reference_set,
+    import_ncbi_taxonomy,
+    list_reference_sets,
+    list_taxonomy_snapshots,
 )
 from operon.utils import format_table, parse_key_values
 from operon.workflow import flush_run_log, log_run, new_run_id, set_state
@@ -70,7 +69,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--project-id", default="PRJ_000001")
     p.add_argument("--name", default="")
 
-    p = sub.add_parser("init-demo", help="initialize a project with synthetic assemblies/annotations/reads and run the pipeline")
+    p = sub.add_parser("init-demo",
+                       help="initialize a project with synthetic assemblies/annotations/reads and run the pipeline")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--project-id", default="PRJ_DEMO_001")
 
@@ -190,8 +190,10 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("next-id", help="allocate the next stable internal ID for an entity type")
     p.add_argument("entity_type", choices=["organism", "sample", "run", "assembly", "annotation", "file"])
 
-    p = sub.add_parser("ingest", help="archive a file or directory (local path, sftp:// or remote:// URL) into raw/ with a content hash and manifest record")
-    p.add_argument("--source", required=True, help="local path, sftp://[user@]host[:port]/path, or remote://<name>/<path>")
+    p = sub.add_parser("ingest",
+                       help="archive a file or directory (local path, sftp:// or remote:// URL) into raw/ with a content hash and manifest record")
+    p.add_argument("--source", required=True,
+                   help="local path, sftp://[user@]host[:port]/path, or remote://<name>/<path>")
     p.add_argument("--entity-type", required=True, choices=["organism", "sample", "run", "assembly", "annotation"])
     p.add_argument("--entity-id", required=True)
     p.add_argument("--role", required=True)
@@ -227,9 +229,11 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("import-qc", help="import external QC metrics (e.g. BUSCO, QUAST, FastQC) from TSV")
     p.add_argument("--file", dest="tsv_file", required=True)
 
-    p = sub.add_parser("run-external", help="run an external tool with structured provenance (stdout/stderr, exit code, expected outputs)")
+    p = sub.add_parser("run-external",
+                       help="run an external tool with structured provenance (stdout/stderr, exit code, expected outputs)")
     p.add_argument("--step", required=True, help="workflow step name, e.g. busco / quast / fastp")
-    p.add_argument("--command", dest="command_line", required=True, help="quoted command line, e.g. 'busco -i in.fa -o out -m genome'")
+    p.add_argument("--command", dest="command_line", required=True,
+                   help="quoted command line, e.g. 'busco -i in.fa -o out -m genome'")
     p.add_argument("--entity-type")
     p.add_argument("--entity-id")
     p.add_argument("--parameter-set")
@@ -259,7 +263,8 @@ def _parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("remotes", help="list configured remotes (project.yaml remotes:) and test connectivity")
 
-    p = sub.add_parser("push", help="upload manifest files to a configured remote mirror (SFTP, checksum-verified, idempotent)")
+    p = sub.add_parser("push",
+                       help="upload manifest files to a configured remote mirror (SFTP, checksum-verified, idempotent)")
     p.add_argument("--remote", required=True, help="remote name from the project.yaml remotes: section")
     p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: all)")
 
@@ -272,7 +277,8 @@ def _parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("pull", help="restore manifest files from a configured remote mirror (SFTP, checksum-verified)")
     p.add_argument("--remote", required=True, help="remote name from the project.yaml remotes: section")
-    p.add_argument("--file-id", action="append", default=[], help="restrict to these manifest files (default: everything in the remote manifest)")
+    p.add_argument("--file-id", action="append", default=[],
+                   help="restrict to these manifest files (default: everything in the remote manifest)")
 
     p = sub.add_parser("evaluate", help="apply a versioned QC profile and record decisions")
     p.add_argument("--profile")
@@ -404,7 +410,8 @@ def _parser() -> argparse.ArgumentParser:
     bp = backup_sub.add_parser("verify", help="verify every file in an existing backup")
     bp.add_argument("--input", required=True)
 
-    p = sub.add_parser("set-state", help="manually set workflow state (audited; use --force for non-standard transition)")
+    p = sub.add_parser("set-state",
+                       help="manually set workflow state (audited; use --force for non-standard transition)")
     p.add_argument("--entity-type", required=True)
     p.add_argument("--entity-id", required=True)
     p.add_argument("--state", required=True)
@@ -417,13 +424,13 @@ def _parser() -> argparse.ArgumentParser:
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
-        args.command == "query"
-        or args.command == "show"
-        or args.command == "retired"
-        or (args.command in {"retire", "restore"} and not args.apply)
-        or (args.command == "backup" and args.backup_command == "create")
-        or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
-        or (args.command == "ncbi-reconcile" and not args.apply)
+            args.command == "query"
+            or args.command == "show"
+            or args.command == "retired"
+            or (args.command in {"retire", "restore"} and not args.apply)
+            or (args.command == "backup" and args.backup_command == "create")
+            or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
+            or (args.command == "ncbi-reconcile" and not args.apply)
     )
     db = Database(project.db_path, read_only=read_only)
     return project, db
@@ -471,7 +478,8 @@ def _cmd_status(args: argparse.Namespace, db: Database) -> int:
     if not rows:
         print("no entity states recorded yet")
     else:
-        print(format_table(["entity_type", "entity_id", "state", "message", "updated_at"], ([r[c] for c in r.keys()] for r in rows)))
+        print(format_table(["entity_type", "entity_id", "state", "message", "updated_at"],
+                           ([r[c] for c in r.keys()] for r in rows)))
     return 0
 
 
@@ -513,13 +521,16 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
     db.ensure_metadata_columns(schema)
     for extra in list(row.keys()):
         if extra not in schema.columns(table):
-            print(f"warning: unknown field {extra!r} for {entity_type}; add it to {project.schema_path} to remove this warning", file=sys.stderr)
+            print(
+                f"warning: unknown field {extra!r} for {entity_type}; add it to {project.schema_path} to remove this warning",
+                file=sys.stderr)
     normalized, _ = schema.validate_and_normalize(table, [row])
     row = normalized[0]
     _check_fks_for_row(db, entity_type, row, require_target=True)
     db.insert_row(table, row)
     db.set_entity_state(entity_type, record_id, "METADATA_VALIDATED", "record added via CLI and schema-validated")
-    db.record_change(entity_type, record_id, None, None, json.dumps({k: str(v) for k, v in row.items()}), "record added", actor=os.environ.get("USER"))
+    db.record_change(entity_type, record_id, None, None, json.dumps({k: str(v) for k, v in row.items()}),
+                     "record added", actor=os.environ.get("USER"))
     print(f"added {entity_type} {record_id}")
     return 0
 
@@ -535,7 +546,8 @@ def _check_fks_for_row(db: Database, entity_type: str, row: dict[str, Any], requ
         db.require_active_entity("assembly", row["assembly_id"])
     for field in ("fasta_file_id", "gff_file_id", "cds_file_id", "protein_file_id"):
         if row.get(field) and db.conn.execute("SELECT 1 FROM files WHERE file_id=?", (row[field],)).fetchone() is None:
-            raise ValidationError(f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: {field} {row[field]} does not exist")
+            raise ValidationError(
+                f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: {field} {row[field]} does not exist")
 
 
 def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database) -> int:
@@ -677,7 +689,8 @@ def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     rows = read_tsv(args.tsv_file)
-    required = ["entity_type", "entity_id", "qc_stage", "metric_name", "metric_value", "tool", "tool_version", "parameter_set"]
+    required = ["entity_type", "entity_id", "qc_stage", "metric_name", "metric_value", "tool", "tool_version",
+                "parameter_set"]
     missing = [c for c in required if not rows or c not in rows[0]]
     if missing:
         raise ValidationError(f"{args.tsv_file}: missing columns {missing}")
@@ -744,7 +757,8 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
         expected_outputs=args.expected_output, cwd=args.cwd, timeout=args.timeout,
         backend=args.backend,
     )
-    print(json.dumps({k: record.get(k) for k in ("run_id", "step", "status", "exit_code", "finished_at")}, ensure_ascii=False))
+    print(json.dumps({k: record.get(k) for k in ("run_id", "step", "status", "exit_code", "finished_at")},
+                     ensure_ascii=False))
     return 0
 
 
@@ -951,7 +965,8 @@ def _cmd_evaluate(args: argparse.Namespace, project: Project, db: Database) -> i
     else:
         results = evaluate_all(db, project, args.profile, args.entity_type)
     print(format_table(["entity_type", "entity_id", "profile", "decision", "reasons"], (
-        [r["entity_type"], r["entity_id"], r["profile"], r["decision"], ", ".join(_reason_list(r["reason_codes"])) or "-"] for r in results
+        [r["entity_type"], r["entity_id"], r["profile"], r["decision"],
+         ", ".join(_reason_list(r["reason_codes"])) or "-"] for r in results
     )))
     return 0
 
@@ -1173,8 +1188,10 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
         ]),
         ("Samples", graph["samples"], ["sample_id", "isolate", "strain", "biosample_accession"]),
         ("Runs", graph["runs"], ["run_id", "sample_id", "run_accession", "platform", "instrument_model"]),
-        ("Assemblies", graph["assemblies"], ["assembly_id", "sample_id", "assembly_accession", "assembly_name", "assembly_level"]),
-        ("Annotations", graph["annotations"], ["annotation_id", "assembly_id", "annotation_source", "annotation_version"]),
+        ("Assemblies", graph["assemblies"],
+         ["assembly_id", "sample_id", "assembly_accession", "assembly_name", "assembly_level"]),
+        ("Annotations", graph["annotations"],
+         ["annotation_id", "assembly_id", "annotation_source", "annotation_version"]),
         ("Files", graph["files"], ["file_id", "entity_type", "entity_id", "file_role", "status", "relative_path"]),
     ]
     if graph["supersessions"]:

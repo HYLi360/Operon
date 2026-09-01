@@ -153,6 +153,7 @@ def connect_ssh(host: str, user: str = "", port: int = 22, key_file: str = "",
                         f"expected SHA256:{expected_fingerprint}, got SHA256:{actual}"
                     )
                 ssh_client.get_host_keys().add(hostname, key.get_name(), key)
+
         client.set_missing_host_key_policy(PinnedHostKeyPolicy())
     elif insecure_accept_unknown_host:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -664,10 +665,10 @@ def _assert_entry_matches_record(name: str, rel: str, entry: dict[str, Any],
         entry, label=f"remote {name!r} manifest entry {rel!r}"
     )
     if (
-        entry_file_id != str(record["file_id"])
-        or entry_sha != str(record["sha256"]).lower()
-        or entry_size != int(record["size_bytes"])
-        or rel != str(record["relative_path"])
+            entry_file_id != str(record["file_id"])
+            or entry_sha != str(record["sha256"]).lower()
+            or entry_size != int(record["size_bytes"])
+            or rel != str(record["relative_path"])
     ):
         raise ConflictError(
             f"remote {name!r} identity for {rel} does not match local manifest "
@@ -978,8 +979,8 @@ def evict_local(db: Database, project: Project, name: str,
                 local = local_artifact_path(project, rel)
                 if local.exists():
                     if (
-                        path_size_bytes(local) != int(record["size_bytes"])
-                        or sha256_path(local).lower() != str(record["sha256"]).lower()
+                            path_size_bytes(local) != int(record["size_bytes"])
+                            or sha256_path(local).lower() != str(record["sha256"]).lower()
                     ):
                         raise ConflictError(f"local artifact does not match manifest; refusing to evict: {rel}")
                     _ensure_remote_only_schema(project)
@@ -1018,7 +1019,8 @@ def evict_local(db: Database, project: Project, name: str,
 def check_remote(project: Project, name: str) -> dict[str, Any]:
     """Connectivity check used by `operon remotes`."""
     spec = get_remote(project, name)
-    result: dict[str, Any] = {"name": name, "type": "sftp", "address": spec.address, "root": spec.root, "status": "ok", "error": ""}
+    result: dict[str, Any] = {"name": name, "type": "sftp", "address": spec.address, "root": spec.root, "status": "ok",
+                              "error": ""}
     try:
         with SFTPStore(spec) as store:
             store.sftp.stat(spec.root)

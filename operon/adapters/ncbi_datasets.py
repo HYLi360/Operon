@@ -49,7 +49,6 @@ from operon.schema import (
 from operon.utils import atomic_copy, atomic_write_text, now_iso, sha256_file
 from operon.workflow import finish_run, new_run_id, start_run
 
-
 NCBI_DATASETS_API = "https://api.ncbi.nlm.nih.gov/datasets/v2"
 NCBI_DATASETS_API_FALLBACK = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha"
 ACCESSION_RE = re.compile(r"\bGC[AF]_\d+(?:\.\d+)?\b", re.IGNORECASE)
@@ -72,6 +71,8 @@ class _RetryableDownloadError(Exception):
 
 class _DownloadCancelled(Exception):
     """Internal marker used when the caller stops waiting for more batches."""
+
+
 NCBI_ASSEMBLY_SCHEMA_FIELDS = (
     "assembly_name",
     "bioproject_accession",
@@ -322,7 +323,7 @@ class _PlanBuilder:
             stored_base, stored_version = _split_accession(stored)
             explicit_version = _integer_or_none(row.get("assembly_version"))
             if stored == accession or (
-                stored_base == base and (stored_version or explicit_version) == version
+                    stored_base == base and (stored_version or explicit_version) == version
             ):
                 self._require_active_existing("assembly", assembly_id)
                 return assembly_id
@@ -408,10 +409,10 @@ class _PlanBuilder:
         return sample_id
 
     def _ensure_annotation(
-        self,
-        assembly_id: str,
-        accession: str,
-        annotation: dict[str, Any],
+            self,
+            assembly_id: str,
+            accession: str,
+            annotation: dict[str, Any],
     ) -> str:
         accession = _canonical_accession(accession)
         if accession in self.plan.annotation_ids:
@@ -457,14 +458,14 @@ class _PlanBuilder:
                     )
                 annotation_id = next((
                     aid for aid, row in {
-                        **self.rows["annotations"], **self.planned["annotations"],
-                    }.items()
+                    **self.rows["annotations"], **self.planned["annotations"],
+                }.items()
                     if aid not in claimed
-                    and row.get("assembly_id") == assembly_id
-                    and str(row.get("annotation_source") or "").strip().casefold()
-                    == provider.casefold()
-                    and (_integer_or_none(row.get("annotation_version")) or 1) == version
-                    and _date_only(row.get("annotation_date")) == release_date
+                       and row.get("assembly_id") == assembly_id
+                       and str(row.get("annotation_source") or "").strip().casefold()
+                       == provider.casefold()
+                       and (_integer_or_none(row.get("annotation_version")) or 1) == version
+                       and _date_only(row.get("annotation_date")) == release_date
                 ), "")
         if not annotation_id:
             annotation_id = self.ids.allocate("annotation")
@@ -513,8 +514,8 @@ class _PlanBuilder:
         key = f"{namespace}\0{accession}"
         current = self._accession(namespace, accession)
         if current and (
-            current.get("internal_type") != internal_type
-            or current.get("internal_id") != internal_id
+                current.get("internal_type") != internal_type
+                or current.get("internal_id") != internal_id
         ):
             raise ConflictError(
                 f"{namespace}:{accession} already maps to "
@@ -532,26 +533,26 @@ class _PlanBuilder:
 
 
 def run_ncbi_datasets_adapter(
-    db: Database,
-    project: Project,
-    *,
-    inputs: Sequence[str | Path] = (),
-    accessions: Sequence[str] = (),
-    accession_file: str | Path | None = None,
-    includes: Sequence[str] = DEFAULT_INCLUDES,
-    archive_files: bool = True,
-    standardize: bool = False,
-    dry_run: bool = False,
-    preserve_sources: bool = True,
-    email: str | None = None,
-    api_key: str | None = None,
-    timeout: float = 300.0,
-    batch_size: int = 10,
-    download_workers: int = 3,
-    max_retries: int = 4,
-    retry_backoff: float = 1.0,
-    resume_run_id: str | None = None,
-    plan_only: bool = False,
+        db: Database,
+        project: Project,
+        *,
+        inputs: Sequence[str | Path] = (),
+        accessions: Sequence[str] = (),
+        accession_file: str | Path | None = None,
+        includes: Sequence[str] = DEFAULT_INCLUDES,
+        archive_files: bool = True,
+        standardize: bool = False,
+        dry_run: bool = False,
+        preserve_sources: bool = True,
+        email: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 300.0,
+        batch_size: int = 10,
+        download_workers: int = 3,
+        max_retries: int = 4,
+        retry_backoff: float = 1.0,
+        resume_run_id: str | None = None,
+        plan_only: bool = False,
 ) -> dict[str, Any]:
     """Import existing NCBI Datasets outputs and optionally download packages."""
 
@@ -683,11 +684,11 @@ def run_ncbi_datasets_adapter(
             )
 
     def process_source(
-        source_path: Path,
-        *,
-        label: str,
-        requested_batch: Sequence[str] = (),
-        already_preserved: Path | None = None,
+            source_path: Path,
+            *,
+            label: str,
+            requested_batch: Sequence[str] = (),
+            already_preserved: Path | None = None,
     ) -> dict[str, Any]:
         nonlocal persisted_schema
         bundle = _open_source(source_path, project, False, label=label)
@@ -816,7 +817,7 @@ def run_ncbi_datasets_adapter(
             # staging directory lives on the project filesystem.  Batches are
             # downloaded concurrently and consumed as soon as each finishes.
             with tempfile.TemporaryDirectory(
-                prefix=".operon-ncbi-download-", dir=str(project.root)
+                    prefix=".operon-ncbi-download-", dir=str(project.root)
             ) as temp_name:
                 for missing_signature, group_accessions in download_groups.items():
                     batches = list(_chunks(group_accessions, batch_size))
@@ -1016,11 +1017,11 @@ def _find_archived_assembly(db: Database, accession: str) -> str | None:
 
 
 def _file_satisfies_include(
-    project: Project,
-    row: Any | None,
-    *,
-    entity_type: str,
-    standardize: bool,
+        project: Project,
+        row: Any | None,
+        *,
+        entity_type: str,
+        standardize: bool,
 ) -> bool:
     if row is None or str(row["status"]) not in {
         "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
@@ -1031,8 +1032,8 @@ def _file_satisfies_include(
         return False
     if standardize:
         standardized = (
-            project.standardized_root / raw_bucket(entity_type)
-            / str(row["entity_id"]) / Path(str(row["relative_path"])).name
+                project.standardized_root / raw_bucket(entity_type)
+                / str(row["entity_id"]) / Path(str(row["relative_path"])).name
         )
         if not standardized.exists():
             return False
@@ -1040,13 +1041,13 @@ def _file_satisfies_include(
 
 
 def _missing_includes(
-    db: Database,
-    project: Project,
-    accession: str,
-    assembly_id: str,
-    includes: Sequence[str],
-    *,
-    standardize: bool,
+        db: Database,
+        project: Project,
+        accession: str,
+        assembly_id: str,
+        includes: Sequence[str],
+        *,
+        standardize: bool,
 ) -> tuple[str, ...]:
     """Return the exact requested include subset not already verified."""
     accession = _canonical_accession(accession)
@@ -1065,7 +1066,7 @@ def _missing_includes(
                 (assembly_id, role),
             ).fetchone()
             if not _file_satisfies_include(
-                project, row, entity_type="assembly", standardize=standardize,
+                    project, row, entity_type="assembly", standardize=standardize,
             ):
                 missing.append(include)
 
@@ -1077,15 +1078,15 @@ def _missing_includes(
             [
                 str(row["annotation_id"])
                 for row in db.conn.execute(
-                    "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
-                    "WHERE n.assembly_accession=? "
-                    + (
-                        "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-                        "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
-                        if db.lifecycle_schema_available() else ""
-                    ),
-                    (accession,),
-                )
+                "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
+                "WHERE n.assembly_accession=? "
+                + (
+                    "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                    "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
+                    if db.lifecycle_schema_available() else ""
+                ),
+                (accession,),
+            )
             ]
             if _table_exists(db, "ncbi_annotation_records") else []
         )
@@ -1121,7 +1122,7 @@ def _missing_includes(
                     (annotation_id, role),
                 ).fetchone()
                 if _file_satisfies_include(
-                    project, row, entity_type="annotation", standardize=standardize,
+                        project, row, entity_type="annotation", standardize=standardize,
                 ):
                     present.add(include)
             if len(present) > len(satisfied):
@@ -1133,12 +1134,12 @@ def _missing_includes(
 
 
 def _plan_missing_downloads(
-    db: Database,
-    project: Project,
-    accessions: Sequence[str],
-    includes: Sequence[str],
-    *,
-    standardize: bool,
+        db: Database,
+        project: Project,
+        accessions: Sequence[str],
+        includes: Sequence[str],
+        *,
+        standardize: bool,
 ) -> tuple[dict[tuple[str, ...], list[str]], list[str]]:
     """Group accessions by their exact missing include signature."""
     groups: dict[tuple[str, ...], list[str]] = {}
@@ -1221,16 +1222,16 @@ def _zip_package_diagnostic(path: Path, accessions: Sequence[str]) -> tuple[bool
 
 
 def download_ncbi_dataset(
-    accessions: Sequence[str],
-    destination: str | Path,
-    *,
-    includes: Sequence[str] = DEFAULT_INCLUDES,
-    email: str | None = None,
-    api_key: str | None = None,
-    timeout: float = 300.0,
-    session: Any | None = None,
-    max_retries: int = 4,
-    retry_backoff: float = 1.0,
+        accessions: Sequence[str],
+        destination: str | Path,
+        *,
+        includes: Sequence[str] = DEFAULT_INCLUDES,
+        email: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 300.0,
+        session: Any | None = None,
+        max_retries: int = 4,
+        retry_backoff: float = 1.0,
 ) -> Path:
     """Download one NCBI Datasets package with explicit SSL/network retries.
 
@@ -1302,14 +1303,14 @@ def download_ncbi_dataset(
 
 
 def _download_ncbi_dataset_once(
-    *,
-    canonical: Sequence[str],
-    destination: Path,
-    includes: Sequence[str],
-    email: str | None,
-    api_key: str | None,
-    timeout: float,
-    session: Any,
+        *,
+        canonical: Sequence[str],
+        destination: Path,
+        includes: Sequence[str],
+        email: str | None,
+        api_key: str | None,
+        timeout: float,
+        session: Any,
 ) -> Path:
     """One download attempt over primary and fallback API bases."""
     import requests
@@ -1409,7 +1410,8 @@ def _download_ncbi_dataset_once(
                 pass
             if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
                 raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
-            if isinstance(exc, (ssl.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ChunkedEncodingError)):
+            if isinstance(exc, (ssl.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                                requests.exceptions.ChunkedEncodingError)):
                 raise _RetryableDownloadError(str(exc)) from exc
             raise
         return destination
@@ -1419,18 +1421,18 @@ def _download_ncbi_dataset_once(
 
 
 def download_ncbi_datasets_parallel(
-    batches: Sequence[Sequence[str]],
-    staging_dir: str | Path,
-    *,
-    includes: Sequence[str] = DEFAULT_INCLUDES,
-    email: str | None = None,
-    api_key: str | None = None,
-    timeout: float = 300.0,
-    max_workers: int = 3,
-    max_retries: int = 4,
-    retry_backoff: float = 1.0,
-    on_complete: Any,
-    on_error: Any | None = None,
+        batches: Sequence[Sequence[str]],
+        staging_dir: str | Path,
+        *,
+        includes: Sequence[str] = DEFAULT_INCLUDES,
+        email: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 300.0,
+        max_workers: int = 3,
+        max_retries: int = 4,
+        retry_backoff: float = 1.0,
+        on_complete: Any,
+        on_error: Any | None = None,
 ) -> list[Path]:
     """Download accession batches concurrently and consume each as it lands.
 
@@ -1523,18 +1525,18 @@ def download_ncbi_datasets_parallel(
 
 
 async def _download_batches_async(
-    *,
-    batches: Sequence[Sequence[str]],
-    staging_dir: Path,
-    includes: Sequence[str],
-    email: str | None,
-    api_key: str | None,
-    timeout: float,
-    max_workers: int,
-    max_retries: int,
-    retry_backoff: float,
-    completed_queue: Any,
-    cancel_event: Any,
+        *,
+        batches: Sequence[Sequence[str]],
+        staging_dir: Path,
+        includes: Sequence[str],
+        email: str | None,
+        api_key: str | None,
+        timeout: float,
+        max_workers: int,
+        max_retries: int,
+        retry_backoff: float,
+        completed_queue: Any,
+        cancel_event: Any,
 ) -> None:
     semaphore = asyncio.Semaphore(max_workers)
 
@@ -1595,16 +1597,16 @@ async def _interruptible_retry_sleep(seconds: float, cancel_event: Any) -> None:
 
 
 async def _download_batch_aiohttp(
-    accessions: Sequence[str],
-    destination: Path,
-    *,
-    includes: Sequence[str],
-    email: str | None,
-    api_key: str | None,
-    timeout: float,
-    max_retries: int,
-    retry_backoff: float,
-    cancel_event: Any,
+        accessions: Sequence[str],
+        destination: Path,
+        *,
+        includes: Sequence[str],
+        email: str | None,
+        api_key: str | None,
+        timeout: float,
+        max_retries: int,
+        retry_backoff: float,
+        cancel_event: Any,
 ) -> Path:
     """One concurrent download task with SSL/transient-error retries."""
     import aiohttp
@@ -1722,7 +1724,7 @@ async def _download_batch_aiohttp(
 
 
 def fetch_entrez_assembly_reports(
-    accessions: Sequence[str], *, email: str | None, api_key: str | None = None
+        accessions: Sequence[str], *, email: str | None, api_key: str | None = None
 ) -> list[dict[str, Any]]:
     """Use Biopython Entrez as a metadata fallback for unusual packages."""
 
@@ -1790,7 +1792,7 @@ def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> l
                 candidates = [
                     info for info in infos
                     if info.filename.lower().endswith(".jsonl")
-                    and "sequence_report" not in PurePosixPath(info.filename).name
+                       and "sequence_report" not in PurePosixPath(info.filename).name
                 ]
             for info in candidates:
                 with archive.open(info) as raw_handle:
@@ -1821,9 +1823,9 @@ def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> l
 
 
 def discover_dataset_assets(
-    root: str | Path,
-    reports: Sequence[dict[str, Any]],
-    source_label: str,
+        root: str | Path,
+        reports: Sequence[dict[str, Any]],
+        source_label: str,
 ) -> list[DatasetAsset]:
     root = Path(root)
     report_accessions = [
@@ -1894,12 +1896,12 @@ def _validate_plan_rows(schema: Schema, plan: ImportPlan) -> dict[str, list[dict
 
 
 def _apply_plan(
-    db: Database,
-    project: Project,
-    plan: ImportPlan,
-    schema: Schema,
-    *,
-    workflow_run_id: str,
+        db: Database,
+        project: Project,
+        plan: ImportPlan,
+        schema: Schema,
+        *,
+        workflow_run_id: str,
 ) -> None:
     normalized = _validate_plan_rows(schema, plan)
     with db.transaction() as conn:
@@ -2085,14 +2087,14 @@ def _asset_sha256(asset: DatasetAsset) -> str:
 
 
 def _ingest_dataset_asset(
-    db: Database,
-    project: Project,
-    asset: DatasetAsset,
-    entity_type: str,
-    entity_id: str,
-    *,
-    run_id: str,
-    standardize: bool,
+        db: Database,
+        project: Project,
+        asset: DatasetAsset,
+        entity_type: str,
+        entity_id: str,
+        *,
+        run_id: str,
+        standardize: bool,
 ) -> dict[str, Any]:
     """Ingest one asset while bounding temporary storage to one member."""
 
@@ -2348,12 +2350,14 @@ def _read_report_tsv(handle: Any, path: Path) -> list[dict[str, Any]]:
 
 def _tsv_row_to_report(row: dict[str, str]) -> dict[str, Any]:
     normalized = {_normalize_key(key): value for key, value in row.items() if key is not None}
+
     def get(*names: str) -> str:
         for name in names:
             value = normalized.get(_normalize_key(name), "").strip()
             if value:
                 return value
         return ""
+
     return {
         "accession": get("assembly accession", "accession", "current accession"),
         "organism": {
@@ -2399,7 +2403,8 @@ def _extract_metadata(report: dict[str, Any]) -> dict[str, Any]:
         "scientific_name": _pick(organism, "organismName", "organism_name", "name"),
         "taxon_id": _pick(organism, "taxId", "tax_id", "taxid"),
         "biosample_accession": _pick(biosample, "accession") or _pick(assembly_info, "biosampleAccession"),
-        "bioproject_accession": _pick(assembly_info, "bioprojectAccession", "bioproject_accession") or _pick(report, "bioprojectAccession"),
+        "bioproject_accession": _pick(assembly_info, "bioprojectAccession", "bioproject_accession") or _pick(report,
+                                                                                                             "bioprojectAccession"),
         "strain": _pick(infra, "strain") or attributes.get("strain"),
         "isolate": _pick(infra, "isolate") or attributes.get("isolate"),
         "cultivar": _pick(infra, "cultivar") or attributes.get("cultivar"),
@@ -2531,9 +2536,9 @@ def _split_accession(value: str) -> tuple[str, int | None]:
 
 
 def _select_canonical_assembly_accession(
-    current: dict[str, Any],
-    related: Sequence[str],
-    primary: str,
+        current: dict[str, Any],
+        related: Sequence[str],
+        primary: str,
 ) -> str:
     """Choose a stable canonical accession without arrival-order rewrites."""
     normalized = [_canonical_accession(value) for value in related if value]
@@ -2559,11 +2564,11 @@ def _assembly_asset_role(role: str, accession: str, canonical: str) -> str:
 
 
 def _annotation_identity(
-    assembly_id: str,
-    accession: str,
-    provider: str,
-    version: int,
-    release_date: str | None,
+        assembly_id: str,
+        accession: str,
+        provider: str,
+        version: int,
+        release_date: str | None,
 ) -> str:
     document = {
         "assembly_id": assembly_id,

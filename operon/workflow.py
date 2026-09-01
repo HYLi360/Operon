@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import shlex
-import os
 import subprocess
 import time
 import uuid
@@ -106,11 +105,11 @@ def flush_run_log(project: Project, records: Iterable[dict[str, Any]]) -> None:
 
 
 def log_run(
-    db: Database,
-    project: Project,
-    record: dict[str, Any],
-    *,
-    jsonl_buffer: list[dict[str, Any]] | None = None,
+        db: Database,
+        project: Project,
+        record: dict[str, Any],
+        *,
+        jsonl_buffer: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Store a workflow run and append JSONL only after its DB write succeeds.
 
@@ -166,16 +165,16 @@ def start_run(db: Database, record: dict[str, Any]) -> dict[str, Any]:
 
 
 def finish_run(
-    db: Database,
-    project: Project,
-    run_id: str,
-    *,
-    status: str,
-    finished_at: str | None = None,
-    exit_code: int | None = None,
-    error: str | None = None,
-    output_sha256: str | None = None,
-    execution_details: str | None = None,
+        db: Database,
+        project: Project,
+        run_id: str,
+        *,
+        status: str,
+        finished_at: str | None = None,
+        exit_code: int | None = None,
+        error: str | None = None,
+        output_sha256: str | None = None,
+        execution_details: str | None = None,
 ) -> dict[str, Any]:
     """Finalize a previously started run and append its immutable JSONL record."""
     finished_at = finished_at or now_iso()
@@ -197,22 +196,22 @@ def finish_run(
 
 
 def run_external_command(
-    db: Database,
-    project: Project,
-    argv: list[str],
-    step: str,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-    parameter_set: str | None = None,
-    expected_outputs: Iterable[str | Path] | None = None,
-    cwd: str | Path | None = None,
-    timeout: float | None = None,
-    tool: str | None = None,
-    tool_version: str | None = None,
-    backend: str | None = None,
-    threads: int | None = None,
-    stage_inputs: Iterable[str | Path] = (),
-    executor: Any = None,
+        db: Database,
+        project: Project,
+        argv: list[str],
+        step: str,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        parameter_set: str | None = None,
+        expected_outputs: Iterable[str | Path] | None = None,
+        cwd: str | Path | None = None,
+        timeout: float | None = None,
+        tool: str | None = None,
+        tool_version: str | None = None,
+        backend: str | None = None,
+        threads: int | None = None,
+        stage_inputs: Iterable[str | Path] = (),
+        executor: Any = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 

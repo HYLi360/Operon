@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import tempfile
 from decimal import Decimal, ROUND_HALF_UP
@@ -42,7 +41,7 @@ def _chunks(values: list[int], size: int = 400) -> Iterable[list[int]]:
 
 
 def _load_reference_set(
-    db: Database, project: Project, reference_set_id: str
+        db: Database, project: Project, reference_set_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     row = db.conn.execute(
         "SELECT * FROM taxonomy_reference_sets WHERE reference_set_id=?", (reference_set_id,)
@@ -139,7 +138,7 @@ def _indexed(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
 
 
 def _release_scope(
-    db: Database, project: Project, release_version: str
+        db: Database, project: Project, release_version: str
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     release_row = db.conn.execute("SELECT * FROM releases WHERE version=?", (release_version,)).fetchone()
     if not release_row:
@@ -272,7 +271,7 @@ def _release_scope(
 
 
 def _resolve_taxids(
-    db: Database, snapshot_id: str, taxids: list[int]
+        db: Database, snapshot_id: str, taxids: list[int]
 ) -> dict[int, tuple[int | None, str]]:
     resolved: dict[int, tuple[int | None, str]] = {}
     for batch in _chunks(sorted(set(taxids))):
@@ -307,7 +306,7 @@ def _resolve_taxids(
 
 
 def _lineages(
-    db: Database, snapshot_id: str, resolved_taxids: list[int]
+        db: Database, snapshot_id: str, resolved_taxids: list[int]
 ) -> dict[int, list[dict[str, Any]]]:
     result: dict[int, list[dict[str, Any]]] = {taxid: [] for taxid in resolved_taxids}
     for batch in _chunks(sorted(set(resolved_taxids)), size=250):
@@ -331,11 +330,11 @@ def _lineages(
 
 
 def _resolve_observations(
-    db: Database,
-    snapshot_id: str,
-    raw_observations: list[dict[str, Any]],
-    targets: list[dict[str, Any]],
-    parsed_profile: dict[str, Any],
+        db: Database,
+        snapshot_id: str,
+        raw_observations: list[dict[str, Any]],
+        targets: list[dict[str, Any]],
+        parsed_profile: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[tuple[str, int], set[str]]]:
     valid_taxids: list[int] = []
     preliminary_excluded: list[dict[str, Any]] = []
@@ -381,14 +380,14 @@ def _resolve_observations(
             excluded.append({**observation, "reason": "UNKNOWN_RESOLVED_TAXID"})
             continue
         if parsed_profile["exclude_extinct"] and any(
-            item.get("is_extinct") == 1 for item in lineage
+                item.get("is_extinct") == 1 for item in lineage
         ):
             excluded.append({**observation, "reason": "EXCLUDED_EXTINCT"})
             continue
         if any(
-            pattern.search(str(item["scientific_name"]))
-            for pattern in patterns
-            for item in lineage
+                pattern.search(str(item["scientific_name"]))
+                for pattern in patterns
+                for item in lineage
         ):
             excluded.append({**observation, "reason": "EXCLUDED_NAME_PATTERN"})
             continue
@@ -425,12 +424,12 @@ def _resolve_observations(
             "family_taxid": rank_taxids["family"],
             "genus_taxid": rank_taxids["genus"],
             "family_in_reference_set": (
-                rank_taxids["family"] is not None
-                and ("family", rank_taxids["family"]) in target_keys
+                    rank_taxids["family"] is not None
+                    and ("family", rank_taxids["family"]) in target_keys
             ),
             "genus_in_reference_set": (
-                rank_taxids["genus"] is not None
-                and ("genus", rank_taxids["genus"]) in target_keys
+                    rank_taxids["genus"] is not None
+                    and ("genus", rank_taxids["genus"]) in target_keys
             ),
             "release_version": observation.get("release_version"),
             "member_entity_ids": observation.get("member_entity_ids", ""),
@@ -469,8 +468,8 @@ def _percentage(numerator: int, denominator: int) -> float:
 def _result_hash(directory: Path) -> str:
     digest = hashlib.sha256()
     for name in (
-        "coverage_summary.tsv", "coverage_targets.tsv", "coverage_missing.tsv",
-        "coverage_observations.tsv", "coverage_excluded_observations.tsv",
+            "coverage_summary.tsv", "coverage_targets.tsv", "coverage_missing.tsv",
+            "coverage_observations.tsv", "coverage_excluded_observations.tsv",
     ):
         path = directory / name
         data = path.read_bytes()
@@ -502,8 +501,8 @@ def _cached_report(db: Database, project: Project, row: dict[str, Any]) -> dict[
         "decision": row["decision"],
     }
     if (
-        any(provenance.get(key) != value for key, value in expected_provenance.items())
-        or _result_hash(path) != row["result_sha256"]
+            any(provenance.get(key) != value for key, value in expected_provenance.items())
+            or _result_hash(path) != row["result_sha256"]
     ):
         raise ConflictError(f"cached coverage report has changed: {path}")
     metrics = [dict(metric) for metric in db.conn.execute(
@@ -520,11 +519,11 @@ def _cached_report(db: Database, project: Project, row: dict[str, Any]) -> dict[
 
 
 def _report_coverage_impl(
-    db: Database,
-    project: Project,
-    reference_set_id: str,
-    *,
-    release_version: str | None = None,
+        db: Database,
+        project: Project,
+        reference_set_id: str,
+        *,
+        release_version: str | None = None,
 ) -> dict[str, Any]:
     """Compute metadata or frozen-release coverage against one compiled denominator."""
     reference, targets, profile, parsed = _load_reference_set(db, project, reference_set_id)
@@ -744,11 +743,11 @@ def _report_coverage_impl(
 
 
 def report_coverage(
-    db: Database,
-    project: Project,
-    reference_set_id: str,
-    *,
-    release_version: str | None = None,
+        db: Database,
+        project: Project,
+        reference_set_id: str,
+        *,
+        release_version: str | None = None,
 ) -> dict[str, Any]:
     """Generate a report and record failed attempts as workflow provenance."""
     started_at = now_iso()

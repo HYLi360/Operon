@@ -44,11 +44,11 @@ def _path(message: str, *, default: str = "") -> str:
 
 
 def _autocomplete(
-    message: str,
-    choices: list[str],
-    *,
-    default: str = "",
-    meta_information: dict[str, str] | None = None,
+        message: str,
+        choices: list[str],
+        *,
+        default: str = "",
+        meta_information: dict[str, str] | None = None,
 ) -> str:
     allowed = set(choices)
     return str(_answer(questionary.autocomplete(
@@ -145,7 +145,8 @@ def _ask_sample(db: Database, draft: dict[str, Any]) -> None:
     ).fetchall()]
     choices: list[Any] = [questionary.Choice("Create a new sample", value="__new__")]
     choices.extend(_choice_rows(
-        rows, "sample_id", lambda row: row.get("isolate") or row.get("strain") or row.get("biosample_accession") or "sample"
+        rows, "sample_id",
+        lambda row: row.get("isolate") or row.get("strain") or row.get("biosample_accession") or "sample"
     ))
     selected = _select("Select the sample:", choices)
     if selected != "__new__":
@@ -173,10 +174,16 @@ def _ask_sequencing(db: Database, draft: dict[str, Any]) -> None:
         "sample_id": draft["sample"]["id"],
         "run_accession": _text("Run accession (optional):", current.get("run_accession", "")),
         "experiment_accession": _text("Experiment accession (optional):", current.get("experiment_accession", "")),
-        "library_strategy": _select("Library strategy:", ["WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other", questionary.Choice("Skip", value="")]),
-        "library_source": _select("Library source:", ["GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER", questionary.Choice("Skip", value="")]),
-        "library_layout": _select("Library layout:", ["PAIRED", "SINGLE", "unknown", questionary.Choice("Skip", value="")]),
-        "platform": _select("Sequencing platform:", ["ILLUMINA", "PACBIO_SMRT", "OXFORD_NANOPORE", "BGISEQ", "ION_TORRENT", "other", questionary.Choice("Skip", value="")]),
+        "library_strategy": _select("Library strategy:",
+                                    ["WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other",
+                                     questionary.Choice("Skip", value="")]),
+        "library_source": _select("Library source:", ["GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER",
+                                                      questionary.Choice("Skip", value="")]),
+        "library_layout": _select("Library layout:",
+                                  ["PAIRED", "SINGLE", "unknown", questionary.Choice("Skip", value="")]),
+        "platform": _select("Sequencing platform:",
+                            ["ILLUMINA", "PACBIO_SMRT", "OXFORD_NANOPORE", "BGISEQ", "ION_TORRENT", "other",
+                             questionary.Choice("Skip", value="")]),
         "instrument_model": _text("Instrument model (optional):", current.get("instrument_model", "")),
     }
     draft["run"] = {"action": "create", "id": row["run_id"], "row": row}
@@ -206,10 +213,12 @@ def _ask_assembly(db: Database, draft: dict[str, Any]) -> None:
         "assembly_accession": _text("Assembly accession (optional):"),
         "assembly_name": _text("Assembly name (optional):"),
         "assembly_version": _text("Assembly version (optional):", default="1"),
-        "assembly_level": _select("Assembly level:", ["complete_genome", "chromosome", "scaffold", "contig", questionary.Choice("Skip", value="")]),
+        "assembly_level": _select("Assembly level:", ["complete_genome", "chromosome", "scaffold", "contig",
+                                                      questionary.Choice("Skip", value="")]),
         "assembly_method": _text("Assembly software and parameters (optional):"),
         "submitter": source.get("provider", ""),
-        "source_database": _select("Source database:", ["RefSeq", "GenBank", "other", questionary.Choice("Skip", value="")]),
+        "source_database": _select("Source database:",
+                                   ["RefSeq", "GenBank", "other", questionary.Choice("Skip", value="")]),
     }
     draft["assembly"] = {"action": "create", "id": row["assembly_id"], "row": row}
 
@@ -228,7 +237,8 @@ def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
     ).fetchall()]
     choices: list[Any] = [questionary.Choice("Create a new annotation", value="__new__")]
     choices.extend(_choice_rows(
-        rows, "annotation_id", lambda row: f"{row.get('annotation_source') or 'annotation'} v{row.get('annotation_version') or '?'}"
+        rows, "annotation_id",
+        lambda row: f"{row.get('annotation_source') or 'annotation'} v{row.get('annotation_version') or '?'}"
     ))
     selected = _select("Select the annotation:", choices)
     if selected != "__new__":
@@ -289,7 +299,8 @@ def _warnings(db: Database, draft: dict[str, Any]) -> list[str]:
     if not any(item["role"] == "genome_fasta" for item in draft.get("files", [])):
         warnings.append("Genome FASTA is missing.")
     if draft.get("annotation"):
-        for label, role in (("GFF3", "annotation_gff3"), ("CDS FASTA", "cds_fasta"), ("Protein FASTA", "protein_fasta")):
+        for label, role in (("GFF3", "annotation_gff3"), ("CDS FASTA", "cds_fasta"),
+                            ("Protein FASTA", "protein_fasta")):
             if not any(item["role"] == role for item in draft.get("files", [])):
                 warnings.append(f"{label} is missing from the annotation bundle.")
     sample = draft.get("sample") or {}
@@ -479,7 +490,8 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                     "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) VALUES(?,?,?,?,?)",
                     (entity_type, entity_id, "METADATA_VALIDATED", "created by interactive import", now_iso()),
                 )
-                db.record_change(entity_type, entity_id, None, None, json.dumps(row, ensure_ascii=False, sort_keys=True),
+                db.record_change(entity_type, entity_id, None, None,
+                                 json.dumps(row, ensure_ascii=False, sort_keys=True),
                                  "interactive dataset import", actor=actor)
             source_url = draft.get("source", {}).get("record_url") or None
             for item in draft.get("files", []):

@@ -16,7 +16,6 @@ from operon.errors import ConflictError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
 from operon.utils import now_iso
 
-
 IMPORTABLE_TABLES = ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -80,17 +79,17 @@ def _write_xlsx_template(schema: Schema, table: str, output: Path) -> None:
     guide_data = ET.SubElement(guide, f"{{{NS_MAIN}}}sheetData")
     guide_headers = ["field", "type", "required", "allowed", "description"]
     for row_no, values in enumerate(
-        [guide_headers] + [
-            [
-                name,
-                str(spec.get("type", "string")),
-                "yes" if spec.get("required") else "no",
-                ", ".join(str(value) for value in spec.get("allowed", [])),
-                str(spec.get("description", "")),
-            ]
-            for name, spec in fields.items()
-        ],
-        start=1,
+            [guide_headers] + [
+                [
+                    name,
+                    str(spec.get("type", "string")),
+                    "yes" if spec.get("required") else "no",
+                    ", ".join(str(value) for value in spec.get("allowed", [])),
+                    str(spec.get("description", "")),
+                ]
+                for name, spec in fields.items()
+            ],
+            start=1,
     ):
         xml_row = ET.SubElement(guide_data, f"{{{NS_MAIN}}}row", {"r": str(row_no)})
         for index, value in enumerate(values):
@@ -337,12 +336,12 @@ def preview_table_import(db: Database, schema: Schema, table: str, path: str | P
 
 
 def apply_table_import(
-    db: Database,
-    schema: Schema,
-    preview: dict[str, Any],
-    *,
-    on_conflict: str,
-    actor: str | None = None,
+        db: Database,
+        schema: Schema,
+        preview: dict[str, Any],
+        *,
+        on_conflict: str,
+        actor: str | None = None,
 ) -> dict[str, int]:
     if on_conflict not in {"error", "skip", "update"}:
         raise ValidationError("on_conflict must be error, skip or update")

@@ -61,6 +61,7 @@ def _advance_checksum_state(db: Database, entity_type: str, entity_id: str, mess
     if current in _CHECKSUM_ADVANCE_FROM:
         db.set_entity_state(entity_type, entity_id, "CHECKSUM_VERIFIED", message)
 
+
 ENTITY_BUCKETS = {
     "run": "reads",
     "sample": "reads",
@@ -174,8 +175,8 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
         if cached is not None:
             cached_record = dict(cached)
             if (
-                str(cached_record["sha256"]).lower() == str(record["sha256"]).lower()
-                and _same_local_fingerprint(cached_record, before)
+                    str(cached_record["sha256"]).lower() == str(record["sha256"]).lower()
+                    and _same_local_fingerprint(cached_record, before)
             ):
                 info.update(
                     sha256_match=True,
@@ -210,6 +211,7 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
     else:
         clear_local_file_verification(db, str(record["file_id"]))
     return matched, info
+
 
 GZIP_SUFFIXES = {".gz", ".gzip", ".bgz", ".bgzf"}
 
@@ -262,19 +264,19 @@ def find_existing_file(db: Database, entity_type: str, entity_id: str, role: str
 
 
 def ingest_file(
-    db: Database,
-    project: Project,
-    source: str | Path,
-    entity_type: str,
-    entity_id: str,
-    role: str,
-    fmt: str | None = None,
-    compression: str | None = None,
-    source_url: str | None = None,
-    move: bool = False,
-    run_id: str | None = None,
-    actor: str | None = None,
-    provenance_buffer: list[dict[str, Any]] | None = None,
+        db: Database,
+        project: Project,
+        source: str | Path,
+        entity_type: str,
+        entity_id: str,
+        role: str,
+        fmt: str | None = None,
+        compression: str | None = None,
+        source_url: str | None = None,
+        move: bool = False,
+        run_id: str | None = None,
+        actor: str | None = None,
+        provenance_buffer: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Archive one file or directory into raw/ and register it in the manifest.
 
@@ -350,7 +352,8 @@ def ingest_file(
     if target.exists():
         target_sha = sha256_path(target)
         if target_sha == source_sha:
-            row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, source_sha, source_size)
+            row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url,
+                                 source_sha, source_size)
             remember_local_file_verification(db, row, target)
             _advance_checksum_state(
                 db, entity_type, entity_id,
@@ -395,7 +398,8 @@ def ingest_file(
         else:
             target.unlink(missing_ok=True)
         raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
-    row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha, target_size)
+    row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha,
+                         target_size)
     remember_local_file_verification(db, row, target)
     _advance_checksum_state(
         db, entity_type, entity_id,
@@ -658,7 +662,8 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         raise ChecksumError(f"{record['file_id']}: source missing: {source}")
     if sha256_path(source) != record["sha256"]:
         clear_local_file_verification(db, file_id)
-        db.set_entity_state(record["entity_type"], record["entity_id"], "CHECKSUM_FAILED", f"{file_id} changed after manifest registration")
+        db.set_entity_state(record["entity_type"], record["entity_id"], "CHECKSUM_FAILED",
+                            f"{file_id} changed after manifest registration")
         raise ChecksumError(f"{file_id}: source checksum does not match manifest")
     remember_local_file_verification(db, record, source)
 
@@ -695,7 +700,8 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         raise ChecksumError(f"{file_id}: standardized target checksum mismatch")
     db.conn.execute("UPDATE files SET status='STANDARDIZED' WHERE file_id=?", (file_id,))
     db.conn.commit()
-    db.set_entity_state(record["entity_type"], record["entity_id"], "STANDARDIZED", f"file {file_id} staged in standardized/")
+    db.set_entity_state(record["entity_type"], record["entity_id"], "STANDARDIZED",
+                        f"file {file_id} staged in standardized/")
     return {"file_id": file_id, "target": str(target), "action": link_kind}
 
 

@@ -26,7 +26,6 @@ from operon.utils import (
     atomic_copy,
     atomic_write_text,
     now_iso,
-    path_size_bytes,
     sha256_file,
 )
 from operon.workflow import log_run, new_run_id
@@ -463,10 +462,10 @@ def _import_taxdump(db: Database, snapshot_id: str, path: Path) -> int:
 
 
 def import_ncbi_taxonomy(
-    db: Database,
-    project: Project,
-    source: str | Path,
-    taxonomy_version: str,
+        db: Database,
+        project: Project,
+        source: str | Path,
+        taxonomy_version: str,
 ) -> dict[str, Any]:
     """Archive and import one immutable NCBI Datasets taxonomy JSONL package."""
     taxonomy_version = _safe_token(taxonomy_version, "taxonomy version")
@@ -605,7 +604,8 @@ def import_ncbi_taxonomy(
             )
             db.conn.execute(
                 "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) VALUES(?,?,?,?,?)",
-                ("taxonomy_snapshot", snapshot_id, "CHECKSUM_VERIFIED", f"NCBI Taxonomy {taxonomy_version}", imported_at),
+                ("taxonomy_snapshot", snapshot_id, "CHECKSUM_VERIFIED", f"NCBI Taxonomy {taxonomy_version}",
+                 imported_at),
             )
             db.conn.execute(
                 "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, evidence, actor, changed_at) "
@@ -760,12 +760,12 @@ def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> di
 
 
 def _descendant_targets(
-    db: Database,
-    snapshot_id: str,
-    roots: list[int],
-    excluded_roots: list[int],
-    ranks: list[str],
-    exclude_extinct: bool,
+        db: Database,
+        snapshot_id: str,
+        roots: list[int],
+        excluded_roots: list[int],
+        ranks: list[str],
+        exclude_extinct: bool,
 ) -> list[dict[str, Any]]:
     root_rows = db.conn.execute(
         f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({','.join('?' for _ in roots)})",
@@ -846,15 +846,15 @@ def _tsv_text(columns: list[str], rows: list[dict[str, Any]]) -> str:
 
 
 def _validate_reference_provenance(
-    path: Path,
-    *,
-    reference_set_id: str,
-    taxonomy_snapshot_id: str,
-    taxonomy_version: str,
-    taxonomy_source_sha256: str,
-    profile_sha256: str,
-    tsv_sha256: str,
-    tsv_size_bytes: int,
+        path: Path,
+        *,
+        reference_set_id: str,
+        taxonomy_snapshot_id: str,
+        taxonomy_version: str,
+        taxonomy_source_sha256: str,
+        profile_sha256: str,
+        tsv_sha256: str,
+        tsv_size_bytes: int,
 ) -> dict[str, Any]:
     if not path.is_file():
         raise ConflictError(f"reference-set provenance is missing: {path}")
@@ -881,10 +881,10 @@ def _validate_reference_provenance(
 
 
 def _compile_reference_set_impl(
-    db: Database,
-    project: Project,
-    profile_name: str,
-    taxonomy_version: str,
+        db: Database,
+        project: Project,
+        profile_name: str,
+        taxonomy_version: str,
 ) -> dict[str, Any]:
     """Compile a versioned coverage profile into one immutable TSV denominator."""
     profile_name = _safe_token(profile_name, "profile name")
@@ -908,9 +908,9 @@ def _compile_reference_set_impl(
     if existing:
         existing = dict(existing)
         if (
-            existing["profile_sha256"] != profile_sha
-            or existing["taxonomy_snapshot_id"] != snapshot["taxonomy_snapshot_id"]
-            or existing["tsv_sha256"] != (sha256_file(target) if target.is_file() else None)
+                existing["profile_sha256"] != profile_sha
+                or existing["taxonomy_snapshot_id"] != snapshot["taxonomy_snapshot_id"]
+                or existing["tsv_sha256"] != (sha256_file(target) if target.is_file() else None)
         ):
             raise ConflictError(
                 f"reference set {reference_set_id} already exists with different profile, taxonomy or bytes"
@@ -1039,10 +1039,10 @@ def _compile_reference_set_impl(
 
 
 def compile_reference_set(
-    db: Database,
-    project: Project,
-    profile_name: str,
-    taxonomy_version: str,
+        db: Database,
+        project: Project,
+        profile_name: str,
+        taxonomy_version: str,
 ) -> dict[str, Any]:
     """Compile a denominator and record failed attempts as workflow provenance."""
     started_at = now_iso()

@@ -13,9 +13,8 @@ from typing import Any, Iterable
 from operon.database import Database
 from operon.entity_view import resolve_identifier
 from operon.errors import ValidationError
-from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES
+from operon.schema import ENTITY_TABLES
 from operon.utils import now_iso
-
 
 RETIRE_REASON_CODES = {
     "accidental_import",
@@ -33,7 +32,7 @@ def _ordered_ids(db: Database, sql: str, params: Iterable[Any]) -> list[str]:
 
 
 def entity_subtree(
-    db: Database, entity_type: str, entity_id: str
+        db: Database, entity_type: str, entity_id: str
 ) -> dict[str, list[str]]:
     """Return the target and every ownership descendant in stable order."""
     db.require_entity(entity_type, entity_id)
@@ -94,13 +93,13 @@ def _pairs(subtree: dict[str, list[str]]) -> list[tuple[str, str]]:
 
 
 def _rows_for_pairs(
-    db: Database,
-    table: str,
-    type_column: str,
-    id_column: str,
-    pairs: Iterable[tuple[str, str]],
-    *,
-    columns: str = "*",
+        db: Database,
+        table: str,
+        type_column: str,
+        id_column: str,
+        pairs: Iterable[tuple[str, str]],
+        *,
+        columns: str = "*",
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[str]] = defaultdict(list)
     for entity_type, entity_id in pairs:
@@ -120,12 +119,12 @@ def _rows_for_pairs(
 
 
 def _rows_for_ids(
-    db: Database,
-    table: str,
-    id_column: str,
-    ids: list[str],
-    *,
-    columns: str = "*",
+        db: Database,
+        table: str,
+        id_column: str,
+        ids: list[str],
+        *,
+        columns: str = "*",
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for start in range(0, len(ids), 500):
@@ -141,7 +140,7 @@ def _rows_for_ids(
 
 
 def lifecycle_plan(
-    db: Database, identifier: str, *, action: str
+        db: Database, identifier: str, *, action: str
 ) -> dict[str, Any]:
     """Build a read-only retirement/restoration impact plan."""
     action = action.upper()
@@ -217,9 +216,9 @@ def lifecycle_plan(
     if action == "RESTORE" and will_change:
         effective_after = any(
             not (
-                row["retired_by_type"] == entity_type
-                and row["retired_by_id"] == entity_id
-                and int(row["event_id"]) == int(current["event_id"])
+                    row["retired_by_type"] == entity_type
+                    and row["retired_by_id"] == entity_id
+                    and int(row["event_id"]) == int(current["event_id"])
             )
             for row in effective
         )
@@ -260,16 +259,16 @@ def lifecycle_plan(
 
 
 def apply_lifecycle_event(
-    db: Database,
-    entity_type: str,
-    entity_id: str,
-    *,
-    action: str,
-    reason: str,
-    actor: str,
-    reason_code: str | None = None,
-    evidence: str | None = None,
-    workflow_run_id: str | None = None,
+        db: Database,
+        entity_type: str,
+        entity_id: str,
+        *,
+        action: str,
+        reason: str,
+        actor: str,
+        reason_code: str | None = None,
+        evidence: str | None = None,
+        workflow_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Append one direct RETIRE/RESTORE event and its changes audit row."""
     action = action.upper()
@@ -348,7 +347,7 @@ def apply_lifecycle_event(
 
 
 def list_retired_entities(
-    db: Database, *, direct_only: bool = False
+        db: Database, *, direct_only: bool = False
 ) -> list[dict[str, Any]]:
     """List current direct retirements or their full effective descendant set."""
     if not db.lifecycle_schema_available():

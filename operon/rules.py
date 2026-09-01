@@ -7,9 +7,8 @@ data, not print statements.
 
 from __future__ import annotations
 
-import json
 import hashlib
-from pathlib import Path
+import json
 from typing import Any
 
 from operon.config import Project

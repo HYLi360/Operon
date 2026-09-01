@@ -78,7 +78,8 @@ def default_profiles() -> dict[str, Any]:
                 {"metric": "parseable", "operator": "==", "value": 1, "code": "FORMAT_INVALID"},
                 {"metric": "total_length", "operator": ">=", "value": 1000, "code": "ASSEMBLY_TOO_SHORT"},
                 {"metric": "contig_n50", "operator": ">=", "value": 1000, "code": "LOW_CONTIGUITY"},
-                {"metric": "ambiguous_base_percent", "operator": "<=", "value": 5, "code": "HIGH_AMBIGUOUS_BASE_CONTENT"},
+                {"metric": "ambiguous_base_percent", "operator": "<=", "value": 5,
+                 "code": "HIGH_AMBIGUOUS_BASE_CONTENT"},
                 {"metric": "empty_sequence_count", "operator": "==", "value": 0, "code": "EMPTY_SEQUENCE"},
             ],
             "warnings": [
@@ -95,7 +96,8 @@ def default_profiles() -> dict[str, Any]:
                 {"metric": "parseable", "operator": "==", "value": 1, "code": "FORMAT_INVALID"},
                 {"metric": "gene_count", "operator": ">=", "value": 1, "code": "NO_GENES"},
                 {"metric": "cds_count", "operator": ">=", "value": 1, "code": "NO_CDS"},
-                {"metric": "cds_length_multiple3_percent", "operator": ">=", "value": 99, "code": "CDS_NOT_MULTIPLE_OF_3"},
+                {"metric": "cds_length_multiple3_percent", "operator": ">=", "value": 99,
+                 "code": "CDS_NOT_MULTIPLE_OF_3"},
                 {"metric": "missing_parent_count", "operator": "==", "value": 0, "code": "BROKEN_GFF3_PARENTS"},
                 {"metric": "coordinate_error_count", "operator": "==", "value": 0, "code": "INVALID_GFF3_COORDINATES"},
             ],
@@ -172,7 +174,8 @@ def default_profiles() -> dict[str, Any]:
             ],
             "warnings": [
                 {"metric": "duplicate_percent", "operator": ">", "value": 30, "code": "HIGH_DUPLICATION"},
-                {"metric": "overrepresented_sequence_count", "operator": ">", "value": 1, "code": "OVERREPRESENTED_SEQUENCES"},
+                {"metric": "overrepresented_sequence_count", "operator": ">", "value": 1,
+                 "code": "OVERREPRESENTED_SEQUENCES"},
             ],
         },
         "coverage_viridiplantae_v1": {

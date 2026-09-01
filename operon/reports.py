@@ -11,7 +11,6 @@ from operon.database import Database
 from operon.schema import write_tsv
 from operon.utils import format_table, now_iso, sha256_file
 
-
 METADATA_REPORT_TABLES = [
     "organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files",
 ]
@@ -19,11 +18,11 @@ SOURCE_REPORT_TABLES = ["data_sources", "source_links"]
 
 
 def export_metadata_report(
-    db: Database,
-    project: Project,
-    output: str | Path | None = None,
-    *,
-    include_retired: bool = False,
+        db: Database,
+        project: Project,
+        output: str | Path | None = None,
+        *,
+        include_retired: bool = False,
 ) -> Path:
     """Write a derived, read-only metadata snapshot from SQLite.
 
@@ -74,11 +73,11 @@ def export_metadata_report(
 
 
 def qc_rows(
-    db: Database,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-    *,
-    include_retired: bool = False,
+        db: Database,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        *,
+        include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     sql = "SELECT * FROM qc_results WHERE 1=1"
     params: list[Any] = []
@@ -99,7 +98,7 @@ def qc_rows(
 
 
 def qc_wide(
-    db: Database, entity_type: str | None = None, *, include_retired: bool = False
+        db: Database, entity_type: str | None = None, *, include_retired: bool = False
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """Pivot long QC results into a wide table for browsing/statistics."""
     rows = qc_rows(db, entity_type=entity_type, include_retired=include_retired)
@@ -120,16 +119,17 @@ def qc_wide(
 
 
 def print_qc_table(
-    db: Database,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-    *,
-    include_retired: bool = False,
+        db: Database,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        *,
+        include_retired: bool = False,
 ) -> str:
     rows = qc_rows(
         db, entity_type, entity_id, include_retired=include_retired
     )
-    headers = ["entity_type", "entity_id", "file_id", "qc_stage", "metric_name", "metric_value", "metric_unit", "tool", "evaluated_at"]
+    headers = ["entity_type", "entity_id", "file_id", "qc_stage", "metric_name", "metric_value", "metric_unit", "tool",
+               "evaluated_at"]
     return format_table(headers, ([r[h] for h in headers] for r in rows))
 
 
@@ -137,11 +137,12 @@ def print_status(db: Database) -> str:
     rows = db.conn.execute(
         "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state ORDER BY entity_type, entity_id"
     ).fetchall()
-    return format_table(["entity_type", "entity_id", "state", "message", "updated_at"], ([r[c] for c in r.keys()] for r in rows))
+    return format_table(["entity_type", "entity_id", "state", "message", "updated_at"],
+                        ([r[c] for c in r.keys()] for r in rows))
 
 
 def print_decisions(
-    db: Database, profile: str | None = None, *, include_retired: bool = False
+        db: Database, profile: str | None = None, *, include_retired: bool = False
 ) -> str:
     sql = "SELECT entity_type, entity_id, profile, profile_version, decision, COALESCE(curated_decision,'') AS curated_decision, reason_codes, evaluated_at FROM current_decisions"
     params: list[Any] = []
@@ -166,20 +167,24 @@ def print_decisions(
             return ", ".join(str(x) for x in parsed) if isinstance(parsed, list) else value or ""
         except Exception:
             return value or ""
-    return format_table(["entity_type", "entity_id", "profile", "version", "decision", "curated", "reasons", "evaluated_at"], (
-        [r["entity_type"], r["entity_id"], r["profile"], r["profile_version"], r["decision"], r["curated_decision"], _reasons(r["reason_codes"]), r["evaluated_at"]] for r in rows
-    ))
+
+    return format_table(
+        ["entity_type", "entity_id", "profile", "version", "decision", "curated", "reasons", "evaluated_at"], (
+            [r["entity_type"], r["entity_id"], r["profile"], r["profile_version"], r["decision"], r["curated_decision"],
+             _reasons(r["reason_codes"]), r["evaluated_at"]] for r in rows
+        ))
 
 
 def export_qc_tsv(
-    db: Database,
-    project: Project,
-    entity_type: str | None = None,
-    *,
-    include_retired: bool = False,
+        db: Database,
+        project: Project,
+        entity_type: str | None = None,
+        *,
+        include_retired: bool = False,
 ) -> Path:
     out = project.qc_root / "aggregate" / "qc_results.tsv"
-    columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
+    columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name",
+               "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
     rows = qc_rows(db, entity_type, include_retired=include_retired)
     write_tsv(out, columns, rows)
     columns_wide, rows_wide = qc_wide(

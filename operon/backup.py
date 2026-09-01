@@ -15,7 +15,6 @@ from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.utils import now_iso, sha256_file
 
-
 SCOPE_PATHS = {
     "control": ["project.yaml", "config", "logs"],
     "results": ["project.yaml", "config", "logs", "qc", "analysis", "reports", "taxonomy", "releases"],

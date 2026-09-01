@@ -18,7 +18,7 @@ from operon.files import ingest_file
 from operon.qc_module import qc_all
 from operon.release import create_release
 from operon.reports import export_qc_tsv
-from operon.rules import evaluate_all, evaluate_entity
+from operon.rules import evaluate_all
 
 AA_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
 
@@ -58,29 +58,50 @@ def write_fastq(path: Path, records: list[tuple[str, str]]) -> None:
 def _metadata_rows() -> dict[str, list[dict[str, Any]]]:
     return {
         "organisms": [
-            {"organism_id": "ORG_000001", "scientific_name": "Syntheticus alpha", "taxon_id": 100001, "taxonomic_rank": "species", "taxonomy_source": "NCBI", "taxonomy_version": "demo.1"},
-            {"organism_id": "ORG_000002", "scientific_name": "Syntheticus beta", "taxon_id": 100002, "taxonomic_rank": "species", "taxonomy_source": "NCBI", "taxonomy_version": "demo.1"},
+            {"organism_id": "ORG_000001", "scientific_name": "Syntheticus alpha", "taxon_id": 100001,
+             "taxonomic_rank": "species", "taxonomy_source": "NCBI", "taxonomy_version": "demo.1"},
+            {"organism_id": "ORG_000002", "scientific_name": "Syntheticus beta", "taxon_id": 100002,
+             "taxonomic_rank": "species", "taxonomy_source": "NCBI", "taxonomy_version": "demo.1"},
         ],
         "samples": [
-            {"sample_id": "SMP_000001", "organism_id": "ORG_000001", "biosample_accession": "SAMN0000001", "strain": "alpha-A", "tissue": "leaf", "tissue_normalized": "young leaf", "tissue_ontology_id": "PO:0009025", "collection_date": "2026-01-10", "country": "China", "country_iso": "CN", "latitude": 28.2, "longitude": 112.9},
-            {"sample_id": "SMP_000002", "organism_id": "ORG_000002", "biosample_accession": "SAMN0000002", "strain": "beta-B", "collection_date": "2026-02-01", "country": "Germany", "country_iso": "DE", "latitude": 52.5, "longitude": 13.4},
-            {"sample_id": "SMP_000003", "organism_id": "ORG_000001", "biosample_accession": "SAMN0000003", "strain": "alpha-C", "collection_date": "2026-03-01", "country": "United States", "country_iso": "US", "latitude": 40.0, "longitude": -100.0},
+            {"sample_id": "SMP_000001", "organism_id": "ORG_000001", "biosample_accession": "SAMN0000001",
+             "strain": "alpha-A", "tissue": "leaf", "tissue_normalized": "young leaf",
+             "tissue_ontology_id": "PO:0009025", "collection_date": "2026-01-10", "country": "China",
+             "country_iso": "CN", "latitude": 28.2, "longitude": 112.9},
+            {"sample_id": "SMP_000002", "organism_id": "ORG_000002", "biosample_accession": "SAMN0000002",
+             "strain": "beta-B", "collection_date": "2026-02-01", "country": "Germany", "country_iso": "DE",
+             "latitude": 52.5, "longitude": 13.4},
+            {"sample_id": "SMP_000003", "organism_id": "ORG_000001", "biosample_accession": "SAMN0000003",
+             "strain": "alpha-C", "collection_date": "2026-03-01", "country": "United States", "country_iso": "US",
+             "latitude": 40.0, "longitude": -100.0},
         ],
         "runs": [
-            {"run_id": "RUN_000001", "sample_id": "SMP_000001", "run_accession": "SRR0000001", "experiment_accession": "SRX0000001", "library_strategy": "WGS", "library_source": "GENOMIC", "library_layout": "PAIRED", "platform": "ILLUMINA", "instrument_model": "NovaSeq", "read_length": 150},
+            {"run_id": "RUN_000001", "sample_id": "SMP_000001", "run_accession": "SRR0000001",
+             "experiment_accession": "SRX0000001", "library_strategy": "WGS", "library_source": "GENOMIC",
+             "library_layout": "PAIRED", "platform": "ILLUMINA", "instrument_model": "NovaSeq", "read_length": 150},
         ],
         "assemblies": [
-            {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_accession": "GCA_000000001", "assembly_version": 1, "assembly_level": "scaffold", "assembly_method": "demo assembler", "reference_status": "representative"},
-            {"assembly_id": "ASM_000002", "sample_id": "SMP_000002", "assembly_accession": "GCA_000000002", "assembly_version": 1, "assembly_level": "contig", "assembly_method": "demo assembler", "reference_status": "other"},
-            {"assembly_id": "ASM_000003", "sample_id": "SMP_000003", "assembly_accession": "GCA_000000003", "assembly_version": 1, "assembly_level": "scaffold", "assembly_method": "demo assembler", "reference_status": "other"},
+            {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_accession": "GCA_000000001",
+             "assembly_version": 1, "assembly_level": "scaffold", "assembly_method": "demo assembler",
+             "reference_status": "representative"},
+            {"assembly_id": "ASM_000002", "sample_id": "SMP_000002", "assembly_accession": "GCA_000000002",
+             "assembly_version": 1, "assembly_level": "contig", "assembly_method": "demo assembler",
+             "reference_status": "other"},
+            {"assembly_id": "ASM_000003", "sample_id": "SMP_000003", "assembly_accession": "GCA_000000003",
+             "assembly_version": 1, "assembly_level": "scaffold", "assembly_method": "demo assembler",
+             "reference_status": "other"},
         ],
         "annotations": [
-            {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001", "annotation_source": "demo annotator", "annotation_version": 1},
-            {"annotation_id": "ANN_000003", "assembly_id": "ASM_000003", "annotation_source": "demo annotator", "annotation_version": 1},
+            {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001", "annotation_source": "demo annotator",
+             "annotation_version": 1},
+            {"annotation_id": "ANN_000003", "assembly_id": "ASM_000003", "annotation_source": "demo annotator",
+             "annotation_version": 1},
         ],
         "accessions": [
-            {"internal_type": "sample", "internal_id": "SMP_000001", "namespace": "NCBI_BioSample", "accession": "SAMN0000001", "version": "1"},
-            {"internal_type": "assembly", "internal_id": "ASM_000001", "namespace": "NCBI_Assembly", "accession": "GCA_000000001", "version": "1"},
+            {"internal_type": "sample", "internal_id": "SMP_000001", "namespace": "NCBI_BioSample",
+             "accession": "SAMN0000001", "version": "1"},
+            {"internal_type": "assembly", "internal_id": "ASM_000001", "namespace": "NCBI_Assembly",
+             "accession": "GCA_000000001", "version": "1"},
         ],
     }
 
@@ -120,9 +141,11 @@ def init_demo(path: str | Path, project_id: str = "PRJ_DEMO_001") -> Project:
                 db.insert_row(table, row)
 
         rng = random.Random(20260816)
-        asm1 = [(f"ctg{i}", _random_dna(rng, length)) for i, length in enumerate([6000, 5000, 4000, 3000, 2000], start=1)]
+        asm1 = [(f"ctg{i}", _random_dna(rng, length)) for i, length in
+                enumerate([6000, 5000, 4000, 3000, 2000], start=1)]
         asm2 = [(f"tig{i:02d}", _random_dna(rng, 200)) for i in range(1, 11)]
-        asm3 = [(f"scaf{i}", _random_dna(rng, length)) for i, length in enumerate([5000, 4000, 3000, 2000, 1000], start=1)]
+        asm3 = [(f"scaf{i}", _random_dna(rng, length)) for i, length in
+                enumerate([5000, 4000, 3000, 2000, 1000], start=1)]
 
         source_dir = project.root / "examples" / "synthetic_source"
         fa1 = source_dir / "ASM_000001.genome.fasta"
@@ -156,9 +179,11 @@ def init_demo(path: str | Path, project_id: str = "PRJ_DEMO_001") -> Project:
         ingest_file(db, project, fa2, "assembly", "ASM_000002", "genome_fasta")
         ingest_file(db, project, fa3, "assembly", "ASM_000003", "genome_fasta")
         ingest_file(db, project, source_dir / "ANN_000001.protein.faa", "annotation", "ANN_000001", "protein_fasta")
-        ingest_file(db, project, source_dir / "ANN_000001.annotation.gff3", "annotation", "ANN_000001", "annotation_gff3")
+        ingest_file(db, project, source_dir / "ANN_000001.annotation.gff3", "annotation", "ANN_000001",
+                    "annotation_gff3")
         ingest_file(db, project, source_dir / "ANN_000003.protein.faa", "annotation", "ANN_000003", "protein_fasta")
-        ingest_file(db, project, source_dir / "ANN_000003.annotation.gff3", "annotation", "ANN_000003", "annotation_gff3")
+        ingest_file(db, project, source_dir / "ANN_000003.annotation.gff3", "annotation", "ANN_000003",
+                    "annotation_gff3")
         ingest_file(db, project, source_dir / "RUN_000001.R1.fastq", "run", "RUN_000001", "reads_r1")
         ingest_file(db, project, source_dir / "RUN_000001.R2.fastq", "run", "RUN_000001", "reads_r2")
 
@@ -175,8 +200,13 @@ def init_demo(path: str | Path, project_id: str = "PRJ_DEMO_001") -> Project:
         create_release(db, project, version="2026.08.demo", profile="assembly_production_v1")
 
         from operon.schema import write_tsv
-        decisions = db.export_rows("decisions", ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256", "decision", "curated_decision", "reason_codes", "observed", "thresholds", "evaluated_at", "curated_by", "curated_reason", "curated_evidence", "curated_at"])
-        write_tsv(project.reports_root / "decisions.tsv", list(decisions[0].keys()) if decisions else ["entity_type", "entity_id", "profile"], decisions)
+        decisions = db.export_rows("decisions",
+                                   ["decision_id", "entity_type", "entity_id", "profile", "profile_version",
+                                    "profile_snapshot_id", "profile_sha256", "decision", "curated_decision",
+                                    "reason_codes", "observed", "thresholds", "evaluated_at", "curated_by",
+                                    "curated_reason", "curated_evidence", "curated_at"])
+        write_tsv(project.reports_root / "decisions.tsv",
+                  list(decisions[0].keys()) if decisions else ["entity_type", "entity_id", "profile"], decisions)
     finally:
         db.close()
     return project

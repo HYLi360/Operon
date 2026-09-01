@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from operon.errors import ConflictError, EntityNotFoundError, ValidationError
+from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
 SCHEMA_VERSION = "2.7"
@@ -624,8 +624,8 @@ class Database:
             conn.close()
             message = str(exc).lower()
             if (
-                "attempt to write a readonly database" not in message
-                and "unable to open database file" not in message
+                    "attempt to write a readonly database" not in message
+                    and "unable to open database file" not in message
             ):
                 raise
         wal_path = Path(f"{path}-wal")
@@ -670,8 +670,8 @@ class Database:
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
             "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "
-            "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
-            "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"
+                                                                                         "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
+                                                                                         "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"
         )
         self._conn.commit()
 
@@ -684,11 +684,11 @@ class Database:
         """
         assembly_columns = set(self.table_columns("assemblies"))
         for column in (
-            "assembly_name",
-            "bioproject_accession",
-            "source_database",
-            "assembly_status",
-            "assembly_type",
+                "assembly_name",
+                "bioproject_accession",
+                "source_database",
+                "assembly_status",
+                "assembly_type",
         ):
             if column not in assembly_columns:
                 self._conn.execute(f'ALTER TABLE assemblies ADD COLUMN "{column}" TEXT')
@@ -917,7 +917,8 @@ class Database:
     def upsert_rows(self, table: str, columns: list[str], rows: Iterable[dict[str, Any]]) -> int:
         """Insert or update rows by primary key. Generated tables are replaceable."""
         columns = list(columns)
-        assignments = ", ".join(f"{c}=excluded.{c}" for c in columns if c != "pk" and c not in self._primary_keys(table))
+        assignments = ", ".join(
+            f"{c}=excluded.{c}" for c in columns if c != "pk" and c not in self._primary_keys(table))
         insert_cols = ", ".join(columns)
         placeholders = ", ".join("?" for _ in columns)
         sql = (
@@ -1017,7 +1018,7 @@ class Database:
             raise EntityNotFoundError(f"{entity_type} {entity_id} does not exist")
 
     def effective_retirements(
-        self, entity_type: str, entity_id: str
+            self, entity_type: str, entity_id: str
     ) -> list[dict[str, Any]]:
         """Return every direct or inherited retirement root for an entity."""
         if entity_type not in ENTITY_TABLES or not self.lifecycle_schema_available():
@@ -1071,7 +1072,7 @@ class Database:
             )
 
     def current_lifecycle_event(
-        self, entity_type: str, entity_id: str
+            self, entity_type: str, entity_id: str
     ) -> dict[str, Any] | None:
         """Return the latest direct lifecycle event for one entity."""
         if not self.lifecycle_schema_available():
@@ -1124,10 +1125,10 @@ class Database:
         return f"{prefix}_{max_n + 1:06d}"
 
     def register_data_source(
-        self,
-        source: dict[str, Any],
-        *,
-        workflow_run_id: str | None = None,
+            self,
+            source: dict[str, Any],
+            *,
+            workflow_run_id: str | None = None,
     ) -> dict[str, Any]:
         """Normalize and idempotently register one external data source."""
         normalized = {
@@ -1177,12 +1178,12 @@ class Database:
         return record
 
     def link_data_source(
-        self,
-        source_id: str,
-        objects: Iterable[tuple[str, str]],
-        *,
-        workflow_run_id: str | None = None,
-        relationship: str = "derived_from",
+            self,
+            source_id: str,
+            objects: Iterable[tuple[str, str]],
+            *,
+            workflow_run_id: str | None = None,
+            relationship: str = "derived_from",
     ) -> int:
         """Link a registered source to entities or files, idempotently."""
         allowed = {"organism", "sample", "run", "assembly", "annotation", "file"}
@@ -1191,7 +1192,7 @@ class Database:
         if unknown:
             raise ValidationError(f"unsupported source link object type(s): {unknown}")
         if self._conn.execute(
-            "SELECT 1 FROM data_sources WHERE source_id=?", (source_id,)
+                "SELECT 1 FROM data_sources WHERE source_id=?", (source_id,)
         ).fetchone() is None:
             raise EntityNotFoundError(f"data source {source_id} does not exist")
         for kind, object_id in normalized:
@@ -1253,7 +1254,7 @@ class Database:
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
 
     def export_active_rows(
-        self, table: str, columns: list[str] | None = None
+            self, table: str, columns: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Export rows whose owning metadata entity is not effectively retired."""
         if not self.lifecycle_schema_available():
@@ -1385,7 +1386,8 @@ class Database:
                 count += 1
         return count
 
-    def set_entity_state(self, entity_type: str, entity_id: str, state: str, message: str | None = None, updated_at: str | None = None) -> None:
+    def set_entity_state(self, entity_type: str, entity_id: str, state: str, message: str | None = None,
+                         updated_at: str | None = None) -> None:
         from operon.utils import now_iso
         updated_at = updated_at or now_iso()
         with self.transaction():
@@ -1418,17 +1420,17 @@ class Database:
         return int(cursor.lastrowid)
 
     def upsert_adapter_run_item(
-        self,
-        run_id: str,
-        item_key: str,
-        requested_includes: str,
-        status: str,
-        *,
-        attempt: int = 1,
-        started_at: str | None = None,
-        finished_at: str | None = None,
-        error: str | None = None,
-        result_json: str | None = None,
+            self,
+            run_id: str,
+            item_key: str,
+            requested_includes: str,
+            status: str,
+            *,
+            attempt: int = 1,
+            started_at: str | None = None,
+            finished_at: str | None = None,
+            error: str | None = None,
+            result_json: str | None = None,
     ) -> None:
         """Persist one resumable adapter item without rewriting older runs."""
         with self.transaction():
@@ -1447,15 +1449,15 @@ class Database:
             )
 
     def supersede_entity(
-        self,
-        object_type: str,
-        object_id: str,
-        superseded_by_type: str,
-        superseded_by_id: str,
-        *,
-        reason: str,
-        evidence: str | None = None,
-        workflow_run_id: str | None = None,
+            self,
+            object_type: str,
+            object_id: str,
+            superseded_by_type: str,
+            superseded_by_id: str,
+            *,
+            reason: str,
+            evidence: str | None = None,
+            workflow_run_id: str | None = None,
     ) -> bool:
         """Append a logical supersession; original rows and artifacts remain intact."""
         from operon.utils import now_iso

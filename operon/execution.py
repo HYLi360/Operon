@@ -75,7 +75,7 @@ def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None)
     if config.mem_gb < 0 or config.poll_interval <= 0:
         raise ValidationError("execution.slurm mem_gb must be >= 0 and poll_interval must be > 0")
     for field_name, values in (
-        ("extra_sbatch", config.extra_sbatch), ("setup_commands", config.setup_commands),
+            ("extra_sbatch", config.extra_sbatch), ("setup_commands", config.setup_commands),
     ):
         if any("\n" in value or "\r" in value for value in values):
             raise ValidationError(f"execution.slurm.{field_name} entries must be single lines")
@@ -388,7 +388,7 @@ class SSHExecutor:
             self.known_hosts = self.known_hosts or storage.known_hosts
             self.host_key_sha256 = self.host_key_sha256 or storage.host_key_sha256
             self.insecure_accept_unknown_host = (
-                self.insecure_accept_unknown_host or storage.insecure_accept_unknown_host
+                    self.insecure_accept_unknown_host or storage.insecure_accept_unknown_host
             )
         if not self.host:
             raise ValidationError(

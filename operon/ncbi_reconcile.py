@@ -17,7 +17,6 @@ from operon.files import canonical_filename
 from operon.utils import now_iso, sha256_file
 from operon.workflow import finish_run, new_run_id, start_run
 
-
 _ACCESSION_RE = re.compile(r"GC[AF]_\d+(?:\.\d+)?", re.IGNORECASE)
 _EARLY_STATES = {
     "DISCOVERED", "METADATA_FETCHED", "METADATA_VALIDATED", "DOWNLOAD_PENDING",
@@ -60,8 +59,8 @@ def _compatible_duplicate(db: Database, canonical: str, duplicate: str) -> bool:
     right = _annotation_files(db, duplicate)
     for role in set(left) & set(right):
         if (
-            str(left[role]["sha256"]).lower() != str(right[role]["sha256"]).lower()
-            or int(left[role]["size_bytes"]) != int(right[role]["size_bytes"])
+                str(left[role]["sha256"]).lower() != str(right[role]["sha256"]).lower()
+                or int(left[role]["size_bytes"]) != int(right[role]["size_bytes"])
         ):
             return False
     return True
@@ -86,15 +85,15 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
         {
             str(row["object_id"])
             for row in db.conn.execute(
-                "SELECT object_id FROM entity_supersessions WHERE object_type='annotation'"
-            )
+            "SELECT object_id FROM entity_supersessions WHERE object_type='annotation'"
+        )
         }
         if has_supersessions else set()
     )
     groups: dict[tuple[Any, ...], list[str]] = defaultdict(list)
     for row in db.conn.execute(
-        "SELECT annotation_id, assembly_id, annotation_source, annotation_version, annotation_date "
-        "FROM annotations ORDER BY annotation_id"
+            "SELECT annotation_id, assembly_id, annotation_source, annotation_version, annotation_date "
+            "FROM annotations ORDER BY annotation_id"
     ):
         if str(row["annotation_id"]) in superseded_ids:
             continue
@@ -129,8 +128,8 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
 
     aliases: dict[str, list[str]] = defaultdict(list)
     for row in db.conn.execute(
-        "SELECT internal_id, accession FROM accessions WHERE internal_type='assembly' "
-        "AND namespace IN ('NCBI_Assembly','NCBI_GenBank_Assembly','NCBI_RefSeq_Assembly')"
+            "SELECT internal_id, accession FROM accessions WHERE internal_type='assembly' "
+            "AND namespace IN ('NCBI_Assembly','NCBI_GenBank_Assembly','NCBI_RefSeq_Assembly')"
     ):
         value = str(row["accession"]).upper()
         if value not in aliases[str(row["internal_id"])]:
@@ -148,11 +147,11 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
         current_accession = str(assembly["assembly_accession"] or "").upper() if assembly else ""
         historical_accession = ""
         for file_row in db.conn.execute(
-            "SELECT f.file_id, f.source_url FROM files f LEFT JOIN annotations an "
-            "ON f.entity_type='annotation' AND f.entity_id=an.annotation_id "
-            "WHERE (f.entity_type='assembly' AND f.entity_id=?) "
-            "OR (f.entity_type='annotation' AND an.assembly_id=?) ORDER BY f.file_id",
-            (assembly_id, assembly_id),
+                "SELECT f.file_id, f.source_url FROM files f LEFT JOIN annotations an "
+                "ON f.entity_type='annotation' AND f.entity_id=an.annotation_id "
+                "WHERE (f.entity_type='assembly' AND f.entity_id=?) "
+                "OR (f.entity_type='annotation' AND an.assembly_id=?) ORDER BY f.file_id",
+                (assembly_id, assembly_id),
         ):
             matches = _ACCESSION_RE.findall(str(file_row["source_url"] or ""))
             candidate = matches[-1].upper() if matches else ""
@@ -160,14 +159,14 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                 historical_accession = candidate
                 break
         canonical = (
-            historical_accession
-            or (current_accession if current_accession in values else "")
-            or gcf[-1]
+                historical_accession
+                or (current_accession if current_accession in values else "")
+                or gcf[-1]
         )
         canonical_database = "RefSeq" if canonical.startswith("GCF_") else "GenBank"
         if assembly and (
-            current_accession != canonical
-            or str(assembly["source_database"] or "") != canonical_database
+                current_accession != canonical
+                or str(assembly["source_database"] or "") != canonical_database
         ):
             plan["assembly_updates"].append({
                 "assembly_id": assembly_id,
@@ -177,11 +176,11 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                 "new_source_database": canonical_database,
             })
         for row in db.conn.execute(
-            "SELECT file_id, file_role, source_url, sha256, relative_path, format, compression "
-            "FROM files "
-            "WHERE entity_type='assembly' AND entity_id=? "
-            "AND file_role IN ('genome_fasta','assembly_report')",
-            (assembly_id,),
+                "SELECT file_id, file_role, source_url, sha256, relative_path, format, compression "
+                "FROM files "
+                "WHERE entity_type='assembly' AND entity_id=? "
+                "AND file_role IN ('genome_fasta','assembly_report')",
+                (assembly_id,),
         ):
             matches = _ACCESSION_RE.findall(str(row["source_url"] or ""))
             source_accession = matches[-1].upper() if matches else ""
@@ -236,9 +235,9 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
     # with the role-derived canonical name so future ingests of the plain
     # role do not collide with these bytes.
     for row in db.conn.execute(
-        "SELECT file_id, entity_id, file_role, format, compression, relative_path "
-        "FROM files WHERE file_role IN ('genome_fasta_genbank','genome_fasta_refseq',"
-        "'assembly_report_genbank','assembly_report_refseq')"
+            "SELECT file_id, entity_id, file_role, format, compression, relative_path "
+            "FROM files WHERE file_role IN ('genome_fasta_genbank','genome_fasta_refseq',"
+            "'assembly_report_genbank','assembly_report_refseq')"
     ):
         old_rel = str(row["relative_path"])
         expected = canonical_filename(
@@ -253,9 +252,9 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
             })
 
     for row in db.conn.execute(
-        "SELECT e.entity_id, e.state FROM entity_state e WHERE e.entity_type='annotation' "
-        "AND EXISTS (SELECT 1 FROM qc_results q WHERE q.entity_type='annotation' "
-        "AND q.entity_id=e.entity_id)"
+            "SELECT e.entity_id, e.state FROM entity_state e WHERE e.entity_type='annotation' "
+            "AND EXISTS (SELECT 1 FROM qc_results q WHERE q.entity_type='annotation' "
+            "AND q.entity_id=e.entity_id)"
     ):
         annotation_id = str(row["entity_id"])
         if annotation_id in superseded_ids or str(row["state"]) not in _EARLY_STATES:
@@ -272,15 +271,15 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
 
 
 def _apply_path_move(
-    db: Database,
-    project: Project,
-    file_id: str,
-    old_rel: str,
-    new_rel: str,
-    *,
-    actor: str | None,
-    run_id: str,
-    reason: str,
+        db: Database,
+        project: Project,
+        file_id: str,
+        old_rel: str,
+        new_rel: str,
+        *,
+        actor: str | None,
+        run_id: str,
+        reason: str,
 ) -> bool:
     """Move an archived file to its new canonical path and update the row.
 
@@ -310,10 +309,10 @@ def _apply_path_move(
 
 
 def apply_ncbi_reconciliation(
-    db: Database,
-    project: Project,
-    *,
-    actor: str | None = None,
+        db: Database,
+        project: Project,
+        *,
+        actor: str | None = None,
 ) -> dict[str, Any]:
     """Apply a freshly computed conservative plan as one audited repair run."""
     from operon.adapters.ncbi_datasets import _adapter_schema
@@ -340,18 +339,18 @@ def apply_ncbi_reconciliation(
         "command": "operon ncbi-reconcile --apply",
     })
     path_moves = [
-        (
-            item["file_id"], item["old_relative_path"], item["new_relative_path"],
-            "move renamed NCBI source-specific artifact to its canonical path",
-        )
-        for item in plan["file_role_updates"]
-    ] + [
-        (
-            item["file_id"], item["old_relative_path"], item["new_relative_path"],
-            "align archived path with reconciled source-specific role",
-        )
-        for item in plan["file_path_repairs"]
-    ]
+                     (
+                         item["file_id"], item["old_relative_path"], item["new_relative_path"],
+                         "move renamed NCBI source-specific artifact to its canonical path",
+                     )
+                     for item in plan["file_role_updates"]
+                 ] + [
+                     (
+                         item["file_id"], item["old_relative_path"], item["new_relative_path"],
+                         "align archived path with reconciled source-specific role",
+                     )
+                     for item in plan["file_path_repairs"]
+                 ]
     skipped_path_moves: list[str] = []
     try:
         # Validate every destination before touching anything: physical moves
@@ -362,8 +361,8 @@ def apply_ncbi_reconciliation(
             old_path = project.root / old_rel
             new_path = project.root / new_rel
             if (
-                old_path.exists() and new_path.exists()
-                and sha256_file(new_path).lower() != sha256_file(old_path).lower()
+                    old_path.exists() and new_path.exists()
+                    and sha256_file(new_path).lower() != sha256_file(old_path).lower()
             ):
                 raise ConflictError(
                     f"cannot move {old_path} to {new_path}: "
@@ -372,8 +371,8 @@ def apply_ncbi_reconciliation(
         with db.transaction():
             for file_id, old_rel, new_rel, reason in path_moves:
                 if not _apply_path_move(
-                    db, project, file_id, old_rel, new_rel,
-                    actor=actor, run_id=run_id, reason=reason,
+                        db, project, file_id, old_rel, new_rel,
+                        actor=actor, run_id=run_id, reason=reason,
                 ):
                     skipped_path_moves.append(file_id)
             for item in plan["annotation_supersessions"]:
@@ -396,8 +395,8 @@ def apply_ncbi_reconciliation(
                     (item["new_accession"], item["new_source_database"], item["assembly_id"]),
                 )
                 for field, old_key, new_key in (
-                    ("assembly_accession", "old_accession", "new_accession"),
-                    ("source_database", "old_source_database", "new_source_database"),
+                        ("assembly_accession", "old_accession", "new_accession"),
+                        ("source_database", "old_source_database", "new_source_database"),
                 ):
                     db.record_change(
                         "assemblies", item["assembly_id"], field, item[old_key], item[new_key],
