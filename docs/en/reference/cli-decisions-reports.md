@@ -60,6 +60,25 @@ Materializes database entities into a directory by file identity for consumption
 - Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
 - Semantically complementary to release: release targets publication (QC-gated, immutable snapshot), while export targets analysis inputs (arbitrary selection criteria, materialized on demand).
 
+## adopt
+
+```bash
+operon adopt --file PATH --entity-type TYPE --entity-id ID --role ROLE \
+  [--format FMT] [--compression C] \
+  --derived-from FILE_ID [--derived-from FILE_ID ...] [--workflow-run-id RID] [--actor NAME]
+operon adopt --from-manifest FILE [--actor NAME]
+```
+
+Registers derived artifacts produced by external analyses/workflows back into the database as first-class files: they enter the `files` manifest, become eligible for QC, evaluate, export, and release, and can be selected by `analyze` candidate matching (`entity_type + file_role + format`) as inputs to downstream recipes, enabling cascading analysis. Together with export this closes the contract loop: export provides the input-side manifest, and after the external workflow consumes it, adopt re-registers the output side.
+
+- The two modes are mutually exclusive: `--file` single-file mode requires `--entity-type`/`--entity-id`/`--role` plus at least one `--derived-from` (repeatable); `--from-manifest` batch mode lets snakemake/nextflow re-register a whole batch of outputs at the end of a rule. The manifest format is described in the [external analysis guide](../guides/external-analysis.md).
+- Artifacts are materialized under `analysis/adopted/<entity_id>/`, never inside the immutable `raw/` archive.
+- Inherits the ingest idempotency/conflict invariants: same entity, same role, same bytes reuse the same `FIL_` idempotently; different bytes raise `ConflictError`.
+- Every `derived_from` file_id must already be registered, and the target entity must be active; the whole batch is validated before anything is registered, so any failing item aborts the batch atomically.
+- Lineage edges are written to `file_lineage(derived_file_id, input_file_id, workflow_run_id, created_at)`; repeating the same adopt is a no-op.
+- Every adopt writes one `workflow_runs` row (step `adopt`, `execution_details` containing the actor and an items summary); `--actor` defaults to `$USER` or `adopt`.
+- Derived roles are freely named by the producing workflow and are not restricted to the built-in role list in `schemas.yaml` (that list only applies to the import path).
+
 ## run-pipeline
 
 ```bash

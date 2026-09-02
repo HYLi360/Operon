@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS），账本记录为 `2.8-execution-environments`；�
 `test_schema_2_8_columns_and_table_exist` 与
 `test_migration_adds_columns_to_pre_2_8_database`。
 
+`Database._migrate_schema_2_9()` 为 2.8 项目纯加法增加派生文件谱系、recipe 快照与
+运行资源使用：创建 `file_lineage` 与 `recipe_snapshots` 表，给 `workflow_runs`
+增加 `duration_seconds`、`avg_rss_mb`、`cpu_seconds` 三列，给 `analysis_jobs`
+增加 `recipe_snapshot_id` 列。迁移幂等（ALTER TABLE ADD COLUMN + CREATE TABLE IF
+NOT EXISTS），账本记录为 `2.9-lineage-recipes-resources`；不改写任何既有行，历史行
+的新列保持 NULL。只要仍支持打开 2.8 项目就必须保留。对应测试为
+`tests/unit/test_schema_2_9.py` 的 `test_schema_2_9_columns_and_tables_exist` 与
+`test_migration_backfills_dropped_2_9_objects`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。

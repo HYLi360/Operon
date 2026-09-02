@@ -322,6 +322,52 @@ def _parser() -> argparse.ArgumentParser:
                    help="export file storage mode (default: copy)")
     p.add_argument("--no-qc", action="store_true", help="skip the qc.tsv metrics snapshot")
 
+    p = sub.add_parser("adopt",
+                       help="register externally produced derived artifacts with lineage "
+                            "(complements export: workflow outputs re-enter the manifest)")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--file", dest="file", help="single derived artifact path to adopt")
+    mode.add_argument("--from-manifest", dest="manifest",
+                      help="batch manifest: JSON list of items, or TSV with header "
+                           "path/entity_type/entity_id/role/format/compression/derived_from "
+                           "(derived_from is comma-separated; workflow_run_id column optional)")
+    p.add_argument("--entity-type")
+    p.add_argument("--entity-id")
+    p.add_argument("--role", help="derived file role, freely defined by the producing workflow")
+    p.add_argument("--format", dest="fmt")
+    p.add_argument("--compression")
+    p.add_argument("--derived-from", action="append", default=[], metavar="FILE_ID",
+                   help="registered input file_id this artifact was derived from; repeatable")
+    p.add_argument("--workflow-run-id", help="workflow run that produced the artifact")
+    p.add_argument("--actor", help="recorded in the adopt workflow run (default: $USER or 'adopt')")
+
+    p = sub.add_parser("recipes",
+                       help="list configured analysis recipes and inspect recorded recipe snapshots")
+    recipes_sub = p.add_subparsers(dest="recipes_command", required=True)
+    recipes_sub.add_parser("list", help="list recipes from config/tools.yaml")
+    rp = recipes_sub.add_parser("history", help="show the recorded snapshot history of one recipe")
+    rp.add_argument("name")
+    rp = recipes_sub.add_parser(
+        "show",
+        help="print a recorded recipe snapshot as YAML; to restore a version, copy the "
+             "output back into config/tools.yaml manually (no in-place restore)",
+    )
+    rp.add_argument("name")
+    rp.add_argument("--snapshot-id", type=int, help="snapshot to print (default: latest)")
+
+    p = sub.add_parser("profiles", help="inspect recorded QC profile snapshots")
+    profiles_sub = p.add_subparsers(dest="profiles_command", required=True)
+    pp = profiles_sub.add_parser(
+        "history", help="show recorded profile snapshot history (all profiles when NAME is omitted)")
+    pp.add_argument("name", nargs="?")
+    pp = profiles_sub.add_parser(
+        "show",
+        help="print a recorded profile snapshot as YAML; to restore a version, copy the "
+             "output back into config/profiles/ manually (no in-place restore)",
+    )
+    pp.add_argument("name")
+    pp.add_argument("--snapshot-id", type=int, help="snapshot to print (default: latest)")
+
     p = sub.add_parser("run-pipeline", help="ingest -> verify -> standardize -> QC -> evaluate for one file")
     p.add_argument("--source", required=True)
     p.add_argument("--entity-type", required=True, choices=["run", "assembly", "annotation"])
@@ -1051,6 +1097,148 @@ def _cmd_export(args: argparse.Namespace, project: Project, db: Database) -> int
     return 0
 
 
+def _cmd_adopt(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.lineage import adopt_files, load_adopt_manifest
+    if args.manifest:
+        items = load_adopt_manifest(args.manifest)
+    else:
+        missing = [flag for flag, value in (
+            ("--entity-type", args.entity_type), ("--entity-id", args.entity_id),
+            ("--role", args.role),
+        ) if not value]
+        if missing:
+            raise ValidationError(f"single-file adopt requires {', '.join(missing)}")
+        if not args.derived_from:
+            raise ValidationError("single-file adopt requires at least one --derived-from FILE_ID")
+        items = [{
+            "path": args.file,
+            "entity_type": args.entity_type,
+            "entity_id": args.entity_id,
+            "role": args.role,
+            "format": args.fmt,
+            "compression": args.compression,
+            "derived_from": args.derived_from,
+            "workflow_run_id": args.workflow_run_id,
+        }]
+    actor = (args.actor or os.environ.get("USER") or "adopt").strip()
+    results = adopt_files(db, project, items=items, actor=actor)
+    print(json.dumps({
+        "registered": len(results),
+        "file_ids": [result["file_id"] for result in results],
+        "items": results,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _print_snapshot_document(document: str) -> None:
+    """Print a stored snapshot document as YAML (fall back to the raw text)."""
+    import yaml
+    try:
+        parsed = json.loads(document)
+    except json.JSONDecodeError:
+        print(document)
+        return
+    print(yaml.safe_dump(parsed, sort_keys=False, allow_unicode=True).rstrip("\n"))
+
+
+def _cmd_recipes(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.tools import list_analyses
+    if args.recipes_command == "list":
+        recipes = list_analyses(project)
+        print(format_table(
+            ["name", "version", "tool", "entity_type", "file_role", "format"],
+            ([recipe.name, recipe.version, recipe.tool_name, recipe.entity_type or "*",
+              recipe.file_role, recipe.fmt] for recipe in recipes),
+        ))
+        return 0
+    if args.recipes_command == "history":
+        rows = db.conn.execute(
+            "SELECT s.recipe_snapshot_id, s.recipe_version, s.recipe_sha256, s.recorded_at, "
+            "(SELECT COUNT(*) FROM analysis_jobs j WHERE j.recipe_snapshot_id = s.recipe_snapshot_id) "
+            "AS jobs FROM recipe_snapshots s WHERE s.recipe_name=? ORDER BY s.recipe_snapshot_id",
+            (args.name,),
+        ).fetchall()
+        if not rows:
+            print(f"no snapshots recorded for recipe {args.name!r}")
+            return 0
+        print(format_table(
+            ["snapshot_id", "version", "sha256", "recorded_at", "jobs"],
+            ([row["recipe_snapshot_id"], row["recipe_version"], str(row["recipe_sha256"])[:12],
+              row["recorded_at"], row["jobs"]] for row in rows),
+        ))
+        return 0
+    if args.recipes_command == "show":
+        if args.snapshot_id is not None:
+            row = db.conn.execute(
+                "SELECT recipe_document FROM recipe_snapshots "
+                "WHERE recipe_name=? AND recipe_snapshot_id=?",
+                (args.name, args.snapshot_id),
+            ).fetchone()
+        else:
+            row = db.conn.execute(
+                "SELECT recipe_document FROM recipe_snapshots WHERE recipe_name=? "
+                "ORDER BY recipe_snapshot_id DESC LIMIT 1",
+                (args.name,),
+            ).fetchone()
+        if row is None:
+            detail = f" with snapshot id {args.snapshot_id}" if args.snapshot_id is not None else ""
+            raise ValidationError(f"no snapshot recorded for recipe {args.name!r}{detail}")
+        _print_snapshot_document(str(row["recipe_document"]))
+        return 0
+    raise ValidationError(f"unknown recipes command {args.recipes_command!r}")
+
+
+def _cmd_profiles(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.profiles_command == "history":
+        if not args.name:
+            rows = db.conn.execute(
+                "SELECT profile_name, COUNT(*) AS snapshots, MAX(recorded_at) AS latest "
+                "FROM qc_profiles GROUP BY profile_name ORDER BY profile_name",
+            ).fetchall()
+            if not rows:
+                print("no profile snapshots recorded")
+                return 0
+            print(format_table(
+                ["name", "snapshots", "latest_recorded_at"],
+                ([row["profile_name"], row["snapshots"], row["latest"]] for row in rows),
+            ))
+            return 0
+        rows = db.conn.execute(
+            "SELECT s.profile_snapshot_id, s.profile_version, s.profile_sha256, s.recorded_at, "
+            "(SELECT COUNT(*) FROM decisions d WHERE d.profile_snapshot_id = s.profile_snapshot_id) "
+            "AS decisions FROM qc_profiles s WHERE s.profile_name=? ORDER BY s.profile_snapshot_id",
+            (args.name,),
+        ).fetchall()
+        if not rows:
+            print(f"no snapshots recorded for profile {args.name!r}")
+            return 0
+        print(format_table(
+            ["snapshot_id", "version", "sha256", "recorded_at", "decisions"],
+            ([row["profile_snapshot_id"], row["profile_version"], str(row["profile_sha256"])[:12],
+              row["recorded_at"], row["decisions"]] for row in rows),
+        ))
+        return 0
+    if args.profiles_command == "show":
+        if args.snapshot_id is not None:
+            row = db.conn.execute(
+                "SELECT profile_document FROM qc_profiles "
+                "WHERE profile_name=? AND profile_snapshot_id=?",
+                (args.name, args.snapshot_id),
+            ).fetchone()
+        else:
+            row = db.conn.execute(
+                "SELECT profile_document FROM qc_profiles WHERE profile_name=? "
+                "ORDER BY profile_snapshot_id DESC LIMIT 1",
+                (args.name,),
+            ).fetchone()
+        if row is None:
+            detail = f" with snapshot id {args.snapshot_id}" if args.snapshot_id is not None else ""
+            raise ValidationError(f"no snapshot recorded for profile {args.name!r}{detail}")
+        _print_snapshot_document(str(row["profile_document"]))
+        return 0
+    raise ValidationError(f"unknown profiles command {args.profiles_command!r}")
+
+
 def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) -> int:
     print(f"[1/4] ingest {args.source}")
     row = ingest_file(db, project, args.source, args.entity_type, args.entity_id, args.role,
@@ -1456,6 +1644,9 @@ def main(argv: list[str] | None = None) -> int:
                 "curate": lambda: _cmd_curate(args, project, db),
                 "release": lambda: _cmd_release(args, project, db),
                 "export": lambda: _cmd_export(args, project, db),
+                "adopt": lambda: _cmd_adopt(args, project, db),
+                "recipes": lambda: _cmd_recipes(args, project, db),
+                "profiles": lambda: _cmd_profiles(args, project, db),
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),
                 "taxonomy": lambda: _cmd_taxonomy(args, project, db),
                 "report": lambda: _cmd_report(args, project, db),

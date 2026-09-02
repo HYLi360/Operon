@@ -51,6 +51,7 @@ Key recipe fields:
 | `result_parser` | `blast_tabular`, `hmmer_tblout`, `busco_json`, or `none`. |
 | `result_glob` | Result glob inside a directory output; BUSCO usually uses `short_summary*.json`. |
 | `max_hits_per_query` | Maximum hits per query synchronized to SQLite. |
+| `version` | Optional positive integer (default 1, invalid values rejected); together with the configuration content it enters the recipe snapshot recorded by `analyze`, inspectable via `operon recipes history/show`. |
 
 Placeholders include `${input}`, `${output}`, `${database}`, `${threads}`, `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, and `${entity_id}`.
 
@@ -212,3 +213,47 @@ operon run-external \
 - stdout and stderr are saved to `logs/<WF_ID>.stdout.log` and `.stderr.log`.
 - Run records are written to `logs/workflow.jsonl` and `workflow_runs`.
 - The run is `completed` only when the exit code is 0 and every `--expected-output` exists and is non-empty; otherwise it is `failed` and the command exits non-zero.
+
+## Re-register external workflow outputs (adopt)
+
+`operon export` materializes the selected entities as an input-side manifest; after a workflow manager such as snakemake/nextflow consumes it, `operon adopt` registers the derived artifacts back into the database. Adopted files enter the `files` manifest, become eligible for QC, evaluate, export, and release, and can be selected as inputs by later recipes through `entity_type + file_role + format`, enabling cascading analysis.
+
+A single artifact:
+
+```bash
+operon adopt \
+  --file analysis/external/ASM_000001/megahit/final.contigs.fa \
+  --entity-type assembly --entity-id ASM_000002 \
+  --role megahit_contigs --format fasta \
+  --derived-from FIL_000001
+```
+
+Batch mode lets a workflow re-register all outputs at the end of a rule. The manifest can be JSON (a list of dicts):
+
+```json
+[
+  {
+    "path": "analysis/external/ASM_000002/megahit/final.contigs.fa",
+    "entity_type": "assembly",
+    "entity_id": "ASM_000002",
+    "role": "megahit_contigs",
+    "format": "fasta",
+    "derived_from": ["FIL_000001"]
+  }
+]
+```
+
+or a TSV with a header row (the `format`, `compression`, and `workflow_run_id` columns are optional; the `derived_from` column carries comma-separated file_ids):
+
+```text
+path	entity_type	entity_id	role	format	derived_from
+analysis/external/ASM_000002/megahit/final.contigs.fa	assembly	ASM_000002	megahit_contigs	fasta	FIL_000001,FIL_000004
+```
+
+```bash
+operon adopt --from-manifest adopt_manifest.json
+```
+
+- Each item requires `path`, `entity_type`, `entity_id`, `role`, and `derived_from` (at least one already-registered file_id); relative paths resolve from the project root.
+- Artifacts are materialized under `analysis/adopted/<entity_id>/`; same entity and role with identical bytes is reused idempotently, different bytes raise `ConflictError`; if any item is invalid (e.g. an unregistered `derived_from` or a retired entity), nothing in the batch is registered.
+- Roles are freely named by the workflow; lineage edges are written to the `file_lineage` table and can be audited with `operon query`.

@@ -67,6 +67,8 @@ tools:
 
 One tool may contain multiple recipes — for example, the same `blastp` can use different databases, parameters, and result limits. Recipe names should be unique across the whole configuration; otherwise lookups silently use the first matching entry.
 
+A recipe may declare an optional `version:` (a positive integer, default 1; non-positive integers and booleans are configuration errors at load time). `analyze` records the verbatim recipe together with its referenced tool spec as a content-addressed snapshot in the `recipe_snapshots` table, and `analysis_jobs` points back through `recipe_snapshot_id`; any change to the recipe or the tool definition produces a new snapshot. Use `operon recipes history NAME` to list the history and `operon recipes show NAME [--snapshot-id N]` to print a snapshot document as YAML, which a human can copy back into `config/tools.yaml` (the program never rewrites the file in place).
+
 ## Tool-level fields
 
 | Field | Required / default | Meaning |

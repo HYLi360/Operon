@@ -54,6 +54,7 @@ recipe 关键字段：
 | `result_parser` | `blast_tabular`、`hmmer_tblout`、`busco_json` 或 `none` |
 | `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
 | `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
+| `version` | 可选正整数（缺省 1，非法值报错）；与配置内容一起进入 `analyze` 记录的 recipe 快照，可用 `operon recipes history/show` 查看 |
 
 可用占位符：
 
@@ -269,3 +270,55 @@ operon run-external \
 - stdout/stderr 保存到 `logs/<WF_ID>.stdout.log` 和 `.stderr.log`。
 - 运行记录同时写入 `logs/workflow.jsonl` 与 `workflow_runs` 表。
 - 只有退出码为 0 且所有 `--expected-output` 存在且非空，才记录 `completed`；否则记录 `failed` 并返回非零。
+
+## 回注册外部工作流产出（adopt）
+
+`operon export` 把选定实体物化为输入侧 manifest；snakemake/nextflow 等工作流消费后，
+用 `operon adopt` 把派生 artifact 注册回数据库。被 adopt 的文件进入 `files`
+manifest，可继续 QC、evaluate、export、release，也能被后续 recipe 按
+`entity_type + file_role + format` 选为输入，从而串起级联分析。
+
+单个产物：
+
+```bash
+operon adopt \
+  --file analysis/external/ASM_000001/megahit/final.contigs.fa \
+  --entity-type assembly --entity-id ASM_000002 \
+  --role megahit_contigs --format fasta \
+  --derived-from FIL_000001
+```
+
+批量模式供工作流在 rule 末尾一次回注册整批产出。manifest 可以是 JSON（list of
+dict）：
+
+```json
+[
+  {
+    "path": "analysis/external/ASM_000002/megahit/final.contigs.fa",
+    "entity_type": "assembly",
+    "entity_id": "ASM_000002",
+    "role": "megahit_contigs",
+    "format": "fasta",
+    "derived_from": ["FIL_000001"]
+  }
+]
+```
+
+也可以是带表头的 TSV（`format`、`compression`、`workflow_run_id` 列可选；
+`derived_from` 列用逗号分隔多个 file_id）：
+
+```text
+path	entity_type	entity_id	role	format	derived_from
+analysis/external/ASM_000002/megahit/final.contigs.fa	assembly	ASM_000002	megahit_contigs	fasta	FIL_000001,FIL_000004
+```
+
+```bash
+operon adopt --from-manifest adopt_manifest.json
+```
+
+- 每条必须含 `path`、`entity_type`、`entity_id`、`role`、`derived_from`（至少一个已
+  注册的 file_id）；相对路径按项目根解析。
+- 产物物化到 `analysis/adopted/<entity_id>/`；同实体同 role 相同字节幂等复用，不同
+  字节报 `ConflictError`；任一条目不合法（如 `derived_from` 未注册、实体已退役）则
+  整批不注册。
+- role 由工作流自由命名；谱系边写入 `file_lineage` 表，可用 `operon query` 审计。

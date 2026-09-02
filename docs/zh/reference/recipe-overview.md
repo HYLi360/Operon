@@ -69,6 +69,13 @@ tools:
 同一个 tool 可以包含多个 recipe，例如同一个 `blastp` 可分别使用不同数据库、参数和
 结果上限。recipe 名在整个配置中应保持唯一，否则查找时只会使用最先遇到的同名项。
 
+recipe 可声明可选的 `version:`（正整数，缺省 1；非正整数或布尔值在加载时报配置
+错误）。`analyze` 会把 recipe 原文与其引用的 tool spec 一起作为内容寻址快照记录到
+`recipe_snapshots` 表，`analysis_jobs` 通过 `recipe_snapshot_id` 回指；recipe 或
+tool 定义的任何变更都产生新快照。历史用 `operon recipes history NAME` 查看，
+`operon recipes show NAME [--snapshot-id N]` 以 YAML 打印快照文档，供人工写回
+`config/tools.yaml`（程序不做原地改写）。
+
 ## tool 层字段
 
 | 字段 | 必需性与默认值 | 含义 |

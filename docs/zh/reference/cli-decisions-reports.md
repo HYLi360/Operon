@@ -71,6 +71,37 @@ operon export --output DIR \
 - 语义上与 release 互补：release 面向发布（QC 准入、不可变快照），export 面向分析
   输入（任意选择条件、按需物化）。
 
+## adopt
+
+```bash
+operon adopt --file PATH --entity-type TYPE --entity-id ID --role ROLE \
+  [--format FMT] [--compression C] \
+  --derived-from FILE_ID [--derived-from FILE_ID ...] [--workflow-run-id RID] [--actor NAME]
+operon adopt --from-manifest FILE [--actor NAME]
+```
+
+把外部分析/工作流产生的派生 artifact 注册回数据库，成为一等公民文件：进入
+`files` manifest，获得 QC、evaluate、export、release 资格，并可被 `analyze` 的
+候选选择（`entity_type + file_role + format`）选为下游 recipe 的输入，从而打通
+级联分析。与 export 构成契约闭环：export 提供输入侧 manifest，外部工作流消费后由
+adopt 回注册输出侧 manifest。
+
+- 两种模式互斥：`--file` 单文件模式要求 `--entity-type`/`--entity-id`/`--role` 与至少
+  一个 `--derived-from`（可重复）；`--from-manifest` 批量模式供 snakemake/nextflow
+  在 rule 末尾一次回注册整批产出，manifest 格式见
+  [外部分析操作指南](../guides/external-analysis.md)。
+- 产物物化到 `analysis/adopted/<entity_id>/`，不进入不可变的 `raw/` 归档。
+- 继承 ingest 的幂等/冲突不变量：同实体同 role 相同字节幂等复用同一 `FIL_`，
+  不同字节抛 `ConflictError`。
+- 所有 `derived_from` 的 file_id 必须已在库中，且目标实体必须处于活动状态；整批先
+  校验后落库，任一条目失败则整批不注册（原子）。
+- 谱系边写入 `file_lineage(derived_file_id, input_file_id, workflow_run_id,
+  created_at)`；重复 adopt 是 no-op。
+- 每次 adopt 写入一行 `workflow_runs`（step 为 `adopt`，`execution_details` 含
+  actor 与 items 摘要）；`--actor` 缺省取 `$USER` 或 `adopt`。
+- 派生 role 由产生它的工作流自由命名，不受 `schemas.yaml` 内置 role 清单限制
+  （该清单只在导入路径生效）。
+
 ## run-pipeline
 
 ```bash

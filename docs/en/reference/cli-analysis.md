@@ -12,7 +12,7 @@ operon run-external \
 ```
 
 - The command is parsed with `shlex` and is not executed through a shell.
-- Exit code, stdout/stderr files, and start/end times are recorded in `workflow_runs` and `logs/workflow.jsonl`.
+- Exit code, stdout/stderr files, and start/end times are recorded in `workflow_runs` and `logs/workflow.jsonl`; `workflow_runs` also carries `duration_seconds` (wall clock) plus the `max_rss_mb`/`avg_rss_mb`/`cpu_seconds` resource-usage columns as collected by the execution backend (NULL when collection is unavailable, never affecting the success verdict; per-backend collection is described in the [external analysis execution model](../architecture/external-analysis.md)).
 - Success requires exit code 0 and every `--expected-output` to exist and be non-empty.
 - `--tool NAME` references a tool configured in `config/tools.yaml`: on a match its version is detected automatically and recorded as `tool_version` and `tool_version_raw`; a failed probe degrades to a warning and does not block the run.
 - `--input PATH` (repeatable) declares input files/directories: each file is hashed with SHA-256, the combined hash is written to `input_sha256`, and the full list goes into `execution_details`.
@@ -70,7 +70,33 @@ Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, `analyze`:
 
 If a process is killed by SIGKILL or another uncatchable mechanism, a residual `RUNNING` row is cleaned to `interrupted` on the next `analyze` startup.
 
+Before each candidate file is processed, the current recipe together with its referenced tool spec is snapshotted into `recipe_snapshots` (content-addressed, deduplicated), and `analysis_jobs.recipe_snapshot_id` points back to that snapshot; cache hits record a snapshot of the current configuration as well, and jobs adopted during resume inherit the original job's snapshot id. See the `recipes` command below and the [external analysis execution model](../architecture/external-analysis.md).
+
 Default recipes are `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, and `busco_autolineage`; they can be changed. For the complete `config/tools.yaml` contract, see the [Recipe Configuration Model](recipe-overview.md).
+
+## recipes
+
+```bash
+operon recipes list
+operon recipes history NAME
+operon recipes show NAME [--snapshot-id N]
+```
+
+- `list`: lists all recipes configured in `config/tools.yaml` (name/version/tool/entity_type/file_role/format).
+- `history`: shows the recorded snapshot history of one recipe (snapshot_id/version/sha256 prefix/recorded_at/number of associated `analysis_jobs`).
+- `show`: prints a snapshot document as YAML (the latest one by default, or the one given by `--snapshot-id`). Restoring an old version is print-only: copy the output back into `config/tools.yaml` manually — the program never rewrites the file in place, so comments are not lost.
+
+## profiles
+
+```bash
+operon profiles history [NAME]
+operon profiles show NAME [--snapshot-id N]
+```
+
+Inspects the profile snapshots recorded into `qc_profiles` during evaluate:
+
+- `history`: without NAME, summarizes per profile (snapshot count and latest recording time); with NAME, lists that profile's snapshot history (snapshot_id/version/sha256 prefix/recorded_at/number of associated decisions).
+- `show`: prints a snapshot document as YAML (the latest one by default). Also print-only: to restore, copy the output back into `config/profiles/` manually — no in-place rewrite.
 
 ## report analysis
 

@@ -1,8 +1,8 @@
 # NCBI adapter 恢复与迁移
 
-本流程用于将旧项目迁移到 database schema 2.8、metadata schema 1.4，并修复旧 NCBI adapter 的已知异常。
+本流程用于将旧项目迁移到 database schema 2.9、metadata schema 1.4，并修复旧 NCBI adapter 的已知异常。
 
-本文用于把长期运行的旧 `operon` 数据库迁移到 database schema 2.8、metadata schema 1.4，
+本文用于把长期运行的旧 `operon` 数据库迁移到 database schema 2.9、metadata schema 1.4，
 并修复旧 NCBI Datasets adapter 可能留下的 annotation 重复、GCA/GCF canonical 漂移和
 QC 状态降级。整个过程遵守以下边界：
 
@@ -26,8 +26,8 @@ QC 状态降级。整个过程遵守以下边界：
 ```bash
 OPERON_CODE=/path/to/Operon
 OPERON_PROJECT=/path/to/operon-project
-OPERON_BACKUP=/path/to/backups/operon-pre-2.8
-OPERON_STAGE=/path/to/staging/operon-2.8-rehearsal
+OPERON_BACKUP=/path/to/backups/operon-pre-2.9
+OPERON_STAGE=/path/to/staging/operon-2.9-rehearsal
 OPERON_ACTOR=database-maintainer
 
 cd "$OPERON_CODE"
@@ -92,11 +92,12 @@ cp -a "$OPERON_BACKUP" "$OPERON_STAGE"
 
 `migrate-result.json` 必须满足：
 
-- `schema_version` 为 `2.8`；
+- `schema_version` 为 `2.9`；
 - `integrity_check` 为 `ok`；
 - `foreign_key_violations` 为 `0`；
 - migration 账本包含 `2.6-recovery-and-ncbi-identities`、
-  `2.7-entity-lifecycle-retirement` 与 `2.8-execution-environments`
+  `2.7-entity-lifecycle-retirement`、`2.8-execution-environments` 与
+  `2.9-lineage-recipes-resources`
   （原库已处于更近版本时只新增缺失项）。
 
 然后生成业务修复计划：

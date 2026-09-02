@@ -12,7 +12,11 @@ operon run-external \
 ```
 
 - 命令用 shlex 解析，不经过 shell。
-- 记录退出码、stdout/stderr 文件、起止时间到 `workflow_runs` 与 `logs/workflow.jsonl`。
+- 记录退出码、stdout/stderr 文件、起止时间到 `workflow_runs` 与 `logs/workflow.jsonl`；
+  `workflow_runs` 同时填充 `duration_seconds`（墙钟秒数）与执行后端采集到的
+  `max_rss_mb`/`avg_rss_mb`/`cpu_seconds` 资源使用列（采集不到时留 NULL，不影响
+  运行判定；各后端采集方式见
+  [外部分析执行模型](../architecture/external-analysis.md)）。
 - 仅当退出码为 0 且所有 `--expected-output` 非空时才判定成功。
 - `--tool NAME` 引用 `config/tools.yaml` 中已配置的工具：命中时自动探测版本并记录
   `tool_version` 与 `tool_version_raw`；探测失败降级为 warning，不阻断运行。
@@ -90,8 +94,44 @@ operon analyze --analysis busco_lineage \
 若进程被 SIGKILL 等无法捕获的方式杀死，残留的 `RUNNING` 行会在下一次 `analyze`
 启动时被清扫为 `interrupted`。
 
+每个待处理文件在实际执行前都会把当前 recipe 及其引用的 tool spec 快照记录到
+`recipe_snapshots`（内容寻址去重），`analysis_jobs.recipe_snapshot_id` 回指该快照；
+缓存命中同样记录当前配置的快照，续跑收养的作业继承原作业的快照 id。详见下文
+`recipes` 命令与 [外部分析执行模型](../architecture/external-analysis.md)。
+
 默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`（可自行增删）。
 `config/tools.yaml` 的完整字段和执行语义见 [Recipe 配置参考](recipe-overview.md)。
+
+## recipes
+
+```bash
+operon recipes list
+operon recipes history NAME
+operon recipes show NAME [--snapshot-id N]
+```
+
+- `list`：列出 `config/tools.yaml` 中配置的全部 recipe（name/version/tool/
+  entity_type/file_role/format）。
+- `history`：列出该 recipe 已记录的快照历史（snapshot_id/version/sha256 前缀/
+  recorded_at/关联 `analysis_jobs` 数）。
+- `show`：把快照文档以 YAML 形式打印（缺省最新一条，或按 `--snapshot-id` 指定）。
+  恢复旧版本是 print-only 流程：把输出人工写回 `config/tools.yaml`，程序不做原地
+  改写，以避免丢失注释。
+
+## profiles
+
+```bash
+operon profiles history [NAME]
+operon profiles show NAME [--snapshot-id N]
+```
+
+查看 evaluate 时记录到 `qc_profiles` 的 profile 快照：
+
+- `history`：不带 NAME 时按 profile 汇总（快照数与最近记录时间）；带 NAME 时列出
+  该 profile 的快照历史（snapshot_id/version/sha256 前缀/recorded_at/关联
+  decisions 数）。
+- `show`：把快照文档以 YAML 形式打印（缺省最新一条）。同样是 print-only：恢复时
+  人工写回 `config/profiles/`，程序不做原地改写。
 
 ## report analysis
 

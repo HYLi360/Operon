@@ -277,8 +277,14 @@ def ingest_file(
         run_id: str | None = None,
         actor: str | None = None,
         provenance_buffer: list[dict[str, Any]] | None = None,
+        archive_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Archive one file or directory into raw/ and register it in the manifest.
+
+    ``archive_root`` overrides the archive location (default
+    ``raw/<bucket>/<entity_id>/``); adopters of derived artifacts pass a
+    derived area such as ``analysis/adopted/`` while reusing the exact same
+    idempotency and conflict semantics.
 
     The function is idempotent:
       * target exists with same checksum -> existing manifest row is returned;
@@ -347,7 +353,10 @@ def ingest_file(
             )
             return existing_record
 
-    target_dir = project.raw_root / raw_bucket(entity_type) / entity_id
+    target_dir = (
+        Path(archive_root) if archive_root is not None
+        else project.raw_root / raw_bucket(entity_type)
+    ) / entity_id
     target = target_dir / canonical_filename(entity_id, role, fmt, compression)
     if target.exists():
         target_sha = sha256_path(target)

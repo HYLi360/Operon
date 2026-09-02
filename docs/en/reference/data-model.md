@@ -74,8 +74,9 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | Table | Purpose |
 |---|---|
 | `entity_state` | Entity-level state machine, including the database schema marker row |
-| `workflow_runs` | Structured run records (mirroring `logs/workflow.jsonl`) |
+| `workflow_runs` | Structured run records (mirroring `logs/workflow.jsonl`), including executor, scheduler job ID, execution details, and resource-usage columns (`duration_seconds`, `max_rss_mb`, `avg_rss_mb`, `cpu_seconds`; NULL when collection is unavailable, never affecting the run verdict) |
 | `execution_environments` | Content-addressed execution-environment documents (hostname, OS/kernel, Python/operon versions, relevant environment variables, docker probe); referenced by `workflow_runs` and `analysis_jobs` through `environment_id` |
+| `file_lineage` | Lineage edges from a derived file to its input files (`derived_file_id`, `input_file_id`, optional `workflow_run_id`, `created_at`), written by `operon adopt`; `UNIQUE(derived_file_id, input_file_id)` makes repeated adopts idempotent |
 | `data_sources` | External databases/repositories, providers, record URLs, citations, licenses, and normalized content identity |
 | `source_links` | Many-to-many associations between sources and organism/sample/run/assembly/annotation/file, plus import provenance |
 | `schema_migrations` | Stable IDs, script identities, and application times of applied database migrations |
@@ -89,7 +90,8 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | `file_locations` | URI, identity copy, availability status, and last verification time of each `file_id` on each remote mirror; rebuildable from remote manifests |
 | `local_file_verifications` | Stat fingerprint of the last full local SHA-256 pass; a rebuildable QC acceleration cache only — it does not change manifest file identity |
 | `releases` / `release_members` | Release metadata and member file lists |
-| `analysis_jobs` | External analysis jobs: command, version, parameter fingerprint, input/database fingerprints, output checksums, cache state |
+| `analysis_jobs` | External analysis jobs: command, version, parameter fingerprint, input/database fingerprints, output checksums, cache state; `recipe_snapshot_id` points back to the recipe snapshot that produced the job |
+| `recipe_snapshots` | Content-addressed recipe snapshots (canonicalized JSON of the verbatim recipe plus its referenced tool spec, with its SHA-256), deduplicated by `UNIQUE(recipe_name, recipe_version, recipe_sha256)`; recorded by `analyze` |
 | `analysis_results` / `analysis_hits` | Analysis summary metrics and top-hits long tables synced into the database |
 | `taxonomy_snapshots` | NCBI Taxonomy versions, source manifest identities, node counts, and import status |
 | `taxonomy_nodes` / `taxonomy_aliases` | Frozen taxonomy tree nodes and secondary/merged TaxID mappings |

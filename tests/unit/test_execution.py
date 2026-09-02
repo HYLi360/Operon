@@ -6,6 +6,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -22,7 +23,11 @@ from operon.execution import (
     SSHExecutor,
     SlurmConfig,
     SlurmExecutor,
+    _parse_remote_stats,
+    _parse_sacct_accounting,
+    _parse_sacct_memory_mb,
     _parse_sbatch_job_id,
+    _parse_slurm_time_seconds,
     get_executor,
     load_slurm_config,
     render_slurm_script,
@@ -391,6 +396,57 @@ class TestExecutionConfig(PytestAssertions):
         self.assertIsNone(row["scheduler_job_id"])
         self.assertIn('"backend": "local"', row["execution_details"])
 
+    def test_local_executor_collects_resources(self):
+        out_log = self.root / "logs" / "res.stdout.log"
+        err_log = self.root / "logs" / "res.stderr.log"
+        result = LocalExecutor().run(
+            [sys.executable, "-c",
+             "x = bytearray(20 << 20)\nimport time\ntime.sleep(1.2)"],
+            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+        )
+        self.assertEqual(result.exit_code, 0)
+        # The 20 MiB allocation must show up in the sampled RSS.
+        self.assertGreater(result.resources["max_rss_mb"], 10)
+        self.assertGreater(result.resources["avg_rss_mb"], 0)
+        self.assertLessEqual(result.resources["avg_rss_mb"], result.resources["max_rss_mb"])
+        self.assertGreaterEqual(result.resources["cpu_seconds"], 0)
+
+    def test_local_executor_resources_degrade_silently(self):
+        out_log = self.root / "logs" / "deg.stdout.log"
+        err_log = self.root / "logs" / "deg.stderr.log"
+        # A failing command still returns resources without raising.
+        result = LocalExecutor().run(
+            ["false"], cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertGreaterEqual(result.resources.get("cpu_seconds", 0), 0)
+
+    def test_run_external_command_records_resource_usage(self):
+        record = run_external_command(
+            self.db, self.project,
+            [sys.executable, "-c",
+             "x = bytearray(20 << 20)\nimport time\ntime.sleep(0.8)"],
+            step="test:resources",
+        )
+        row = self.db.conn.execute(
+            "SELECT duration_seconds, max_rss_mb, avg_rss_mb, cpu_seconds "
+            "FROM workflow_runs WHERE run_id=?", (record["run_id"],),
+        ).fetchone()
+        self.assertIsNotNone(row["duration_seconds"])
+        self.assertGreaterEqual(row["duration_seconds"], 0.7)
+        self.assertTrue(row["duration_seconds"] < 30)
+        self.assertGreater(row["max_rss_mb"], 10)
+        self.assertGreater(row["avg_rss_mb"], 0)
+        self.assertGreaterEqual(row["cpu_seconds"], 0)
+
+    def test_run_external_command_failed_run_has_null_resources(self):
+        with self.assertRaisesRegex(RuntimeError, "test:failed-resources"):
+            run_external_command(self.db, self.project, ["false"], step="test:failed-resources")
+        row = self.db.conn.execute(
+            "SELECT duration_seconds, max_rss_mb FROM workflow_runs WHERE step='test:failed-resources'"
+        ).fetchone()
+        self.assertIsNotNone(row["duration_seconds"])
+
     def test_version_cache_is_scoped_to_executor_identity(self):
         import operon.tools as tools_module
         tools_module._VERSION_CACHE.clear()
@@ -466,6 +522,28 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         )
         self.assertEqual(result.exit_code, 3)
         self.assertEqual(err_log.read_text().strip(), "oops")
+
+    def test_direct_execution_collects_remote_rss_stats(self):
+        client = FakeSSHClient()
+        executor = self._executor(client=client)
+        out_log = self.root / "logs" / "stats.stdout.log"
+        err_log = self.root / "logs" / "stats.stderr.log"
+        result = executor.run(
+            [sys.executable, "-c",
+             "x = bytearray(20 << 20)\nimport time\ntime.sleep(2.5)"],
+            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+        )
+        self.assertEqual(result.exit_code, 0)
+        # The fake client executes the payload locally, so the remote sampler
+        # really ran and its stats file was read back over "SSH".
+        self.assertGreater(result.resources["max_rss_mb"], 10)
+        self.assertGreater(result.resources["avg_rss_mb"], 0)
+        self.assertLessEqual(result.resources["avg_rss_mb"], result.resources["max_rss_mb"])
+        self.assertFalse("cpu_seconds" in result.resources)  # unavailable in direct mode
+        # Both the pidfile and the stats file are cleaned up afterwards.
+        stats_commands = [c for c in client.commands if ".stats" in c]
+        self.assertTrue(stats_commands)
+        self.assertTrue(any(c.startswith("cat ") and "rm -f" in c for c in stats_commands))
 
     def test_direct_timeout_attempts_remote_process_group_termination(self):
         class HangingChannel:
@@ -863,3 +941,59 @@ class TestSSHShutdownCleanup(PytestAssertions):
                 run_id="WF_RSLURM_INT",
             )
         self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))
+
+
+class TestResourceParsing(PytestAssertions):
+    """Pure parsers for sacct accounting output and remote sampler stats."""
+
+    def test_parse_sacct_memory_suffixes(self):
+        self.assertEqual(_parse_sacct_memory_mb("256M"), 256.0)
+        self.assertAlmostEqual(_parse_sacct_memory_mb("2048K"), 2.0)
+        self.assertEqual(_parse_sacct_memory_mb("1.5G"), 1536.0)
+        self.assertEqual(_parse_sacct_memory_mb("2T"), 2.0 * 1024 * 1024)
+        # A bare number is raw bytes (Slurm prints small exact values so).
+        self.assertAlmostEqual(_parse_sacct_memory_mb("1048576"), 1.0)
+        for bad in ("", "Unknown", "abc", "12X"):
+            self.assertIsNone(_parse_sacct_memory_mb(bad))
+
+    def test_parse_slurm_time_formats(self):
+        self.assertEqual(_parse_slurm_time_seconds("01:05"), 65.0)
+        self.assertEqual(_parse_slurm_time_seconds("02:03:04"), 7384.0)
+        self.assertEqual(_parse_slurm_time_seconds("1-02:03:04"), 93784.0)
+        self.assertAlmostEqual(_parse_slurm_time_seconds("00:00:30.5"), 30.5)
+        for bad in ("", "Unknown", "1:2:3:4", "abc"):
+            self.assertIsNone(_parse_slurm_time_seconds(bad))
+
+    def test_parse_sacct_accounting_multiple_steps(self):
+        text = (
+            # Main job row first; memory fields are empty on it.
+            "0:0|||00:02:10|00:01:40|\n"
+            "0:0|256M|200M|00:02:10|00:01:38|\n"
+            "0:0|512K|400K|00:02:10|00:00:02|\n"
+            "0:0|1G|700M|00:02:10|00:01:30|\n"
+        )
+        accounting = _parse_sacct_accounting(text)
+        self.assertEqual(accounting["exit_code"], 0)
+        self.assertEqual(accounting["max_rss_mb"], 1024.0)
+        self.assertEqual(accounting["avg_rss_mb"], 700.0)
+        self.assertEqual(accounting["elapsed_seconds"], 130.0)
+        self.assertEqual(accounting["cpu_seconds"], 100.0)
+
+    def test_parse_sacct_accounting_degrades_gracefully(self):
+        self.assertEqual(_parse_sacct_accounting(""), {})
+        self.assertEqual(_parse_sacct_accounting("garbage\nlines\n"), {})
+        # Non-zero exit code from the first parseable token; no memory data.
+        accounting = _parse_sacct_accounting("1:0|||00:00:05|00:00:01|\n")
+        self.assertEqual(accounting["exit_code"], 1)
+        self.assertFalse("max_rss_mb" in accounting)
+        self.assertEqual(accounting["elapsed_seconds"], 5.0)
+
+    def test_parse_remote_stats(self):
+        parsed = _parse_remote_stats("20480 30720 3\n")
+        self.assertEqual(parsed["max_rss_mb"], 20.0)
+        self.assertEqual(parsed["avg_rss_mb"], 10.0)
+        for bad in ("", "garbage", "1 2", "1 2 0", "a b c"):
+            self.assertEqual(_parse_remote_stats(bad), {})
+
+    def test_exec_result_resources_default_empty(self):
+        self.assertEqual(ExecResult(exit_code=0).resources, {})

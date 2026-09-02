@@ -108,14 +108,14 @@ def test_slurm_command_helpers(monkeypatch, tmp_path):
 def test_slurm_exit_code_file_sacct_and_unavailable(monkeypatch, tmp_path):
     path = tmp_path / "exit"
     path.write_text("3", encoding="utf-8")
-    assert execution._read_slurm_exit_code(path, "1").exit_code == 3
+    assert execution._read_slurm_accounting(path, "1").exit_code == 3
     path.write_text("bad", encoding="utf-8")
     monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
     monkeypatch.setattr(execution.shutil, "which", lambda name: "sacct" if name == "sacct" else None)
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout="bad\n4:0\n"))
-    assert execution._read_slurm_exit_code(path, "1", retries=1).exit_code == 4
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout="bad:x\n"))
-    result = execution._read_slurm_exit_code(path, "1", retries=1)
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout="bad\n4:0|||||\n"))
+    assert execution._read_slurm_accounting(path, "1", retries=1).exit_code == 4
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout="bad:x|||||\n"))
+    result = execution._read_slurm_accounting(path, "1", retries=1)
     assert result.exit_code is None and "unavailable" in result.error
 
 
@@ -419,7 +419,7 @@ def test_remote_slurm_exitcode_falls_back_to_sacct(tmp_path, monkeypatch):
         if command.startswith("cat "):
             return 1, ""  # the exitcode file never becomes visible
         if command.startswith("sacct"):
-            return 0, "bad\n4:0\n"
+            return 0, "bad\n4:0|||||\n"
         return 0, ""
 
     monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
@@ -440,7 +440,7 @@ def test_remote_slurm_exitcode_unavailable_is_terminal_failure(tmp_path, monkeyp
         if command.startswith("cat "):
             return 1, ""
         if command.startswith("sacct"):
-            return 0, "bad:x\n"
+            return 0, "bad:x|||||\n"
         return 0, ""
 
     monkeypatch.setattr(ssh, "_remote_exec", fake_exec)

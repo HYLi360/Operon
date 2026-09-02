@@ -2,7 +2,7 @@
 
 Operon is a file-backed database for large-scale genomic data. It supports metadata management, immutable file archiving, quality control (QC), rule-based decisions, external analysis, remote storage and execution, and versioned dataset releases.
 
-This documentation matches `operon` 0.6.0, database schema 2.8, and metadata schema 1.4. The Chinese and English documentation use the same directory structure.
+This documentation matches `operon` 0.6.0, database schema 2.9, and metadata schema 1.4. The Chinese and English documentation use the same directory structure.
 
 ## Reading paths
 

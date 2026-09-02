@@ -65,6 +65,31 @@ JSON 的 SHA-256（内容寻址，同内容自动去重），`workflow_runs` 与
 探针失败只把该次运行的 `environment_id` 留为 NULL，不报错也不影响运行；2.8 之前的
 历史行同样为 NULL。
 
+Recipe 版本与快照（schema 2.9）：recipe 新增可选 `version:` 字段（正整数，缺省 1，
+非法值在配置校验时报错）。`analyze` 处理每个候选文件时把当前 recipe 连同其引用的
+tool spec 原文记录到 `recipe_snapshots` 表：快照文档为
+`{"recipe": <recipe 原文 mapping>, "tool": <引用的 tool spec 原文>}`，经规范化 JSON
+的 SHA-256 内容寻址，以 `UNIQUE(recipe_name, recipe_version, recipe_sha256)` 去重——
+因此工具定义变更同样产生新快照，缓存命中也会记录当前配置的快照。
+`analysis_jobs.recipe_snapshot_id` 回指产生该作业的精确配置；续跑收养的作业继承原
+作业的快照 id（它由那份配置产生，而非当前配置）。查看用 `operon recipes list /
+history / show`，QC profile 侧对应的 `qc_profiles` 快照用 `operon profiles
+history / show`；恢复均为 print-only，由人工把输出写回配置 YAML，程序不做原地改写。
+
+运行资源使用记录（schema 2.9）：`workflow_runs` 新增 `duration_seconds`（墙钟秒数，
+此前只进 JSONL）、`avg_rss_mb`（平均 RSS）与 `cpu_seconds`（核时）三列，既有
+`max_rss_mb` 列现在真正填充。采集按后端实现：
+
+- `local`：采样线程轮询 `/proc/<pid>/status` 的 VmRSS 得到峰值与平均，
+  核时取 `getrusage(RUSAGE_CHILDREN)` 的运行前后差值；
+- `slurm`：作业结束后以扩展字段查询 `sacct`（`MaxRSS`/`AveRSS`/`Elapsed`/
+  `TotalCPU`）；远端 Slurm（`ssh` + `scheduler: slurm`）走同一路径；
+- `ssh` 直连：远端 POSIX 采样循环把统计写入 stats 文件并读回（直连模式
+  `cpu_seconds` 留空）。
+
+任何后端采集不到对应指标时该列留 NULL，不报错也不影响任务本体；资源数据只用于
+审计与容量评估，不参与成功判定。
+
 `run-external` 的 provenance 与 `analyze` 对齐：`--tool NAME` 命中 `config/tools.yaml`
 中已配置工具时自动探测版本并记录 `tool_version` 与 `tool_version_raw`（探测失败降级为
 warning，不阻断运行）；`--input PATH`（可重复）声明输入文件，逐文件 SHA-256 的组合

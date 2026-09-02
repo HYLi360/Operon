@@ -273,6 +273,7 @@ class Recipe:
     result_parser: str
     max_hits_per_query: int
     raw: dict[str, Any]
+    version: int = 1
 
 
 def get_tool(project: Project, tool_name: str) -> ToolSpec:
@@ -336,6 +337,11 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             raw = recipes[analysis_name]
             if not isinstance(raw, dict):
                 raise ValidationError(f"analysis {analysis_name!r} must be a mapping")
+            raw_version = raw.get("version", 1)
+            if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 1:
+                raise ValidationError(
+                    f"analysis {analysis_name!r}: version must be a positive integer"
+                )
             fmt = str(raw.get("format", "")).strip()
             input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
             output_kind = str(raw.get("output_kind", "file")).strip()
@@ -373,6 +379,7 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             return Recipe(
                 name=analysis_name,
                 tool_name=tool_name,
+                version=raw_version,
                 description=str(raw.get("description", "")),
                 entity_type=str(raw.get("entity_type", "")).strip(),
                 file_role=str(raw.get("file_role", "")).strip(),
@@ -718,6 +725,7 @@ def _job_columns() -> list[str]:
         "parameter_set", "parameter_sha256", "input_sha256", "database_identity",
         "status", "output_relative_path", "output_sha256", "stdout_file", "stderr_file",
         "started_at", "finished_at", "error", "workflow_run_id", "environment_id",
+        "recipe_snapshot_id",
     ]
 
 
@@ -1028,6 +1036,13 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             "dry_run": True,
         }
 
+    # Snapshot the recipe together with its tool spec; any edit to either
+    # produces a new content-addressed snapshot, keeping jobs traceable to
+    # the exact configuration that produced them.
+    recipe_snapshot_id = db.record_recipe(
+        recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
+    )
+
     if cached is not None and not force:
         if output_path.exists() and sha256_path(output_path) == cached["output_sha256"]:
             return {
@@ -1083,6 +1098,9 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 "finished_at": finished,
                 "workflow_run_id": adoptee["workflow_run_id"],
                 "environment_id": adoptee["environment_id"],
+                # Adopted results inherit the original job's recipe snapshot:
+                # they were produced by that configuration, not today's.
+                "recipe_snapshot_id": adoptee["recipe_snapshot_id"],
             }
             with db.transaction() as conn:
                 cursor = conn.execute(
@@ -1132,6 +1150,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         "database_identity": db_identity,
         "status": "RUNNING",
         "started_at": started,
+        "recipe_snapshot_id": recipe_snapshot_id,
     }
     columns = _job_columns()
     with db.transaction() as conn:

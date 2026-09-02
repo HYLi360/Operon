@@ -87,8 +87,9 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | 表 | 用途 |
 |---|---|
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
-| `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应） |
+| `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应），含 executor、scheduler job ID、执行详情与资源使用列（`duration_seconds`、`max_rss_mb`、`avg_rss_mb`、`cpu_seconds`；采集不到留 NULL，不影响任务判定） |
 | `execution_environments` | 内容寻址的执行环境文档（hostname、OS/kernel、Python/operon 版本、相关环境变量、docker 探测）；`workflow_runs` 与 `analysis_jobs` 经 `environment_id` 引用 |
+| `file_lineage` | 派生文件到输入文件的谱系边（`derived_file_id`、`input_file_id`、可选 `workflow_run_id`、`created_at`），由 `operon adopt` 写入；`UNIQUE(derived_file_id, input_file_id)` 使重复 adopt 幂等 |
 | `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `schema_migrations` | 已应用数据库迁移的稳定 ID、脚本身份和应用时间 |
@@ -102,7 +103,8 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `local_file_verifications` | 最近一次完整本地 SHA-256 通过时的 stat 指纹；仅为可重建的 QC 加速缓存，不改变 manifest 文件身份 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
-| `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态 |
+| `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态；`recipe_snapshot_id` 回指产生该作业的 recipe 快照 |
+| `recipe_snapshots` | 内容寻址的 recipe 快照（recipe 原文 + 引用 tool spec 原文的规范化 JSON 及其 SHA-256），`UNIQUE(recipe_name, recipe_version, recipe_sha256)` 去重；由 `analyze` 记录 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
 | `taxonomy_snapshots` | NCBI Taxonomy 版本、来源 manifest 身份、节点数与导入状态 |
 | `taxonomy_nodes` / `taxonomy_aliases` | 冻结的分类树节点与 secondary/merged TaxID 映射 |

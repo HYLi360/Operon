@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.8"
+SCHEMA_VERSION = "2.9"
 
 MANUAL_TABLES = [
     "organisms",
@@ -206,6 +206,9 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     output_sha256 TEXT,
     threads INTEGER,
     max_rss_mb REAL,
+    duration_seconds REAL,
+    avg_rss_mb REAL,
+    cpu_seconds REAL,
     log_file TEXT,
     stdout_file TEXT,
     stderr_file TEXT,
@@ -288,7 +291,8 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
     finished_at TEXT,
     error TEXT,
     workflow_run_id TEXT,
-    environment_id TEXT
+    environment_id TEXT,
+    recipe_snapshot_id INTEGER REFERENCES recipe_snapshots(recipe_snapshot_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_jobs_completed_cache
     ON analysis_jobs(analysis_name, file_id, parameter_sha256, input_sha256, database_identity)
@@ -674,6 +678,7 @@ class Database:
         self._migrate_recovery_schema_2_6()
         self._migrate_lifecycle_schema_2_7()
         self._migrate_environment_schema_2_8()
+        self._migrate_schema_2_9()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -885,6 +890,47 @@ class Database:
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
             "VALUES('2.8-execution-environments', ?, datetime('now'), NULL)",
+            (migration_sha256,),
+        )
+
+    def _migrate_schema_2_9(self) -> None:
+        """Add derived-file lineage, recipe snapshots and run resource usage."""
+        workflow_columns = set(self.table_columns("workflow_runs"))
+        for column in ("duration_seconds", "avg_rss_mb", "cpu_seconds"):
+            if column not in workflow_columns:
+                self._conn.execute(f'ALTER TABLE workflow_runs ADD COLUMN "{column}" REAL')
+        if "recipe_snapshot_id" not in set(self.table_columns("analysis_jobs")):
+            self._conn.execute(
+                'ALTER TABLE analysis_jobs ADD COLUMN "recipe_snapshot_id" INTEGER '
+                'REFERENCES recipe_snapshots(recipe_snapshot_id)'
+            )
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS file_lineage (
+                lineage_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                derived_file_id TEXT NOT NULL REFERENCES files(file_id),
+                input_file_id TEXT NOT NULL,
+                workflow_run_id TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE (derived_file_id, input_file_id)
+            );
+            CREATE TABLE IF NOT EXISTS recipe_snapshots (
+                recipe_snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipe_name TEXT NOT NULL,
+                recipe_version INTEGER NOT NULL,
+                recipe_sha256 TEXT NOT NULL,
+                recipe_document TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                UNIQUE (recipe_name, recipe_version, recipe_sha256)
+            );
+            """
+        )
+        migration_document = "operon schema 2.9: file lineage, recipe snapshots, and run resource usage"
+        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.9-lineage-recipes-resources', ?, datetime('now'), NULL)",
             (migration_sha256,),
         )
 
@@ -1567,6 +1613,29 @@ class Database:
                 (name, version, sha256),
             ).fetchone()
         return int(row["profile_snapshot_id"])
+
+    def record_recipe(self, name: str, version: int, document: dict[str, Any]) -> int:
+        """Store a content-addressed recipe snapshot; returns its snapshot id.
+
+        The document is canonicalized (sorted-key JSON) before hashing, so
+        recording the same recipe twice is idempotent and yields one row.
+        """
+        from operon.utils import now_iso
+        canonical = json.dumps(document, sort_keys=True, ensure_ascii=False)
+        sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        with self.transaction():
+            self._conn.execute(
+                "INSERT OR IGNORE INTO recipe_snapshots"
+                "(recipe_name, recipe_version, recipe_sha256, recipe_document, recorded_at) "
+                "VALUES(?,?,?,?,?)",
+                (name, version, sha256, canonical, now_iso()),
+            )
+            row = self._conn.execute(
+                "SELECT recipe_snapshot_id FROM recipe_snapshots "
+                "WHERE recipe_name=? AND recipe_version=? AND recipe_sha256=?",
+                (name, version, sha256),
+            ).fetchone()
+        return int(row["recipe_snapshot_id"])
 
     def upsert_decision(self, decision: dict[str, Any]) -> int:
         """Append an automatic decision; retained name preserves API compatibility."""

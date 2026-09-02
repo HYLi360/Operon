@@ -26,11 +26,17 @@ import signal
 import stat as stat_module
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+
+try:
+    import resource
+except ImportError:  # non-Unix platforms have no getrusage
+    resource = None  # type: ignore[assignment]
 
 from operon.config import Project
 from operon.environment import PROBE_SHELL_LINES, local_environment, parse_probe_output
@@ -46,6 +52,10 @@ class ExecResult:
     error: str | None = None
     scheduler_job_id: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
+    # Resource usage measured by the backend; every key is optional and a
+    # missing/None value means the metric could not be collected.
+    # Known keys: max_rss_mb, avg_rss_mb, cpu_seconds.
+    resources: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -193,6 +203,51 @@ def _terminate_process_group(process: subprocess.Popen, grace: float = 3.0) -> N
     process.wait()
 
 
+def _sample_process_rss(pid: int, samples_mb: list[float], stop: threading.Event) -> None:
+    """Poll ``/proc/<pid>/status`` VmRSS until the process exits or ``stop``.
+
+    Sampling is best-effort diagnostics: any read failure (process gone,
+    non-Linux platform, restricted procfs) ends the sampler silently.
+    """
+    while not stop.is_set():
+        try:
+            with open(f"/proc/{pid}/status", encoding="ascii") as handle:
+                for line in handle:
+                    if line.startswith("VmRSS:"):
+                        samples_mb.append(int(line.split()[1]) / 1024.0)  # kB -> MB
+                        break
+                else:
+                    return  # no VmRSS field: nothing to sample
+        except (OSError, ValueError, IndexError):
+            return
+        stop.wait(0.5)
+
+
+def _child_cpu_seconds() -> float | None:
+    """Cumulative user+system CPU seconds of waited-for children, if available."""
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
+def _parse_remote_stats(text: str) -> dict[str, Any]:
+    """Parse the remote sampler's "<max_kb> <sum_kb> <count>" stats line."""
+    parts = text.split()
+    if len(parts) != 3:
+        return {}
+    try:
+        max_kb, sum_kb, count = float(parts[0]), float(parts[1]), int(parts[2])
+    except ValueError:
+        return {}
+    if count <= 0:
+        return {}
+    return {
+        "max_rss_mb": round(max_kb / 1024.0, 3),
+        "avg_rss_mb": round(sum_kb / count / 1024.0, 3),
+    }
+
+
 class LocalExecutor:
     name = "local"
 
@@ -214,6 +269,9 @@ class LocalExecutor:
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
             expected_outputs: Iterable[Any] = ()) -> ExecResult:
         command = [str(a) for a in argv]
+        samples_mb: list[float] = []
+        stop = threading.Event()
+        cpu_before = _child_cpu_seconds()
         with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
             # A dedicated process group lets shutdown (or timeout) terminate
             # the tool and any children it spawned, without orphaning them.
@@ -221,6 +279,11 @@ class LocalExecutor:
                 command, cwd=str(cwd) if cwd else None,
                 stdout=out, stderr=err, start_new_session=True,
             )
+            sampler = threading.Thread(
+                target=_sample_process_rss, args=(process.pid, samples_mb, stop),
+                daemon=True,
+            )
+            sampler.start()
             try:
                 process.wait(timeout=timeout)
             except BaseException:
@@ -228,7 +291,18 @@ class LocalExecutor:
                 # other abort: kill the whole group, then re-raise unchanged.
                 _terminate_process_group(process)
                 raise
-        return ExecResult(exit_code=process.returncode, details={"backend": "local"})
+            finally:
+                stop.set()
+                sampler.join()
+        resources: dict[str, Any] = {}
+        if samples_mb:
+            resources["max_rss_mb"] = round(max(samples_mb), 3)
+            resources["avg_rss_mb"] = round(sum(samples_mb) / len(samples_mb), 3)
+        cpu_after = _child_cpu_seconds()
+        if cpu_before is not None and cpu_after is not None:
+            resources["cpu_seconds"] = round(max(0.0, cpu_after - cpu_before), 3)
+        return ExecResult(exit_code=process.returncode, details={"backend": "local"},
+                          resources=resources)
 
 
 def _parse_sbatch_job_id(output: str) -> str:
@@ -268,25 +342,137 @@ def _scancel_slurm_job(job_id: str) -> None:
         pass
 
 
-def _read_slurm_exit_code(exitcode_path: Path, job_id: str, retries: int = 5) -> ExecResult:
+def _parse_sacct_memory_mb(value: str) -> float | None:
+    """Parse a sacct memory field (e.g. 123K, 256M, 1.5G, 2T) into MB.
+
+    Suffixed values follow Slurm's K/M/G/T conventions; a bare number is raw
+    bytes (Slurm prints small exact values without a suffix).
+    """
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([KMGTkmgt]?)", value.strip())
+    if not match:
+        return None
+    number = float(match.group(1))
+    suffix = match.group(2).upper()
+    if suffix == "K":
+        return number / 1024.0
+    if suffix == "M":
+        return number
+    if suffix == "G":
+        return number * 1024.0
+    if suffix == "T":
+        return number * 1024.0 * 1024.0
+    return number / (1024.0 * 1024.0)
+
+
+_SLURM_TIME_RE = re.compile(r"(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)")
+
+
+def _parse_slurm_time_seconds(value: str) -> float | None:
+    """Parse a Slurm ``[[dd-]hh:]mm:ss`` time field into seconds."""
+    match = _SLURM_TIME_RE.fullmatch(value.strip())
+    if not match:
+        return None
+    days, hours, minutes, seconds = match.groups()
+    total = float(seconds) + int(minutes) * 60
+    if hours is not None:
+        total += int(hours) * 3600
+    if days is not None:
+        total += int(days) * 86400
+    return total
+
+
+def _parse_sacct_accounting(text: str) -> dict[str, Any]:
+    """Parse ``sacct -n -p -o ExitCode,MaxRSS,AveRSS,Elapsed,TotalCPU`` output.
+
+    The main job row comes first, followed by its step rows (.batch, .extern,
+    ...).  The exit code is the first parseable "N:M" token (identical on
+    every row), memory metrics take the maximum across all rows, and elapsed
+    / total CPU come from the main job row only.
+    """
+    accounting: dict[str, Any] = {}
+    max_rss: float | None = None
+    ave_rss: float | None = None
+    is_main_row = True
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("|")
+        if fields and fields[-1] == "":
+            fields.pop()  # -p terminates every line with a trailing '|'
+        if len(fields) < 5:
+            continue
+        exit_token, max_rss_raw, ave_rss_raw, elapsed_raw, total_cpu_raw = fields[:5]
+        if "exit_code" not in accounting and ":" in exit_token:
+            try:
+                accounting["exit_code"] = int(exit_token.split(":")[0])
+            except ValueError:
+                pass
+        rss = _parse_sacct_memory_mb(max_rss_raw)
+        if rss is not None:
+            max_rss = rss if max_rss is None else max(max_rss, rss)
+        rss = _parse_sacct_memory_mb(ave_rss_raw)
+        if rss is not None:
+            ave_rss = rss if ave_rss is None else max(ave_rss, rss)
+        if is_main_row:
+            is_main_row = False
+            elapsed = _parse_slurm_time_seconds(elapsed_raw)
+            if elapsed is not None:
+                accounting["elapsed_seconds"] = elapsed
+            total_cpu = _parse_slurm_time_seconds(total_cpu_raw)
+            if total_cpu is not None:
+                accounting["cpu_seconds"] = total_cpu
+    if max_rss is not None:
+        accounting["max_rss_mb"] = round(max_rss, 3)
+    if ave_rss is not None:
+        accounting["avg_rss_mb"] = round(ave_rss, 3)
+    return accounting
+
+
+def _apply_slurm_accounting(result: ExecResult, accounting: dict[str, Any]) -> None:
+    """Copy parsed sacct metrics into the result's resources and details."""
+    for key in ("max_rss_mb", "avg_rss_mb", "cpu_seconds"):
+        if key in accounting:
+            result.resources[key] = accounting[key]
+    if "elapsed_seconds" in accounting:
+        result.details["slurm_elapsed_seconds"] = accounting["elapsed_seconds"]
+
+
+def _read_slurm_accounting(exitcode_path: Path, job_id: str, retries: int = 5) -> ExecResult:
+    """Resolve a finished job's exit code and collect its sacct accounting.
+
+    The exit-code file written by the batch script remains the primary exit
+    code source; sacct supplies the fallback exit code and the resource
+    metrics.  Accounting failures degrade to empty resources and never fail
+    the run itself.
+    """
+    result: ExecResult | None = None
     for _ in range(retries):
         try:
-            return ExecResult(exit_code=int(exitcode_path.read_text().strip()))
+            result = ExecResult(exit_code=int(exitcode_path.read_text().strip()))
+            break
         except (OSError, ValueError):
             time.sleep(1)  # wait for shared-filesystem metadata to settle
     sacct = shutil.which("sacct")
     if sacct:
-        proc = subprocess.run([sacct, "-n", "-o", "ExitCode", "-j", job_id],
-                              capture_output=True, text=True)
-        for line in proc.stdout.splitlines():
-            token = line.strip()
-            if ":" in token:
-                try:
-                    return ExecResult(exit_code=int(token.split(":")[0]))
-                except ValueError:
-                    continue
-    return ExecResult(exit_code=None,
-                      error=f"slurm job {job_id} finished but its exit code is unavailable")
+        try:
+            proc = subprocess.run(
+                [sacct, "-n", "-p", "-o", "ExitCode,MaxRSS,AveRSS,Elapsed,TotalCPU",
+                 "-j", job_id],
+                capture_output=True, text=True,
+            )
+            accounting = _parse_sacct_accounting(proc.stdout)
+        except Exception:
+            accounting = {}
+        if result is None:
+            exit_code = accounting.get("exit_code")
+            if exit_code is not None:
+                result = ExecResult(exit_code=exit_code)
+        if result is not None:
+            _apply_slurm_accounting(result, accounting)
+    if result is None:
+        result = ExecResult(exit_code=None,
+                            error=f"slurm job {job_id} finished but its exit code is unavailable")
+    return result
 
 
 class SlurmExecutor:
@@ -350,7 +536,7 @@ class SlurmExecutor:
             # Shutdown must not abandon a queued/running cluster job.
             _scancel_slurm_job(job_id)
             raise
-        result = _read_slurm_exit_code(exitcode_path, job_id)
+        result = _read_slurm_accounting(exitcode_path, job_id)
         result.scheduler_job_id = job_id
         result.details = {"backend": "slurm", "script": str(script_path)}
         environment = _read_probe_environment(probe_path)
@@ -653,9 +839,27 @@ class SSHExecutor:
             command = f"cd {shlex.quote(remote_cwd)} && {command}"
         label = re.sub(r"[^A-Za-z0-9_.-]", "_", run_id or uuid.uuid4().hex)
         pidfile = f"/tmp/operon-{label}-{uuid.uuid4().hex}.pid"
+        statsfile = f"{pidfile}.stats"
+        # Background RSS sampler: once per second record the combined RSS
+        # (kB) of the payload shell and its children as a "<max> <sum>
+        # <count>" stats line.  Hosts without ps/awk simply leave no usable
+        # stats file; sampling must never affect the payload itself.
+        sampler = (
+            "( max=0; sum=0; count=0; "
+            "while kill -0 $$ 2>/dev/null; do "
+            "rss=$(ps -o rss= -p $$ --ppid $$ 2>/dev/null | "
+            "awk 'NF{s+=$1; n++} END{if (n) print s}'); "
+            "if [ -n \"$rss\" ]; then "
+            "[ \"$rss\" -gt \"$max\" ] 2>/dev/null && max=$rss; "
+            "sum=$((sum + rss)); count=$((count + 1)); "
+            f"printf '%s %s %s\\n' \"$max\" \"$sum\" \"$count\" > {shlex.quote(statsfile)}; "
+            "fi; "
+            "sleep 1; "
+            "done ) & "
+        )
         payload = (
             f"umask 077; echo $$ > {shlex.quote(pidfile)}; "
-            f"trap 'rm -f {shlex.quote(pidfile)}' EXIT; {command}"
+            f"trap 'rm -f {shlex.quote(pidfile)}' EXIT; {sampler}{command}"
         )
         # --wait makes setsid propagate the payload's exit status even when
         # setsid itself is already a process group leader and has to fork
@@ -710,7 +914,19 @@ class SSHExecutor:
         return ExecResult(
             exit_code=channel.recv_exit_status(),
             details={"backend": "ssh", "scheduler": "none", "host": self.host},
+            resources=self._read_remote_stats(client, statsfile),
         )
+
+    def _read_remote_stats(self, client: Any, statsfile: str) -> dict[str, Any]:
+        """Read back and remove the remote sampler stats file; best-effort."""
+        try:
+            _, out = self._remote_exec(
+                client,
+                f"cat {shlex.quote(statsfile)} 2>/dev/null; rm -f {shlex.quote(statsfile)}",
+            )
+        except Exception:
+            return {}
+        return _parse_remote_stats(out)
 
     def _terminate_remote_process(self, client: Any, pidfile: str) -> tuple[bool, str]:
         command = (
@@ -795,30 +1011,35 @@ class SSHExecutor:
             raise
         self._sftp_get_if_exists(sftp, remote_stdout, stdout_path)
         self._sftp_get_if_exists(sftp, remote_stderr, stderr_path)
+        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
+                   "script": remote_script}
+        exit_code: int | None = None
         for _ in range(5):
             rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
             if rc == 0:
                 try:
-                    return ExecResult(
-                        exit_code=int(out.strip()), scheduler_job_id=job_id,
-                        details={"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                                 "script": remote_script},
-                    )
+                    exit_code = int(out.strip())
+                    break
                 except ValueError:
                     pass
             time.sleep(1)
-        rc, out = self._remote_exec(client, f"sacct -n -o ExitCode -j {shlex.quote(job_id)}")
-        for line in out.splitlines():
-            token = line.strip()
-            if ":" in token:
-                try:
-                    return ExecResult(
-                        exit_code=int(token.split(":")[0]), scheduler_job_id=job_id,
-                        details={"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                                 "script": remote_script},
-                    )
-                except ValueError:
-                    continue
+        # sacct supplies the fallback exit code and the resource metrics;
+        # accounting failures degrade to empty resources and never fail the
+        # run itself.
+        try:
+            rc, out = self._remote_exec(
+                client,
+                f"sacct -n -p -o ExitCode,MaxRSS,AveRSS,Elapsed,TotalCPU -j {shlex.quote(job_id)}",
+            )
+            accounting = _parse_sacct_accounting(out) if rc == 0 else {}
+        except Exception:
+            accounting = {}
+        if exit_code is None:
+            exit_code = accounting.get("exit_code")
+        if exit_code is not None:
+            result = ExecResult(exit_code=exit_code, scheduler_job_id=job_id, details=details)
+            _apply_slurm_accounting(result, accounting)
+            return result
         return ExecResult(exit_code=None,
                           error=f"remote slurm job {job_id} finished but its exit code is unavailable",
                           scheduler_job_id=job_id)

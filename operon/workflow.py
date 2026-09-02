@@ -103,6 +103,7 @@ _WORKFLOW_RUN_COLUMNS = [
     "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
     "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
     "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
+    "duration_seconds", "avg_rss_mb", "cpu_seconds",
     "log_file", "stdout_file", "stderr_file", "error",
     "executor", "scheduler_job_id", "execution_details", "environment_id",
 ]
@@ -293,6 +294,13 @@ def run_external_command(
         )
         record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
         record["scheduler_job_id"] = result.scheduler_job_id
+        # Duck-typed executors may predate the resources field.
+        resources = getattr(result, "resources", None)
+        if not isinstance(resources, dict):
+            resources = {}
+        record["max_rss_mb"] = resources.get("max_rss_mb")
+        record["avg_rss_mb"] = resources.get("avg_rss_mb")
+        record["cpu_seconds"] = resources.get("cpu_seconds")
         details = dict(result.details)
         if input_entries:
             details["inputs"] = input_entries
@@ -333,8 +341,9 @@ def run_external_command(
         finished_at=now_iso(),
         stdout_file=str(stdout_file),
         stderr_file=str(stderr_file),
-        max_rss_mb=None,
     )
+    for key in ("max_rss_mb", "avg_rss_mb", "cpu_seconds"):
+        record.setdefault(key, None)
     if environment:
         with db.transaction():
             record["environment_id"] = db.record_environment(environment)
