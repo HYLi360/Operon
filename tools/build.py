@@ -239,10 +239,10 @@ def collect_licenses(
 
     _write_third_party_notices(output, entries, missing)
     copied = len(entries) - len(missing)
-    print(f"Collected license files for {copied} distributions -> {output}")
+    print(f"\033[32mCollected license files for {copied} distributions -> {output}\033[0m")
     for name in missing:
         print(
-            f"warning: no license file found for '{name}' (metadata only)",
+            f"\033[33mwarning: no license file found for '{name}' (metadata only)\033[0m",
             file=sys.stderr,
         )
 
@@ -363,6 +363,7 @@ def build_release(
                 "to replace that exact version"
             )
 
+
     release_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix=f".v{version}-",
@@ -374,10 +375,10 @@ def build_release(
         sources = staging / "sources"
 
         extension = build_cython_extension()
-        print(f"Built Cython parser extension -> {extension}")
+        print(f"\033[34mBuilt Cython parser extension -> {extension}\033[0m")
         collect_licenses(PYPROJECT, licenses)
         source_archive = build_source_distribution(sources, version)
-        print(f"Built corresponding source archive -> {source_archive}")
+        print(f"\033[34mBuilt corresponding source archive -> {source_archive}\033[0m")
         freeze_application(application)
 
         shutil.copytree(licenses, application / "licenses")
@@ -397,7 +398,7 @@ def build_release(
                 os.replace(previous_release, final_output)
             raise
 
-    print(f"Complete Operon release -> {final_output}")
+    print(f"\033[32mComplete Operon release -> \033[35m{final_output}\033[0m")
     return final_output
 
 
@@ -407,7 +408,8 @@ def main(argv: list[str] | None = None) -> int:
         "--release-root",
         type=Path,
         default=DEFAULT_RELEASE_ROOT,
-        help="parent directory for versioned releases",
+        help="parent directory for versioned releases "
+             f"(default: build/release/{project_version()})",
     )
     parser.add_argument(
         "--force",
