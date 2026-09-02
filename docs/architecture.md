@@ -264,8 +264,10 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 
 活动数据消费者默认排除有效退役实体，包括 `show` 的后代计数、status/report、批量 QC、
 规则判定、外部分析候选、metadata coverage、NCBI 重导入复用和新 release。显式查询历史时
-可用对应的 `--include-retired`；`retired` 列出当前直接及继承状态。备份、校验、远程驻留、
-只读 SQL、已有 release 和审计历史仍保留完整归档视角。
+可用对应的 `--include-retired`；直接 `show` 已退役目标时该参数是必需的。活动 metadata/
+release 快照同时移除只关联退役对象的孤立来源记录。`retired` 列出当前直接及继承状态。
+新 release 的 `exclusions.tsv` 会把已有判定但因退役未纳入的实体及其退役根/原因写入
+provenance。备份、校验、远程驻留、只读 SQL、已有 release 和审计历史仍保留完整归档视角。
 
 当前架构没有 `purge`。退役计划会列出后代、文件及 QC/decision/analysis/workflow/source/
 remote/release 引用，并明确 `physical_changes` 全为零。未来若增加物理清除，必须以这份可审计

@@ -1086,7 +1086,8 @@ operon show GCF_000001405.40 --json
 上游 lineage 与自己的 subtree，避免查询一个 assembly 时把同一 organism 的其他 assembly
 计入数量；需要完整 organism 图时使用 `--scope organism`。默认隐藏已 supersede 和已退役的
 后代，分别可用 `--include-superseded`、`--include-retired` 审计完整历史。裸 accession 有
-歧义时使用 `namespace:accession`。
+歧义时使用 `namespace:accession`。如果命中实体自己已有效退役，默认会明确拒绝并列出退役
+根；必须加 `--include-retired` 才显示其 metadata、lineage/subtree 和文件。
 
 ## 16. 如何安全退役与恢复误导入实体
 

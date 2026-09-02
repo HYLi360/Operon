@@ -547,7 +547,9 @@ operon release --version VERSION --profile NAME \
 - 默认 `copy`，生成与 raw/standardized 不共享 inode 的 release。
 - `--copy-files` 是 `--link copy` 的兼容别名。
 - 已存在的 version 目录会拒绝重复创建。
-- 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 的文件；其余实体写入 `exclusions.tsv`。
+- 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 且仍活动的文件；
+  判定未通过的实体和已退役的已判定实体都写入 `exclusions.tsv`。退役项额外记录直接退役根、
+  reason code 和原因，避免原先 PASS 的实体因后续退役而从新 release provenance 中静默消失。
 - release 的 metadata 快照包含 `data_sources.tsv` 与 `source_links.tsv`，冻结来源、引用、
   License 及对象关联，并纳入 release checksum/provenance。
 
@@ -611,7 +613,8 @@ operon report metadata [--output DIRECTORY] [--include-retired]
 - `metadata`：从当前 SQLite 导出 `organisms/samples/runs/assemblies/annotations/accessions/files`
   以及规范化来源 `data_sources/source_links` 的只读 TSV 快照，并生成包含行数与 SHA-256
   的 `manifest.json`；默认写入
-  `reports/metadata/`。它是派生 report，不是备份，也不能反向覆盖数据库。
+  `reports/metadata/`。manifest 会记录本次是否使用 `include_retired`；活动快照不会保留只
+  关联已退役对象的孤立 `data_sources`。它是派生 report，不是备份，也不能反向覆盖数据库。
 - `qc`、`decisions`、`analysis` 和 `metadata` 默认排除有效退役实体；审计完整历史时显式
   使用 `--include-retired`。metadata scope 的 coverage 同样默认只统计活动 organism；
   已有 release 使用创建时冻结的范围，不因后续退役而改变。
@@ -654,8 +657,9 @@ operon show ASM_000001 --include-retired
 直接按一个已 supersede 的实体查询时，该命中实体本身仍会显示。
 
 默认也不把有效退役的后代计入各节数量及文件集合；`Retirements` 节会说明它们由哪个直接
-退役根隔离。`--include-retired` 恢复完整历史视图。直接查询一个已退役目标时，目标本身与
-它的 subtree 仍显示，避免退役后失去审计入口。
+退役根隔离。直接查询一个已退役目标时，默认明确拒绝并列出造成退役的根，必须使用
+`--include-retired` 才显示该目标、已退役 lineage/subtree 及其文件。这保证该参数不会因
+“命中实体本身已退役”而被整体绕过。
 
 裸 accession 对应多个实体时拒绝并要求使用带 namespace 的写法。`--json` 输出完整机器可读
 对象，并包含 `scope`、`include_superseded`、`include_retired`、`supersessions` 和

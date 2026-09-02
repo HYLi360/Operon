@@ -39,6 +39,7 @@ def export_metadata_report(
         "created_at": now_iso(),
         "metadata_schema_version": schema.version,
         "database": str(db.path),
+        "include_retired": include_retired,
         "tables": {},
     }
     for table in METADATA_REPORT_TABLES:
@@ -81,7 +82,7 @@ def qc_rows(
 ) -> list[dict[str, Any]]:
     sql = "SELECT * FROM qc_results WHERE 1=1"
     params: list[Any] = []
-    if not include_retired:
+    if not include_retired and db.lifecycle_schema_available():
         sql += (
             " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
             "WHERE r.entity_type=qc_results.entity_type "
@@ -128,6 +129,8 @@ def print_qc_table(
     rows = qc_rows(
         db, entity_type, entity_id, include_retired=include_retired
     )
+    if not rows:
+        return "(no QC results)"
     headers = ["entity_type", "entity_id", "file_id", "qc_stage", "metric_name", "metric_value", "metric_unit", "tool",
                "evaluated_at"]
     return format_table(headers, ([r[h] for h in headers] for r in rows))
@@ -150,7 +153,7 @@ def print_decisions(
     if profile:
         clauses.append("profile=?")
         params.append(profile)
-    if not include_retired:
+    if not include_retired and db.lifecycle_schema_available():
         clauses.append(
             "NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
             "WHERE r.entity_type=current_decisions.entity_type "
@@ -160,6 +163,8 @@ def print_decisions(
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY entity_type, entity_id, profile"
     rows = db.conn.execute(sql, params).fetchall()
+    if not rows:
+        return "(no decisions)"
     import json as _json
     def _reasons(value):
         try:

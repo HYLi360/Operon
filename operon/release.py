@@ -43,6 +43,48 @@ def release_files_for(db: Database, profile: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
+    """Return decision and retirement exclusions for a new release."""
+    decisions = [dict(row) for row in db.conn.execute(
+        "SELECT entity_type, entity_id, COALESCE(curated_decision, decision) "
+        "AS effective_decision, reason_codes, evaluated_at "
+        "FROM current_decisions WHERE profile=? ORDER BY entity_type, entity_id",
+        (profile,),
+    ).fetchall()]
+    retirement_rows = db.conn.execute(
+        "SELECT entity_type, entity_id, retired_by_type, retired_by_id, "
+        "reason_code, reason FROM effective_retired_entities "
+        "ORDER BY entity_type, entity_id, event_id"
+    ).fetchall()
+    retirements: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in retirement_rows:
+        retirements.setdefault(
+            (str(row["entity_type"]), str(row["entity_id"])), []
+        ).append(dict(row))
+
+    excluded: list[dict[str, Any]] = []
+    for decision in decisions:
+        key = (str(decision["entity_type"]), str(decision["entity_id"]))
+        roots = retirements.get(key, [])
+        if not roots and decision["effective_decision"] in ACCEPTED:
+            continue
+        excluded.append({
+            **decision,
+            "exclusion_reason": "RETIRED" if roots else "DECISION",
+            "retired_by": json.dumps(
+                [f"{row['retired_by_type']}:{row['retired_by_id']}" for row in roots],
+                ensure_ascii=False,
+            ),
+            "retirement_reason_codes": json.dumps(
+                [row["reason_code"] for row in roots], ensure_ascii=False,
+            ),
+            "retirement_reasons": json.dumps(
+                [row["reason"] for row in roots], ensure_ascii=False,
+            ),
+        })
+    return excluded
+
+
 def create_release(db: Database, project: Project, version: str, profile: str,
                    copy_files: bool | None = None, link_kind: str = "copy") -> dict[str, Any]:
     if copy_files:
@@ -149,23 +191,14 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     ).fetchall()
     write_tsv(release_root / "profile_history.tsv", profile_cols, [dict(r) for r in profile_rows])
 
-    # Exclusions: evaluated under this profile but not accepted.
-    excluded = db.conn.execute(
-        """
-        SELECT entity_type, entity_id, COALESCE(curated_decision, decision) AS effective_decision,
-               reason_codes, evaluated_at
-        FROM current_decisions d WHERE profile=?
-          AND COALESCE(curated_decision, decision) NOT IN ('PASS','PASS_WITH_WARNINGS','ACCEPT_WITH_WARNING')
-          AND NOT EXISTS (
-              SELECT 1 FROM effective_retired_entities r
-              WHERE r.entity_type=d.entity_type AND r.entity_id=d.entity_id
-          )
-        ORDER BY entity_type, entity_id
-        """,
-        (profile,),
-    ).fetchall()
-    exclusion_cols = ["entity_type", "entity_id", "effective_decision", "reason_codes", "evaluated_at"]
-    write_tsv(release_root / "exclusions.tsv", exclusion_cols, [dict(r) for r in excluded])
+    # Exclusions preserve both failed decisions and retirement provenance.
+    excluded = release_exclusions_for(db, profile)
+    exclusion_cols = [
+        "entity_type", "entity_id", "effective_decision", "reason_codes",
+        "evaluated_at", "exclusion_reason", "retired_by",
+        "retirement_reason_codes", "retirement_reasons",
+    ]
+    write_tsv(release_root / "exclusions.tsv", exclusion_cols, excluded)
 
     software = [
         {"tool": "operon", "version": __version__, "role": "file database, built-in QC and rule engine"},

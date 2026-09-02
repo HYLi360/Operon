@@ -1294,6 +1294,17 @@ class Database:
                 "WHERE f.file_id=t.object_id AND f.entity_type=r.entity_type "
                 "AND f.entity_id=r.entity_id)))"
             )
+        elif table == "data_sources":
+            sql += (
+                " WHERE NOT EXISTS (SELECT 1 FROM source_links any_link "
+                "WHERE any_link.source_id=t.source_id) OR EXISTS ("
+                "SELECT 1 FROM source_links sl WHERE sl.source_id=t.source_id "
+                "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r WHERE "
+                "(r.entity_type=sl.object_type AND r.entity_id=sl.object_id) OR "
+                "(sl.object_type='file' AND EXISTS (SELECT 1 FROM files f "
+                "WHERE f.file_id=sl.object_id AND f.entity_type=r.entity_type "
+                "AND f.entity_id=r.entity_id))))"
+            )
         rows = self._conn.execute(sql).fetchall()
         return [
             {column: row[column] if column in existing else None for column in cols}

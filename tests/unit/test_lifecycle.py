@@ -20,7 +20,7 @@ from operon.files import ingest_file
 from operon.lifecycle import (
     apply_lifecycle_event, entity_subtree, lifecycle_plan, list_retired_entities,
 )
-from operon.release import release_files_for
+from operon.release import release_exclusions_for, release_files_for
 from operon.tools import Recipe, candidate_files
 from operon.workflow import run_external_command
 
@@ -192,9 +192,21 @@ def test_active_consumers_exclude_retired_entities(lifecycle_project, monkeypatc
 
     graph = entity_graph(db, "ORG_000001")
     assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000002"]
-    assert entity_graph(db, "ASM_000001")["assemblies"][0]["assembly_id"] == "ASM_000001"
+    organism_history = entity_graph(db, "ORG_000001", include_retired=True)
+    assert [row["assembly_id"] for row in organism_history["assemblies"]] == [
+        "ASM_000001", "ASM_000002",
+    ]
+    with pytest.raises(ValidationError, match="use --include-retired"):
+        entity_graph(db, "ASM_000001")
+    history_graph = entity_graph(db, "ASM_000001", include_retired=True)
+    assert history_graph["assemblies"][0]["assembly_id"] == "ASM_000001"
     assert [row["entity_id"] for row in reports.qc_rows(db)] == ["ASM_000002"]
     assert {row["entity_id"] for row in release_files_for(db, "p")} == {"ASM_000002"}
+    exclusions = release_exclusions_for(db, "p")
+    assert [(row["entity_id"], row["exclusion_reason"]) for row in exclusions] == [
+        ("ASM_000001", "RETIRED"),
+    ]
+    assert json.loads(exclusions[0]["retired_by"]) == ["assembly:ASM_000001"]
 
     recipe = Recipe(
         name="test", tool_name="test", description="", entity_type="assembly",
@@ -226,6 +238,182 @@ def test_active_consumers_exclude_retired_entities(lifecycle_project, monkeypatc
     )
     history_manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
     assert history_manifest["tables"]["assemblies.tsv"]["row_count"] == 2
+
+
+def test_show_include_retired_is_required_for_direct_retired_match(
+    lifecycle_project, capsys,
+):
+    project, db = lifecycle_project
+    _retire(db, "assembly", "ASM_000001")
+    _retire(db, "annotation", "ANN_000001")
+    db.close()
+
+    assert main([
+        "--project", str(project.root), "show", "ANN_000001",
+    ]) == 2
+    error = capsys.readouterr().err
+    assert "annotation ANN_000001 is retired by" in error
+    assert "assembly ASM_000001" in error
+    assert "annotation ANN_000001" in error
+    assert "--include-retired" in error
+
+    assert main([
+        "--project", str(project.root), "show", "ANN_000001",
+        "--include-retired", "--json",
+    ]) == 0
+    graph = json.loads(capsys.readouterr().out)
+    assert graph["include_retired"] is True
+    assert [row["assembly_id"] for row in graph["assemblies"]] == ["ASM_000001"]
+    assert [row["annotation_id"] for row in graph["annotations"]] == ["ANN_000001"]
+    assert {(row["retired_by_type"], row["retired_by_id"]) for row in graph["retirements"]} == {
+        ("assembly", "ASM_000001"),
+        ("annotation", "ANN_000001"),
+    }
+
+
+def test_active_metadata_report_omits_sources_only_linked_to_retired_entities(
+    lifecycle_project, tmp_path,
+):
+    project, db = lifecycle_project
+    sources = [
+        {
+            "source_id": "SRC_000001", "identity_sha256": "a" * 64,
+            "source_type": "insdc", "provider": "NCBI",
+            "database_name": "Assembly", "created_at": "2026-09-02T00:00:00+08:00",
+        },
+        {
+            "source_id": "SRC_000002", "identity_sha256": "b" * 64,
+            "source_type": "insdc", "provider": "ENA",
+            "database_name": "Assembly", "created_at": "2026-09-02T00:00:00+08:00",
+        },
+        {
+            "source_id": "SRC_000003", "identity_sha256": "c" * 64,
+            "source_type": "insdc", "provider": "DDBJ",
+            "database_name": "Assembly", "created_at": "2026-09-02T00:00:00+08:00",
+        },
+    ]
+    for row in sources:
+        db.insert_row("data_sources", row)
+    db.insert_row("source_links", {
+        "source_id": "SRC_000001", "object_type": "file",
+        "object_id": "FIL_000001", "relationship": "derived_from",
+        "linked_at": "2026-09-02T00:00:00+08:00",
+    })
+    db.insert_row("source_links", {
+        "source_id": "SRC_000002", "object_type": "assembly",
+        "object_id": "ASM_000002", "relationship": "derived_from",
+        "linked_at": "2026-09-02T00:00:00+08:00",
+    })
+    _retire(db, "assembly", "ASM_000001")
+
+    active = reports.export_metadata_report(db, project, tmp_path / "active-sources")
+    history = reports.export_metadata_report(
+        db, project, tmp_path / "history-sources", include_retired=True,
+    )
+    active_manifest = json.loads((active / "manifest.json").read_text(encoding="utf-8"))
+    history_manifest = json.loads((history / "manifest.json").read_text(encoding="utf-8"))
+    assert active_manifest["include_retired"] is False
+    assert active_manifest["tables"]["data_sources.tsv"]["row_count"] == 2
+    assert active_manifest["tables"]["source_links.tsv"]["row_count"] == 1
+    assert history_manifest["include_retired"] is True
+    assert history_manifest["tables"]["data_sources.tsv"]["row_count"] == 3
+    assert history_manifest["tables"]["source_links.tsv"]["row_count"] == 2
+
+
+def test_report_filters_and_include_retired_cover_qc_decisions_analysis_and_status(
+    lifecycle_project, capsys,
+):
+    _project, db = lifecycle_project
+    for suffix in ("1", "2"):
+        entity_id = f"ASM_00000{suffix}"
+        file_id = f"FIL_00000{suffix}"
+        db.insert_row("qc_results", {
+            "entity_type": "assembly", "entity_id": entity_id,
+            "input_identity": f"entity:{entity_id}", "qc_stage": "test",
+            "metric_name": "marker", "metric_value": f"qc-{suffix}",
+            "tool": "test", "tool_version": "1", "parameter_set": "default",
+            "evaluated_at": "2026-09-02T00:00:00+08:00",
+        })
+        db.insert_row("decisions", {
+            "entity_type": "assembly", "entity_id": entity_id,
+            "profile": "lifecycle", "profile_version": 1, "decision": "PASS",
+            "reason_codes": json.dumps([f"decision-{suffix}"]),
+            "observed": "{}", "thresholds": "{}",
+            "evaluated_at": "2026-09-02T00:00:00+08:00",
+        })
+        cursor = db.conn.execute(
+            "INSERT INTO analysis_jobs(analysis_name, entity_type, entity_id, file_id, "
+            "tool, tool_version, parameter_set, parameter_sha256, input_sha256, "
+            "database_identity, status, started_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "lifecycle", "assembly", entity_id, file_id, "tool", "1", "default",
+                f"parameter-{suffix}", f"input-{suffix}", "database", "completed",
+                "2026-09-02T00:00:00+08:00",
+            ),
+        )
+        db.conn.execute(
+            "INSERT INTO analysis_results(job_id, entity_type, entity_id, file_id, "
+            "analysis_name, metric_name, metric_value) VALUES(?,?,?,?,?,?,?)",
+            (
+                cursor.lastrowid, "assembly", entity_id, file_id, "lifecycle",
+                "marker", f"analysis-{suffix}",
+            ),
+        )
+        db.set_entity_state("assembly", entity_id, "QC_COMPLETE", f"status-{suffix}")
+    db.conn.commit()
+    _retire(db, "assembly", "ASM_000001")
+
+    assert cli._cmd_qc_table(
+        SimpleNamespace(entity_type=None, entity_id=None, export=False, include_retired=False),
+        _project, db,
+    ) == 0
+    output = capsys.readouterr().out
+    assert "qc-1" not in output and "qc-2" in output
+    assert cli._cmd_qc_table(
+        SimpleNamespace(entity_type=None, entity_id=None, export=False, include_retired=True),
+        _project, db,
+    ) == 0
+    output = capsys.readouterr().out
+    assert "qc-1" in output and "qc-2" in output
+
+    assert cli._cmd_decisions(
+        SimpleNamespace(profile="lifecycle", include_retired=False), _project, db,
+    ) == 0
+    output = capsys.readouterr().out
+    assert "decision-1" not in output and "decision-2" in output
+    assert cli._cmd_decisions(
+        SimpleNamespace(profile="lifecycle", include_retired=True), _project, db,
+    ) == 0
+    output = capsys.readouterr().out
+    assert "decision-1" in output and "decision-2" in output
+
+    analysis_args = SimpleNamespace(
+        hits=False, analysis="lifecycle", entity_type=None, entity_id=None,
+        limit=20, include_retired=False,
+    )
+    assert cli._cmd_analysis_results(analysis_args, db) == 0
+    output = capsys.readouterr().out
+    assert "analysis-1" not in output and "analysis-2" in output
+    analysis_args.include_retired = True
+    assert cli._cmd_analysis_results(analysis_args, db) == 0
+    output = capsys.readouterr().out
+    assert "analysis-1" in output and "analysis-2" in output
+
+    status_args = SimpleNamespace(
+        entity_type="assembly", entity_id=None, include_retired=False,
+    )
+    assert cli._cmd_status(status_args, db) == 0
+    output = capsys.readouterr().out
+    assert "status-1" not in output and "status-2" in output
+    status_args.include_retired = True
+    assert cli._cmd_status(status_args, db) == 0
+    output = capsys.readouterr().out
+    assert "status-1" in output and "status-2" in output
+
+    assert reports.print_qc_table(
+        db, entity_type="assembly", entity_id="ASM_000001",
+    ) == "(no QC results)"
+    assert reports.print_decisions(db, profile="missing") == "(no decisions)"
 
 
 def test_cli_retire_restore_records_workflow(lifecycle_project, capsys):

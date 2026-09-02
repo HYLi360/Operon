@@ -91,6 +91,19 @@ def entity_graph(
     if scope not in {"matched", "organism"}:
         raise ValidationError(f"unknown entity graph scope {scope!r}")
     matched_type, matched_id = resolve_identifier(db, identifier)
+    matched_retirements = (
+        [] if include_retired
+        else db.effective_retirements(matched_type, matched_id)
+    )
+    if matched_retirements:
+        roots = ", ".join(
+            f"{row['retired_by_type']} {row['retired_by_id']}"
+            for row in matched_retirements
+        )
+        raise ValidationError(
+            f"{matched_type} {matched_id} is retired by {roots}; "
+            "use --include-retired to inspect retired metadata and files"
+        )
     organism_id = _organism_for(db, matched_type, matched_id)
     organism_row = db.conn.execute(
         "SELECT * FROM organisms WHERE organism_id=?", (organism_id,)
@@ -241,8 +254,7 @@ def entity_graph(
     retired_pairs = {
         (row["entity_type"], row["entity_id"]) for row in retirements
     }
-    matched_is_retired = (matched_type, matched_id) in retired_pairs
-    if not include_retired and not matched_is_retired:
+    if not include_retired:
         samples = [
             row for row in samples
             if ("sample", row["sample_id"]) not in retired_pairs

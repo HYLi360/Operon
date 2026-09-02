@@ -424,13 +424,18 @@ def _parser() -> argparse.ArgumentParser:
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
-            args.command == "query"
-            or args.command == "show"
-            or args.command == "retired"
-            or (args.command in {"retire", "restore"} and not args.apply)
-            or (args.command == "backup" and args.backup_command == "create")
-            or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
-            or (args.command == "ncbi-reconcile" and not args.apply)
+        args.command == "query"
+        or args.command == "show"
+        or args.command == "retired"
+        or args.command == "status"
+        or (
+            args.command == "report"
+            and args.report_kind in {"qc", "decisions", "analysis", "metadata"}
+        )
+        or (args.command in {"retire", "restore"} and not args.apply)
+        or (args.command == "backup" and args.backup_command == "create")
+        or (args.command == "ncbi-datasets" and (args.dry_run or args.plan_only))
+        or (args.command == "ncbi-reconcile" and not args.apply)
     )
     db = Database(project.db_path, read_only=read_only)
     return project, db
@@ -461,7 +466,10 @@ def _cmd_init_demo(args: argparse.Namespace) -> int:
 def _cmd_status(args: argparse.Namespace, db: Database) -> int:
     sql = "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state WHERE entity_type != 'database'"
     params: list[Any] = []
-    if not getattr(args, "include_retired", False):
+    if (
+        not getattr(args, "include_retired", False)
+        and db.lifecycle_schema_available()
+    ):
         sql += (
             " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
             "WHERE r.entity_type=entity_state.entity_type "
@@ -828,7 +836,10 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             JOIN analysis_jobs j ON j.job_id = h.job_id
             WHERE j.status='completed'
         """
-        if not getattr(args, "include_retired", False):
+        if (
+            not getattr(args, "include_retired", False)
+            and db.lifecycle_schema_available()
+        ):
             sql += (
                 " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
                 "WHERE er.entity_type=h.entity_type AND er.entity_id=h.entity_id)"
@@ -841,7 +852,10 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             JOIN analysis_jobs j ON j.job_id = r.job_id
             WHERE j.status='completed'
         """
-        if not getattr(args, "include_retired", False):
+        if (
+            not getattr(args, "include_retired", False)
+            and db.lifecycle_schema_available()
+        ):
             sql += (
                 " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
                 "WHERE er.entity_type=r.entity_type AND er.entity_id=r.entity_id)"

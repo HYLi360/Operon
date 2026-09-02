@@ -464,6 +464,23 @@ class TestCorrectnessRegressions(PytestAssertions):
         self.assertEqual(main([
             "--project", str(self.root), "ncbi-reconcile",
         ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "status",
+        ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "qc",
+        ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "decisions",
+        ]), 0)
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "analysis",
+        ]), 0)
+        with tempfile.TemporaryDirectory() as report_parent:
+            self.assertEqual(main([
+                "--project", str(self.root), "report", "metadata",
+                "--output", str(Path(report_parent) / "metadata"),
+            ]), 0)
 
         conn = sqlite3.connect(self.project.db_path)
         try:
