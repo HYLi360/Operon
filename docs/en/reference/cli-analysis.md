@@ -6,13 +6,17 @@
 operon run-external \
   --step STEP --command 'CMD ARGS' \
   [--entity-type TYPE] [--entity-id ID] \
-  [--parameter-set PS] [--expected-output PATH ...] \
+  [--parameter-set PS] [--tool NAME] [--input PATH ...] [--threads N] \
+  [--expected-output PATH ...] \
   [--cwd DIR] [--timeout SECONDS] [--backend {local,slurm,ssh}]
 ```
 
 - The command is parsed with `shlex` and is not executed through a shell.
 - Exit code, stdout/stderr files, and start/end times are recorded in `workflow_runs` and `logs/workflow.jsonl`.
 - Success requires exit code 0 and every `--expected-output` to exist and be non-empty.
+- `--tool NAME` references a tool configured in `config/tools.yaml`: on a match its version is detected automatically and recorded as `tool_version` and `tool_version_raw`; a failed probe degrades to a warning and does not block the run.
+- `--input PATH` (repeatable) declares input files/directories: each file is hashed with SHA-256, the combined hash is written to `input_sha256`, and the full list goes into `execution_details`.
+- `--threads N` records and requests the thread count from the execution backend.
 - `--backend` overrides `project.yaml`'s `execution.backend`: `local` (default subprocess), `slurm` (submit to a local Slurm cluster), or `ssh` (run on an SSH host). See [Remote Execution with Slurm and SSH](../guides/remote-execution.md).
 
 ## tools-check

@@ -83,6 +83,51 @@ class TestPipelineAndRelease(PytestAssertions):
             finally:
                 db.close()
 
+    def test_export_end_to_end(self):
+        import csv
+        import json as json_module
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(main(["--project", str(root), "init", str(root)]), 0)
+            project = load_project(root)
+            db = Database(project.db_path)
+            try:
+                db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X", "taxonomy_source": "NCBI"})
+                db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+                db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
+                source = root / "genome.fa"
+                source.write_text(">ctg1\n" + "A" * 2000 + "\n", encoding="utf-8")
+                row = ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+            finally:
+                db.close()
+            self.assertEqual(main(["--project", str(root), "qc", "--file-id", row["file_id"]]), 0)
+            self.assertEqual(main([
+                "--project", str(root), "evaluate", "--entity-type", "assembly",
+                "--entity-id", "ASM_000001", "--profile", "assembly_production_v1",
+            ]), 0)
+            out = root / "exported"
+            self.assertEqual(main([
+                "--project", str(root), "export", "--output", str(out),
+                "--decision", "pass", "--profile", "assembly_production_v1",
+            ]), 0)
+            with open(out / "manifest.tsv", encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["file_id"], row["file_id"])
+            exported = out / rows[0]["export_relative_path"]
+            self.assertEqual(exported.read_bytes(), source.read_bytes())
+            self.assertEqual(sha256_file(exported), rows[0]["sha256"])
+            provenance = json_module.loads((out / "provenance.json").read_text(encoding="utf-8"))
+            self.assertEqual(provenance["selection"]["decision"], "pass")
+            self.assertEqual(provenance["file_count"], 1)
+            db = Database(project.db_path)
+            try:
+                runs = db.query("SELECT * FROM workflow_runs WHERE step='export'")
+                self.assertEqual(len(runs), 1)
+                self.assertEqual(runs[0]["output_sha256"], provenance["manifest_sha256"])
+            finally:
+                db.close()
+
     def test_verify_detects_corruption(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

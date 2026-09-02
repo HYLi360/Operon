@@ -75,6 +75,7 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 |---|---|
 | `entity_state` | Entity-level state machine, including the database schema marker row |
 | `workflow_runs` | Structured run records (mirroring `logs/workflow.jsonl`) |
+| `execution_environments` | Content-addressed execution-environment documents (hostname, OS/kernel, Python/operon versions, relevant environment variables, docker probe); referenced by `workflow_runs` and `analysis_jobs` through `environment_id` |
 | `data_sources` | External databases/repositories, providers, record URLs, citations, licenses, and normalized content identity |
 | `source_links` | Many-to-many associations between sources and organism/sample/run/assembly/annotation/file, plus import provenance |
 | `schema_migrations` | Stable IDs, script identities, and application times of applied database migrations |

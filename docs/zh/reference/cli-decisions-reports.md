@@ -37,6 +37,40 @@ operon release --version VERSION --profile NAME \
 - release 的 metadata 快照包含 `data_sources.tsv` 与 `source_links.tsv`，冻结来源、引用、
   License 及对象关联，并纳入 release checksum/provenance。
 
+## export
+
+```bash
+operon export --output DIR \
+  [--entity-type TYPE] [--entity-id ID ...] [--file-id FIL_... ...] \
+  [--file-role ROLE] [--format FMT] [--state STATE] \
+  [--decision DECISION --profile NAME] \
+  [--link {copy,hardlink,symlink}] [--no-qc]
+```
+
+把数据库实体按文件身份物化为目录，供外部分析工具消费。
+
+- `--output` 必填；目标目录必须不存在或为空。
+- 至少提供一个选择条件：`--entity-type`、`--entity-id`（可重复）、`--file-id`
+  （可重复）、`--file-role`、`--format`、`--state` 或 `--decision`。
+- `--decision` 必须同时给出 `--profile`，匹配 `current_decisions` 中该 profile 下的
+  有效决策（如 PASS、FAIL），大小写不敏感。
+- 有效退役实体始终被排除。
+- `--link` 默认 `copy`；`hardlink` 失败时自动回退 `copy`。
+- 布局为 `data/<entity_type>/<entity_id>/<文件名>`；物化前校验源文件 SHA-256 与
+  manifest 一致，不一致即拒绝。
+- 产物：
+  - `manifest.tsv`：列为 `file_id`、`entity_type`、`entity_id`、`file_role`、
+    `format`、`compression`、`export_relative_path`、`original_relative_path`、
+    `source_url`、`size_bytes`、`sha256`；其中 `sha256` 是物化后对导出字节复算的值；
+  - `qc.tsv`：默认生成，导出实体的 QC 长表快照；`--no-qc` 跳过；
+  - `checksums.sha256`：导出字节的校验和；
+  - `provenance.json`：记录全部选择条件、`created_at`、`file_count`、`operon` 版本、
+    `link_kind` 和 manifest SHA-256。
+- 每次导出写入一行 `workflow_runs`（step 为 `export`，`output_sha256` 为 manifest
+  哈希，`execution_details` 包含选择条件）。
+- 语义上与 release 互补：release 面向发布（QC 准入、不可变快照），export 面向分析
+  输入（任意选择条件、按需物化）。
+
 ## run-pipeline
 
 ```bash

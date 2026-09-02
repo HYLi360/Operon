@@ -88,6 +88,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 |---|---|
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应） |
+| `execution_environments` | 内容寻址的执行环境文档（hostname、OS/kernel、Python/operon 版本、相关环境变量、docker 探测）；`workflow_runs` 与 `analysis_jobs` 经 `environment_id` 引用 |
 | `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `schema_migrations` | 已应用数据库迁移的稳定 ID、脚本身份和应用时间 |

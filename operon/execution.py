@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from operon.config import Project
+from operon.environment import PROBE_SHELL_LINES, local_environment, parse_probe_output
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
 from operon.utils import iter_directory_entries, sha256_file, sha256_path
 
@@ -129,7 +130,8 @@ def rewrite_remote_path(value: str, local_root: Path, remote_root: str) -> str:
 
 def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
                         stdout_path: str, stderr_path: str, exitcode_path: str,
-                        threads: int | None, slurm: SlurmConfig) -> str:
+                        threads: int | None, slurm: SlurmConfig,
+                        probe_path: str | None = None) -> str:
     """Render a self-contained sbatch script (pure, unit-testable)."""
     lines = [
         "#!/bin/bash",
@@ -152,6 +154,12 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
         lines.append("")
     lines.append(f"cd {shlex.quote(cwd)}")
     lines.append("rc=$?")
+    if probe_path:
+        # Capture the compute-side environment before the payload runs;
+        # probe failures must never affect the job itself.
+        lines.append("{")
+        lines.extend(f"  {probe_line}" for probe_line in PROBE_SHELL_LINES)
+        lines.append(f"}} > {shlex.quote(probe_path)} 2>/dev/null || true")
     lines.append("if [ $rc -eq 0 ]; then")
     lines.append(f"  {command_line}")
     lines.append("  rc=$?")
@@ -193,6 +201,13 @@ class LocalExecutor:
 
     def cache_identity(self) -> str:
         return "local"
+
+    def probe_environment(self) -> dict[str, Any] | None:
+        """Collect the local execution environment document."""
+        try:
+            return local_environment()
+        except Exception:
+            return None
 
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
             stderr_path: Path, timeout: float | None = None, threads: int | None = None,
@@ -289,6 +304,10 @@ class SlurmExecutor:
     def cache_identity(self) -> str:
         return "slurm:" + repr(self.slurm)
 
+    def probe_environment(self) -> dict[str, Any] | None:
+        """The compute-side environment is only probed inside the job itself."""
+        return None
+
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
             stderr_path: Path, timeout: float | None = None, threads: int | None = None,
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
@@ -303,15 +322,18 @@ class SlurmExecutor:
         logs = Path(stdout_path).parent
         script_path = logs / f"{label}.sbatch"
         exitcode_path = logs / f"{label}.exitcode"
+        probe_path = logs / f"{label}.env"
         script = render_slurm_script(
             job_name=f"operon_{label}",
             command_line=shlex.join(str(a) for a in argv),
             cwd=str(cwd) if cwd else str(self.project.root),
             stdout_path=str(stdout_path), stderr_path=str(stderr_path),
             exitcode_path=str(exitcode_path), threads=threads, slurm=self.slurm,
+            probe_path=str(probe_path),
         )
         script_path.write_text(script, encoding="utf-8")
         exitcode_path.unlink(missing_ok=True)
+        probe_path.unlink(missing_ok=True)
         job_id = _submit_slurm_job(sbatch, script_path)
         deadline = time.monotonic() + timeout if timeout else None
         try:
@@ -331,7 +353,24 @@ class SlurmExecutor:
         result = _read_slurm_exit_code(exitcode_path, job_id)
         result.scheduler_job_id = job_id
         result.details = {"backend": "slurm", "script": str(script_path)}
+        environment = _read_probe_environment(probe_path)
+        if environment:
+            result.details["environment"] = environment
         return result
+
+
+def _read_probe_environment(probe_path: Path) -> dict[str, Any] | None:
+    """Read and parse a job-side environment probe file; best-effort."""
+    try:
+        environment = parse_probe_output(probe_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    finally:
+        try:
+            probe_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return environment or None
 
 
 class SSHExecutor:
@@ -408,6 +447,18 @@ class SSHExecutor:
             f"root={self.remote_root}:storage={self.storage_remote}:"
             f"hostkey={self.host_key_sha256}:slurm={self.slurm!r}"
         )
+
+    def probe_environment(self) -> dict[str, Any] | None:
+        """Probe the remote host over SSH; any failure degrades to None."""
+        try:
+            client = self._connect()
+            _, stdout, _ = client.exec_command(
+                " ; ".join(PROBE_SHELL_LINES), timeout=self.connect_timeout,
+            )
+            environment = parse_probe_output(stdout.read().decode("utf-8", "replace"))
+            return environment or None
+        except Exception:
+            return None
 
     def _connect(self) -> Any:
         if self._client is None:

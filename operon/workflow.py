@@ -6,6 +6,7 @@ not guessed from a folder or screen log.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shlex
 import subprocess
@@ -17,8 +18,8 @@ from typing import Any, Iterable
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ConflictError, OperonError
-from operon.utils import append_jsonl, now_iso, path_is_nonempty
+from operon.errors import ConflictError, OperonError, ValidationError
+from operon.utils import append_jsonl, now_iso, path_is_nonempty, sha256_path
 
 VALID_STATES = {
     "DISCOVERED",
@@ -98,6 +99,15 @@ def new_run_id() -> str:
     return f"WF_{now_iso().replace('-', '').replace(':', '').replace('T', '_')}_{uuid.uuid4().hex[:8]}"
 
 
+_WORKFLOW_RUN_COLUMNS = [
+    "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
+    "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
+    "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
+    "log_file", "stdout_file", "stderr_file", "error",
+    "executor", "scheduler_job_id", "execution_details", "environment_id",
+]
+
+
 def flush_run_log(project: Project, records: Iterable[dict[str, Any]]) -> None:
     """Append workflow records after the transaction that produced them is final."""
     for record in records:
@@ -123,13 +133,7 @@ def log_run(
     record.setdefault("started_at", now_iso())
     record.setdefault("finished_at", now_iso())
     record.setdefault("tool_version", __version__)
-    columns = [
-        "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
-        "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
-        "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
-        "log_file", "stdout_file", "stderr_file", "error",
-        "executor", "scheduler_job_id", "execution_details",
-    ]
+    columns = _WORKFLOW_RUN_COLUMNS
     with db.transaction():
         db.conn.execute(
             f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
@@ -149,13 +153,7 @@ def start_run(db: Database, record: dict[str, Any]) -> dict[str, Any]:
     record.setdefault("status", "running")
     record.setdefault("started_at", now_iso())
     record.setdefault("tool_version", __version__)
-    columns = [
-        "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
-        "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
-        "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
-        "log_file", "stdout_file", "stderr_file", "error",
-        "executor", "scheduler_job_id", "execution_details",
-    ]
+    columns = _WORKFLOW_RUN_COLUMNS
     with db.transaction():
         db.conn.execute(
             f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
@@ -175,6 +173,7 @@ def finish_run(
         error: str | None = None,
         output_sha256: str | None = None,
         execution_details: str | None = None,
+        environment_id: str | None = None,
 ) -> dict[str, Any]:
     """Finalize a previously started run and append its immutable JSONL record."""
     finished_at = finished_at or now_iso()
@@ -182,8 +181,10 @@ def finish_run(
         db.conn.execute(
             "UPDATE workflow_runs SET status=?, finished_at=?, exit_code=?, error=?, "
             "output_sha256=COALESCE(?, output_sha256), "
-            "execution_details=COALESCE(?, execution_details) WHERE run_id=?",
-            (status, finished_at, exit_code, error, output_sha256, execution_details, run_id),
+            "execution_details=COALESCE(?, execution_details), "
+            "environment_id=COALESCE(?, environment_id) WHERE run_id=?",
+            (status, finished_at, exit_code, error, output_sha256, execution_details,
+             environment_id, run_id),
         )
         row = db.conn.execute(
             "SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)
@@ -210,6 +211,8 @@ def run_external_command(
         tool_version: str | None = None,
         backend: str | None = None,
         threads: int | None = None,
+        inputs: Iterable[str | Path] = (),
+        extra_details: dict[str, Any] | None = None,
         stage_inputs: Iterable[str | Path] = (),
         executor: Any = None,
 ) -> dict[str, Any]:
@@ -218,6 +221,10 @@ def run_external_command(
     stdout/stderr are preserved as files, exit code is captured, and the run is
     recorded as structured JSON.  Completion is only recorded after all expected
     outputs exist and are non-empty.
+
+    ``inputs`` declares input artifacts: each must exist, is hashed, and the
+    sorted ``path:sha256`` lines are combined into the run's ``input_sha256``.
+    ``extra_details`` are merged into the recorded ``execution_details``.
 
     Execution goes through the configured backend (`execution.backend` in
     project.yaml, overridable per call): `local` subprocess, `slurm` job
@@ -252,12 +259,33 @@ def run_external_command(
         if not path.is_absolute():
             path = base / path
         resolved_outputs.append(path)
+    input_entries: list[dict[str, Any]] = []
+    for raw_input in inputs:
+        path = Path(raw_input)
+        if not path.is_absolute():
+            path = base / path
+        if not path.exists():
+            raise ValidationError(f"declared input does not exist: {path}")
+        input_entries.append({"path": str(path), "sha256": sha256_path(path)})
+    if input_entries:
+        combined = "\n".join(
+            f"{entry['path']}:{entry['sha256']}"
+            for entry in sorted(input_entries, key=lambda entry: entry["path"])
+        )
+        record["input_sha256"] = hashlib.sha256(combined.encode("utf-8")).hexdigest()
     owns_executor = executor is None
+    environment: dict[str, Any] | None = None
     try:
         if executor is None:
             from operon.execution import get_executor
             executor = get_executor(project, backend)
         record["executor"] = executor.describe()
+        probe = getattr(executor, "probe_environment", None)
+        if probe is not None:
+            try:
+                environment = probe()
+            except Exception:
+                environment = None  # probe failures must never affect the run
         result = executor.run(
             argv, cwd=cwd, stdout_path=stdout_file, stderr_path=stderr_file,
             timeout=timeout, threads=threads, run_id=run_id,
@@ -265,7 +293,15 @@ def run_external_command(
         )
         record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
         record["scheduler_job_id"] = result.scheduler_job_id
-        record["execution_details"] = json.dumps(result.details, ensure_ascii=False, sort_keys=True)
+        details = dict(result.details)
+        if input_entries:
+            details["inputs"] = input_entries
+        if extra_details:
+            details.update(extra_details)
+        record["execution_details"] = json.dumps(details, ensure_ascii=False, sort_keys=True)
+        # Slurm probes the compute side inside the job; prefer that document.
+        if result.details.get("environment"):
+            environment = result.details["environment"]
         if result.exit_code != 0:
             record["error"] = result.error or f"exit code {result.exit_code}"
             record["status"] = "failed"
@@ -299,6 +335,9 @@ def run_external_command(
         stderr_file=str(stderr_file),
         max_rss_mb=None,
     )
+    if environment:
+        with db.transaction():
+            record["environment_id"] = db.record_environment(environment)
     duration = time.monotonic() - started_monotonic
     record["duration_seconds"] = round(duration, 3)
     log_run(db, project, record)

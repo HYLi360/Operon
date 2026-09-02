@@ -1,6 +1,6 @@
 # NCBI adapter recovery and migration
 
-This procedure migrates a long-running legacy `operon` database to database schema 2.7 and metadata schema 1.4, and repairs the annotation duplication, GCA/GCF canonical drift, and QC state downgrades the old NCBI Datasets adapter may have left behind. The whole procedure respects these boundaries:
+This procedure migrates a long-running legacy `operon` database to database schema 2.8 and metadata schema 1.4, and repairs the annotation duplication, GCA/GCF canonical drift, and QC state downgrades the old NCBI Datasets adapter may have left behind. The whole procedure respects these boundaries:
 
 - It does not initialize a project and does not delete old annotations, files, workflows, QC, analyses, releases, or raw files;
 - Schema migrations only add columns, tables, and indexes; business repairs are expressed as new repair workflows, logical supersessions, and `changes` compensation records;
@@ -17,8 +17,8 @@ First stop all `ncbi-datasets`, `ingest`, QC, analysis, release, and any other p
 ```bash
 OPERON_CODE=/path/to/Operon
 OPERON_PROJECT=/path/to/operon-project
-OPERON_BACKUP=/path/to/backups/operon-pre-2.7
-OPERON_STAGE=/path/to/staging/operon-2.7-rehearsal
+OPERON_BACKUP=/path/to/backups/operon-pre-2.8
+OPERON_STAGE=/path/to/staging/operon-2.8-rehearsal
 OPERON_ACTOR=database-maintainer
 
 cd "$OPERON_CODE"
@@ -76,10 +76,10 @@ cp -a "$OPERON_BACKUP" "$OPERON_STAGE"
 
 `migrate-result.json` must satisfy:
 
-- `schema_version` is `2.7`;
+- `schema_version` is `2.8`;
 - `integrity_check` is `ok`;
 - `foreign_key_violations` is `0`;
-- The migration ledger contains `2.6-recovery-and-ncbi-identities` and `2.7-entity-lifecycle-retirement` (a database already at 2.6 only gains the latter).
+- The migration ledger contains `2.6-recovery-and-ncbi-identities`, `2.7-entity-lifecycle-retirement`, and `2.8-execution-environments` (a database already at a newer version only gains the missing entries).
 
 Then generate the business repair plan:
 

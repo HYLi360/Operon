@@ -1,6 +1,6 @@
 # Architecture overview
 
-This document corresponds to `operon` 0.6.0, internal database schema 2.7, and metadata schema 1.4.
+This document corresponds to `operon` 0.6.0, internal database schema 2.8, and metadata schema 1.4.
 
 ## Design goals
 
@@ -90,7 +90,7 @@ How the principles map to implementations:
 | `operon/cli.py` | argparse command parsing, dispatch, human-readable output |
 | `operon/config.py` | Reads `project.yaml`, locates the project root, generates the directory structure |
 | `operon/schema.py` | Built-in metadata field definitions, type validation and normalization, derived TSV output |
-| `operon/database.py` | SQLite DDL, WAL/foreign keys/indexes, development-time compatibility migrations and incremental schema 2.2–2.7 migrations, transactions, read-only queries |
+| `operon/database.py` | SQLite DDL, WAL/foreign keys/indexes, development-time compatibility migrations and incremental schema 2.2–2.8 migrations, transactions, read-only queries |
 | `operon/files.py` | File format/compression detection, atomic archiving, idempotent ingest, checksum verification, standardized views |
 | `operon/lifecycle.py` | Retire/restore plans, append-only lifecycle events, hierarchical propagation, and the current retired list |
 | `operon/import_wizard.py` | English questionary import wizard, draft summary review, non-linear section editing, preflight and commit |

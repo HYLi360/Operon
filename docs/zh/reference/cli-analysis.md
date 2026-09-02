@@ -6,13 +6,19 @@
 operon run-external \
   --step STEP --command 'CMD ARGS' \
   [--entity-type TYPE] [--entity-id ID] \
-  [--parameter-set PS] [--expected-output PATH ...] \
+  [--parameter-set PS] [--tool NAME] [--input PATH ...] [--threads N] \
+  [--expected-output PATH ...] \
   [--cwd DIR] [--timeout SECONDS] [--backend {local,slurm,ssh}]
 ```
 
 - 命令用 shlex 解析，不经过 shell。
 - 记录退出码、stdout/stderr 文件、起止时间到 `workflow_runs` 与 `logs/workflow.jsonl`。
 - 仅当退出码为 0 且所有 `--expected-output` 非空时才判定成功。
+- `--tool NAME` 引用 `config/tools.yaml` 中已配置的工具：命中时自动探测版本并记录
+  `tool_version` 与 `tool_version_raw`；探测失败降级为 warning，不阻断运行。
+- `--input PATH`（可重复）声明输入文件/目录：逐文件计算 SHA-256，组合哈希写入
+  `input_sha256`，完整清单进入 `execution_details`。
+- `--threads N` 记录并向执行后端申请线程数。
 - `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认，
   本地子进程）、`slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上
   执行）。配置与前提见 [How-to 操作手册](../guides/index.md)第 9 节。

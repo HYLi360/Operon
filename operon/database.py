@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.7"
+SCHEMA_VERSION = "2.8"
 
 MANUAL_TABLES = [
     "organisms",
@@ -212,7 +212,13 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     executor TEXT,
     scheduler_job_id TEXT,
     execution_details TEXT,
+    environment_id TEXT,
     error TEXT
+);
+CREATE TABLE IF NOT EXISTS execution_environments (
+    environment_id TEXT PRIMARY KEY,
+    document TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS file_locations (
     file_id TEXT NOT NULL REFERENCES files(file_id) ON DELETE CASCADE,
@@ -281,7 +287,8 @@ CREATE TABLE IF NOT EXISTS analysis_jobs (
     started_at TEXT NOT NULL,
     finished_at TEXT,
     error TEXT,
-    workflow_run_id TEXT
+    workflow_run_id TEXT,
+    environment_id TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_jobs_completed_cache
     ON analysis_jobs(analysis_name, file_id, parameter_sha256, input_sha256, database_identity)
@@ -666,6 +673,7 @@ class Database:
         self._migrate_integrity_cache_schema_2_5()
         self._migrate_recovery_schema_2_6()
         self._migrate_lifecycle_schema_2_7()
+        self._migrate_environment_schema_2_8()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -854,6 +862,29 @@ class Database:
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
             "VALUES('2.7-entity-lifecycle-retirement', ?, datetime('now'), NULL)",
+            (migration_sha256,),
+        )
+
+    def _migrate_environment_schema_2_8(self) -> None:
+        """Add content-addressed execution-environment records for run provenance."""
+        for table in ("workflow_runs", "analysis_jobs"):
+            if "environment_id" not in set(self.table_columns(table)):
+                self._conn.execute(f'ALTER TABLE {table} ADD COLUMN "environment_id" TEXT')
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS execution_environments (
+                environment_id TEXT PRIMARY KEY,
+                document TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        migration_document = "operon schema 2.8: execution environment capture"
+        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.8-execution-environments', ?, datetime('now'), NULL)",
             (migration_sha256,),
         )
 
@@ -1429,6 +1460,23 @@ class Database:
                  workflow_run_id, reverts_change_id),
             )
         return int(cursor.lastrowid)
+
+    def record_environment(self, document: dict[str, Any]) -> str:
+        """Store an execution-environment document; returns its content address.
+
+        Documents are deduplicated by fingerprint, so recording the same
+        environment twice is idempotent and yields a single row.
+        """
+        from operon.environment import environment_fingerprint
+        from operon.utils import now_iso
+        environment_id = environment_fingerprint(document)
+        canonical = json.dumps(document, sort_keys=True, ensure_ascii=False)
+        self._conn.execute(
+            "INSERT OR IGNORE INTO execution_environments (environment_id, document, created_at) "
+            "VALUES (?, ?, ?)",
+            (environment_id, canonical, now_iso()),
+        )
+        return environment_id
 
     def upsert_adapter_run_item(
             self,

@@ -50,6 +50,27 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 工具版本探测在非 `local` 后端时也经同一后端执行。单个 recipe 可用 `slurm:`
 mapping 覆盖 `execution.slurm` 的同名字段（如给 BUSCO 单独调内存/时间）。
 
+执行环境捕获（schema 2.8，`environment.py`）：三个后端都会在每次运行时探测执行环境，
+规范化 JSON 文档写入 `execution_environments` 表；其主键 `environment_id` 是该规范化
+JSON 的 SHA-256（内容寻址，同内容自动去重），`workflow_runs` 与 `analysis_jobs` 通过
+各自的 `environment_id` 列引用。
+
+- `local`：直接收集 hostname、OS/kernel/架构、Python 与 `operon` 版本，
+  以及 `PATH`、`CONDA_PREFIX`、`CONDA_DEFAULT_ENV`、`VIRTUAL_ENV`、
+  `SINGULARITY_NAME`、`APPTAINER_NAME`、`container` 等环境变量和 docker 探测结果；
+- `slurm`：在 sbatch 脚本中嵌入探针，作业内把结果写入 `<run_id>.env` 后读回——
+  探到的是计算节点环境，而非提交节点；
+- `ssh`：通过 paramiko 在远端执行探针并读回结果。
+
+探针失败只把该次运行的 `environment_id` 留为 NULL，不报错也不影响运行；2.8 之前的
+历史行同样为 NULL。
+
+`run-external` 的 provenance 与 `analyze` 对齐：`--tool NAME` 命中 `config/tools.yaml`
+中已配置工具时自动探测版本并记录 `tool_version` 与 `tool_version_raw`（探测失败降级为
+warning，不阻断运行）；`--input PATH`（可重复）声明输入文件，逐文件 SHA-256 的组合
+哈希写入 `input_sha256`，完整清单进入 `execution_details`；`--threads` 记录向执行
+后端申请的线程数。
+
 优雅停机（`shutdown.py`）：`analyze` 批次运行期间安装 SIGINT/SIGTERM 处理器，信号被
 转换为 `ShutdownRequested`（`KeyboardInterrupt` 子类）在主线程抛出，沿常规异常路径
 完成清理——`local` 后端子进程以 `start_new_session` 独立进程组启动，中断/超时时对整个

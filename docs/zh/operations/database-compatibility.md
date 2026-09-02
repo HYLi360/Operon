@@ -69,6 +69,16 @@ schema migration。对应回归测试为
 2.6 项目就必须保留。对应回归测试为
 `test_schema_2_7_adds_append_only_entity_lifecycle`。
 
+`Database._migrate_environment_schema_2_8()` 为 2.7 项目纯加法增加执行环境捕获：
+创建 `execution_environments` 表（主键 `environment_id` 为规范化 JSON 文档的
+SHA-256，内容寻址；另有 `document` 与 `created_at` 列），并给 `workflow_runs` 与
+`analysis_jobs` 各增加 `environment_id` 列。迁移幂等（ALTER TABLE ADD COLUMN +
+CREATE TABLE IF NOT EXISTS），账本记录为 `2.8-execution-environments`；不改写任何
+既有行，历史行的 `environment_id` 保持 NULL。只要仍支持打开 2.7 项目就必须保留。
+对应测试为 `tests/unit/test_environment.py` 的
+`test_schema_2_8_columns_and_table_exist` 与
+`test_migration_adds_columns_to_pre_2_8_database`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。

@@ -717,7 +717,7 @@ def _job_columns() -> list[str]:
         "tool", "tool_version", "tool_version_raw", "launcher", "command",
         "parameter_set", "parameter_sha256", "input_sha256", "database_identity",
         "status", "output_relative_path", "output_sha256", "stdout_file", "stderr_file",
-        "started_at", "finished_at", "error", "workflow_run_id",
+        "started_at", "finished_at", "error", "workflow_run_id", "environment_id",
     ]
 
 
@@ -1082,6 +1082,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 "started_at": finished,
                 "finished_at": finished,
                 "workflow_run_id": adoptee["workflow_run_id"],
+                "environment_id": adoptee["environment_id"],
             }
             with db.transaction() as conn:
                 cursor = conn.execute(
@@ -1168,9 +1169,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         with db.transaction() as conn:
             conn.execute(
                 "UPDATE analysis_jobs SET status='completed', output_relative_path=?, output_sha256=?, "
-                "stdout_file=?, stderr_file=?, finished_at=?, workflow_run_id=? WHERE job_id=?",
+                "stdout_file=?, stderr_file=?, finished_at=?, workflow_run_id=?, environment_id=? "
+                "WHERE job_id=?",
                 (output_rel, output_sha, run_record.get("stdout_file"), run_record.get("stderr_file"),
-                 finished, run_record.get("run_id"), job_id),
+                 finished, run_record.get("run_id"), run_record.get("environment_id"), job_id),
             )
         return {
             "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],

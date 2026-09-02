@@ -9,6 +9,12 @@ JSON summary parser 原生接入；QUAST、Merqury、Kraken2、CheckM2 等尚未
 的工具仍可通过 `run-external` + `import-qc` 接入。下游比较基因组分析在 `analysis/`
 中由外部工作流完成，`operon` 负责数据准入、provenance 与发布。
 
+下游流程与数据库之间的契约入口是 `operon export`：它把所选实体按文件身份物化为
+`data/<entity_type>/<entity_id>/<文件名>` 布局，并附带 `manifest.tsv`（含物化后复算的
+SHA-256）、`qc.tsv` QC 长表快照、`checksums.sha256` 和 `provenance.json`。下游流程应
+消费这组产物而不是直接读数据库。export 与 release 语义互补：release 面向发布（QC
+准入、不可变快照），export 面向分析输入（任意选择条件、按需物化）。
+
 去重按层实现：字节级重复已由 SHA-256 幂等保证（同一实体同角色、相同字节返回同一
 `FIL_`，不同字节明确拒绝）；序列级重复（规范化序列 digest / refget 风格摘要）与
 生物学近重复（Mash/ANI/k-mer 相似度、duplicate cluster 与代表选择）属于扩展方向，

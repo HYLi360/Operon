@@ -34,6 +34,32 @@ operon release --version VERSION --profile NAME \
 - Only files whose `current_decisions` are PASS, PASS_WITH_WARNINGS, or ACCEPT_WITH_WARNING are included; all other entities are written to `exclusions.tsv`.
 - The release metadata snapshot contains `data_sources.tsv` and `source_links.tsv`, freezing sources, citations, licenses, and object associations, and is covered by the release checksum/provenance.
 
+## export
+
+```bash
+operon export --output DIR \
+  [--entity-type TYPE] [--entity-id ID ...] [--file-id FIL_... ...] \
+  [--file-role ROLE] [--format FMT] [--state STATE] \
+  [--decision DECISION --profile NAME] \
+  [--link {copy,hardlink,symlink}] [--no-qc]
+```
+
+Materializes database entities into a directory by file identity for consumption by external analysis tools.
+
+- `--output` is required; the directory must not exist or must be empty.
+- At least one selection criterion is required: `--entity-type`, `--entity-id` (repeatable), `--file-id` (repeatable), `--file-role`, `--format`, `--state`, or `--decision`.
+- `--decision` requires `--profile` and matches the effective decision under that profile in `current_decisions` (e.g. PASS, FAIL), case-insensitively.
+- Effectively retired entities are always excluded.
+- `--link` defaults to `copy`; a failed `hardlink` falls back to `copy`.
+- The layout is `data/<entity_type>/<entity_id>/<filename>`; before materialization the source file SHA-256 is checked against the manifest, and any mismatch is refused.
+- Artifacts:
+  - `manifest.tsv` with columns `file_id`, `entity_type`, `entity_id`, `file_role`, `format`, `compression`, `export_relative_path`, `original_relative_path`, `source_url`, `size_bytes`, `sha256`; `sha256` is recomputed over the materialized bytes;
+  - `qc.tsv`: a QC long-table snapshot of the exported entities, written by default; skipped with `--no-qc`;
+  - `checksums.sha256`: checksums of the exported bytes;
+  - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the manifest SHA-256.
+- Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
+- Semantically complementary to release: release targets publication (QC-gated, immutable snapshot), while export targets analysis inputs (arbitrary selection criteria, materialized on demand).
+
 ## run-pipeline
 
 ```bash

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +15,8 @@ from operon import cli
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import ValidationError
+from operon.errors import ExternalToolError, ValidationError
+from operon.utils import sha256_file
 
 
 @pytest.fixture
@@ -224,6 +227,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
         cli._cmd_run_external(ns(
             command_line=" ", step="x", entity_type=None, entity_id=None,
             parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
+            tool=None, inputs=[], threads=None,
         ), project, db)
     monkeypatch.setattr("operon.workflow.run_external_command", lambda *_a, **_k: {
         "run_id": "WF1", "step": "x", "status": "completed", "exit_code": 0,
@@ -232,6 +236,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
     assert cli._cmd_run_external(ns(
         command_line="echo ok", step="x", entity_type=None, entity_id=None,
         parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
+        tool=None, inputs=[], threads=None,
     ), project, db) == 0
     assert '"run_id": "WF1"' in capsys.readouterr().out
 
@@ -250,6 +255,90 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
     args.dry_run = False
     assert cli._cmd_analyze(args, project, db) == 0
     assert "0/0 succeeded" in capsys.readouterr().out
+
+
+def _run_external_ns(**overrides):
+    values = dict(
+        command_line="echo ok", step="x", entity_type=None, entity_id=None,
+        parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
+        tool=None, inputs=[], threads=None,
+    )
+    values.update(overrides)
+    return ns(**values)
+
+
+def test_run_external_tool_version_threads_and_inputs(project_db, monkeypatch, capsys):
+    project, db = project_db
+    captured: dict = {}
+
+    def fake_run(_db, _project, _argv, **kwargs):
+        captured.update(kwargs)
+        return {"run_id": "WF2", "step": "x", "status": "completed", "exit_code": 0,
+                "finished_at": "now"}
+
+    monkeypatch.setattr("operon.workflow.run_external_command", fake_run)
+    monkeypatch.setattr("operon.tools.detect_tool_version_record",
+                        lambda _tool, _config: ("2.15.0", "blastn: 2.15.0+"))
+    # blastn is preconfigured in the default config/tools.yaml.
+    assert cli._cmd_run_external(_run_external_ns(
+        command_line="blastn -h", tool="blastn", inputs=["in.fa"], threads=8,
+    ), project, db) == 0
+    assert captured["tool"] == "blastn"
+    assert captured["tool_version"] == "2.15.0"
+    assert captured["threads"] == 8
+    assert captured["inputs"] == ["in.fa"]
+    assert captured["extra_details"] == {"tool_version_raw": "blastn: 2.15.0+"}
+
+    # Unconfigured tool name: recorded as-is, version stays None.
+    captured.clear()
+    assert cli._cmd_run_external(_run_external_ns(tool="notatool"), project, db) == 0
+    assert captured["tool"] == "notatool"
+    assert captured["tool_version"] is None
+    assert captured["extra_details"] is None
+
+    # Version detection failure degrades to a warning and a NULL version.
+    def boom(*_a, **_k):
+        raise ExternalToolError("cannot launch blastn")
+
+    monkeypatch.setattr("operon.tools.detect_tool_version_record", boom)
+    captured.clear()
+    assert cli._cmd_run_external(_run_external_ns(tool="blastn"), project, db) == 0
+    assert captured["tool"] == "blastn"
+    assert captured["tool_version"] is None
+    assert "warning: version detection" in capsys.readouterr().err
+
+
+def test_run_external_input_hashing(project_db, tmp_path):
+    from operon.workflow import run_external_command
+    project, db = project_db
+    source = tmp_path / "input.fa"
+    source.write_text(">x\nACGT\n", encoding="utf-8")
+    other = tmp_path / "other.fa"
+    other.write_text(">y\nTTTT\n", encoding="utf-8")
+    record = run_external_command(
+        db, project, [sys.executable, "-c", "pass"], step="selftest_inputs",
+        inputs=[other, source], extra_details={"tool_version_raw": "raw out"},
+    )
+    # The combined hash covers the sorted path:sha256 lines, not the order given.
+    combined = "\n".join(
+        f"{path}:{sha256_file(path)}" for path in sorted([source, other], key=str)
+    )
+    expected = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+    assert record["input_sha256"] == expected
+    details = json.loads(record["execution_details"])
+    assert sorted(details["inputs"], key=lambda entry: entry["path"]) == [
+        {"path": str(path), "sha256": sha256_file(path)}
+        for path in sorted([source, other], key=str)
+    ]
+    assert details["tool_version_raw"] == "raw out"
+    row = db.query("SELECT * FROM workflow_runs WHERE step='selftest_inputs'")[0]
+    assert row["input_sha256"] == expected
+
+    with pytest.raises(ValidationError, match="declared input does not exist"):
+        run_external_command(
+            db, project, [sys.executable, "-c", "pass"], step="x",
+            inputs=[tmp_path / "missing.fa"],
+        )
 
 
 def test_analysis_results_support_metrics_and_hits(project_db, capsys):

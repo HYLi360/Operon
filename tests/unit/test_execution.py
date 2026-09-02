@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import signal
+import socket
 import subprocess
 import tempfile
 import time
@@ -293,6 +294,50 @@ class TestExecutionConfig(PytestAssertions):
         self.assertFalse("--time=" in script)
         self.assertFalse("--partition=" in script)
         self.assertFalse("--mem=" in script)
+        self.assertFalse("PROBE" in script or "hostname" in script)
+
+    def test_render_slurm_script_with_probe(self):
+        from operon.environment import PROBE_SHELL_LINES
+        script = render_slurm_script(
+            job_name="j", command_line="echo hi", cwd="/work dir",
+            stdout_path="/o", stderr_path="/e", exitcode_path="/x",
+            threads=None, slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
+            probe_path="/p/logs/WF_1.env",
+        )
+        for probe_line in PROBE_SHELL_LINES:
+            self.assertIn(probe_line, script)
+        self.assertIn("} > /p/logs/WF_1.env 2>/dev/null || true", script)
+        # The probe block sits after `cd` and before the payload command.
+        self.assertTrue(script.index("cd '/work dir'") < script.index("hostname"))
+        self.assertTrue(script.index("hostname") < script.index("echo hi"))
+
+    def test_local_executor_probe_environment(self):
+        env = LocalExecutor().probe_environment()
+        self.assertIsNotNone(env)
+        self.assertEqual(env["hostname"], socket.gethostname())
+        self.assertIn("os", env)
+        self.assertIn("python_version", env)
+
+    def test_run_external_command_records_environment(self):
+        record = run_external_command(self.db, self.project, ["true"], step="test:environment")
+        self.assertIsNotNone(record.get("environment_id"))
+        row = self.db.conn.execute(
+            "SELECT environment_id FROM workflow_runs WHERE run_id=?", (record["run_id"],),
+        ).fetchone()
+        self.assertEqual(row["environment_id"], record["environment_id"])
+        env_row = self.db.conn.execute(
+            "SELECT document FROM execution_environments WHERE environment_id=?",
+            (record["environment_id"],),
+        ).fetchone()
+        self.assertIsNotNone(env_row)
+        import json as _json
+        document = _json.loads(env_row["document"])
+        self.assertEqual(document["hostname"], socket.gethostname())
+        # A second run in the same environment reuses the row.
+        second = run_external_command(self.db, self.project, ["true"], step="test:environment2")
+        self.assertEqual(second["environment_id"], record["environment_id"])
+        count = self.db.conn.execute("SELECT COUNT(*) AS n FROM execution_environments").fetchone()
+        self.assertEqual(count["n"], 1)
 
     def test_rewrite_remote_path(self):
         root = self.root

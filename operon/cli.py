@@ -237,6 +237,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--entity-type")
     p.add_argument("--entity-id")
     p.add_argument("--parameter-set")
+    p.add_argument("--tool", help="tool name from config/tools.yaml; its version is detected and recorded")
+    p.add_argument("--input", dest="inputs", action="append", default=[],
+                   help="declared input file/directory; hashed into the run's input_sha256")
+    p.add_argument("--threads", type=int, help="threads requested from the execution backend")
     p.add_argument("--expected-output", action="append", default=[], help="path that must exist and be non-empty")
     p.add_argument("--cwd")
     p.add_argument("--timeout", type=float)
@@ -301,6 +305,22 @@ def _parser() -> argparse.ArgumentParser:
                    help="release file storage mode (default: copy)")
     p.add_argument("--copy-files", action="store_true",
                    help="compatibility alias for --link copy")
+
+    p = sub.add_parser("export",
+                       help="materialize a filtered subset of manifest files with manifest/QC/provenance sidecars")
+    p.add_argument("--output", required=True,
+                   help="output directory (must not exist or must be empty; never overwritten)")
+    p.add_argument("--entity-type")
+    p.add_argument("--entity-id", action="append", default=[])
+    p.add_argument("--file-id", action="append", default=[])
+    p.add_argument("--file-role")
+    p.add_argument("--format", dest="fmt")
+    p.add_argument("--state", help="only entities currently in this workflow state")
+    p.add_argument("--decision", help="only entities with this effective decision (requires --profile)")
+    p.add_argument("--profile", help="QC profile used together with --decision")
+    p.add_argument("--link", choices=["copy", "hardlink", "symlink"], default="copy",
+                   help="export file storage mode (default: copy)")
+    p.add_argument("--no-qc", action="store_true", help="skip the qc.tsv metrics snapshot")
 
     p = sub.add_parser("run-pipeline", help="ingest -> verify -> standardize -> QC -> evaluate for one file")
     p.add_argument("--source", required=True)
@@ -759,11 +779,30 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
     argv = shlex.split(args.command_line)
     if not argv:
         raise ValidationError("--command must not be empty")
+    tool_version = None
+    extra_details: dict[str, Any] | None = None
+    if args.tool:
+        from operon.tools import detect_tool_version_record, get_tool, load_tools_config
+        try:
+            tool_spec = get_tool(project, args.tool)
+        except ValidationError:
+            tool_spec = None  # unconfigured name: record the name, no version
+        if tool_spec is not None:
+            try:
+                config = load_tools_config(project)
+                tool_version, raw_output = detect_tool_version_record(tool_spec, config)
+                extra_details = {"tool_version_raw": raw_output}
+            except Exception as exc:
+                # Version detection must never block the actual command.
+                print(f"warning: version detection for {args.tool!r} failed: {exc}",
+                      file=sys.stderr)
     record = run_external_command(
         db, project, argv, step=args.step, entity_type=args.entity_type,
         entity_id=args.entity_id, parameter_set=args.parameter_set,
         expected_outputs=args.expected_output, cwd=args.cwd, timeout=args.timeout,
-        backend=args.backend,
+        tool=args.tool, tool_version=tool_version,
+        backend=args.backend, threads=args.threads, inputs=args.inputs,
+        extra_details=extra_details,
     )
     print(json.dumps({k: record.get(k) for k in ("run_id", "step", "status", "exit_code", "finished_at")},
                      ensure_ascii=False))
@@ -996,6 +1035,19 @@ def _cmd_release(args: argparse.Namespace, project: Project, db: Database) -> in
     link_kind = "copy" if args.copy_files else args.link
     result = create_release(db, project, args.version, args.profile, link_kind=link_kind)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.export import export_files
+    summary = export_files(
+        db, project, output_dir=args.output,
+        entity_type=args.entity_type, entity_ids=args.entity_id, file_ids=args.file_id,
+        file_role=args.file_role, fmt=args.fmt, state=args.state,
+        decision=args.decision, profile=args.profile,
+        link_kind=args.link, include_qc=not args.no_qc,
+    )
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -1403,6 +1455,7 @@ def main(argv: list[str] | None = None) -> int:
                 "evaluate": lambda: _cmd_evaluate(args, project, db),
                 "curate": lambda: _cmd_curate(args, project, db),
                 "release": lambda: _cmd_release(args, project, db),
+                "export": lambda: _cmd_export(args, project, db),
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),
                 "taxonomy": lambda: _cmd_taxonomy(args, project, db),
                 "report": lambda: _cmd_report(args, project, db),
