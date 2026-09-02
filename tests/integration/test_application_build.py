@@ -119,7 +119,14 @@ def test_source_distribution_contains_corresponding_source(tmp_path):
         f"{prefix}operon/qc_module/_parsers.pyx",
         f"{prefix}tools/build.py",
         f"{prefix}tests/integration/test_application_build.py",
-        f"{prefix}docs/architecture.md",
+        f"{prefix}.readthedocs.yaml",
+        f"{prefix}docs/conf.py",
+        f"{prefix}docs/requirements.txt",
+        f"{prefix}docs/zh/architecture/index.md",
+        f"{prefix}docs/en/architecture/index.md",
+        f"{prefix}docs/_templates/layout.html",
+        f"{prefix}docs/_static/operon.css",
+        f"{prefix}docs/_static/language-switcher.js",
     }
     with tarfile.open(archive, "r:gz") as source_tar:
         names = set(source_tar.getnames())

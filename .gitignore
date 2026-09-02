@@ -24,3 +24,5 @@ coverage.xml
 junit.xml
 .coverage
 htmlcov/
+/site/
+/docs/_build/

@@ -1,0 +1,66 @@
+# Metadata Import and Field Extension
+
+## Import metadata in bulk
+
+Use `add` for a few records and controlled CSV/XLSX imports for hundreds or thousands of records. Generate templates first:
+
+```bash
+operon import table --table organisms --template organisms.xlsx
+operon import table --table samples --template samples.csv
+```
+
+Review the preview before writing:
+
+```bash
+operon import table --table organisms --file organisms.xlsx
+
+# Non-interactive runs must explicitly confirm the collision policy.
+operon import table --table organisms --file organisms.csv \
+  --on-conflict update --yes
+```
+
+Import behavior:
+
+- Only manually managed entity/accession tables are accepted. System-managed tables such as `files`, QC results, and decisions cannot be overwritten by table import.
+- Schema, controlled-vocabulary, and foreign-key validation run before the row-by-row `insert/update/unchanged` preview.
+- `--on-conflict error` rejects existing rows, `skip` skips them, and `update` updates fields with per-field audit records.
+- Deletes and full-snapshot replacement are not supported. If any write fails, the transaction for the table is rolled back.
+- For XLSX, the first `data` worksheet is imported; the template's second `schema` worksheet is read-only documentation.
+
+CSV example:
+
+```text
+assembly_id,sample_id,assembly_accession,assembly_version,assembly_level,assembly_method
+ASM_000001,SMP_000001,GCA_000000001,1,chromosome,SPAdes v4.0.0
+```
+
+Use `operon schema --dump` to list all available columns.
+
+To import a complete dataset together with files:
+
+```bash
+operon import dataset
+```
+
+The wizard currently uses English. Existing organisms can be selected by scientific name. The source section requires an explicit INSDC/non-INSDC choice and records database/repository and provider, record URL, citation, and license. Non-INSDC data must include a citation or DOI and a license name or SPDX identifier. These fields are optional for INSDC sources. Taxonomy IDs, sequencing fields, genome FASTA, and some annotation files can be skipped, but the summary keeps visible warnings. Editing a section returns directly to the summary rather than continuing the original linear sequence. Nothing is written until final confirmation.
+
+After import, normalized sources are written to `data_sources` and linked to selected/created entities and archived files through `source_links`. Identical source content is reused by identity. Both tables are included in `report metadata` and releases.
+
+## Extend metadata fields
+
+1. Open `config/schemas.yaml`.
+2. Add a field under the target table's `fields` mapping:
+
+```yaml
+tables:
+  organisms:
+    fields:
+      provenance_note:
+        type: string
+        description: Project-specific source note
+```
+
+3. Use `operon add ... --field provenance_note=...` or `operon import table ...`. Operon adds the corresponding SQLite column automatically through `ensure_metadata_columns`.
+4. Run `operon report metadata` and inspect the derived export.
+
+Unknown columns in CSV/XLSX are rejected. Extend the schema before importing data.

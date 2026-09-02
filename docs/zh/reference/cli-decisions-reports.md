@@ -1,0 +1,128 @@
+# 判定、发布与报告命令
+
+## evaluate
+
+```bash
+operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID]
+```
+
+- 默认 profile 来自 `project.yaml` 的 `qc.default_profile`。
+- 指定 `--entity-id` 时必须同时指定 `--entity-type`。
+- 保存 profile SHA-256 快照，追加 decision；状态机按判定更新。
+- 规则支持 `value_by.metric + value_by.values` 动态选择门限，并用 `unknown` 指定未知
+  selector 的策略（`warning`/`fail`/`ignore`，缺省视为缺少门限即 `NOT_EVALUATED`）；
+  `source.qc_stage` 可把规则绑定到一个明确的 QC/analysis 来源。
+
+## curate
+
+```bash
+operon curate \
+  --entity-type TYPE --entity-id ID --profile NAME \
+  --decision DECISION --reviewer REVIEWER --reason REASON [--evidence TEXT]
+```
+
+修改该 entity/profile 最新 decision 的 `curated_*` 字段并写入 `changes` 审计表。
+
+## release
+
+```bash
+operon release --version VERSION --profile NAME \
+  [--link {copy|hardlink}] [--copy-files]
+```
+
+- 默认 `copy`，生成与 raw/standardized 不共享 inode 的 release。
+- `--copy-files` 是 `--link copy` 的兼容别名。
+- 已存在的 version 目录会拒绝重复创建。
+- 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 的文件；其余实体写入 `exclusions.tsv`。
+- release 的 metadata 快照包含 `data_sources.tsv` 与 `source_links.tsv`，冻结来源、引用、
+  License 及对象关联，并纳入 release checksum/provenance。
+
+## run-pipeline
+
+```bash
+operon run-pipeline \
+  --source FILE --entity-type {run|assembly|annotation} --entity-id ID \
+  --role ROLE [--format FMT] [--compression C] [--source-url URL] \
+  [--profile NAME]
+```
+
+依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。
+
+## report
+
+```bash
+operon report qc [--entity-type TYPE] [--entity-id ID] [--export] [--include-retired]
+operon report decisions [--profile NAME] [--include-retired]
+operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
+  [--hits] [--limit N] [--include-retired]
+operon report coverage --reference-set NAME@TAXONOMY_VERSION [--scope metadata]
+operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
+operon report metadata [--output DIRECTORY] [--include-retired]
+```
+
+- `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
+  `qc_results.wide.tsv`。
+- `decisions`：显示 `current_decisions`（每个 entity/profile 的最新判定）。
+- `analysis`：显示同步到数据库的分析汇总；`--hits` 改为显示 top hits，`--limit`
+  默认 20。
+- `coverage`：只对指定的冻结 taxonomy reference set 计算 family/genus 覆盖率。
+  默认 `--scope metadata` 审计当前 `organisms`；`--release VERSION` 改为沿
+  `release_members` 和 release 内冻结元数据统计已发布数据集，并复核创建时保存的
+  metadata SHA-256。二者互斥。
+- coverage 报告写入 `reports/coverage/COV_<input-hash>/`，包括分子/分母、完整目标、
+  缺失清单、纳入/排除观察和 provenance。完全相同输入会校验并复用既有报告。
+- `metadata`：从当前 SQLite 导出 `organisms/samples/runs/assemblies/annotations/accessions/files`
+  以及规范化来源 `data_sources/source_links` 的只读 TSV 快照，并生成包含行数与 SHA-256
+  的 `manifest.json`；默认写入
+  `reports/metadata/`。它是派生 report，不是备份，也不能反向覆盖数据库。
+- `qc`、`decisions`、`analysis` 和 `metadata` 默认排除有效退役实体；审计完整历史时显式
+  使用 `--include-retired`。metadata scope 的 coverage 同样默认只统计活动 organism；
+  已有 release 使用创建时冻结的范围，不因后续退役而改变。
+
+coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功生成但至少一个 rank
+未达标时返回 1。阈值不写死在命令或代码中。
+
+## query
+
+```bash
+operon query "SQL"
+```
+
+只读 SQL。允许 SELECT 与只读 PRAGMA（如 `table_info`、`foreign_key_list`）；拒绝 DML/DDL/写 PRAGMA/ATTACH/VACUUM 等。
+
+## show
+
+```bash
+operon show ORG_000001
+operon show LAB:HX-ROOT
+operon show GCF_000001405.40 --json
+operon show GCF_000001405.40 --scope organism
+operon show ANN_000001 --include-superseded
+operon show ASM_000001 --include-retired
+```
+
+解析内部稳定 ID、裸 accession 或 `NAMESPACE:ACCESSION`。默认的 `--scope matched` 会显示
+命中实体的上游 lineage 和自己的下游 subtree，避免查询一个 assembly 时把同一 organism 下
+其他 sample/assembly 的数量一起算入：
+
+- organism：显示该 organism 的全部后代；
+- sample：显示 organism、该 sample 及其 run、assembly、annotation；
+- run：显示 organism、所属 sample 和该 run；
+- assembly：显示 organism、所属 sample、该 assembly 及其 annotation；
+- annotation：显示 organism、所属 sample、所属 assembly 和该 annotation。
+
+需要旧式的完整物种关系图时使用 `--scope organism`。默认不把
+`entity_supersessions` 中已经逻辑取代的后代计入各节数量及文件集合；输出仍列出相关
+`Supersessions`，便于解释隐藏的历史记录。`--include-superseded` 可显式恢复完整历史视图；
+直接按一个已 supersede 的实体查询时，该命中实体本身仍会显示。
+
+默认也不把有效退役的后代计入各节数量及文件集合；`Retirements` 节会说明它们由哪个直接
+退役根隔离。`--include-retired` 恢复完整历史视图。直接查询一个已退役目标时，目标本身与
+它的 subtree 仍显示，避免退役后失去审计入口。
+
+裸 accession 对应多个实体时拒绝并要求使用带 namespace 的写法。`--json` 输出完整机器可读
+对象，并包含 `scope`、`include_superseded`、`include_retired`、`supersessions` 和
+`retirements` 字段。`show` 使用 SQLite
+只读连接，因此可安全检查只读挂载或只读数据库副本。若只读介质上仍有非空
+`operon.sqlite-wal`，命令会拒绝 immutable 回退并要求先在可写挂载上 checkpoint，避免忽略
+未合并事务而显示过期数据。

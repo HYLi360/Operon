@@ -40,6 +40,11 @@ build = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 remote = ["paramiko>=3.4"]
+docs = [
+    "Sphinx>=8.1,<9",
+    "myst-parser>=4.0,<5",
+    "sphinx-rtd-theme>=3.0,<4",
+]
 dev = [
     "coverage>=7.0",
     "cx-Freeze>=8.4",
@@ -47,6 +52,9 @@ dev = [
     "pytest>=8.0",
     "paramiko>=3.4",
     "tomli>=2.0; python_version < '3.11'",
+    "Sphinx>=8.1,<9",
+    "myst-parser>=4.0,<5",
+    "sphinx-rtd-theme>=3.0,<4",
 ]
 
 [project.scripts]
