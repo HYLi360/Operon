@@ -36,10 +36,18 @@ dependencies = [
 test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "setuptools>=77"]
 build = [
     "cx-Freeze>=8.4",
+    "myst-parser>=4.0,<5",
     "paramiko>=3.4",
+    "Sphinx>=7.4,<9",
+    "sphinx-rtd-theme>=3.0,<4",
     "tomli>=2.0; python_version < '3.11'",
 ]
 remote = ["paramiko>=3.4"]
+docs = [
+    "Sphinx>=7.4,<9",
+    "myst-parser>=4.0,<5",
+    "sphinx-rtd-theme>=3.0,<4",
+]
 dev = [
     "coverage>=7.0",
     "cx-Freeze>=8.4",
@@ -47,6 +55,9 @@ dev = [
     "pytest>=8.0",
     "paramiko>=3.4",
     "tomli>=2.0; python_version < '3.11'",
+    "Sphinx>=7.4,<9",
+    "myst-parser>=4.0,<5",
+    "sphinx-rtd-theme>=3.0,<4",
 ]
 
 [project.scripts]
@@ -64,7 +75,7 @@ executables = [
 packages = ["operon", "email", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
-    ["docs", "share/doc/operon/docs"],
+    ["README_ZH.md", "share/doc/operon/README_ZH.md"],
     ["LICENSE", "LICENSE"],
 ]
 excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov"]

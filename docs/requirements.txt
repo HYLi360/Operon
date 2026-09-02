@@ -1,0 +1,3 @@
+# Read the Docs invokes this file from the repository root. Keep dependency
+# versions authoritative in pyproject.toml's dedicated documentation extra.
+.[docs]

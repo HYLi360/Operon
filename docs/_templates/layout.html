@@ -1,0 +1,10 @@
+{% extends "!layout.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {% if operon_language_url %}
+  <link rel="alternate" hreflang="{{ 'zh' if operon_language_label == '中文' else 'en' }}" href="{{ operon_language_url }}">
+  <meta name="operon-language-url" content="{{ operon_language_url }}">
+  <meta name="operon-language-label" content="{{ operon_language_label }}">
+  {% endif %}
+{% endblock %}

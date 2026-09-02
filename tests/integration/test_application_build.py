@@ -27,6 +27,7 @@ def collected(tmp_path_factory):
     application_build.collect_licenses(
         ROOT / "pyproject.toml",
         output,
+        extras=("remote",),
     )
     return output
 
@@ -58,6 +59,10 @@ def test_transitive_dependencies_are_included(collected):
         "cryptography",
     ):
         assert package in text
+
+
+def test_release_license_scope_includes_rendered_documentation():
+    assert application_build.DEFAULT_BUNDLED_EXTRAS == ("remote", "docs")
 
 
 def test_license_files_are_copied(collected):
@@ -94,6 +99,20 @@ def test_freeze_includes_importlib_metadata_email_dependency():
     assert "email" in cxfreeze["build_exe"]["packages"]
 
 
+def test_freeze_inputs_use_rendered_documentation_only():
+    cxfreeze = application_build._load_pyproject()["tool"]["cxfreeze"]
+    include_files = cxfreeze["build_exe"]["include_files"]
+    assert ["README_ZH.md", "share/doc/operon/README_ZH.md"] in include_files
+    assert not any(source == "docs" for source, _ in include_files)
+
+
+def test_build_extra_contains_documentation_toolchain():
+    project = application_build._load_pyproject()["project"]
+    requirements = project["optional-dependencies"]["build"]
+    for package in ("Sphinx", "myst-parser", "sphinx-rtd-theme"):
+        assert any(requirement.startswith(package) for requirement in requirements)
+
+
 def test_python_310_tomli_is_an_explicit_build_dependency():
     project = application_build._load_pyproject()["project"]
     for extra in ("build", "dev"):
@@ -103,6 +122,58 @@ def test_python_310_tomli_is_an_explicit_build_dependency():
             and "python_version < '3.11'" in requirement
             for requirement in requirements
         )
+
+
+def test_documentation_build_is_strict_and_checks_outputs(tmp_path, monkeypatch):
+    output = tmp_path / "html"
+    stale = output / "stale.txt"
+    stale.parent.mkdir()
+    stale.write_text("stale", encoding="utf-8")
+    observed = []
+
+    def fake_run(args, **kwargs):
+        observed.append((args, kwargs))
+        for relative in (
+            "index.html",
+            "zh/index.html",
+            "en/index.html",
+            "_static/language-switcher.js",
+        ):
+            target = output / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(relative, encoding="utf-8")
+        (output / ".buildinfo").write_text("cache", encoding="utf-8")
+        doctree = output.with_name(".html-doctrees") / "index.doctree"
+        doctree.parent.mkdir()
+        doctree.write_text("cache", encoding="utf-8")
+        (output / "_sources").mkdir()
+
+    monkeypatch.setattr(application_build, "_run", fake_run)
+
+    assert application_build.build_documentation(output) == output
+    assert not stale.exists()
+    assert not (output / ".buildinfo").exists()
+    assert not output.with_name(".html-doctrees").exists()
+    assert not (output / "_sources").exists()
+    args, kwargs = observed[0]
+    assert args == [
+        application_build.sys.executable,
+        "-m",
+        "sphinx",
+        "-W",
+        "--keep-going",
+        "-b",
+        "html",
+        "-d",
+        output.with_name(".html-doctrees"),
+        "-D",
+        "html_copy_source=0",
+        "-D",
+        "html_show_sourcelink=0",
+        application_build.ROOT / "docs",
+        output,
+    ]
+    assert kwargs == {}
 
 
 def test_source_distribution_contains_corresponding_source(tmp_path):
@@ -119,7 +190,14 @@ def test_source_distribution_contains_corresponding_source(tmp_path):
         f"{prefix}operon/qc_module/_parsers.pyx",
         f"{prefix}tools/build.py",
         f"{prefix}tests/integration/test_application_build.py",
-        f"{prefix}docs/architecture.md",
+        f"{prefix}.readthedocs.yaml",
+        f"{prefix}docs/conf.py",
+        f"{prefix}docs/requirements.txt",
+        f"{prefix}docs/zh/architecture/index.md",
+        f"{prefix}docs/en/architecture/index.md",
+        f"{prefix}docs/_templates/layout.html",
+        f"{prefix}docs/_static/operon.css",
+        f"{prefix}docs/_static/language-switcher.js",
     }
     with tarfile.open(archive, "r:gz") as source_tar:
         names = set(source_tar.getnames())
@@ -128,6 +206,7 @@ def test_source_distribution_contains_corresponding_source(tmp_path):
     assert not any(
         name.endswith((".so", ".pyd", ".pyc", "_parsers.c"))
         or "/__pycache__/" in name
+        or "/docs/_build/" in name
         for name in names
     )
 

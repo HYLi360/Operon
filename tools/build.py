@@ -2,9 +2,10 @@
 """Build a complete, versioned standalone Operon application release.
 
 This is the single entry point for application releases. It compiles the
-required Cython parser extension, collects third-party license texts, builds
-an sdist containing the corresponding project source, freezes the executable,
-assembles the release directory, and verifies the finished artifact.
+required Cython parser extension, strictly builds the Sphinx documentation,
+collects third-party license texts, builds an sdist containing the
+corresponding project source, freezes the executable, assembles the release
+directory, and verifies the finished artifact.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ except ModuleNotFoundError:  # packaging normally ships with pip
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 DEFAULT_RELEASE_ROOT = ROOT / "build" / "release"
-DEFAULT_EXTRA = "remote"
+DEFAULT_BUNDLED_EXTRAS = ("remote", "docs")
 
 _LICENSE_FILE_RE = re.compile(
     r"^(licen[cs]e|copying|notice)(\..*)?$",
@@ -79,22 +80,25 @@ def _requirement_name(requirement: str, extra: str) -> str | None:
     return re.split(r"[<>=!~;\[ ]", requirement, maxsplit=1)[0]
 
 
-def _load_dependency_roots(pyproject: Path, extra: str) -> list[str]:
+def _load_dependency_roots(
+    pyproject: Path,
+    extras: Sequence[str],
+) -> list[str]:
     project = _load_pyproject(pyproject)["project"]
-    requirements = list(project.get("dependencies", []))
-    requirements.extend(
-        project.get("optional-dependencies", {}).get(extra, [])
-    )
-    return [
-        _normalize(name)
-        for requirement in requirements
-        if (name := _requirement_name(requirement, extra)) is not None
-    ]
+    roots: list[str] = []
+    for requirement in project.get("dependencies", []):
+        if (name := _requirement_name(requirement, "")) is not None:
+            roots.append(_normalize(name))
+    optional = project.get("optional-dependencies", {})
+    for extra in extras:
+        for requirement in optional.get(extra, []):
+            if (name := _requirement_name(requirement, extra)) is not None:
+                roots.append(_normalize(name))
+    return roots
 
 
 def _resolve_dependency_closure(
     roots: list[str],
-    extra: str,
 ) -> dict[str, metadata.Distribution]:
     """Resolve installed distributions reachable from the bundled roots."""
     seen: dict[str, metadata.Distribution] = {}
@@ -120,7 +124,7 @@ def _resolve_dependency_closure(
             continue
         seen[name] = dist
         for requirement in metadata.requires(name) or []:
-            if (dependency := _requirement_name(requirement, extra)) is not None:
+            if (dependency := _requirement_name(requirement, "")) is not None:
                 queue.append(_normalize(dependency))
 
     if missing_roots:
@@ -206,11 +210,11 @@ def _write_third_party_notices(
 def collect_licenses(
     pyproject: Path,
     output: Path,
-    extra: str = DEFAULT_EXTRA,
+    extras: Sequence[str] = DEFAULT_BUNDLED_EXTRAS,
 ) -> None:
-    """Collect licenses for core and bundled optional dependencies."""
-    roots = _load_dependency_roots(pyproject, extra)
-    closure = _resolve_dependency_closure(roots, extra)
+    """Collect licenses for runtime packages and rendered-doc assets."""
+    roots = _load_dependency_roots(pyproject, extras)
+    closure = _resolve_dependency_closure(roots)
 
     if output.exists():
         shutil.rmtree(output)
@@ -274,6 +278,48 @@ def build_cython_extension() -> Path:
     raise RuntimeError("Cython parser extension was not produced")
 
 
+def build_documentation(output: Path) -> Path:
+    """Strictly build the bilingual Sphinx HTML documentation."""
+    doctrees = output.with_name(f".{output.name}-doctrees")
+    if output.exists():
+        shutil.rmtree(output)
+    if doctrees.exists():
+        shutil.rmtree(doctrees)
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "sphinx",
+            "-W",
+            "--keep-going",
+            "-b",
+            "html",
+            "-d",
+            doctrees,
+            "-D",
+            "html_copy_source=0",
+            "-D",
+            "html_show_sourcelink=0",
+            ROOT / "docs",
+            output,
+        ]
+    )
+    required = [
+        output / "index.html",
+        output / "zh" / "index.html",
+        output / "en" / "index.html",
+        output / "_static" / "language-switcher.js",
+    ]
+    missing = [path for path in required if not path.is_file()]
+    if missing:
+        details = "\n".join(f"- {path}" for path in missing)
+        raise RuntimeError(f"documentation build is incomplete:\n{details}")
+    shutil.rmtree(doctrees, ignore_errors=True)
+    shutil.rmtree(output / "_sources", ignore_errors=True)
+    (output / ".buildinfo").unlink(missing_ok=True)
+    return output
+
+
 def build_source_distribution(output: Path, version: str) -> Path:
     """Create the corresponding-source sdist using the configured backend."""
     from setuptools import build_meta
@@ -314,18 +360,35 @@ def _executable_path(release: Path) -> Path:
 def verify_release(release: Path, version: str) -> None:
     """Check required artifacts and run the frozen executable smoke test."""
     executable = _executable_path(release)
+    documentation = release / "share" / "doc" / "operon" / "html"
     required = [
         executable,
         release / "LICENSE",
         release / "licenses" / "THIRD_PARTY_NOTICES.md",
         release / "source" / f"operon-{version}.tar.gz",
         release / "share" / "doc" / "operon" / "README.md",
-        release / "share" / "doc" / "operon" / "docs" / "architecture.md",
+        release / "share" / "doc" / "operon" / "README_ZH.md",
+        documentation / "index.html",
+        documentation / "zh" / "index.html",
+        documentation / "en" / "index.html",
+        documentation / "_static" / "language-switcher.js",
     ]
     missing = [path for path in required if not path.exists()]
     if missing:
         details = "\n".join(f"- {path}" for path in missing)
         raise RuntimeError(f"release is incomplete:\n{details}")
+
+    forbidden = [
+        documentation / ".doctrees",
+        documentation / ".buildinfo",
+        documentation / "_sources",
+        release / "share" / "doc" / "operon" / "docs",
+    ]
+    leaked = [path for path in forbidden if path.exists()]
+    leaked.extend(documentation.rglob("*.pickle"))
+    if leaked:
+        details = "\n".join(f"- {path}" for path in leaked)
+        raise RuntimeError(f"release contains documentation build cache:\n{details}")
 
     result = subprocess.run(
         [os.fspath(executable), "--version"],
@@ -373,9 +436,12 @@ def build_release(
         application = staging / "application"
         licenses = staging / "licenses"
         sources = staging / "sources"
+        documentation = staging / "documentation"
 
         extension = build_cython_extension()
         print(f"\033[34mBuilt Cython parser extension -> {extension}\033[0m")
+        build_documentation(documentation)
+        print(f"\033[34mBuilt Sphinx documentation -> {documentation}\033[0m")
         collect_licenses(PYPROJECT, licenses)
         source_archive = build_source_distribution(sources, version)
         print(f"\033[34mBuilt corresponding source archive -> {source_archive}\033[0m")
@@ -385,6 +451,8 @@ def build_release(
         source_output = application / "source"
         source_output.mkdir()
         shutil.copy2(source_archive, source_output / source_archive.name)
+        documentation_output = application / "share" / "doc" / "operon" / "html"
+        shutil.copytree(documentation, documentation_output)
 
         verify_release(application, version)
 
