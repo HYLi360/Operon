@@ -1,5 +1,7 @@
 # Operon
 
+[![deploy status](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/tests.yml)
+
 A Python-based, **file-based database** designed for large-scale genomic data, used for archiving, quality control, analysis, and deterministic automation.
 
 [点此阅读中文自述文件。](README_ZH.md)

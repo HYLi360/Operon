@@ -106,7 +106,7 @@ python tools/build.py               # complete standalone release -> build/relea
 ```
 
 Run the relevant test category after any change; run the full suite before
-considering work done. CI (`.github/workflows/tests.yml`) runs pytest on
+considering work done. CI (`.github/workflows/deploy.yml`) runs pytest on
 Python 3.10–3.14, the frozen release build, and the strict Sphinx build.
 
 `tools/build.py` compiles the Cython parser, builds the Sphinx documentation
