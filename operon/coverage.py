@@ -319,8 +319,9 @@ def _lineages(
             "WHERE n.taxonomy_snapshot_id=? "
             "UNION ALL "
             "SELECT a.input_taxid, p.taxid, p.parent_taxid, p.rank, p.scientific_name, p.is_extinct, a.depth+1 "
-            "FROM ancestry a JOIN taxonomy_nodes p ON p.taxid=a.parent_taxid "
-            "WHERE p.taxonomy_snapshot_id=? AND a.parent_taxid IS NOT NULL "
+            "FROM ancestry a CROSS JOIN taxonomy_nodes p "
+            "WHERE p.taxonomy_snapshot_id=? AND p.taxid=a.parent_taxid "
+            "AND a.parent_taxid IS NOT NULL "
             "AND a.parent_taxid<>a.taxid AND a.depth<100) "
             "SELECT * FROM ancestry ORDER BY input_taxid, depth"
         )

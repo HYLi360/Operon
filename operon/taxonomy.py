@@ -792,8 +792,8 @@ def _descendant_targets(
         excluded_values = ",".join("(?)" for _ in excluded_roots)
         excluded_cte = (
             f", excluded(taxid) AS (SELECT column1 FROM (VALUES {excluded_values}) "
-            "UNION SELECT n.taxid FROM taxonomy_nodes n JOIN excluded e ON n.parent_taxid=e.taxid "
-            "WHERE n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"
+            "UNION SELECT n.taxid FROM excluded e CROSS JOIN taxonomy_nodes n "
+            "WHERE n.parent_taxid=e.taxid AND n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"
         )
         params.extend(excluded_roots)
         params.append(snapshot_id)
@@ -816,21 +816,24 @@ def _descendant_targets(
         extinct_cte = (
             ", extinct(taxid) AS (SELECT taxid FROM taxonomy_nodes "
             "WHERE taxonomy_snapshot_id=? AND is_extinct=1 "
-            "UNION SELECT n.taxid FROM taxonomy_nodes n JOIN extinct e "
-            "ON n.parent_taxid=e.taxid WHERE n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"
+            "UNION SELECT n.taxid FROM extinct e CROSS JOIN taxonomy_nodes n "
+            "WHERE n.parent_taxid=e.taxid AND n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"
         )
         params.extend([snapshot_id, snapshot_id])
         extinct_clause = "AND NOT EXISTS (SELECT 1 FROM extinct x WHERE x.taxid=n.taxid)"
     params.append(snapshot_id)
     params.extend(ranks)
+    # CROSS JOIN fixes the join order so every recursive step and the final
+    # SELECT drive from the CTE side; otherwise the planner may scan the
+    # whole snapshot per step (quadratic on multi-million-node taxonomies).
     sql = (
         f"WITH RECURSIVE scope(taxid) AS (SELECT column1 FROM (VALUES {root_values}) "
-        "UNION SELECT n.taxid FROM taxonomy_nodes n JOIN scope s ON n.parent_taxid=s.taxid "
-        "WHERE n.taxonomy_snapshot_id=? AND n.taxid<>s.taxid) "
+        "UNION SELECT n.taxid FROM scope s CROSS JOIN taxonomy_nodes n "
+        "WHERE n.parent_taxid=s.taxid AND n.taxonomy_snapshot_id=? AND n.taxid<>s.taxid) "
         f"{excluded_cte}{extinct_cte} "
         "SELECT DISTINCT n.taxid, n.rank, n.scientific_name, n.is_extinct "
-        "FROM taxonomy_nodes n JOIN scope s ON s.taxid=n.taxid "
-        f"WHERE n.taxonomy_snapshot_id=? {excluded_clause} {extinct_clause} "
+        "FROM scope s CROSS JOIN taxonomy_nodes n "
+        f"WHERE n.taxonomy_snapshot_id=? AND s.taxid=n.taxid {excluded_clause} {extinct_clause} "
         f"AND n.rank IN ({rank_values})"
     )
     return [dict(row) for row in db.conn.execute(sql, params).fetchall()]
