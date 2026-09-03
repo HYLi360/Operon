@@ -92,7 +92,7 @@ def _workflow_time(value: str) -> str:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="operon",
-        description="Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data",
+        description="Operon the Database System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data",
     )
     parser.add_argument("--project", default=".", help="project root or project.yaml path (default: current directory)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")

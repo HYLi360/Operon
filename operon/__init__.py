@@ -1,4 +1,4 @@
-"""Operon the System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data."""
+"""Operon the Database System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data."""
 
 from importlib.metadata import PackageNotFoundError, version
 
