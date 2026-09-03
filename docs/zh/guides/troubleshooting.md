@@ -16,5 +16,5 @@ operon query "SELECT file_id, entity_type, entity_id, file_role, status, relativ
 | `REMOTE_UNVERIFIED`（仅 verify 输出） | 远端暂时不可达，未确认副本是否仍在；检查 SSH/网络后重试 `verify` |
 | `MISSING` | 恢复文件到 `relative_path`，或从源头重新归档为新实体版本 |
 | `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
-| `QC_FAILED` | 查看 `operon report qc` 中 `parseable=0` 的文件，以及 `logs/workflow.jsonl` 中的错误 |
+| `QC_FAILED` | 查看 `operon report qc` 中 `parseable=0` 的文件，再用 `operon workflow list --step qc --status failed` 与 `operon workflow show WF_ID` 查看错误和执行详情 |
 | 格式解析失败 | 用外部工具（如 `seqkit stats`、GFF3 validator）检查；修复后作为新版本归档，不要覆盖 raw |

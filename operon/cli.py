@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
 import sys
+import textwrap
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +43,14 @@ from operon.taxonomy import (
     list_taxonomy_snapshots,
 )
 from operon.utils import format_table, parse_key_values
-from operon.workflow import flush_run_log, log_run, new_run_id, set_state
+from operon.workflow import (
+    flush_run_log,
+    get_run,
+    list_runs,
+    log_run,
+    new_run_id,
+    set_state,
+)
 
 MANUAL_METADATA_ENTITIES = ["organism", "sample", "run", "assembly", "annotation"]
 
@@ -53,6 +63,30 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
+
+
+def _nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a non-negative integer") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return parsed
+
+
+def _workflow_time(value: str) -> str:
+    """Normalize a CLI ISO-8601 time, interpreting naive values locally."""
+    candidate = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "must be an ISO-8601 date or timestamp"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed.isoformat()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -418,6 +452,33 @@ def _parser() -> argparse.ArgumentParser:
     rp.add_argument("--output", help="output directory (default: reports/metadata)")
     rp.add_argument("--include-retired", action="store_true")
 
+    p = sub.add_parser("workflow", help="search and inspect recorded workflow runs")
+    workflow_sub = p.add_subparsers(dest="workflow_command", required=True)
+    wp = workflow_sub.add_parser("list", help="list workflow runs with optional filters")
+    wp.add_argument("--from", dest="started_from", type=_workflow_time,
+                    help="inclusive started_at boundary (ISO-8601; local time if no offset)")
+    wp.add_argument("--to", dest="started_to", type=_workflow_time,
+                    help="exclusive started_at boundary (ISO-8601; local time if no offset)")
+    wp.add_argument("--run-id")
+    wp.add_argument("--step", action="append", default=[],
+                    help="exact step name; repeat to match any of several steps")
+    wp.add_argument("--status", action="append", default=[],
+                    help="exact status; repeat to match any of several statuses")
+    wp.add_argument("--entity-type")
+    wp.add_argument("--entity-id")
+    wp.add_argument("--parent-run-id")
+    wp.add_argument("--resumes-run-id")
+    wp.add_argument("--tool")
+    wp.add_argument("--executor")
+    wp.add_argument("--limit", type=_nonnegative_int, default=50,
+                    help="maximum rows (default: 50; 0 means all)")
+    wp.add_argument("--offset", type=_nonnegative_int, default=0)
+    wp.add_argument("--oldest-first", action="store_true")
+    wp.add_argument("--format", choices=["table", "json", "jsonl"], default="table")
+    wp = workflow_sub.add_parser("show", help="show one complete workflow run")
+    wp.add_argument("run_id")
+    wp.add_argument("--format", choices=["text", "json"], default="text")
+
     p = sub.add_parser("query", help="run arbitrary read-only SQL against the file database")
     p.add_argument("sql")
 
@@ -491,6 +552,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
         args.command == "query"
+        or args.command == "workflow"
         or args.command == "show"
         or args.command == "retired"
         or args.command == "status"
@@ -509,6 +571,177 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
 
 def _print_table(headers: list[str], rows: list[list[Any]]) -> None:
     print(format_table(headers, rows))
+
+
+def _workflow_json_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Expose JSON stored in SQLite as structured output when it is valid."""
+    result = dict(record)
+    details = result.get("execution_details")
+    if isinstance(details, str):
+        try:
+            result["execution_details"] = json.loads(details)
+        except json.JSONDecodeError:
+            pass
+    return result
+
+
+def _workflow_duration(record: dict[str, Any]) -> str:
+    duration = record.get("duration_seconds")
+    if duration is not None:
+        return f"{float(duration):.3f}s"
+    started = record.get("started_at")
+    finished = record.get("finished_at")
+    if not started or not finished:
+        return "-"
+    try:
+        seconds = datetime.fromisoformat(finished) - datetime.fromisoformat(started)
+    except (TypeError, ValueError):
+        return "-"
+    return f"{max(seconds.total_seconds(), 0.0):.3f}s"
+
+
+def _compact_workflow_value(value: Any, width: int) -> str:
+    text = "-" if value in (None, "") else str(value)
+    return text if len(text) <= width else text[:width - 3] + "..."
+
+
+def _workflow_started_local(value: Any) -> str:
+    if not isinstance(value, str):
+        return "-"
+    try:
+        return datetime.fromisoformat(value).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return _compact_workflow_value(value, 19)
+
+
+def _print_workflow_field(label: str, value: Any) -> None:
+    text = "-" if value in (None, "") else str(value)
+    prefix = f"  {label:<18} "
+    available = max(40, shutil.get_terminal_size(fallback=(100, 24)).columns)
+    print(textwrap.fill(
+        text,
+        width=available,
+        initial_indent=prefix,
+        subsequent_indent=" " * len(prefix),
+        break_long_words=False,
+        break_on_hyphens=False,
+    ))
+
+
+def _print_workflow_section(title: str, fields: list[tuple[str, Any]]) -> None:
+    print(title)
+    for label, value in fields:
+        _print_workflow_field(label, value)
+
+
+def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
+    if args.workflow_command == "list":
+        if (
+            args.started_from is not None
+            and args.started_to is not None
+            and datetime.fromisoformat(args.started_from)
+            >= datetime.fromisoformat(args.started_to)
+        ):
+            raise ValidationError("--from must be earlier than --to")
+        records = list_runs(
+            db,
+            started_from=args.started_from,
+            started_to=args.started_to,
+            run_id=args.run_id,
+            steps=args.step,
+            statuses=args.status,
+            entity_type=args.entity_type,
+            entity_id=args.entity_id,
+            parent_run_id=args.parent_run_id,
+            resumes_run_id=args.resumes_run_id,
+            tool=args.tool,
+            executor=args.executor,
+            limit=args.limit,
+            offset=args.offset,
+            oldest_first=args.oldest_first,
+        )
+        serialized = [_workflow_json_record(record) for record in records]
+        if args.format == "json":
+            print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
+        elif args.format == "jsonl":
+            for record in serialized:
+                print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+        elif not records:
+            print("no workflow runs matched")
+        else:
+            print(format_table(
+                ["started_local", "status", "step", "entity", "duration", "run_id"],
+                ([
+                    _workflow_started_local(record["started_at"]),
+                    _compact_workflow_value(record["status"], 11),
+                    _compact_workflow_value(record["step"], 16),
+                    _compact_workflow_value(
+                        ":".join(filter(None, (record.get("entity_type"), record.get("entity_id")))),
+                        20,
+                    ),
+                    _compact_workflow_value(_workflow_duration(record), 10),
+                    record["run_id"],
+                ] for record in records),
+            ))
+        return 0
+
+    if args.workflow_command == "show":
+        record = get_run(db, args.run_id)
+        if record is None:
+            raise ValidationError(f"workflow run does not exist: {args.run_id}")
+        serialized = _workflow_json_record(record)
+        if args.format == "json":
+            print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        entity = ":".join(filter(None, (record.get("entity_type"), record.get("entity_id"))))
+        _print_workflow_section("Workflow run", [
+            ("run_id", record["run_id"]),
+            ("status", record["status"]),
+            ("step", record["step"]),
+            ("entity", entity or None),
+            ("parent_run_id", record.get("parent_run_id")),
+            ("resumes_run_id", record.get("resumes_run_id")),
+        ])
+        print()
+        _print_workflow_section("Timing and resources", [
+            ("started_at", record.get("started_at")),
+            ("finished_at", record.get("finished_at")),
+            ("duration", _workflow_duration(record)),
+            ("threads", record.get("threads")),
+            ("max_rss_mb", record.get("max_rss_mb")),
+            ("avg_rss_mb", record.get("avg_rss_mb")),
+            ("cpu_seconds", record.get("cpu_seconds")),
+        ])
+        print()
+        _print_workflow_section("Execution", [
+            ("command", record.get("command")),
+            ("tool", record.get("tool")),
+            ("tool_version", record.get("tool_version")),
+            ("parameter_set", record.get("parameter_set")),
+            ("executor", record.get("executor")),
+            ("scheduler_job_id", record.get("scheduler_job_id")),
+            ("exit_code", record.get("exit_code")),
+            ("environment_id", record.get("environment_id")),
+        ])
+        print()
+        _print_workflow_section("Artifacts and logs", [
+            ("input_sha256", record.get("input_sha256")),
+            ("output_sha256", record.get("output_sha256")),
+            ("log_file", record.get("log_file")),
+            ("stdout_file", record.get("stdout_file")),
+            ("stderr_file", record.get("stderr_file")),
+        ])
+        print()
+        _print_workflow_section("Outcome", [("error", record.get("error"))])
+        print("\nExecution details")
+        details = serialized.get("execution_details")
+        if isinstance(details, (dict, list)):
+            print(json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print("-" if details in (None, "") else details)
+        return 0
+
+    raise ValidationError(f"unknown workflow command {args.workflow_command!r}")
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -1650,6 +1883,7 @@ def main(argv: list[str] | None = None) -> int:
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),
                 "taxonomy": lambda: _cmd_taxonomy(args, project, db),
                 "report": lambda: _cmd_report(args, project, db),
+                "workflow": lambda: _cmd_workflow(args, db),
                 "query": lambda: _cmd_query(args, db),
                 "show": lambda: _cmd_show(args, db),
                 "retire": lambda: _cmd_lifecycle(args, project, db),

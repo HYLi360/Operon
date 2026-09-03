@@ -109,6 +109,79 @@ _WORKFLOW_RUN_COLUMNS = [
 ]
 
 
+def list_runs(
+        db: Database,
+        *,
+        started_from: str | None = None,
+        started_to: str | None = None,
+        run_id: str | None = None,
+        steps: Iterable[str] = (),
+        statuses: Iterable[str] = (),
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        parent_run_id: str | None = None,
+        resumes_run_id: str | None = None,
+        tool: str | None = None,
+        executor: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        oldest_first: bool = False,
+) -> list[dict[str, Any]]:
+    """Return workflow runs matching stable, read-only CLI filters.
+
+    Time bounds apply to ``started_at`` and use a half-open interval. SQLite's
+    Julian-day conversion keeps comparisons correct when records use different
+    UTC offsets. ``limit=0`` means no row limit.
+    """
+    conditions: list[str] = []
+    parameters: list[Any] = []
+
+    def exact(column: str, value: str | None) -> None:
+        if value is not None:
+            conditions.append(f"{column}=?")
+            parameters.append(value)
+
+    if started_from is not None:
+        conditions.append("julianday(started_at) >= julianday(?)")
+        parameters.append(started_from)
+    if started_to is not None:
+        conditions.append("julianday(started_at) < julianday(?)")
+        parameters.append(started_to)
+    exact("run_id", run_id)
+    exact("entity_type", entity_type)
+    exact("entity_id", entity_id)
+    exact("parent_run_id", parent_run_id)
+    exact("resumes_run_id", resumes_run_id)
+    exact("tool", tool)
+    exact("executor", executor)
+
+    for column, values in (("step", list(steps)), ("status", list(statuses))):
+        if values:
+            conditions.append(f"{column} IN ({', '.join('?' for _ in values)})")
+            parameters.extend(values)
+
+    sql = "SELECT * FROM workflow_runs"
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    direction = "ASC" if oldest_first else "DESC"
+    sql += f" ORDER BY julianday(started_at) {direction}, rowid {direction}"
+    if limit:
+        sql += " LIMIT ? OFFSET ?"
+        parameters.extend((limit, offset))
+    elif offset:
+        sql += " LIMIT -1 OFFSET ?"
+        parameters.append(offset)
+    return [dict(row) for row in db.conn.execute(sql, parameters).fetchall()]
+
+
+def get_run(db: Database, run_id: str) -> dict[str, Any] | None:
+    """Return one workflow run without modifying project state."""
+    row = db.conn.execute(
+        "SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
 def flush_run_log(project: Project, records: Iterable[dict[str, Any]]) -> None:
     """Append workflow records after the transaction that produced them is final."""
     for record in records:

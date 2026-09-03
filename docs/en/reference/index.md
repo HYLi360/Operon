@@ -7,6 +7,7 @@
 - [External Analysis Commands](cli-analysis.md)
 - [Remote Storage Commands](cli-remote.md)
 - [Decisions, Releases, and Reports](cli-decisions-reports.md)
+- [Workflow History Commands](cli-workflow.md)
 - [Taxonomy, Lifecycle, and Administration](cli-taxonomy-lifecycle-admin.md)
 
 ## Configuration and data model
@@ -24,6 +25,7 @@ cli-files-qc
 cli-analysis
 cli-remote
 cli-decisions-reports
+cli-workflow
 cli-taxonomy-lifecycle-admin
 recipe-overview
 recipe-fields
