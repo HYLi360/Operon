@@ -26,13 +26,13 @@ Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF �
 不属于 `operon` 的 Python 运行时依赖。缺少时 cx_Freeze 会在 `build_exe` 阶段直接停止。
 
 ```text
-build/release/v0.6.0/
+build/release/v0.6.1/
 ├── operon                  # 命令行可执行文件；Windows 为 operon.exe
 ├── lib/                    # Python 运行时、operon 包与第三方依赖
 ├── LICENSE                 # Operon 自身的许可证（AGPL-3.0-or-later）
 ├── licenses/               # THIRD_PARTY_NOTICES.md 与各第三方依赖的许可证全文
 ├── source/
-│   └── operon-0.6.0.tar.gz # 对应本次二进制的完整项目源码 sdist
+│   └── operon-0.6.1.tar.gz # 对应本次二进制的完整项目源码 sdist
 ├── frozen_application_license.txt  # cx_Freeze 自动附带的冻结引导代码许可证
 └── share/doc/operon/
     ├── README.md           # 英文项目说明

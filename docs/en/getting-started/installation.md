@@ -27,7 +27,7 @@ Verify the installation:
 
 ```bash
 operon --version
-# Expected: operon 0.6.0
+# Expected: operon 0.6.1
 
 operon --help
 ```

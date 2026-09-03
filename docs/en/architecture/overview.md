@@ -1,6 +1,6 @@
 # Architecture overview
 
-This document corresponds to `operon` 0.6.0, internal database schema 2.9, and metadata schema 1.4.
+This document corresponds to `operon` 0.6.1, internal database schema 2.9, and metadata schema 1.4.
 
 ## Design goals
 

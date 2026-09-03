@@ -26,7 +26,7 @@ principle-to-implementation mapping.
 
 Current version markers (must stay consistent across code and docs):
 
-- `operon` 0.6.0 (`pyproject.toml`)
+- `operon` 0.6.1 (`pyproject.toml`)
 - database schema 2.9 (`operon/database.py`, `SCHEMA_VERSION`)
 - metadata schema 1.4 (`operon/schema.py`, `METADATA_SCHEMA_VERSION`)
 
@@ -164,5 +164,5 @@ change:
 - Contributor-facing processes → `docs/*/contributor/`; navigation →
   `docs/*/index.md`
 
-Version markers in docs (`operon` 0.6.0, database schema 2.9, metadata
+Version markers in docs (`operon` 0.6.1, database schema 2.9, metadata
 schema 1.4) must match `pyproject.toml` and the code.

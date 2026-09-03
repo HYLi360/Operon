@@ -1,6 +1,6 @@
 # 架构总览
 
-本文对应 `operon` 0.6.0、数据库内部 schema 2.9、metadata schema 1.4。
+本文对应 `operon` 0.6.1、数据库内部 schema 2.9、metadata schema 1.4。
 
 ## 设计目标
 

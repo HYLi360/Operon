@@ -18,13 +18,13 @@ Release content lands in a versioned directory:
 A Linux build machine additionally needs the system command `patchelf`; it is a build-time tool for cx_Freeze's ELF dependency handling, not a Python runtime dependency of `operon`. When it is missing, cx_Freeze stops right at the `build_exe` stage.
 
 ```text
-build/release/v0.6.0/
+build/release/v0.6.1/
 ├── operon                  # command-line executable; operon.exe on Windows
 ├── lib/                    # Python runtime, the operon package, and third-party dependencies
 ├── LICENSE                 # Operon's own license (AGPL-3.0-or-later)
 ├── licenses/               # THIRD_PARTY_NOTICES.md and full license texts of third-party dependencies
 ├── source/
-│   └── operon-0.6.0.tar.gz # complete project source sdist corresponding to this binary
+│   └── operon-0.6.1.tar.gz # complete project source sdist corresponding to this binary
 ├── frozen_application_license.txt  # license of the frozen bootstrap code automatically included by cx_Freeze
 └── share/doc/operon/
     ├── README.md           # English project overview

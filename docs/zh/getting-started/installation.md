@@ -27,7 +27,7 @@ python -m pip install -e '.[remote]'
 
 ```bash
 operon --version
-# 输出：operon 0.6.0
+# 输出：operon 0.6.1
 
 operon --help
 ```
