@@ -1,6 +1,6 @@
 # Operon
 
-[![deploy status](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml) [![codecov](https://codecov.io/gh/HYLi360/Operon/graph/badge.svg?token=BC4LD8UPL2)](https://codecov.io/gh/HYLi360/Operon)
+[![deploy status](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml) [![codecov](https://codecov.io/gh/HYLi360/Operon/branch/master/graph/badge.svg?token=BC4LD8UPL2)](https://codecov.io/gh/HYLi360/Operon)
 
 一个基于 Python 的、面向大规模基因组数据的**基于文件的数据库**，用于归档、质控、分析与确定性自动化处理。
 
