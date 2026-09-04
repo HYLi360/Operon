@@ -15,7 +15,7 @@ operon run-external \
 - Exit code, stdout/stderr files, and start/end times are recorded in `workflow_runs` and `logs/workflow.jsonl`; `workflow_runs` also carries `duration_seconds` (wall clock) plus the `max_rss_mb`/`avg_rss_mb`/`cpu_seconds` resource-usage columns as collected by the execution backend (NULL when collection is unavailable, never affecting the success verdict; per-backend collection is described in the [external analysis execution model](../architecture/external-analysis.md)).
 - Success requires exit code 0 and every `--expected-output` to exist and be non-empty.
 - `--tool NAME` references a tool configured in `config/tools.yaml`: on a match its version is detected automatically and recorded as `tool_version` and `tool_version_raw`; a failed probe degrades to a warning and does not block the run.
-- `--input PATH` (repeatable) declares input files/directories: each file is hashed with SHA-256, the combined hash is written to `input_sha256`, and the full list goes into `execution_details`.
+- `--input PATH` (repeatable) declares input files/directories: each file is hashed with SHA-256, the combined hash is written to `input_sha256`, and the full list goes into `execution_details`. With the SSH backend and a non-empty `remote_root`, declared inputs are also uploaded into the corresponding path in the remote project mirror before execution. Such inputs must resolve inside the local project root.
 - `--threads N` records and requests the thread count from the execution backend.
 - `--backend` overrides `project.yaml`'s `execution.backend`: `local` (default subprocess), `slurm` (submit to a local Slurm cluster), or `ssh` (run on an SSH host). See [Remote Execution with Slurm and SSH](../guides/remote-execution.md).
 

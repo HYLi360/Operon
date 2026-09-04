@@ -60,7 +60,8 @@ JSON 的 SHA-256（内容寻址，同内容自动去重），`workflow_runs` 与
   `SINGULARITY_NAME`、`APPTAINER_NAME`、`container` 等环境变量和 docker 探测结果；
 - `slurm`：在 sbatch 脚本中嵌入探针，作业内把结果写入 `<run_id>.env` 后读回——
   探到的是计算节点环境，而非提交节点；
-- `ssh`：通过 paramiko 在远端执行探针并读回结果。
+- `ssh`：直连模式通过 paramiko 在远端执行探针；远端 Slurm 模式嵌入并读回同一份
+  作业内探针，因此记录计算节点而不是 SSH 登录节点。
 
 探针失败只把该次运行的 `environment_id` 留为 NULL，不报错也不影响运行；2.8 之前的
 历史行同样为 NULL。

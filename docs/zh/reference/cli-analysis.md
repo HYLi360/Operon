@@ -21,7 +21,9 @@ operon run-external \
 - `--tool NAME` 引用 `config/tools.yaml` 中已配置的工具：命中时自动探测版本并记录
   `tool_version` 与 `tool_version_raw`；探测失败降级为 warning，不阻断运行。
 - `--input PATH`（可重复）声明输入文件/目录：逐文件计算 SHA-256，组合哈希写入
-  `input_sha256`，完整清单进入 `execution_details`。
+  `input_sha256`，完整清单进入 `execution_details`。使用 SSH 后端且 `remote_root`
+  非空时，声明的输入还会在执行前上传到远端项目镜像中的对应路径；这些输入解析后
+  必须位于本地项目根目录内。
 - `--threads N` 记录并向执行后端申请线程数。
 - `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认，
   本地子进程）、`slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上

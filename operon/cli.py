@@ -273,7 +273,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--parameter-set")
     p.add_argument("--tool", help="tool name from config/tools.yaml; its version is detected and recorded")
     p.add_argument("--input", dest="inputs", action="append", default=[],
-                   help="declared input file/directory; hashed into the run's input_sha256")
+                   help="declared input file/directory; hashed for provenance and staged for "
+                        "non-shared SSH execution")
     p.add_argument("--threads", type=int, help="threads requested from the execution backend")
     p.add_argument("--expected-output", action="append", default=[], help="path that must exist and be non-empty")
     p.add_argument("--cwd")

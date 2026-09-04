@@ -934,10 +934,17 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 "configure execution.ssh.storage_remote"
             )
         if not dry_run:
-            from operon.remotes import verify_remote_record
+            from operon.remotes import _ensure_remote_only_schema, verify_remote_record
             verify_remote_record(
                 project, storage_remote, file_record, db=db,
                 client=getattr(executor, "client", None),
+            )
+            _ensure_remote_only_schema(project)
+            db.set_file_status(
+                file_record["file_id"], "REMOTE_ONLY",
+                reason=f"local bytes absent; remote input verified for analysis on {storage_remote}",
+                actor="operon analyze",
+                evidence=f"remote://{storage_remote}/{input_rel}",
             )
         input_is_remote = True
         actual_sha = manifest_sha

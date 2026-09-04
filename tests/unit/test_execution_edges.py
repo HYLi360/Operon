@@ -130,7 +130,11 @@ def test_slurm_executor_requires_commands_timeout_and_interrupt(tmp_path, monkey
         executor.run(["x"], cwd=None, stdout_path=out, stderr_path=err)
 
     monkeypatch.setattr(execution.shutil, "which", lambda name: name)
-    monkeypatch.setattr(execution, "_submit_slurm_job", lambda *_a: "42")
+    def submit_with_probe(*_args):
+        (tmp_path / "r.env").write_text("hostname=compute-01\nos=Linux\n", encoding="utf-8")
+        return "42"
+
+    monkeypatch.setattr(execution, "_submit_slurm_job", submit_with_probe)
     monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: False)
     monkeypatch.setattr(execution, "_scancel_slurm_job", lambda job: None)
     times = iter([0, 2, 2])
@@ -138,6 +142,9 @@ def test_slurm_executor_requires_commands_timeout_and_interrupt(tmp_path, monkey
     monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
     result = executor.run(["x"], cwd=None, stdout_path=out, stderr_path=err, timeout=1, run_id="r")
     assert result.exit_code is None and result.scheduler_job_id == "42"
+    assert result.details["backend"] == "slurm"
+    assert result.details["environment"]["hostname"] == "compute-01"
+    assert not (tmp_path / "r.env").exists()
 
     monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
     with pytest.raises(KeyboardInterrupt):
@@ -385,6 +392,8 @@ def test_remote_slurm_submission_queue_and_exitcode_failures(tmp_path, monkeypat
     def timeout_exec(_client, command, **_kwargs):
         calls.append(command)
         if command.startswith("sbatch"):
+            probe = remote_root / "logs" / "d.env"
+            probe.write_text("hostname=compute-01\nos=Linux\n", encoding="utf-8")
             return 0, "42"
         if command.startswith("squeue"):
             return 0, "42"
@@ -393,6 +402,30 @@ def test_remote_slurm_submission_queue_and_exitcode_failures(tmp_path, monkeypat
     result = ssh._run_via_slurm(None, sftp, ["true"], cwd=root, stdout_path=out,
                                 stderr_path=err, timeout=1, threads=None, run_id="d")
     assert result.exit_code is None and any(command.startswith("scancel") for command in calls)
+    assert result.details["backend"] == "ssh"
+    assert result.details["scheduler"] == "slurm"
+    assert result.details["cancellation_requested"] is True
+    assert result.details["environment"]["hostname"] == "compute-01"
+    assert not (remote_root / "logs" / "d.env").exists()
+
+    times = iter([0, 2, 2])
+    monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
+
+    def failed_cancel(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "43"
+        if command.startswith("squeue"):
+            return 0, "43"
+        if command.startswith("scancel"):
+            return 1, "permission denied"
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", failed_cancel)
+    result = ssh._run_via_slurm(None, sftp, ["true"], cwd=root, stdout_path=out,
+                                stderr_path=err, timeout=1, threads=None, run_id="e")
+    assert result.details["cancellation_requested"] is False
+    assert result.details["cancellation_error"] == "permission denied"
+    assert "job may still be running" in result.error
 
 
 def _remote_slurm_executor(tmp_path, monkeypatch):

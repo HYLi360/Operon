@@ -298,7 +298,9 @@ def run_external_command(
 
     ``inputs`` declares input artifacts: each must exist, is hashed, and the
     sorted ``path:sha256`` lines are combined into the run's ``input_sha256``.
-    ``extra_details`` are merged into the recorded ``execution_details``.
+    With SSH and a non-empty remote root, declared inputs are also staged in
+    the remote project mirror. ``extra_details`` are merged into the recorded
+    ``execution_details``.
 
     Execution goes through the configured backend (`execution.backend` in
     project.yaml, overridable per call): `local` subprocess, `slurm` job
@@ -334,12 +336,14 @@ def run_external_command(
             path = base / path
         resolved_outputs.append(path)
     input_entries: list[dict[str, Any]] = []
+    resolved_inputs: list[Path] = []
     for raw_input in inputs:
         path = Path(raw_input)
         if not path.is_absolute():
             path = base / path
         if not path.exists():
             raise ValidationError(f"declared input does not exist: {path}")
+        resolved_inputs.append(path)
         input_entries.append({"path": str(path), "sha256": sha256_path(path)})
     if input_entries:
         combined = "\n".join(
@@ -354,6 +358,21 @@ def run_external_command(
             from operon.execution import get_executor
             executor = get_executor(project, backend)
         record["executor"] = executor.describe()
+        resolved_stage_inputs: list[Path] = []
+        for raw_input in stage_inputs:
+            path = Path(raw_input)
+            if not path.is_absolute():
+                path = base / path
+            resolved_stage_inputs.append(path)
+        if getattr(executor, "name", None) == "ssh" and getattr(
+                executor, "remote_root", ""):
+            # A non-shared SSH project needs every declared local input in its
+            # remote mirror. Preserve explicit staging for analysis callers and
+            # de-duplicate paths without changing their user-facing spelling.
+            staged: dict[str, Path] = {}
+            for path in [*resolved_inputs, *resolved_stage_inputs]:
+                staged.setdefault(str(path.resolve(strict=False)), path)
+            resolved_stage_inputs = list(staged.values())
         probe = getattr(executor, "probe_environment", None)
         if probe is not None:
             try:
@@ -363,7 +382,7 @@ def run_external_command(
         result = executor.run(
             argv, cwd=cwd, stdout_path=stdout_file, stderr_path=stderr_file,
             timeout=timeout, threads=threads, run_id=run_id,
-            stage_inputs=stage_inputs, expected_outputs=resolved_outputs,
+            stage_inputs=resolved_stage_inputs, expected_outputs=resolved_outputs,
         )
         record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
         record["scheduler_job_id"] = result.scheduler_job_id

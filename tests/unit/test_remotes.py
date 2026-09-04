@@ -738,6 +738,11 @@ class TestPushPull(PytestAssertions):
         monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
         push(self.db, self.project, "mirror")
         evict_local(self.db, self.project, "mirror", [self.file_row["file_id"]])
+        self.db.set_file_status(
+            self.file_row["file_id"], "MISSING",
+            reason="simulate a previously unavailable remote",
+            actor="test",
+        )
         tool_tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tool_tmp.cleanup)
         script = Path(tool_tmp.name) / "remote_tool.py"
@@ -787,6 +792,19 @@ class TestPushPull(PytestAssertions):
         output = self.root / results[0]["output"]
         self.assertIn("observed=>ctg1", output.read_text(encoding="utf-8"))
         self.assertFalse((self.root / self.file_row["relative_path"]).exists())
+        status = self.db.conn.execute(
+            "SELECT status FROM files WHERE file_id=?", (self.file_row["file_id"],)
+        ).fetchone()["status"]
+        self.assertEqual(status, "REMOTE_ONLY")
+        audit = self.db.conn.execute(
+            "SELECT actor, old_value, new_value FROM changes "
+            "WHERE object_type='files' AND object_id=? AND field='status' "
+            "ORDER BY change_id DESC LIMIT 1",
+            (self.file_row["file_id"],),
+        ).fetchone()
+        self.assertEqual(dict(audit), {
+            "actor": "operon analyze", "old_value": "MISSING", "new_value": "REMOTE_ONLY",
+        })
 
     def test_cli_push_and_remotes(self, monkeypatch, capsys):
         monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())

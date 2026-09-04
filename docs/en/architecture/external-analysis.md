@@ -26,7 +26,7 @@ Execution environment capture (schema 2.8, `environment.py`): all three backends
 
 - `local`: collects hostname, OS/kernel/architecture, Python and `operon` versions, the environment variables `PATH`, `CONDA_PREFIX`, `CONDA_DEFAULT_ENV`, `VIRTUAL_ENV`, `SINGULARITY_NAME`, `APPTAINER_NAME`, `container`, and a docker probe, all directly;
 - `slurm`: embeds the probe in the sbatch script, writes the result to `<run_id>.env` inside the job, and reads it back — the captured environment is the compute node's, not the submission host's;
-- `ssh`: runs the probe on the remote host through paramiko and reads the result back.
+- `ssh`: direct mode runs the probe on the remote host through paramiko; remote Slurm mode embeds and retrieves the same job-side probe so it also records the compute node rather than the SSH login node.
 
 A failed probe leaves the run's `environment_id` NULL without raising an error or affecting the run; rows from before 2.8 are likewise NULL.
 

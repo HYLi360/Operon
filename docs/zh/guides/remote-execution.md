@@ -63,6 +63,8 @@ SSH 后端的前提与行为：
   `pip install paramiko`）；未安装时只在使用 SSH/SFTP 功能时报配置错误。
 - `execution.ssh.scheduler: slurm` 时改为在远端主机走 sbatch/squeue 提交与轮询；
   否则直接在远端执行，并把 stdout/stderr 流式回传到本地日志文件。
+- 远端 Slurm 在作业内捕获执行环境，因此 provenance 记录计算节点而不是 SSH 登录节点；
+  探针失败不影响作业结果。
 - 常见的“先 SSH 登录节点，再进入计算节点”不需要第二次交互式 SSH：把登录节点配置
   为 `host`，设置 `scheduler: slurm`，`operon` 在登录节点运行 `sbatch`，Slurm 再把
   作业派发到计算节点。前提是登录节点与计算节点都能看到同一 `remote_root`。如果集群
@@ -74,18 +76,21 @@ SSH 后端的前提与行为：
 - 默认拒绝 known_hosts 中没有的主机。首次使用前应由管理员核对主机公钥后写入
   `~/.ssh/known_hosts`，或配置 `known_hosts` / `host_key_sha256`；
   `insecure_accept_unknown_host: true` 只适合明确接受风险的临时测试环境。
-- `analyze` 自动把尚在本地的输入经 SFTP 上传到远端；远端没有 `sha256sum` 时会
-  通过 SFTP 流式计算 SHA-256，目录则计算完整树哈希，不会退化为 size 校验。
-  已有不同内容时拒绝覆盖。
-- 配置 `storage_remote` 后，本地状态为 `REMOTE_ONLY` 的输入会先对照本地 SQLite、
-  远端清单和远端实际内容，再直接在远端 root 原位读取，不会先下载到个人电脑。
+- `analyze` 自动把尚在本地的输入经 SFTP 上传到远端；当 `remote_root` 非空时，
+  `run-external` 也会上传每个 `--input` 声明的输入。暂存路径在解析符号链接后必须
+  仍位于本地项目根目录内。远端没有 `sha256sum` 时会通过 SFTP 流式计算 SHA-256，
+  目录则计算完整树哈希，不会退化为 size 校验；已有不同内容时拒绝覆盖。
+- 配置 `storage_remote` 后，本地缺失的输入会先对照本地 SQLite、远端清单和远端实际
+  内容，再直接在远端 root 原位读取，不会先下载到个人电脑。实时校验成功后，先前
+  陈旧的 `MISSING` 状态会通过审计记录恢复为 `REMOTE_ONLY`。
 - 同一分析批次复用一个惰性 SSH 连接完成工具版本探测、远端输入验证、数据库预检和
   各文件命令，批次结束后关闭；不会为每个文件的每一步重新握手。
 - 运行前只删除严格限定在 `remote_root` 内的精确 expected-output 路径，避免旧结果
   冒充本次输出；拉回后再次比较本地/远端内容。已有本地输出不同则报冲突。
 - SSH 直连命令超时时，`operon` 使用权限收紧的远端 PID 文件向该命令的进程组发送
   TERM，必要时再发送 KILL；若 PID 文件或终止命令不可用，错误会明确说明远端进程
-  可能仍在运行。远端 Slurm 则使用 `scancel`。
+  可能仍在运行。远端 Slurm 则使用 `scancel`，记录取消请求是否被接受，并取回当时
+  可用的部分日志与作业内环境探针。
 - SSH 直连模式要求远端主机提供 util-linux 的 `setsid`（用于以独立进程组运行命令
   并可靠回传退出码）。Linux 发行版默认包含；macOS/BSD 远端没有该命令，直连命令会
   以 127 失败，此类远端应使用支持 Slurm 的 Linux 主机或本地后端。
@@ -108,6 +113,7 @@ recipes:
 ```
 
 > **测试说明**：Slurm 与 SSH 后端的自动化测试基于模拟环境（fake sbatch/squeue
-> 与内存态 SSH/SFTP 实现），尚未在真实 HPC 集群上实测。首次在生产集群使用前，
-> 建议先用一个短时小任务（如 `run-external --backend slurm/ssh` 跑一条
-> `--command 'echo ok'`）验证提交、轮询与输出拉回链路。
+> 与内存态 SSH/SFTP 实现）。SSH/SFTP、远端原位分析和远端 Slurm 链路还于
+> 2026-09-04 在 Linux OpenSSH 登录节点、共享 GPFS 文件系统和 Slurm 计算节点上完成
+> 真实冒烟。每套部署仍应运行自己的短任务，核对主机密钥、文件系统可见性、分区、
+> 提交、取消、轮询与输出拉回。

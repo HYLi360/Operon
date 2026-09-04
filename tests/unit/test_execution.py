@@ -589,6 +589,10 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertTrue(hanging.closed)
         self.assertTrue(any("kill -TERM" in command for command in client.commands))
         self.assertEqual(result.details["termination_signaled"], True)
+        self.assertTrue(any(
+            command.startswith("cat ") and ".stats" in command and "rm -f" in command
+            for command in client.commands
+        ))
         # setsid must wait for the payload so its exit status is propagated
         # even when setsid itself is already a process group leader.
         setsid_commands = [c for c in client.commands if c.startswith("setsid ")]
@@ -620,6 +624,13 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         executor.close()
         self.assertEqual(client.close_calls, 1)
 
+    def test_remote_slurm_skips_login_node_environment_probe(self):
+        client = FakeSSHClient()
+        executor = self._executor(scheduler="slurm", client=client)
+
+        self.assertIsNone(executor.probe_environment())
+        self.assertEqual(client.commands, [])
+
     def test_stage_and_pull_with_remote_root(self):
         remote_root = self.root / "remote-mirror"
         remote_root.mkdir()
@@ -643,6 +654,45 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(output.read_text(), "staged-bytes")
         # The command the fake received must reference rewritten mirror paths.
         self.assertTrue(any(str(remote_root / "analysis" / "out.txt") in c for c in client.commands))
+
+    def test_declared_workflow_input_is_staged_with_remote_root(self):
+        remote_root = self.root / "remote-declared-input"
+        remote_root.mkdir()
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        staged = self.root / "inputs" / "declared.txt"
+        staged.parent.mkdir()
+        staged.write_text("declared-input", encoding="utf-8")
+        output = self.root / "analysis" / "declared-output.txt"
+
+        record = run_external_command(
+            self.db, self.project, ["cp", str(staged), str(output)],
+            step="test:declared-ssh-input", cwd=self.root,
+            inputs=[Path("inputs/declared.txt")], expected_outputs=[output],
+            executor=executor,
+        )
+
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(
+            (remote_root / "inputs" / "declared.txt").read_text(), "declared-input",
+        )
+        self.assertEqual(output.read_text(), "declared-input")
+
+    def test_staged_input_outside_project_is_rejected(self):
+        remote_root = self.root / "remote-contained-input"
+        remote_root.mkdir()
+        outside = self.root.parent / f"{self.root.name}-outside.txt"
+        outside.write_text("outside", encoding="utf-8")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        executor = self._executor(remote_root=str(remote_root), client=FakeSSHClient())
+
+        with self.assertRaisesRegex(ValidationError, "must stay under the project root"):
+            executor.run(
+                ["true"], cwd=self.root,
+                stdout_path=self.root / "logs" / "outside.stdout.log",
+                stderr_path=self.root / "logs" / "outside.stderr.log",
+                stage_inputs=[outside],
+            )
 
     def test_stale_remote_output_is_removed_before_execution(self):
         remote_root = self.root / "remote-stale"
@@ -739,10 +789,13 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
         self.assertEqual([seconds for seconds in sleep_calls if seconds >= 1], [7.25, 1, 1])
         self.assertEqual(exitcode_checks, 3)
+        self.assertEqual(result.details["environment"]["hostname"], socket.gethostname())
         # The uploaded batch script must live in and reference the mirror.
         script = remote_root / "logs" / "WF_TEST_1.sbatch"
         self.assertTrue(script.exists())
         self.assertIn(str(remote_root / "analysis" / "slurm-out.txt"), script.read_text())
+        self.assertIn(str(remote_root / "logs" / "WF_TEST_1.env"), script.read_text())
+        self.assertFalse((remote_root / "logs" / "WF_TEST_1.env").exists())
 
 
 FAKE_SBATCH_OK = """\

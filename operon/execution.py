@@ -509,6 +509,7 @@ class SlurmExecutor:
         script_path = logs / f"{label}.sbatch"
         exitcode_path = logs / f"{label}.exitcode"
         probe_path = logs / f"{label}.env"
+        details = {"backend": "slurm", "script": str(script_path)}
         script = render_slurm_script(
             job_name=f"operon_{label}",
             command_line=shlex.join(str(a) for a in argv),
@@ -528,9 +529,12 @@ class SlurmExecutor:
                     break
                 if deadline is not None and time.monotonic() > deadline:
                     _scancel_slurm_job(job_id)
+                    environment = _read_probe_environment(probe_path)
+                    if environment:
+                        details["environment"] = environment
                     return ExecResult(exit_code=None,
                                       error=f"timeout after {timeout}s waiting for slurm job {job_id}",
-                                      scheduler_job_id=job_id)
+                                      scheduler_job_id=job_id, details=details)
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon a queued/running cluster job.
@@ -538,7 +542,7 @@ class SlurmExecutor:
             raise
         result = _read_slurm_accounting(exitcode_path, job_id)
         result.scheduler_job_id = job_id
-        result.details = {"backend": "slurm", "script": str(script_path)}
+        result.details = details
         environment = _read_probe_environment(probe_path)
         if environment:
             result.details["environment"] = environment
@@ -554,6 +558,26 @@ def _read_probe_environment(probe_path: Path) -> dict[str, Any] | None:
     finally:
         try:
             probe_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return environment or None
+
+
+def _read_remote_probe_environment(sftp: Any, probe_path: str) -> dict[str, Any] | None:
+    """Read and remove a compute-side probe through SFTP; best-effort."""
+    try:
+        with sftp.open(probe_path, "rb") as handle:
+            payload = handle.read()
+        if isinstance(payload, bytes):
+            text = payload.decode("utf-8", "replace")
+        else:
+            text = str(payload)
+        environment = parse_probe_output(text)
+    except (OSError, ValueError, TypeError):
+        return None
+    finally:
+        try:
+            sftp.remove(probe_path)
         except OSError:
             pass
     return environment or None
@@ -636,6 +660,10 @@ class SSHExecutor:
 
     def probe_environment(self) -> dict[str, Any] | None:
         """Probe the remote host over SSH; any failure degrades to None."""
+        if self.scheduler == "slurm":
+            # The login node is not the execution environment. Remote Slurm
+            # captures the compute-side document inside the submitted job.
+            return None
         try:
             client = self._connect()
             _, stdout, _ = client.exec_command(
@@ -732,6 +760,11 @@ class SSHExecutor:
             local = Path(item)
             if not local.exists():
                 raise RemoteError(f"cannot stage missing local input: {local}")
+            if self.remote_root and not local.resolve().is_relative_to(
+                    self.project.root.resolve()):
+                raise ValidationError(
+                    f"SSH staged input must stay under the project root: {local}"
+                )
             remote = self._rewrite(local)
             if local.is_dir():
                 self._stage_directory(client, sftp, local, remote)
@@ -880,6 +913,7 @@ class SSHExecutor:
                     if deadline is not None and time.monotonic() > deadline:
                         signaled, termination_error = self._terminate_remote_process(client, pidfile)
                         channel.close()
+                        resources = self._read_remote_stats(client, statsfile) if signaled else {}
                         if signaled:
                             error = (
                                 f"timeout after {timeout}s; termination signals were sent to the "
@@ -896,13 +930,16 @@ class SSHExecutor:
                                 "backend": "ssh", "scheduler": "none", "host": self.host,
                                 "pidfile": pidfile, "termination_signaled": signaled,
                             },
+                            resources=resources,
                         )
                     time.sleep(0.05)
             except KeyboardInterrupt:
                 # The remote payload runs under setsid and would survive
                 # connection teardown, so terminate its process group first.
                 try:
-                    self._terminate_remote_process(client, pidfile)
+                    signaled, _ = self._terminate_remote_process(client, pidfile)
+                    if signaled:
+                        self._read_remote_stats(client, statsfile)
                 except Exception:
                     pass
                 channel.close()
@@ -961,15 +998,18 @@ class SSHExecutor:
         remote_dir = posixpath.dirname(remote_stdout)
         remote_script = posixpath.join(remote_dir, f"{label}.sbatch")
         remote_exitcode = posixpath.join(remote_dir, f"{label}.exitcode")
+        remote_probe = posixpath.join(remote_dir, f"{label}.env")
         script = render_slurm_script(
             job_name=f"operon_{label}",
             command_line=shlex.join(self._rewrite(a) for a in argv),
             cwd=self._rewrite(cwd) if cwd else (self.remote_root or "."),
             stdout_path=remote_stdout, stderr_path=remote_stderr,
             exitcode_path=remote_exitcode, threads=threads, slurm=self.slurm,
+            probe_path=remote_probe,
         )
         sftp_makedirs(sftp, remote_dir)
         _remove_remote_tree(sftp, remote_exitcode)
+        _remove_remote_tree(sftp, remote_probe)
         _remove_remote_tree(sftp, remote_script)
         script_tmp = f"{remote_script}.operon-tmp-{uuid.uuid4().hex}"
         try:
@@ -986,6 +1026,8 @@ class SSHExecutor:
             job_id = _parse_sbatch_job_id(out)
         except ExternalToolError as exc:
             raise RemoteError(str(exc)) from exc
+        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
+                   "script": remote_script}
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
@@ -997,22 +1039,33 @@ class SSHExecutor:
                 if not out.strip():
                     break
                 if deadline is not None and time.monotonic() > deadline:
-                    self._remote_exec(client, f"scancel {shlex.quote(job_id)}")
+                    cancelled, cancellation_error = self._cancel_remote_slurm_job(client, job_id)
+                    details["cancellation_requested"] = cancelled
+                    if cancellation_error:
+                        details["cancellation_error"] = cancellation_error
+                    self._sftp_get_if_exists(sftp, remote_stdout, stdout_path)
+                    self._sftp_get_if_exists(sftp, remote_stderr, stderr_path)
+                    environment = _read_remote_probe_environment(sftp, remote_probe)
+                    if environment:
+                        details["environment"] = environment
+                    error = f"timeout after {timeout}s waiting for remote slurm job {job_id}"
+                    if not cancelled:
+                        error += (
+                            "; cancellation request failed and the job may still be running: "
+                            f"{cancellation_error}"
+                        )
                     return ExecResult(exit_code=None,
-                                      error=f"timeout after {timeout}s waiting for remote slurm job {job_id}",
-                                      scheduler_job_id=job_id)
+                                      error=error, scheduler_job_id=job_id, details=details)
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon the queued/running remote cluster job.
-            try:
-                self._remote_exec(client, f"scancel {shlex.quote(job_id)}")
-            except Exception:
-                pass
+            self._cancel_remote_slurm_job(client, job_id)
             raise
         self._sftp_get_if_exists(sftp, remote_stdout, stdout_path)
         self._sftp_get_if_exists(sftp, remote_stderr, stderr_path)
-        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                   "script": remote_script}
+        environment = _read_remote_probe_environment(sftp, remote_probe)
+        if environment:
+            details["environment"] = environment
         exit_code: int | None = None
         for _ in range(5):
             rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
@@ -1042,7 +1095,17 @@ class SSHExecutor:
             return result
         return ExecResult(exit_code=None,
                           error=f"remote slurm job {job_id} finished but its exit code is unavailable",
-                          scheduler_job_id=job_id)
+                          scheduler_job_id=job_id, details=details)
+
+    def _cancel_remote_slurm_job(self, client: Any, job_id: str) -> tuple[bool, str]:
+        """Request cancellation and report whether Slurm accepted the command."""
+        try:
+            rc, output = self._remote_exec(client, f"scancel {shlex.quote(job_id)}")
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
+        if rc != 0:
+            return False, output.strip() or f"scancel exited {rc}"
+        return True, ""
 
     def _remote_exec(self, client: Any, command: str,
                      timeout: float | None = None) -> tuple[int, str]:
