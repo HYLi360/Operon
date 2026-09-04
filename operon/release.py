@@ -237,8 +237,10 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         f"- created by: operon {__version__}\n"
         f"- provenance: provenance.json\n"
         f"- checksums: checksums.sha256\n\n"
-        "Raw files are immutable in this system.  Verify with:\n\n"
-        "    sha256sum -c checksums.sha256\n"
+        "Raw files are immutable in this system. Verify on Linux with:\n\n"
+        "    sha256sum -c checksums.sha256\n\n"
+        "Or on macOS with:\n\n"
+        "    shasum -a 256 -c checksums.sha256\n"
     )
     (release_root / "README.md").write_text(readme, encoding="utf-8")
 

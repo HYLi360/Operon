@@ -26,7 +26,10 @@ With `REMOTE_ONLY` files, a local backup must include the SQLite database contai
 Create releases regularly and verify them in the release directory:
 
 ```bash
+# Linux
 sha256sum -c checksums.sha256
+# macOS
+shasum -a 256 -c checksums.sha256
 ```
 
 Backup policy can be based on reconstruction cost:

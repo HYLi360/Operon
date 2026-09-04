@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import signal
 import subprocess
 from pathlib import Path
@@ -79,6 +80,21 @@ def test_process_group_termination_fallback_and_kill(monkeypatch):
     done.polls = iter([0])
     execution._terminate_process_group(done)
     assert not done.waited
+
+
+def test_process_rss_falls_back_to_portable_ps(monkeypatch):
+    real_open = builtins.open
+
+    def no_procfs(path, *args, **kwargs):
+        if str(path).startswith("/proc/"):
+            raise FileNotFoundError(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", no_procfs)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
+        returncode=0, stdout="20480\n"
+    ))
+    assert execution._read_process_rss_mb(123) == 20.0
 
 
 def test_slurm_command_helpers(monkeypatch, tmp_path):

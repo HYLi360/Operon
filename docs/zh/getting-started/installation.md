@@ -11,6 +11,17 @@
 - 可用的 C 编译工具链；`operon` 默认构建并使用 Cython 内置 QC 扩展
 - 可选：BUSCO、QUAST、FastQC、fastp 等外部工具（不在本指南中安装）
 
+## 平台支持
+
+Linux 是独立应用发布、本地 Slurm 及完整外部生物信息学工具生态的主要平台。
+macOS 支持从源码安装后的本地执行，也支持作为 SSH/SFTP 客户端向 Linux 主机提交
+远端 Slurm 作业。本地资源采样在可用时读取 procfs，在 macOS 上则使用系统 `ps`
+命令。
+
+`tools.yaml` 配置的外部命令仍须在控制端平台上自行安装。SSH 直连执行要求远端主机
+提供 util-linux `setsid`，因此该计算端模式仍以 Linux 为目标；这不影响 Mac 作为
+控制端使用。目前不发布签名或公证过的 macOS 独立应用包。
+
 安装 `operon`：
 
 ```bash

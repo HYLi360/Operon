@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import socket
 import subprocess
@@ -95,7 +96,17 @@ class FakeSSHClient:
 
     def exec_command(self, command: str, timeout: float | None = None):
         self.commands.append(command)
-        proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
+        argv = shlex.split(command)
+        if argv[:4] == ["setsid", "--wait", "sh", "-c"]:
+            # The production remote contract requires util-linux setsid. The
+            # fake executes that Linux-side payload on the CI host, where
+            # macOS has no setsid, so emulate only the session boundary.
+            proc = subprocess.run(
+                argv[2:], capture_output=True, timeout=timeout,
+                start_new_session=True,
+            )
+        else:
+            proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
         channel = _FakeChannel(proc)
         return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
 
@@ -365,6 +376,16 @@ class TestExecutionConfig(PytestAssertions):
         link.symlink_to(root.parent)
         with self.assertRaisesRegex(ValidationError, "escapes the project root"):
             rewrite_remote_path(str(link / "x"), root, "/remote/proj")
+
+    def test_rewrite_remote_path_accepts_resolved_root_alias(self):
+        real_root = self.root / "real"
+        real_root.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(real_root, target_is_directory=True)
+        self.assertEqual(
+            rewrite_remote_path(str(alias / "raw/x.fa"), alias, "/remote/proj"),
+            "/remote/proj/raw/x.fa",
+        )
 
     def test_run_external_command_local_default_unchanged(self):
         output = self.root / "out.txt"

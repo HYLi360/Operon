@@ -37,5 +37,8 @@ Verify the release checksums:
 
 ```bash
 cd ./demo-project/releases/2026.08.demo
+# Linux
 sha256sum -c checksums.sha256
+# macOS
+shasum -a 256 -c checksums.sha256
 ```

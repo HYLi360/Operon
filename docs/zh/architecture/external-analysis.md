@@ -81,12 +81,13 @@ history / show`；恢复均为 print-only，由人工把输出写回配置 YAML�
 此前只进 JSONL）、`avg_rss_mb`（平均 RSS）与 `cpu_seconds`（核时）三列，既有
 `max_rss_mb` 列现在真正填充。采集按后端实现：
 
-- `local`：采样线程轮询 `/proc/<pid>/status` 的 VmRSS 得到峰值与平均，
-  核时取 `getrusage(RUSAGE_CHILDREN)` 的运行前后差值；
+- `local`：存在 procfs 时由采样线程轮询 `/proc/<pid>/status` 的 VmRSS，否则
+  使用 POSIX `ps` 的 RSS 字段（包括 macOS）得到峰值与平均；核时取
+  `getrusage(RUSAGE_CHILDREN)` 的运行前后差值；
 - `slurm`：作业结束后以扩展字段查询 `sacct`（`MaxRSS`/`AveRSS`/`Elapsed`/
   `TotalCPU`）；远端 Slurm（`ssh` + `scheduler: slurm`）走同一路径；
-- `ssh` 直连：远端 POSIX 采样循环把统计写入 stats 文件并读回（直连模式
-  `cpu_seconds` 留空）。
+- `ssh` 直连：远端 POSIX 采样循环汇总隔离进程组的 RSS，把统计写入 stats 文件并
+  读回（直连模式 `cpu_seconds` 留空）。
 
 任何后端采集不到对应指标时该列留 NULL，不报错也不影响任务本体；资源数据只用于
 审计与容量评估，不参与成功判定。
