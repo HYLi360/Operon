@@ -28,7 +28,9 @@ operon backup verify --input /backups/my-project-full
 `report metadata` 不是备份：它只导出便于浏览和交换的 metadata/manifest TSV，不包含
 完整 QC、decision、changes、workflow、remote location 和数据库迁移状态。
 
-更稳妥的做法是定期创建 release，并在 release 目录执行 `sha256sum -c checksums.sha256`。
+更稳妥的做法是定期创建 release，并在 release 目录执行
+`sha256sum -c checksums.sha256`（Linux）或
+`shasum -a 256 -c checksums.sha256`（macOS）。
 
 备份策略可按重建成本分级：
 

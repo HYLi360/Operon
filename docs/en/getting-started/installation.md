@@ -7,6 +7,20 @@
 - A working C toolchain; `operon` builds and uses the Cython QC extension by default
 - Optional external tools such as BUSCO, QUAST, FastQC, and fastp
 
+## Platform support
+
+Linux is the primary platform for standalone application releases, local
+Slurm, and the broad external bioinformatics tool ecosystem. macOS is
+supported for source-installed local execution and as an SSH/SFTP client,
+including remote Slurm submission to a Linux host. Local resource sampling
+uses procfs when available and the system `ps` command on macOS.
+
+External commands configured in `tools.yaml` must themselves be installed for
+the controller platform. SSH direct execution still requires util-linux
+`setsid` on the remote host, so that compute-side mode targets Linux; this does
+not prevent a Mac from acting as the controller. Signed or notarized macOS
+standalone bundles are not currently published.
+
 ## Install from the repository
 
 Run the following commands from the repository root:

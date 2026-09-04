@@ -324,5 +324,8 @@ Verify it:
 
 ```bash
 cd releases/2026.08
+# Linux
 sha256sum -c checksums.sha256
+# macOS
+shasum -a 256 -c checksums.sha256
 ```

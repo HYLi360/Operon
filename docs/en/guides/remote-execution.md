@@ -59,6 +59,10 @@ Prerequisites and behavior:
 
 Prerequisites and behavior:
 
+- The controller may run on Linux or macOS. Local project paths are resolved
+  before mapping, so macOS filesystem aliases such as `/var` and
+  `/private/var` identify the same project root without weakening symlink
+  escape checks. The SSH compute-side requirements below are unchanged.
 - Install the optional dependency: `pip install 'operon[remote]'` or `pip install paramiko`.
 - With `execution.ssh.scheduler: slurm`, commands are submitted and polled on the remote host with sbatch/squeue. Otherwise commands run directly on the host and stream stdout/stderr back to local log files.
 - Remote Slurm captures the execution environment inside the job, so provenance records the compute node rather than the SSH login node. Probe failure does not affect the job result.

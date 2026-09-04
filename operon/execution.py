@@ -118,24 +118,35 @@ def rewrite_remote_path(value: str, local_root: Path, remote_root: str) -> str:
     """
     if not remote_root:
         return value
-    local_root = local_root.resolve()
-    local = str(local_root)
-    if value == local:
-        return posixpath.normpath(remote_root)
-    prefix = local + "/"
-    if value.startswith(prefix):
-        candidate = Path(value).resolve(strict=False)
-        if not candidate.is_relative_to(local_root):
+    lexical_root = local_root.absolute()
+    candidate_path = Path(value)
+    if not candidate_path.is_absolute():
+        return value
+
+    try:
+        candidate_path.relative_to(lexical_root)
+        lexically_inside = True
+    except ValueError:
+        lexically_inside = False
+    resolved_root = lexical_root.resolve()
+    resolved_candidate = candidate_path.resolve(strict=False)
+    try:
+        relative = resolved_candidate.relative_to(resolved_root)
+    except ValueError:
+        if lexically_inside:
             raise ValidationError(
                 f"local path escapes the project root and cannot be mapped over SSH: {value}"
             )
-        relative = candidate.relative_to(local_root).as_posix()
-        root = posixpath.normpath(remote_root)
-        mapped = posixpath.normpath(posixpath.join(root, relative))
-        if mapped == root or mapped.startswith(root.rstrip("/") + "/"):
-            return mapped
-        raise ValidationError(f"mapped SSH path escapes remote_root {root!r}: {value}")
-    return value
+        return value
+
+    # Resolve before mapping so a symlink below the project cannot smuggle an
+    # argument outside it. This also treats macOS aliases such as /var and
+    # /private/var as the same root.
+    root = posixpath.normpath(remote_root)
+    mapped = posixpath.normpath(posixpath.join(root, relative.as_posix()))
+    if mapped == root or mapped.startswith(root.rstrip("/") + "/"):
+        return mapped
+    raise ValidationError(f"mapped SSH path escapes remote_root {root!r}: {value}")
 
 
 def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
@@ -203,23 +214,44 @@ def _terminate_process_group(process: subprocess.Popen, grace: float = 3.0) -> N
     process.wait()
 
 
-def _sample_process_rss(pid: int, samples_mb: list[float], stop: threading.Event) -> None:
-    """Poll ``/proc/<pid>/status`` VmRSS until the process exits or ``stop``.
+def _read_process_rss_mb(pid: int) -> float | None:
+    """Read one process's RSS on Linux or another POSIX host, if available."""
+    try:
+        with open(f"/proc/{pid}/status", encoding="ascii") as handle:
+            for line in handle:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0  # kB -> MB
+    except (OSError, ValueError, IndexError):
+        pass
 
-    Sampling is best-effort diagnostics: any read failure (process gone,
-    non-Linux platform, restricted procfs) ends the sampler silently.
+    # macOS has no procfs. Its BSD ps and the procps implementation used on
+    # Linux both report this field in KiB.
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.split()[0]) / 1024.0
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _sample_process_rss(pid: int, samples_mb: list[float], stop: threading.Event) -> None:
+    """Poll process RSS until the process exits or ``stop`` is requested.
+
+    Sampling is best-effort diagnostics: unavailable procfs/ps data or a
+    vanished process ends the sampler silently.
     """
     while not stop.is_set():
-        try:
-            with open(f"/proc/{pid}/status", encoding="ascii") as handle:
-                for line in handle:
-                    if line.startswith("VmRSS:"):
-                        samples_mb.append(int(line.split()[1]) / 1024.0)  # kB -> MB
-                        break
-                else:
-                    return  # no VmRSS field: nothing to sample
-        except (OSError, ValueError, IndexError):
+        rss_mb = _read_process_rss_mb(pid)
+        if rss_mb is None:
             return
+        samples_mb.append(rss_mb)
         stop.wait(0.5)
 
 
@@ -880,7 +912,7 @@ class SSHExecutor:
         sampler = (
             "( max=0; sum=0; count=0; "
             "while kill -0 $$ 2>/dev/null; do "
-            "rss=$(ps -o rss= -p $$ --ppid $$ 2>/dev/null | "
+            "rss=$(ps -o rss= -g $$ 2>/dev/null | "
             "awk 'NF{s+=$1; n++} END{if (n) print s}'); "
             "if [ -n \"$rss\" ]; then "
             "[ \"$rss\" -gt \"$max\" ] 2>/dev/null && max=$rss; "
@@ -888,11 +920,14 @@ class SSHExecutor:
             f"printf '%s %s %s\\n' \"$max\" \"$sum\" \"$count\" > {shlex.quote(statsfile)}; "
             "fi; "
             "sleep 1; "
-            "done ) & "
+            "done ) & sampler_pid=$!; "
         )
         payload = (
             f"umask 077; echo $$ > {shlex.quote(pidfile)}; "
-            f"trap 'rm -f {shlex.quote(pidfile)}' EXIT; {sampler}{command}"
+            f"{sampler}"
+            "trap 'kill \"$sampler_pid\" 2>/dev/null || true; "
+            "wait \"$sampler_pid\" 2>/dev/null || true; "
+            f"rm -f {shlex.quote(pidfile)}' EXIT; {command}"
         )
         # --wait makes setsid propagate the payload's exit status even when
         # setsid itself is already a process group leader and has to fork

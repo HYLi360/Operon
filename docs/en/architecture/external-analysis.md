@@ -34,9 +34,9 @@ Recipe versioning and snapshots (schema 2.9): a recipe gains an optional `versio
 
 Run resource-usage recording (schema 2.9): `workflow_runs` gains `duration_seconds` (wall clock; previously only present in the JSONL), `avg_rss_mb` (average RSS), and `cpu_seconds` (core-seconds), and the pre-existing `max_rss_mb` column is now actually populated. Collection is per backend:
 
-- `local`: a sampling thread polls `VmRSS` in `/proc/<pid>/status` for peak and average, and core-seconds come from the `getrusage(RUSAGE_CHILDREN)` delta across the run;
+- `local`: a sampling thread polls `VmRSS` in `/proc/<pid>/status` when procfs is available and otherwise uses the POSIX `ps` RSS field (including on macOS) for peak and average; core-seconds come from the `getrusage(RUSAGE_CHILDREN)` delta across the run;
 - `slurm`: after the job finishes, `sacct` is queried with extended fields (`MaxRSS`/`AveRSS`/`Elapsed`/`TotalCPU`); remote Slurm (`ssh` with `scheduler: slurm`) follows the same path;
-- `ssh` direct: a remote POSIX sampling loop writes a stats file that is read back (in direct mode `cpu_seconds` is left empty).
+- `ssh` direct: a remote POSIX sampling loop sums RSS for the isolated process group and writes a stats file that is read back (in direct mode `cpu_seconds` is left empty).
 
 Whenever a backend cannot collect a metric the column stays NULL — no error is raised and the task itself is never affected; resource data serves auditing and capacity evaluation only and plays no part in the success verdict.
 

@@ -397,5 +397,8 @@ operon release --version 2026.08 --profile assembly_production_v1
 
 ```bash
 cd releases/2026.08
+# Linux
 sha256sum -c checksums.sha256
+# macOS
+shasum -a 256 -c checksums.sha256
 ```

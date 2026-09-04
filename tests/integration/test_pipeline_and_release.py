@@ -37,6 +37,9 @@ class TestPipelineAndRelease(PytestAssertions):
                 for line in checksums.strip().splitlines():
                     digest, rel = line.split("  ", 1)
                     self.assertEqual(sha256_file(release_dir / rel), digest)
+                release_readme = (release_dir / "README.md").read_text(encoding="utf-8")
+                self.assertIn("sha256sum -c checksums.sha256", release_readme)
+                self.assertIn("shasum -a 256 -c checksums.sha256", release_readme)
             finally:
                 db.close()
 
@@ -145,4 +148,3 @@ class TestPipelineAndRelease(PytestAssertions):
                 self.assertEqual(main(["--project", str(root), "verify"]), 1)
             finally:
                 db.close()
-
