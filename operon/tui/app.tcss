@@ -99,6 +99,18 @@ WriteModal, ErrorDialog {
     padding: 0 0 1 0;
 }
 
+#modal-form {
+    height: 1fr;
+}
+
+#snapshot-view-scroll {
+    height: 1fr;
+}
+
+#history-table {
+    height: 1fr;
+}
+
 #modal-command {
     color: $text-muted;
     padding-top: 1;

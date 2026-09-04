@@ -185,9 +185,12 @@ class WriteModal(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
             yield Label(self.modal_title, id="modal-title")
-            yield from self.compose_form()
-            yield Static("", id="modal-command")
-            yield Static("", id="modal-error")
+            # The form scrolls so the buttons below stay visible even when
+            # the content (e.g. a wrapped long command line) exceeds the box.
+            with VerticalScroll(id="modal-form"):
+                yield from self.compose_form()
+                yield Static("", id="modal-command")
+                yield Static("", id="modal-error")
             with Horizontal(id="modal-buttons"):
                 yield Button("Confirm", id="confirm", variant="primary")
                 yield Button("Cancel", id="cancel")
@@ -280,6 +283,7 @@ class ErrorDialog(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
             yield Label(self.dialog_title, id="modal-title")
-            yield Static(Text(self.message, style="red"), id="error-dialog-body")
+            with VerticalScroll(id="modal-form"):
+                yield Static(Text(self.message, style="red"), id="error-dialog-body")
             with Horizontal(id="modal-buttons"):
                 yield Button("OK", id="cancel", variant="primary")
