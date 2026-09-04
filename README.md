@@ -1,6 +1,6 @@
 # Operon
 
-[![deploy status](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml)
+[![deploy status](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/deploy.yml) [![codecov](https://codecov.io/gh/HYLi360/Operon/graph/badge.svg?token=BC4LD8UPL2)](https://codecov.io/gh/HYLi360/Operon)
 
 A Python-based, **file-based database** designed for large-scale genomic data, used for archiving, quality control, analysis, and deterministic automation.
 
