@@ -9,7 +9,7 @@ operon remotes
 - Lists the remotes defined in the `remotes:` section of `project.yaml` and tests connectivity to each one.
 - Output columns: `name` / `type` / `address` / `root` / `files` (entries in the remote manifest) / `status` / `error`.
 - Returns exit code 1 if any remote reports an `error`.
-- Requires the optional dependency `operon[remote]` (paramiko); without it, configuration errors are only raised when SSH/SFTP features are actually used.
+- Requires the optional dependency `OperonDBS[remote]` (paramiko); without it, configuration errors are only raised when SSH/SFTP features are actually used.
 - Unknown SSH host keys are rejected by default; establish trust through `known_hosts` or `host_key_sha256`.
 
 ## push

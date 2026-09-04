@@ -20,7 +20,7 @@ remotes:
     insecure_accept_unknown_host: false
 ```
 
-SFTP 功能需要可选依赖 paramiko：`pip install 'operon[remote]'`。
+SFTP 功能需要可选依赖 paramiko：`pip install 'OperonDBS[remote]'`。
 
 先列出配置并测试连通性（任一远程端报错时退出码为 1）：
 

@@ -548,7 +548,7 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser(
         "tui",
-        help="open the read-only terminal UI (requires the 'tui' extra: pip install 'operon[tui]')",
+        help="open the read-only terminal UI (requires the 'tui' extra: pip install 'OperonDBS[tui]')",
     )
 
     return parser
@@ -1856,7 +1856,7 @@ def _cmd_tui(args: argparse.Namespace) -> int:
     except ModuleNotFoundError:
         print(
             "error: the TUI requires the 'textual' package; "
-            "install it with: pip install 'operon[tui]'",
+            "install it with: pip install 'OperonDBS[tui]'",
             file=sys.stderr,
         )
         return 2

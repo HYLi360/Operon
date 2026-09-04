@@ -22,7 +22,25 @@ macOS 支持从源码安装后的本地执行，也支持作为 SSH/SFTP 客户�
 提供 util-linux `setsid`，因此该计算端模式仍以 Linux 为目标；这不影响 Mac 作为
 控制端使用。目前不发布签名或公证过的 macOS 独立应用包。
 
-安装 `operon`：
+## 从 PyPI 安装
+
+PyPI 分发名为 `OperonDBS`，导入包名与命令名仍为 `operon`：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install OperonDBS
+
+# 按需安装 SSH/SFTP 与终端界面功能
+python -m pip install 'OperonDBS[remote,tui]'
+```
+
+发布的 wheel 已包含编译后的 QC parser。PyPI 安装不使用 cx_Freeze；cx_Freeze 只用于
+另一条独立应用目录发布链路。
+
+## 从仓库安装
+
+在仓库根目录安装 `operon`：
 
 ```bash
 # 在仓库根目录
@@ -38,7 +56,16 @@ python -m pip install -e '.[remote]'
 
 ```bash
 operon --version
-# 输出：operon 0.6.1
+# 输出：operon 0.6.2
 
 operon --help
 ```
+
+如需构建独立 cx_Freeze 应用，请安装 `build` extra 并使用统一发布入口：
+
+```bash
+python -m pip install -e '.[build]'
+python tools/build.py
+```
+
+目录结构与校验规则见[应用程序发布](../contributor/application-release.md)。

@@ -11,7 +11,7 @@ recursive-include .github *.yml
 recursive-include benchmarks *.tsv
 recursive-include docs *.css *.html *.js *.md *.py *.txt
 prune docs/_build
-recursive-include operon *.py *.pyx
+recursive-include operon *.py *.pyx *.tcss
 recursive-include tests *.py
 recursive-include tools *.py
 exclude operon/qc_module/_parsers.c

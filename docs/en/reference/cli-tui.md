@@ -16,7 +16,7 @@ The TUI is an optional feature built on
 [Textual](https://textual.textualize.io/). Install the extra:
 
 ```bash
-pip install 'operon[tui]'
+pip install 'OperonDBS[tui]'
 ```
 
 The frozen standalone build does not bundle Textual; there `operon tui`

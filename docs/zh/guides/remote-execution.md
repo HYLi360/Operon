@@ -62,7 +62,7 @@ SSH 后端的前提与行为：
 - 控制端可以运行 Linux 或 macOS。本地项目路径先解析再映射，因此 macOS 的
   `/var` 与 `/private/var` 等文件系统别名会识别为同一项目根目录，同时仍严格拒绝
   符号链接越界；下述 SSH 计算端要求不变。
-- 需要可选依赖 paramiko：`pip install 'operon[remote]'`（或
+- 需要可选依赖 paramiko：`pip install 'OperonDBS[remote]'`（或
   `pip install paramiko`）；未安装时只在使用 SSH/SFTP 功能时报配置错误。
 - `execution.ssh.scheduler: slurm` 时改为在远端主机走 sbatch/squeue 提交与轮询；
   否则直接在远端执行，并把 stdout/stderr 流式回传到本地日志文件。

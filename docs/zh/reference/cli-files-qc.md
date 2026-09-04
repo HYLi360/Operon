@@ -14,7 +14,7 @@ operon ingest \
   `remote://<remote名>/<相对远端root路径>`（`remote://` 引用 `project.yaml` 的
   `remotes:` 配置）；会先经 SFTP 下载到临时文件再走原归档流程。未显式给出
   `--source-url` 时，自动把该 URL 记录为 `source_url`。SFTP 来源需要安装可选
-  依赖 `operon[remote]`（paramiko）。
+  依赖 `OperonDBS[remote]`（paramiko）。
 - `remote://` 路径必须是安全的 root 相对路径，并且已存在于该远端的
   `operon-manifest.json`；下载前后验证清单 SHA-256/size。裸 `sftp://` 没有镜像清单
   可对照，下载后由 ingest 计算并登记新的本地身份。

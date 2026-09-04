@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -89,6 +90,7 @@ def test_build_and_test_tooling_is_excluded(collected):
 
 def test_pyproject_is_the_single_application_version_source():
     assert application_build.project_version() == operon.__version__
+    assert application_build.project_distribution_name() == "operondbs"
     assert 'version = "' not in (ROOT / "operon" / "__init__.py").read_text(
         encoding="utf-8"
     )
@@ -97,6 +99,45 @@ def test_pyproject_is_the_single_application_version_source():
 def test_freeze_includes_importlib_metadata_email_dependency():
     cxfreeze = application_build._load_pyproject()["tool"]["cxfreeze"]
     assert "email" in cxfreeze["build_exe"]["packages"]
+
+
+def test_freeze_copies_distribution_metadata(tmp_path, monkeypatch):
+    output = tmp_path / "application"
+    (output / "lib").mkdir(parents=True)
+    distribution_info = tmp_path / "operondbs-0.6.2.dist-info"
+    distribution_info.mkdir()
+    (distribution_info / "METADATA").write_text(
+        "Name: OperonDBS\nVersion: 0.6.2\n",
+        encoding="utf-8",
+    )
+    observed = []
+
+    monkeypatch.setattr(
+        application_build,
+        "_run",
+        lambda args, **kwargs: observed.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        application_build.metadata,
+        "distribution",
+        lambda name: SimpleNamespace(_path=distribution_info),
+    )
+
+    application_build.freeze_application(output)
+
+    assert (output / "lib" / distribution_info.name / "METADATA").is_file()
+    assert observed == [
+        (
+            [
+                application_build.sys.executable,
+                "-m",
+                "cx_Freeze",
+                "build_exe",
+                f"--build-exe={output}",
+            ],
+            {},
+        )
+    ]
 
 
 def test_freeze_inputs_use_rendered_documentation_only():
@@ -111,6 +152,18 @@ def test_build_extra_contains_documentation_toolchain():
     requirements = project["optional-dependencies"]["build"]
     for package in ("Sphinx", "myst-parser", "sphinx-rtd-theme"):
         assert any(requirement.startswith(package) for requirement in requirements)
+
+
+def test_python_package_build_is_independent_of_cxfreeze():
+    pyproject = application_build._load_pyproject()
+    assert not any(
+        requirement.startswith("cx-Freeze")
+        for requirement in pyproject["build-system"]["requires"]
+    )
+    assert not any(
+        requirement.startswith(("cx-Freeze", "Cython"))
+        for requirement in pyproject["project"]["dependencies"]
+    )
 
 
 def test_python_310_tomli_is_an_explicit_build_dependency():
@@ -179,7 +232,7 @@ def test_documentation_build_is_strict_and_checks_outputs(tmp_path, monkeypatch)
 def test_source_distribution_contains_corresponding_source(tmp_path):
     version = application_build.project_version()
     archive = application_build.build_source_distribution(tmp_path, version)
-    prefix = f"operon-{version}/"
+    prefix = f"{application_build.project_distribution_name()}-{version}/"
     required = {
         f"{prefix}LICENSE",
         f"{prefix}MANIFEST.in",
@@ -188,6 +241,7 @@ def test_source_distribution_contains_corresponding_source(tmp_path):
         f"{prefix}setup.py",
         f"{prefix}operon/cli.py",
         f"{prefix}operon/qc_module/_parsers.pyx",
+        f"{prefix}operon/tui/app.tcss",
         f"{prefix}tools/build.py",
         f"{prefix}tests/integration/test_application_build.py",
         f"{prefix}.readthedocs.yaml",

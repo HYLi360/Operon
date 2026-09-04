@@ -9,7 +9,7 @@ The mirror inventory lives on the remote itself in `operon-manifest.json`.
 The local SQLite `file_locations` table is a rebuildable residency cache used
 by the local control plane; file identity remains in the `files` table.
 
-Paramiko is an optional dependency (`pip install 'operon[remote]'`) and is
+Paramiko is an optional dependency (`pip install 'OperonDBS[remote]'`) and is
 imported lazily; core archiving works without it.
 """
 
@@ -56,7 +56,7 @@ def import_paramiko() -> Any:
     except ImportError as exc:
         raise ConfigError(
             "remote storage / SSH execution requires Paramiko; "
-            "install it with `pip install 'operon[remote]'` or `pip install paramiko`"
+            "install it with `pip install 'OperonDBS[remote]'` or `pip install paramiko`"
         ) from exc
 
 
