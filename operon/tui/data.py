@@ -15,6 +15,7 @@ from typing import Any, Iterable, Iterator
 
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ValidationError
 
 ENTITY_TABLES: dict[str, tuple[str, str]] = {
     "organism": ("organisms", "organism_id"),
@@ -204,6 +205,43 @@ def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict
         return tree
 
 
+def _entity_metrics(db: Database, entity_type: str, entity_id: str) -> dict[str, Any]:
+    """Latest QC metrics per (stage, metric, tool) plus external analysis metrics."""
+    qc_rows = _rows(
+        db,
+        "SELECT qc_stage, metric_name, metric_value, metric_unit, tool, tool_version, "
+        "evaluated_at, qc_result_id FROM qc_results "
+        "WHERE entity_type=? AND entity_id=? "
+        "ORDER BY qc_stage, metric_name, tool, julianday(evaluated_at) DESC, qc_result_id DESC",
+        (entity_type, entity_id),
+    )
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in qc_rows:
+        key = (row["qc_stage"], row["metric_name"], row["tool"])
+        if key not in latest:
+            del row["evaluated_at"], row["qc_result_id"]
+            latest[key] = row
+    analysis = _rows(
+        db,
+        "SELECT analysis_name, metric_name, metric_value, metric_unit FROM analysis_results "
+        "WHERE entity_type=? AND entity_id=? ORDER BY analysis_name, metric_name",
+        (entity_type, entity_id),
+    )
+    return {"qc": list(latest.values()), "analysis": analysis}
+
+
+def entity_metrics(project: Project, entity_type: str, entity_id: str) -> dict[str, Any]:
+    """Return the latest built-in QC and external-analysis metrics for one entity.
+
+    ``"qc"`` holds one row per ``(qc_stage, metric_name, tool)`` — the newest
+    measurement when several input identities recorded the same metric —
+    ordered by stage and metric; ``"analysis"`` holds synced external results
+    (BUSCO/QUAST-style) ordered by analysis name and metric.
+    """
+    with _open(project) as db:
+        return _entity_metrics(db, entity_type, entity_id)
+
+
 def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[str, Any] | None:
     """Return one entity's row, accessions, state, and files."""
     table, id_column = ENTITY_TABLES[entity_type]
@@ -228,6 +266,7 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
             "FROM files WHERE entity_type=? AND entity_id=? ORDER BY file_id",
             (entity_type, entity_id),
         )
+        metrics = _entity_metrics(db, entity_type, entity_id)
     return {
         "entity_type": entity_type,
         "entity_id": entity_id,
@@ -235,6 +274,7 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
         "accessions": accessions,
         "state": state,
         "files": files,
+        "metrics": metrics,
     }
 
 
@@ -298,6 +338,190 @@ def file_detail(project: Project, file_id: str) -> dict[str, Any] | None:
             (file_id,),
         )
     return {"file": record, "locations": locations}
+
+
+def list_decisions(
+        project: Project,
+        *,
+        profile: str | None = None,
+        decision: str | None = None,
+        text: str = "",
+        limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Return rows from the ``current_decisions`` view.
+
+    The effective decision is ``COALESCE(curated_decision, decision)``; the
+    ``decision`` filter matches that effective value.  ``text`` is a
+    case-insensitive substring over entity_type/entity_id.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+    if profile:
+        conditions.append("profile=?")
+        params.append(profile)
+    if decision:
+        conditions.append("COALESCE(curated_decision, decision)=?")
+        params.append(decision)
+    if text:
+        conditions.append("(entity_type LIKE ? OR entity_id LIKE ?)")
+        params.extend((f"%{text}%", f"%{text}%"))
+    sql = (
+        "SELECT entity_type, entity_id, profile, decision, curated_decision, "
+        "curated_by, curated_reason, curated_at, reason_codes, evaluated_at "
+        "FROM current_decisions"
+    )
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY entity_type, entity_id, profile"
+    if limit:
+        sql += " LIMIT ?"
+        params.append(limit)
+    with _open(project) as db:
+        return _rows(db, sql, params)
+
+
+def list_profiles(project: Project) -> list[str]:
+    """Return profile names from recorded decisions and the profiles directory."""
+    with _open(project) as db:
+        names = {
+            str(row["profile"])
+            for row in db.query("SELECT DISTINCT profile FROM current_decisions")
+        }
+    for pattern in ("*.yaml", "*.yml"):
+        names.update(path.stem for path in project.profiles_dir.glob(pattern))
+    return sorted(names)
+
+
+def list_qc_profiles(project: Project) -> list[dict[str, Any]]:
+    """Return the on-disk ``kind: qc`` profiles (name, version, description)."""
+    from operon.profiles import load_profiles
+
+    profiles = load_profiles(project.profiles_dir, kind="qc")
+    return [
+        {
+            "name": name,
+            "version": int(doc.get("version", 1)),
+            "description": str(doc.get("description", "")),
+        }
+        for name, doc in sorted(profiles.items())
+    ]
+
+
+def get_profile_document(project: Project, name: str) -> dict[str, Any]:
+    """Return the current on-disk qc profile document for the editor."""
+    from operon.profiles import load_profile
+
+    return load_profile(project.profiles_dir, name, expected_kind="qc")
+
+
+def profile_history(project: Project, name: str) -> list[dict[str, Any]]:
+    """Return the recorded snapshot history of one profile (CLI ``profiles history``)."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT s.profile_snapshot_id AS snapshot_id, s.profile_version AS version, "
+            "s.profile_sha256 AS sha256, s.recorded_at, "
+            "(SELECT COUNT(*) FROM decisions d WHERE d.profile_snapshot_id = s.profile_snapshot_id) "
+            "AS uses FROM qc_profiles s WHERE s.profile_name=? ORDER BY s.profile_snapshot_id",
+            (name,),
+        )
+
+
+def get_profile_snapshot(project: Project, name: str, snapshot_id: int) -> dict[str, Any]:
+    """Return the parsed document of one recorded profile snapshot."""
+    with _open(project) as db:
+        row = _row(
+            db,
+            "SELECT profile_document FROM qc_profiles "
+            "WHERE profile_name=? AND profile_snapshot_id=?",
+            (name, snapshot_id),
+        )
+    if row is None:
+        raise ValidationError(f"no snapshot recorded for profile {name!r} with snapshot id {snapshot_id}")
+    return json.loads(str(row["profile_document"]))
+
+
+def list_tools(project: Project) -> list[dict[str, Any]]:
+    """Return the configured external tools (no version probing)."""
+    from operon.tools import get_tool, load_tools_config
+
+    config = load_tools_config(project)
+    rows: list[dict[str, Any]] = []
+    for tool_name in config.get("tools", {}):
+        try:
+            tool = get_tool(project, str(tool_name))
+            rows.append({
+                "name": tool.name,
+                "executable": tool.executable,
+                "run_method": tool.run_method,
+                "description": tool.description,
+                "recipes": sorted(tool.recipes),
+            })
+        except ValidationError as exc:
+            rows.append({
+                "name": str(tool_name),
+                "executable": "",
+                "run_method": "",
+                "description": f"invalid: {exc}",
+                "recipes": [],
+            })
+    return rows
+
+
+def list_recipes(project: Project) -> list[dict[str, Any]]:
+    """Return one summary row per recipe (CLI ``recipes list``)."""
+    from operon.tools import list_analyses
+
+    return [
+        {
+            "name": recipe.name,
+            "version": recipe.version,
+            "tool": recipe.tool_name,
+            "entity_type": recipe.entity_type or "*",
+            "file_role": recipe.file_role,
+            "format": recipe.fmt,
+        }
+        for recipe in list_analyses(project)
+    ]
+
+
+def get_recipe_document(project: Project, name: str) -> dict[str, Any]:
+    """Return ``{"tool": ..., "document": raw recipe mapping}`` for the editor."""
+    from operon.tools import get_recipe
+
+    recipe = get_recipe(project, name)
+    return {"tool": recipe.tool_name, "document": dict(recipe.raw)}
+
+
+def recipe_history(project: Project, name: str) -> list[dict[str, Any]]:
+    """Return the recorded snapshot history of one recipe (CLI ``recipes history``)."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT s.recipe_snapshot_id AS snapshot_id, s.recipe_version AS version, "
+            "s.recipe_sha256 AS sha256, s.recorded_at, "
+            "(SELECT COUNT(*) FROM analysis_jobs j WHERE j.recipe_snapshot_id = s.recipe_snapshot_id) "
+            "AS uses FROM recipe_snapshots s WHERE s.recipe_name=? ORDER BY s.recipe_snapshot_id",
+            (name,),
+        )
+
+
+def get_recipe_snapshot(project: Project, name: str, snapshot_id: int) -> dict[str, Any]:
+    """Return the parsed document of one recorded recipe snapshot.
+
+    The document has the same shape ``run_analysis`` records:
+    ``{"recipe": <raw recipe mapping>, "tool": <raw tool mapping>}``.
+    """
+    with _open(project) as db:
+        row = _row(
+            db,
+            "SELECT recipe_document FROM recipe_snapshots "
+            "WHERE recipe_name=? AND recipe_snapshot_id=?",
+            (name, snapshot_id),
+        )
+    if row is None:
+        raise ValidationError(f"no snapshot recorded for recipe {name!r} with snapshot id {snapshot_id}")
+    return json.loads(str(row["recipe_document"]))
 
 
 def list_workflow_runs(

@@ -35,6 +35,12 @@ warnings:
 
 支持的运算符：`>=`、`<=`、`>`、`<`、`==`、`!=`、`between`（需 `min`/`max`）、`in`/`not_in`（需 `values`）、`exists`。
 
+手工编辑 YAML 文件完全受支持。带审计的替代途径是 TUI 的 Config 界面
+（`operon tui`，按键 `6`，QC Profiles 标签页）：结构化表单（description、
+`applies_to` 复选框、规则行）会校验组合后的文档、递增 `version`、写回文件，
+并记录与 `operon evaluate` 相同的内容寻址快照——内置快照历史与"恢复为新版本"
+功能。
+
 运行：
 
 ```bash

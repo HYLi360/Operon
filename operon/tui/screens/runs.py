@@ -17,8 +17,10 @@ from operon.config import Project
 from operon.tui import data
 from operon.tui.screens.common import (
     Panel,
+    capture_table_view,
     entity_label,
     format_duration,
+    restore_table_view,
     styled_status,
 )
 
@@ -89,7 +91,7 @@ class RunsPanel(Panel):
     def render_data(self, payload: list[dict[str, Any]]) -> None:
         self.runs = payload
         table = self.query_one("#runs-table", DataTable)
-        cursor_row = table.cursor_row
+        view = capture_table_view(table)
         table.clear()
         for record in payload:
             table.add_row(
@@ -101,8 +103,7 @@ class RunsPanel(Panel):
                 record["run_id"],
                 key=record["run_id"],
             )
-        if payload:
-            table.move_cursor(row=min(max(cursor_row, 0), len(payload) - 1), animate=False)
+        restore_table_view(table, view, len(payload))
 
     def show_error(self, exc: BaseException) -> None:
         self.app.notify(f"runs load failed: {exc}", severity="error")

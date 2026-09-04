@@ -35,6 +35,13 @@ warnings:
 
 Supported operators are `>=`, `<=`, `>`, `<`, `==`, `!=`, `between` (requires `min` and `max`), `in`, `not_in` (requires `values`), and `exists`.
 
+Hand-editing the YAML file is fully supported. The audited alternative is the
+TUI Config screen (`operon tui`, key `6`, QC Profiles tab): a structured form
+(description, `applies_to` checkboxes, rule rows) that validates the composed
+document, bumps the `version`, writes the file, and records the same
+content-addressed snapshot `operon evaluate` records — with snapshot history
+and restore-as-new-version built in.
+
 Run the profile:
 
 ```bash

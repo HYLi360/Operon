@@ -84,7 +84,7 @@ operon recipes show NAME [--snapshot-id N]
 
 - `list`: lists all recipes configured in `config/tools.yaml` (name/version/tool/entity_type/file_role/format).
 - `history`: shows the recorded snapshot history of one recipe (snapshot_id/version/sha256 prefix/recorded_at/number of associated `analysis_jobs`).
-- `show`: prints a snapshot document as YAML (the latest one by default, or the one given by `--snapshot-id`). Restoring an old version is print-only: copy the output back into `config/tools.yaml` manually — the program never rewrites the file in place, so comments are not lost.
+- `show`: prints a snapshot document as YAML (the latest one by default, or the one given by `--snapshot-id`). Restoring an old version from the CLI is print-only: copy the output back into `config/tools.yaml` manually — the CLI never rewrites the file in place, so comments are not lost. The audited alternative is the TUI Config screen (Tools & Recipes tab): its History dialog restores a snapshot into the recipe editor and saving creates the next version, recording a new snapshot (note that TUI saves normalize the file's formatting and drop hand-written comments).
 
 ## profiles
 
@@ -96,7 +96,7 @@ operon profiles show NAME [--snapshot-id N]
 Inspects the profile snapshots recorded into `qc_profiles` during evaluate:
 
 - `history`: without NAME, summarizes per profile (snapshot count and latest recording time); with NAME, lists that profile's snapshot history (snapshot_id/version/sha256 prefix/recorded_at/number of associated decisions).
-- `show`: prints a snapshot document as YAML (the latest one by default). Also print-only: to restore, copy the output back into `config/profiles/` manually — no in-place rewrite.
+- `show`: prints a snapshot document as YAML (the latest one by default). Also print-only: to restore from the CLI, copy the output back into `config/profiles/` manually — no in-place rewrite. The TUI Config screen (QC Profiles tab) offers the audited alternative: restore a snapshot into the profile editor and save it as the next version with a new recorded snapshot.
 
 ## report analysis
 

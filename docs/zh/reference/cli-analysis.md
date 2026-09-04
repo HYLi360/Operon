@@ -117,8 +117,10 @@ operon recipes show NAME [--snapshot-id N]
 - `history`：列出该 recipe 已记录的快照历史（snapshot_id/version/sha256 前缀/
   recorded_at/关联 `analysis_jobs` 数）。
 - `show`：把快照文档以 YAML 形式打印（缺省最新一条，或按 `--snapshot-id` 指定）。
-  恢复旧版本是 print-only 流程：把输出人工写回 `config/tools.yaml`，程序不做原地
-  改写，以避免丢失注释。
+  在 CLI 中恢复旧版本是 print-only 流程：把输出人工写回 `config/tools.yaml`，CLI
+  不做原地改写，以避免丢失注释。带审计的替代途径是 TUI 的 Config 界面
+  （Tools & Recipes 标签页）：其 History 对话框把快照载入 recipe 编辑器，保存即
+  创建下一个版本并记录新快照（注意：TUI 保存会规范化文件格式并丢弃手写注释）。
 
 ## profiles
 
@@ -132,8 +134,10 @@ operon profiles show NAME [--snapshot-id N]
 - `history`：不带 NAME 时按 profile 汇总（快照数与最近记录时间）；带 NAME 时列出
   该 profile 的快照历史（snapshot_id/version/sha256 前缀/recorded_at/关联
   decisions 数）。
-- `show`：把快照文档以 YAML 形式打印（缺省最新一条）。同样是 print-only：恢复时
-  人工写回 `config/profiles/`，程序不做原地改写。
+- `show`：把快照文档以 YAML 形式打印（缺省最新一条）。同样是 print-only：在 CLI 中
+  恢复时需人工写回 `config/profiles/`，程序不做原地改写。TUI 的 Config 界面
+  （QC Profiles 标签页）提供带审计的替代途径：把快照恢复到 profile 编辑器并保存为
+  下一个版本，同时记录新快照。
 
 ## report analysis
 

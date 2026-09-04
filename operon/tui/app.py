@@ -1,9 +1,12 @@
 """Textual application shell for the Operon TUI.
 
-The app is strictly read-only: it never opens a writable ``Database``.  Each
-panel loads data through short-lived read-only connections in
+Read access goes through short-lived read-only connections in
 :mod:`operon.tui.data`, so the TUI is safe to leave open while CLI commands
-run against the same project.
+run against the same project.  Write operations (evaluate, curate,
+retire/restore, ingest, verify, QC) go through :mod:`operon.tui.actions`,
+which calls the same core functions as the CLI — every mutation follows
+preview/form → explicit confirm → audited apply, and every dialog shows the
+equivalent CLI command.
 """
 
 from __future__ import annotations
@@ -16,17 +19,21 @@ from textual.widgets import ContentSwitcher, Footer, Header, Label, ListItem, Li
 
 from operon.config import Project
 from operon.tui.screens.common import Panel
+from operon.tui.screens.config import ConfigPanel
+from operon.tui.screens.decisions import DecisionsPanel
 from operon.tui.screens.entities import EntitiesPanel
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.home import HomePanel
 from operon.tui.screens.runs import RunsPanel
 
-SCREENS = ("home", "entities", "files", "runs")
+SCREENS = ("home", "entities", "files", "runs", "decisions", "config")
 NAV_LABELS = {
     "home": "1  Home",
     "entities": "2  Entities",
     "files": "3  Files",
-    "runs": "4  Runs",
+    "runs": "4  Tasks",
+    "decisions": "5  Decisions",
+    "config": "6  Config",
 }
 
 
@@ -45,20 +52,30 @@ class HelpScreen(ModalScreen):
             "  1  Home dashboard\n"
             "  2  Entities browser\n"
             "  3  Files browser\n"
-            "  4  Workflow runs\n"
+            "  4  Tasks — workflow-run monitor\n"
+            "  5  Decisions\n"
+            "  6  Config — QC profiles and tools/recipes editors\n"
             "  r  refresh current screen\n"
-            "  t  toggle retired entities (Entities screen)\n"
-            "  enter  open selected run (Runs screen)\n"
+            "  t  show/hide retired entities (Entities screen; shown dimmed by default)\n"
+            "  x  retire/restore selected entity (Entities screen)\n"
+            "  i  ingest file (Files screen)\n"
+            "  v  verify files (Files screen)\n"
+            "  q  run QC (Files screen; elsewhere: quit)\n"
+            "  e  evaluate decisions (Decisions screen)\n"
+            "  c  curate selected decision (Decisions screen)\n"
+            "  enter  open selected run (Tasks screen)\n"
             "  esc  back / close\n"
             "  q  quit\n"
             "\n"
-            "The TUI is strictly read-only; it never writes to the project.",
+            "Write operations run the same audited core functions as the CLI:\n"
+            "every change shows a preview, the equivalent CLI command, and an\n"
+            "explicit Confirm before anything is written.",
             id="help-body",
         )
 
 
 class OperonApp(App):
-    """Read-only TUI for an Operon project."""
+    """TUI for an Operon project (reads plus audited write operations)."""
 
     CSS_PATH = "app.tcss"
 
@@ -67,7 +84,9 @@ class OperonApp(App):
         Binding("1", "switch_screen('home')", "Home"),
         Binding("2", "switch_screen('entities')", "Entities"),
         Binding("3", "switch_screen('files')", "Files"),
-        Binding("4", "switch_screen('runs')", "Runs"),
+        Binding("4", "switch_screen('runs')", "Tasks"),
+        Binding("5", "switch_screen('decisions')", "Decisions"),
+        Binding("6", "switch_screen('config')", "Config"),
         Binding("r", "refresh", "Refresh"),
         Binding("question_mark", "help", "Help"),
     ]
@@ -90,6 +109,8 @@ class OperonApp(App):
                 yield EntitiesPanel(self.project)
                 yield FilesPanel(self.project)
                 yield RunsPanel(self.project)
+                yield DecisionsPanel(self.project)
+                yield ConfigPanel(self.project)
         yield Footer()
 
     def action_switch_screen(self, name: str) -> None:
@@ -111,6 +132,11 @@ class OperonApp(App):
     def action_refresh(self) -> None:
         panel = self.current_panel()
         if isinstance(panel, Panel):
+            panel.reload()
+
+    def reload_after_write(self) -> None:
+        """Reload every panel after a successful audited write."""
+        for panel in self.query(Panel):
             panel.reload()
 
     def action_help(self) -> None:

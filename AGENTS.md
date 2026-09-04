@@ -54,9 +54,27 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   - `operon/remotes.py` — SFTP remote storage mirrors (push/pull with
     checksum verification) and `sftp://` / `remote://` URL fetching.
   - `operon/tui/` — Textual-based terminal UI (`operon tui`, optional `tui`
-    extra). Phase 1 is strictly read-only: Home dashboard, Entities browser,
-    Files browser, and workflow-run monitor. Textual is imported only inside
-    this package, which the `tui` command handler imports lazily.
+    extra): Home dashboard, Entities browser, Files browser, workflow-run
+    monitor, a Decisions screen, and a Config screen. Read access lives in
+    `operon/tui/data.py` and is strictly read-only (short-lived read-only
+    connections only). Phase 2 write operations (evaluate, curate,
+    retire/restore, ingest, verify, QC batch) live in
+    `operon/tui/actions.py`: each function opens its own short-lived
+    *writable* `Database`, calls the same core functions as the CLI
+    (identical `changes`/`workflow_runs` provenance), and returns plain
+    dicts; writable connections are never held by the UI. Every write in the
+    UI follows form/plan preview → equivalent CLI command shown → explicit
+    Confirm → background worker → notify + reload or inline error. The
+    Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
+    `config/profiles/*.yaml` (kind `qc`) and single recipes inside
+    `config/tools.yaml` through structured control-based forms (no free-text
+    YAML): every save bumps the `version`, records the same content-addressed
+    snapshot the CLI records (`qc_profiles` / `recipe_snapshots`), and
+    restores the previous file bytes on failure; keys the forms do not model
+    are preserved verbatim; history modals restore snapshots into the editor
+    as the next version; tools-check runs in a worker with per-row updates.
+    Textual is imported only inside this package, which the `tui` command
+    handler imports lazily.
   - Other top-level modules by responsibility: `database.py` (SQLite schema
     and migrations), `schema.py` (YAML metadata schema and validation),
     `config.py` (project configuration and directory layout), `files.py`

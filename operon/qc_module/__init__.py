@@ -13,7 +13,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from operon.qc_module._parsers import (
     fasta_lengths,
@@ -645,8 +645,16 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
            entity_id: str | None = None, file_id: str | None = None,
            sample_size: int = 1000000, phred_offset: int | str = 33,
            parameter_set: str = DEFAULT_PARAMETER_SET,
-           force_checksum: bool = False) -> list[dict[str, Any]]:
-    """Run QC for selected manifest files; one failure does not abort the batch."""
+           force_checksum: bool = False,
+           progress_callback: Callable[[int, int, dict[str, Any]], None] | None = None,
+           ) -> list[dict[str, Any]]:
+    """Run QC for selected manifest files; one failure does not abort the batch.
+
+    ``progress_callback``, when given, is invoked after each file as
+    ``progress_callback(index, total, result)`` with a 1-based ``index``.
+    Raising from the callback aborts the batch between files; results for
+    files already processed are kept.
+    """
     sql = (
         "SELECT file_id FROM files WHERE entity_type IN "
         "('organism','sample','run','assembly','annotation') AND NOT EXISTS ("
@@ -668,12 +676,16 @@ def qc_all(db: Database, project: Project, entity_type: str | None = None,
     sql += " ORDER BY file_id"
     rows = db.conn.execute(sql, params).fetchall()
     results = []
+    total = len(rows)
     read_count_cache: dict[tuple[str, str], int] = {}
-    for row in rows:
-        results.append(qc_file(
+    for index, row in enumerate(rows, start=1):
+        result = qc_file(
             db, project, row["file_id"], sample_size=sample_size,
             phred_offset=phred_offset, parameter_set=parameter_set,
             read_count_cache=read_count_cache,
             force_checksum=force_checksum,
-        ))
+        )
+        results.append(result)
+        if progress_callback is not None:
+            progress_callback(index, total, result)
     return results

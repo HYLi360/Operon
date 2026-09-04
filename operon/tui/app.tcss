@@ -49,13 +49,77 @@
     width: 12;
 }
 
-#files-table, #runs-table {
+#files-table, #runs-table, #decisions-table {
     height: 1fr;
 }
 
 #file-detail-scroll {
     height: 40%;
     border-top: solid $primary;
+}
+
+#decisions-filters {
+    height: auto;
+    padding: 0 1;
+}
+
+#decisions-profile, #decisions-decision {
+    width: 24;
+}
+
+#decisions-filter {
+    width: 1fr;
+}
+
+WriteModal, ErrorDialog {
+    align: center middle;
+}
+
+#modal-box {
+    width: 84;
+    max-width: 95%;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    border: solid $primary;
+    background: $surface;
+}
+
+#modal-title {
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+.modal-label {
+    color: $text-muted;
+    padding-top: 1;
+}
+
+.modal-info {
+    padding: 0 0 1 0;
+}
+
+#modal-command {
+    color: $text-muted;
+    padding-top: 1;
+}
+
+#modal-error {
+    color: $error;
+    padding-top: 1;
+}
+
+#modal-buttons {
+    height: auto;
+    padding-top: 1;
+}
+
+#modal-buttons Button {
+    margin-right: 2;
+}
+
+#qc-progress {
+    padding: 1 0;
 }
 
 HelpScreen {
@@ -72,4 +136,108 @@ HelpScreen {
 
 #run-detail-scroll {
     padding: 1 2;
+}
+
+#config-tabs {
+    height: 1fr;
+}
+
+#profiles-layout {
+    height: 1fr;
+}
+
+#profiles-sidebar {
+    width: 34;
+    border-right: solid $primary;
+}
+
+#profiles-list {
+    height: 1fr;
+}
+
+#profile-editor, #recipe-editor {
+    padding: 0 2;
+}
+
+#profile-editor {
+    width: 1fr;
+}
+
+#tools-layout {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#tools-table {
+    height: 8;
+}
+
+#recipes-table {
+    height: 8;
+}
+
+#recipe-editor {
+    height: 1fr;
+    border-top: solid $primary;
+}
+
+.config-buttons {
+    height: auto;
+    padding-top: 1;
+}
+
+.config-buttons Button {
+    margin-right: 2;
+}
+
+.rule-row {
+    height: auto;
+}
+
+.rule-inputs {
+    height: auto;
+}
+
+.rule-metric {
+    width: 24;
+}
+
+.rule-operator {
+    width: 12;
+}
+
+.rule-value {
+    width: 14;
+}
+
+.rule-code {
+    width: 28;
+}
+
+.rule-remove {
+    min-width: 3;
+    width: 3;
+    height: 1;
+    border: none;
+}
+
+.rule-extras, #profile-extras-note, #recipe-extras-note, #recipe-parameters-note {
+    padding-left: 2;
+}
+
+#recipe-arguments, #recipe-parameters {
+    height: 6;
+}
+
+#snapshot-view-scroll {
+    height: 1fr;
+    max-height: 24;
+}
+
+#history-table {
+    height: 12;
+}
+
+#history-error {
+    color: $error;
 }

@@ -1,1 +1,1 @@
-"""Textual-based terminal user interface for Operon (read-only phase 1)."""
+"""Textual-based terminal user interface for Operon (phase 2: audited writes)."""

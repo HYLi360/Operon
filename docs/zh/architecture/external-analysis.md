@@ -75,7 +75,10 @@ tool spec 原文记录到 `recipe_snapshots` 表：快照文档为
 `analysis_jobs.recipe_snapshot_id` 回指产生该作业的精确配置；续跑收养的作业继承原
 作业的快照 id（它由那份配置产生，而非当前配置）。查看用 `operon recipes list /
 history / show`，QC profile 侧对应的 `qc_profiles` 快照用 `operon profiles
-history / show`；恢复均为 print-only，由人工把输出写回配置 YAML，程序不做原地改写。
+history / show`；在 CLI 中恢复均为 print-only，由人工把输出写回配置 YAML，CLI
+不做原地改写。带审计的替代途径是 TUI 的 Config 界面：其结构化编辑器把每次变更
+保存为下一个版本并记录新快照，也可以把任何已记录的快照载入编辑器（保存即创建
+下一个版本）；TUI 保存 recipe 时会规范化 `tools.yaml` 格式并丢弃手写注释。
 
 运行资源使用记录（schema 2.9）：`workflow_runs` 新增 `duration_seconds`（墙钟秒数，
 此前只进 JSONL）、`avg_rss_mb`（平均 RSS）与 `cpu_seconds`（核时）三列，既有

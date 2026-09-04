@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
-from textual.widgets import ContentSwitcher, DataTable, Input, Select, Static, Tree
+from textual.widgets import ContentSwitcher, DataTable, Input, Label, Select, Static, Tree
 
 from operon.cli import main
 from operon.config import Project
@@ -158,7 +158,27 @@ def test_entity_detail(demo_project: Project) -> None:
     assert any(a["namespace"] == "NCBI_Assembly" for a in detail["accessions"])
     assert detail["state"]["state"] == "RELEASED"
     assert detail["files"], "assembly should have at least one file"
+    assert detail["metrics"]["qc"], "assembly should have QC metrics"
     assert data.entity_detail(demo_project, "assembly", "ASM_999999") is None
+
+
+def test_entity_metrics(demo_project: Project) -> None:
+    metrics = data.entity_metrics(demo_project, "assembly", "ASM_000001")
+    qc = metrics["qc"]
+    assert qc, "demo assemblies should have built-in QC metrics"
+    keys = [(row["qc_stage"], row["metric_name"], row["tool"]) for row in qc]
+    assert len(keys) == len(set(keys)), "deduped to one row per (stage, metric, tool)"
+    names = {row["metric_name"] for row in qc}
+    assert {"contig_n50", "parseable"} <= names
+    assert [row["qc_stage"] for row in qc] == sorted(row["qc_stage"] for row in qc)
+    n50 = next(row for row in qc if row["metric_name"] == "contig_n50")
+    assert n50["metric_unit"] == "bp"
+    assert n50["tool"] == "operon.builtin"
+    assert metrics["analysis"] == []
+
+    assert data.entity_metrics(demo_project, "organism", "ORG_000001") == {
+        "qc": [], "analysis": [],
+    }
 
 
 def test_list_files_filters(demo_project: Project) -> None:
@@ -307,6 +327,7 @@ def test_data_layer_never_writes(demo_project: Project) -> None:
         data.entity_tree(demo_project)
         data.entity_tree(demo_project, include_retired=True)
         data.entity_detail(demo_project, "assembly", "ASM_000001")
+        data.entity_metrics(demo_project, "assembly", "ASM_000001")
         data.list_files(demo_project)
         data.file_statuses(demo_project)
         data.file_detail(demo_project, data.list_files(demo_project)[0]["file_id"])
@@ -341,6 +362,7 @@ def test_navigation_and_home(demo_project: Project) -> None:
             await pilot.pause()
             switcher = app.query_one("#main", ContentSwitcher)
             assert switcher.current == "home"
+            assert _static_text(app.query_one("#nav-runs Label", Label)) == "4  Tasks"
 
             home = app.query_one(HomePanel)
             assert home.summary["entity_counts"]["assembly"] == 3
@@ -378,6 +400,7 @@ def test_entities_screen(demo_project: Project) -> None:
             await pilot.pause()
             await _settled(app)
             panel = app.query_one(EntitiesPanel)
+            assert panel.include_retired is True
             assert [n["entity_id"] for n in panel.tree_data] == ["ORG_000001", "ORG_000002"]
 
             tree = panel.query_one("#entities-tree", Tree)
@@ -390,13 +413,59 @@ def test_entities_screen(demo_project: Project) -> None:
             assert "GCA_000000001" in detail_text
             assert "RELEASED" in detail_text
             assert "NCBI_Assembly" in detail_text
+            assert "QC metrics" in detail_text
+            assert "contig_n50 = 5000.0 bp" in detail_text
+            assert "operon.builtin@" in detail_text
+            assert "Analysis metrics" in detail_text
+
+            # No retired entities in the demo; toggling only flips the flag.
+            panel.action_toggle_retired()
+            await pilot.pause()
+            await _settled(app)
+            assert panel.include_retired is False
+            assert [n["entity_id"] for n in panel.tree_data] == ["ORG_000001", "ORG_000002"]
+            panel.action_toggle_retired()
+
+    _run(scenario())
+
+
+def test_entities_retired_shown_dimmed_by_default(tmp_path: Path) -> None:
+    """Retired entities are visible-but-dimmed by default; `t` hides them."""
+    from operon.database import Database
+    from operon.lifecycle import apply_lifecycle_event
+
+    project = Project.init(tmp_path / "retire-ui-project")
+    db = Database(project.db_path)
+    try:
+        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"})
+        db.insert_row("organisms", {"organism_id": "ORG_000002", "scientific_name": "Thriving"})
+        apply_lifecycle_event(
+            db, "organism", "ORG_000001",
+            action="RETIRE", reason="test retirement", actor="tester", reason_code="duplicate",
+        )
+    finally:
+        db.close()
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            assert panel.include_retired is True
+            tree = panel.query_one("#entities-tree", Tree)
+            node = _find_tree_node(tree, "organism", "ORG_000001")
+            assert node is not None
+            assert "(retired)" in node.label.plain
+            assert any("dim" in str(span.style) for span in node.label.spans)
 
             panel.action_toggle_retired()
             await pilot.pause()
             await _settled(app)
-            assert panel.include_retired is True
-            assert [n["entity_id"] for n in panel.tree_data] == ["ORG_000001", "ORG_000002"]
-            panel.action_toggle_retired()
+            assert panel.include_retired is False
+            assert _find_tree_node(tree, "organism", "ORG_000001") is None
+            assert _find_tree_node(tree, "organism", "ORG_000002") is not None
 
     _run(scenario())
 
@@ -575,6 +644,9 @@ def test_help_modal(demo_project: Project) -> None:
             await pilot.press("?")
             await pilot.pause()
             assert isinstance(app.screen, HelpScreen)
+            body = _static_text(app.screen.query_one("#help-body", Static))
+            assert "Tasks — workflow-run monitor" in body
+            assert "show/hide retired entities" in body
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, HelpScreen)
@@ -648,6 +720,55 @@ def test_runs_step_filter(demo_project: Project) -> None:
             await pilot.pause()
             await _settled(app)
             assert table.row_count == 0
+
+    _run(scenario())
+
+
+def test_runs_table_view_survives_reload(tmp_path: Path) -> None:
+    """Reloads (including the 2s auto-refresh) keep the cursor and scroll offset."""
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / "runs-scroll-project")
+    db = Database(project.db_path)
+    try:
+        for index in range(80):
+            log_run(db, project, {
+                "step": "qc", "status": "completed",
+                "entity_type": "run", "entity_id": f"RUN_{index:06d}",
+            })
+    finally:
+        db.close()
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(RunsPanel)
+            table = panel.query_one("#runs-table", DataTable)
+            assert table.row_count == 80
+
+            table.move_cursor(row=5, animate=False)
+            table.scroll_end(animate=False)
+            await pilot.pause()
+            cursor_row = table.cursor_row
+            scroll_offset = table.scroll_offset
+            assert cursor_row == 5
+            assert scroll_offset.y > 0
+
+            panel.reload()
+            await _settled(app)
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + SETTLE_TIMEOUT
+            while loop.time() < deadline:
+                await pilot.pause()
+                if table.cursor_row == cursor_row and table.scroll_offset == scroll_offset:
+                    break
+                await asyncio.sleep(0.05)
+            assert table.cursor_row == cursor_row
+            assert table.scroll_offset == scroll_offset
 
     _run(scenario())
 

@@ -7,12 +7,26 @@ from typing import Any
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import DataTable, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import data
-from operon.tui.screens.common import Panel, human_size, styled_file_status
+from operon.tui.screens.common import (
+    ErrorDialog,
+    Panel,
+    capture_table_view,
+    human_size,
+    restore_table_view,
+    styled_file_status,
+)
+from operon.tui.screens.files_ops import (
+    HEALTHY_VERIFY_STATUSES,
+    IngestModal,
+    QcModal,
+    VerifyModal,
+)
 
 ALL_STATUSES = "ALL"
 
@@ -24,6 +38,12 @@ KNOWN_FILE_STATUSES = [
 
 class FilesPanel(Panel):
     """Manifest files with substring/status filters and residency details."""
+
+    BINDINGS = [
+        Binding("i", "ingest", "Ingest"),
+        Binding("v", "verify", "Verify"),
+        Binding("q", "qc", "Run QC"),
+    ]
 
     def __init__(self, project: Project) -> None:
         super().__init__(id="files")
@@ -71,6 +91,7 @@ class FilesPanel(Panel):
             if current not in (ALL_STATUSES, Select.NULL) and current in new_statuses:
                 select.value = current
         table = self.query_one("#files-table", DataTable)
+        view = capture_table_view(table)
         table.clear()
         for record in self.files:
             entity = f"{record['entity_type']}:{record['entity_id']}"
@@ -84,9 +105,66 @@ class FilesPanel(Panel):
                 styled_file_status(record.get("status")),
                 key=record["file_id"],
             )
+        restore_table_view(table, view, len(self.files))
 
     def show_error(self, exc: BaseException) -> None:
         self.query_one("#file-detail", Static).update(Text(f"error: {exc}", style="red"))
+
+    def _selected_record(self) -> dict[str, Any] | None:
+        table = self.query_one("#files-table", DataTable)
+        if not self.files or table.cursor_row is None:
+            return None
+        if 0 <= table.cursor_row < len(self.files):
+            return self.files[table.cursor_row]
+        return None
+
+    def _after_write(self, result: Any) -> None:
+        if result:
+            self.app.reload_after_write()
+
+    def action_ingest(self) -> None:
+        self.app.push_screen(IngestModal(self.project, self._selected_record()), self._after_write)
+
+    def action_verify(self) -> None:
+        selected = self._selected_record()
+        file_id = str(selected["file_id"]) if selected else None
+        self.app.push_screen(
+            VerifyModal(self.project, file_id, len(self.files)), self._after_verify,
+        )
+
+    def _after_verify(self, results: Any) -> None:
+        if not results:
+            return
+        failed = [r for r in results if r["status"] not in HEALTHY_VERIFY_STATUSES]
+        if failed:
+            lines = "\n".join(
+                f"{r['file_id']}: {r['status']}" + (f" — {r['error']}" if r.get("error") else "")
+                for r in failed[:20]
+            )
+            self.app.push_screen(ErrorDialog(
+                f"{len(failed)} of {len(results)} file(s) failed verification", lines,
+            ))
+        else:
+            self.app.notify(f"verified {len(results)} file(s)")
+        self.app.reload_after_write()
+
+    def action_qc(self) -> None:
+        selected = self._selected_record()
+        file_id = str(selected["file_id"]) if selected else None
+        self.app.push_screen(
+            QcModal(self.project, file_id, len(self.files)), self._after_qc,
+        )
+
+    def _after_qc(self, result: Any) -> None:
+        if not result or result.get("cancelled"):
+            return
+        failures = result.get("failures") or []
+        if failures:
+            lines = "\n".join(f"{r['file_id']}: {r.get('error') or 'failed'}" for r in failures[:20])
+            self.app.push_screen(ErrorDialog(
+                f"{len(failures)} of {result['total']} file(s) failed QC", lines,
+            ))
+        self.app.reload_after_write()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "files-filter":
