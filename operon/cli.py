@@ -546,6 +546,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--message")
     p.add_argument("--force", action="store_true")
 
+    sub.add_parser(
+        "tui",
+        help="open the read-only terminal UI (requires the 'tui' extra: pip install 'operon[tui]')",
+    )
+
     return parser
 
 
@@ -1839,6 +1844,27 @@ def _cmd_set_state(args: argparse.Namespace, db: Database) -> int:
     return 0
 
 
+def _cmd_tui(args: argparse.Namespace) -> int:
+    """Launch the read-only TUI without opening a writable database.
+
+    The app manages its own short-lived read-only connections.  ``textual``
+    is an optional dependency, so it is imported lazily here and nowhere in
+    the normal runtime path.
+    """
+    try:
+        from operon.tui.app import OperonApp
+    except ModuleNotFoundError:
+        print(
+            "error: the TUI requires the 'textual' package; "
+            "install it with: pip install 'operon[tui]'",
+            file=sys.stderr,
+        )
+        return 2
+    project = load_project(args.project)
+    OperonApp(project).run()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -1849,6 +1875,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_init_demo(args)
         if args.command == "backup" and args.backup_command == "verify":
             return _cmd_backup_verify(args)
+        if args.command == "tui":
+            return _cmd_tui(args)
         project, db = _open_project(args)
         try:
             handlers = {

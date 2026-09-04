@@ -1,0 +1,75 @@
+#app-layout {
+    height: 1fr;
+}
+
+#nav {
+    width: 18;
+    border-right: solid $primary;
+}
+
+#main {
+    width: 1fr;
+}
+
+.body {
+    padding: 1 2;
+}
+
+#entities-tree {
+    width: 40%;
+    border-right: solid $primary;
+}
+
+#entity-detail-scroll {
+    width: 1fr;
+}
+
+#files-filters, #runs-filters {
+    height: auto;
+    padding: 0 1;
+}
+
+#files-filter {
+    width: 1fr;
+}
+
+#files-status {
+    width: 24;
+}
+
+#runs-status {
+    width: 20;
+}
+
+#runs-step, #runs-entity {
+    width: 1fr;
+}
+
+#runs-limit {
+    width: 12;
+}
+
+#files-table, #runs-table {
+    height: 1fr;
+}
+
+#file-detail-scroll {
+    height: 40%;
+    border-top: solid $primary;
+}
+
+HelpScreen {
+    align: center middle;
+}
+
+#help-body {
+    width: 64;
+    height: auto;
+    padding: 1 2;
+    border: solid $primary;
+    background: $surface;
+}
+
+#run-detail-scroll {
+    padding: 1 2;
+}

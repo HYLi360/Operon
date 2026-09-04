@@ -53,6 +53,10 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     Slurm). All backends share one provenance contract.
   - `operon/remotes.py` — SFTP remote storage mirrors (push/pull with
     checksum verification) and `sftp://` / `remote://` URL fetching.
+  - `operon/tui/` — Textual-based terminal UI (`operon tui`, optional `tui`
+    extra). Phase 1 is strictly read-only: Home dashboard, Entities browser,
+    Files browser, and workflow-run monitor. Textual is imported only inside
+    this package, which the `tui` command handler imports lazily.
   - Other top-level modules by responsibility: `database.py` (SQLite schema
     and migrations), `schema.py` (YAML metadata schema and validation),
     `config.py` (project configuration and directory layout), `files.py`
@@ -123,7 +127,7 @@ asks.
 - Python 3.10+. Treat `pyproject.toml` as the authoritative dependency
   list: `[project.dependencies]` contains core runtime dependencies, while
   `[project.optional-dependencies]` contains separately installable extras
-  (`test`, `build`, `remote`, `docs`, `dev`). Runtime-feature extras must
+  (`test`, `build`, `remote`, `tui`, `docs`, `dev`). Runtime-feature extras must
   remain lazy-imported by their feature paths (e.g. Paramiko is only
   imported inside remote/SSH code); test/build extras must stay out of
   normal runtime paths. Do not promote an extra dependency to core, or add a

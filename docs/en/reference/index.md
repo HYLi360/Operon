@@ -8,6 +8,7 @@
 - [Remote Storage Commands](cli-remote.md)
 - [Decisions, Releases, and Reports](cli-decisions-reports.md)
 - [Workflow History Commands](cli-workflow.md)
+- [Terminal UI](cli-tui.md)
 - [Taxonomy, Lifecycle, and Administration](cli-taxonomy-lifecycle-admin.md)
 
 ## Configuration and data model
@@ -26,6 +27,7 @@ cli-analysis
 cli-remote
 cli-decisions-reports
 cli-workflow
+cli-tui
 cli-taxonomy-lifecycle-admin
 recipe-overview
 recipe-fields

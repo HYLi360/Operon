@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "setuptools>=77"]
+test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "setuptools>=77", "textual>=8.0"]
 build = [
     "cx-Freeze>=8.4",
     "myst-parser>=4.0,<5",
@@ -43,6 +43,7 @@ build = [
     "tomli>=2.0; python_version < '3.11'",
 ]
 remote = ["paramiko>=3.4"]
+tui = ["textual>=8.0"]
 docs = [
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
@@ -54,6 +55,7 @@ dev = [
     "pytest-cov>=7.0",
     "pytest>=8.0",
     "paramiko>=3.4",
+    "textual>=8.0",
     "tomli>=2.0; python_version < '3.11'",
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",

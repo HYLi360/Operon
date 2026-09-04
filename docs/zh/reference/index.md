@@ -8,6 +8,7 @@
 - [远程存储命令](cli-remote.md)
 - [判定、发布与报告命令](cli-decisions-reports.md)
 - [Workflow 历史命令](cli-workflow.md)
+- [终端界面](cli-tui.md)
 - [Taxonomy、生命周期与管理命令](cli-taxonomy-lifecycle-admin.md)
 
 ## 配置与数据模型
@@ -26,6 +27,7 @@ cli-analysis
 cli-remote
 cli-decisions-reports
 cli-workflow
+cli-tui
 cli-taxonomy-lifecycle-admin
 recipe-overview
 recipe-fields
