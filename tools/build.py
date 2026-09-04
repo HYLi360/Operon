@@ -63,6 +63,22 @@ def project_version(pyproject: Path = PYPROJECT) -> str:
     return version
 
 
+def project_distribution_name(pyproject: Path = PYPROJECT) -> str:
+    """Return the normalized Python distribution name."""
+    name = str(_load_pyproject(pyproject)["project"]["name"]).strip()
+    if not name:
+        raise RuntimeError(f"project.name is empty in {pyproject}")
+    return _normalize(name)
+
+
+def source_distribution_filename(
+    version: str,
+    pyproject: Path = PYPROJECT,
+) -> str:
+    """Return the PEP 625 source-distribution filename."""
+    return f"{project_distribution_name(pyproject)}-{version}.tar.gz"
+
+
 def _normalize(name: str) -> str:
     """Normalize a distribution name per PEP 503."""
     return re.sub(r"[-_.]+", "-", name).lower()
@@ -332,7 +348,7 @@ def build_source_distribution(output: Path, version: str) -> Path:
     finally:
         os.chdir(previous_cwd)
     archive = output / filename
-    expected = output / f"operon-{version}.tar.gz"
+    expected = output / source_distribution_filename(version)
     if archive != expected or not archive.is_file():
         raise RuntimeError(
             f"source distribution mismatch: expected {expected}, produced {archive}"
@@ -351,6 +367,16 @@ def freeze_application(output: Path) -> None:
             f"--build-exe={output}",
         ]
     )
+    library = output / "lib"
+    if not library.is_dir():
+        raise RuntimeError(f"cx_Freeze output has no library directory: {library}")
+    distribution = metadata.distribution(project_distribution_name())
+    distribution_info = Path(distribution._path)  # type: ignore[attr-defined]
+    shutil.copytree(
+        distribution_info,
+        library / distribution_info.name,
+        dirs_exist_ok=True,
+    )
 
 
 def _executable_path(release: Path) -> Path:
@@ -365,7 +391,7 @@ def verify_release(release: Path, version: str) -> None:
         executable,
         release / "LICENSE",
         release / "licenses" / "THIRD_PARTY_NOTICES.md",
-        release / "source" / f"operon-{version}.tar.gz",
+        release / "source" / source_distribution_filename(version),
         release / "share" / "doc" / "operon" / "README.md",
         release / "share" / "doc" / "operon" / "README_ZH.md",
         documentation / "index.html",

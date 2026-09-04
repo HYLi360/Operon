@@ -2,7 +2,9 @@
 
 ## 应用发布文件结构
 
-项目使用 cx_Freeze 从 `pyproject.toml` 构建独立应用目录。完整应用发布只有一个入口：
+这条链路与发布到 PyPI 的 `OperonDBS` 软件包相互独立。PyPI wheel 与 sdist 不调用、
+也不依赖 cx_Freeze；项目仅保留 cx_Freeze 来构建可选的独立应用目录。完整独立应用发布
+只有一个入口：
 
 ```bash
 python -m pip install -e '.[build]'
@@ -26,13 +28,13 @@ Linux 构建机还需要系统命令 `patchelf`；它是 cx_Freeze 处理 ELF �
 不属于 `operon` 的 Python 运行时依赖。缺少时 cx_Freeze 会在 `build_exe` 阶段直接停止。
 
 ```text
-build/release/v0.6.1/
+build/release/v0.6.2/
 ├── operon                  # 命令行可执行文件；Windows 为 operon.exe
 ├── lib/                    # Python 运行时、operon 包与第三方依赖
 ├── LICENSE                 # Operon 自身的许可证（AGPL-3.0-or-later）
 ├── licenses/               # THIRD_PARTY_NOTICES.md 与各第三方依赖的许可证全文
 ├── source/
-│   └── operon-0.6.1.tar.gz # 对应本次二进制的完整项目源码 sdist
+│   └── operondbs-0.6.2.tar.gz # 对应本次二进制的完整项目源码 sdist
 ├── frozen_application_license.txt  # cx_Freeze 自动附带的冻结引导代码许可证
 └── share/doc/operon/
     ├── README.md           # 英文项目说明
@@ -56,6 +58,11 @@ Markdown、`conf.py`、RTD 配置和模板则保存在 `source/` 下的对应源
 cx_Freeze 的静态分析不能稳定发现这一间接导入，因此 `[tool.cxfreeze.build_exe].packages`
 显式包含整个 `email` 包；不要将其视为未使用模块删除，否则冻结程序可能在启动阶段因
 缺少 `email.header` 而退出。
+
+PyPI 分发名（`OperonDBS`）与导入包名（`operon`）不同，因此 cx_Freeze 无法推断该包
+对应哪一份分发元数据。发布构建器会在版本 smoke test 前显式把已安装的
+`operondbs-<version>.dist-info` 目录复制到冻结库中；否则独立可执行程序中的
+`importlib.metadata.version("OperonDBS")` 会回退为 `0+unknown`。
 
 应用发布目录与 `operon release` 生成的数据集快照是两个不同概念：前者交付程序，
 后者交付经过筛选并可校验的数据。

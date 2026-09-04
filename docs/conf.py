@@ -13,9 +13,9 @@ author = "Operon contributors"
 copyright = "2026, Operon contributors"
 
 try:
-    release = version("operon")
+    release = version("OperonDBS")
 except PackageNotFoundError:
-    release = "0.6.1"
+    release = "0.6.2"
 version = release
 
 extensions = ["myst_parser"]

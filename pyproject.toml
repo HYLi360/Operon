@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77", "cx-Freeze>=8.4", "Cython>=3.0"]
+requires = ["setuptools>=77", "Cython>=3.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "operon"
-version = "0.6.1"
+name = "OperonDBS"
+version = "0.6.2"
 description = "Operon the Database System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"
 authors = [
     { name = "hyli360", email = "lihuanyu2003@gmail.com" }
@@ -12,6 +12,8 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -26,14 +28,18 @@ license-files = ["LICENSE"]
 dependencies = [
     "aiohttp>=3.9",
     "biopython>=1.85",
-    "Cython>=3.0",
     "PyYAML>=6.0",
     "questionary>=2.1",
     "requests>=2.32",
+    "textual>=8.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/HYLi360/Operon"
+Issues = "https://github.com/HYLi360/Operon/issues"
+
 [project.optional-dependencies]
-test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "setuptools>=77", "textual>=8.0"]
+test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "setuptools>=77", "textual>=8.0", "cython>=3.0"]
 build = [
     "cx-Freeze>=8.4",
     "myst-parser>=4.0,<5",
@@ -41,9 +47,9 @@ build = [
     "Sphinx>=7.4,<9",
     "sphinx-rtd-theme>=3.0,<4",
     "tomli>=2.0; python_version < '3.11'",
+    "cython>=3.0",
 ]
 remote = ["paramiko>=3.4"]
-tui = ["textual>=8.0"]
 docs = [
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
@@ -52,6 +58,7 @@ docs = [
 dev = [
     "coverage>=7.0",
     "cx-Freeze>=8.4",
+    "cython>=3.0",
     "pytest-cov>=7.0",
     "pytest>=8.0",
     "paramiko>=3.4",
@@ -67,6 +74,9 @@ operon = "operon.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["operon*"]
+
+[tool.setuptools.package-data]
+"operon.tui" = ["*.tcss"]
 
 [tool.cxfreeze]
 executables = [

@@ -797,7 +797,7 @@ def test_tui_missing_textual_hint(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert main(["tui"]) == 2
-    assert "pip install 'operon[tui]'" in capsys.readouterr().err
+    assert "pip install 'OperonDBS[tui]'" in capsys.readouterr().err
 
 
 def test_tui_without_project_returns_2(tmp_path: Path, capsys) -> None:

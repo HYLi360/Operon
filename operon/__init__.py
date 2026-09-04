@@ -3,6 +3,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("operon")
+    __version__ = version("OperonDBS")
 except PackageNotFoundError:  # Direct use from an uninstalled source checkout.
     __version__ = "0+unknown"

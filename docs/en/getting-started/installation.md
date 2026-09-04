@@ -21,6 +21,24 @@ the controller platform. SSH direct execution still requires util-linux
 not prevent a Mac from acting as the controller. Signed or notarized macOS
 standalone bundles are not currently published.
 
+## Install from PyPI
+
+The distribution is named `OperonDBS`; the imported package and command are
+both named `operon`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install OperonDBS
+
+# Optional SSH/SFTP and terminal UI features
+python -m pip install 'OperonDBS[remote,tui]'
+```
+
+Published wheels include the compiled QC parser. PyPI installation does not
+use cx_Freeze; that tool is only needed for the separate standalone
+application directory.
+
 ## Install from the repository
 
 Run the following commands from the repository root:
@@ -41,7 +59,7 @@ Verify the installation:
 
 ```bash
 operon --version
-# Expected: operon 0.6.1
+# Expected: operon 0.6.2
 
 operon --help
 ```

@@ -23,7 +23,7 @@ remotes:
 Install the optional dependency:
 
 ```bash
-pip install 'operon[remote]'
+pip install 'OperonDBS[remote]'
 ```
 
 List remotes and test connectivity:
