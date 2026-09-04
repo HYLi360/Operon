@@ -28,7 +28,7 @@ jobs:
       - run: python -m pip install --upgrade build twine
       - run: python -m build --sdist
       - run: python -m twine check dist/*
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: python-package-sdist
           path: dist/*.tar.gz
@@ -65,7 +65,7 @@ jobs:
           CIBW_TEST_COMMAND: >-
             python -c "import operon; import operon.qc_module._parsers;
             print(operon.__version__)" && operon --help
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: python-package-wheel-${{ matrix.artifact }}
           path: wheelhouse/*.whl
@@ -80,7 +80,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           pattern: python-package-*
           path: dist/
