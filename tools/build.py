@@ -42,7 +42,7 @@ except ModuleNotFoundError:  # packaging normally ships with pip
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 DEFAULT_RELEASE_ROOT = ROOT / "build" / "release"
-DEFAULT_BUNDLED_EXTRAS = ("remote", "docs")
+DEFAULT_BUNDLED_EXTRAS = ("docs",)
 
 _LICENSE_FILE_RE = re.compile(
     r"^(licen[cs]e|copying|notice)(\..*)?$",

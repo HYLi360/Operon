@@ -10,14 +10,8 @@ workflow 溯源记录（`workflow_runs`）及语义与等价命令完全一致�
 
 ## 安装
 
-TUI 是基于 [Textual](https://textual.textualize.io/) 的可选功能。安装对应 extra：
-
-```bash
-pip install 'OperonDBS[tui]'
-```
-
-冻结的独立构建版本不打包 Textual；在该版本中 `operon tui` 会打印上述安装提示
-并以退出码 2 结束。
+TUI 基于 [Textual](https://textual.textualize.io/)，包含在标准 `OperonDBS` 安装与
+冻结的独立构建版本中。
 
 ## 用法
 

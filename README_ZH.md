@@ -18,8 +18,8 @@
 ## 依赖
 
 - Python 3.10 及以上版本
-- 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython` 与 `questionary`；内置 QC 加速扩展在构建软件包时编译
-- 可选 extras：`test`（pytest）、`remote`（Paramiko）、`build`（cx_Freeze 与远程功能）、`dev`（全部开发/构建依赖）
+- 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython`、`Paramiko`、`Textual` 与 `questionary`；内置 QC 加速扩展在构建软件包时编译
+- 可选 extras：`test`（pytest 与 Cython）、`build`（cx_Freeze、Cython 与文档工具）、`docs`（文档工具）和 `dev`（全部开发/构建依赖）
 
 ## 安装
 
@@ -28,9 +28,6 @@
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install OperonDBS
-
-# 按需增加 SSH/SFTP 远程存算与终端界面
-python -m pip install 'OperonDBS[remote,tui]'
 ```
 
 开发仓库的可编辑安装应在仓库根目录执行：

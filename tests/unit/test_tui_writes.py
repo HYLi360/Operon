@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,20 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         if loop.time() > deadline:
             states = [worker.state.name for worker in app.workers]
             raise TimeoutError(f"workers did not finish within {timeout}s: {states}")
+        await asyncio.sleep(0.05)
+
+
+async def _wait_until(
+    predicate: Callable[[], bool],
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
+) -> None:
+    """Wait for an observable UI result after a thread worker completes."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() > deadline:
+            raise TimeoutError(f"UI did not {description} within {timeout}s")
         await asyncio.sleep(0.05)
 
 
@@ -577,8 +592,11 @@ def test_ingest_modal_end_to_end(project: Project) -> None:
             assert "operon ingest" in _static_text(modal.query_one("#modal-command", Static))
             await pilot.click("#confirm")
             await pilot.pause()
+            await _wait_until(
+                lambda: not isinstance(app.screen, IngestModal),
+                "dismiss the ingest modal",
+            )
             await _settled(app)
-            await pilot.pause()
             assert not isinstance(app.screen, IngestModal)
             assert table.row_count == before + 1
 
@@ -613,8 +631,13 @@ def test_ingest_conflict_stays_open_without_writing(project: Project) -> None:
             await pilot.pause()
             await pilot.click("#confirm")
             await pilot.pause()
+            await _wait_until(
+                lambda: "sha256" in _static_text(
+                    modal.query_one("#modal-error", Static)
+                ),
+                "show the ingest conflict",
+            )
             await _settled(app)
-            await pilot.pause()
             assert isinstance(app.screen, IngestModal)
             error_text = _static_text(modal.query_one("#modal-error", Static))
             assert "sha256" in error_text

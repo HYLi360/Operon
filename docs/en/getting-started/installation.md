@@ -30,14 +30,12 @@ both named `operon`:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install OperonDBS
-
-# Optional SSH/SFTP and terminal UI features
-python -m pip install 'OperonDBS[remote,tui]'
 ```
 
-Published wheels include the compiled QC parser. PyPI installation does not
-use cx_Freeze; that tool is only needed for the separate standalone
-application directory.
+Published wheels include the compiled QC parser. SSH/SFTP support and the TUI
+are included in the standard installation. PyPI installation does not use
+cx_Freeze; that tool is only needed for the separate standalone application
+directory.
 
 ## Install from the repository
 
@@ -47,12 +45,6 @@ Run the following commands from the repository root:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-```
-
-Install the SSH/SFTP extra when remote storage or execution is required:
-
-```bash
-python -m pip install -e '.[remote]'
 ```
 
 Verify the installation:

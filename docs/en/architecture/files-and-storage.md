@@ -25,7 +25,7 @@ The `remotes:` section of `project.yaml` can configure one or more SFTP remote m
 - After `pull` restores a locally missing file, `files.status` returns to `CHECKSUM_VERIFIED`, and this change is written to `changes` just like the status changes from `verify`/`evict`;
 - `ingest --source` also directly accepts `sftp://[user@]host[:port]/path` and `remote://<name>/<path>`; the latter must exist in the remote manifest and is identity-checked first, while the former is downloaded and assigned a fresh identity by ingest, then follows exactly the same archiving flow as a local file.
 
-paramiko is an optional dependency (`pip install 'OperonDBS[remote]'`), imported lazily in code; core dependencies and local functionality are unaffected. The cx_Freeze `build` extra and release packages include paramiko.
+Paramiko is a core runtime dependency but remains lazily imported, so local-only commands do not initialize the SSH stack. The cx_Freeze release packages include it as well.
 
 ## Local control plane and remote data plane
 

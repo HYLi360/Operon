@@ -28,7 +28,7 @@ def collected(tmp_path_factory):
     application_build.collect_licenses(
         ROOT / "pyproject.toml",
         output,
-        extras=("remote",),
+        extras=(),
     )
     return output
 
@@ -63,7 +63,7 @@ def test_transitive_dependencies_are_included(collected):
 
 
 def test_release_license_scope_includes_rendered_documentation():
-    assert application_build.DEFAULT_BUNDLED_EXTRAS == ("remote", "docs")
+    assert application_build.DEFAULT_BUNDLED_EXTRAS == ("docs",)
 
 
 def test_license_files_are_copied(collected):
@@ -152,6 +152,16 @@ def test_build_extra_contains_documentation_toolchain():
     requirements = project["optional-dependencies"]["build"]
     for package in ("Sphinx", "myst-parser", "sphinx-rtd-theme"):
         assert any(requirement.startswith(package) for requirement in requirements)
+
+
+def test_cython_is_available_to_build_and_test_tooling():
+    project = application_build._load_pyproject()["project"]
+    optional = project["optional-dependencies"]
+    for extra in ("build", "test", "dev"):
+        assert any(
+            requirement.lower().startswith("cython>=3.0")
+            for requirement in optional[extra]
+        )
 
 
 def test_python_package_build_is_independent_of_cxfreeze():

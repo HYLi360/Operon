@@ -20,11 +20,7 @@ remotes:
     insecure_accept_unknown_host: false
 ```
 
-Install the optional dependency:
-
-```bash
-pip install 'OperonDBS[remote]'
-```
+Paramiko is included in the standard `OperonDBS` installation.
 
 List remotes and test connectivity:
 

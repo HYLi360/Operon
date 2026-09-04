@@ -11,9 +11,10 @@ python -m pip install -e '.[build]'
 python tools/build.py
 ```
 
-`build` extra 包含 cx_Freeze、Sphinx/MyST/RTD 主题、远程功能所需的 Paramiko，以及
-Python 3.10 读取 `pyproject.toml` 所需的条件依赖 `tomli`；Python 3.11 及以上直接使用
-标准库 `tomllib`，不会安装 `tomli`。因此 Python 3.10 和 3.11+ 使用相同的构建命令。
+`build` extra 包含 cx_Freeze、Cython、Sphinx/MyST/RTD 主题，以及 Python 3.10 读取
+`pyproject.toml` 所需的条件依赖 `tomli`；Python 3.11 及以上直接使用标准库
+`tomllib`，不会安装 `tomli`。Paramiko 与 Textual 是标准运行时依赖，因此安装该
+extra 时也会存在。Python 3.10 和 3.11+ 使用相同的构建命令。
 
 `tools/build.py` 依次重建必需的 Cython parser、严格构建双语 Sphinx HTML、解析
 `pyproject.toml` 中唯一的应用版本号、收集冻结运行时依赖与渲染文档资产的许可证、

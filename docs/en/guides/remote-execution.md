@@ -63,7 +63,7 @@ Prerequisites and behavior:
   before mapping, so macOS filesystem aliases such as `/var` and
   `/private/var` identify the same project root without weakening symlink
   escape checks. The SSH compute-side requirements below are unchanged.
-- Install the optional dependency: `pip install 'OperonDBS[remote]'` or `pip install paramiko`.
+- Paramiko is included in the standard `OperonDBS` installation.
 - With `execution.ssh.scheduler: slurm`, commands are submitted and polled on the remote host with sbatch/squeue. Otherwise commands run directly on the host and stream stdout/stderr back to local log files.
 - Remote Slurm captures the execution environment inside the job, so provenance records the compute node rather than the SSH login node. Probe failure does not affect the job result.
 - For a typical login-node-to-compute-node setup, configure the login node as `host` and set `scheduler: slurm`. Operon runs `sbatch` on the login node, and Slurm dispatches work. The login and compute nodes must see the same `remote_root`. A second SSH hop to a compute node is not currently supported.

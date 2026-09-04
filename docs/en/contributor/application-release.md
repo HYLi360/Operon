@@ -13,7 +13,7 @@ python -m pip install -e '.[build]'
 python tools/build.py
 ```
 
-The `build` extra contains cx_Freeze, Sphinx/MyST/the RTD theme, Paramiko for remote functionality, and the conditional dependency `tomli` needed by Python 3.10 to read `pyproject.toml`; Python 3.11 and above use the standard-library `tomllib` directly and do not install `tomli`. Python 3.10 and 3.11+ therefore share the same build command.
+The `build` extra contains cx_Freeze, Cython, Sphinx/MyST/the RTD theme, and the conditional dependency `tomli` needed by Python 3.10 to read `pyproject.toml`; Python 3.11 and above use the standard-library `tomllib` directly and do not install `tomli`. Paramiko and Textual are standard runtime dependencies and are therefore also present when this extra is installed. Python 3.10 and 3.11+ share the same build command.
 
 `tools/build.py`, in order: rebuilds the required Cython parsers, strictly builds the bilingual Sphinx HTML site, resolves the single application version from `pyproject.toml`, collects licenses for frozen runtime dependencies and rendered documentation assets, generates the corresponding source sdist, invokes cx_Freeze, and assembles and verifies the final directory. If any step fails, the target version is not published; an existing same-version directory refuses to be overwritten by default, and only an explicit `--force` replaces it. Do not invoke cx_Freeze directly for an official release package, because that skips documentation validation, licenses, corresponding source, and the final smoke test.
 

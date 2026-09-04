@@ -10,8 +10,7 @@ operon remotes
 - 输出表格：`name` / `type` / `address` / `root` / `files`（远端清单条目数）/
   `status` / `error`。
 - 任一远程端有 `error` 时返回退出码 1。
-- 需要安装可选依赖 `OperonDBS[remote]`（paramiko）；未安装时只在使用 SSH/SFTP
-  功能时报配置错误。
+- 标准 `OperonDBS` 安装已包含 paramiko；SSH/SFTP 命令使用时才会惰性导入。
 - 默认拒绝未知 SSH 主机密钥；通过 `known_hosts` 或 `host_key_sha256` 建立信任。
 
 ## push

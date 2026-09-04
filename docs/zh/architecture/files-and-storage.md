@@ -37,8 +37,8 @@
   `remote://<name>/<path>`；后者必须存在于远端清单并先校验身份，前者下载后由
   ingest 计算新身份，再走与本地文件完全相同的归档流程。
 
-paramiko 是可选依赖（`pip install 'OperonDBS[remote]'`），代码内惰性导入；核心依赖与
-本地功能不受影响。cx_Freeze 的 `build` extra 和发布包包含 paramiko。
+paramiko 是核心运行时依赖，但仍在代码中惰性导入，因此仅本地命令不会初始化 SSH
+组件；cx_Freeze 发布包同样包含它。
 
 ### 7.2 本地控制面与远程数据面
 

@@ -30,13 +30,10 @@ PyPI 分发名为 `OperonDBS`，导入包名与命令名仍为 `operon`：
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install OperonDBS
-
-# 按需安装 SSH/SFTP 与终端界面功能
-python -m pip install 'OperonDBS[remote,tui]'
 ```
 
-发布的 wheel 已包含编译后的 QC parser。PyPI 安装不使用 cx_Freeze；cx_Freeze 只用于
-另一条独立应用目录发布链路。
+发布的 wheel 已包含编译后的 QC parser，标准安装也已包含 SSH/SFTP 与 TUI 功能。
+PyPI 安装不使用 cx_Freeze；cx_Freeze 只用于另一条独立应用目录发布链路。
 
 ## 从仓库安装
 
@@ -47,9 +44,6 @@ python -m pip install 'OperonDBS[remote,tui]'
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-
-# 需要 SSH/SFTP 远程存储或计算时
-python -m pip install -e '.[remote]'
 ```
 
 验证安装：

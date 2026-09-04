@@ -12,15 +12,8 @@ and panel reload, or an inline error message (the dialog stays open).
 
 ## Installation
 
-The TUI is an optional feature built on
-[Textual](https://textual.textualize.io/). Install the extra:
-
-```bash
-pip install 'OperonDBS[tui]'
-```
-
-The frozen standalone build does not bundle Textual; there `operon tui`
-prints the install hint above and exits with code 2.
+The TUI is built on [Textual](https://textual.textualize.io/) and is included
+in the standard `OperonDBS` installation and the frozen standalone build.
 
 ## Usage
 

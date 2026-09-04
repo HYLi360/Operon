@@ -9,8 +9,7 @@ The mirror inventory lives on the remote itself in `operon-manifest.json`.
 The local SQLite `file_locations` table is a rebuildable residency cache used
 by the local control plane; file identity remains in the `files` table.
 
-Paramiko is an optional dependency (`pip install 'OperonDBS[remote]'`) and is
-imported lazily; core archiving works without it.
+Paramiko is imported lazily so local commands do not initialize the SSH stack.
 """
 
 from __future__ import annotations
@@ -49,14 +48,14 @@ REMOTE_MANIFEST_LOCK_NAME = ".operon-manifest.lock"
 
 
 def import_paramiko() -> Any:
-    """Import Paramiko lazily so it stays an optional dependency."""
+    """Import Paramiko lazily so non-remote commands avoid SSH setup."""
     try:
         import paramiko
         return paramiko
     except ImportError as exc:
         raise ConfigError(
-            "remote storage / SSH execution requires Paramiko; "
-            "install it with `pip install 'OperonDBS[remote]'` or `pip install paramiko`"
+            "the OperonDBS installation is missing the required Paramiko package; "
+            "reinstall OperonDBS"
         ) from exc
 
 

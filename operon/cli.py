@@ -548,7 +548,7 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser(
         "tui",
-        help="open the read-only terminal UI (requires the 'tui' extra: pip install 'OperonDBS[tui]')",
+        help="open the terminal UI",
     )
 
     return parser
@@ -1847,16 +1847,15 @@ def _cmd_set_state(args: argparse.Namespace, db: Database) -> int:
 def _cmd_tui(args: argparse.Namespace) -> int:
     """Launch the read-only TUI without opening a writable database.
 
-    The app manages its own short-lived read-only connections.  ``textual``
-    is an optional dependency, so it is imported lazily here and nowhere in
-    the normal runtime path.
+    The app manages its own short-lived database connections.  ``textual``
+    is imported lazily so non-TUI commands do not initialize the UI stack.
     """
     try:
         from operon.tui.app import OperonApp
     except ModuleNotFoundError:
         print(
-            "error: the TUI requires the 'textual' package; "
-            "install it with: pip install 'OperonDBS[tui]'",
+            "error: the OperonDBS installation is missing the required "
+            "'textual' package; reinstall OperonDBS",
             file=sys.stderr,
         )
         return 2

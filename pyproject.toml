@@ -29,6 +29,7 @@ dependencies = [
     "aiohttp>=3.9",
     "biopython>=1.85",
     "PyYAML>=6.0",
+    "paramiko>=3.4",
     "questionary>=2.1",
     "requests>=2.32",
     "textual>=8.0",
@@ -43,13 +44,11 @@ test = ["coverage>=7.0", "paramiko>=3.4", "pytest-cov>=7.0", "pytest>=8.0", "set
 build = [
     "cx-Freeze>=8.4",
     "myst-parser>=4.0,<5",
-    "paramiko>=3.4",
     "Sphinx>=7.4,<9",
     "sphinx-rtd-theme>=3.0,<4",
     "tomli>=2.0; python_version < '3.11'",
     "cython>=3.0",
 ]
-remote = ["paramiko>=3.4"]
 docs = [
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
@@ -61,8 +60,6 @@ dev = [
     "cython>=3.0",
     "pytest-cov>=7.0",
     "pytest>=8.0",
-    "paramiko>=3.4",
-    "textual>=8.0",
     "tomli>=2.0; python_version < '3.11'",
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
@@ -84,13 +81,13 @@ executables = [
 ]
 
 [tool.cxfreeze.build_exe]
-packages = ["operon", "email", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth"]
+packages = ["operon", "email", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth", "textual"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["README_ZH.md", "share/doc/operon/README_ZH.md"],
     ["LICENSE", "LICENSE"],
 ]
-excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov"]
+excludes = ["pytest", "setuptools", "unittest", "coverage", "pytest-cov", "cython", "myst-parser"]
 optimize = 1
 
 [tool.pytest.ini_options]

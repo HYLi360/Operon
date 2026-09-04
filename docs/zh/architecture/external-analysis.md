@@ -31,7 +31,7 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
   `poll_interval` 轮询 `squeue`，作业消失后读取脚本写入的 `<run_id>.exitcode`
   退出码文件（失败时回退 `sacct`）；前提是项目目录位于与计算节点共享的
   文件系统上；
-- `ssh`：通过 paramiko（可选依赖 `OperonDBS[remote]`，惰性导入）在 SSH 远程主机
+- `ssh`：通过核心运行时依赖 paramiko（惰性导入）在 SSH 远程主机
   （HPC 头节点/云虚拟机）上执行；`execution.ssh.scheduler: slurm` 时改为在远端
   走 sbatch/squeue。支持 `remote_root` 路径映射（空表示共享文件系统）；输入
   文件经 SFTP 上传（内容一致跳过，严格 SHA-256/目录树哈希；不同内容拒绝覆盖）；

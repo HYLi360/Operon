@@ -20,8 +20,8 @@ A Python-based, **file-based database** designed for large-scale genomic data, u
 ## Dependencies
 
 - Python 3.10+
-- Runtime dependencies: `PyYAML`, `requests`, `aiohttp`, `Biopython`, and `questionary`; the built-in QC acceleration extension is compiled when the package is built
-- Optional extras: `test` (pytest), `remote` (Paramiko), `build` (cx_Freeze and remote features), `dev` (all development/build dependencies)
+- Runtime dependencies: `PyYAML`, `requests`, `aiohttp`, `Biopython`, `Paramiko`, `Textual`, and `questionary`; the built-in QC acceleration extension is compiled when the package is built
+- Optional extras: `test` (pytest and Cython), `build` (cx_Freeze, Cython, and documentation tooling), `docs` (documentation tooling), and `dev` (all development/build dependencies)
 
 ## Install
 
@@ -30,9 +30,6 @@ A Python-based, **file-based database** designed for large-scale genomic data, u
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install OperonDBS
-
-# Add SSH/SFTP remote execution and the terminal UI when needed
-python -m pip install 'OperonDBS[remote,tui]'
 ```
 
 For an editable checkout, run from the repository root:
