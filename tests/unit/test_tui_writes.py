@@ -86,6 +86,16 @@ async def _wait_until(
         await asyncio.sleep(0.05)
 
 
+async def _click(pilot, selector: str) -> None:
+    """Click a widget, failing loudly when the click does not land on it.
+
+    ``Pilot.click`` silently returns False when the target is clipped or
+    obscured (e.g. a modal button pushed out of the box), which otherwise
+    surfaces much later as a confusing timeout.
+    """
+    assert await pilot.click(selector), f"click did not land on {selector}"
+
+
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
     stack = list(tree.root.children)
     while stack:
@@ -413,7 +423,7 @@ def test_decisions_screen_and_curate_end_to_end(project: Project) -> None:
             await pilot.pause()
             assert "ACCEPT_WITH_WARNING" in _static_text(modal.query_one("#curate-preview", Static))
             assert "contiguity acceptable" in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -445,7 +455,7 @@ def test_curate_empty_reason_stays_open_without_writing(project: Project) -> Non
             modal = app.screen
             assert isinstance(modal, CurateModal)
 
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             assert isinstance(app.screen, CurateModal)
@@ -476,7 +486,7 @@ def test_evaluate_modal_end_to_end(project: Project) -> None:
             modal = app.screen
             assert isinstance(modal, EvaluateModal)
             assert "operon evaluate" in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -522,7 +532,7 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             assert "operon retire ASM_000001" in _static_text(
                 modal.query_one("#modal-command", Static)
             )
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -548,7 +558,7 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             assert "RESTORE" in _static_text(modal.query_one("#lifecycle-plan", Static))
             modal.query_one("#lifecycle-reason", Input).value = "restore from the TUI test"
             await pilot.pause()
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -566,7 +576,13 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
 
 
 def test_ingest_modal_end_to_end(project: Project) -> None:
-    source = project.root / "ui_ingest.fasta"
+    # A deep source path makes the equivalent-command line wrap, which used to
+    # push the Confirm button outside the modal's max-height on CI runners
+    # with long temp paths (macOS), where pilot.click silently missed it.
+    source = project.root / (
+        "nested_" + "d" * 60 + "/deeper_" + "d" * 60 + "/ui_ingest.fasta"
+    )
+    source.parent.mkdir(parents=True)
     source.write_text(">ui_ctg\nACGTACGT\n", encoding="utf-8")
 
     async def scenario() -> None:
@@ -590,7 +606,7 @@ def test_ingest_modal_end_to_end(project: Project) -> None:
             modal.query_one("#ingest-role", Input).value = "ui_extra_fasta"
             await pilot.pause()
             assert "operon ingest" in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _wait_until(
                 lambda: not isinstance(app.screen, IngestModal),
@@ -606,7 +622,10 @@ def test_ingest_modal_end_to_end(project: Project) -> None:
 
 
 def test_ingest_conflict_stays_open_without_writing(project: Project) -> None:
-    source = project.root / "conflict.fasta"
+    source = project.root / (
+        "nested_" + "d" * 60 + "/deeper_" + "d" * 60 + "/conflict.fasta"
+    )
+    source.parent.mkdir(parents=True)
     source.write_text(">different\nTTTTCCCCAAAAGGGG\n", encoding="utf-8")
 
     async def scenario() -> None:
@@ -629,7 +648,7 @@ def test_ingest_conflict_stays_open_without_writing(project: Project) -> None:
             modal.query_one("#ingest-entity-id", Input).value = "ASM_000001"
             modal.query_one("#ingest-role", Input).value = "genome_fasta"
             await pilot.pause()
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _wait_until(
                 lambda: "sha256" in _static_text(
@@ -677,7 +696,7 @@ def test_qc_modal_single_file_with_progress(project: Project) -> None:
             assert f"operon qc --file-id {file_id}" in _static_text(
                 modal.query_one("#modal-command", Static)
             )
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -729,7 +748,7 @@ def test_verify_modal_end_to_end(project: Project) -> None:
             modal = app.screen
             assert isinstance(modal, VerifyModal)
             assert file_id in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -759,7 +778,7 @@ def test_ingest_modal_inline_validation(project: Project) -> None:
             modal.query_one("#ingest-entity-id", Input).value = ""
             modal.query_one("#ingest-role", Input).value = ""
             await pilot.pause()
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             assert isinstance(app.screen, IngestModal)
             assert "source is required" in _static_text(modal.query_one("#modal-error", Static))
@@ -767,7 +786,7 @@ def test_ingest_modal_inline_validation(project: Project) -> None:
             modal.query_one("#ingest-source", Input).value = "/tmp/whatever.fasta"
             await pilot.pause()
             await asyncio.sleep(0.3)  # outlast the Button -active debounce window
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             assert isinstance(app.screen, IngestModal)
             assert "entity id is required" in _static_text(
@@ -778,7 +797,7 @@ def test_ingest_modal_inline_validation(project: Project) -> None:
             modal.query_one("#ingest-role", Input).value = "whatever"
             await pilot.pause()
             await asyncio.sleep(0.3)  # outlast the Button -active debounce window
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             assert isinstance(app.screen, IngestModal)
@@ -815,7 +834,7 @@ def test_evaluate_modal_selected_entity_scope(project: Project) -> None:
             await pilot.pause()
             command = _static_text(modal.query_one("#modal-command", Static))
             assert "--entity-type assembly --entity-id ASM_000001" in command
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()

@@ -93,6 +93,16 @@ def _profile_doc(project: Project, name: str = "assembly_production_v1") -> dict
     return data.get_profile_document(project, name)
 
 
+async def _click(pilot, selector: str) -> None:
+    """Click a widget, failing loudly when the click does not land on it.
+
+    ``Pilot.click`` silently returns False when the target is clipped or
+    obscured (e.g. a modal button pushed out of the box), which otherwise
+    surfaces much later as a confusing timeout.
+    """
+    assert await pilot.click(selector), f"click did not land on {selector}"
+
+
 # ---------------------------------------------------------------------------
 # Data layer additions (read-only)
 # ---------------------------------------------------------------------------
@@ -451,12 +461,12 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
                 if r.query_one(".rule-metric", Input).value == "contig_n50"
             )
             row.query_one(".rule-value", Input).value = "2500"
-            await pilot.click("#profile-save")
+            await _click(pilot, "#profile-save")
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, ProfileSaveModal)
             assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -482,11 +492,11 @@ def test_config_screen_save_error_stays_inline(project: Project) -> None:
             _select_profile(panel, "reads_qc_v1")
             await pilot.pause()
             panel._rule_rows("required")[1].query_one(".rule-metric", Input).value = ""
-            await pilot.click("#profile-save")
+            await _click(pilot, "#profile-save")
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, ProfileSaveModal)
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             assert isinstance(app.screen, ProfileSaveModal)
@@ -505,23 +515,23 @@ def test_config_screen_history_view_and_restore(project: Project) -> None:
             panel = await _open_config(app, pilot)
             _select_profile(panel, "assembly_production_v1")
             await pilot.pause()
-            await pilot.click("#profile-history")
+            await _click(pilot, "#profile-history")
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, HistoryModal)
             table = modal.query_one("#history-table", DataTable)
             assert table.row_count == 1
 
-            await pilot.click("#view")
+            await _click(pilot, "#view")
             await pilot.pause()
             view = app.screen
             assert isinstance(view, SnapshotViewModal)
             assert "total_length" in _static_text(view.query_one("#snapshot-view-scroll Static"))
-            await pilot.click("#cancel")
+            await _click(pilot, "#cancel")
             await pilot.pause()
             assert isinstance(app.screen, HistoryModal)
 
-            await pilot.click("#restore")
+            await _click(pilot, "#restore")
             await pilot.pause()
             assert not isinstance(app.screen, HistoryModal)
             heading = _static_text(panel.query_one("#profile-heading", Static))
@@ -557,12 +567,12 @@ def test_config_screen_recipe_save_end_to_end(project: Project) -> None:
             panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
             await pilot.pause()
             await pilot.pause()
-            await pilot.click("#recipe-save")
+            await _click(pilot, "#recipe-save")
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, RecipeSaveModal)
             assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
-            await pilot.click("#confirm")
+            await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -589,7 +599,7 @@ def test_config_screen_tools_check(project: Project, tmp_path: Path) -> None:
             tools_table = panel.query_one("#tools-table", DataTable)
             assert tools_table.row_count == 2
 
-            await pilot.click("#tools-check")
+            await _click(pilot, "#tools-check")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()

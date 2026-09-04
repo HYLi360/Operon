@@ -65,6 +65,16 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
+async def _click(pilot, selector: str) -> None:
+    """Click a widget, failing loudly when the click does not land on it.
+
+    ``Pilot.click`` silently returns False when the target is clipped or
+    obscured (e.g. a modal button pushed out of the box), which otherwise
+    surfaces much later as a confusing timeout.
+    """
+    assert await pilot.click(selector), f"click did not land on {selector}"
+
+
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
     stack = list(tree.root.children)
     while stack:
@@ -692,6 +702,8 @@ def test_empty_project_and_app_actions(tmp_path: Path) -> None:
             app.action_switch_screen("bogus")
             assert app.query_one("#main", ContentSwitcher).current == "home"
 
+            # A click on the ListItem lands on its child Label, so the strict
+            # _click helper does not apply here.
             await pilot.click("#nav-files")
             await pilot.pause()
             await _settled(app)
