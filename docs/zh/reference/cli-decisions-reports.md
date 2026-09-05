@@ -96,8 +96,8 @@ adopt 回注册输出侧 manifest。
 - 产物物化到 `analysis/adopted/<entity_id>/`，不进入不可变的 `raw/` 归档。
 - 继承 ingest 的幂等/冲突不变量：同实体同 role 相同字节幂等复用同一 `FIL_`，
   不同字节抛 `ConflictError`。
-- 所有 `derived_from` 的 file_id 必须已在库中，且目标实体必须处于活动状态；整批先
-  校验后落库，任一条目失败则整批不注册（原子）。
+- 所有 `derived_from` 的 file_id 必须已在库中，且目标实体必须处于活动状态。整批预检查路径、格式和内容冲突（包括批内相同实体/role 的两个条目）。收养目标已被不同内容占用时直接拒绝，不搬迁或隔离既有文件。
+- manifest、谱系、实体状态和工作流记录在同一事务中提交。提交前的失败（包括可处理的中断）会回滚这些记录，且仅删除本批新建的归档目标，保留既有制品。完成状态的 JSONL 记录在提交后才写出。操作系统级崩溃仍可能留下待恢复的未注册文件。
 - 谱系边写入 `file_lineage(derived_file_id, input_file_id, workflow_run_id,
   created_at)`；重复 adopt 是 no-op。
 - 每次 adopt 写入一行 `workflow_runs`（step 为 `adopt`，`execution_details` 含

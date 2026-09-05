@@ -325,6 +325,7 @@ operon adopt --from-manifest adopt_manifest.json
 - 每条必须含 `path`、`entity_type`、`entity_id`、`role`、`derived_from`（至少一个已
   注册的 file_id）；相对路径按项目根解析。
 - 产物物化到 `analysis/adopted/<entity_id>/`；同实体同 role 相同字节幂等复用，不同
-  字节报 `ConflictError`；任一条目不合法（如 `derived_from` 未注册、实体已退役）则
-  整批不注册。
+  字节报 `ConflictError`。整批预检查后在同一事务中注册；提交前失败会回滚元数据、谱系、
+  状态和工作流记录，并删除新建制品，保留既有文件。目标被冲突内容占用时，应先显式处理
+  冲突再重试。完成状态的 JSONL 记录仅在提交后写出。
 - role 由工作流自由命名；谱系边写入 `file_lineage` 表，可用 `operon query` 审计。

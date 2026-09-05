@@ -14,6 +14,7 @@ from operon.errors import ConflictError, ValidationError
 from operon.files import ingest_file
 from operon.lineage import adopt_files, load_adopt_manifest
 from operon.tools import Recipe, candidate_files
+from operon import lineage
 
 
 @pytest.fixture
@@ -118,6 +119,69 @@ def test_adopt_unknown_derived_from_aborts_whole_batch(project_db, tmp_path):
         "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='adopt'").fetchone()["n"] == 0
 
 
+@pytest.mark.parametrize("existing_conflict", [False, True])
+def test_adopt_content_conflicts_abort_before_materializing(project_db, tmp_path, existing_conflict):
+    project, db, source = project_db
+    first = _item(_write_derived(tmp_path, "first.tsv"), source, role="batch_a")
+    second = _item(_write_derived(tmp_path, "second.tsv", "different"), source, role="batch_a")
+    if existing_conflict:
+        adopt_files(db, project, items=[first])
+        first = _item(_write_derived(tmp_path, "new.tsv"), source, role="new_role")
+    before = list(db.conn.iterdump())
+    log = (project.logs_root / "workflow.jsonl").read_bytes()
+    with pytest.raises(ConflictError):
+        adopt_files(db, project, items=[first, second])
+    assert list(db.conn.iterdump()) == before
+    assert (project.logs_root / "workflow.jsonl").read_bytes() == log
+    expected = "batch_a" if existing_conflict else None
+    artifacts = list((project.analysis_root / "adopted").rglob("*.tsv"))
+    assert [path.name for path in artifacts] == ([f"ASM_000001.{expected}.tsv"] if expected else [])
+
+
+@pytest.mark.parametrize("failure", ["second_item", "batch_log", "interrupt"])
+def test_adopt_late_failure_rolls_back_files_state_lineage_and_logs(project_db, tmp_path, monkeypatch, failure):
+    project, db, source = project_db
+    existing = _item(_write_derived(tmp_path, "existing.tsv"), source, role="existing")
+    existing_record = adopt_files(db, project, items=[existing])[0]
+    first = _item(_write_derived(tmp_path, "first.tsv"), source, role="batch_a")
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    (directory / "data").write_text("directory bytes")
+    second = _item(directory, source, role="batch_b", format="directory")
+    before = list(db.conn.iterdump())
+    log = (project.logs_root / "workflow.jsonl").read_bytes()
+    ingest = lineage.ingest_file
+
+    def fail_ingest(*args, **kwargs):
+        result = ingest(*args, **kwargs)
+        if args[5] == "batch_b":
+            if failure == "interrupt":
+                raise KeyboardInterrupt()
+            raise OSError("late archive failure")
+        return result
+
+    if failure == "batch_log":
+        log_run = lineage.log_run
+
+        def fail_log(*args, **kwargs):
+            log_run(*args, **kwargs)
+            raise OSError("late batch log failure")
+
+        monkeypatch.setattr(lineage, "log_run", fail_log)
+    else:
+        monkeypatch.setattr(lineage, "ingest_file", fail_ingest)
+    with pytest.raises(KeyboardInterrupt if failure == "interrupt" else OSError):
+        adopt_files(db, project, items=[existing, first, second])
+    assert not db.conn.in_transaction
+    assert list(db.conn.iterdump()) == before
+    assert (project.logs_root / "workflow.jsonl").read_bytes() == log
+    assert (project.root / existing_record["relative_path"]).read_bytes() == Path(existing["path"]).read_bytes()
+    adopted = project.analysis_root / "adopted" / "ASM_000001"
+    assert sorted(path.name for path in adopted.iterdir()) == ["ASM_000001.existing.tsv"]
+    monkeypatch.undo()
+    assert len(adopt_files(db, project, items=[existing, first, second])) == 3
+
+
 def test_adopt_item_validation(project_db, tmp_path):
     project, db, source = project_db
     derived = _write_derived(tmp_path)
@@ -131,6 +195,22 @@ def test_adopt_item_validation(project_db, tmp_path):
         adopt_files(db, project, items=[_item(tmp_path / "missing.tsv", source)])
     with pytest.raises(ValidationError, match="must be a mapping"):
         adopt_files(db, project, items=[["not-a-mapping"]])
+
+
+def test_adopt_preserves_conflicting_unregistered_destination(project_db, tmp_path):
+    project, db, source = project_db
+    target = project.analysis_root / "adopted" / "ASM_000001" / "ASM_000001.derived.tsv"
+    target.parent.mkdir(parents=True)
+    target.write_text("preexisting bytes")
+    before = list(db.conn.iterdump())
+    with pytest.raises(ConflictError, match="occupied"):
+        adopt_files(db, project, items=[
+            _item(_write_derived(tmp_path, "first.tsv"), source, role="new_role"),
+            _item(_write_derived(tmp_path, "second.tsv"), source, role="derived"),
+        ])
+    assert target.read_text() == "preexisting bytes"
+    assert list(target.parent.iterdir()) == [target]
+    assert list(db.conn.iterdump()) == before
 
 
 def test_adopt_directory_artifact(project_db, tmp_path):

@@ -980,7 +980,7 @@ class Database:
                 self._conn.commit()
             else:
                 self._conn.execute(f"RELEASE SAVEPOINT {savepoint}")
-        except Exception:
+        except BaseException:
             if outermost:
                 self._conn.rollback()
             else:

@@ -67,6 +67,18 @@ def test_next_id_reserves_numbers_across_connections(db):
     assert second == "ORG_000002"
 
 
+def test_nested_transaction_interrupt_rolls_back_only_inner_savepoint(db):
+    with db.transaction():
+        db.conn.execute("INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000001','outer')")
+        with pytest.raises(KeyboardInterrupt):
+            with db.transaction():
+                db.conn.execute("INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000002','inner')")
+                raise KeyboardInterrupt()
+        assert db.entity_exists("organism", "ORG_000001")
+        assert not db.entity_exists("organism", "ORG_000002")
+    assert not db.conn.in_transaction
+
+
 def test_data_source_requires_source_type(db):
     with pytest.raises(ValidationError, match="source_type"):
         db.register_data_source({})

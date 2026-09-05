@@ -258,5 +258,5 @@ operon adopt --from-manifest adopt_manifest.json
 ```
 
 - Each item requires `path`, `entity_type`, `entity_id`, `role`, and `derived_from` (at least one already-registered file_id); relative paths resolve from the project root.
-- Artifacts are materialized under `analysis/adopted/<entity_id>/`; same entity and role with identical bytes is reused idempotently, different bytes raise `ConflictError`; if any item is invalid (e.g. an unregistered `derived_from` or a retired entity), nothing in the batch is registered.
+- Artifacts are materialized under `analysis/adopted/<entity_id>/`; same entity and role with identical bytes is reused idempotently, different bytes raise `ConflictError`. The whole batch is preflighted, then registered in one transaction. A failure before commit rolls back metadata, lineage, state and workflow rows and removes newly created artifacts; existing files are preserved. Resolve conflicting occupied targets explicitly before retrying. Completed JSONL records are written only after commit.
 - Roles are freely named by the workflow; lineage edges are written to the `file_lineage` table and can be audited with `operon query`.
