@@ -123,6 +123,10 @@ CREATE TABLE IF NOT EXISTS files (
     downloaded_at TEXT,
     status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS id_counters (
+    entity_type TEXT PRIMARY KEY,
+    next_number INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS local_file_verifications (
     file_id TEXT PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE,
     sha256 TEXT NOT NULL,
@@ -961,7 +965,11 @@ class Database:
         outermost = not self._conn.in_transaction
         savepoint: str | None = None
         if outermost:
-            self._conn.execute("BEGIN")
+            # Acquire the writer lock before any read in the transaction.  It
+            # prevents deferred read-to-write upgrades from racing with ID
+            # reservations and makes concurrent writers wait predictably for
+            # the configured busy timeout.
+            self._conn.execute("BEGIN IMMEDIATE")
         else:
             self._savepoint_counter += 1
             savepoint = f"operon_sp_{self._savepoint_counter}"
@@ -1181,7 +1189,8 @@ class Database:
             "AND name='effective_retired_entities'"
         ).fetchone() is not None
 
-    def next_id(self, entity_type: str) -> str:
+    @staticmethod
+    def _id_spec(entity_type: str) -> tuple[str, str | None, str | None]:
         if entity_type == "source":
             prefix = "SRC"
         elif entity_type in ENTITY_PREFIXES:
@@ -1191,11 +1200,16 @@ class Database:
         table = ENTITY_TABLES.get(entity_type)
         if entity_type == "source":
             table = "data_sources"
+        id_col = "source_id" if entity_type == "source" else ENTITY_ID_COLUMNS.get(entity_type)
+        return prefix, table, id_col
+
+    @staticmethod
+    def _max_id_number(conn: sqlite3.Connection, entity_type: str, prefix: str,
+                       table: str | None, id_col: str | None) -> int:
         max_n = 0
         if table:
-            id_col = "source_id" if entity_type == "source" else ENTITY_ID_COLUMNS[entity_type]
             try:
-                rows = self._conn.execute(f"SELECT {id_col} AS id FROM {table}").fetchall()
+                rows = conn.execute(f"SELECT {id_col} AS id FROM {table}").fetchall()
             except sqlite3.OperationalError:
                 rows = []
             for row in rows:
@@ -1205,14 +1219,57 @@ class Database:
         # Also scan files table for FIL.
         if entity_type == "file":
             try:
-                rows = self._conn.execute("SELECT file_id AS id FROM files").fetchall()
+                rows = conn.execute("SELECT file_id AS id FROM files").fetchall()
             except sqlite3.OperationalError:
                 rows = []
             for row in rows:
                 match = re.fullmatch(r"FIL_(\d+)", str(row["id"]))
                 if match:
                     max_n = max(max_n, int(match.group(1)))
-        return f"{prefix}_{max_n + 1:06d}"
+        return max_n
+
+    def _reserve_id(self, conn: sqlite3.Connection, entity_type: str, prefix: str,
+                    table: str | None, id_col: str | None, local_max: int = 0) -> str:
+        max_n = self._max_id_number(conn, entity_type, prefix, table, id_col)
+        row = conn.execute(
+            "SELECT next_number FROM id_counters WHERE entity_type=?", (entity_type,)
+        ).fetchone()
+        counter = int(row["next_number"]) if row is not None else 1
+        number = max(counter, max_n + 1, local_max + 1)
+        conn.execute(
+            "INSERT INTO id_counters(entity_type, next_number) VALUES(?, ?) "
+            "ON CONFLICT(entity_type) DO UPDATE SET next_number=excluded.next_number",
+            (entity_type, number + 1),
+        )
+        return f"{prefix}_{number:06d}"
+
+    def next_id(self, entity_type: str) -> str:
+        """Reserve and return a process-safe stable ID.
+
+        IDs are allocated from a SQLite counter under an immediate write lock.
+        A reservation may be consumed by a later failed insert, so gaps are
+        expected; uniqueness and recoverability are more important than
+        contiguous numbering.
+        """
+        prefix, table, id_col = self._id_spec(entity_type)
+        local_max = self._max_id_number(self._conn, entity_type, prefix, table, id_col)
+        if self._conn.in_transaction:
+            # Normal Database.transaction() blocks are already immediate, so
+            # reserve inside the caller's transaction and roll back the
+            # reservation together with its metadata writes.
+            return self._reserve_id(
+                self._conn, entity_type, prefix, table, id_col, local_max=local_max,
+            )
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            value = self._reserve_id(
+                self._conn, entity_type, prefix, table, id_col, local_max=local_max,
+            )
+            self._conn.commit()
+            return value
+        except BaseException:
+            self._conn.rollback()
+            raise
 
     def register_data_source(
             self,

@@ -56,6 +56,17 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
+def test_next_id_reserves_numbers_across_connections(db):
+    other = Database(db.path)
+    try:
+        first = db.next_id("organism")
+        second = other.next_id("organism")
+    finally:
+        other.close()
+    assert first == "ORG_000001"
+    assert second == "ORG_000002"
+
+
 def test_data_source_requires_source_type(db):
     with pytest.raises(ValidationError, match="source_type"):
         db.register_data_source({})
@@ -121,4 +132,3 @@ def test_metadata_columns_export_empty_and_metric_conservative_fallback(db):
 def test_missing_file_status_raises(db):
     with pytest.raises(EntityNotFoundError, match="does not exist"):
         db.set_file_status("FIL_999999", "REMOTE_ONLY", reason="x", actor="test")
-
