@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -120,7 +122,61 @@ def export_files(
         link_kind: str = "copy",
         include_qc: bool = True,
 ) -> dict[str, Any]:
-    """Materialize selected manifest files into ``output_dir``.
+    """Materialize an export in a recoverable workspace before publishing it."""
+    requested = Path(output_dir)
+    if requested.exists():
+        if not requested.is_dir() or any(requested.iterdir()):
+            raise FileExistsError(f"export output directory is not empty: {requested}")
+        workspace = requested
+        temporary = False
+    else:
+        requested.parent.mkdir(parents=True, exist_ok=True)
+        workspace = Path(tempfile.mkdtemp(
+            prefix=f".{requested.name}.operon-export-", dir=str(requested.parent),
+        ))
+        temporary = True
+    try:
+        summary = _export_files_in_workspace(
+            db, project, output_dir=workspace,
+            output_label=requested,
+            entity_type=entity_type, entity_ids=entity_ids, file_ids=file_ids,
+            file_role=file_role, fmt=fmt, state=state, decision=decision,
+            profile=profile, link_kind=link_kind, include_qc=include_qc,
+        )
+        if temporary:
+            os.replace(workspace, requested)
+        summary["output_dir"] = str(requested)
+        return summary
+    except BaseException:
+        if temporary:
+            shutil.rmtree(workspace, ignore_errors=True)
+        else:
+            for child in list(workspace.iterdir()):
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
+        raise
+
+
+def _export_files_in_workspace(
+        db: Database,
+        project: Project,
+        *,
+        output_dir: str | Path,
+        output_label: str | Path | None = None,
+        entity_type: str | None = None,
+        entity_ids: Iterable[str] = (),
+        file_ids: Iterable[str] = (),
+        file_role: str | None = None,
+        fmt: str | None = None,
+        state: str | None = None,
+        decision: str | None = None,
+        profile: str | None = None,
+        link_kind: str = "copy",
+        include_qc: bool = True,
+) -> dict[str, Any]:
+    """Materialize selected manifest files into an already isolated workspace.
 
     The output directory must not exist or must be empty; exports never
     overwrite.  Every source is re-hashed against the manifest before it is
@@ -146,6 +202,7 @@ def export_files(
     )
 
     output_root = Path(output_dir)
+    output_label = Path(output_label) if output_label is not None else output_root
     if output_root.exists():
         if not output_root.is_dir() or any(output_root.iterdir()):
             raise FileExistsError(f"export output directory is not empty: {output_root}")
@@ -246,14 +303,14 @@ def export_files(
         "output_sha256": manifest_sha256,
         "execution_details": json.dumps({
             "selection": selection,
-            "output_dir": str(output_root),
+            "output_dir": str(output_label),
             "link_kind": link_kind,
             "file_count": len(manifest_rows),
         }, ensure_ascii=False, sort_keys=True),
     })
     return {
         "file_count": len(manifest_rows),
-        "output_dir": str(output_root),
+        "output_dir": str(output_label),
         "manifest_sha256": manifest_sha256,
         "link_kind": link_kind,
         "created_at": created_at,
