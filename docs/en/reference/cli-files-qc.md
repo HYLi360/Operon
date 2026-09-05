@@ -51,7 +51,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
 - By default, QC reuses the most recent full SHA-256 verification from `ingest` or `verify` when the stat fingerprint is unchanged. Any fingerprint change triggers a new SHA-256 calculation. `--rehash` always bypasses the cache; use it for periodic audits, the first check after storage migration, or cold-verification benchmarks. For annotation GFF3, it also revalidates the associated assembly and protein inputs actually read at runtime.
 - The assembly FASTA `seqid -> length` map is written to `qc/cache/fasta_lengths/` on first use. Later QC runs reuse it only for the same complete content identity. A missing, malformed, or identity-mismatched cache is rebuilt automatically. `--rehash` revalidates the source SHA-256, but the length index can still be reused when content identity is unchanged because the index is keyed by the verified SHA-256.
 - Results are written to `qc_results` by `file_id + file_sha256 + input_identity`.
-- On success, entity state becomes `QC_COMPLETE`; on failure it becomes `QC_FAILED` and the command exits non-zero.
+- Each file receives its own `QC_COMPLETE`, `QC_FAILED`, or `QC_PENDING` status. The entity state is the worst sibling status (`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`), and the command lists every file status. A failed file makes the command exit non-zero.
 - For each file, `logs/workflow.jsonl` records `duration_seconds`, the actual parser backend, primary/related input identity, and high-resolution `stage_timings_seconds`/`qc_timing`. The same details are written to `workflow_runs.execution_details`. See [Built-In QC Performance Diagnostics](../operations/qc-performance.md).
 
 ## import-qc

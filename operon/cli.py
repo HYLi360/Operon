@@ -1003,10 +1003,16 @@ def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     )
     ok = sum(1 for r in results if r["ok"])
     for r in results:
+        print(f"{r['file_id']}: {r.get('file_qc_state', 'QC_UNKNOWN')} "
+              f"(entity {r.get('entity_qc_state', 'QC_UNKNOWN')})")
         if not r["ok"]:
             print(f"{r['file_id']}: FAILED {r['error']}", file=sys.stderr)
+        for sibling in r.get("file_statuses", []):
+            if sibling["file_id"] != r["file_id"]:
+                print(f"  {sibling['file_id']} ({sibling['file_role']}): {sibling['qc_state']}")
     print(f"QC complete: {ok}/{len(results)} file(s) passed built-in stages")
-    return 0 if ok == len(results) else 1
+    entity_failed = any(r.get("entity_qc_state") == "QC_FAILED" for r in results)
+    return 0 if ok == len(results) and not entity_failed else 1
 
 
 def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> int:

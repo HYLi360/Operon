@@ -117,6 +117,78 @@ def _write(db: Database, metrics: list[dict[str, Any] | None], file_record: dict
     db.insert_many_qc(prepared)
 
 
+_QC_FAILURE_METRICS = {
+    "file_exists",
+    "sha256_match",
+    "parseable",
+    "paired_read_count_match",
+}
+
+
+def _metric_is_false(row: Any) -> bool:
+    value = row["metric_numeric"] if row["metric_numeric"] is not None else row["metric_value"]
+    if isinstance(value, (int, float)):
+        return float(value) == 0.0
+    return str(value).strip().lower() in {"0", "false", "no"}
+
+
+def file_qc_status(db: Database, file_id: str) -> str:
+    """Return the aggregate built-in QC status for one manifest file."""
+    rows = db.conn.execute(
+        """
+        SELECT metric_name, metric_value, metric_numeric
+        FROM (
+            SELECT metric_name, metric_value, metric_numeric,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY metric_name
+                       ORDER BY evaluated_at DESC, qc_result_id DESC
+                   ) AS rn
+            FROM qc_results
+            WHERE file_id=?
+        )
+        WHERE rn=1
+        """,
+        (file_id,),
+    ).fetchall()
+    if not rows:
+        return "QC_PENDING"
+    if any(row["metric_name"] in _QC_FAILURE_METRICS and _metric_is_false(row) for row in rows):
+        return "QC_FAILED"
+    return "QC_COMPLETE"
+
+
+def file_qc_statuses(db: Database, entity_type: str, entity_id: str) -> list[dict[str, str]]:
+    """List every file's latest aggregate QC status for an entity."""
+    rows = db.conn.execute(
+        "SELECT file_id, file_role, relative_path FROM files "
+        "WHERE entity_type=? AND entity_id=? ORDER BY file_id",
+        (entity_type, entity_id),
+    ).fetchall()
+    return [
+        {
+            "file_id": str(row["file_id"]),
+            "file_role": str(row["file_role"]),
+            "relative_path": str(row["relative_path"]),
+            "qc_state": file_qc_status(db, str(row["file_id"])),
+        }
+        for row in rows
+    ]
+
+
+def _recompute_entity_qc_state(db: Database, entity_type: str, entity_id: str) -> tuple[str, list[dict[str, str]]]:
+    """Set entity QC state from all sibling files and return per-file states."""
+    statuses = file_qc_statuses(db, entity_type, entity_id)
+    if any(item["qc_state"] == "QC_FAILED" for item in statuses):
+        state = "QC_FAILED"
+    elif any(item["qc_state"] == "QC_PENDING" for item in statuses):
+        state = "QC_RUNNING"
+    else:
+        state = "QC_COMPLETE"
+    detail = "; ".join(f"{item['file_id']}={item['qc_state']}" for item in statuses) or "no files"
+    set_state_bulk(db, entity_type, entity_id, state, f"built-in QC aggregate: {detail}")
+    return state, statuses
+
+
 def _file_ok(db: Database, record: dict[str, Any], project: Project, *,
              rehash: bool = False) -> tuple[bool, dict[str, Any]]:
     path = project.root / record["relative_path"]
@@ -404,16 +476,20 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,
         )
-        _timed_call(
-            timings, "state_qc_failed", set_state_bulk,
-            db, entity_type, entity_id, "QC_FAILED", error,
+        entity_qc_state, sibling_statuses = _timed_call(
+            timings, "state_qc_failed", _recompute_entity_qc_state,
+            db, entity_type, entity_id,
         )
         _log_qc_run(
             db, project, record, started_at=started, total_started=total_started,
             status="failed", file_info=file_info, timings=timings,
             related_inputs=related_inputs, error=error,
         )
-        return {"file_id": file_id, "ok": False, "error": error}
+        return {
+            "file_id": file_id, "ok": False, "error": error,
+            "file_qc_state": "QC_FAILED", "entity_qc_state": entity_qc_state,
+            "file_statuses": sibling_statuses,
+        }
 
     try:
         if record["format"] == "fasta":
@@ -476,16 +552,21 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,
         )
-        _timed_call(
-            timings, "state_qc_complete", set_state_bulk,
-            db, entity_type, entity_id, "QC_COMPLETE", f"built-in QC complete for {file_id}",
+        entity_qc_state, sibling_statuses = _timed_call(
+            timings, "state_qc_complete", _recompute_entity_qc_state,
+            db, entity_type, entity_id,
         )
+        file_qc_state = file_qc_status(db, file_id)
         _log_qc_run(
             db, project, record, started_at=started, total_started=total_started,
             status="completed", file_info=file_info, timings=timings,
             related_inputs=related_inputs,
         )
-        return {"file_id": file_id, "ok": True, "error": None}
+        return {
+            "file_id": file_id, "ok": True, "error": None,
+            "file_qc_state": file_qc_state, "entity_qc_state": entity_qc_state,
+            "file_statuses": sibling_statuses,
+        }
     except Exception as exc:
         parseable = 0
         error = f"{type(exc).__name__}: {exc}"
@@ -494,16 +575,20 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,
         )
-        _timed_call(
-            timings, "state_qc_failed", set_state_bulk,
-            db, entity_type, entity_id, "QC_FAILED", error,
+        entity_qc_state, sibling_statuses = _timed_call(
+            timings, "state_qc_failed", _recompute_entity_qc_state,
+            db, entity_type, entity_id,
         )
         _log_qc_run(
             db, project, record, started_at=started, total_started=total_started,
             status="failed", file_info=file_info, timings=timings,
             related_inputs=related_inputs, error=error,
         )
-        return {"file_id": file_id, "ok": False, "error": error}
+        return {
+            "file_id": file_id, "ok": False, "error": error,
+            "file_qc_state": "QC_FAILED", "entity_qc_state": entity_qc_state,
+            "file_statuses": sibling_statuses,
+        }
 
 
 def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, Any],

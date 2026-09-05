@@ -73,7 +73,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   匹配时自动重建。`--rehash` 强制重新验证源文件 SHA-256，但内容身份未变时仍可复用
   长度索引，因为索引本身按已验证 SHA-256 键控。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
-- 成功后实体状态为 `QC_COMPLETE`；失败为 `QC_FAILED` 并返回非零。
+- 每个文件都有自己的 `QC_COMPLETE`、`QC_FAILED` 或 `QC_PENDING` 状态；实体状态取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），命令会列出每个文件状态。任一文件失败时命令返回非零。
 - 每个文件的 `logs/workflow.jsonl` 记录包含 `duration_seconds`、实际 parser backend、
   主/关联输入身份及 `stage_timings_seconds`/`qc_timing` 分阶段高精度耗时；同一份详情
   也写入 `workflow_runs.execution_details`。字段定义与代表性复测集合见

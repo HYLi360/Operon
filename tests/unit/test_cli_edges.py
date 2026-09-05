@@ -142,6 +142,11 @@ def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys)
               phred_offset=None, rehash=False)
     assert cli._cmd_qc(args, project, db) == 1
     assert "FAILED bad" in capsys.readouterr().err
+    monkeypatch.setattr("operon.qc_module.qc_all", lambda *_a, **_k: [
+        {"file_id": "F1", "ok": True, "file_qc_state": "QC_COMPLETE",
+         "entity_qc_state": "QC_FAILED", "file_statuses": []},
+    ])
+    assert cli._cmd_qc(args, project, db) == 1
     assert cli._print_sync_results("push", "r", [
         {"file_id": "F1", "relative_path": "a", "status": "uploaded"},
         {"file_id": "F2", "relative_path": "b", "status": "error", "error": "bad"},

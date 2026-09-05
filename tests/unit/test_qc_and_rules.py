@@ -195,6 +195,25 @@ class TestQCAndRules(PytestAssertions):
         self.assertFalse("parseable" in names)
         self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "QC_COMPLETE")
 
+    def test_multi_file_qc_state_uses_worst_file_and_reports_each_file(self):
+        self._add_organism_sample_assembly()
+        bad = self.root / "first-bad.fa"
+        bad.write_text(">broken\nACGT\n", encoding="utf-8")
+        bad_row = ingest_file(self.db, self.project, bad, "assembly", "ASM_000001", "genome_fasta")
+        bad_archived = self.project.root / bad_row["relative_path"]
+        bad_archived.write_text(">broken\nZZZZ\n", encoding="utf-8")
+        good = self.root / "second-good.fa"
+        good.write_text(">ok\nACGT\n", encoding="utf-8")
+        good_row = ingest_file(self.db, self.project, good, "assembly", "ASM_000001", "protein_fasta")
+
+        results = qc_all(self.db, self.project, entity_type="assembly")
+        assert [item["file_id"] for item in results] == [bad_row["file_id"], good_row["file_id"]]
+        assert self.db.get_entity_state("assembly", "ASM_000001") == "QC_FAILED"
+        final_statuses = results[-1]["file_statuses"]
+        assert {item["file_id"]: item["qc_state"] for item in final_statuses} == {
+            bad_row["file_id"]: "QC_FAILED", good_row["file_id"]: "QC_COMPLETE",
+        }
+
     def test_unparsed_format_is_not_evaluated_by_integrity_profile(self):
         row = self._add_other_format_file()
         result = qc_module.qc_file(self.db, self.project, row["file_id"])
@@ -222,6 +241,28 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(counter.call_count, 1)
         metrics = self.db.latest_metrics("run", "RUN_000001")
         self.assertEqual(metrics["paired_read_count_match"], 1.0)
+
+    def test_paired_fastq_mismatch_fails_file_and_entity_qc(self):
+        self.db.insert_row("organisms", {
+            "organism_id": "ORG_000001", "scientific_name": "Reads", "taxonomy_source": "NCBI",
+        })
+        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        self.db.insert_row("runs", {
+            "run_id": "RUN_000001", "sample_id": "SMP_000001", "library_layout": "PAIRED",
+        })
+        fastq_r1 = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
+        fastq_r2 = "@r1\nACGT\n+\nIIII\n"
+        for role, content in (("reads_r1", fastq_r1), ("reads_r2", fastq_r2)):
+            source = self.root / f"{role}.fastq"
+            source.write_text(content, encoding="utf-8")
+            ingest_file(self.db, self.project, source, "run", "RUN_000001", role)
+
+        results = qc_all(self.db, self.project, entity_type="run")
+
+        self.assertTrue(all(item["ok"] for item in results), results)
+        self.assertEqual(self.db.get_entity_state("run", "RUN_000001"), "QC_FAILED")
+        self.assertTrue(any(item["file_qc_state"] == "QC_FAILED" for item in results))
+        self.assertEqual(self.db.latest_metrics("run", "RUN_000001")["paired_read_count_match"], 0.0)
 
     def test_annotation_fasta_lengths_are_cached_across_qc_runs(self):
         assembly_row, gff_row, protein_row = self._add_annotation_inputs()
