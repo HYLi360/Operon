@@ -131,7 +131,7 @@ def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys)
         {"file_id": "F1", "action": "cached", "target": "x"},
         {"file_id": "F2", "error": "bad"},
     ])
-    assert cli._cmd_standardize(ns(file_id=[], link="copy"), project, db) == 0
+    assert cli._cmd_standardize(ns(file_id=[], link="copy"), project, db) == 1
     captured = capsys.readouterr()
     assert "cached" in captured.out and "ERROR bad" in captured.err
 

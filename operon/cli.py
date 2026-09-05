@@ -981,6 +981,7 @@ def _cmd_verify(args: argparse.Namespace, project: Project, db: Database) -> int
 
 
 def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -> int:
+    errors = 0
     if args.file_id:
         for file_id in args.file_id:
             result = standardize_file(db, project, file_id, link_kind=args.link)
@@ -988,10 +989,11 @@ def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -
     else:
         for result in standardize_all(db, project, link_kind=args.link):
             if "error" in result:
+                errors += 1
                 print(f"{result.get('file_id', '?')}: ERROR {result['error']}", file=sys.stderr)
             else:
                 print(f"{result['file_id']}: {result['action']} -> {result['target']}")
-    return 0
+    return 1 if errors else 0
 
 
 def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
