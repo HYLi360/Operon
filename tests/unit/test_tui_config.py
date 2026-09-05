@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -273,6 +274,43 @@ def test_save_profile_new_profile_gets_version_1(project: Project) -> None:
     # numeric-looking string values are stored as numbers
     assert loaded["required"][0]["value"] == 5000
     assert isinstance(loaded["required"][0]["value"], int)
+
+
+@pytest.mark.parametrize("kind", ["profile", "new_profile", "recipe"])
+@pytest.mark.parametrize("failure", ["before_insert", "after_insert", "interrupt"])
+def test_config_snapshot_failure_restores_bytes_and_database(project, monkeypatch, kind, failure):
+    if kind == "recipe":
+        path = project.tools_config_path
+        info = data.get_recipe_document(project, "blastn_nt")
+        document = info["document"]
+        save = lambda: actions.save_recipe(project, info["tool"], "blastn_nt", document)
+        method, table = "record_recipe", "recipe_snapshots"
+    else:
+        name = "new_profile" if kind == "new_profile" else "assembly_production_v1"
+        path = project.profiles_dir / f"{name}.yaml"
+        document = _profile_doc(project)
+        save = lambda: actions.save_profile(project, name, document)
+        method, table = "record_profile", "qc_profiles"
+    document["description"] = "must roll back"
+    if path.exists():
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    original = path.read_bytes() if path.exists() else None
+    before = _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]
+    record = getattr(Database, method)
+
+    def fail(db, *args, **kwargs):
+        if failure != "before_insert":
+            record(db, *args, **kwargs)
+        if failure == "interrupt":
+            raise KeyboardInterrupt()
+        raise sqlite3.OperationalError("snapshot storage failed")
+
+    monkeypatch.setattr(Database, method, fail)
+    expected = KeyboardInterrupt if failure == "interrupt" else ValidationError
+    with pytest.raises(expected):
+        save()
+    assert (path.read_bytes() if path.exists() else None) == original
+    assert _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"] == before
 
 
 def test_profile_history_restore_then_save_creates_next_version(project: Project) -> None:

@@ -26,6 +26,7 @@ import yaml
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
+from operon.utils import atomic_write_text
 
 
 @contextmanager
@@ -318,6 +319,23 @@ def _validate_profile_document(name: str, document: dict[str, Any]) -> None:
                 )
 
 
+@contextmanager
+def _saved_config(path: Path, text: str, previous_text: str | None,
+                  label: str) -> Iterator[None]:
+    """Publish configuration atomically and restore it if validation or storage fails."""
+    try:
+        atomic_write_text(path, text)
+        yield
+    except BaseException as exc:
+        if previous_text is None:
+            path.unlink(missing_ok=True)
+        else:
+            atomic_write_text(path, previous_text)
+        if isinstance(exc, Exception):
+            raise ValidationError(f"{label}: save rolled back: {exc}") from exc
+        raise
+
+
 def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[str, Any]:
     """Validate and save a ``kind: qc`` profile as a new version.
 
@@ -338,7 +356,7 @@ def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[
         raise ValidationError(f"profile {name!r}: only kind 'qc' profiles can be saved from the TUI")
     document = {str(key): value for key, value in document.items()}
     path = project.profiles_dir / f"{name}.yaml"
-    previous_text = path.read_text(encoding="utf-8") if path.exists() else None
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
     existing: dict[str, Any] | None = None
     if previous_text is not None:
         parsed = yaml.safe_load(previous_text)
@@ -371,22 +389,14 @@ def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[
         "(versioned; review and rename before changing a frozen definition)\n"
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    try:
+    with _saved_config(path, text, previous_text, f"profile {name!r}"):
         loaded = load_profile(project.profiles_dir, name, expected_kind="qc")
-    except Exception as exc:
-        if previous_text is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_text(previous_text, encoding="utf-8")
-        raise ValidationError(f"profile {name!r}: save rolled back: {exc}") from exc
-
-    profile_document = json.dumps(loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
-    version = int(loaded.get("version", 1))
-    with _open_writable(project) as db:
-        snapshot_id = db.record_profile(name, version, sha256, profile_document, now_iso())
+        profile_document = json.dumps(loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
+        version = int(loaded.get("version", 1))
+        with _open_writable(project) as db:
+            with db.transaction():
+                snapshot_id = db.record_profile(name, version, sha256, profile_document, now_iso())
     return {
         "name": name, "version": version, "sha256": sha256,
         "snapshot_id": snapshot_id, "unchanged": False,
@@ -420,7 +430,7 @@ def save_recipe(
     if not isinstance(recipe_doc, dict):
         raise ValidationError(f"recipe {recipe_name!r}: document must be a mapping")
     path = project.tools_config_path
-    previous_text = path.read_text(encoding="utf-8") if path.exists() else None
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
     config = load_tools_config(project)
     tools = config.get("tools")
     if not isinstance(tools, dict) or tool_name not in tools:
@@ -456,23 +466,15 @@ def save_recipe(
         "# comments are dropped; every version is kept in recipe_snapshots.\n"
         + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    try:
+    with _saved_config(path, text, previous_text, f"recipe {recipe_name!r}"):
         load_tools_config(project)
         recipe = get_recipe(project, recipe_name)
         tool = get_tool(project, tool_name)
-    except Exception as exc:
-        if previous_text is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_text(previous_text, encoding="utf-8")
-        raise ValidationError(f"recipe {recipe_name!r}: save rolled back: {exc}") from exc
-
-    with _open_writable(project) as db:
-        snapshot_id = db.record_recipe(
-            recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
-        )
+        with _open_writable(project) as db:
+            with db.transaction():
+                snapshot_id = db.record_recipe(
+                    recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
+                )
     return {
         "name": recipe.name, "tool": tool_name, "version": recipe.version,
         "snapshot_id": snapshot_id, "unchanged": False,

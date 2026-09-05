@@ -77,7 +77,10 @@ unchanged content is a no-op: the version is not bumped and no snapshot is
 recorded. Every save is confirmed in a dialog that shows the effect
 ("writes `config/profiles/<name>.yaml` as version N + records snapshot"),
 and validation errors are shown inline without touching the file (a failed
-write is rolled back to the previous file bytes).
+write is rolled back to the previous file bytes). Configuration publication
+uses atomic file replacement. Rollback also covers database opening, snapshot
+insertion/commit, and handled interruptions: existing bytes (including line
+endings) are restored, or a newly created configuration file is removed.
 
 **History and restore.** The History dialog lists the recorded snapshots
 (snapshot id, version, sha256 prefix, recording time, usage count) like
