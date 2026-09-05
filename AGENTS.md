@@ -188,3 +188,12 @@ change:
 
 Version markers in docs (`operon` 0.6.2, database schema 2.9, metadata
 schema 1.4) must match `pyproject.toml` and the code.
+
+## Special Note For Codex/ChatGPT
+
+To ensure security, code testing in Codex/ChatGPT runs in a sandbox by default.
+However, this causes the `test_tui.py` section to experience Textual/asyncio
+cleanup blocking during testing, resulting in a "FAIL" report due to a timeout.
+
+To run the full test suite, first exclude `test_tui.py`, then run it separately
+outside the sandbox.

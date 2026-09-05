@@ -33,7 +33,7 @@ warnings:
     code: HIGH_BUSCO_DUPLICATION
 ```
 
-支持的运算符：`>=`、`<=`、`>`、`<`、`==`、`!=`、`between`（需 `min`/`max`）、`in`/`not_in`（需 `values`）、`exists`。
+支持的运算符：`>=`、`<=`、`>`、`<`、`==`、`!=`、`between`（需 `min`/`max`）、`in`/`not_in`（需 `values`）、`exists`。比较在边界上是闭区间，`in`/`not_in` 把指标值当字符串比较。注意两个 profile 校验缺口：缺 `min`/`max` 的 `between` 规则或缺 `values` 的 `in`/`not_in` 规则不会在加载 profile 时被拒绝——前者在评估时以 Python traceback 形式暴露，后者会静默地对空值集求值。
 
 手工编辑 YAML 文件完全受支持。带审计的替代途径是 TUI 的 Config 界面
 （`operon tui`，按键 `6`，QC Profiles 标签页）：结构化表单（description、

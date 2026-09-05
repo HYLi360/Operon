@@ -25,7 +25,7 @@ operon import table --table organisms --file organisms.csv \
 - 先完成 schema、受控词汇和外键校验，再显示每行 `insert/update/unchanged`。
 - `--on-conflict error` 拒绝修改已有行，`skip` 跳过，`update` 更新并记录逐字段审计。
 - 不提供删除或“完整快照替换”语义；任一写入失败时该表的整个事务回滚。
-- XLSX 的第一张 `data` 工作表用于导入；模板的第二张 `schema` 工作表仅供查看。
+- XLSX 按工作簿顺序只导入第一个工作表（无论其名称；`--template` 生成的模板把它命名为 `data`，并附一张仅供查看的 `schema` 说明工作表）。
 
 CSV 示例：
 

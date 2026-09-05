@@ -19,6 +19,14 @@ sphinx-build -W --keep-going -b html docs docs/_build/html
 The pytest suite is organized into four categories — `unit`, `integration`, `regression`, `compatibility` — covering: Python 3.10 syntax and runtime gates, schema validation and controlled vocabularies, metadata round-trips and transaction rollback, stable IDs, default copy isolation, query read-only constraints, file-aware QC identity, profile/decision history, gzip FASTA recognition, assembly/annotation QC, rule decisions, idempotent ingest and conflict protection, checksum-tamper detection, the demo end-to-end pipeline and release verification, the NCBI Datasets adapter, wrapped BLAST/HMMER/BUSCO execution, directory artifacts, JSON summaries, conda run prefix parsing, cache hits/forced re-runs, result write-back, and input-tamper rejection.
 The taxonomy coverage integration tests additionally cover taxonomy source-package identity conflicts, profile type/content conflicts, exclusion rules, secondary TaxIDs, denominator/report idempotence, and that active metadata modifications do not affect the release-frozen scope.
 
+## Special Note For Codex/ChatGPT
+
+To ensure security, code testing in Codex/ChatGPT runs in a sandbox by default. However, this causes the `test_tui.py` section to experience Textual/asyncio cleanup blocking during testing, resulting in a "FAIL" report due to a timeout.
+
+To run the full test suite, first exclude `test_tui.py`, then run it separately outside the sandbox.
+
+This information has also been updated in AGENTS.md.
+
 ## Documentation synchronization
 
 When changing the CLI, configuration fields, behavior, or storage layout, update the Chinese and English documentation in the same change:

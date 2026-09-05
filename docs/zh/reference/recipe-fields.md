@@ -222,8 +222,8 @@ ${input_stem}
 ${<parameter>}
 ```
 
-它不能引用 `${output}`、`${output_parent}` 或 `${output_name}` 本身。无法识别的占位符会
-在配置校验阶段报错。
+它不能引用 `${output}`、`${output_parent}` 或 `${output_name}` 本身。`output_name` 在配置加载时
+并不渲染；无法识别的占位符在 recipe 渲染时报错，即 `analyze` 运行时（含 `--dry-run`）。
 
 ## 数据库与缓存目录
 

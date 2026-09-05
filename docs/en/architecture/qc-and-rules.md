@@ -8,6 +8,7 @@ Built-in QC loads the Cython streaming parsers by default and requires them; the
 |---|---|---|
 | `file_integrity` | All files | `file_exists`, `size_bytes`, `sha256_match`, `parseable` |
 | `assembly_basic` | genome FASTA | `total_length`, `contig_n50/n90`, `contig_l50/l90`, `gc_percent`, `n_percent` (strictly N only), `gap_count`/`gap_percent` (runs and fraction of alignment gap characters `-`), `ambiguous_base_percent`, duplicate seqids/complete headers, circular/empty sequences |
+| `sequence_basic` | other FASTA (e.g. standalone CDS or protein FASTA) | `sequence_count`, `total_length`, `empty_sequence_count`, `duplicate_sequence_id_count` |
 | `reads_basic` | FASTQ | `read_count`, `total_bases`, `q20_percent`, `q30_percent`, `gc_percent`, `duplicate_percent`, sampling count/strategy, `overrepresented_sequence_count`, read length N50, R1/R2 pairing |
 | `annotation_basic` | GFF3 (+ assembly FASTA/protein FASTA) | gene/mRNA/CDS counts, CDS triplet ratio, ID/Parent integrity, coordinate errors, seqid matching, protein duplicate IDs, X ratio, internal stop codons |
 

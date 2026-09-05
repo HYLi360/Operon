@@ -33,7 +33,7 @@ warnings:
     code: HIGH_BUSCO_DUPLICATION
 ```
 
-Supported operators are `>=`, `<=`, `>`, `<`, `==`, `!=`, `between` (requires `min` and `max`), `in`, `not_in` (requires `values`), and `exists`.
+Supported operators are `>=`, `<=`, `>`, `<`, `==`, `!=`, `between` (requires `min` and `max`), `in`, `not_in` (requires `values`), and `exists`. Comparisons are inclusive at the boundaries, and `in`/`not_in` compare metric values as strings. Note two profile-validation gaps: a `between` rule missing `min`/`max`, or an `in`/`not_in` rule missing `values`, is not rejected when the profile loads — the former surfaces as a Python traceback at evaluation time, and the latter silently evaluates against an empty value set.
 
 Hand-editing the YAML file is fully supported. The audited alternative is the
 TUI Config screen (`operon tui`, key `6`, QC Profiles tab): a structured form

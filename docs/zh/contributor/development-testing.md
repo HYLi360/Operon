@@ -27,6 +27,16 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 排除规则、secondary TaxID、分母/报告幂等，以及活动 metadata 修改不影响 release
 冻结口径。
 
+## 对 Codex/ChatGPT 的特别提醒
+
+为确保安全，Codex/ChatGPT 中执行的代码测试默认在沙箱内进行，但这会导致
+`test_tui.py` 部分在测试时发生 Textual/asyncio 清理阻塞，从而因超时报告 FAIL。
+
+Codex/ChatGPT 若要运行完整测试套件，请先排除 `test_tui.py`，
+然后再在沙箱外单独执行它。
+
+该内容也已同步至 AGENTS.md。
+
 ## 文档同步
 
 修改 CLI、配置字段、行为或存储布局时，应在同一变更中更新中文与英文文档：

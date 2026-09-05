@@ -119,7 +119,7 @@ tools:
 
 BUSCO's `-o` is a short run name, not an input path, and should not receive the full `${output}`; `--out_path` is the parent directory. Hence the separate use of `${output_name}` and `${output_parent}`.
 
-In addition, the SEPP used by BUSCO auto-lineage incorrectly runs `replace("fasta", "jplace")` on the full output path. No level of the output path may contain lowercase `fasta`. Using `${file_id}.busco` avoids the default `<file_id>.protein_fasta.busco` name; `operon` also checks for and rejects such dangerous paths before launching auto-lineage.
+In addition, the SEPP used by BUSCO auto-lineage incorrectly runs `replace("fasta", "jplace")` on the full output path. No level of the output path may contain lowercase `fasta`. Using `${file_id}.busco` avoids the default `<file_id>.protein_fasta` name; `operon` also checks for and rejects such dangerous paths before launching auto-lineage.
 
 Running:
 

@@ -2,7 +2,8 @@
 
 ## 备份与迁移
 
-推荐由 `backup` 命令创建 SQLite 一致快照，而不是在数据库运行期间直接复制文件：
+推荐由 `backup` 命令创建 SQLite 一致快照，而不是在数据库运行期间直接复制文件。
+`--output` 目录必须位于项目根之外且尚不存在，`backup create` 否则会拒绝执行：
 
 ```bash
 # 配置、SQLite、审计与 workflow 日志
@@ -16,6 +17,9 @@ operon backup create --output /backups/my-project-full --scope full
 
 operon backup verify --input /backups/my-project-full
 ```
+
+注意范围边界：`results` 不包含 `raw/` 与 `standardized/`（通常最难重建的字节），
+因此不能作为可恢复的 `full` 替代品；只有 `full` 能恢复数据文件。
 
 `backup verify` 按精确快照校验：除检查 manifest 所列文件的大小与 SHA-256 外，也会拒绝
 备份目录中任何未列入 manifest 的额外文件。不要把注释、临时文件或恢复记录直接放进备份
@@ -55,8 +59,8 @@ operon backup verify --input /backups/my-project-full
 - `release`：版本目录已存在时拒绝重复创建，不会悄悄覆盖。
 - `taxonomy compile`：相同 profile/taxonomy/TSV 复用；身份相同而内容不同则拒绝覆盖。
 - `report coverage`：输入成员、profile 和 reference-set 身份相同则校验并复用旧报告。
-- `analyze`：Ctrl+C/SIGTERM 优雅停机后，当前作业记为 `interrupted`、半成品输出被清理；
-  重跑时已完成文件走缓存，输入未变且输出验证一致的旧结果会被收养（`adopted`），只有
-  真正未完成的文件才重新计算。
+- `analyze`：Ctrl+C/SIGTERM 优雅停机后，当前作业记为 `interrupted`、半成品输出被清理
+  （`--keep-partial` 可保留它们用于调试）；重跑时已完成文件走缓存，输入未变且输出验证
+  一致的旧结果会被收养（`adopted`），只有真正未完成的文件才重新计算。
 
 因此从中断处直接重跑相同命令即可。可通过 `status` 查看每个实体当前处于哪个状态。

@@ -20,6 +20,8 @@ Operon manages data admission, identity verification, provenance, rule evaluatio
 
 The current source adapter supports NCBI Datasets. Taxonomy coverage currently supports NCBI Taxonomy only; GTDB and NCBI↔GTDB crosswalks are extension work.
 
+Implicit semantics, edge cases, and known issues that are not covered by the task-facing pages are catalogued in [Implicit Behaviors, Edge Cases, and Known Issues](reference/behaviors-and-limitations.md).
+
 ## Recommended workflow
 
 ```text

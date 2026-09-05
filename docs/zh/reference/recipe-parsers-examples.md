@@ -129,7 +129,7 @@ BUSCO 的 `-o` 是短 run name，不是输入路径，也不应传完整 `${outp
 
 另外，BUSCO auto-lineage 使用的 SEPP 会错误地在完整输出路径上执行
 `replace("fasta", "jplace")`。输出路径任何一层都不要含小写 `fasta`。使用
-`${file_id}.busco` 可以避免默认的 `<file_id>.protein_fasta.busco` 名称；`operon` 也会在
+`${file_id}.busco` 可以避免默认的 `<file_id>.protein_fasta` 名称；`operon` 也会在
 启动 auto-lineage 前检查并拒绝这种危险路径。
 
 运行：

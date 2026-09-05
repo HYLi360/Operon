@@ -13,6 +13,7 @@
 |---|---|---|
 | `file_integrity` | 所有文件 | `file_exists`、`size_bytes`、`sha256_match`、`parseable` |
 | `assembly_basic` | genome FASTA | `total_length`、`contig_n50/n90`、`contig_l50/l90`、`gc_percent`、`n_percent`（严格只统计 N）、`gap_count`/`gap_percent`（比对缺口字符 `-` 的连续段与占比）、`ambiguous_base_percent`、重复 seqid/完整 header、circular/空序列 |
+| `sequence_basic` | 其他 FASTA（如独立的 CDS 或蛋白 FASTA） | `sequence_count`、`total_length`、`empty_sequence_count`、`duplicate_sequence_id_count` |
 | `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、采样数量/策略、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
 | `annotation_basic` | GFF3 (+组装 FASTA/蛋白 FASTA) | gene/mRNA/CDS 数量、CDS 三联体比例、ID/Parent 完整性、坐标错误、seqid 匹配、蛋白重复 ID、X 比例、内部终止密码子 |
 

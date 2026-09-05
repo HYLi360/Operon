@@ -403,7 +403,7 @@ def _parser() -> argparse.ArgumentParser:
     pp.add_argument("name")
     pp.add_argument("--snapshot-id", type=int, help="snapshot to print (default: latest)")
 
-    p = sub.add_parser("run-pipeline", help="ingest -> verify -> standardize -> QC -> evaluate for one file")
+    p = sub.add_parser("run-pipeline", help="ingest -> standardize -> QC -> evaluate for one file")
     p.add_argument("--source", required=True)
     p.add_argument("--entity-type", required=True, choices=["run", "assembly", "annotation"])
     p.add_argument("--entity-id", required=True)

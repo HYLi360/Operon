@@ -2,7 +2,7 @@
 
 ## Back up and migrate a project
 
-Use `backup` to create a consistent SQLite snapshot. Do not copy database files directly while the database may be active:
+Use `backup` to create a consistent SQLite snapshot. Do not copy database files directly while the database may be active. The `--output` directory must be outside the project root and must not exist yet; `backup create` refuses otherwise:
 
 ```bash
 # Configuration, SQLite, audit records, and workflow logs
@@ -16,6 +16,8 @@ operon backup create --output /backups/my-project-full --scope full
 
 operon backup verify --input /backups/my-project-full
 ```
+
+Note the scope boundaries: `results` excludes `raw/` and `standardized/` (the bytes you usually cannot regenerate), so it is not a restorable substitute for `full`; only `full` can restore data files.
 
 `backup verify` validates an exact snapshot. In addition to checking size and SHA-256 for files listed in the manifest, it rejects extra files in the backup directory. Keep notes, temporary files, and recovery records outside the backup directory.
 
@@ -55,6 +57,6 @@ Core steps are idempotent:
 - `release` rejects an existing version directory rather than overwriting it.
 - `taxonomy compile` reuses identical profile/taxonomy/TSV input and rejects different content under the same identity.
 - `report coverage` validates and reuses an old report when input membership, profile, and reference-set identity match.
-- After Ctrl+C/SIGTERM, `analyze` marks the current job `interrupted` and removes partial outputs. On rerun, completed files use the cache; an old result with unchanged input and verified output is adopted (`adopted`); only unfinished work is recomputed.
+- After Ctrl+C/SIGTERM, `analyze` marks the current job `interrupted` and removes partial outputs (`--keep-partial` preserves them for debugging). On rerun, completed files use the cache; an old result with unchanged input and verified output is adopted (`adopted`); only unfinished work is recomputed.
 
 Rerun the same command to continue from the interruption. Use `status` to inspect each entity's current state.

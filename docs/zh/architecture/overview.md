@@ -22,7 +22,7 @@
 | raw 不可变、standardized 派生 | 原子 ingest + `ConflictError` + 默认独立副本 |
 | 文件名只含稳定 ID/角色/格式/压缩 | `canonical_filename()` |
 | 路径不是文件身份 | `files.file_id + sha256 + size_bytes` |
-| QC 分层 | `file_integrity/reads_basic/assembly_basic/annotation_basic` |
+| QC 分层 | `file_integrity/reads_basic/sequence_basic/assembly_basic/annotation_basic` |
 | 指标与判定分离 | `qc_results` 长表 + YAML profile 规则引擎 |
 | taxonomy 覆盖率不随上游升级漂移 | NCBI taxonomy 快照 + 编译后的 reference-set TSV + SHA-256 |
 | 自动化状态机、失败显式、幂等续跑 | `entity_state` + 严格迁移 + 原子操作 |
@@ -101,12 +101,12 @@
 
 ## 项目目录结构
 
-`operon init` 创建以下目录和文件。SQLite 数据库不在 init 时创建，而是在第一次执行需要数据库的命令时创建。
+`operon init` 创建以下目录和文件。SQLite 数据库由 `operon init` 直接创建；两个条目按需延迟出现（`logs/workflow.jsonl` 在首次 workflow 运行时，`.operon/placeholders/` 在首次远程 evict/pull 指针写入时）。
 
 ```text
 project/
 ├── project.yaml              # 项目配置：路径、默认 QC profile、资源参数
-├── operon.sqlite           # 基于文件的数据库（首次使用命令时创建）
+├── operon.sqlite           # 基于文件的数据库（由 operon init 创建）
 ├── config/
 │   ├── schemas.yaml          # 元数据字段契约（类型/必填/允许值/正则）
 │   ├── tools.yaml            # 外部分析程序配置（BLAST/HMMER/BUSCO、artifact 类型）
@@ -114,6 +114,7 @@ project/
 │       ├── file_integrity_v1.yaml
 │       ├── assembly_production_v1.yaml
 │       ├── annotation_release_v1.yaml
+│       ├── annotation_busco_viridiplantae_odb12_v1.yaml
 │       ├── reads_qc_v1.yaml
 │       └── coverage_viridiplantae_v1.yaml
 ├── metadata/                 # 旧项目布局兼容说明；不再作为读写数据源
@@ -123,8 +124,9 @@ project/
 ├── analysis/                 # 分析工作区（外部工具输出、下游分析）
 ├── reports/                  # decisions、汇总导出及 coverage 报告
 ├── taxonomy/reference_sets/  # 编译后的不可变 family/genus 分母与 provenance
-├── logs/workflow.jsonl       # 机器可读工作流日志
+├── logs/workflow.jsonl       # 机器可读工作流日志（首次 workflow 运行时创建）
 ├── .operon/placeholders/     # REMOTE_ONLY 文件的小型、非权威指针
+│                             #   （首次远程 evict/pull 时创建）
 └── releases/                 # 不可变数据集发布快照
 ```
 

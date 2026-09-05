@@ -17,6 +17,7 @@
 - [Recipe Field Reference](recipe-fields.md)
 - [Result Parsers and Examples](recipe-parsers-examples.md)
 - [Data Model](data-model.md)
+- [Implicit Behaviors, Edge Cases, and Known Issues](behaviors-and-limitations.md)
 
 ```{toctree}
 :hidden:
@@ -33,6 +34,7 @@ recipe-overview
 recipe-fields
 recipe-parsers-examples
 data-model
+behaviors-and-limitations
 ```
 
 All commands use the following form:

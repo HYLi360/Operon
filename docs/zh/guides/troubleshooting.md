@@ -18,3 +18,9 @@ operon query "SELECT file_id, entity_type, entity_id, file_role, status, relativ
 | `CHECKSUM_FAILED` | 不要继续 QC；确认文件是否被误改，从原始来源恢复 |
 | `QC_FAILED` | 查看 `operon report qc` 中 `parseable=0` 的文件，再用 `operon workflow list --step qc --status failed` 与 `operon workflow show WF_ID` 查看错误和执行详情 |
 | 格式解析失败 | 用外部工具（如 `seqkit stats`、GFF3 validator）检查；修复后作为新版本归档，不要覆盖 raw |
+
+
+## 延伸阅读
+
+不属于单一工作流缺陷的隐式语义、边界情形与已知问题——例如缺失指标的处理方式、多文件
+实体的 QC 状态语义、退出码约定等——见[隐式行为、边界情形与已知问题](../reference/behaviors-and-limitations.md)。

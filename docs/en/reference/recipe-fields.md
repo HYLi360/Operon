@@ -211,7 +211,7 @@ ${input_stem}
 ${<parameter>}
 ```
 
-It cannot reference `${output}`, `${output_parent}`, or `${output_name}` itself. Unrecognized placeholders are reported during configuration validation.
+It cannot reference `${output}`, `${output_parent}`, or `${output_name}` itself. `output_name` is not rendered when the configuration is loaded; unrecognized placeholders are reported when the recipe is rendered, i.e. when `analyze` runs (including `--dry-run`).
 
 ## Databases and cache directories
 

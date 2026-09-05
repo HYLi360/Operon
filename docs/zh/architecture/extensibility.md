@@ -4,7 +4,7 @@
 
 当前内置来源适配器先覆盖 NCBI Datasets；ENA 等来源仍属于后续扩展边界。taxonomy
 coverage 当前只支持 NCBI Taxonomy；GTDB 及 NCBI↔GTDB crosswalk 尚未实现。内置 QC
-覆盖文件级、reads 基础、assembly 结构与 annotation 结构。BUSCO 已通过目录输出和
+覆盖文件级、面向非 genome FASTA（CDS/protein）的通用 sequence 基础、reads 基础、assembly 结构与 annotation 结构。BUSCO 已通过目录输出和
 JSON summary parser 原生接入；QUAST、Merqury、Kraken2、CheckM2 等尚未提供 parser
 的工具仍可通过 `run-external` + `import-qc` 接入。下游比较基因组分析在 `analysis/`
 中由外部工作流完成，`operon` 负责数据准入、provenance 与发布。

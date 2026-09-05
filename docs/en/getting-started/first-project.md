@@ -18,7 +18,7 @@ metadata/            Legacy-layout compatibility note
 raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 ```
 
-`operon.sqlite` is created the first time a command needs the database.
+`operon init` also creates an empty `operon.sqlite` immediately, together with the directory tree.
 
 > The global `--project` option must appear before the subcommand. It can be omitted inside the project root. Outside the project, use `operon --project /path/to/my-genome-project <subcommand>`.
 

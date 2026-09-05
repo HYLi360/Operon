@@ -18,6 +18,7 @@ remotes:
     # Alternatively pin an administrator-provided fingerprint:
     # host_key_sha256: SHA256:base64...
     insecure_accept_unknown_host: false
+    connect_timeout: 30            # seconds; also bounds the remote manifest lock wait
 ```
 
 Paramiko is included in the standard `OperonDBS` installation.
@@ -54,7 +55,7 @@ The remote model preserves the raw-file invariants:
 - Remote relative paths must remain safely under the remote root. By default, `pull` checks every record against local SQLite `file_id + relative_path + sha256 + size_bytes`; the remote manifest cannot rewrite local identity.
 - Every transfer writes workflow provenance (`push:<name>` or `pull:<name>`), and successful locations are recorded in `file_locations`.
 - A failed item does not stop the rest of a push/pull/evict batch. Every item receives a result, and the command exits with code 1 if any item has `error`.
-- After `pull` restores a missing local file, `files.status` returns to `CHECKSUM_VERIFIED` and the change is audited in `changes`.
+- After `pull` restores a missing local file, `files.status` returns to `CHECKSUM_VERIFIED` and the change is audited in `changes`. A file that was already `STANDARDIZED` before eviction keeps the `STANDARDIZED` status after restore.
 
 ## Keep the control plane local and large files remote
 
@@ -94,6 +95,8 @@ execution:
 ```
 
 `evict` explicitly deletes local bytes; without `--file-id`, it processes every manifest object. It first validates local identity, remote manifest identity, and actual remote SHA-256/tree hash. The state change is written to `changes`. `standardize` and `release` require local bytes, so run `pull` first. External `analyze` can consume `REMOTE_ONLY` input directly.
+
+Eviction writes a small placeholder pointer file under `.operon/placeholders/<file_id>.json` (deleted again when `pull` restores the bytes). The first remote-only status also extends `config/schemas.yaml` with the `REMOTE_ONLY` file status and bumps its `schema_version` to 1.2 — the file is rewritten with normalized formatting, so hand-written comments in it are dropped.
 
 When a local object is missing, `verify` checks the remote in real time rather than treating `file_locations.status=AVAILABLE` as permanent proof. A deleted or damaged remote object returns `MISSING` and updates the cache. An unreachable SSH host returns `REMOTE_UNVERIFIED` and exit code 1 while preserving the last persistent state, so a network failure is not misclassified as data loss.
 

@@ -33,7 +33,7 @@ schema 的兼容代码。这里的“删除”不包括当前 schema 所需的�
 `taxonomy_nodes`、`taxonomy_aliases`、`taxonomy_reference_sets`、
 `coverage_reports` 与 `coverage_report_metrics` 及相关索引，不修改既有业务行。
 只要仍支持打开 2.2 项目就必须保留。对应回归测试为
-`test_schema_2_3_adds_taxonomy_coverage_history`。
+`test_schema_2_3_adds_taxonomy_and_coverage_history`。
 
 `Database._migrate_source_schema_2_4()` 是另一项当前功能所需的纯加法迁移：它为 2.3
 项目创建 `data_sources` 与 `source_links`，保存规范化的外部数据库/仓库、引用文献、

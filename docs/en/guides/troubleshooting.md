@@ -18,3 +18,7 @@ Recommended actions:
 | `CHECKSUM_FAILED` | Stop QC. Determine whether the file was modified and restore it from the original source. |
 | `QC_FAILED` | Inspect files with `parseable=0` in `operon report qc`, then use `operon workflow list --step qc --status failed` and `operon workflow show WF_ID` for the recorded error and execution details. |
 | Format parsing failure | Check with an external validator such as `seqkit stats` or a GFF3 validator. Archive the repaired file as a new version; do not overwrite raw data. |
+
+## Further reading
+
+For implicit semantics, edge cases, and known issues that are not defects in a single workflow — such as how missing metrics are treated, multi-file QC state semantics, or exit-code conventions — see [Implicit Behaviors, Edge Cases, and Known Issues](../reference/behaviors-and-limitations.md).

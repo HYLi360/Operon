@@ -104,4 +104,15 @@ Restoration is the strict inverse operation: it appends `RESTORE` and points bac
 
 For databases older than schema 2.7, run `operon migrate` first.
 
+## Force a state transition manually
+
+`operon set-state` performs an audited manual state change when a transition is needed that the automatic workflow does not produce (for example, recovering a stuck entity):
+
+```bash
+operon set-state --entity-type assembly --entity-id ASM_000001 --state QC_COMPLETE \
+  --message "Manual review confirmed metrics are complete" --force
+```
+
+The normal path enforces the legal transition table and appends a `changes` audit row with the message; `--force` bypasses the transition check for manual recovery while the audit row keeps the action traceable. Note that `RELEASED` is a terminal state: entities published in a release cannot leave it without `--force`, and setting a state that equals the current state is a silent no-op. Prefer `curate` (for decisions) or rerunning the affected step (for provenance) whenever possible.
+
 There is currently no `purge` command. Do not use manual SQL, `rm`, or remote-object deletion as a substitute. Physical deletion requires separately designed retention periods, release/remote reference protection, a restoration window, and irreversible confirmation. Until then, auditable retirement and restoration are the supported safe-disposal path.

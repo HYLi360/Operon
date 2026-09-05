@@ -102,6 +102,9 @@ operon analyze --analysis hmmsearch_pfam
 operon analyze --analysis blastn_nt --dry-run
 ```
 
+批量控制：`--limit N` 只处理按 `file_id` 排序的前 N 个匹配文件；`--threads` 覆盖 recipe
+默认线程数。
+
 查看同步结果：
 
 ```bash
@@ -267,6 +270,9 @@ operon run-external \
 ```
 
 - `--command` 使用 shell 风格引号解析，但不经过 shell，可避免注入。
+- `--tool` 记录从 `config/tools.yaml` 探测到的工具版本；`--input` 声明参与 provenance
+  哈希的输入文件/目录（可重复）；`--threads`、`--cwd`、`--timeout` 与 `--backend`
+  （默认 `local`，亦可选 `slurm` 或 `ssh`）控制执行方式。
 - stdout/stderr 保存到 `logs/<WF_ID>.stdout.log` 和 `.stderr.log`。
 - 运行记录同时写入 `logs/workflow.jsonl` 与 `workflow_runs` 表。
 - 只有退出码为 0 且所有 `--expected-output` 存在且非空，才记录 `completed`；否则记录 `failed` 并返回非零。

@@ -18,6 +18,7 @@ remotes:
     known_hosts: ~/.ssh/known_hosts
     # 也可固定管理员提供的指纹：host_key_sha256: SHA256:base64...
     insecure_accept_unknown_host: false
+    connect_timeout: 30            # 秒；同时限定远端 manifest 锁的等待时长
 ```
 
 标准 `OperonDBS` 安装已包含 SFTP 功能所需的 paramiko。
@@ -60,7 +61,7 @@ operon locations
 - push/pull/evict 的单个条目失败不会中止整个批次；每项都会输出结果并写 provenance，
   其余条目继续，任一项为 `error` 时命令最终返回退出码 1；
 - `pull` 恢复本地缺失文件后，其 `files.status` 恢复为 `CHECKSUM_VERIFIED`，变化写入
-  `changes` 审计。
+  `changes` 审计。被驱逐前已经是 `STANDARDIZED` 的文件在恢复后保持 `STANDARDIZED` 状态。
 
 ### 10.1 本地只保留控制面，远端保存并计算大文件
 
@@ -103,6 +104,11 @@ execution:
 它只在远端清单身份和远端实际内容均通过严格校验后执行，并在 `changes` 中审计状态
 变化。`standardize` 与 `release` 仍需要本地字节，应先 `pull`；外部 `analyze` 则可
 直接消费 REMOTE_ONLY 输入。
+
+驱逐时会在 `.operon/placeholders/<file_id>.json` 写入小型指针文件（`pull` 恢复字节
+时删除）。首次出现远程独占状态时，还会自动扩展 `config/schemas.yaml`、加入
+`REMOTE_ONLY` 文件状态并把 `schema_version` 提升到 1.2——该文件会被规范化格式重写，
+其中的手写注释会丢失。
 
 本地缺失对象运行 `verify` 时也会实时检查远端，而不是把 `file_locations` 的
 `AVAILABLE` 当作永久证明。远端对象已被带外删除或损坏时返回 `MISSING` 并更新缓存；

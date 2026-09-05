@@ -22,7 +22,7 @@ How the principles map to implementations:
 | Raw immutable, standardized derived | Atomic ingest + `ConflictError` + independent copies by default |
 | Filenames contain only stable ID/role/format/compression | `canonical_filename()` |
 | Paths are not file identity | `files.file_id + sha256 + size_bytes` |
-| Layered QC | `file_integrity/reads_basic/assembly_basic/annotation_basic` |
+| Layered QC | `file_integrity/reads_basic/sequence_basic/assembly_basic/annotation_basic` |
 | Measurement separated from decision | `qc_results` long table + YAML profile rule engine |
 | Taxonomy coverage does not drift with upstream upgrades | NCBI taxonomy snapshot + compiled reference-set TSV + SHA-256 |
 | Automated state machine, explicit failures, idempotent resume | `entity_state` + strict transitions + atomic operations |
@@ -115,12 +115,12 @@ How the principles map to implementations:
 
 ## Project directory structure
 
-`operon init` creates the following directories and files. The SQLite database is not created at init time, but on the first command that needs it.
+`operon init` creates the following directories and files. The SQLite database is created eagerly by `operon init`; two entries appear only lazily when first needed (`logs/workflow.jsonl` on the first workflow run, `.operon/placeholders/` on the first remote-evict/pull pointer write).
 
 ```text
 project/
 ├── project.yaml              # project config: paths, default QC profile, resource parameters
-├── operon.sqlite           # file-based database (created on first command use)
+├── operon.sqlite           # file-based database (created by operon init)
 ├── config/
 │   ├── schemas.yaml          # metadata field contract (types/required/allowed values/regex)
 │   ├── tools.yaml            # external analysis programs (BLAST/HMMER/BUSCO, artifact types)
@@ -128,6 +128,7 @@ project/
 │       ├── file_integrity_v1.yaml
 │       ├── assembly_production_v1.yaml
 │       ├── annotation_release_v1.yaml
+│       ├── annotation_busco_viridiplantae_odb12_v1.yaml
 │       ├── reads_qc_v1.yaml
 │       └── coverage_viridiplantae_v1.yaml
 ├── metadata/                 # legacy layout compatibility note; no longer a read/write data source
@@ -137,8 +138,9 @@ project/
 ├── analysis/                 # analysis workspace (external tool output, downstream analysis)
 ├── reports/                  # decisions, summary exports, and coverage reports
 ├── taxonomy/reference_sets/  # compiled immutable family/genus denominators and provenance
-├── logs/workflow.jsonl       # machine-readable workflow log
+├── logs/workflow.jsonl       # machine-readable workflow log (created on the first workflow run)
 ├── .operon/placeholders/     # small, non-authoritative pointers for REMOTE_ONLY files
+│                             #   (created on the first remote evict/pull)
 └── releases/                 # immutable dataset release snapshots
 ```
 

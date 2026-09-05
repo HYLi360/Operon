@@ -17,6 +17,7 @@
 - [Recipe 字段参考](recipe-fields.md)
 - [结果解析器与示例](recipe-parsers-examples.md)
 - [数据模型](data-model.md)
+- [隐式行为、边界情形与已知问题](behaviors-and-limitations.md)
 
 ```{toctree}
 :hidden:
@@ -33,6 +34,7 @@ recipe-overview
 recipe-fields
 recipe-parsers-examples
 data-model
+behaviors-and-limitations
 ```
 
 全部命令使用全局形式：

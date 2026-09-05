@@ -92,6 +92,8 @@ Preview selection and cache status:
 operon analyze --analysis blastn_nt --dry-run
 ```
 
+Useful batch controls: `--limit N` processes only the first N matching files (in `file_id` order), and `--threads` overrides the recipe default.
+
 Inspect synchronized results:
 
 ```bash
@@ -210,6 +212,7 @@ operon run-external \
 ```
 
 - `--command` is parsed with shell-style quoting but is not run through a shell.
+- `--tool` records a tool version probed from `config/tools.yaml`; `--input` declares an input file/directory that is hashed for provenance (repeatable); `--threads`, `--cwd`, `--timeout`, and `--backend` (default `local`; also `slurm` or `ssh`) control execution.
 - stdout and stderr are saved to `logs/<WF_ID>.stdout.log` and `.stderr.log`.
 - Run records are written to `logs/workflow.jsonl` and `workflow_runs`.
 - The run is `completed` only when the exit code is 0 and every `--expected-output` exists and is non-empty; otherwise it is `failed` and the command exits non-zero.

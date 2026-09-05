@@ -111,6 +111,21 @@ operon restore GCA_000751015.1 --reason "确认来源映射正确" \
 退役的子实体不能单独恢复，应恢复计划指出的根；如果子实体还有独立直接退役，恢复父实体后
 它仍保持退役。若库版本早于 database schema 2.7，先运行 `operon migrate`。
 
+## 手动强制状态迁移
+
+`operon set-state` 在自动工作流无法产生的迁移场景（例如恢复卡住的实体）执行带审计的
+手动状态变更：
+
+```bash
+operon set-state --entity-type assembly --entity-id ASM_000001 --state QC_COMPLETE \
+  --message "Manual review confirmed metrics are complete" --force
+```
+
+常规路径强制执行合法迁移表并写入带 message 的 `changes` 审计行；`--force` 绕过迁移检查
+用于人工恢复，审计行仍保证动作可追溯。注意 `RELEASED` 是终态：已进入 release 的实体
+不经 `--force` 不能离开该状态；把状态设置为与当前相同的值是静默 no-op。可能的情况下，
+优先选择 `curate`（针对判定）或重跑相应步骤（针对 provenance）。
+
 当前没有 `purge`。不要用手工 SQL、`rm` 或删除远端对象代替：物理清除还需要单独设计保留期、
 release/远端引用保护、恢复窗口和不可逆确认。在此之前，“退役 + 可审计恢复”就是完整的安全
 处置路径。

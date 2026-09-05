@@ -75,8 +75,8 @@ recipe 可声明可选的 `version:`（正整数，缺省 1；非正整数或布
 tool 定义的任何变更都产生新快照。历史用 `operon recipes history NAME` 查看，
 `operon recipes show NAME [--snapshot-id N]` 以 YAML 打印快照文档，供人工写回
 `config/tools.yaml`（CLI 不做原地改写）。也可以直接在 TUI 的 Config 界面
-（Tools & Recipes 标签页）中编辑 recipe：结构化表单在每次保存时递增版本并记录
-相同形态的快照——注意 TUI 保存会规范化 YAML 格式并丢弃手写注释，所有版本均
+（Tools & Recipes 标签页）中编辑 recipe：结构化表单在每次内容有变化的保存时递增版本并记录
+相同形态的快照（内容未变的保存是 no-op）——注意 TUI 保存会规范化 YAML 格式并丢弃手写注释，所有版本均
 保存在 `recipe_snapshots` 中。
 
 ## tool 层字段

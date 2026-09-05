@@ -20,7 +20,7 @@ metadata/            旧布局兼容说明（SQLite 是唯一可写 metadata 来
 raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 ```
 
-`operon.sqlite` 不会在 init 时创建，第一次执行需要数据库的命令时自动创建。
+`operon init` 会连同目录结构一并立即创建空的 `operon.sqlite`。
 
 > 提示：全局选项 `--project` 必须放在子命令之前。进入项目目录后可以省略它；
 > 在项目外则使用 `operon --project /path/to/my-genome-project <子命令>`。
