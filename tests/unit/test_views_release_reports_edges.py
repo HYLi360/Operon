@@ -142,6 +142,20 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
     assert (Path(result["path"]) / "data" / "organism" / "ORG_000001" / "file").read_text() == "y"
 
 
+def test_release_rolls_back_published_tree_when_state_commit_fails(project_db, monkeypatch):
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    source = project.root / "raw" / "file"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("y", encoding="utf-8")
+    monkeypatch.setattr(release, "release_files_for", lambda *_a: [_member("raw/file", sha256_path(source))])
+    monkeypatch.setattr(release, "set_state", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("state failure")))
+    with pytest.raises(RuntimeError, match="state failure"):
+        release.create_release(db, project, "state-failure", "p")
+    assert not (project.releases_root / "state-failure").exists()
+    assert db.conn.execute("SELECT 1 FROM releases WHERE version='state-failure'").fetchone() is None
+
+
 def test_report_filters_wide_rows_and_decision_reason_formats(project_db):
     project, db = project_db
     db.insert_qc_result({

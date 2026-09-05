@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ from operon.config import Project
 from operon.database import Database
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
+from operon.workflow import set_state
 
 ACCEPTED = {"PASS", "PASS_WITH_WARNINGS", "ACCEPT_WITH_WARNING"}
 
@@ -87,15 +90,34 @@ def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
 
 def create_release(db: Database, project: Project, version: str, profile: str,
                    copy_files: bool | None = None, link_kind: str = "copy") -> dict[str, Any]:
+    """Create a release through a recoverable staging directory."""
+    final_root = project.releases_root / version
+    if final_root.exists():
+        raise FileExistsError(f"release {version} already exists: {final_root}")
+    project.releases_root.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(tempfile.mkdtemp(
+        prefix=f".{version}.operon-release-", dir=str(project.releases_root),
+    ))
+    try:
+        return _create_release_in_workspace(
+            db, project, version, profile, release_root=staging_root,
+            final_root=final_root, copy_files=copy_files, link_kind=link_kind,
+        )
+    except BaseException:
+        if staging_root.exists():
+            shutil.rmtree(staging_root, ignore_errors=True)
+        raise
+
+
+def _create_release_in_workspace(
+        db: Database, project: Project, version: str, profile: str, *,
+        release_root: Path, final_root: Path, copy_files: bool | None = None,
+        link_kind: str = "copy",
+) -> dict[str, Any]:
     if copy_files:
         link_kind = "copy"
     if link_kind not in {"copy", "hardlink"}:
         raise ValueError(f"unsupported release link kind {link_kind!r}")
-    release_root = project.releases_root / version
-    if release_root.exists():
-        raise FileExistsError(f"release {version} already exists: {release_root}")
-    release_root.mkdir(parents=True, exist_ok=False)
-
     # Metadata snapshots (small, copied).
     metadata_tables = [
         "organisms", "samples", "runs", "assemblies", "annotations", "accessions",
@@ -254,21 +276,38 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         "manifest_sha256": sha256_file(manifest_path),
         "metadata_sha256": metadata_sha256,
     }
-    db.conn.execute(
-        "INSERT INTO releases(version, created_at, profile, path, manifest_sha256, summary) VALUES(?,?,?,?,?,?)",
-        (version, now_iso(), profile, str(release_root), summary["manifest_sha256"], json.dumps(summary)),
-    )
-    db.conn.executemany(
-        "INSERT OR REPLACE INTO release_members(release_version, file_id, entity_type, entity_id, release_path, sha256, size_bytes) "
-        "VALUES(?,?,?,?,?,?,?)",
-        [(version, m["file_id"], m["entity_type"], m["entity_id"], m["release_relative_path"], m["sha256"],
-          m["size_bytes"]) for m in manifest_rows],
-    )
-    db.conn.commit()
-    for member in members:
-        # Release state is applied to accepted members.
-        db.set_entity_state(member["entity_type"], member["entity_id"], "RELEASED", f"released in {version}")
-    return {**summary, "path": str(release_root)}
+    # Publish the fully verified tree atomically.  If the database commit below
+    # fails, remove the published tree so a retry cannot observe a phantom
+    # release directory.
+    os.replace(release_root, final_root)
+    try:
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO releases(version, created_at, profile, path, manifest_sha256, summary) VALUES(?,?,?,?,?,?)",
+                (version, now_iso(), profile, str(final_root), summary["manifest_sha256"], json.dumps(summary)),
+            )
+            db.conn.executemany(
+                "INSERT OR REPLACE INTO release_members(release_version, file_id, entity_type, entity_id, release_path, sha256, size_bytes) "
+                "VALUES(?,?,?,?,?,?,?)",
+                [(version, m["file_id"], m["entity_type"], m["entity_id"], m["release_relative_path"], m["sha256"],
+                  m["size_bytes"]) for m in manifest_rows],
+            )
+            released_entities = {
+                (member["entity_type"], member["entity_id"])
+                for member in members
+            }
+            for entity_type, entity_id in sorted(released_entities):
+                # Accepted members use the normal audited transition machine.
+                set_state(
+                    db, entity_type, entity_id, "RELEASED",
+                    f"released in {version}", actor="operon release",
+                )
+    except BaseException:
+        if final_root.exists():
+            shutil.rmtree(final_root, ignore_errors=True)
+        raise
+    summary["path"] = str(final_root)
+    return summary
 
 
 def _python_version() -> str:
