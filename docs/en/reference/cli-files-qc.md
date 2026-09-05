@@ -15,7 +15,7 @@ operon ingest \
 - Compression such as `.gz` is detected automatically. A file with a gzip suffix but no gzip magic bytes is rejected.
 - Different SHA-256 bytes for the same entity and role are rejected.
 - If the target canonical path is occupied by different bytes, Operon does not overwrite it. If another manifest row claims the occupant and its bytes match, the occupant is first moved to that row's own canonical role path and its `relative_path` is updated. An unclaimed interrupted remnant is quarantined as `<filename>.orphan-<first-12-sha>` in the same directory. Both cases are audited in `changes` and preserve bytes. `ConflictError` is raised only when the occupying bytes do not match the claiming row's checksum either.
-- `--move` moves instead of copying the source file.
+- `--move` removes the source only after the archived copy has been checksum-verified and the manifest/workflow transaction has committed. If any earlier step fails, the source remains available for retry.
 - On success, the entity state becomes `CHECKSUM_VERIFIED` and relevant entity file-ID fields are updated.
 
 ## verify
@@ -37,6 +37,7 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 - The default `copy` mode keeps raw and standardized files on separate inodes.
 - `hardlink` and `symlink` are explicit compatibility and space-saving options.
 - An existing target with the same checksum is skipped; a different checksum is rejected.
+- New targets are built under a temporary sibling and published atomically. If copying, checksum verification, or the status transaction fails, the target and temporary link are removed so the operation can be retried without a partial artifact.
 
 ## qc
 

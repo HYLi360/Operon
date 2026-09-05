@@ -203,6 +203,22 @@ def test_standardize_hardlink_fallback_directory_and_batch_error(project_db, tmp
     assert any("error" in item for item in results)
 
 
+def test_standardize_rolls_back_target_when_state_commit_fails(project_db, tmp_path, monkeypatch):
+    project, db = project_db
+    source = tmp_path / "rollback.fa"
+    source.write_text(">x\nACGT\n", encoding="utf-8")
+    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    monkeypatch.setattr(
+        db, "set_entity_state",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("state write failed")),
+    )
+    with pytest.raises(RuntimeError, match="state write failed"):
+        files.standardize_file(db, project, row["file_id"])
+    target = project.standardized_root / "assemblies" / "ASM_000001" / Path(row["relative_path"]).name
+    assert not target.exists()
+    assert db.query("SELECT status FROM files WHERE file_id=?", (row["file_id"],))[0]["status"] == "CHECKSUM_VERIFIED"
+
+
 def test_local_verification_stat_error(project_db, tmp_path, monkeypatch):
     _project, db = project_db
     path = tmp_path / "x"

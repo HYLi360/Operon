@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import uuid
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
@@ -382,23 +383,15 @@ def ingest_file(
                 f"({target_sha[:12]}... != {source_sha[:12]}...); refusing to overwrite"
             )
 
-    if move:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.replace(source, target)
-        except OSError:
-            # Cross-device moves use a verified copy followed by source removal.
-            if source.is_dir():
-                atomic_copytree(source, target)
-                shutil.rmtree(source)
-            else:
-                atomic_copy(source, target)
-                source.unlink()
+    # A move is deliberately implemented as copy -> verify -> register ->
+    # remove-source.  This is slightly more work on one filesystem than
+    # ``os.replace``, but it leaves the source recoverable if copying,
+    # verification, or the manifest transaction fails (including cross-device
+    # moves, where rename is unavailable).
+    if source.is_dir():
+        atomic_copytree(source, target)
     else:
-        if source.is_dir():
-            atomic_copytree(source, target)
-        else:
-            atomic_copy(source, target)
+        atomic_copy(source, target)
     target_sha = sha256_path(target)
     target_size = path_size_bytes(target)
     if target_sha != source_sha or target_size != source_size:
@@ -419,6 +412,11 @@ def ingest_file(
         provenance_buffer=provenance_buffer,
         command=f"ingest {source}", input_sha256=target_sha,
     )
+    if move:
+        if source.is_dir() and not source.is_symlink():
+            shutil.rmtree(source)
+        else:
+            source.unlink()
     return row
 
 
@@ -686,32 +684,54 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         db.conn.commit()
         return {"file_id": file_id, "target": str(target), "action": "skipped"}
 
-    if link_kind == "symlink":
-        os.symlink(source, target)
-    elif link_kind == "hardlink":
-        if source.is_dir():
-            atomic_copytree(source, target)
+    created_target = False
+    temporary_link: Path | None = None
+    try:
+        if link_kind == "symlink":
+            # A symlink is published with the same temp-name + replace pattern
+            # as regular files, so an interrupted operation cannot expose a
+            # half-created standardized target.
+            temporary_link = target.with_name(f".{target.name}.operon-{uuid.uuid4().hex}")
+            os.symlink(source, temporary_link)
+            os.replace(temporary_link, target)
+        elif link_kind == "hardlink":
+            if source.is_dir():
+                atomic_copytree(source, target)
+            else:
+                temporary_link = target.with_name(f".{target.name}.operon-{uuid.uuid4().hex}")
+                try:
+                    os.link(source, temporary_link)
+                    os.replace(temporary_link, target)
+                except OSError:
+                    if temporary_link.exists() or temporary_link.is_symlink():
+                        temporary_link.unlink(missing_ok=True)
+                    temporary_link = None
+                    atomic_copy(source, target)
         else:
-            try:
-                os.link(source, target)
-            except OSError:
+            if source.is_dir():
+                atomic_copytree(source, target)
+            else:
                 atomic_copy(source, target)
-    else:
-        if source.is_dir():
-            atomic_copytree(source, target)
-        else:
-            atomic_copy(source, target)
-    if sha256_path(target) != record["sha256"]:
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
-        else:
-            target.unlink(missing_ok=True)
-        raise ChecksumError(f"{file_id}: standardized target checksum mismatch")
-    db.conn.execute("UPDATE files SET status='STANDARDIZED' WHERE file_id=?", (file_id,))
-    db.conn.commit()
-    db.set_entity_state(record["entity_type"], record["entity_id"], "STANDARDIZED",
-                        f"file {file_id} staged in standardized/")
-    return {"file_id": file_id, "target": str(target), "action": link_kind}
+        created_target = True
+        if sha256_path(target) != record["sha256"]:
+            raise ChecksumError(f"{file_id}: standardized target checksum mismatch")
+        # File status and entity state are committed together.  If either
+        # database write fails, the newly published target is removed below so
+        # a retry starts from the same filesystem state.
+        with db.transaction():
+            db.conn.execute("UPDATE files SET status='STANDARDIZED' WHERE file_id=?", (file_id,))
+            db.set_entity_state(record["entity_type"], record["entity_id"], "STANDARDIZED",
+                                f"file {file_id} staged in standardized/")
+        return {"file_id": file_id, "target": str(target), "action": link_kind}
+    except BaseException:
+        if temporary_link is not None and (temporary_link.exists() or temporary_link.is_symlink()):
+            temporary_link.unlink(missing_ok=True)
+        if created_target or target.exists() or target.is_symlink():
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+        raise
 
 
 def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> list[dict[str, Any]]:

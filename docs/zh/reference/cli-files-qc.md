@@ -25,7 +25,7 @@ operon ingest \
   `relative_path`；无人认领的中断残留会隔离为同目录的 `<文件名>.orphan-<sha前12位>`。
   两种情况都写入 `changes` 审计、保留原字节；占用字节与认领行 checksum 也不一致时才抛出
   `ConflictError`。
-- `--move` 移动而非复制源文件。
+- `--move` 只有在归档副本完成 checksum 校验且 manifest/workflow 事务提交后才删除源文件；此前任一步失败都会保留源文件，便于重试。
 - 成功后实体状态为 `CHECKSUM_VERIFIED`，并回填相关实体的文件 ID 字段。
 
 ## verify
@@ -53,6 +53,7 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 - 默认 `copy`：raw/standardized 不共享 inode。
 - `hardlink`/`symlink` 为显式兼容与节省空间选项。
 - 目标已存在且 checksum 一致时跳过；不一致则拒绝覆盖。
+- 新目标先写入同目录临时路径再原子发布；复制、checksum 校验或状态事务失败时会清理目标和临时链接，不留下半成品，可直接重试。
 
 ## qc
 
