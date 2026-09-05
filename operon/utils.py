@@ -212,8 +212,6 @@ def format_table(headers: Iterable[str], rows: Iterable[Iterable[Any]]) -> str:
     strings: list[list[str]] = []
     for row in rows:
         strings.append(["" if value is None else str(value) for value in row])
-    if not strings:
-        strings = [[h for h in headers]]
     widths = [len(str(h)) for h in headers]
     for row in strings:
         for i, value in enumerate(row):

@@ -187,7 +187,9 @@ def test_atomic_helpers_cleanup_temporary_files(tmp_path, monkeypatch):
 
 
 def test_table_and_numeric_utility_edges():
-    assert "header" in utils.format_table(["header"], [])
+    rendered = utils.format_table(["header"], [])
+    assert rendered.count("header") == 1
+    assert rendered.count("-" * len("header")) == 1
     assert "" in utils.format_table(["a"], [[None]])
     assert utils.parse_key_values(["--a=1", "b=two=parts"]) == {"a": "1", "b": "two=parts"}
     with pytest.raises(ValueError, match="expected key=value"):
