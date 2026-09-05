@@ -17,9 +17,19 @@ from typing import Any
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ValidationError
+from operon.profiles import load_profile
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
 from operon.workflow import set_state
+
+_ENTITY_TABLES = {
+    "organism": "organisms",
+    "sample": "samples",
+    "run": "runs",
+    "assembly": "assemblies",
+    "annotation": "annotations",
+}
 
 ACCEPTED = {"PASS", "PASS_WITH_WARNINGS", "ACCEPT_WITH_WARNING"}
 
@@ -88,6 +98,85 @@ def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
     return excluded
 
 
+def _assert_release_entities_evaluated(db: Database, project: Project, profile: str) -> None:
+    """Reject a release scope containing entities with no current decision."""
+    # ``release_files_for`` remains usable by low-level callers that provide a
+    # synthetic member list (for example migration tooling). The normal CLI
+    # path always validates the profile before reaching this helper.
+    if not (project.profiles_dir / f"{profile}.yaml").exists():
+        return
+    document = load_profile(project.profiles_dir, profile, expected_kind="qc")
+    applies_to = sorted(set(document.get("applies_to", ["assembly", "annotation", "run"])))
+    if not applies_to:
+        return
+    placeholders = ", ".join("?" for _ in applies_to)
+    rows = db.conn.execute(
+        f"""
+        SELECT DISTINCT f.entity_type, f.entity_id
+        FROM files f
+        LEFT JOIN current_decisions d
+          ON d.entity_type=f.entity_type AND d.entity_id=f.entity_id AND d.profile=?
+        WHERE f.entity_type IN ({placeholders})
+          AND d.entity_id IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_supersessions s
+              WHERE s.object_type=f.entity_type AND s.object_id=f.entity_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM effective_retired_entities r
+              WHERE r.entity_type=f.entity_type AND r.entity_id=f.entity_id
+          )
+        ORDER BY f.entity_type, f.entity_id
+        """,
+        [profile, *applies_to],
+    ).fetchall()
+    stale_keys: list[tuple[str, str]] = []
+    for entity_type in applies_to:
+        table = _ENTITY_TABLES.get(entity_type)
+        if table is None:
+            continue
+        decisions = db.conn.execute(
+            "SELECT d.entity_type, d.entity_id, d.observed, d.evaluated_at "
+            "FROM current_decisions d WHERE d.profile=? AND d.entity_type=? "
+            "AND NOT EXISTS (SELECT 1 FROM entity_supersessions s "
+            "WHERE s.object_type=d.entity_type AND s.object_id=d.entity_id) "
+            "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type=d.entity_type AND r.entity_id=d.entity_id) "
+            "ORDER BY d.entity_id",
+            (profile, entity_type),
+        ).fetchall()
+        for decision in decisions:
+            try:
+                observed = json.loads(str(decision["observed"] or "{}"))
+            except json.JSONDecodeError:
+                observed = {}
+            watermark = observed.get("_metadata_change_id") if isinstance(observed, dict) else None
+            if watermark is not None:
+                stale = db.metadata_change_id(entity_type, str(decision["entity_id"])) > int(watermark)
+            else:
+                # Pre-watermark decisions retain the historical timestamp
+                # comparison. New decisions use the monotonic audit ID above.
+                stale = db.conn.execute(
+                    "SELECT 1 FROM changes c WHERE c.object_id=? "
+                    "AND c.object_type IN (?, ?) AND c.field IS NOT NULL "
+                    "AND julianday(c.changed_at)>julianday(?) LIMIT 1",
+                    (decision["entity_id"], entity_type, table, decision["evaluated_at"]),
+                ).fetchone() is not None
+            if stale:
+                stale_keys.append((entity_type, str(decision["entity_id"])))
+    missing_keys = [(str(row["entity_type"]), str(row["entity_id"])) for row in rows]
+    problem_keys = sorted(set(missing_keys + stale_keys))
+    if problem_keys:
+        sample = ", ".join(f"{entity_type}:{entity_id}" for entity_type, entity_id in problem_keys[:10])
+        if len(problem_keys) > 10:
+            sample += ", ..."
+        reason = "missing decisions or metadata changed since evaluation"
+        raise ValidationError(
+            f"release profile {profile!r} has {len(problem_keys)} unevaluated/stale entity/entities "
+            f"({reason}): {sample}; run `operon qc` and `operon evaluate` before release"
+        )
+
+
 def create_release(db: Database, project: Project, version: str, profile: str,
                    copy_files: bool | None = None, link_kind: str = "copy") -> dict[str, Any]:
     """Create a release through a recoverable staging directory."""
@@ -118,6 +207,8 @@ def _create_release_in_workspace(
         link_kind = "copy"
     if link_kind not in {"copy", "hardlink"}:
         raise ValueError(f"unsupported release link kind {link_kind!r}")
+    _assert_release_entities_evaluated(db, project, profile)
+
     # Metadata snapshots (small, copied).
     metadata_tables = [
         "organisms", "samples", "runs", "assemblies", "annotations", "accessions",

@@ -208,3 +208,16 @@ def test_apply_skips_unchanged_rows_without_new_audit_rows(project_db, tmp_path)
     result = apply_table_import(db, schema, again, on_conflict="update")
     assert result == {"inserted": 0, "updated": 0, "unchanged": 1, "skipped": 0}
     assert db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"] == audited
+
+
+def test_metadata_update_preserves_advanced_entity_state(project_db, tmp_path):
+    project, db, schema = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"})
+    db.set_entity_state("organism", "ORG_000001", "QC_COMPLETE", "qc complete")
+    source = _csv(tmp_path / "update-advanced.csv", ["organism_id", "scientific_name"], [
+        {"organism_id": "ORG_000001", "scientific_name": "After"},
+    ])
+    preview = preview_table_import(db, schema, "organisms", source)
+    result = apply_table_import(db, schema, preview, on_conflict="update", actor="tester")
+    assert result["updated"] == 1
+    assert db.get_entity_state("organism", "ORG_000001") == "QC_COMPLETE"

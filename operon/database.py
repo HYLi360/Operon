@@ -1161,6 +1161,19 @@ class Database:
         ).fetchone()
         return dict(row) if row is not None else None
 
+    def metadata_change_id(self, entity_type: str, entity_id: str) -> int:
+        """Return the latest audited metadata change for one entity."""
+        object_types = [entity_type]
+        table = ENTITY_TABLES.get(entity_type)
+        if table is not None:
+            object_types.append(table)
+        row = self._conn.execute(
+            f"SELECT COALESCE(MAX(change_id), 0) AS change_id FROM changes "
+            f"WHERE object_id=? AND object_type IN ({', '.join('?' for _ in object_types)})",
+            (entity_id, *object_types),
+        ).fetchone()
+        return int(row["change_id"] or 0)
+
     def lifecycle_schema_available(self) -> bool:
         """Return whether schema 2.7 lifecycle objects are present."""
         return self._conn.execute(

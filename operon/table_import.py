@@ -14,7 +14,6 @@ from xml.etree import ElementTree as ET
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
-from operon.utils import now_iso
 
 IMPORTABLE_TABLES = ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -383,11 +382,16 @@ def apply_table_import(
                 result["updated"] += 1
             for entity_type, entity_table in ENTITY_TABLES.items():
                 if entity_table == table:
-                    entity_id = row[ENTITY_ID_COLUMNS[entity_type]]
-                    conn.execute(
-                        "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) VALUES(?,?,?,?,?) "
-                        "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, updated_at=excluded.updated_at",
-                        (entity_type, entity_id, "METADATA_VALIDATED", "metadata imported from table", now_iso()),
-                    )
+                    # An update to existing metadata must not silently demote a
+                    # QC, decision, or released entity.  Its audit timestamp is
+                    # used by release preflight to require a fresh evaluation.
+                    # New entities still enter the normal metadata-validated
+                    # state.
+                    if action == "insert":
+                        entity_id = row[ENTITY_ID_COLUMNS[entity_type]]
+                        db.set_entity_state(
+                            entity_type, entity_id, "METADATA_VALIDATED",
+                            "metadata imported from table",
+                        )
                     break
     return result

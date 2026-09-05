@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from operon import entity_view, release, reports
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import EntityNotFoundError, ValidationError
+from operon.files import ingest_file
+from operon.rules import evaluate_entity
 from operon.utils import sha256_path
 
 
@@ -112,6 +115,46 @@ def test_release_validates_link_kind_existing_and_missing_members(project_db, mo
     ])
     with pytest.raises(FileNotFoundError, match="remote-only"):
         release.create_release(db, project, "remote", "p")
+
+
+def test_release_rejects_unevaluated_entities_before_creating_output(project_db):
+    project, db = project_db
+    _insert_graph(db)
+    (project.profiles_dir / "release_preflight.yaml").write_text(
+        yaml.safe_dump({
+            "kind": "qc", "version": 1, "applies_to": ["assembly"],
+            "required": [], "warnings": [],
+        }, sort_keys=False),
+        encoding="utf-8",
+    )
+    source = project.root / "assembly.fa"
+    source.write_text(">ctg1\nACGT\n", encoding="utf-8")
+    ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    with pytest.raises(ValidationError, match="unevaluated/stale"):
+        release.create_release(db, project, "blocked", "release_preflight")
+    assert not (project.releases_root / "blocked").exists()
+
+
+def test_release_rejects_metadata_changed_after_evaluation(project_db):
+    project, db = project_db
+    _insert_graph(db)
+    profile_name = "release_stale"
+    (project.profiles_dir / f"{profile_name}.yaml").write_text(
+        yaml.safe_dump({
+            "kind": "qc", "version": 1, "applies_to": ["assembly"],
+            "required": [], "warnings": [],
+        }, sort_keys=False),
+        encoding="utf-8",
+    )
+    source = project.root / "assembly.fa"
+    source.write_text(">ctg1\nACGT\n", encoding="utf-8")
+    ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    evaluate_entity(db, project, "assembly", "ASM_000001", profile_name)
+    db.record_change("assemblies", "ASM_000001", "assembly_name", None, "updated",
+                     "metadata changed after evaluation")
+    with pytest.raises(ValidationError, match="unevaluated/stale"):
+        release.create_release(db, project, "stale", profile_name)
+    assert not (project.releases_root / "stale").exists()
 
 
 def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monkeypatch):

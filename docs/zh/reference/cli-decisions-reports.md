@@ -35,6 +35,7 @@ operon release --version VERSION --profile NAME \
 - 默认 `copy`，生成与 raw/standardized 不共享 inode 的 release。
 - `--copy-files` 是 `--link copy` 的兼容别名。
 - 已存在的 version 目录会拒绝重复创建。
+- 发布预检会拒绝缺少当前 decision、或元数据在评估后发生变化的活动实体；请先重新执行 `qc` 与 `evaluate` 再重试。
 - 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 的文件；其余实体写入 `exclusions.tsv`。
 - release 的 metadata 快照包含 `data_sources.tsv` 与 `source_links.tsv`，冻结来源、引用、
   License 及对象关联，并纳入 release checksum/provenance。

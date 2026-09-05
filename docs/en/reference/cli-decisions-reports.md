@@ -33,6 +33,7 @@ operon release --version VERSION --profile NAME \
 - The default is `copy`, producing a release that shares no inodes with raw/standardized.
 - `--copy-files` is a compatibility alias for `--link copy`.
 - An existing version directory is never recreated.
+- Release preflight rejects active, in-scope entities with no current decision or with metadata changed after evaluation; run `qc` and `evaluate` again before retrying.
 - Only files whose `current_decisions` are PASS, PASS_WITH_WARNINGS, or ACCEPT_WITH_WARNING are included; all other entities are written to `exclusions.tsv`.
 - The release metadata snapshot contains `data_sources.tsv` and `source_links.tsv`, freezing sources, citations, licenses, and object associations, and is covered by the release checksum/provenance.
 
