@@ -163,6 +163,15 @@ def test_ask_entity_sections_cover_create_reuse_and_skip(project_db, monkeypatch
     assert draft["annotation"]["row"]["assembly_id"] == "ASM_000001"
 
 
+def test_annotation_prompt_default_reflects_existing_draft(project_db, monkeypatch):
+    _project, db = project_db
+    defaults: list[bool] = []
+    monkeypatch.setattr(wizard, "_confirm", lambda _message, default=True: defaults.append(default) or False)
+    draft = {"assembly": {"id": "ASM_000001"}}
+    wizard._ask_annotation(db, draft)
+    assert defaults == [False]
+
+
 def test_ask_path_files_and_summary_cover_optional_sections(project_db, tmp_path, monkeypatch, capsys):
     _project, db = project_db
     real_file = tmp_path / "genome.fna"

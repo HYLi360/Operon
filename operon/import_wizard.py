@@ -224,7 +224,7 @@ def _ask_assembly(db: Database, draft: dict[str, Any]) -> None:
 
 
 def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
-    if not _confirm("Record an annotation release?", default=bool(draft.get("annotation")) or True):
+    if not _confirm("Record an annotation release?", default=bool(draft.get("annotation"))):
         draft["annotation"] = None
         return
     assembly_id = draft["assembly"]["id"]
