@@ -65,7 +65,7 @@ operon export --output DIR \
   - `manifest.tsv`：列为 `file_id`、`entity_type`、`entity_id`、`file_role`、
     `format`、`compression`、`export_relative_path`、`original_relative_path`、
     `source_url`、`size_bytes`、`sha256`；其中 `sha256` 是物化后对导出字节复算的值；
-  - `qc.tsv`：默认生成，导出实体的 QC 长表快照；`--no-qc` 跳过；
+  - `qc.tsv`：默认生成，导出实体的 QC 长表快照；`--no-qc` 跳过。QC 采用有界分批查询，避免数千实体的导出触及 SQLite 表达式或参数上限，并保持实体、阶段、指标的排序；
   - `checksums.sha256`：导出字节的校验和；
   - `provenance.json`：记录全部选择条件、`created_at`、`file_count`、`operon` 版本、
     `link_kind` 和 manifest SHA-256。

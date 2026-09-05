@@ -261,14 +261,17 @@ def _export_files_in_workspace(
     if include_qc:
         pairs = sorted({(row["entity_type"], row["entity_id"]) for row in manifest_rows})
         qc_rows: list[dict[str, Any]] = []
-        if pairs:
-            clause = " OR ".join("(q.entity_type=? AND q.entity_id=?)" for _ in pairs)
-            params = [value for pair in pairs for value in pair]
-            qc_rows = [dict(row) for row in db.conn.execute(
+        # Keep both expression depth and bind parameters below SQLite's
+        # conservative limits, independently of the size of the export.
+        for offset in range(0, len(pairs), 200):
+            batch = pairs[offset:offset + 200]
+            clause = " OR ".join("(q.entity_type=? AND q.entity_id=?)" for _ in batch)
+            params = [value for pair in batch for value in pair]
+            qc_rows.extend(dict(row) for row in db.conn.execute(
                 f"SELECT q.* FROM qc_results q WHERE ({clause}) "
                 "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",
                 params,
-            ).fetchall()]
+            ).fetchall())
         write_tsv(output_root / "qc.tsv", QC_COLUMNS, qc_rows)
 
     checksum_lines = [

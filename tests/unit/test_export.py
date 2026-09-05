@@ -62,6 +62,32 @@ def test_export_requires_a_selection_criterion(project_db, tmp_path):
                      link_kind="weird")
 
 
+def test_export_qc_over_a_thousand_entities(project_db, tmp_path):
+    project, db, files = project_db
+    source = project.root / files["genome1"]["relative_path"]
+    # Use real archived members, with QC on both sides of batch boundaries.
+    with db.transaction():
+        for number in range(3, 1002):
+            entity_id = f"ASM_{number:06d}"
+            db.insert_row("assemblies", {"assembly_id": entity_id, "sample_id": "SMP_000001"})
+            member = ingest_file(db, project, source, "assembly", entity_id, "genome_fasta")
+            if number in {199, 200, 201, 400, 401, 1001}:
+                db.insert_qc_result({
+                    "entity_type": "assembly", "entity_id": entity_id,
+                    "file_id": member["file_id"], "file_sha256": member["sha256"],
+                    "qc_stage": "file", "metric_name": "total_length", "metric_value": "8",
+                    "metric_numeric": 8, "tool": "operon", "tool_version": "0",
+                    "parameter_set": "default", "evaluated_at": "now",
+                })
+    out = tmp_path / "large-export"
+    result = export_files(db, project, output_dir=out, entity_type="assembly")
+    assert result["file_count"] == 1002
+    assert len(_read_tsv(out / "manifest.tsv")) == 1002
+    assert [row["entity_id"] for row in _read_tsv(out / "qc.tsv")] == [
+        f"ASM_{number:06d}" for number in (199, 200, 201, 400, 401, 1001)
+    ]
+
+
 def test_export_filters_by_entity_type_and_role(project_db, tmp_path):
     project, db, files = project_db
     out = tmp_path / "export"

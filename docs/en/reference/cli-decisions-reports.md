@@ -57,7 +57,7 @@ Materializes database entities into a directory by file identity for consumption
 - The layout is `data/<entity_type>/<entity_id>/<filename>`; before materialization the source file SHA-256 is checked against the manifest, and any mismatch is refused.
 - Artifacts:
   - `manifest.tsv` with columns `file_id`, `entity_type`, `entity_id`, `file_role`, `format`, `compression`, `export_relative_path`, `original_relative_path`, `source_url`, `size_bytes`, `sha256`; `sha256` is recomputed over the materialized bytes;
-  - `qc.tsv`: a QC long-table snapshot of the exported entities, written by default; skipped with `--no-qc`;
+  - `qc.tsv`: a QC long-table snapshot of the exported entities, written by default; skipped with `--no-qc`. QC is fetched in bounded batches so exports with thousands of entities do not exceed SQLite expression/parameter limits; entity/stage/metric ordering is preserved;
   - `checksums.sha256`: checksums of the exported bytes;
   - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the manifest SHA-256.
 - Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
