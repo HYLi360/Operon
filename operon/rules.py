@@ -238,7 +238,17 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
 
     if source_snapshots:
         decision_observed["_rule_sources"] = source_snapshots
+    decision_observed["_metadata_change_id"] = db.metadata_change_id(entity_type, entity_id)
 
+    # Re-evaluation creates a new immutable automatic decision, but it must not
+    # terminate or hide a curator's decision lifecycle.  Carry the current
+    # curation fields forward verbatim; a curator can still change them later
+    # with the normal audited ``curate`` operation.
+    previous = db.conn.execute(
+        "SELECT curated_decision, curated_by, curated_reason, curated_evidence, curated_at "
+        "FROM current_decisions WHERE entity_type=? AND entity_id=? AND profile=?",
+        (entity_type, entity_id, profile_name),
+    ).fetchone()
     row = {
         "entity_type": entity_type,
         "entity_id": entity_id,
@@ -252,15 +262,33 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
         "thresholds": json.dumps(profile, ensure_ascii=False),
         "evaluated_at": now_iso(),
     }
+    if previous is not None:
+        row.update({
+            "curated_decision": previous["curated_decision"],
+            "curated_by": previous["curated_by"],
+            "curated_reason": previous["curated_reason"],
+            "curated_evidence": previous["curated_evidence"],
+            "curated_at": previous["curated_at"],
+        })
     db.upsert_decision(row)
-    set_state_bulk(db, entity_type, entity_id, DECISION_STATES.get(decision, "QC_COMPLETE"),
-                   f"profile {profile_name}: {decision} ({', '.join(reasons) or 'no issues'})")
+    # A curator owns the entity lifecycle until an explicit ``curate`` call.
+    # Automatic re-evaluation may append evidence, but must not demote an
+    # ACCEPTED/REVIEW/REJECTED/RELEASED state based on its new result.
+    if previous is None or previous["curated_decision"] is None:
+        set_state_bulk(db, entity_type, entity_id, DECISION_STATES.get(decision, "QC_COMPLETE"),
+                       f"profile {profile_name}: {decision} ({', '.join(reasons) or 'no issues'})")
     row["details"] = details
     return row
 
 
-def evaluate_all(db: Database, project: Project, profile_name: str | None = None,
-                 entity_type: str | None = None) -> list[dict[str, Any]]:
+def evaluation_targets(db: Database, project: Project, profile_name: str | None = None,
+                       entity_type: str | None = None,
+                       entity_id: str | None = None) -> list[tuple[str, str]]:
+    """Return the exact entities a bulk evaluation would process.
+
+    Keeping target discovery separate lets the CLI warn once, before any
+    writes, when the operation will re-evaluate entities with curation data.
+    """
     profile_name = profile_name or project.config["qc"]["default_profile"]
     profile = load_profile(project.profiles_dir, profile_name, expected_kind="qc")
     applies_to = set(profile.get("applies_to", ["assembly", "annotation", "run"]))
@@ -273,13 +301,44 @@ def evaluate_all(db: Database, project: Project, profile_name: str | None = None
     if entity_type:
         sql += " AND entity_type=?"
         params.append(entity_type)
+    if entity_id:
+        sql += " AND entity_id=?"
+        params.append(entity_id)
     sql += " ORDER BY entity_type, entity_id"
     rows = db.conn.execute(sql, params).fetchall()
+    return [
+        (str(row["entity_type"]), str(row["entity_id"]))
+        for row in rows if row["entity_type"] in applies_to
+    ]
+
+
+def curated_evaluation_targets(
+        db: Database, project: Project, profile_name: str | None = None,
+        entity_type: str | None = None, entity_id: str | None = None,
+) -> list[tuple[str, str]]:
+    """Return evaluation targets that already have a manual decision."""
+    profile_name = profile_name or project.config["qc"]["default_profile"]
+    targets = set(evaluation_targets(db, project, profile_name, entity_type, entity_id))
+    if not targets:
+        return []
+    rows = db.conn.execute(
+        "SELECT entity_type, entity_id FROM current_decisions "
+        "WHERE profile=? AND curated_decision IS NOT NULL",
+        (profile_name,),
+    ).fetchall()
+    curated = {
+        (str(row["entity_type"]), str(row["entity_id"])) for row in rows
+    }
+    return sorted(targets & curated)
+
+
+def evaluate_all(db: Database, project: Project, profile_name: str | None = None,
+                 entity_type: str | None = None) -> list[dict[str, Any]]:
+    profile_name = profile_name or project.config["qc"]["default_profile"]
+    targets = evaluation_targets(db, project, profile_name, entity_type)
     results = []
-    for row in rows:
-        if row["entity_type"] not in applies_to:
-            continue
-        results.append(evaluate_entity(db, project, row["entity_type"], row["entity_id"], profile_name))
+    for target_type, target_id in targets:
+        results.append(evaluate_entity(db, project, target_type, target_id, profile_name))
     return results
 
 

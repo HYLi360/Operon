@@ -3,12 +3,14 @@
 ## evaluate
 
 ```bash
-operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID]
+operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID] [--yes]
 ```
 
 - 默认 profile 来自 `project.yaml` 的 `qc.default_profile`。
 - 指定 `--entity-id` 时必须同时指定 `--entity-type`。
 - 保存 profile SHA-256 快照，追加 decision；状态机按判定更新。
+- 若本次会重新评估已有人工判定的实体，CLI 会在执行前一次性列出受影响的实体并请求确认；非交互运行必须显式给出 `--yes`，取消发生在写入任何 decision 之前。
+- 重评估会追加新的自动判定，但会沿用当前 decision 的 `curated_*` 字段；人工决定的生命周期只有在显式执行 `curate` 时才会改变。
 - 规则支持 `value_by.metric + value_by.values` 动态选择门限，并用 `unknown` 指定未知
   selector 的策略（`warning`/`fail`/`ignore`，缺省视为缺少门限即 `NOT_EVALUATED`）；
   `source.qc_stage` 可把规则绑定到一个明确的 QC/analysis 来源。

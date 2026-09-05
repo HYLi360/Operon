@@ -23,7 +23,12 @@ from operon.errors import OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
 from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table
-from operon.rules import curate_decision, evaluate_all, evaluate_entity
+from operon.rules import (
+    curated_evaluation_targets,
+    curate_decision,
+    evaluate_all,
+    evaluate_entity,
+)
 from operon.schema import (
     ENTITY_ID_COLUMNS,
     ENTITY_TABLES,
@@ -323,6 +328,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--profile")
     p.add_argument("--entity-type")
     p.add_argument("--entity-id")
+    p.add_argument("--yes", action="store_true",
+                   help="continue without confirmation when existing curated decisions will be re-evaluated")
 
     p = sub.add_parser("curate", help="record an audited human override of an automatic decision")
     p.add_argument("--entity-type", required=True)
@@ -412,6 +419,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--compression")
     p.add_argument("--source-url")
     p.add_argument("--profile")
+    p.add_argument("--yes", action="store_true",
+                   help="continue without confirmation when evaluation will reuse curated decisions")
 
     p = sub.add_parser("taxonomy", help="manage immutable NCBI Taxonomy snapshots and denominators")
     taxonomy_sub = p.add_subparsers(dest="taxonomy_command", required=True)
@@ -1295,9 +1304,28 @@ def _reason_list(reason_codes: Any) -> list[str]:
 
 
 def _cmd_evaluate(args: argparse.Namespace, project: Project, db: Database) -> int:
+    profile_name = args.profile or project.config["qc"]["default_profile"]
     if args.entity_id:
         if not args.entity_type:
             raise ValidationError("--entity-type is required when --entity-id is given")
+        row = db.conn.execute(
+            "SELECT curated_decision FROM current_decisions "
+            "WHERE entity_type=? AND entity_id=? AND profile=?",
+            (args.entity_type, args.entity_id, profile_name),
+        ).fetchone()
+        curated_targets = (
+            [(args.entity_type, args.entity_id)]
+            if row is not None and row["curated_decision"] is not None else []
+        )
+    elif (project.profiles_dir / f"{profile_name}.yaml").exists():
+        curated_targets = curated_evaluation_targets(
+            db, project, profile_name, getattr(args, "entity_type", None), None,
+        )
+    else:
+        curated_targets = []
+    if not _confirm_curated_evaluation(curated_targets, getattr(args, "yes", False)):
+        return 0
+    if args.entity_id:
         result = evaluate_entity(db, project, args.entity_type, args.entity_id, args.profile)
         results = [result]
     else:
@@ -1307,6 +1335,30 @@ def _cmd_evaluate(args: argparse.Namespace, project: Project, db: Database) -> i
          ", ".join(_reason_list(r["reason_codes"])) or "-"] for r in results
     )))
     return 0
+
+
+def _confirm_curated_evaluation(
+        targets: list[tuple[str, str]], yes: bool, *, label: str = "evaluation",
+) -> bool:
+    """Confirm a curated re-evaluation before any command stage mutates data."""
+    if not targets or yes:
+        return True
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValidationError(
+            f"{label} will re-run {len(targets)} entity/entities with curated decisions; "
+            "pass --yes to confirm"
+        )
+    import questionary
+    preview = ", ".join(f"{entity_type}:{entity_id}" for entity_type, entity_id in targets[:5])
+    if len(targets) > 5:
+        preview += ", ..."
+    confirmed = questionary.confirm(
+        f"Re-evaluate {len(targets)} curated entity/entities ({preview})?",
+        default=False,
+    ).ask()
+    if not confirmed:
+        print("Evaluation cancelled; no rows were changed.")
+    return bool(confirmed)
 
 
 def _cmd_curate(args: argparse.Namespace, project: Project, db: Database) -> int:
@@ -1479,6 +1531,18 @@ def _cmd_profiles(args: argparse.Namespace, project: Project, db: Database) -> i
 
 
 def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) -> int:
+    profile_name = args.profile or project.config["qc"]["default_profile"]
+    current = db.conn.execute(
+        "SELECT curated_decision FROM current_decisions "
+        "WHERE entity_type=? AND entity_id=? AND profile=?",
+        (args.entity_type, args.entity_id, profile_name),
+    ).fetchone()
+    curated_targets = (
+        [(args.entity_type, args.entity_id)]
+        if current is not None and current["curated_decision"] is not None else []
+    )
+    if not _confirm_curated_evaluation(curated_targets, getattr(args, "yes", False), label="pipeline"):
+        return 0
     print(f"[1/4] ingest {args.source}")
     row = ingest_file(db, project, args.source, args.entity_type, args.entity_id, args.role,
                       fmt=args.fmt, compression=args.compression, source_url=args.source_url)

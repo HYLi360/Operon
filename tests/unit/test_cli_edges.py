@@ -412,6 +412,29 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkey
     assert cli._cmd_run_pipeline(pipeline, project, db) == 0
 
 
+def test_run_pipeline_preflights_curated_evaluation_before_ingest(project_db, monkeypatch):
+    project, db = project_db
+    profile = project.config["qc"]["default_profile"]
+    db.upsert_decision({
+        "entity_type": "assembly", "entity_id": "ASM_1", "profile": profile,
+        "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
+        "curated_reason": "manual review", "reason_codes": "[]", "observed": "{}",
+        "thresholds": "{}", "evaluated_at": "2026-01-01T00:00:00+00:00",
+    })
+
+    class NotTTY:
+        def isatty(self):
+            return False
+
+    monkeypatch.setattr(cli.sys, "stdin", NotTTY())
+    monkeypatch.setattr(cli.sys, "stdout", NotTTY())
+    monkeypatch.setattr(cli, "ingest_file", lambda *_a, **_k: pytest.fail("ingest ran before confirmation"))
+    pipeline = ns(source="x", entity_type="assembly", entity_id="ASM_1", role="genome_fasta",
+                  fmt=None, compression=None, source_url=None, profile=None)
+    with pytest.raises(ValidationError, match="pipeline will.*pass --yes"):
+        cli._cmd_run_pipeline(pipeline, project, db)
+
+
 def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, capsys):
     project, db = project_db
     monkeypatch.setattr(cli, "print_qc_table", lambda *_a: "qc")

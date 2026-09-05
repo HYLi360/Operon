@@ -3,12 +3,14 @@
 ## evaluate
 
 ```bash
-operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID]
+operon evaluate [--profile NAME] [--entity-type TYPE] [--entity-id ID] [--yes]
 ```
 
 - The default profile comes from `qc.default_profile` in `project.yaml`.
 - `--entity-id` requires `--entity-type`.
 - Stores a SHA-256 snapshot of the profile and appends a decision; the state machine is updated according to the outcome.
+- Before a run that will re-evaluate any curated entity, the CLI previews the affected entity IDs and asks once for confirmation. Non-interactive runs must pass `--yes`; cancellation occurs before any decision row is written.
+- Re-evaluation appends a new automatic decision but carries the current `curated_*` fields forward, so a human decision remains the effective lifecycle record until an explicit `curate` changes it.
 - Rules support dynamic threshold selection through `value_by.metric + value_by.values`, with `unknown` defining the policy for unknown selectors (`warning`/`fail`/`ignore`; by default a missing threshold means `NOT_EVALUATED`). `source.qc_stage` can bind a rule to a specific QC/analysis source.
 
 ## curate

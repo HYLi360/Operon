@@ -273,6 +273,37 @@ def test_evaluate_all_filter_and_curate_missing(project_db):
         rules.curate_decision(db, "organism", "ORG_000001", "none", "PASS", "r", "why")
 
 
+def test_re_evaluation_carries_curated_decision_forward(project_db):
+    project, db = project_db
+    db.insert_qc_result({
+        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
+        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
+        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
+    })
+    _write_profile(project, "curation_lifecycle", {
+        "kind": "qc", "version": 1, "applies_to": ["organism"],
+        "required": [{"metric": "score", "operator": ">=", "value": 80}],
+    })
+    first = rules.evaluate_entity(db, project, "organism", "ORG_000001", "curation_lifecycle")
+    assert first["decision"] == "FAIL"
+    rules.curate_decision(
+        db, "organism", "ORG_000001", "curation_lifecycle", "PASS",
+        reviewer="reviewer", reason="manual evidence",
+    )
+    second = rules.evaluate_entity(db, project, "organism", "ORG_000001", "curation_lifecycle")
+    assert second["decision"] == "FAIL"
+    assert db.get_entity_state("organism", "ORG_000001") == "ACCEPTED"
+    current = db.query(
+        "SELECT decision, curated_decision, curated_by, curated_reason "
+        "FROM current_decisions WHERE entity_type='organism' AND entity_id='ORG_000001' "
+        "AND profile='curation_lifecycle'"
+    )[0]
+    assert current["decision"] == "FAIL"
+    assert current["curated_decision"] == "PASS"
+    assert current["curated_by"] == "reviewer"
+    assert current["curated_reason"] == "manual evidence"
+
+
 def test_schema_construction_columns_and_error_rendering(tmp_path):
     with pytest.raises(ValidationError, match="tables.*mapping"):
         Schema([])
