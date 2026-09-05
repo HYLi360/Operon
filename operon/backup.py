@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -13,7 +14,7 @@ from operon import __version__
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.utils import now_iso, sha256_file
+from operon.utils import iter_directory_entries, now_iso, sha256_file
 
 SCOPE_PATHS = {
     "control": ["project.yaml", "config", "logs"],
@@ -37,6 +38,28 @@ def _copy_known_path(project: Project, relative: str, destination: Path) -> None
         shutil.copy2(source, target)
 
 
+def _rebase_standardized_links(project: Project, staging: Path) -> None:
+    """Make generated views portable without altering archived artifact trees."""
+    root = staging / "standardized"
+    if not root.is_dir():
+        return
+    for link in iter_directory_entries(root):
+        if not link.is_symlink():
+            continue
+        target = Path(os.readlink(link))
+        if not target.is_absolute():
+            continue
+        try:
+            relative = target.relative_to(project.root)
+        except ValueError:
+            # External targets are preserved as link metadata, not read or
+            # copied. The backup does not claim to archive their referents.
+            continue
+        relocated = staging / relative
+        link.unlink()
+        link.symlink_to(os.path.relpath(relocated, link.parent))
+
+
 def create_backup(db: Database, project: Project, output: str | Path, scope: str = "control") -> dict[str, Any]:
     if scope not in SCOPE_PATHS:
         raise ValidationError(f"backup scope must be one of {sorted(SCOPE_PATHS)}")
@@ -54,6 +77,7 @@ def create_backup(db: Database, project: Project, output: str | Path, scope: str
     try:
         for relative in SCOPE_PATHS[scope]:
             _copy_known_path(project, relative, staging)
+        _rebase_standardized_links(project, staging)
         backup_db = staging / "operon.sqlite"
         destination = sqlite3.connect(backup_db)
         try:
@@ -61,8 +85,14 @@ def create_backup(db: Database, project: Project, output: str | Path, scope: str
         finally:
             destination.close()
         files: list[dict[str, Any]] = []
-        for path in sorted(item for item in staging.rglob("*") if item.is_file()):
-            if path.name == "backup-manifest.json":
+        for path in iter_directory_entries(staging):
+            if path.is_symlink():
+                files.append({
+                    "relative_path": path.relative_to(staging).as_posix(),
+                    "type": "symlink", "target": os.readlink(path),
+                })
+                continue
+            if not path.is_file():
                 continue
             files.append({
                 "relative_path": path.relative_to(staging).as_posix(),
@@ -70,7 +100,7 @@ def create_backup(db: Database, project: Project, output: str | Path, scope: str
                 "sha256": sha256_file(path),
             })
         manifest = {
-            "backup_format": 1,
+            "backup_format": 2,
             "created_at": now_iso(),
             "operon_version": __version__,
             "project_id": project.project_id,
@@ -102,11 +132,23 @@ def verify_backup(path: str | Path) -> dict[str, Any]:
     for item in manifest_files:
         relative = str(item.get("relative_path", ""))
         expected_paths.add(relative)
-        candidate = (path / relative).resolve()
+        candidate = path / relative
+        is_link = manifest.get("backup_format", 1) == 2 and item.get("type") == "symlink"
         try:
-            candidate.relative_to(path)
+            # A link entry authenticates its own text; never follow its target.
+            # Parent directories must still be contained in the backup.
+            (candidate.parent.resolve() if is_link else candidate.resolve()).relative_to(path)
         except ValueError:
             failures.append({"relative_path": relative, "error": "unsafe path"})
+            continue
+        if is_link:
+            if not candidate.is_symlink():
+                failures.append({"relative_path": relative, "error": "missing symlink"})
+            elif os.readlink(candidate) != item.get("target"):
+                failures.append({"relative_path": relative, "error": "symlink target mismatch"})
+            continue
+        if manifest.get("backup_format", 1) == 2 and candidate.is_symlink():
+            failures.append({"relative_path": relative, "error": "unexpected symlink"})
             continue
         if not candidate.is_file():
             failures.append({"relative_path": relative, "error": "missing"})
@@ -118,8 +160,8 @@ def verify_backup(path: str | Path) -> dict[str, Any]:
             failures.append({"relative_path": relative, "error": "checksum mismatch"})
     actual_paths = {
         candidate.relative_to(path).as_posix()
-        for candidate in path.rglob("*")
-        if candidate.is_file() and candidate != manifest_path
+        for candidate in iter_directory_entries(path)
+        if (candidate.is_file() or candidate.is_symlink()) and candidate != manifest_path
     }
     unexpected_paths = sorted(actual_paths - expected_paths)
     failures.extend(

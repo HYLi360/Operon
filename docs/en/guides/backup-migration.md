@@ -21,6 +21,8 @@ Note the scope boundaries: `results` excludes `raw/` and `standardized/` (the by
 
 `backup verify` validates an exact snapshot. In addition to checking size and SHA-256 for files listed in the manifest, it rejects extra files in the backup directory. Keep notes, temporary files, and recovery records outside the backup directory.
 
+New backups use manifest format 2; format 1 backups remain verifiable. Symbolic links are recorded and verified by their target text, including broken links and directory links, without following their targets. Absolute links inside the standardized view that point into the project are rebased to relative paths within the backup, so a full backup can be moved independently. Links inside archived directory artifacts retain their exact text to preserve artifact identity. External link targets are not backed up; restoring such a link does not restore its external referent.
+
 With `REMOTE_ONLY` files, a local backup must include the SQLite database containing `file_locations`. Back up the remote mirror root independently, including `operon-manifest.json` and actual objects. Placeholder files are not recovery evidence. Safe hydration requires both local `files` identity and the remote manifest/bytes.
 
 `report metadata` is not a backup. It exports metadata/manifest TSV files for browsing and exchange, but does not include complete QC, decisions, changes, workflows, remote locations, or migration state.

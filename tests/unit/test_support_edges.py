@@ -15,6 +15,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
+from operon.files import ingest_file, standardize_file
 
 
 @pytest.fixture
@@ -99,6 +100,51 @@ def test_backup_staging_is_removed_on_failure(project_db, tmp_path, monkeypatch)
     with pytest.raises(RuntimeError):
         backup.create_backup(db, project, tmp_path / "failed")
     assert not list(tmp_path.glob(".failed.staging-*"))
+
+
+@pytest.mark.parametrize("directory", [False, True])
+def test_full_backup_links_survive_project_and_backup_moves(project_db, tmp_path, directory):
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    source = tmp_path / "artifact"
+    if directory:
+        source.mkdir()
+        (source / "data").write_text("bytes")
+        (source / "alias").symlink_to("data")
+        (source / "missing").symlink_to("not-present")
+        (source / "external").symlink_to(tmp_path / "external-missing")
+        (source / "backup-manifest.json").write_text("artifact data")
+    else:
+        source.write_text("bytes")
+    member = ingest_file(db, project, source, "organism", "ORG_000001", "derived")
+    standardized = standardize_file(db, project, member["file_id"], link_kind="symlink")
+    output = tmp_path / "backup"
+    backup.create_backup(db, project, output, scope="full")
+    assert backup.verify_backup(output)["ok"]
+    db.close()
+    project.root.rename(tmp_path / "old-project")
+    moved = tmp_path / "moved-backup"
+    output.rename(moved)
+    assert backup.verify_backup(moved)["ok"]
+    view = moved / Path(standardized["target"]).relative_to(project.root)
+    assert view.is_symlink()
+    assert not Path(os.readlink(view)).is_absolute()
+    assert utils.sha256_path(view) == member["sha256"]
+    assert utils.sha256_path(moved / member["relative_path"]) == member["sha256"]
+    view.unlink()
+    view.symlink_to("wrong-target")
+    assert any(f["error"] == "symlink target mismatch" for f in backup.verify_backup(moved)["failures"])
+
+
+def test_backup_verifies_legacy_file_manifests(project_db, tmp_path):
+    project, db = project_db
+    output = tmp_path / "legacy"
+    backup.create_backup(db, project, output)
+    path = output / "backup-manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["backup_format"] = 1
+    path.write_text(json.dumps(manifest))
+    assert backup.verify_backup(output)["ok"]
 
 
 def test_report_queries_wide_pivot_and_reason_rendering(project_db):
