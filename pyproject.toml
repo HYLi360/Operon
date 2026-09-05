@@ -81,7 +81,7 @@ executables = [
 ]
 
 [tool.cxfreeze.build_exe]
-packages = ["operon", "email", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth", "textual"]
+packages = ["operon", "email", "yaml", "requests", "aiohttp", "Bio", "paramiko", "questionary", "prompt_toolkit", "wcwidth", "textual", "rich"]
 include_files = [
     ["README.md", "share/doc/operon/README.md"],
     ["README_ZH.md", "share/doc/operon/README_ZH.md"],
