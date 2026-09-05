@@ -218,10 +218,32 @@ GZIP_SUFFIXES = {".gz", ".gzip", ".bgz", ".bgzf"}
 
 
 def canonical_filename(entity_id: str, role: str, fmt: str, compression: str) -> str:
+    for name, value in (("entity_id", entity_id), ("role", role), ("format", fmt)):
+        if (not value or value in {".", ".."}
+                or any(char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value)):
+            raise ValidationError(f"invalid archive {name}: {value!r}")
     if fmt == "directory":
         return f"{entity_id}.{role}.dir"
     suffix = ".gz" if compression in {"gzip", "bgzip"} else ""
     return f"{entity_id}.{role}.{fmt}{suffix}"
+
+
+def _require_project_path(project: Project, target: Path) -> None:
+    """Reject lexical and symlink escapes before accessing an archive target."""
+    try:
+        target.resolve().relative_to(project.root.resolve())
+    except (ValueError, RuntimeError) as exc:
+        raise ValidationError(f"archive target must stay inside the project root: {target}") from exc
+
+
+def archive_target(project: Project, entity_type: str, entity_id: str, role: str,
+                   fmt: str, compression: str, archive_root: str | Path | None = None) -> Path:
+    """Build and validate the destination shared by ingestion and batch planning."""
+    filename = canonical_filename(entity_id, role, fmt, compression)
+    root = Path(archive_root) if archive_root is not None else project.raw_root / raw_bucket(entity_type)
+    target = root / entity_id / filename
+    _require_project_path(project, target)
+    return target
 
 
 def detect_format(path: str | Path, role: str | None = None) -> str:
@@ -303,6 +325,7 @@ def ingest_file(
 
     fmt = fmt or detect_format(source, role)
     compression = compression or detect_compression(source)
+    target = archive_target(project, entity_type, entity_id, role, fmt, compression, archive_root)
     if source.is_dir() and fmt != "directory":
         raise ValidationError(f"directory input requires format=directory, got {fmt!r}: {source}")
     if source.is_file() and fmt == "directory":
@@ -331,6 +354,7 @@ def ingest_file(
         )
     if existing is not None:
         target = project.root / existing["relative_path"]
+        _require_project_path(project, target)
         if target.exists() and sha256_path(target) == source_sha:
             with db.transaction():
                 db.conn.execute(
@@ -354,11 +378,7 @@ def ingest_file(
             )
             return existing_record
 
-    target_dir = (
-        Path(archive_root) if archive_root is not None
-        else project.raw_root / raw_bucket(entity_type)
-    ) / entity_id
-    target = target_dir / canonical_filename(entity_id, role, fmt, compression)
+    target = archive_target(project, entity_type, entity_id, role, fmt, compression, archive_root)
     if target.exists():
         target_sha = sha256_path(target)
         if target_sha == source_sha:

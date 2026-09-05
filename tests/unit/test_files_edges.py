@@ -51,6 +51,42 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     assert files.detect_compression(real) == "gzip"
 
 
+@pytest.mark.parametrize("field,value", [
+    ("role", "x/../../../../../escaped"), ("role", "x\\..\\escaped"),
+    ("role", ""), ("role", "bad\nrole"), ("fmt", "../../escaped"),
+])
+def test_ingest_rejects_unsafe_names_before_writing(project_db, tmp_path, field, value):
+    project, db = project_db
+    source = tmp_path / "source.fa"
+    source.write_text(">x\nACGT\n")
+    kwargs = {"role": "genome_fasta", "fmt": "fasta", field: value}
+    with pytest.raises(ValidationError, match="invalid archive"):
+        files.ingest_file(db, project, source, "assembly", "ASM_000001", **kwargs)
+    assert db.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+    assert not list(project.raw_root.rglob("*.fasta"))
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_ingest_rejects_symlink_escape_even_when_idempotent(project_db, tmp_path, existing):
+    project, db = project_db
+    source = tmp_path / "source.fa"
+    source.write_text(">x\nACGT\n")
+    target = project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+    if existing:
+        files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+        target.unlink()
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path.parent / f"{tmp_path.name}-external.fa"
+    outside.write_bytes(source.read_bytes())
+    target.symlink_to(outside)
+    before = db.conn.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0]
+    with pytest.raises(ValidationError, match="inside the project root"):
+        files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    assert outside.read_bytes() == source.read_bytes()
+    assert db.conn.execute("SELECT COUNT(*) FROM workflow_runs").fetchone()[0] == before
+
+
 def test_ingest_rejects_artifact_shape_and_role_conflicts(project_db, tmp_path):
     project, db = project_db
     missing = tmp_path / "missing"
