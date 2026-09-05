@@ -68,7 +68,7 @@ email 时，Biopython Entrez 可作为元数据回退。NCBI 对无效/撤回 ac
 原始 report/ZIP 按 SHA-256 保存到
 `raw/metadata/ncbi_datasets/`；导入摘要写入 `changes` 和 workflow provenance。
 旧项目在正式导入时会以合并方式补齐 adapter 自有字段和来源文件角色并把 metadata
-schema 升级为 1.4；自定义字段保留，dry-run 只使用内存中的升级后 schema。
+schema 升级为 {{ metadata_schema }}；自定义字段保留，dry-run 只使用内存中的升级后 schema。
 
 adapter run 在开始处理前写入 `running` workflow；每个 accession 的状态保存在
 `adapter_run_items`。失败或中断运行保持原状态，恢复运行使用新的 run ID 和

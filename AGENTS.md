@@ -187,7 +187,19 @@ change:
   `docs/*/index.md`
 
 Version markers in docs (`operon` 0.6.2, database schema 2.9, metadata
-schema 1.4) must match `pyproject.toml` and the code.
+schema 1.4) must match `pyproject.toml` and the code. Do not write the
+current values literally in Markdown sources: use the `myst_substitutions`
+references `{{ operon_version }}`, `{{ db_schema }}`, and
+`{{ metadata_schema }}`, which `docs/conf.py` resolves from the single
+sources above at build time. Substitutions expand in paragraph text only,
+never inside code spans or fenced code blocks — examples there use
+`<version>` placeholders instead. Intentional historical pins stay literal — either on the
+allowlisted era-pinned pages (`docs/*/operations/database-compatibility.md`,
+`docs/*/operations/ncbi-recovery-migration.md`) or on a line carrying an
+inline `<!-- version-pin -->` marker — and
+`tests/unit/test_docs_versions.py` fails on any other hardcoded current
+version. Only this `AGENTS.md` keeps literal current markers (it is not
+Sphinx-rendered); update the list above when bumping.
 
 ## Special Note For Codex/ChatGPT
 

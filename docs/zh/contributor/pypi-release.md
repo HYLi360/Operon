@@ -27,7 +27,10 @@ workflow 填 `publish.yml`，environment 填 `pypi`。GitHub environment 名称�
 
 ## 发布步骤
 
-1. 同时更新 `[project].version` 与文档中的所有版本标记。
+1. 更新 `[project].version`；如有变化，同时更新代码中的 `SCHEMA_VERSION` /
+   `METADATA_SCHEMA_VERSION`。文档版本标记通过 `docs/conf.py` 的
+   `myst_substitutions` 从这些唯一来源渲染，无需手工批量替换；
+   `tests/unit/test_docs_versions.py` 会拒绝 Markdown 源文件中硬编码的当前版本。
 2. 运行完整 pytest 套件与严格文档构建。
 3. 提交发布状态，并让 `v<project.version>` tag 指向该提交；不要复用仍指向旧软件包
    元数据的 tag。

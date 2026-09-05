@@ -66,7 +66,7 @@ JSON 的 SHA-256（内容寻址，同内容自动去重），`workflow_runs` 与
 探针失败只把该次运行的 `environment_id` 留为 NULL，不报错也不影响运行；2.8 之前的
 历史行同样为 NULL。
 
-Recipe 版本与快照（schema 2.9）：recipe 新增可选 `version:` 字段（正整数，缺省 1，
+Recipe 版本与快照（schema 2.9）：<!-- version-pin -->recipe 新增可选 `version:` 字段（正整数，缺省 1，
 非法值在配置校验时报错）。`analyze` 处理每个候选文件时把当前 recipe 连同其引用的
 tool spec 原文记录到 `recipe_snapshots` 表：快照文档为
 `{"recipe": <recipe 原文 mapping>, "tool": <引用的 tool spec 原文>}`，经规范化 JSON
@@ -80,7 +80,7 @@ history / show`；在 CLI 中恢复均为 print-only，由人工把输出写回�
 保存为下一个版本并记录新快照，也可以把任何已记录的快照载入编辑器（保存即创建
 下一个版本）；TUI 保存 recipe 时会规范化 `tools.yaml` 格式并丢弃手写注释。
 
-运行资源使用记录（schema 2.9）：`workflow_runs` 新增 `duration_seconds`（墙钟秒数，
+运行资源使用记录（schema 2.9）：<!-- version-pin -->`workflow_runs` 新增 `duration_seconds`（墙钟秒数，
 此前只进 JSONL）、`avg_rss_mb`（平均 RSS）与 `cpu_seconds`（核时）三列，既有
 `max_rss_mb` 列现在真正填充。采集按后端实现：
 

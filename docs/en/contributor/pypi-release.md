@@ -31,7 +31,11 @@ manual approval before the final upload.
 
 ## Release procedure
 
-1. Update `[project].version` and every documented version marker together.
+1. Update `[project].version`, plus `SCHEMA_VERSION` / `METADATA_SCHEMA_VERSION`
+   in the code when they change. Documentation version markers render from
+   these single sources through `myst_substitutions` in `docs/conf.py`, so no
+   manual sweep is needed; `tests/unit/test_docs_versions.py` rejects
+   hardcoded current versions in the Markdown sources.
 2. Run the full pytest suite and strict documentation build.
 3. Commit the release state and create tag `v<project.version>` on that exact
    commit. Never reuse a tag that points to older package metadata.

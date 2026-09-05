@@ -1,6 +1,6 @@
 # Implicit Behaviors, Edge Cases, and Known Issues
 
-This page corresponds to `operon` 0.6.2 (database schema 2.9, metadata schema 1.4). It documents behavior that is observable in the code but not stated on the task- or architecture-facing pages: implicit semantics, edge cases, and known issues. Items are described as they behave today, with the implementing module named so you can verify each claim. Nothing on this page is a usage recommendation; for the supported workflows see the [guides](../guides/index.md) and [troubleshooting](../guides/troubleshooting.md).
+This page corresponds to `operon` {{ operon_version }} (database schema {{ db_schema }}, metadata schema {{ metadata_schema }}). It documents behavior that is observable in the code but not stated on the task- or architecture-facing pages: implicit semantics, edge cases, and known issues. Items are described as they behave today, with the implementing module named so you can verify each claim. Nothing on this page is a usage recommendation; for the supported workflows see the [guides](../guides/index.md) and [troubleshooting](../guides/troubleshooting.md).
 
 Historical known issues that have been resolved are listed first. The remaining
 items describe current behavior and accepted limitations.
@@ -161,7 +161,7 @@ covered by the current implementation and regression tests:
 - **Partial download failures keep committed batches.** When some batches fail but others import, the run raises a validation error after the successful batches are committed; a rerun skips the completed batches idempotently (`adapters/ncbi_datasets.py`).
 - **The pre-2.6 annotation bridge is conservative.** It reuses an existing annotation row only for the assembly's canonical accession and only when the row is not already claimed by a different accession — a workaround for paired GCA/GCF packages with identical annotation metadata but different GFF bytes (`adapters/ncbi_datasets.py`).
 - **Disk-space preflight reserves a fixed 64 MiB** and stages downloads under the project root, never `/tmp` (`adapters/ncbi_datasets.py`).
-- **The adapter auto-upgrades old metadata schemas.** Opening a pre-1.4 `config/schemas.yaml` upgrades it in place, normalizing formatting and dropping hand-written comments (the same normalization the first remote-only eviction applies; see the [remote storage guide](../guides/remote-storage.md)) (`adapters/ncbi_datasets.py`).
+- **The adapter auto-upgrades old metadata schemas.** Opening a pre-{{ metadata_schema }} `config/schemas.yaml` upgrades it in place, normalizing formatting and dropping hand-written comments (the same normalization the first remote-only eviction applies; see the [remote storage guide](../guides/remote-storage.md)) (`adapters/ncbi_datasets.py`).
 
 ## Backup and the import wizard
 

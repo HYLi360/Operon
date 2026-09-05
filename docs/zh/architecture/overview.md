@@ -1,6 +1,6 @@
 # 架构总览
 
-本文对应 `operon` 0.6.2、数据库内部 schema 2.9、metadata schema 1.4。
+本文对应 `operon` {{ operon_version }}、数据库内部 schema {{ db_schema }}、metadata schema {{ metadata_schema }}。
 
 ## 设计目标
 
@@ -76,7 +76,7 @@
 | `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
-| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–2.9 增量迁移、事务、只读查询 |
+| `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–{{ db_schema }} 增量迁移、事务、只读查询 |
 | `operon/files.py` | 文件格式/压缩识别、原子归档、幂等 ingest、checksum 验证、standardized 视图 |
 | `operon/lifecycle.py` | 退役/恢复计划、append-only 生命周期事件、层级传播与当前退役清单 |
 | `operon/import_wizard.py` | questionary 英文导入向导、Draft 汇总审阅、非线性章节修改、预检与提交 |

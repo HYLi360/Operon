@@ -50,10 +50,12 @@ python -m pip install -e .
 
 ```bash
 operon --version
-# 输出：operon 0.6.2
 
 operon --help
 ```
+
+第一条命令输出 `operon` 加已安装的版本号——与本文档对应的版本为
+{{ operon_version }}。
 
 如需构建独立 cx_Freeze 应用，请安装 `build` extra 并使用统一发布入口：
 

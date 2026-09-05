@@ -49,4 +49,10 @@ Codex/ChatGPT 若要运行完整测试套件，请先排除 `test_tui.py`，
 | `tools.yaml` recipe、占位符或 parser | `docs/*/reference/recipe-*.md` |
 | 迁移、性能诊断或兼容边界 | `docs/*/operations/` |
 
-文档中的软件版本、database schema 和 metadata schema 必须与 `pyproject.toml` 及代码保持一致。
+文档中的软件版本、database schema 和 metadata schema 必须与 `pyproject.toml` 及代码保持一致。当前版本标记在 Markdown 源文件中写作替换引用：
+
+```text
+{{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
+```
+
+由 `docs/conf.py` 在构建时从 `pyproject.toml` 与代码常量解析。替换只在正文段落中展开，行内代码与代码块内不生效，这些位置的示例改用 `<version>` 占位符。有意保留的历史版本号保持字面量：要么位于 `docs/*/operations/` 下 allowlist 中的时代绑定页面，要么在行内附带 `<!-- version-pin -->` 标记。`tests/unit/test_docs_versions.py` 负责强制此规则。

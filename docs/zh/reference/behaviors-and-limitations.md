@@ -1,6 +1,6 @@
 # 隐式行为、边界情形与已知问题
 
-本页对应 `operon` 0.6.2（数据库 schema 2.9，元数据 schema 1.4）。它记录代码中可观察到、但未在其他任务型或架构型页面中说明的行为：隐式语义、边界情形与已知问题。各项按当前实际行为如实描述，并标注实现模块以便核对。本页不是使用建议；受支持的工作流请参阅[指南](../guides/index.md)与[故障排查](../guides/troubleshooting.md)。
+本页对应 `operon` {{ operon_version }}（数据库 schema {{ db_schema }}，元数据 schema {{ metadata_schema }}）。它记录代码中可观察到、但未在其他任务型或架构型页面中说明的行为：隐式语义、边界情形与已知问题。各项按当前实际行为如实描述，并标注实现模块以便核对。本页不是使用建议；受支持的工作流请参阅[指南](../guides/index.md)与[故障排查](../guides/troubleshooting.md)。
 
 已修复的历史问题列在前面；其余条目描述当前行为与已接受的限制。
 
@@ -159,7 +159,7 @@
 - **部分下载失败时保留已提交批次。** 部分批次失败而其余导入成功时，run 在成功批次已提交之后抛校验错误；重跑会幂等跳过已完成批次（`adapters/ncbi_datasets.py`）。
 - **pre-2.6 注释桥接是保守的。** 仅当 report 属于 assembly 的规范 accession、且该注释行未被其他 accession 认领时才复用既有注释行——这是对"GCA/GCF 成对包注释元数据相同但 GFF 字节不同"的规避（`adapters/ncbi_datasets.py`）。
 - **磁盘预检保留固定 64 MiB**，且下载暂存在项目根内，从不使用 `/tmp`（`adapters/ncbi_datasets.py`）。
-- **适配器自动升级旧元数据 schema。** 打开 pre-1.4 的 `config/schemas.yaml` 会就地升级，归一化格式并丢弃手写注释（与首次 REMOTE_ONLY 驱逐触发的归一化相同；见[远程存储指南](../guides/remote-storage.md)）（`adapters/ncbi_datasets.py`）。
+- **适配器自动升级旧元数据 schema。** 打开 pre-{{ metadata_schema }} 的 `config/schemas.yaml` 会就地升级，归一化格式并丢弃手写注释（与首次 REMOTE_ONLY 驱逐触发的归一化相同；见[远程存储指南](../guides/remote-storage.md)）（`adapters/ncbi_datasets.py`）。
 
 ## 备份与导入向导
 

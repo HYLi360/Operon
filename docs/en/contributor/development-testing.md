@@ -39,4 +39,10 @@ When changing the CLI, configuration fields, behavior, or storage layout, update
 | `tools.yaml` recipes, placeholders, or parsers | `docs/*/reference/recipe-*.md` |
 | Migrations, performance diagnostics, or compatibility boundaries | `docs/*/operations/` |
 
-Software versions, database schema versions, and metadata schema versions stated in the documentation must stay consistent with `pyproject.toml` and the code.
+Software versions, database schema versions, and metadata schema versions stated in the documentation must stay consistent with `pyproject.toml` and the code. Write current version markers in the Markdown sources as substitutions:
+
+```text
+{{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
+```
+
+`docs/conf.py` resolves them from `pyproject.toml` and the code constants at build time. Substitutions expand in paragraph text only, not inside code spans or fenced code blocks; examples there use `<version>` placeholders instead. Intentional historical pins stay literal: they either live on the allowlisted era-pinned pages under `docs/*/operations/` or carry an inline `<!-- version-pin -->` marker. `tests/unit/test_docs_versions.py` enforces the rule.

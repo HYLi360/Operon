@@ -2,21 +2,59 @@
 
 from __future__ import annotations
 
+import re
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
 
 DOCS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = DOCS_DIR.parent
 
 project = "Operon"
 author = "Operon contributors"
 copyright = "2026, Operon contributors"
 
-try:
-    release = version("OperonDBS")
-except PackageNotFoundError:
-    release = "0.6.2"
+
+def _package_version() -> str:
+    try:
+        return version("OperonDBS")
+    except PackageNotFoundError:
+        with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
+            return tomllib.load(handle)["project"]["version"]
+
+
+def _source_constant(module: str, name: str) -> str:
+    """Read a module-level string constant, falling back to the source file."""
+
+    try:
+        imported = __import__(f"operon.{module}", fromlist=[name])
+        return str(getattr(imported, name))
+    except Exception:
+        source = (REPO_ROOT / "operon" / f"{module}.py").read_text(encoding="utf-8")
+        match = re.search(rf'^{name} = "([^"]+)"', source, re.MULTILINE)
+        if match is None:
+            raise RuntimeError(f"cannot resolve {name} from operon/{module}.py")
+        return match.group(1)
+
+
+release = _package_version()
 version = release
+
+# Markdown sources reference these as {{ operon_version }} / {{ db_schema }} /
+# {{ metadata_schema }} in paragraph text. Substitutions do not expand inside
+# code spans or fenced code blocks, so examples there use `<version>`
+# placeholders instead. Historical version mentions stay literal and are
+# guarded by tests/unit/test_docs_versions.py.
+myst_substitutions = {
+    "operon_version": release,
+    "db_schema": _source_constant("database", "SCHEMA_VERSION"),
+    "metadata_schema": _source_constant("schema", "METADATA_SCHEMA_VERSION"),
+}
 
 extensions = ["myst_parser"]
 source_suffix = {".md": "markdown"}
@@ -27,7 +65,7 @@ templates_path = ["_templates"]
 # resolves their relative Markdown links as Sphinx cross-references, while the
 # toctrees provide one coherent navigation hierarchy for both languages.
 myst_heading_anchors = 4
-myst_enable_extensions = ["colon_fence", "deflist", "fieldlist"]
+myst_enable_extensions = ["colon_fence", "deflist", "fieldlist", "substitution"]
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 nitpicky = True

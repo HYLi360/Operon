@@ -16,7 +16,7 @@ operon ncbi-datasets \
 输出中的 `new_ids` 是将要分配的 organism/sample/assembly/annotation 数量；
 `metadata_rows` 包含将要 upsert 的行数。dry-run 不复制输入、不写数据库、不生成日志。
 如果项目仍是旧 metadata schema，正式导入会保留自定义字段、补入 NCBI adapter
-需要的 assembly 字段和 paired-source 文件角色，并升级到 1.4；dry-run 不修改 schema。
+需要的 assembly 字段和 paired-source 文件角色，并升级到 {{ metadata_schema }}；dry-run 不修改 schema。
 
 确认后去掉 `--dry-run`：
 

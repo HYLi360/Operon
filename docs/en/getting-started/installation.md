@@ -51,10 +51,12 @@ Verify the installation:
 
 ```bash
 operon --version
-# Expected: operon 0.6.2
 
 operon --help
 ```
+
+The first command prints `operon` followed by the installed version —
+{{ operon_version }} for the release this documentation matches.
 
 To build a standalone cx_Freeze application, install the build extra and use the unified release entry point:
 

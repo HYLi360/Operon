@@ -12,7 +12,7 @@ operon ncbi-datasets \
 
 The output includes the number of organism/sample/assembly/annotation IDs to create in `new_ids` and the rows to upsert in `metadata_rows`. A dry run does not copy input, write the database, or create logs.
 
-If the project still uses an old metadata schema, a formal import preserves custom fields, adds the fields and paired-source file roles required by the adapter, and upgrades the schema to 1.4. A dry run does not modify the schema.
+If the project still uses an old metadata schema, a formal import preserves custom fields, adds the fields and paired-source file roles required by the adapter, and upgrades the schema to {{ metadata_schema }}. A dry run does not modify the schema.
 
 After review, remove `--dry-run`:
 
