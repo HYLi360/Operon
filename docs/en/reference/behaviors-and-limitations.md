@@ -2,26 +2,32 @@
 
 This page corresponds to `operon` 0.6.2 (database schema 2.9, metadata schema 1.4). It documents behavior that is observable in the code but not stated on the task- or architecture-facing pages: implicit semantics, edge cases, and known issues. Items are described as they behave today, with the implementing module named so you can verify each claim. Nothing on this page is a usage recommendation; for the supported workflows see the [guides](../guides/index.md) and [troubleshooting](../guides/troubleshooting.md).
 
-Each item is classified:
+Historical known issues that have been resolved are listed first. The remaining
+items describe current behavior and accepted limitations.
+
+Each current item is classified:
 
 - **Intended but implicit** — deliberate design whose consequences can still surprise (for example, what a state transition does to audit rows).
 - **Limitation** — a capability boundary or robustness gap that is accepted for now.
-- **Known issue** — a defect or data-semantics surprise reported here instead of being silently left undocumented. Known issues are not yet fixed; each lists a workaround where one exists.
+- **Known issue** — a defect or data-semantics surprise reported here instead of being silently left undocumented. Any unresolved issue lists a workaround where one exists.
 
-## Known issues at a glance
+## Resolved issues
 
-| # | Area | Issue | Workaround |
-|---|---|---|---|
-| K1 | Decisions | Re-running `evaluate` appends a new decision row whose `curated_decision` is empty, so `current_decisions` (latest row per entity/profile) silently drops a previous manual `curate` override | After re-evaluating, re-run `curate` for any entity whose manual decision must stand; or avoid re-running `evaluate` for that profile |
-| K2 | QC state | For a multi-file entity (e.g. annotation with GFF3 + protein FASTA + assembly FASTA), each file's QC outcome overwrites the entity state; the last processed file wins, so an early failure can end in `QC_COMPLETE` with failing metrics stored | Inspect `operon report qc` rather than entity state alone; re-run `operon qc` for the failing file so its outcome is last |
-| K3 | Standardize | `operon standardize` always exits 0; per-file errors are only visible in its per-file output lines | Check the per-file output, or confirm expected `standardized/` targets exist |
-| K4 | Release | A failed `release` run leaves the partial release directory on disk, and the existing directory blocks any retry (`FileExistsError`) | Delete the partial directory manually after confirming nothing consumed it, then re-run |
-| K5 | Release | Member entities are set to `RELEASED` after the release commit in a loop outside any transaction, bypassing the transition machine; a crash mid-loop leaves some entities `RELEASED` and others not, with no audit row | Compare `operon status` with the release manifest; fix stragglers with an audited `set-state --force` |
-| K6 | Export | A failed `export` run leaves a partial export directory, which blocks re-running into the same directory | Delete the partial directory, then re-run |
-| K7 | Table import | `import table` overwrite sets `entity_state` to `METADATA_VALIDATED` directly (no transition check), demoting `QC_COMPLETE` or `RELEASED` entities | Re-run the affected QC/evaluate steps after patching metadata; keep metadata patches to entities early in their lifecycle |
-| K8 | Ingest (`move` across filesystems) | With `move=True` across filesystems, the fallback copies bytes, removes the source, then verifies; if verification fails the target is deleted but the source is already gone | Verify before moving; keep the original until `verify` passes on the ingested copy |
-| K9 | Utilities (cosmetic) | `format_table` with zero rows prints the header twice | Ignore; no data is implied |
-| K10 | Import wizard (cosmetic) | The "Record an annotation release?" prompt defaults to yes regardless of the draft's content | Answer explicitly at the prompt; the summary review still shows the final plan |
+The following issues were previously reported against this page and are now
+covered by the current implementation and regression tests:
+
+| # | Area | Resolution |
+|---|---|---|
+| K1 | Decisions | Re-evaluation appends an automatic row while carrying the current `curated_*` fields forward. The CLI previews all affected curated entities and asks once before any write; non-interactive runs require `--yes`. |
+| K2 | QC state | Each file has an aggregate QC status. An entity takes the worst sibling status (`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`), and `operon qc` lists every file status. |
+| K3 | Standardize | Batch standardization returns exit code 1 when any file fails. |
+| K4 | Release | Releases are built in a hidden staging directory and published atomically. Failed builds remove staging output; a database commit failure also removes the published tree. |
+| K5 | Release | Release membership, audited `RELEASED` transitions, and the release row commit in one transaction, so a partial state update is rolled back. |
+| K6 | Export | Exports are built in a temporary sibling and renamed only after all artifacts are complete; failures clean the temporary tree or restore an existing empty destination. |
+| K7 | Table import | Updating existing metadata preserves its lifecycle state and audit history. Release preflight treats changes after evaluation as stale and requires a fresh QC/evaluation. |
+| K8 | Ingest (`move`) | Move mode copies and verifies the archive, registers it, and removes the source last. Copy, checksum, or transaction failures leave the source recoverable. |
+| K9 | Utilities | Empty tables render one header and separator, without a duplicate data row. |
+| K10 | Import wizard | The annotation prompt defaults to the draft's current presence (`yes` only when an annotation is already selected). |
 
 ## Identity, archiving, and the filesystem
 
@@ -29,7 +35,7 @@ Each item is classified:
 - **Untracked leftovers are quarantined, not deleted.** When the canonical target path inside `raw/` is occupied by bytes the manifest does not know, the occupant is moved to `<name>.orphan-<sha12-prefix>` in the same directory (`files.py`). `.orphan-*` files can appear inside the otherwise immutable archive; they are not manifest members.
 - **Compression detection is asymmetric.** A file *named* `.gz` whose magic bytes are not gzip is rejected, but a plain-named file whose content is gzip is silently recorded as `compression=gzip` (`files.py`, `detect_compression`).
 - **Format detection reads extensions, not content.** At most one `.gz` suffix is stripped; `.fasta.bz2` or other unknown extensions yield format `other` (`files.py`, `detect_format`).
-- **`standardize --link-kind hardlink` falls back to a copy for directory artifacts** — only single files can be hardlinked (`files.py`, `standardize_file`).
+- **`standardize --link-kind hardlink` falls back to a copy for directory artifacts** — only single files can be hardlinked (`files.py`, `standardize_file`). New standardized targets are published atomically and removed on any failure.
 - **`verify` always computes full SHA-256; `qc` uses the stat-fingerprint cache.** A `touch` or copy invalidates the cache and forces a rehash in QC, but `operon verify` never consults the cache (`files.py`, `verify_local_file_identity` vs `verify_files`).
 - **`REMOTE_UNVERIFIED` is an output-only status.** It is printed by `verify` when a remote is unreachable, never persisted, and does not write an audit row — but it does drive exit code 1 (`files.py`). A network hiccup is therefore not misclassified as data loss, yet it does fail the command.
 - **`verify` only live-checks remotes for files whose local bytes are absent.** When local bytes exist, remote drift is not detected (`files.py`).
@@ -40,7 +46,7 @@ Each item is classified:
 
 ## Database, transactions, and concurrency
 
-- **Concurrent writers are serialized only up to 30 seconds.** The database runs in WAL mode with `busy_timeout=30000` and deferred transactions; two writers both pass the read phase and the loser fails at first write/commit with `database is locked` (exit 1). There is no automatic retry (`database.py`). Related: stable-ID allocation (`next_id`) scans for max+1 and is racy across processes — concurrent ingests can attempt the same ID and the loser dies with a PRIMARY KEY error.
+- **Concurrent writers are serialized only up to 30 seconds.** The database runs in WAL mode with `busy_timeout=30000` and immediate write transactions; writers wait for the lock before reading and a writer that exceeds the timeout still fails with `database is locked` (exit 1). Stable IDs are reserved under the same lock, so concurrent allocations are unique; failed inserts can leave gaps (`database.py`).
 - **Migrations run on every writable open, not only on `operon migrate`.** Opening a project with an older schema applies pending additive migrations as a side effect of any command (`database.py`). Migrations are additive (new columns/tables); there is no destructive migration and no data backfill, except the pre-1.0 rebuilds (see [database compatibility](../operations/database-compatibility.md)).
 - **Read-only access requires an empty WAL.** A read-only mount can only be opened when the `-wal` file is empty; otherwise the open fails with instructions to checkpoint on a writable host (`database.py`).
 - **`operon query` rejects more than writes.** A SQL authorizer denies DML/DDL/ATTACH/SAVEPOINT and allows only a whitelist of PRAGMAs, so `PRAGMA journal_mode` or `VACUUM` fail with *not authorized* even though they are not writes to tables (`database.py`).
@@ -58,13 +64,13 @@ Each item is classified:
 ## Metrics and decisions
 
 - **A missing metric never fails a gate.** A required rule whose metric has no value evaluates to `NOT_EVALUATED` and the entity lands in `QC_COMPLETE` (not `QC_FAILED`). Entities whose formats have no parser (e.g. BAM, directories) stay `QC_COMPLETE` and are excluded from releases only by never reaching `PASS` (`rules.py`).
-- **`evaluate` only sees entities that have QC results.** Entities never processed by `qc` receive no decision and do not appear in release exclusions (`rules.py`).
+- **`evaluate` only sees entities that have QC results.** Entities never processed by `qc` receive no decision; release preflight now rejects such active in-scope entities before creating output (`rules.py`, `release.py`).
 - **Multi-file entities mix metrics from different files.** `latest_metrics` partitions by input identity: conservative booleans (`file_exists`, `sha256_match`, `parseable`, `paired_read_count_match`) take the minimum across all inputs, but every other metric takes the most recently evaluated input's value — a decision can combine counts from one file with booleans from another (`database.py`).
 - **Changing QC sampling parameters accumulates rows.** QC results upsert on the parameter set; re-running `qc` with a different `--sample-size`/`--phred-offset` adds a parallel set of rows rather than replacing, and the newest silently wins in `latest_metrics` (`database.py`).
 - **Threshold semantics are inclusive and string-based for sets.** `>=`/`<=` are inclusive, `between` is inclusive on both ends, `in`/`not_in` compare metric values as strings, and a rule without `operator` always passes (`rules.py`). Profile-shape gaps (missing `min`/`max`/`values`) behave as described in the [QC profiles guide](../guides/qc-profiles.md).
 - **`curate` accepts any decision string.** Values are uppercased but not validated against the decision enum; an unrecognized value stores verbatim and maps the entity to `QC_COMPLETE` (`rules.py`).
 - **Every `.yaml` in `config/profiles/` must parse.** A scratch or partially edited YAML in that directory breaks every `evaluate`/`analyze` command that loads profiles (`profiles.py`).
-- **Manual overrides do not survive re-evaluation.** See known issue K1 above.
+- **Manual overrides survive re-evaluation.** The newest automatic decision carries forward the current `curated_*` fields; use `curate` for an explicit lifecycle change (`rules.py`, `cli.py`).
 
 ## Built-in QC parsing
 
@@ -78,7 +84,7 @@ Each item is classified:
 - **Paired-read matching is silently skipped** when the sibling FASTQ has no manifest row or is not on disk — no metric and no warning (`qc_module/__init__.py`).
 - **A corrupt FASTA-length cache is silently rebuilt.** Digest/count mismatch deletes and regenerates the cache (`qc_module/__init__.py`).
 - **Cython and pure-Python parsers have zero tolerated differences.** Metrics and error message strings must match byte-identically; this is enforced by `tests/regression/test_cython_parser_parity.py`.
-- **Entity state reflects the last QC'd file, not the worst result.** See known issue K2 above.
+- **Entity QC state is the worst sibling result.** Each file's status is reported, and an entity is `QC_FAILED` if any sibling failed, `QC_RUNNING` while any sibling is pending, otherwise `QC_COMPLETE` (`qc_module/__init__.py`).
 
 ## External analyses
 
@@ -117,11 +123,11 @@ Each item is classified:
 ## Releases and exports
 
 - **`checksums.sha256` covers the data files only.** Metadata TSVs and `manifest.tsv` are hashed into `provenance.json` and the DB summary but not into `checksums.sha256`, so `sha256sum -c` verifies a subset of a release (`release.py`).
-- **Release exclusions only include entities that have decisions.** Entities never QC'd/evaluated appear neither as members nor in `exclusions.tsv` (`release.py`).
+- **Release preflight requires decisions for every active in-scope entity.** Missing decisions, or metadata changed after evaluation, reject the release before any output is published. Failed and retired decisions remain represented in `exclusions.tsv`; an unevaluated entity cannot silently disappear (`release.py`).
 - **`--link hardlink` shares inodes with `raw/`.** The default is copy, and the docs' immutability reasoning assumes copies; choosing hardlinks re-introduces inode sharing between the release and the raw archive (`release.py`).
 - **An export selecting zero files succeeds.** Exit 0 with an empty `manifest.tsv` and an empty `checksums.sha256` (`export.py`).
 - **Export symlinks store fully resolved targets.** `--link symlink` points at `source.resolve()`; moving the project breaks the links, although checksum verification through them still works (`export.py`).
-- **Interrupted release/export runs leave blocking partial directories.** See known issues K4 and K6 above.
+- **Release/export failures are recoverable.** Both commands stage output and clean it on errors, so an interrupted or failed run does not deliberately publish a partial destination; an OS-level crash can still leave a hidden staging directory for later housekeeping.
 
 ## Lifecycle and identity resolution
 
@@ -139,7 +145,7 @@ Each item is classified:
 - **Date validation follows the Python version.** `datetime.fromisoformat` on Python 3.11+ accepts loose formats such as `20240115`; on 3.10 the same value errors (`schema.py`).
 - **XLSX reads only the first worksheet** in workbook order, whatever its name; other sheets are ignored. Excel serial dates with a fractional part become datetimes (`table_import.py`).
 - **A blank cell clears an existing value on update.** The preview diff shows it, but omitted columns retain current values; `--on-conflict error` refuses to run if any row would change. The whole apply is one transaction (`table_import.py`).
-- **Metadata patches demote entity state.** See known issue K7 above.
+- **Metadata patches preserve lifecycle state but invalidate evaluation freshness.** Updating an existing row records the field-level audit change; a later release preflight requires QC/evaluation after that timestamp (`table_import.py`, `release.py`).
 - **Intra-file forward references are not resolvable.** Reference validation cannot resolve an ID that appears later in the same file; import organisms before samples before runs/assemblies, in separate runs (`table_import.py`).
 - **Taxdump snapshots have no extinction data.** `is_extinct` is stored as NULL for taxdump imports, so a coverage profile with `exclude_extinct: true` fails loudly against them; only NCBI Datasets JSONL sources carry the field (`taxonomy.py`).
 - **A failed taxonomy import leaves the source copy on disk.** The source is copied into `raw/metadata/ncbi_taxonomy/` before the import transaction; on failure the transaction rolls back but the copied file remains unregistered (`taxonomy.py`).

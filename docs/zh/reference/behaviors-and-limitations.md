@@ -2,26 +2,30 @@
 
 本页对应 `operon` 0.6.2（数据库 schema 2.9，元数据 schema 1.4）。它记录代码中可观察到、但未在其他任务型或架构型页面中说明的行为：隐式语义、边界情形与已知问题。各项按当前实际行为如实描述，并标注实现模块以便核对。本页不是使用建议；受支持的工作流请参阅[指南](../guides/index.md)与[故障排查](../guides/troubleshooting.md)。
 
-每一条目按三类标注：
+已修复的历史问题列在前面；其余条目描述当前行为与已接受的限制。
+
+当前条目按三类标注：
 
 - **有意为之但属隐式**：设计如此，但后果可能出乎意料（例如状态迁移对审计记录的影响）。
 - **限制**：当前接受的能力边界或健壮性缺口。
-- **已知问题**：缺陷或数据语义上的意外行为，此处如实记录而非隐而不报。已知问题暂不修复；存在规避方法时随条目给出。
+- **已知问题**：缺陷或数据语义上的意外行为，此处如实记录而非隐而不报。尚未解决的问题会在条目中给出可行方案（如有）。
 
-## 已知问题速览
+## 已修复问题
 
-| # | 领域 | 问题 | 规避方法 |
-|---|---|---|---|
-| K1 | 判定 | 重新运行 `evaluate` 会追加一条 `curated_decision` 为空的新 decision 行，而 `current_decisions`（每实体/profile 取最新行）会静默丢弃此前的人工 `curate` 覆盖 | 重新 evaluate 后，对必须保留人工判定的实体重新执行 `curate`；或避免对该 profile 重复 evaluate |
-| K2 | QC 状态 | 多文件实体（如同时含 GFF3 + protein FASTA + assembly FASTA 的 annotation）逐文件覆写实体状态，最后一个处理的文件决定结果：先前的失败可能以 `QC_COMPLETE` 收场，而失败指标仍留存 | 不要只看实体状态，检查 `operon report qc`；重跑失败文件的 `operon qc`，让其结果成为最后一个 |
-| K3 | 标准化 | `operon standardize` 恒以 0 退出；逐文件错误只体现在其逐文件输出行中 | 检查逐文件输出，或确认 `standardized/` 下的预期产物存在 |
-| K4 | release | 失败的 `release` 运行会在磁盘上留下不完整的 release 目录，且已存在的目录会阻塞任何重试（`FileExistsError`） | 确认无下游消费者后手动删除不完整目录，再重新运行 |
-| K5 | release | 成员实体在 release 提交后于循环中逐一置为 `RELEASED`，该循环在事务之外、绕过状态迁移机；中途崩溃会留下部分实体未置状态，且无审计记录 | 用 `operon status` 对照 release manifest；对遗漏实体执行带审计的 `set-state --force` |
-| K6 | export | 失败的 `export` 运行会留下不完整的导出目录，阻塞向同一目录重跑 | 删除不完整目录后重跑 |
-| K7 | 表格导入 | `import table` 覆盖写入时直接把 `entity_state` 置为 `METADATA_VALIDATED`（无迁移检查），把 `QC_COMPLETE` 或 `RELEASED` 实体降级 | 元数据修补后重跑受影响实体的 QC/evaluate；尽量只对生命周期早期的实体做元数据修补 |
-| K8 | ingest（跨文件系统 `move`） | 跨文件系统且 `move=True` 时的回退路径是先复制、再删除源、最后校验；校验失败会删除目标，但源已不在 | 移动前先校验；对被移动副本 `verify` 通过前保留原件 |
-| K9 | 工具函数（外观） | `format_table` 在零行时把表头打印两次 | 忽略即可；不代表存在数据 |
-| K10 | 导入向导（外观） | "Record an annotation release?" 提示无论草稿内容如何都默认为是 | 在提示处显式作答；最终计划仍会经过摘要确认页 |
+以下问题曾在本页记录，当前实现与回归测试已经覆盖：
+
+| # | 领域 | 修复结果 |
+|---|---|---|
+| K1 | 判定 | 重评估追加自动判定时沿用当前 `curated_*` 字段；CLI 会在写入前一次性预览所有受影响的人工判定实体，非交互运行必须给出 `--yes`。 |
+| K2 | QC 状态 | 每个文件都有聚合 QC 状态；实体取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），`operon qc` 列出每个文件状态。 |
+| K3 | 标准化 | 批量标准化只要任一文件失败就返回退出码 1。 |
+| K4 | release | release 在隐藏 staging 目录中构建，完成后原子发布；构建失败会清理 staging，数据库提交失败也会删除已发布目录。 |
+| K5 | release | release 成员、带审计的 `RELEASED` 状态迁移和 release 数据库行在同一事务中提交，部分状态不会残留。 |
+| K6 | export | export 在临时同级目录中构建，所有产物完成后才重命名；失败时清理临时树或恢复已有的空目标目录。 |
+| K7 | 表格导入 | 更新既有元数据会保留生命周期状态和审计历史；发布预检会把评估后的元数据变化视为过期，要求重新 QC/evaluate。 |
+| K8 | ingest（`move`） | `move` 先复制并校验归档、登记 manifest，最后才删除源文件；复制、校验或事务失败时源文件仍可恢复。 |
+| K9 | 工具函数 | 空表只渲染一次表头和分隔线，不再生成重复的数据行。 |
+| K10 | 导入向导 | annotation 提示默认值与草稿当前是否已有 annotation 一致（已有时才默认“是”）。 |
 
 ## 身份、归档与文件系统
 
@@ -29,7 +33,7 @@
 - **不受清单管理的遗留文件会被隔离，而非删除。** 当 `raw/` 内规范目标路径被清单不认识的字节占用时，占用者会被移动为同目录下的 `<name>.orphan-<sha12-prefix>`（`files.py`）。`.orphan-*` 文件可能出现在本应不可变的归档目录中；它们不是 manifest 成员。
 - **压缩检测是不对称的。** 名为 `.gz` 但 magic bytes 不是 gzip 的文件会被拒绝；反之，普通文件名但内容为 gzip 的文件会被静默记录为 `compression=gzip`（`files.py`，`detect_compression`）。
 - **格式检测看扩展名，不看内容。** 至多剥掉一个 `.gz` 后缀；`.fasta.bz2` 等未知扩展名得到格式 `other`（`files.py`，`detect_format`）。
-- **`standardize --link-kind hardlink` 对目录产物回退为完整复制**——只有单文件能建立硬链接（`files.py`，`standardize_file`）。
+- **`standardize --link-kind hardlink` 对目录产物回退为完整复制**——只有单文件能建立硬链接（`files.py`，`standardize_file`）。新标准化目标采用原子发布，任何失败都会清理。
 - **`verify` 恒做全量 SHA-256；`qc` 使用 stat 指纹缓存。** `touch` 或复制会使缓存失效并强制 QC 重新哈希，但 `operon verify` 从不读缓存（`files.py`，`verify_local_file_identity` 与 `verify_files`）。
 - **`REMOTE_UNVERIFIED` 只是输出状态。** 远端不可达时由 `verify` 打印，从不持久化，也不写审计记录——但会使命令以退出码 1 结束（`files.py`）。网络抖动不会被误判为数据丢失，但会让命令失败。
 - **`verify` 只对本地字节缺失的文件实时核查远端。** 本地字节存在时，远端漂移不会被检测到（`files.py`）。
@@ -40,7 +44,7 @@
 
 ## 数据库、事务与并发
 
-- **并发写只在 30 秒内被串行化。** 数据库运行于 WAL 模式，`busy_timeout=30000` 且使用延迟事务；两个写方都能通过读阶段，输家在首次写/提交时报 `database is locked`（退出码 1），没有自动重试（`database.py`）。相关：稳定 ID 分配（`next_id`）靠扫描取 max+1，跨进程有竞态——并发 ingest 可能分配同一 ID，输家因 PRIMARY KEY 冲突失败。
+- **并发写只在 30 秒内被串行化。** 数据库运行于 WAL 模式，`busy_timeout=30000` 且使用即时写事务；写入者在读取前等待锁，超过超时仍会收到 `database is locked`（退出码 1）。稳定 ID 在同一把锁下预留，因此并发分配唯一；失败插入可能留下编号间隙（`database.py`）。
 - **迁移在每次可写打开时执行，而非仅在 `operon migrate` 时。** 打开旧 schema 的项目时，任何命令都会顺带应用未执行的加法迁移（`database.py`）。迁移全部为加法（新列/新表）；没有破坏性迁移，也没有数据回填，唯 pre-1.0 重建除外（见[数据库兼容性](../operations/database-compatibility.md)）。
 - **只读访问要求 WAL 为空。** 只读挂载只有在 `-wal` 文件为空时才能打开，否则报错并提示到可写主机上做 checkpoint（`database.py`）。
 - **`operon query` 拒绝的不只是写入。** SQL authorizer 拒绝 DML/DDL/ATTACH/SAVEPOINT，且仅放行 PRAGMA 白名单，因此 `PRAGMA journal_mode` 或 `VACUUM` 会以 *not authorized* 失败，尽管它们并非对表的写入（`database.py`）。
@@ -58,13 +62,13 @@
 ## 指标与判定
 
 - **缺失的指标永远不会导致门槛失败。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED`，实体落入 `QC_COMPLETE`（而非 `QC_FAILED`）。没有解析器的格式（如 BAM、目录）会停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。
-- **`evaluate` 只覆盖已有 QC 结果的实体。** 从未被 `qc` 处理过的实体不会有 decision，也不会出现在 release 排除表中（`rules.py`）。
+- **`evaluate` 只覆盖已有 QC 结果的实体。** 从未被 `qc` 处理过的实体不会有 decision；发布预检会在创建任何产物前拒绝这类活动范围内实体（`rules.py`、`release.py`）。
 - **多文件实体会混合来自不同文件的指标。** `latest_metrics` 按输入身份分区：保守布尔指标（`file_exists`、`sha256_match`、`parseable`、`paired_read_count_match`）取所有输入的最小值，而其他指标取最近评估输入的值——一个判定可能把一个文件的计数与另一个文件的布尔值组合起来（`database.py`）。
 - **更改 QC 采样参数会累积行。** QC 结果按参数集 upsert；用不同 `--sample-size`/`--phred-offset` 重跑 `qc` 会新增一组平行行而非替换，`latest_metrics` 中最新的静默胜出（`database.py`）。
 - **阈值语义是闭区间，集合比较按字符串。** `>=`/`<=` 为闭，`between` 两端皆闭，`in`/`not_in` 把指标值当字符串比较，缺少 `operator` 的规则恒通过（`rules.py`）。profile 结构缺口（缺 `min`/`max`/`values`）的行为见 [QC profile 指南](../guides/qc-profiles.md)。
 - **`curate` 接受任意判定字符串。** 值会被转大写但不校验是否属于判定枚举；无法识别的值原样存储，并把实体映射到 `QC_COMPLETE`（`rules.py`）。
 - **`config/profiles/` 下的每个 `.yaml` 都必须能解析。** 该目录中的草稿或改到一半的 YAML 会让所有加载 profile 的 `evaluate`/`analyze` 命令失败（`profiles.py`）。
-- **人工覆盖在重新评估后无法保留。** 见上文已知问题 K1。
+- **人工覆盖会在重新评估后保留。** 最新自动判定沿用当前 `curated_*` 字段；显式 `curate` 才会改变生命周期（`rules.py`、`cli.py`）。
 
 ## 内置 QC 解析
 
@@ -78,7 +82,7 @@
 - **配对 reads 匹配会被静默跳过**——当同批 FASTQ 没有 manifest 行或不在磁盘上时，既无指标也无警告（`qc_module/__init__.py`）。
 - **损坏的 FASTA 长度缓存会被静默重建。** 摘要/计数不匹配时删除并重建缓存（`qc_module/__init__.py`）。
 - **Cython 与纯 Python 解析器零容忍差异。** 指标与错误消息字符串必须逐字节一致；由 `tests/regression/test_cython_parser_parity.py` 强制。
-- **实体状态反映最后一个 QC 的文件，而不是最差结果。** 见上文已知问题 K2。
+- **实体 QC 状态取同层文件的最差结果。** 每个文件状态都会报告；任一文件失败即为 `QC_FAILED`，有文件待处理时为 `QC_RUNNING`，否则为 `QC_COMPLETE`（`qc_module/__init__.py`）。
 
 ## 外部分析
 
@@ -117,11 +121,11 @@
 ## release 与 export
 
 - **`checksums.sha256` 只覆盖数据文件。** 元数据 TSV 与 `manifest.tsv` 的哈希记入 `provenance.json` 和数据库汇总，但不进 `checksums.sha256`，因此 `sha256sum -c` 只校验 release 的一个子集（`release.py`）。
-- **release 排除表只包含有 decision 的实体。** 从未 QC/evaluate 的实体既不作为成员也不出现在 `exclusions.tsv`（`release.py`）。
+- **发布预检要求所有活动范围内实体都有 decision。** 缺少 decision 或评估后元数据发生变化时，在发布任何产物前拒绝 release；失败和退役判定仍会写入 `exclusions.tsv`，未评估实体不会静默消失（`release.py`）。
 - **`--link hardlink` 会与 `raw/` 共享 inode。** 默认是复制，文档中关于不可变的论证也以复制为前提；选择硬链接会让 release 与 raw 归档重新共享 inode（`release.py`）。
 - **选出零个文件的 export 仍算成功。** 退出码 0，得到空的 `manifest.tsv` 与空的 `checksums.sha256`（`export.py`）。
 - **export 符号链接存储完全解析后的目标。** `--link symlink` 指向 `source.resolve()`；移动项目会断链，不过经链接的校验仍然通过（`export.py`）。
-- **中断的 release/export 运行会留下阻塞重跑的不完整目录。** 见上文已知问题 K4 与 K6。
+- **release/export 失败可恢复。** 两个命令都先 staging 并在失败时清理，不会主动发布不完整目标；操作系统级崩溃仍可能留下隐藏 staging 目录，需要后续清理。
 
 ## 生命周期与身份解析
 
@@ -139,7 +143,7 @@
 - **日期校验依赖 Python 版本。** Python 3.11+ 的 `datetime.fromisoformat` 接受 `20240115` 这类宽松格式；3.10 上同样的值会报错（`schema.py`）。
 - **XLSX 只读第一个工作表**（按工作簿顺序，与名称无关），其余工作表被忽略。带小数部分的 Excel 序列日期成为 datetime（`table_import.py`）。
 - **更新时空白单元格会清空现有值。** 预览 diff 会显示，但省略列保留现值；若有任何行会发生变化，`--on-conflict error` 拒绝执行。整个 apply 在一个事务中（`table_import.py`）。
-- **元数据修补会降级实体状态。** 见上文已知问题 K7。
+- **元数据修补保留生命周期状态但会使评估新鲜度失效。** 更新既有行会记录字段级审计变化，后续 release 预检要求在该时间点之后重新 QC/evaluate（`table_import.py`、`release.py`）。
 - **同文件内的前向引用无法解析。** 引用校验不能解析同一文件中较晚出现的 ID；请按 organism → sample → run/assembly 的顺序分多次导入（`table_import.py`）。
 - **taxdump 快照没有灭绝数据。** taxdump 导入的 `is_extinct` 存为 NULL，因此带 `exclude_extinct: true` 的 coverage profile 面对它直接报错；只有 NCBI Datasets JSONL 来源携带该字段（`taxonomy.py`）。
 - **失败的 taxonomy 导入会在磁盘上留下来源副本。** 来源先复制到 `raw/metadata/ncbi_taxonomy/`，再进入导入事务；失败时事务回滚，但已复制的文件留在磁盘上且未登记（`taxonomy.py`）。
