@@ -51,7 +51,7 @@ The left sidebar (or the number keys) switches between eight screens:
 
 | Screen | Key | Contents |
 |--------|-----|----------|
-| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). The **Import dataset** button opens the import wizard (see below). |
+| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). Press `i` to open the import wizard (see below). |
 | Entities | `2` | Hierarchy tree (organisms → samples → runs and assemblies → annotations) with the current state of each entity. Selecting a node shows its metadata fields, accessions, state, files, and the latest built-in QC and external-analysis (e.g. BUSCO/QUAST) metrics. Logically retired entities are shown by default, dimmed and struck-through; press `t` to hide them. Press `x` for the lifecycle dialog (see below). |
 | Files | `3` | Filterable manifest table (substring filter plus status selector). Moving the cursor shows the full file record and its `file_locations` residency list. Statuses are color-coded: verified green, `REMOTE_ONLY` blue, `MISSING`/`CHECKSUM_FAILED` red. Press `i`/`v`/`q` for ingest, verify, and QC (see below). |
 | Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`, with status/step/entity/limit filters. The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. |
@@ -88,7 +88,7 @@ indistinguishable from command-line ones in reports and exports.
 
 ## Import dataset wizard
 
-The wizard (Home → **Import dataset**, or the global `i` key) is a Textual
+The wizard (opened with the global `i` key) is a Textual
 port of `operon import dataset`. It walks one form page per section —
 **Source → Organism → Sample → Sequencing → Assembly → Annotation →
 Files** — with Next/Back navigation and per-field validation identical to

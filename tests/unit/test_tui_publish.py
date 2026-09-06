@@ -398,7 +398,7 @@ def test_import_wizard_walkthrough(project: Project, tmp_path: Path) -> None:
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
             await pilot.pause()
-            await _click(pilot, "#home-import")
+            await pilot.press("i")
             await pilot.pause()
             await _settled(app)
             wizard = app.screen
@@ -481,7 +481,7 @@ def test_import_wizard_validation_blocks(project: Project) -> None:
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
             await pilot.pause()
-            await _click(pilot, "#home-import")
+            await pilot.press("i")
             await pilot.pause()
             await _settled(app)
             wizard = app.screen
@@ -529,7 +529,7 @@ def test_import_wizard_bad_file_path_blocks(project: Project) -> None:
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
             await pilot.pause()
-            await _click(pilot, "#home-import")
+            await pilot.press("i")
             await pilot.pause()
             await _settled(app)
             wizard = app.screen

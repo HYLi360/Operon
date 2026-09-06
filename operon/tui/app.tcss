@@ -260,11 +260,6 @@ HelpScreen {
     color: $error;
 }
 
-#home-actions {
-    height: auto;
-    padding: 1 2 0 2;
-}
-
 #wizard-layout {
     height: 1fr;
 }
