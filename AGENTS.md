@@ -55,7 +55,13 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     checksum verification) and `sftp://` / `remote://` URL fetching.
   - `operon/tui/` — Textual-based terminal UI (`operon tui`, optional `tui`
     extra): Home dashboard, Entities browser, Files browser, workflow-run
-    monitor, a Decisions screen, and a Config screen. Read access lives in
+    monitor, a Decisions screen, a Config screen, a Publish screen (nav key
+    `7`; release builder + selective export builder with read-only previews),
+    a Coverage screen (nav key `8`; taxonomy snapshots, reference sets,
+    coverage report generation and `COV_*` report browsing), and the import
+    dataset wizard (`operon/tui/screens/import_wizard.py`; Home button or
+    global `i`, except on the Files screen where `i` stays ingest). Read
+    access lives in
     `operon/tui/data.py` and is strictly read-only (short-lived read-only
     connections only). Phase 2 write operations (evaluate, curate,
     retire/restore, ingest, verify, QC batch) live in
@@ -64,7 +70,12 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     (identical `changes`/`workflow_runs` provenance), and returns plain
     dicts; writable connections are never held by the UI. Every write in the
     UI follows form/plan preview → equivalent CLI command shown → explicit
-    Confirm → background worker → notify + reload or inline error. The
+    Confirm → background worker → notify + reload or inline error. Phase 3
+    actions in the same module: `import_dataset` (commits wizard drafts
+    through the shared single-transaction `import_wizard._commit`),
+    `reserve_entity_ids`, `create_release`, `export`, and `run_coverage`
+    (a below-threshold coverage report returns `exit_code=1` in the result
+    dict — a warning, not an exception). The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
     `config/profiles/*.yaml` (kind `qc`) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text

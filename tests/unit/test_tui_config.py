@@ -83,7 +83,10 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
     """Wait until no workers are running, with a diagnostic timeout."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while app.workers:
+    # The splash screen blocks key bindings until the startup worker finishes;
+    # that worker is scheduled via call_after_refresh, so the worker set can
+    # be momentarily empty before it starts — gate on _starting as well.
+    while app.workers or getattr(app, "_starting", False):
         if loop.time() > deadline:
             states = [worker.state.name for worker in app.workers]
             raise TimeoutError(f"workers did not finish within {timeout}s: {states}")

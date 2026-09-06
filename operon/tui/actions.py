@@ -520,3 +520,101 @@ def check_tools(
         if on_result is not None:
             on_result(entry)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: import wizard, release/export builders, coverage reports.
+# ---------------------------------------------------------------------------
+
+
+def import_dataset(project: Project, draft: dict[str, Any]) -> dict[str, Any]:
+    """Commit an import-wizard draft like ``operon import dataset``.
+
+    The draft is built by the TUI wizard with the same shape the questionary
+    wizard produces; the actual commit is the shared single-transaction
+    :func:`operon.import_wizard._commit` (data-source registration, entity
+    rows, state, audit, file ingest with staged-file rollback, run logging).
+    """
+    from operon.import_wizard import _commit
+
+    with _open_writable(project) as db:
+        return _commit(db, project, draft)
+
+
+def reserve_entity_ids(project: Project) -> dict[str, str]:
+    """Reserve one fresh internal ID per entity type for the import wizard.
+
+    Reservations that end up unused (the user reuses an existing entity or
+    cancels) simply become gaps, which :meth:`Database.next_id` explicitly
+    allows.
+    """
+    with _open_writable(project) as db:
+        return {entity_type: db.next_id(entity_type) for entity_type in ENTITY_TYPE_NAMES}
+
+
+def create_release(
+        project: Project,
+        version: str,
+        profile: str,
+        copy_files: bool = False,
+        link_kind: str = "copy",
+) -> dict[str, Any]:
+    """Create an immutable release like ``operon release``; FileExistsError propagates."""
+    from operon.release import create_release as _create_release
+
+    with _open_writable(project) as db:
+        return _create_release(
+            db, project, version, profile, copy_files=copy_files, link_kind=link_kind,
+        )
+
+
+def export(
+        project: Project,
+        output_dir: str,
+        *,
+        entity_type: str | None = None,
+        entity_ids: list[str] | None = None,
+        file_ids: list[str] | None = None,
+        file_role: str | None = None,
+        fmt: str | None = None,
+        state: str | None = None,
+        decision: str | None = None,
+        profile: str | None = None,
+        link_kind: str = "copy",
+        include_qc: bool = True,
+) -> dict[str, Any]:
+    """Materialize a selective export like ``operon export``; FileExistsError propagates."""
+    from operon.export import export_files
+
+    with _open_writable(project) as db:
+        return export_files(
+            db, project,
+            output_dir=output_dir,
+            entity_type=entity_type,
+            entity_ids=entity_ids or (),
+            file_ids=file_ids or (),
+            file_role=file_role,
+            fmt=fmt,
+            state=state,
+            decision=decision,
+            profile=profile,
+            link_kind=link_kind,
+            include_qc=include_qc,
+        )
+
+
+def run_coverage(
+        project: Project,
+        reference_set_id: str,
+        release_version: str | None = None,
+) -> dict[str, Any]:
+    """Generate a taxonomy coverage report like ``operon report coverage``.
+
+    A report below its thresholds is not an exception: the result dict carries
+    ``decision="FAIL"`` and ``exit_code=1`` (the CLI maps that to its exit
+    status), so callers render it as a warning result, not a crash.
+    """
+    from operon.coverage import report_coverage
+
+    with _open_writable(project) as db:
+        return report_coverage(db, project, reference_set_id, release_version=release_version)

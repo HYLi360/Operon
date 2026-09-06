@@ -6,7 +6,8 @@ from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.widgets import Static
+from textual.containers import Horizontal
+from textual.widgets import Button, Static
 
 from operon.config import Project
 from operon.tui import data
@@ -30,7 +31,13 @@ class HomePanel(Panel):
         self.recent_runs: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
+        with Horizontal(id="home-actions"):
+            yield Button("Import dataset", id="home-import", variant="primary")
         yield Static("loading…", id="home-body", classes="body")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "home-import":
+            self.app.action_import_dataset()
 
     def _fetch(self) -> dict[str, Any]:
         return {

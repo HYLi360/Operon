@@ -18,20 +18,23 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import ContentSwitcher, Footer, Header, Label, ListItem, ListView, Static
 
 from operon.config import Project
 from operon.tui.screens.common import Panel
 from operon.tui.screens.config import ConfigPanel
+from operon.tui.screens.coverage import CoveragePanel
 from operon.tui.screens.decisions import DecisionsPanel
 from operon.tui.screens.entities import EntitiesPanel
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.home import HomePanel
+from operon.tui.screens.import_wizard import ImportWizardScreen
+from operon.tui.screens.publish import PublishPanel
 from operon.tui.screens.runs import RunsPanel
 from operon.tui.splash import SplashScreen
 
-SCREENS = ("home", "entities", "files", "runs", "decisions", "config")
+SCREENS = ("home", "entities", "files", "runs", "decisions", "config", "publish", "coverage")
 NAV_LABELS = {
     "home": "1  Home",
     "entities": "2  Entities",
@@ -39,6 +42,8 @@ NAV_LABELS = {
     "runs": "4  Tasks",
     "decisions": "5  Decisions",
     "config": "6  Config",
+    "publish": "7  Publish",
+    "coverage": "8  Coverage",
 }
 
 
@@ -60,7 +65,10 @@ class HelpScreen(ModalScreen):
             "  4  Tasks — workflow-run monitor\n"
             "  5  Decisions\n"
             "  6  Config — QC profiles and tools/recipes editors\n"
+            "  7  Publish — release builder and selective export builder\n"
+            "  8  Coverage — taxonomy snapshots, reference sets, coverage reports\n"
             "  r  refresh current screen\n"
+            "  i  import dataset wizard (except on the Files screen, where it ingests)\n"
             "  t  show/hide retired entities (Entities screen; shown dimmed by default)\n"
             "  x  retire/restore selected entity (Entities screen)\n"
             "  i  ingest file (Files screen)\n"
@@ -92,6 +100,9 @@ class OperonApp(App):
         Binding("4", "switch_screen('runs')", "Tasks"),
         Binding("5", "switch_screen('decisions')", "Decisions"),
         Binding("6", "switch_screen('config')", "Config"),
+        Binding("7", "switch_screen('publish')", "Publish"),
+        Binding("8", "switch_screen('coverage')", "Coverage"),
+        Binding("i", "import_dataset", "Import dataset"),
         Binding("r", "refresh", "Refresh"),
         Binding("question_mark", "help", "Help"),
     ]
@@ -117,6 +128,8 @@ class OperonApp(App):
                 yield RunsPanel(self.project)
                 yield DecisionsPanel(self.project)
                 yield ConfigPanel(self.project)
+                yield PublishPanel(self.project)
+                yield CoveragePanel(self.project)
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -180,3 +193,11 @@ class OperonApp(App):
         if self._starting:
             return
         self.push_screen(HelpScreen())
+
+    def action_import_dataset(self) -> None:
+        # Only from the base screen: modals and the wizard itself keep `i` as
+        # plain input, and the Files panel's own `i` binding (ingest) wins
+        # whenever focus is inside that panel.
+        if self._starting or type(self.screen) is not Screen:
+            return
+        self.push_screen(ImportWizardScreen(self.project))

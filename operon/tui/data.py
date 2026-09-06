@@ -578,3 +578,257 @@ def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             pass
     return record
+
+
+# ---------------------------------------------------------------------------
+# Import wizard pickers (read-only mirrors of the questionary wizard queries)
+# ---------------------------------------------------------------------------
+
+
+def _not_retired(db: Database, entity_type: str, alias: str, id_column: str) -> str:
+    if not db.lifecycle_schema_available():
+        return ""
+    return (
+        f" AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        f"WHERE r.entity_type='{entity_type}' AND r.entity_id={alias}.{id_column})"
+    )
+
+
+def list_organisms_for_picker(project: Project) -> list[dict[str, Any]]:
+    """Return non-retired organisms for the import wizard's organism picker."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version "
+            "FROM organisms o WHERE 1=1"
+            + _not_retired(db, "organism", "o", "organism_id")
+            + " ORDER BY scientific_name, organism_id",
+        )
+
+
+def list_samples_for_picker(project: Project, organism_id: str) -> list[dict[str, Any]]:
+    """Return non-retired samples of one organism for the sample picker."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT sample_id, isolate, strain, biosample_accession FROM samples s "
+            "WHERE organism_id=?"
+            + _not_retired(db, "sample", "s", "sample_id")
+            + " ORDER BY sample_id",
+            (organism_id,),
+        )
+
+
+def list_assemblies_for_picker(project: Project, sample_id: str) -> list[dict[str, Any]]:
+    """Return non-retired assemblies of one sample for the assembly picker."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT assembly_id, assembly_accession, assembly_name, assembly_version "
+            "FROM assemblies a WHERE sample_id=?"
+            + _not_retired(db, "assembly", "a", "assembly_id")
+            + " ORDER BY assembly_id",
+            (sample_id,),
+        )
+
+
+def list_annotations_for_picker(project: Project, assembly_id: str) -> list[dict[str, Any]]:
+    """Return non-retired annotations of one assembly for the annotation picker."""
+    with _open(project) as db:
+        return _rows(
+            db,
+            "SELECT annotation_id, annotation_source, annotation_version FROM annotations n "
+            "WHERE assembly_id=?"
+            + _not_retired(db, "annotation", "n", "annotation_id")
+            + " ORDER BY annotation_id",
+            (assembly_id,),
+        )
+
+
+def import_summary(project: Project, draft: dict[str, Any]) -> str:
+    """Render the import plan summary with exactly the wizard's own renderer."""
+    from operon.import_wizard import _summary
+
+    with _open(project) as db:
+        return _summary(db, draft)
+
+
+# ---------------------------------------------------------------------------
+# Publish screen: releases, release preview, export preview
+# ---------------------------------------------------------------------------
+
+
+def list_releases(project: Project) -> list[dict[str, Any]]:
+    """Return recorded releases (version, created_at, profile, decoded summary)."""
+    with _open(project) as db:
+        rows = _rows(
+            db,
+            "SELECT version, created_at, profile, path, manifest_sha256, summary "
+            "FROM releases ORDER BY julianday(created_at) DESC, version DESC",
+        )
+    for row in rows:
+        summary = row.get("summary")
+        if isinstance(summary, str) and summary:
+            try:
+                row["summary"] = json.loads(summary)
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+
+def release_preview(project: Project, profile: str) -> dict[str, Any]:
+    """Return the included members and exclusions a release of ``profile`` would have."""
+    from operon.release import release_exclusions_for, release_files_for
+
+    with _open(project) as db:
+        members = release_files_for(db, profile)
+        exclusions = release_exclusions_for(db, profile)
+    return {
+        "members": members,
+        "member_bytes": sum(int(row.get("size_bytes") or 0) for row in members),
+        "exclusions": exclusions,
+    }
+
+
+def export_preview(
+        project: Project,
+        *,
+        entity_type: str | None = None,
+        entity_ids: Iterable[str] = (),
+        file_ids: Iterable[str] = (),
+        file_role: str | None = None,
+        fmt: str | None = None,
+        state: str | None = None,
+        decision: str | None = None,
+        profile: str | None = None,
+) -> dict[str, Any]:
+    """Count the files an export with these filters would materialize, without writing."""
+    from operon.export import _select_files
+
+    with _open(project) as db:
+        rows = _select_files(
+            db, entity_type=entity_type, entity_ids=entity_ids, file_ids=file_ids,
+            file_role=file_role, fmt=fmt, state=state, decision=decision, profile=profile,
+        )
+    return {
+        "count": len(rows),
+        "bytes": sum(int(row.get("size_bytes") or 0) for row in rows),
+        "files": [
+            {
+                "file_id": row["file_id"],
+                "entity_type": row["entity_type"],
+                "entity_id": row["entity_id"],
+                "file_role": row["file_role"],
+                "size_bytes": row["size_bytes"],
+            }
+            for row in rows
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Coverage screen: taxonomy snapshots, reference sets, coverage reports
+# ---------------------------------------------------------------------------
+
+
+def list_taxonomy_snapshots(project: Project) -> list[dict[str, Any]]:
+    """Return imported NCBI Taxonomy snapshots (CLI ``taxonomy list``)."""
+    from operon.taxonomy import list_taxonomy_snapshots as _list
+
+    with _open(project) as db:
+        return _list(db)
+
+
+def list_reference_sets(project: Project) -> list[dict[str, Any]]:
+    """Return compiled taxonomy reference sets (CLI ``taxonomy reference-sets``)."""
+    from operon.taxonomy import list_reference_sets as _list
+
+    with _open(project) as db:
+        return _list(db)
+
+
+COVERAGE_TABLE_NAMES = (
+    "coverage_summary",
+    "coverage_targets",
+    "coverage_missing",
+    "coverage_observations",
+    "coverage_excluded_observations",
+)
+
+COVERAGE_REPORT_LIMIT = 500
+
+
+def list_coverage_reports(project: Project) -> list[dict[str, Any]]:
+    """Return coverage report directories with their provenance headline.
+
+    Reports are discovered on the filesystem (``reports/coverage/COV_*``), so
+    the browser keeps working even for reports written before the
+    ``coverage_reports`` table existed.
+    """
+    import re
+
+    root = project.reports_root / "coverage"
+    reports: list[dict[str, Any]] = []
+    if not root.is_dir():
+        return reports
+    for path in sorted(root.iterdir()):
+        if not path.is_dir() or not re.fullmatch(r"COV_[0-9A-Fa-f]+", path.name):
+            continue
+        provenance_path = path / "provenance.json"
+        provenance: dict[str, Any] = {}
+        if provenance_path.is_file():
+            try:
+                provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                provenance = {}
+        reports.append({
+            "report_id": path.name,
+            "path": str(path),
+            "reference_set_id": provenance.get("reference_set_id", "?"),
+            "scope_kind": provenance.get("scope_kind", "?"),
+            "scope_value": provenance.get("scope_value"),
+            "decision": provenance.get("decision", "?"),
+            "created_at": provenance.get("created_at", "?"),
+        })
+    reports.sort(key=lambda row: str(row["created_at"]), reverse=True)
+    return reports
+
+
+def read_coverage_report(project: Project, report_id: str) -> dict[str, Any]:
+    """Parse one coverage report's provenance and TSV tables (stdlib only).
+
+    Each table is returned as ``{"columns": [...], "rows": [[...], ...]}``;
+    rows are capped at :data:`COVERAGE_REPORT_LIMIT` with a ``truncated`` flag.
+    """
+    import csv
+    import re
+
+    if not re.fullmatch(r"COV_[0-9A-Fa-f]+", report_id):
+        raise ValidationError(f"invalid coverage report id {report_id!r}")
+    path = project.reports_root / "coverage" / report_id
+    if not path.is_dir():
+        raise ValidationError(f"coverage report not found: {report_id}")
+    provenance: dict[str, Any] = {}
+    provenance_path = path / "provenance.json"
+    if provenance_path.is_file():
+        try:
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            provenance = {}
+    tables: dict[str, Any] = {}
+    for name in COVERAGE_TABLE_NAMES:
+        table_path = path / f"{name}.tsv"
+        if not table_path.is_file():
+            continue
+        with open(table_path, newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle, delimiter="\t")
+            rows = list(reader)
+        columns = rows[0] if rows else []
+        body = rows[1:]
+        tables[name] = {
+            "columns": columns,
+            "rows": body[:COVERAGE_REPORT_LIMIT],
+            "truncated": len(body) > COVERAGE_REPORT_LIMIT,
+            "total": len(body),
+        }
+    return {"report_id": report_id, "path": str(path), "provenance": provenance, "tables": tables}

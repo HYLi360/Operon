@@ -58,7 +58,10 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
     """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while app.workers:
+    # The splash screen blocks key bindings until the startup worker finishes;
+    # that worker is scheduled via call_after_refresh, so the worker set can
+    # be momentarily empty before it starts — gate on _starting as well.
+    while app.workers or getattr(app, "_starting", False):
         if loop.time() > deadline:
             states = [worker.state.name for worker in app.workers]
             raise TimeoutError(f"workers did not finish within {timeout}s: {states}")
@@ -344,11 +347,22 @@ def test_data_layer_never_writes(demo_project: Project) -> None:
         runs = data.list_workflow_runs(demo_project, limit=100)
         data.list_workflow_runs(demo_project, step="qc", entity="RUN_000001")
         data.workflow_run_detail(demo_project, runs[0]["run_id"])
+        # Phase-3 read paths (pickers, publish, coverage).
+        data.list_organisms_for_picker(demo_project)
+        data.list_samples_for_picker(demo_project, "ORG_000001")
+        data.list_assemblies_for_picker(demo_project, "SMP_000001")
+        data.list_annotations_for_picker(demo_project, "ASM_000001")
+        data.list_releases(demo_project)
+        data.release_preview(demo_project, "assembly_production_v1")
+        data.export_preview(demo_project, entity_type="assembly")
+        data.list_taxonomy_snapshots(demo_project)
+        data.list_reference_sets(demo_project)
+        data.list_coverage_reports(demo_project)
 
         async def scenario() -> None:
             app = OperonApp(demo_project)
             async with app.run_test(size=(140, 45)) as pilot:
-                for key in "1234":
+                for key in "12345678":
                     await pilot.press(key)
                     await pilot.pause()
                     await _settled(app)

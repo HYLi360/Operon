@@ -2,7 +2,7 @@
 
 `operon tui` 打开项目的交互式终端用户界面（TUI）。读取操作使用短生命周期的只读
 数据库连接，因此在 CLI 命令对同一项目执行写操作时，保持 TUI 打开也是安全的。
-写操作（第二阶段）调用与 CLI **完全相同的核心函数**，因此审计行（`changes`）、
+写操作调用与 CLI **完全相同的核心函数**，因此审计行（`changes`）、
 workflow 溯源记录（`workflow_runs`）及语义与等价命令完全一致。每个写操作遵循
 相同的流程：表单或计划预览 → 对话框中显示等价的 CLI 命令 → 显式确认（Confirm）
 → 在后台 worker 中执行变更 → 成功通知并刷新面板，或显示内联错误信息（对话框
@@ -23,7 +23,7 @@ operon [--project PATH] tui
 
 ## 启动画面
 
-启动时，`operon` 显示夜湖插画，同时在后台加载六个面板。湖面光纹象征测序
+启动时，`operon` 显示夜湖插画，同时在后台加载八个面板。湖面光纹象征测序
 reads，星星与三组星座象征分析结果和从中获得的见解。画面从首次绘制起至少
 显示一秒，且会等待所有面板的首次加载完成或返回错误。失败的加载会在相应
 面板显示错误，可在该面板按 `r` 重试。启动期间暂停导航，仍可按 `q` 退出。
@@ -37,20 +37,23 @@ Unicode 半块字符绘制预采样资源，根据终端尺寸保持 4:3 场景�
 
 ## 界面
 
-左侧边栏（或数字键）在六个界面之间切换：
+左侧边栏（或数字键）在八个界面之间切换：
 
 | 界面 | 按键 | 内容 |
 |------|------|------|
-| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。 |
+| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。**Import dataset** 按钮打开导入向导（见下文）。 |
 | Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。 |
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录及其 `file_locations` 驻留列表。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q` 分别进行归档、校验与 QC（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询，支持状态/step/entity/数量上限过滤。表格每 2 秒自动刷新，运行中的任务实时更新，光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。 |
 | Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles** 与 **Tools & Recipes**。详见下文。 |
+| Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
+| Coverage | `8` | 已导入的 NCBI Taxonomy 快照、已编译的 reference set、覆盖度报告生成（`operon report coverage`），以及已有 `reports/coverage/COV_*` 报告的浏览器。详见下文。 |
 
-全局按键：`1`–`6` 切换界面，`r` 刷新当前界面，`?` 显示按键帮助，`q` 退出
-（当 Files 表格获得焦点时，`q` 改为启动 QC 运行——将焦点移至别处或使用侧边栏
-离开）。
+全局按键：`1`–`8` 切换界面，`r` 刷新当前界面，`i` 打开数据集导入向导
+（焦点位于 Files 界面时除外，此时 `i` 为归档 ingest），`?` 显示按键帮助，
+`q` 退出（当 Files 表格获得焦点时，`q` 改为启动 QC 运行——将焦点移至别处
+或使用侧边栏离开）。
 
 ## 写操作
 
@@ -65,9 +68,66 @@ Unicode 半块字符绘制预采样资源，根据终端尺寸保持 4:3 场景�
 | `i` | Files | 将文件（本地路径或 `sftp://`/`remote://` URL）归档到 `raw/`，表单根据选中行预填。format/compression 留空时自动检测。校验和冲突（同一实体+角色的字节不同）以红色内联显示，绝不覆盖。 | `operon ingest --source … --entity-type … --entity-id … --role …` |
 | `v` | Files | 校验选中文件，或在"verify all N files?"确认后校验全部文件。失败项（`MISSING`、`CHECKSUM_FAILED` 等）会在错误对话框中列出。 | `operon verify [--file-id …]` |
 | `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …]` |
+| `i` | 全局 | 打开数据集导入向导（也可通过 Home 按钮；在 Files 界面 `i` 仍为归档 ingest）。 | `operon import dataset` |
+| — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
+| — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
+| — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
 
 以上所有操作都会追加与 CLI 相同的 `changes` 审计行和 `workflow_runs` 溯源
 记录，因此在报告与导出中，通过 TUI 执行的操作与命令行操作无法区分。
+
+## 数据集导入向导
+
+导入向导（Home → **Import dataset**，或全局 `i` 键）是 `operon import dataset`
+的 Textual 移植版。它按小节逐页引导——**Source → Organism → Sample →
+Sequencing → Assembly → Annotation → Files**——带 Next/Back 导航和与
+questionary 流程一致的逐字段校验（source database/provider 必填；非 INSDC
+来源额外要求引用文献和许可证；文件路径必须存在）。organism/sample/assembly/
+annotation 选择器列出现有的未退休实体以供复用，选择 "Create a new …" 则分配
+新的内部 ID（`db.next_id`）。Sequencing 与 Annotation 为可选小节（复选框）；
+注释文件角色（GFF3/CDS/protein）和 reads 角色（R1/R2/single）仅在启用相应
+小节时显示。
+
+最后的 **Summary** 页面渲染由 questionary 向导自身的 `_summary`/`_warnings`
+辅助函数产生的计划与警告，提供非线性的 "Edit <section>" 跳转，并且仅在显式
+点击 **Execute import** 后执行。提交走与 CLI 向导相同的单事务
+`import_wizard._commit`——数据源注册、实体行、`entity_state`、`changes` 审计、
+文件归档（失败时回滚已暂存文件）以及运行日志完全一致。成功后通知列出创建的
+实体 ID 与文件数量；错误内联显示，不会留下写入一半的数据。
+
+## Publish 界面
+
+**Release 标签页。** 上方是已有 release 表（版本、创建时间、profile、
+接受/排除计数），下方是构建表单：版本、profile 选择器、"copy files" 复选框
+（对应 `--copy-files`）与链接方式（copy/hardlink）。**Preview**（切换
+profile 时也会触发）运行只读的核心查询 `release_files_for`/
+`release_exclusions_for`，显示成员数量与总字节数以及排除表（实体、有效判定、
+排除原因、reason codes）——正是该 release 将发布的内容。**Create release**
+先显示等价 CLI 命令并要求确认，然后在后台 worker 中通过
+`operon.release.create_release` 构建；版本重复或存在未评估/过期实体时内联
+报错。
+
+**Export 标签页。** 过滤表单（实体类型、实体 id、文件角色、格式、状态、
+判定 + profile——判定过滤缺少 profile 时内联报错，与 CLI 一致）、链接方式
+（copy/hardlink/symlink）、`include_qc` 复选框以及输出目录。**Preview**
+在不写入任何内容的情况下统计匹配文件数量与总字节数（使用与导出本身相同的
+`_select_files` 选择逻辑）。**Run export** 显示等价 CLI 命令并要求确认，然后
+通过 `operon.export.export_files` 物化导出；输出目录已存在且非空时，在打开
+对话框之前即被拒绝。
+
+## Coverage 界面
+
+上半部分列出已导入的 NCBI Taxonomy 快照（`taxonomy list` 数据）与已编译的
+reference set（`taxonomy reference-sets` 数据）。**Generate report** 表单选择
+reference set 与范围——项目元数据或冻结的 release（release 范围会额外显示
+release 选择器）——并显示等价的 `operon report coverage` 命令以供确认。输入
+相同时复用已缓存的不可变报告；当某个 rank 低于阈值时，结果为带各 rank 覆盖度
+与报告路径的警告通知（CLI 将同一结果映射为退出码 1），而不是错误对话框。
+
+**Reports** 表格列出每个 `reports/coverage/COV_*` 目录及其溯源摘要
+（reference set、范围、判定、创建时间）。选中某行会将该报告的 TSV——
+summary、targets、missing、observations、excluded——渲染为标签页表格
+（使用标准库解析；过大的表格截断至 500 行）。
 
 ## Config 界面
 

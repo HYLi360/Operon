@@ -253,3 +253,123 @@ HelpScreen {
 #history-error {
     color: $error;
 }
+
+#home-actions {
+    height: auto;
+    padding: 1 2 0 2;
+}
+
+#wizard-layout {
+    height: 1fr;
+}
+
+#wizard-box {
+    height: 1fr;
+    padding: 1 2;
+}
+
+#wizard-title {
+    text-style: bold;
+}
+
+.wizard-heading {
+    text-style: bold;
+    padding: 1 0;
+}
+
+#wizard-pages {
+    height: auto;
+}
+
+#wizard-bar {
+    height: auto;
+    padding: 1 2 0 2;
+}
+
+#wizard-bar Button {
+    margin-right: 2;
+}
+
+#wizard-edit-bar {
+    height: auto;
+    padding-top: 1;
+}
+
+.wizard-edit {
+    min-width: 14;
+    margin-right: 1;
+}
+
+#wizard-error {
+    color: $error;
+    padding: 1 2 0 2;
+}
+
+#publish-tabs, #coverage-layout {
+    height: 1fr;
+}
+
+#releases-table {
+    height: 8;
+}
+
+#release-form {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#release-exclusions-table {
+    height: 8;
+}
+
+#export-layout {
+    padding: 0 1;
+}
+
+#export-fields {
+    height: auto;
+}
+
+.export-column {
+    width: 1fr;
+    height: auto;
+    padding-right: 1;
+}
+
+#release-error, #export-error {
+    color: $error;
+    padding-top: 1;
+}
+
+#taxonomy-snapshots-table, #reference-sets-table {
+    height: 6;
+}
+
+#coverage-form {
+    height: auto;
+    padding: 0 1;
+}
+
+#coverage-reference-set {
+    width: 32;
+}
+
+#coverage-scope {
+    width: 20;
+}
+
+#coverage-release {
+    width: 20;
+}
+
+#coverage-reports-table {
+    height: 8;
+}
+
+#coverage-report-tabs {
+    height: 1fr;
+}
+
+#coverage-error {
+    color: $error;
+}
