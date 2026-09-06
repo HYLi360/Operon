@@ -8,6 +8,9 @@ workflow 溯源记录（`workflow_runs`）及语义与等价命令完全一致�
 → 在后台 worker 中执行变更 → 成功通知并刷新面板，或显示内联错误信息（对话框
 保持打开）。
 
+学名以斜体显示，其中独立的分类等级缩写 `subsp.`、`ssp.`、`var.`、
+`subvar.`、`f.` 和 `subf.` 使用正体。原始文本和空白保持不变，其他部分保留斜体。
+
 ## 安装
 
 TUI 基于 [Textual](https://textual.textualize.io/)，包含在标准 `OperonDBS` 安装与

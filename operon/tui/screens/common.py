@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Iterable
 
 from rich.text import Text
@@ -67,9 +68,21 @@ def styled(value: Any, styles: dict[str, str]) -> Text:
     return Text(text, style=styles.get(text, "dim"))
 
 
+_SCIENTIFIC_NAME_RANK = re.compile(
+    r"(?<!\S)(?:subsp\.|ssp\.|var\.|subvar\.|f\.|subf\.|x)(?=\s|$)"
+)
+
+
 def styled_scientific_name(value: Any) -> Text:
-    """Render a Latin scientific name in italics, per typesetting convention."""
-    return Text(str(value), style="italic")
+    """Italicize scientific names, keeping standalone rank abbreviations upright.
+
+    Preserve the input verbatim; this is a display helper, not a taxonomic
+    parser. Unknown name components retain the default italic styling.
+    """
+    text = Text(str(value), style="italic")
+    for match in _SCIENTIFIC_NAME_RANK.finditer(text.plain):
+        text.stylize("not italic", match.start(), match.end())
+    return text
 
 
 def styled_status(value: Any) -> Text:

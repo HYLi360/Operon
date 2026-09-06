@@ -10,6 +10,10 @@ a form or plan preview → the equivalent CLI command shown in the dialog →
 explicit Confirm → the mutation runs in a background worker → a notification
 and panel reload, or an inline error message (the dialog stays open).
 
+Scientific-name displays use italics, with standalone rank abbreviations
+`subsp.`, `ssp.`, `var.`, `subvar.`, `f.`, and `subf.` in upright type.
+Original text and spacing are preserved; other components retain italics.
+
 ## Installation
 
 The TUI is built on [Textual](https://textual.textualize.io/) and is included

@@ -533,12 +533,43 @@ def test_files_screen_and_filters(demo_project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.parametrize("rank", ["subsp.", "ssp.", "var.", "subvar.", "f.", "subf."])
+def test_scientific_name_rank_style(rank: str) -> None:
+    from rich.console import Console
+    from operon.tui.screens.common import styled_scientific_name
+
+    name = f"Syntheticus alpha\t{rank}  beta"
+    text = styled_scientific_name(name)
+    assert text.plain == name
+    console = Console()
+    start = name.index(rank)
+    for offset in range(len(name)):
+        assert text.get_style_at_offset(console, offset).italic is (
+            not start <= offset < start + len(rank)
+        )
+
+
+@pytest.mark.parametrize("name", [
+    "Syntheticus alpha", "", "Syntheticus subvar.alpha", "Syntheticus xvar. beta",
+    "Syntheticus [var.] beta",
+])
+def test_scientific_name_preserves_other_text(name: str) -> None:
+    from rich.console import Console
+    from operon.tui.screens.common import styled_scientific_name
+
+    text = styled_scientific_name(name)
+    assert text.plain == name
+    assert all(text.get_style_at_offset(Console(), i).italic for i in range(len(name)))
+
+
 def test_organism_names_render_italic(demo_project: Project) -> None:
     """Latin scientific names are italicized in the tree and the detail panel."""
+    from rich.console import Console
     from operon.tui.screens.entities import _node_label
 
+    name = "Syntheticus alpha subsp. beta var. gamma"
     organism = _node_label({"entity_type": "organism", "entity_id": "ORG_1",
-                            "name": "Syntheticus alpha"})
+                            "name": name})
     assert any("italic" in str(span.style) for span in organism.spans)
     sample = _node_label({"entity_type": "sample", "entity_id": "SMP_1", "name": "isolate A"})
     assert not any("italic" in str(span.style) for span in sample.spans)
@@ -546,7 +577,7 @@ def test_organism_names_render_italic(demo_project: Project) -> None:
     panel = EntitiesPanel(demo_project)
     detail = {
         "entity_type": "organism", "entity_id": "ORG_1",
-        "fields": {"organism_id": "ORG_1", "scientific_name": "Syntheticus alpha"},
+        "fields": {"organism_id": "ORG_1", "scientific_name": name},
         "accessions": [], "state": None, "files": [], "metrics": {},
     }
     text = panel._detail_text(detail)
@@ -555,6 +586,13 @@ def test_organism_names_render_italic(demo_project: Project) -> None:
         "italic" in str(span.style) and span.start <= name_start < span.end
         for span in text.spans
     )
+    for rendered in (organism, text):
+        for component in ("Syntheticus", "alpha", "beta", "gamma", "subsp.", "var."):
+            start = rendered.plain.index(component)
+            for offset in range(start, start + len(component)):
+                assert rendered.get_style_at_offset(Console(), offset).italic is (
+                    component not in ("subsp.", "var.")
+                )
 
 
 def test_detail_text_builders(demo_project: Project) -> None:
