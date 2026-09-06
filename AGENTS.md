@@ -214,9 +214,6 @@ Sphinx-rendered); update the list above when bumping.
 
 ## Special Note For Codex/ChatGPT
 
-To ensure security, code testing in Codex/ChatGPT runs in a sandbox by default.
-However, this causes the `test_tui.py` section to experience Textual/asyncio
-cleanup blocking during testing, resulting in a "FAIL" report due to a timeout.
+Due to specific limitations of the sandbox environment, executing certain TUI test code may cause the system to freeze; this often occurs on Codex/ChatGPT. The specific reason is that when this test code runs in the sandbox, it may results a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
 
-To run the full test suite, first exclude `test_tui.py`, then run it separately
-outside the sandbox.
+If you are Codex/ChatGPT, please execute TUI-related test code OUTSIDE the sandbox.

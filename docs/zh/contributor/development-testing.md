@@ -29,11 +29,10 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 
 ## 对 Codex/ChatGPT 的特别提醒
 
-为确保安全，Codex/ChatGPT 中执行的代码测试默认在沙箱内进行，但这会导致
-`test_tui.py` 部分在测试时发生 Textual/asyncio 清理阻塞，从而因超时报告 FAIL。
+受沙箱环境独有限制，执行TUI部分测试代码时可能出现卡死问题，这常常发生在 Codex/ChatGPT 上。
+其具体原因在于，这些测试代码在沙盒运行时会引发 Textual/asyncio 清理阻塞，从而因超时报告 FAIL。
 
-Codex/ChatGPT 若要运行完整测试套件，请先排除 `test_tui.py`，
-然后再在沙箱外单独执行它。
+如果您是Codex/ChatGPT，请在沙箱外执行TUI测试相关代码。
 
 该内容也已同步至 AGENTS.md。
 
