@@ -912,7 +912,24 @@ def test_splash_quit_during_minimum_display(demo_project):
         app = OperonApp(demo_project)
         async with app.run_test() as pilot:
             assert isinstance(app.screen, SplashScreen)
+            await pilot.press("ctrl+q")
+        assert not app.is_running
+
+    _run(scenario())
+
+
+def test_plain_q_does_not_quit(demo_project):
+    """Only ctrl+q quits; a stray q must never exit the app."""
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
             await pilot.press("q")
+            await pilot.pause()
+            assert app.is_running
+            await pilot.press("ctrl+q")
+            await pilot.pause()
         assert not app.is_running
 
     _run(scenario())

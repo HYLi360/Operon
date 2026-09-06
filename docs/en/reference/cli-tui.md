@@ -32,7 +32,7 @@ stars and three constellations represent analysis results and insights.
 The screen stays visible for at least one second after its first paint and
 until every initial panel load has completed or reported an error. Failed
 loads remain visible in the affected panels; press `r` there to retry.
-During startup, navigation is disabled and `q` still quits.
+During startup, navigation is disabled and `ctrl+q` still quits.
 
 The lower-left loading status and lower-right installed application version
 are live English text, white on black. The bundled source artwork is
@@ -62,9 +62,7 @@ The left sidebar (or the number keys) switches between eight screens:
 
 Global keys: `1`–`8` switch screens, `r` refreshes the current screen, `i`
 opens the import dataset wizard (except when focus is inside the Files
-screen, where `i` is ingest), `?` shows the key help, `q` quits (when the
-Files table is focused, `q` starts a QC run instead — move focus elsewhere
-or use the sidebar to leave).
+screen, where `i` is ingest), `?` shows the key help, `ctrl+q` quits.
 
 ## Write operations
 

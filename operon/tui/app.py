@@ -73,12 +73,12 @@ class HelpScreen(ModalScreen):
             "  x  retire/restore selected entity (Entities screen)\n"
             "  i  ingest file (Files screen)\n"
             "  v  verify files (Files screen)\n"
-            "  q  run QC (Files screen; elsewhere: quit)\n"
+            "  q  run QC (Files screen)\n"
             "  e  evaluate decisions (Decisions screen)\n"
             "  c  curate selected decision (Decisions screen)\n"
             "  enter  open selected run (Tasks screen)\n"
             "  esc  back / close\n"
-            "  q  quit\n"
+            "  ctrl+q  quit\n"
             "\n"
             "Write operations run the same audited core functions as the CLI:\n"
             "every change shows a preview, the equivalent CLI command, and an\n"
@@ -93,7 +93,7 @@ class OperonApp(App):
     CSS_PATH = "app.tcss"
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("ctrl+q", "quit", "Quit"),
         Binding("1", "switch_screen('home')", "Home"),
         Binding("2", "switch_screen('entities')", "Entities"),
         Binding("3", "switch_screen('files')", "Files"),

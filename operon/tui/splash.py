@@ -89,7 +89,7 @@ class LakeArt(Static):
 class SplashScreen(ModalScreen):
     """Block navigation while initial reads finish; quitting stays available."""
 
-    BINDINGS = [Binding("q", "app.quit", "Quit", priority=True)]
+    BINDINGS = [Binding("ctrl+q", "app.quit", "Quit", priority=True)]
     DEFAULT_CSS = """
     SplashScreen { background: #000000; layout: vertical; }
     LakeArt { width: 1fr; height: 1fr; background: #000000; overflow: hidden; }
