@@ -252,6 +252,8 @@ def test_source_distribution_contains_corresponding_source(tmp_path):
         f"{prefix}operon/cli.py",
         f"{prefix}operon/qc_module/_parsers.pyx",
         f"{prefix}operon/tui/app.tcss",
+        f"{prefix}operon/tui/assets/splash.png",
+        f"{prefix}operon/tui/assets/splash.rgb.z",
         f"{prefix}tools/build.py",
         f"{prefix}tests/integration/test_application_build.py",
         f"{prefix}.readthedocs.yaml",

@@ -24,6 +24,27 @@ operon [--project PATH] tui
 The project is selected with the global `--project` option, exactly like
 every other command.
 
+## Startup screen
+
+On startup, `operon` shows a night-lake illustration while the six panels
+load in background workers. Lake reflections represent sequencing reads;
+stars and three constellations represent analysis results and insights.
+The screen stays visible for at least one second after its first paint and
+until every initial panel load has completed or reported an error. Failed
+loads remain visible in the affected panels; press `r` there to retry.
+During startup, navigation is disabled and `q` still quits.
+
+The lower-left loading status and lower-right installed application version
+are live English text, white on black. The bundled source artwork is
+1024 × 768 pixels. For compatibility with ordinary terminal emulators,
+Textual renders a pre-sampled companion with colored Unicode half blocks,
+fitting the 4:3 scene to the terminal (assuming cells twice as tall as wide).
+The subtitle uses terminal text to stay readable at small sizes. True-color
+terminals give the best result; limited-color terminals reduce the palette.
+No Kitty/Sixel image support or additional imaging dependency is required.
+Terminal resolution determines the visible detail; it is not a pixel-exact
+1024 × 768 image display.
+
 ## Screens
 
 The left sidebar (or the number keys) switches between six screens:

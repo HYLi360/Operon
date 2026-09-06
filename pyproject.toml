@@ -73,7 +73,7 @@ operon = "operon.cli:main"
 include = ["operon*"]
 
 [tool.setuptools.package-data]
-"operon.tui" = ["*.tcss"]
+"operon.tui" = ["*.tcss", "assets/*.png", "assets/*.z", "assets/*.md"]
 
 [tool.cxfreeze]
 executables = [

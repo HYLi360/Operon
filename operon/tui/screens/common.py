@@ -126,6 +126,9 @@ class Panel(VerticalScroll):
     inside the panel instead.
     """
 
+    initial_load_complete = False
+    initial_load_failed = False
+
     def on_mount(self) -> None:
         self.reload()
 
@@ -151,6 +154,9 @@ class Panel(VerticalScroll):
             self.show_error(payload)
         else:
             self.render_data(payload)
+        if not self.initial_load_complete:
+            self.initial_load_failed = isinstance(payload, BaseException)
+            self.initial_load_complete = True
 
     def _fetch(self) -> Any:  # pragma: no cover - abstract stub
         raise NotImplementedError

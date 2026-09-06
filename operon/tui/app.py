@@ -11,6 +11,10 @@ equivalent CLI command.
 
 from __future__ import annotations
 
+import asyncio
+from time import monotonic
+
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
@@ -25,6 +29,7 @@ from operon.tui.screens.entities import EntitiesPanel
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.home import HomePanel
 from operon.tui.screens.runs import RunsPanel
+from operon.tui.splash import SplashScreen
 
 SCREENS = ("home", "entities", "files", "runs", "decisions", "config")
 NAV_LABELS = {
@@ -94,6 +99,7 @@ class OperonApp(App):
     def __init__(self, project: Project) -> None:
         super().__init__()
         self.project = project
+        self._starting = True
         self.title = f"Operon — {project.config['project'].get('name') or project.project_id}"
         self.sub_title = f"{project.project_id} · {project.db_path}"
 
@@ -113,8 +119,37 @@ class OperonApp(App):
                 yield ConfigPanel(self.project)
         yield Footer()
 
+    async def on_mount(self) -> None:
+        splash = SplashScreen()
+        await self.push_screen(splash)
+        # Start the clock only after the splash has actually been painted.
+        splash.call_after_refresh(self._finish_startup, splash)
+
+    @work
+    async def _finish_startup(self, splash: SplashScreen) -> None:
+        started = monotonic()
+        panels = list(self.query(Panel))
+        while self.is_running:
+            pending = [panel for panel in panels if not panel.initial_load_complete]
+            if pending:
+                names = ", ".join((panel.id or "data").title() for panel in pending)
+                splash.set_status(f"Loading {names}...")
+            else:
+                failed = sum(panel.initial_load_failed for panel in panels)
+                splash.set_status("Loaded with errors" if failed else "Ready")
+                if monotonic() - started >= 2.0:
+                    self._starting = False
+                    self.pop_screen()
+                    if failed:
+                        self.notify(
+                            "Some panels could not load. See panel errors; press r to retry.",
+                            severity="error",
+                        )
+                    return
+            await asyncio.sleep(0.05)
+
     def action_switch_screen(self, name: str) -> None:
-        if name not in SCREENS:
+        if self._starting or name not in SCREENS:
             return
         self.query_one("#main", ContentSwitcher).current = name
         nav = self.query_one("#nav", ListView)
@@ -130,6 +165,8 @@ class OperonApp(App):
         return switcher.get_child_by_id(switcher.current or "home")
 
     def action_refresh(self) -> None:
+        if self._starting:
+            return
         panel = self.current_panel()
         if isinstance(panel, Panel):
             panel.reload()
@@ -140,4 +177,6 @@ class OperonApp(App):
             panel.reload()
 
     def action_help(self) -> None:
+        if self._starting:
+            return
         self.push_screen(HelpScreen())

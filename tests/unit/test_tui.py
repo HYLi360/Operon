@@ -650,6 +650,7 @@ def test_help_modal(demo_project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(demo_project)
         async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
             await pilot.pause()
             await pilot.press("?")
             await pilot.pause()
@@ -815,3 +816,91 @@ def test_tui_missing_textual_hint(monkeypatch, capsys) -> None:
 def test_tui_without_project_returns_2(tmp_path: Path, capsys) -> None:
     assert main(["--project", str(tmp_path / "nowhere"), "tui"]) == 2
     assert "no project.yaml" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("release_at", [0.5, 1.5])
+def test_splash_waits_for_first_paint_and_initial_reads(demo_project, monkeypatch, release_at):
+    """Both fast and slow reads must pass the time and data readiness gates."""
+    import threading
+    import operon.tui.app as app_module
+    from operon import __version__
+    from operon.tui.splash import SplashScreen
+
+    clock = [0.0]
+    gate = threading.Event()
+    original = HomePanel._fetch
+
+    def fetch(panel):
+        if not gate.wait(10):
+            raise TimeoutError("Test did not release the initial read")
+        return original(panel)
+
+    monkeypatch.setattr(app_module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(HomePanel, "_fetch", fetch)
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        try:
+            async with app.run_test(size=(100, 35)) as pilot:
+                await pilot.pause()
+                assert isinstance(app.screen, SplashScreen)
+                assert __version__ in _static_text(app.screen.query_one("#splash-version", Static))
+                await pilot.press("2", "?", "r", "escape")
+                assert isinstance(app.screen, SplashScreen)
+                clock[0] = release_at
+                await pilot.pause(0.1)
+                assert isinstance(app.screen, SplashScreen)
+                assert "Home" in _static_text(app.screen.query_one("#splash-status", Static))
+                await pilot.resize_terminal(80, 24)
+                gate.set()
+                if release_at < 1:
+                    for _ in range(100):
+                        if app.query_one(HomePanel).initial_load_complete:
+                            break
+                        await asyncio.sleep(0.02)
+                    await pilot.pause(0.1)
+                    assert isinstance(app.screen, SplashScreen)
+                    assert "Ready" in _static_text(app.screen.query_one("#splash-status", Static))
+                clock[0] = 2
+                await _settled(app)
+                await pilot.pause()
+                assert not isinstance(app.screen, SplashScreen)
+                assert not app._starting
+        finally:
+            gate.set()
+
+    _run(scenario())
+
+
+def test_splash_quit_during_minimum_display(demo_project):
+    from operon.tui.splash import SplashScreen
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        async with app.run_test() as pilot:
+            assert isinstance(app.screen, SplashScreen)
+            await pilot.press("q")
+        assert not app.is_running
+
+    _run(scenario())
+
+
+def test_splash_resources_and_small_terminal(monkeypatch):
+    import struct
+    from importlib.resources import files
+    from operon.tui import splash
+
+    png = files("operon.tui").joinpath("assets/splash.png").read_bytes()
+    assert struct.unpack(">II", png[16:24]) == (1024, 768)
+    assert len(splash.lake_pixels()) == 256 * 192 * 3
+    assert splash.lake_text(0, 0).plain == ""
+    for width, height in [(1, 1), (20, 5), (80, 24), (140, 45)]:
+        rendered = splash.lake_text(width, height)
+        assert len(rendered.plain.splitlines()) <= height
+        assert all(len(line) <= width for line in rendered.plain.splitlines())
+    splash.lake_text.cache_clear()
+    def missing():
+        raise FileNotFoundError("missing artwork")
+    monkeypatch.setattr(splash, "lake_pixels", missing)
+    assert "OPERON" in splash.lake_text(80, 24).plain
+    splash.lake_text.cache_clear()

@@ -469,6 +469,7 @@ def test_check_tools_reports_each_row_via_callback(project: Project, tmp_path: P
 
 
 async def _open_config(app, pilot) -> ConfigPanel:
+    await _settled(app)
     app.action_switch_screen("config")
     await pilot.pause()
     await _settled(app)
