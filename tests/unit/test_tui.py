@@ -397,17 +397,12 @@ def test_navigation_and_home(demo_project: Project) -> None:
             assert "FAIL" in body
 
             runs_panel = app.query_one(RunsPanel)
-            runs_panel._auto_reload()  # hidden: must not spawn a worker
-            assert not app.workers
-
             for key, expected in (("2", "entities"), ("3", "files"), ("4", "runs"), ("1", "home")):
                 await pilot.press(key)
                 await pilot.pause()
                 await _settled(app)
                 assert switcher.current == expected
                 if expected == "runs":
-                    runs_panel._auto_reload()  # visible: reloads
-                    await _settled(app)
                     assert runs_panel.runs
 
             await pilot.press("r")
@@ -752,7 +747,7 @@ def test_runs_step_filter(demo_project: Project) -> None:
 
 
 def test_runs_table_view_survives_reload(tmp_path: Path) -> None:
-    """Reloads (including the 2s auto-refresh) keep the cursor and scroll offset."""
+    """Reloads keep the cursor and scroll offset."""
     from operon.database import Database
     from operon.workflow import log_run
 

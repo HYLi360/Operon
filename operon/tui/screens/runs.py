@@ -29,7 +29,7 @@ RUN_STATUSES = ["running", "completed", "failed", "interrupted", "adopted", "pla
 
 
 class RunsPanel(Panel):
-    """Filterable, auto-refreshing workflow run listing."""
+    """Filterable workflow run listing; refreshes on demand (``r``)."""
 
     def __init__(self, project: Project) -> None:
         super().__init__(id="runs")
@@ -54,16 +54,9 @@ class RunsPanel(Panel):
         table = self.query_one("#runs-table", DataTable)
         table.add_columns("started", "status", "step", "entity", "duration", "run_id")
         super().on_mount()
-        self.set_interval(2.0, self._auto_reload)
-
-    def _auto_reload(self) -> None:
-        # Polling while hidden would spawn workers indefinitely, which can
-        # starve app.workers.wait_for_complete() and wastes queries.
-        if self.display:
-            self.reload()
 
     def reload(self) -> None:
-        # The auto-refresh interval must never pile up overlapping loads.
+        # Filter edits and manual refreshes must never pile up overlapping loads.
         if self._loading:
             return
         self._loading = True
