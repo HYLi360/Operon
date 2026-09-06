@@ -179,10 +179,9 @@ def test_entity_metrics(demo_project: Project) -> None:
     metrics = data.entity_metrics(demo_project, "assembly", "ASM_000001")
     qc = metrics["qc"]
     assert qc, "demo assemblies should have built-in QC metrics"
-    keys = [(row["qc_stage"], row["metric_name"], row["tool"]) for row in qc]
-    assert len(keys) == len(set(keys)), "deduped to one row per (stage, metric, tool)"
-    names = {row["metric_name"] for row in qc}
-    assert {"contig_n50", "parseable"} <= names
+    names = [row["metric_name"] for row in qc]
+    assert len(names) == len(set(names)), "collapsed to one row per metric name"
+    assert {"contig_n50", "parseable"} <= set(names)
     assert [row["qc_stage"] for row in qc] == sorted(row["qc_stage"] for row in qc)
     n50 = next(row for row in qc if row["metric_name"] == "contig_n50")
     assert n50["metric_unit"] == "bp"

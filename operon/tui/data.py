@@ -206,37 +206,48 @@ def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict
 
 
 def _entity_metrics(db: Database, entity_type: str, entity_id: str) -> dict[str, Any]:
-    """Latest QC metrics per (stage, metric, tool) plus external analysis metrics."""
+    """Latest measurement per metric name for built-in QC and external analyses."""
     qc_rows = _rows(
         db,
         "SELECT qc_stage, metric_name, metric_value, metric_unit, tool, tool_version, "
         "evaluated_at, qc_result_id FROM qc_results "
         "WHERE entity_type=? AND entity_id=? "
-        "ORDER BY qc_stage, metric_name, tool, julianday(evaluated_at) DESC, qc_result_id DESC",
+        "ORDER BY metric_name, julianday(evaluated_at) DESC, qc_result_id DESC",
         (entity_type, entity_id),
     )
-    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    qc: dict[str, dict[str, Any]] = {}
     for row in qc_rows:
-        key = (row["qc_stage"], row["metric_name"], row["tool"])
-        if key not in latest:
+        if row["metric_name"] not in qc:
             del row["evaluated_at"], row["qc_result_id"]
-            latest[key] = row
-    analysis = _rows(
+            qc[row["metric_name"]] = row
+    analysis_rows = _rows(
         db,
-        "SELECT analysis_name, metric_name, metric_value, metric_unit FROM analysis_results "
-        "WHERE entity_type=? AND entity_id=? ORDER BY analysis_name, metric_name",
+        "SELECT r.analysis_name, r.metric_name, r.metric_value, r.metric_unit, "
+        "j.finished_at, r.result_id FROM analysis_results r "
+        "JOIN analysis_jobs j ON j.job_id = r.job_id "
+        "WHERE r.entity_type=? AND r.entity_id=? "
+        "ORDER BY r.metric_name, julianday(j.finished_at) DESC, r.result_id DESC",
         (entity_type, entity_id),
     )
-    return {"qc": list(latest.values()), "analysis": analysis}
+    analysis: dict[str, dict[str, Any]] = {}
+    for row in analysis_rows:
+        if row["metric_name"] not in analysis:
+            del row["finished_at"], row["result_id"]
+            analysis[row["metric_name"]] = row
+    return {
+        "qc": sorted(qc.values(), key=lambda row: (row["qc_stage"], row["metric_name"])),
+        "analysis": sorted(analysis.values(), key=lambda row: (row["analysis_name"], row["metric_name"])),
+    }
 
 
 def entity_metrics(project: Project, entity_type: str, entity_id: str) -> dict[str, Any]:
     """Return the latest built-in QC and external-analysis metrics for one entity.
 
-    ``"qc"`` holds one row per ``(qc_stage, metric_name, tool)`` — the newest
-    measurement when several input identities recorded the same metric —
-    ordered by stage and metric; ``"analysis"`` holds synced external results
-    (BUSCO/QUAST-style) ordered by analysis name and metric.
+    ``"qc"`` holds one row per ``metric_name`` — the newest measurement,
+    regardless of stage or tool — ordered by stage and metric; ``"analysis"``
+    holds synced external results (BUSCO/QUAST-style) likewise collapsed to
+    the newest measurement per ``metric_name`` and ordered by analysis name
+    and metric.
     """
     with _open(project) as db:
         return _entity_metrics(db, entity_type, entity_id)
