@@ -206,6 +206,12 @@ HelpScreen {
     height: auto;
 }
 
+#profile-required-rules, #profile-warnings-rules {
+    /* Plain Vertical defaults to height 1fr + overflow hidden, which would
+       clip the rules to a fixed window inside the editor scroll area. */
+    height: auto;
+}
+
 .rule-inputs {
     height: auto;
 }

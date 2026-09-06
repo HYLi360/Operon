@@ -102,8 +102,11 @@ async def _click(pilot, selector: str) -> None:
 
     ``Pilot.click`` silently returns False when the target is clipped or
     obscured (e.g. a modal button pushed out of the box), which otherwise
-    surfaces much later as a confusing timeout.
+    surfaces much later as a confusing timeout.  Scroll the target into
+    view first so buttons at the bottom of a scrollable form are clickable.
     """
+    pilot.app.screen.query_one(selector).scroll_visible(animate=False)
+    await pilot.pause()
     assert await pilot.click(selector), f"click did not land on {selector}"
 
 
@@ -524,6 +527,31 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
         project, "SELECT profile_version FROM qc_profiles WHERE profile_name='assembly_production_v1'"
     )
     assert sorted(row["profile_version"] for row in rows) == [1, 2]
+
+
+def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
+    """The rules editor must scroll: rule containers use height 1fr by default
+    (plain Vertical), which clipped the rules to a fixed non-scrolling window."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            _select_profile(panel, "assembly_production_v1")
+            await pilot.pause()
+            editor = panel.query_one("#profile-editor", VerticalScroll)
+            assert editor.virtual_size.height > editor.scrollable_content_region.height
+            assert editor.max_scroll_y > 0
+            editor.scroll_end(animate=False)
+            await pilot.pause()
+            last_rule = panel._rule_rows("warnings")[-1]
+            viewport = editor.scrollable_content_region
+            assert (
+                viewport.y <= last_rule.region.y
+                and last_rule.region.bottom <= viewport.bottom + editor.scroll_offset.y
+            )
+
+    _run(scenario())
 
 
 def test_config_screen_save_error_stays_inline(project: Project) -> None:
