@@ -534,6 +534,30 @@ def test_files_screen_and_filters(demo_project: Project) -> None:
     _run(scenario())
 
 
+def test_organism_names_render_italic(demo_project: Project) -> None:
+    """Latin scientific names are italicized in the tree and the detail panel."""
+    from operon.tui.screens.entities import _node_label
+
+    organism = _node_label({"entity_type": "organism", "entity_id": "ORG_1",
+                            "name": "Syntheticus alpha"})
+    assert any("italic" in str(span.style) for span in organism.spans)
+    sample = _node_label({"entity_type": "sample", "entity_id": "SMP_1", "name": "isolate A"})
+    assert not any("italic" in str(span.style) for span in sample.spans)
+
+    panel = EntitiesPanel(demo_project)
+    detail = {
+        "entity_type": "organism", "entity_id": "ORG_1",
+        "fields": {"organism_id": "ORG_1", "scientific_name": "Syntheticus alpha"},
+        "accessions": [], "state": None, "files": [], "metrics": {},
+    }
+    text = panel._detail_text(detail)
+    name_start = text.plain.index("Syntheticus alpha")
+    assert any(
+        "italic" in str(span.style) and span.start <= name_start < span.end
+        for span in text.spans
+    )
+
+
 def test_detail_text_builders(demo_project: Project) -> None:
     entities_panel = EntitiesPanel(demo_project)
     assert "entity not found" in entities_panel._detail_text(None).plain

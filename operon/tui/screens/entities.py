@@ -16,14 +16,24 @@ from textual.widgets import Input, Select, Static, Tree
 from operon.config import Project
 from operon.lifecycle import RETIRE_REASON_CODES
 from operon.tui import actions, data
-from operon.tui.screens.common import Panel, WriteModal, human_size, styled_file_status
+from operon.tui.screens.common import (
+    Panel,
+    WriteModal,
+    human_size,
+    styled_file_status,
+    styled_scientific_name,
+)
 
 
 def _node_label(node: dict[str, Any]) -> Text:
     label = Text(str(node["entity_id"]))
     name = node.get("name")
     if name:
-        label.append(f"  {name}")
+        label.append("  ")
+        if node.get("entity_type") == "organism":
+            label.append_text(styled_scientific_name(name))
+        else:
+            label.append(str(name))
     state = node.get("state")
     if state:
         label.append(f"  [{state}]", style="dim")
@@ -304,7 +314,12 @@ class EntitiesPanel(Panel):
         text.append(f"{detail['entity_type']} {detail['entity_id']}\n", style="bold underline")
         for field, value in detail["fields"].items():
             if value not in (None, ""):
-                text.append(f"  {field:<24} {value}\n")
+                text.append(f"  {field:<24} ")
+                if field == "scientific_name":
+                    text.append_text(styled_scientific_name(value))
+                    text.append("\n")
+                else:
+                    text.append(f"{value}\n")
         state = detail.get("state")
         text.append("\nState\n", style="bold")
         if state:

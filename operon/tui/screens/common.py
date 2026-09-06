@@ -67,6 +67,11 @@ def styled(value: Any, styles: dict[str, str]) -> Text:
     return Text(text, style=styles.get(text, "dim"))
 
 
+def styled_scientific_name(value: Any) -> Text:
+    """Render a Latin scientific name in italics, per typesetting convention."""
+    return Text(str(value), style="italic")
+
+
 def styled_status(value: Any) -> Text:
     return styled(value, RUN_STATUS_STYLES)
 
