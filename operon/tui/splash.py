@@ -1,9 +1,12 @@
-"""Portable night-lake splash; no terminal image protocol or imaging dependency."""
+"""Night-lake splash with text, color blocks, and native Kitty graphics."""
 
 from __future__ import annotations
 
 from functools import lru_cache
 from importlib.resources import files
+import os
+import secrets
+import sys
 import zlib
 
 from rich.style import Style
@@ -15,6 +18,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from operon import __version__
+from operon.tui.splash_terminal import (
+    kitty_delete, kitty_place, kitty_upload, splash_mode, text_brand,
+)
 
 
 @lru_cache(maxsize=1)
@@ -82,8 +88,61 @@ def lake_text(width: int, height: int) -> Text:
 class LakeArt(Static):
     """Re-render at the actual terminal size, including live resizes."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.mode = splash_mode(os.environ)
+        self._image_id = secrets.randbelow(2**31 - 1) + 1
+        self._uploaded = False
+        self._placement = None
+
     def render(self) -> Text:
+        if self.mode == "text":
+            encoding = (getattr(sys.__stdout__, "encoding", None) or "ascii").lower().replace("-", "")
+            return text_brand(self.size.width, self.size.height,
+                              unicode=encoding == "utf8", color=not self.app.no_color)
         return lake_text(self.size.width, self.size.height)
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self.display_image)
+
+    def on_resize(self) -> None:
+        self.call_after_refresh(self.display_image)
+
+    def display_image(self) -> None:
+        # Use the same serialized output queue as Textual, never stdout writes.
+        driver = self.app._driver
+        if (self.mode != "kitty" or driver is None or driver.is_headless
+                or not self.is_mounted or self.app.screen is not self.screen):
+            return
+        region = self.region
+        if not region.width or not region.height or region == self._placement:
+            return
+        try:
+            if not self._uploaded:
+                png = files("operon.tui").joinpath("assets/splash.png").read_bytes()
+                driver.write(kitty_upload(png, self._image_id))
+                self._uploaded = True
+            driver.write(kitty_delete(self._image_id, free=False)
+                         + kitty_place(self._image_id, *region))
+            self._placement = region
+        except (OSError, ValueError):
+            self.hide_image()
+            self.mode = "text"
+            self.refresh()
+
+    def hide_image(self) -> None:
+        if self._uploaded:
+            driver = self.app._driver
+            if driver is not None:
+                try:
+                    driver.write(kitty_delete(self._image_id))
+                except OSError:
+                    pass  # Terminal disconnected during shutdown.
+            self._uploaded = False
+        self._placement = None
+
+    def on_unmount(self) -> None:
+        self.hide_image()
 
 
 class SplashScreen(ModalScreen):
@@ -104,5 +163,26 @@ class SplashScreen(ModalScreen):
             yield Static("Loading project data...", id="splash-status", markup=False)
             yield Static(f"Version {__version__}", id="splash-version", markup=False)
 
+    def on_mount(self) -> None:
+        self._previous_ansi_color = self.app.ansi_color
+        if self.query_one(LakeArt).mode == "text":
+            # Keep the basic palette as ANSI codes instead of having Textual
+            # expand it to RGB sequences that a Linux console cannot display.
+            self.app.ansi_color = True
+            self.styles.background = "ansi_black"
+            self.query_one(LakeArt).styles.background = "ansi_black"
+            for widget in self.query("#splash-footer, #splash-status, #splash-version"):
+                widget.styles.background = "ansi_black"
+                widget.styles.color = "ansi_bright_white"
+
+    def on_unmount(self) -> None:
+        self.app.ansi_color = self._previous_ansi_color
+
     def set_status(self, status: str) -> None:
         self.query_one("#splash-status", Static).update(status)
+
+    def on_screen_suspend(self) -> None:
+        self.query_one(LakeArt).hide_image()
+
+    def on_screen_resume(self) -> None:
+        self.call_after_refresh(self.query_one(LakeArt).display_image)

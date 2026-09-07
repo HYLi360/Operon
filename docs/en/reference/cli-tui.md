@@ -31,23 +31,48 @@ every other command.
 ## Startup screen
 
 On startup, `operon` shows a night-lake illustration while the eight panels
-load in background workers. Lake reflections represent sequencing reads;
-stars and three constellations represent analysis results and insights.
-The screen stays visible for at least one second after its first paint and
+load in background workers.
+
+The screen stays visible for at least 2 second after its first paint and
 until every initial panel load has completed or reported an error. Failed
 loads remain visible in the affected panels; press `r` there to retry.
 During startup, navigation is disabled and `ctrl+q` still quits.
 
 The lower-left loading status and lower-right installed application version
-are live English text, white on black. The bundled source artwork is
-1024 × 768 pixels. For compatibility with ordinary terminal emulators,
-Textual renders a pre-sampled companion with colored Unicode half blocks,
-fitting the 4:3 scene to the terminal (assuming cells twice as tall as wide).
-The subtitle uses terminal text to stay readable at small sizes. True-color
-terminals give the best result; limited-color terminals reduce the palette.
-No Kitty/Sixel image support or additional imaging dependency is required.
-Terminal resolution determines the visible detail; it is not a pixel-exact
-1024 × 768 image display.
+are live English text, white on black. The source artwork is 1024 × 768 pixels.
+The startup screen automatically chooses a renderer:
+
+- **Text:** Linux TTY, unknown/16-color terminals, or `NO_COLOR` use a centered
+  rounded-square block-letter OPERON logo and a spaced subtitle. Basic ANSI
+  cyan/white keeps the original palette without RGB escape codes; `NO_COLOR`
+  uses monochrome. Non-UTF-8 output uses ASCII `#` blocks; narrow windows use
+  ordinary text.
+- **Color blocks:** 256-color and true-color terminal hints select the existing
+  night-lake half-block illustration, with a readable terminal-text subtitle.
+- **Kitty:** `TERM=xterm-kitty` outside tmux/screen selects native PNG display
+  using the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
+  PNG bytes travel through the terminal connection in base64 chunks, so SSH
+  needs no shared filesystem or remote `kitten` command. The image is fitted
+  above the footer, repositioned on resize, and removed on dismissal, quit,
+  or when another modal covers the splash. Only this splash's image is deleted.
+
+SSH alone does not determine color/image support; the remote terminal hints
+must describe the local emulator. Automatic Kitty selection is conservative
+and based on `TERM`, not an active protocol probe. tmux/screen use character
+rendering automatically. Unsupported graphics requests leave the character
+illustration underneath; image-resource or output errors fall back to text.
+No new runtime dependency is required. Fit assumes cells twice as tall as wide.
+
+Override detection with `OPERON_SPLASH=auto|text|blocks|kitty`, for example:
+
+```bash
+OPERON_SPLASH=text operon --project PATH tui
+OPERON_SPLASH=kitty operon --project PATH tui
+```
+
+Use `kitty` only when the terminal and any intermediary support the protocol;
+this explicit override also bypasses `NO_COLOR`. An unknown value uses auto
+selection. The minimum startup duration and data-readiness gate are unchanged.
 
 ## Screens
 
