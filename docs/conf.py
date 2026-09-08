@@ -16,8 +16,8 @@ DOCS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DOCS_DIR.parent
 
 project = "Operon"
-author = "Operon contributors"
-copyright = "2026, Operon contributors"
+author = "Project Operon Development Group"
+copyright = f"2026, {author}. All Rights Reserved."
 
 
 def _package_version() -> str:
