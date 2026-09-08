@@ -34,5 +34,3 @@
 依赖从 `pyproject.toml` 的 `docs` optional extra 安装。RTD 使用 Python 3.12，并在 Sphinx 警告出现时使构建失败，因此其结果与本地严格构建及 CI 门禁一致。
 
 当前方案在一个 RTD 项目中发布现有的两棵完整 Markdown 文档树，不要求把正文改写成 gettext PO 文件。如果未来需要让 RTD 顶部语言菜单、各语言独立搜索索引或不同翻译版本生命周期由平台原生管理，可以在 RTD 中创建关联的 translation project；迁移时仍可复用当前中英文正文和相对路径约定。
-
-正式独立应用发布也会调用同一份 `docs/conf.py`。`python tools/build.py` 在冻结应用前执行严格 Sphinx 构建，并把结果放入发布目录的 `share/doc/operon/html/`；任何文档警告或缺失的语言入口都会阻止发布。

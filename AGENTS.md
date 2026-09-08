@@ -112,9 +112,6 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   (`.readthedocs.yaml`).
 - `benchmarks/` — representative entity sets for QC performance diagnostics
   (see `docs/*/operations/qc-performance.md`).
-- `tools/build.py` — the only standalone-application release entry point.
-- `build/release/v<version>/` — generated cx_Freeze application releases,
-  including third-party licenses and corresponding source.
 
 ## Setup, test, and build
 
@@ -123,9 +120,8 @@ repo root; activate it or invoke `.venv/bin/python` explicitly).
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev]'   # runtime + pytest + cx_Freeze + Cython +
-                                    # Sphinx; also compiles the qc parsers
-                                    # extension
+python -m pip install -e '.[dev]'   # runtime + pytest + Cython + Sphinx;
+                                    # also compiles the qc parsers extension
 
 python -m pytest                    # full suite (coverage gate: 90% branch)
 python -m pytest tests/unit         # by category: unit / integration /
@@ -134,19 +130,12 @@ python -m pytest tests/unit         # by category: unit / integration /
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
 sphinx-build -W --keep-going -b html docs docs/_build/html  # strict docs build
-
-python tools/build.py               # complete standalone release -> build/release/v<version>/
 ```
 
 Run the relevant test category after any change; run the full suite before
 considering work done. CI (`.github/workflows/deploy.yml`) runs pytest on
-Python 3.10–3.14, the frozen release build, and the strict Sphinx build.
-
-`tools/build.py` compiles the Cython parser, builds the Sphinx documentation
-strictly, collects third-party license texts, builds the
-corresponding-source sdist, freezes the application, assembles the versioned
-directory, and runs the frozen executable smoke test. Do not call cx_Freeze
-directly for a release bundle.
+Python 3.10–3.14 and the strict Sphinx build. Releases are published
+exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
 Do not commit or perform other git mutations unless the user explicitly
 asks.
@@ -156,7 +145,7 @@ asks.
 - Python 3.10+. Treat `pyproject.toml` as the authoritative dependency
   list: `[project.dependencies]` contains core runtime dependencies, while
   `[project.optional-dependencies]` contains separately installable extras
-  (`test`, `build`, `remote`, `tui`, `docs`, `dev`). Runtime-feature extras must
+  (`test`, `docs`, `dev`). Runtime-feature extras must
   remain lazy-imported by their feature paths (e.g. Paramiko is only
   imported inside remote/SSH code); test/build extras must stay out of
   normal runtime paths. Do not promote an extra dependency to core, or add a

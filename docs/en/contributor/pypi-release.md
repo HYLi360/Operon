@@ -4,9 +4,7 @@ The PyPI distribution is named `OperonDBS` because the `operon` distribution
 name belongs to an unrelated project. This does not change the import name or
 console command: users install `OperonDBS`, import `operon`, and run `operon`.
 
-PyPI publishing and standalone application publishing are independent. The
-PEP 517 build dependencies contain only setuptools and Cython; cx_Freeze stays
-in the optional `build` extra and is used only by `python tools/build.py`.
+The PEP 517 build dependencies contain only setuptools and Cython.
 
 ## GitHub Actions release
 

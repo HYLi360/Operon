@@ -13,14 +13,14 @@
 
 ## 平台支持
 
-Linux 是独立应用发布、本地 Slurm 及完整外部生物信息学工具生态的主要平台。
+Linux 是本地 Slurm 及完整外部生物信息学工具生态的主要平台。
 macOS 支持从源码安装后的本地执行，也支持作为 SSH/SFTP 客户端向 Linux 主机提交
 远端 Slurm 作业。本地资源采样在可用时读取 procfs，在 macOS 上则使用系统 `ps`
 命令。
 
 `tools.yaml` 配置的外部命令仍须在控制端平台上自行安装。SSH 直连执行要求远端主机
 提供 util-linux `setsid`，因此该计算端模式仍以 Linux 为目标；这不影响 Mac 作为
-控制端使用。目前不发布签名或公证过的 macOS 独立应用包。
+控制端使用。
 
 ## 从 PyPI 安装
 
@@ -33,7 +33,6 @@ python -m pip install OperonDBS
 ```
 
 发布的 wheel 已包含编译后的 QC parser，标准安装也已包含 SSH/SFTP 与 TUI 功能。
-PyPI 安装不使用 cx_Freeze；cx_Freeze 只用于另一条独立应用目录发布链路。
 
 ## 从仓库安装
 
@@ -56,12 +55,3 @@ operon --help
 
 第一条命令输出 `operon` 加已安装的版本号——与本文档对应的版本为
 {{ operon_version }}。
-
-如需构建独立 cx_Freeze 应用，请安装 `build` extra 并使用统一发布入口：
-
-```bash
-python -m pip install -e '.[build]'
-python tools/build.py
-```
-
-目录结构与校验规则见[应用程序发布](../contributor/application-release.md)。

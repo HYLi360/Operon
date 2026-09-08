@@ -17,7 +17,7 @@ Original text and spacing are preserved; other components retain italics.
 ## Installation
 
 The TUI is built on [Textual](https://textual.textualize.io/) and is included
-in the standard `OperonDBS` installation and the frozen standalone build.
+in the standard `OperonDBS` installation.
 
 ## Usage
 

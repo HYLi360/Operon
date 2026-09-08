@@ -13,8 +13,7 @@ workflow 溯源记录（`workflow_runs`）及语义与等价命令完全一致�
 
 ## 安装
 
-TUI 基于 [Textual](https://textual.textualize.io/)，包含在标准 `OperonDBS` 安装与
-冻结的独立构建版本中。
+TUI 基于 [Textual](https://textual.textualize.io/)，包含在标准 `OperonDBS` 安装中。
 
 ## 用法
 

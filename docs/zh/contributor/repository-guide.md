@@ -17,7 +17,6 @@
 - `operon/remotes.py`：SFTP 镜像、push/pull 和远程 URL 下载。
 - `tests/`：`unit/`、`integration/`、`regression/`、`compatibility/` 测试。
 - `docs/`：用户、架构和运维文档。
-- `build/release/v<version>/`：生成的独立应用发布目录。
 
 ## 协作约定
 

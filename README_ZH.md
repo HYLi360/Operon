@@ -19,7 +19,7 @@
 
 - Python 3.10 及以上版本
 - 运行时依赖：`PyYAML`、`requests`、`aiohttp`、`Biopython`、`Paramiko`、`Textual` 与 `questionary`；内置 QC 加速扩展在构建软件包时编译
-- 可选 extras：`test`（pytest 与 Cython）、`build`（cx_Freeze、Cython 与文档工具）、`docs`（文档工具）和 `dev`（全部开发/构建依赖）
+- 可选 extras：`test`（pytest 与 Cython）、`docs`（文档工具）和 `dev`（全部开发/构建依赖）
 
 ## 安装
 
@@ -34,13 +34,6 @@ python -m pip install OperonDBS
 
 ```bash
 python -m pip install -e '.[dev]'
-```
-
-PyPI 安装不使用 cx_Freeze。若要另行构建独立可执行应用：
-
-```bash
-python -m pip install -e '.[build]'
-python tools/build.py
 ```
 
 ## 文档

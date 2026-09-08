@@ -33,7 +33,7 @@ Do not point these variables at the project's parent directory, a disk root, or 
 .venv/bin/python -m operon --version
 ```
 
-The full test suite must pass. If production runs a cx_Freeze build, rebuild it and complete the rehearsal below in staging with the same binary first.
+The full test suite must pass.
 
 ## 3. Record the pre-migration read-only baseline
 

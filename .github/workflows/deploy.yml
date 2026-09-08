@@ -26,16 +26,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           report_type: test_results
 
-  frozen-release-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-      - run: python -m pip install -e '.[build]'
-      - run: python tools/build.py
-
   documentation:
     runs-on: ubuntu-latest
     steps:

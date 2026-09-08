@@ -43,8 +43,7 @@ cd "$OPERON_CODE"
 .venv/bin/python -m operon --version
 ```
 
-完整测试必须通过。若生产环境运行 cx_Freeze 构建，则还应重新构建并先在 staging 使用同一
-二进制完成下文演练。
+完整测试必须通过。
 
 ## 3. 记录迁移前只读基线
 

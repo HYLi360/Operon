@@ -17,7 +17,6 @@
 - `operon/remotes.py`: SFTP mirrors, push/pull, and remote URL downloads.
 - `tests/`: `unit/`, `integration/`, `regression/`, `compatibility/` tests.
 - `docs/`: user, architecture, and operations documentation.
-- `build/release/v<version>/`: generated standalone application release directories.
 
 ## Collaboration conventions
 

@@ -4,8 +4,7 @@ PyPI 分发名为 `OperonDBS`，因为 `operon` 分发名已属于另一个无�
 导入包名或命令名：用户安装 `OperonDBS`，在 Python 中导入 `operon`，并执行
 `operon` 命令。
 
-PyPI 发布与独立应用发布相互独立。PEP 517 构建依赖只包含 setuptools 和 Cython；
-cx_Freeze 留在可选 `build` extra 中，仅由 `python tools/build.py` 使用。
+PEP 517 构建依赖仅包含 setuptools 与 Cython。
 
 ## GitHub Actions 发布链路
 

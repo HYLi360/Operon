@@ -34,5 +34,3 @@ Run the following from the repository root with the project virtual environment:
 Dependencies are installed from the `docs` optional extra in `pyproject.toml`. RTD uses Python 3.12 and fails the build on Sphinx warnings, matching the strict local build and the CI gate.
 
 The current setup publishes the two existing complete Markdown trees in one RTD project and does not require converting the source into gettext PO files. If the project later needs the platform-native language menu, separate search indexes, or independent translation-version lifecycles, create linked translation projects in RTD. The current bilingual source and mirrored relative paths can still be reused during that migration.
-
-Official standalone application releases use the same `docs/conf.py`. Before freezing the application, `python tools/build.py` runs the strict Sphinx build and places its output in `share/doc/operon/html/` inside the release. Any documentation warning or missing language entry point prevents publication.
