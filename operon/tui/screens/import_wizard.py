@@ -26,6 +26,7 @@ from textual.widgets import Button, Checkbox, ContentSwitcher, Input, Select, St
 from operon.config import Project
 from operon.import_wizard import _source_validation_errors, _synchronize_new_entity_links
 from operon.tui import actions, data
+from operon.tui.screens.common import DismissOnce
 
 CREATE_NEW = "__new__"
 
@@ -70,7 +71,7 @@ def _select_value(screen: Screen, widget_id: str) -> str:
     return "" if value is Select.NULL else str(value)
 
 
-class ImportWizardScreen(Screen):
+class ImportWizardScreen(DismissOnce, Screen):
     """Full-screen wizard that builds and commits an import draft."""
 
     BINDINGS = [

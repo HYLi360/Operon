@@ -732,6 +732,30 @@ def test_qc_modal_cancel_before_confirm(project: Project) -> None:
     _run(scenario())
 
 
+def test_qc_modal_double_dismiss_does_not_crash(project: Project) -> None:
+    """Regression: a second close activation (double-clicked Cancel, or escape
+    racing the worker callback) must not raise ScreenStackError."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("files")
+            await pilot.pause()
+            await _settled(app)
+            results: list[object] = []
+            app.push_screen(QcModal(project, None, 0), results.append)
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, QcModal)
+            modal.dismiss(None)
+            modal.dismiss(None)
+            await pilot.pause()
+            assert not isinstance(app.screen, QcModal)
+            assert results == [None]
+
+    _run(scenario())
+
+
 def test_verify_modal_end_to_end(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)

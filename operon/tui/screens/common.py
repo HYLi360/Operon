@@ -8,6 +8,7 @@ from typing import Any, Callable, Iterable
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
+from textual.await_complete import AwaitComplete
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.geometry import Offset
@@ -186,7 +187,26 @@ class Panel(VerticalScroll):
         raise NotImplementedError
 
 
-class WriteModal(ModalScreen):
+class DismissOnce:
+    """Mixin that makes ``Screen.dismiss()`` idempotent.
+
+    Textual's ``dismiss()`` pops the screen stack unconditionally, so a
+    second activation of the same close path — a double-clicked Cancel
+    button, or ``escape`` racing a worker's completion callback — raises
+    ``ScreenStackError`` and crashes the whole app.  The first call wins;
+    later calls are no-ops.
+    """
+
+    _dismissed = False
+
+    def dismiss(self, result: Any = None) -> AwaitComplete:
+        if self._dismissed:
+            return AwaitComplete.nothing()
+        self._dismissed = True
+        return super().dismiss(result)
+
+
+class WriteModal(DismissOnce, ModalScreen):
     """Base class for phase-2 write-operation modals.
 
     Every write flow looks and behaves the same: a title, a form/preview
@@ -291,7 +311,7 @@ class WriteModal(ModalScreen):
         self.dismiss(payload)
 
 
-class ErrorDialog(ModalScreen):
+class ErrorDialog(DismissOnce, ModalScreen):
     """Simple modal showing an operation result/error with an OK button."""
 
     BINDINGS = [
@@ -311,3 +331,7 @@ class ErrorDialog(ModalScreen):
                 yield Static(Text(self.message, style="red"), id="error-dialog-body")
             with Horizontal(id="modal-buttons"):
                 yield Button("OK", id="cancel", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel":
+            self.dismiss(None)

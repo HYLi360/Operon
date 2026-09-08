@@ -45,7 +45,13 @@ from textual.widgets import (
 from operon.config import Project
 from operon.errors import ValidationError
 from operon.tui import actions, data
-from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, ErrorDialog, Panel, WriteModal
+from operon.tui.screens.common import (
+    ENTITY_TYPE_OPTIONS,
+    DismissOnce,
+    ErrorDialog,
+    Panel,
+    WriteModal,
+)
 
 ENTITY_TYPE_NAMES = list(actions.ENTITY_TYPE_NAMES)
 OPERATOR_OPTIONS = [(operator, operator) for operator in actions.PROFILE_OPERATORS]
@@ -149,7 +155,7 @@ class RuleRow(Vertical):
         return document
 
 
-class SnapshotViewModal(ModalScreen):
+class SnapshotViewModal(DismissOnce, ModalScreen):
     """Read-only rendering of one recorded snapshot document."""
 
     BINDINGS = [
@@ -174,7 +180,7 @@ class SnapshotViewModal(ModalScreen):
             self.dismiss(None)
 
 
-class HistoryModal(ModalScreen):
+class HistoryModal(DismissOnce, ModalScreen):
     """Snapshot history table with View (read-only) and Restore-into-editor.
 
     Restoring never overwrites a file: the snapshot document is loaded into
@@ -260,7 +266,7 @@ class HistoryModal(ModalScreen):
             self.dismiss(self.to_editor(document))
 
 
-class NewProfileModal(ModalScreen):
+class NewProfileModal(DismissOnce, ModalScreen):
     """Prompt for the name of a new qc profile."""
 
     BINDINGS = [

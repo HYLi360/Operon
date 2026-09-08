@@ -22,7 +22,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import ContentSwitcher, Footer, Header, Label, ListItem, ListView, Static
 
 from operon.config import Project
-from operon.tui.screens.common import Panel
+from operon.tui.screens.common import DismissOnce, Panel
 from operon.tui.screens.config import ConfigPanel
 from operon.tui.screens.coverage import CoveragePanel
 from operon.tui.screens.decisions import DecisionsPanel
@@ -47,7 +47,7 @@ NAV_LABELS = {
 }
 
 
-class HelpScreen(ModalScreen):
+class HelpScreen(DismissOnce, ModalScreen):
     """Modal listing the global key bindings."""
 
     BINDINGS = [

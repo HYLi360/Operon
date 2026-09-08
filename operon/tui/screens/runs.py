@@ -135,7 +135,9 @@ class RunDetailScreen(Screen):
         self._load()
 
     def action_back(self) -> None:
-        self.app.pop_screen()
+        # A queued second escape must not pop the screen underneath.
+        if self.app.screen is self:
+            self.app.pop_screen()
 
     @work(thread=True)
     def _load(self) -> None:
