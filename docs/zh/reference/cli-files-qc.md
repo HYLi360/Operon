@@ -78,6 +78,8 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   （`file_id + file_sha256 + 实体 + seqid + length`，复用同一份长度缓存），支撑
   `show` 与 `query` 的 seqid 反查。annotation GFF3 的 QC 会额外地把它实际读取的
   assembly FASTA 的序列同步进表。同一文件的行在每次成功度量时整体替换。
+- 每处理完一个文件会打印一行进度：`[i/N] file_id: OK` 或
+  `[i/N] file_id: FAILED (<错误>)`。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
 - 每个文件都有自己的 `QC_COMPLETE`、`QC_FAILED` 或 `QC_PENDING` 状态；实体状态取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），命令会列出每个文件状态。任一文件失败时命令返回非零。
 - `qc` 是本地专属命令（无 `--backend`）。状态为 `REMOTE_ONLY` 的文件会被跳过而不是判为失败：不写 `qc_results`、不改变实体状态，仅向 stderr 打印 `SKIPPED` 警告；显式 `--file-id` 指定的文件全部被跳过时命令以退出码 1 结束。可先 `pull` 拉回字节再运行，或用 `qc-measure` 远程度量后经 `import-qc` 导入；见 [Remote-First 运行模式](../guides/remote-first.md)。

@@ -27,7 +27,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -798,8 +798,16 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                  dry_run: bool = False, force: bool = False, limit: int | None = None,
                  threads: int | None = None, backend: str | None = None,
                  keep_partial: bool = False,
-                 runtime_parameters: dict[str, str] | None = None) -> list[dict[str, Any]]:
-    """Execute one configured analysis over all matching manifest files."""
+                 runtime_parameters: dict[str, str] | None = None,
+                 progress_callback: Callable[[int, int, str, str], None] | None = None,
+                 ) -> list[dict[str, Any]]:
+    """Execute one configured analysis over all matching manifest files.
+
+    ``progress_callback``, when given, is invoked per file as
+    ``progress_callback(index, total, file_id, phase)`` with a 1-based
+    ``index``; ``phase`` is ``"start"`` before the file's job begins and the
+    result status (``completed``/``cached``/``error``/...) after it ends.
+    """
     recipe = get_recipe(project, analysis_name)
     resolved_parameters = resolve_runtime_parameters(recipe, runtime_parameters)
     tool = get_tool(project, recipe.tool_name)
@@ -824,7 +832,10 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
         with graceful_shutdown():
             if not dry_run:
                 _sweep_stale_running_jobs(db)
-            for file_record in files:
+            total = len(files)
+            for index, file_record in enumerate(files, start=1):
+                if progress_callback is not None:
+                    progress_callback(index, total, file_record["file_id"], "start")
                 try:
                     result = run_analysis_for_file(
                         project, db, recipe, tool, config, file_record,
@@ -847,6 +858,9 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                         "error": f"{type(exc).__name__}: {exc}",
                     }
                 results.append(result)
+                if progress_callback is not None:
+                    progress_callback(index, total, file_record["file_id"],
+                                      str(result.get("status", "done")))
     finally:
         close = getattr(executor, "close", None)
         if close is not None:

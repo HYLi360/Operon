@@ -12,6 +12,7 @@ operon run-external \
 ```
 
 - The command is parsed with `shlex` and is not executed through a shell.
+- Before execution the command prints one line with the new run ID, both log paths, and a follow hint, e.g. `run <run_id>: logs logs/<run_id>.stdout.log / logs/<run_id>.stderr.log; watch: operon workflow show <run_id> --follow`.
 - Exit code, stdout/stderr files, and start/end times are recorded in `workflow_runs` and `logs/workflow.jsonl`; `workflow_runs` also carries `duration_seconds` (wall clock) plus the `max_rss_mb`/`avg_rss_mb`/`cpu_seconds` resource-usage columns as collected by the execution backend (NULL when collection is unavailable, never affecting the success verdict; per-backend collection is described in the [external analysis execution model](../architecture/external-analysis.md)).
 - Success requires exit code 0 and every `--expected-output` to exist and be non-empty.
 - `--tool NAME` references a tool configured in `config/tools.yaml`: on a match its version is detected automatically and recorded as `tool_version` and `tool_version_raw`; a failed probe degrades to a warning and does not block the run.
@@ -47,6 +48,8 @@ For each run, the recipe:
 7. Parses results into `analysis_hits` and `analysis_results`, and synchronizes summary metrics to `qc_results`. Parsers with coordinates additionally write every parsed hit as a structured row to `analysis_alignments` (untruncated by `max_hits_per_query`).
 
 Supported result parsers are `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
+
+Outside `--dry-run`, `analyze` prints one progress line per file as processing advances, in the form `[i/N] file_id: running|done|failed`; dry runs stay silent and print only the plan table.
 
 `--backend` overrides `project.yaml`'s `execution.backend` and can be `local` (default), `slurm`, or `ssh`. Tool-version detection also uses the selected backend. See [Remote Execution with Slurm and SSH](../guides/remote-execution.md). With SSH `storage_remote`, a locally missing candidate input in `REMOTE_ONLY` state is first validated against the remote manifest and actual content, then used in place remotely.
 

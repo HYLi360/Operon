@@ -61,7 +61,7 @@ operon workflow list --parent-run-id WF_20260901_120000+0800_abcd1234
 ## 查看单次 workflow 运行
 
 ```bash
-operon workflow show WF_ID [--format {text,json}]
+operon workflow show WF_ID [--format {text,json}] [--follow]
 ```
 
 文本输出依次分为身份与关联、时间与资源、执行信息、产物与日志路径、结果、执行详情。
@@ -69,6 +69,16 @@ operon workflow show WF_ID [--format {text,json}]
 `workflow_runs` 列，不做终端缩短，并还原合法的 `execution_details` JSON。
 
 run ID 不存在时属于校验错误，退出码为 2。
+
+### 实时跟随运行
+
+`--follow`（仅限文本输出，不能与 `--format json` 组合）先打印常规的运行摘要，随后把该
+运行的本地日志对 `logs/<run_id>.stdout.log` / `logs/<run_id>.stderr.log` 增量流式输出到
+终端，直到运行结束；stderr 行带 `stderr: ` 前缀。由于三种执行后端（`local`、`slurm`、
+`ssh`）写同一对日志文件，跟随对三者行为一致。运行离开 `running` 状态时，两份日志被读取
+到 EOF，并打印收尾行 `run <run_id> finished: status=<status> exit_code=<code>`。运行
+完成时命令退出码为 0；运行失败（或跟随期间记录消失）时为 1；Ctrl-C 时为 130——跟随只是
+观察，不会取消底层作业。
 
 ## Provenance 边界与当前限制
 
@@ -78,5 +88,5 @@ run ID 不存在时属于校验错误，退出码为 2。
 
 当前接口只覆盖 workflow run。`changes` 中的字段修改、`entity_lifecycle_events` 中的直接
 生命周期事件及其他领域历史仍通过各自专用命令或只读 SQL 查看；目前没有统一的跨表事件
-时间线。全文检索、实时 follow 和交互式 TUI 也明确延后，待后端事件模型和运维接口成熟后
+时间线。全文检索与运行历史的交互式分析也明确延后，待后端事件模型和运维接口成熟后
 再作为整体 UX 项目建设；当前只提供稳定、可脚本化的 CLI 输出。

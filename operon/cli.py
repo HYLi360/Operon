@@ -50,6 +50,7 @@ from operon.taxonomy import (
 from operon.utils import atomic_write_text, format_table, parse_key_values
 from operon.workflow import (
     flush_run_log,
+    follow_run_logs,
     get_run,
     list_runs,
     log_run,
@@ -522,6 +523,10 @@ def _parser() -> argparse.ArgumentParser:
     wp = workflow_sub.add_parser("show", help="show one complete workflow run")
     wp.add_argument("run_id")
     wp.add_argument("--format", choices=["text", "json"], default="text")
+    wp.add_argument(
+        "--follow", action="store_true",
+        help="stream the run's stdout/stderr logs to the terminal until the run ends",
+    )
 
     p = sub.add_parser("query", help="run arbitrary read-only SQL against the file database")
     p.add_argument("sql")
@@ -738,6 +743,8 @@ def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
         record = get_run(db, args.run_id)
         if record is None:
             raise ValidationError(f"workflow run does not exist: {args.run_id}")
+        if args.follow and args.format == "json":
+            raise ValidationError("--follow cannot be combined with --format json")
         serialized = _workflow_json_record(record)
         if args.format == "json":
             print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
@@ -788,6 +795,13 @@ def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
             print(json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True))
         else:
             print("-" if details in (None, "") else details)
+        if args.follow:
+            print()
+            return follow_run_logs(
+                lambda: get_run(db, args.run_id),
+                load_project(args.project).logs_root,
+                args.run_id,
+            )
         return 0
 
     raise ValidationError(f"unknown workflow command {args.workflow_command!r}")
@@ -1032,10 +1046,21 @@ def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -
 
 def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.qc_module import qc_all
+
+    def progress(index: int, total: int, result: dict[str, Any]) -> None:
+        if result.get("skipped"):
+            state = f"SKIPPED ({result.get('error')})"
+        elif result["ok"]:
+            state = "OK"
+        else:
+            state = f"FAILED ({result.get('error')})"
+        print(f"[{index}/{total}] {result['file_id']}: {state}", flush=True)
+
     results = qc_all(
         db, project, entity_type=args.entity_type, entity_id=args.entity_id,
         file_id=args.file_id, sample_size=args.sample_size,
         phred_offset=args.phred_offset, force_checksum=args.rehash,
+        progress_callback=progress,
     )
     ok = sum(1 for r in results if r["ok"])
     skipped = [r for r in results if r.get("skipped")]
@@ -1303,13 +1328,17 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
                 # Version detection must never block the actual command.
                 print(f"warning: version detection for {args.tool!r} failed: {exc}",
                       file=sys.stderr)
+    run_id = new_run_id()
+    print(f"run {run_id}: logs {project.logs_root / (run_id + '.stdout.log')} / "
+          f"{project.logs_root / (run_id + '.stderr.log')}; "
+          f"watch: operon workflow show {run_id} --follow", flush=True)
     record = run_external_command(
         db, project, argv, step=args.step, entity_type=args.entity_type,
         entity_id=args.entity_id, parameter_set=args.parameter_set,
         expected_outputs=args.expected_output, cwd=args.cwd, timeout=args.timeout,
         tool=args.tool, tool_version=tool_version,
         backend=args.backend, threads=args.threads, inputs=args.inputs,
-        extra_details=extra_details,
+        extra_details=extra_details, run_id=run_id,
     )
     print(json.dumps({k: record.get(k) for k in ("run_id", "step", "status", "exit_code", "finished_at")},
                      ensure_ascii=False))
@@ -1340,12 +1369,20 @@ def _parse_runtime_parameters(items: list[str]) -> dict[str, str]:
 
 def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.tools import run_analysis
+
+    phase_labels = {"start": "running", "completed": "done", "adopted": "done",
+                    "error": "failed", "failed": "failed"}
+
+    def progress(index: int, total: int, file_id: str, phase: str) -> None:
+        print(f"[{index}/{total}] {file_id}: {phase_labels.get(phase, phase)}", flush=True)
+
     results = run_analysis(
         project, db, args.analysis,
         entity_type=args.entity_type, entity_id=args.entity_id,
         dry_run=args.dry_run, force=args.force, limit=args.limit,
         threads=args.threads, backend=args.backend, keep_partial=args.keep_partial,
         runtime_parameters=_parse_runtime_parameters(args.param),
+        progress_callback=None if args.dry_run else progress,
     )
     headers = ["file_id", "entity", "analysis", "status", "tool_version", "output", "error"]
     rows = []

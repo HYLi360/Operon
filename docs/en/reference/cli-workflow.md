@@ -69,7 +69,7 @@ prints `[]`, and JSONL prints no lines. All three cases exit successfully.
 ## Show one workflow run
 
 ```bash
-operon workflow show WF_ID [--format {text,json}]
+operon workflow show WF_ID [--format {text,json}] [--follow]
 ```
 
 Text output is grouped into identity and lineage, timing and resources,
@@ -79,6 +79,20 @@ copyable. `--format json` returns every `workflow_runs` column without terminal
 shortening and decodes valid `execution_details` JSON.
 
 A missing run ID is a validation error and exits with code 2.
+
+### Following a live run
+
+`--follow` (text output only; it cannot be combined with `--format json`) first
+prints the normal run summary, then incrementally streams the run's local log
+pair `logs/<run_id>.stdout.log` / `logs/<run_id>.stderr.log` to the terminal
+until the run ends; stderr lines are prefixed with `stderr: `. Because every
+execution backend (`local`, `slurm`, `ssh`) writes the same log pair, following
+works uniformly for all of them. When the run leaves the `running` state both
+logs are drained to EOF and a final line
+`run <run_id> finished: status=<status> exit_code=<code>` is printed. The
+command exits 0 when the run completed, 1 when it failed (or disappeared while
+being followed), and 130 on Ctrl-C — following only observes and never cancels
+the underlying job.
 
 ## Provenance boundary and current limitations
 
@@ -90,7 +104,7 @@ is not edited or rebuilt by these read-only commands.
 This interface currently covers workflow-run records. Changes in `changes`,
 direct lifecycle events in `entity_lifecycle_events`, and other domain history
 remain available through their dedicated commands or read-only SQL; there is
-not yet one cross-table event timeline. Full-text search, live following, and
-an interactive TUI are also intentionally deferred until the backend event
+not yet one cross-table event timeline. Full-text search and an interactive
+analysis of run history are also intentionally deferred until the backend event
 model and operational interfaces are mature. The current interface is stable,
 scriptable CLI output only.

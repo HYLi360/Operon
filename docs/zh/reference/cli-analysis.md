@@ -12,6 +12,9 @@ operon run-external \
 ```
 
 - 命令用 shlex 解析，不经过 shell。
+- 执行前先打印一行提示，包含新的 run ID、两个日志路径和 follow 提示，例如
+  `run <run_id>: logs logs/<run_id>.stdout.log / logs/<run_id>.stderr.log;
+  watch: operon workflow show <run_id> --follow`。
 - 记录退出码、stdout/stderr 文件、起止时间到 `workflow_runs` 与 `logs/workflow.jsonl`；
   `workflow_runs` 同时填充 `duration_seconds`（墙钟秒数）与执行后端采集到的
   `max_rss_mb`/`avg_rss_mb`/`cpu_seconds` 资源使用列（采集不到时留 NULL，不影响
@@ -63,6 +66,9 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
 结果 parser 支持 `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`busco_json` 和
 `none`。`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON summary，写入 BUSCO
 完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
+
+非 `--dry-run` 执行时，`analyze` 会按处理进度逐文件打印进度行，形如
+`[i/N] file_id: running|done|failed`；dry-run 保持安静，只打印计划表格。
 
 `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认）、
 `slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上执行）；工具版本探测
