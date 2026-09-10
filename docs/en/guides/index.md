@@ -6,6 +6,7 @@ These pages are organized by task. Run commands from the project root by default
 - [Importing and Downloading NCBI Datasets](ncbi-datasets.md)
 - [File Archiving and Built-In QC](file-archiving.md)
 - [External Analysis](external-analysis.md)
+- [Phylogenetics Workflow](phylogenetics-workflow.md)
 - [Remote Execution with Slurm and SSH](remote-execution.md)
 - [SFTP Remote Storage](remote-storage.md)
 - [Remote-First Operation](remote-first.md)
@@ -22,6 +23,7 @@ metadata-import
 ncbi-datasets
 file-archiving
 external-analysis
+phylogenetics-workflow
 remote-execution
 remote-storage
 remote-first

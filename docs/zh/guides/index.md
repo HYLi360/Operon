@@ -6,6 +6,7 @@
 - [NCBI Datasets 导入与下载](ncbi-datasets.md)
 - [文件归档与内置 QC](file-archiving.md)
 - [外部分析](external-analysis.md)
+- [系统发育分析流程](phylogenetics-workflow.md)
 - [Slurm 与 SSH 远程执行](remote-execution.md)
 - [SFTP 远程存储](remote-storage.md)
 - [Remote-First 运行模式](remote-first.md)
@@ -22,6 +23,7 @@ metadata-import
 ncbi-datasets
 file-archiving
 external-analysis
+phylogenetics-workflow
 remote-execution
 remote-storage
 remote-first
