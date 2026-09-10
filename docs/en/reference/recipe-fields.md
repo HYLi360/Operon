@@ -263,6 +263,43 @@ When SSH uses a non-empty `remote_root`, paths under the local project root in `
 
 Here `database_checksum` is the recipe's explicit declaration of a frozen database's published identity. For reference databases that need byte-level auditing, additionally run the publisher's verification or generate an Operon-verifiable manifest at deployment time; the runtime does not repeatedly traverse multi-terabyte databases for every candidate input.
 
+## Result parsing and alignment columns
+
+`result_parser` selects how a successful output enters SQLite: `none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, or `busco_json`. Per-parser semantics and complete examples live in [Result parsers and examples](recipe-parsers-examples.md); this section defines the field contract.
+
+### 8.1 Tabular column fields
+
+For `blast_tabular`:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `result_columns` | none (required) | Column names in the exact order the external program emits them |
+| `hit_metric_columns` | all columns after the first two | Columns synced as EAV hit metrics into `analysis_hits` |
+| `numeric_columns` | same as `hit_metric_columns` | Subset of hit metrics parsed as numbers |
+| `query_column` | first column | Query ID column |
+| `subject_column` | second column | Subject ID column |
+| `max_hits_per_query` | `5` | EAV hit rows kept per query in `analysis_hits` |
+
+### 8.2 Alignment column mapping keys
+
+Seven optional keys map columns of `result_columns` onto the structured `analysis_alignments` fields:
+
+| Field | Recognized by default | Structured field | Type |
+|---|---|---|---|
+| `qstart_column` | `qstart` | `query_start` | integer |
+| `qend_column` | `qend` | `query_end` | integer |
+| `sstart_column` | `sstart` | `subject_start` | integer |
+| `send_column` | `send` | `subject_end` | integer |
+| `evalue_column` | `evalue` | `evalue` | float |
+| `bitscore_column` | `bitscore` | `bitscore` | float |
+| `pident_column` | `pident` | `percent_identity` | float |
+
+When a key is absent, the parser looks for the default common name in `result_columns`; declare the key explicitly when the tool uses a different header (see the rpsblast example in [Result parsers and examples](recipe-parsers-examples.md)); a declared value that matches no column falls back to the default common names. Structured alignment rows are always written to `analysis_alignments` in full — `max_hits_per_query` truncates only the EAV `analysis_hits` rows. Columns of `result_columns` not mapped to a structured field are preserved verbatim in the alignment row's `extra_json`. A mapping key enters the parameter fingerprint only when it is actually set, so adding a key invalidates the completed cache exactly once.
+
+### 8.3 `hmmer_domtblout`
+
+`hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` (HMM and envelope coordinates go to `extra_json`; subject coordinates are not present in domtblout and stay NULL). It writes both EAV hits and full structured alignment rows. The older `hmmer_tblout` parser reads only `--tblout`, which carries no coordinates, so it never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes.
+
 ## Cache identity
 
 A completed analysis is reused only when all of the following identity components are identical:

@@ -7,11 +7,12 @@
 | Parser | Expected output | Main write-back |
 |---|---|---|
 | `none` | Any verified artifact | Stores only job and output provenance; no domain metrics parsed |
-| `blast_tabular` | Tab-separated file | Top hits, query/hit summary, best e-value |
+| `blast_tabular` | Tab-separated file | Top hits, query/hit summary, best e-value, plus full structured alignment rows |
 | `hmmer_tblout` | HMMER `--tblout` file | Query-target e-value/score and summary |
+| `hmmer_domtblout` | HMMER `--domtblout` file | Per-domain i-Evalue/score hits plus full structured alignment rows |
 | `busco_json` | BUSCO output directory or JSON file | Completeness, single-copy/duplicated, fragmented/missing, lineage and version metadata |
 
-All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Top hits are additionally written to `analysis_hits`.
+All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
 
 ### 10.1 `blast_tabular`
 
@@ -35,9 +36,65 @@ max_hits_per_query: 5
 
 `result_columns` must exactly match the actual column order of the external program. By default the first two columns serve as query/subject and the remaining columns as hit metrics; the dedicated fields above override this. Input order determines hit rank, so make the tool emit hits in the priority you want to keep.
 
+When the output includes BLAST coordinate columns, they are recognized automatically and every hit row is also written to `analysis_alignments` in structured form:
+
+```yaml
+arguments:
+  - -outfmt
+  - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+```
+
+The common names `qstart`/`qend`/`sstart`/`send`/`evalue`/`bitscore`/`pident` are detected by default; `qstart_column`/`qend_column`/`sstart_column`/`send_column`/`evalue_column`/`bitscore_column`/`pident_column` override them when a tool uses different headers. Alignment rows are written in full regardless of `max_hits_per_query`.
+
+For rpsblast, which emits no standard coordinate header names in some pipelines, declare the mapping explicitly:
+
+```yaml
+tools:
+  rpsblast:
+    executable: rpsblast
+    run_method: "conda run --no-capture-output -n blast"
+    version_args: ["-version"]
+    version_pattern: 'rpsblast:\s*([^\s]+)'
+    recipes:
+      rpsblast_cdd:
+        description: Annotation proteins against the CDD database
+        entity_type: annotation
+        file_role: protein_fasta
+        format: fasta
+        database: /data/db/cdd/Cdd
+        database_version: "3.21"
+        output_subdir: rpsblast_cdd
+        output_suffix: .rpsblast.tsv
+        arguments:
+          - -db
+          - ${database}
+          - -query
+          - ${input}
+          - -out
+          - ${output}
+          - -outfmt
+          - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+          - -num_threads
+          - ${threads}
+        result_parser: blast_tabular
+        result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+        hit_metric_columns: [pident, length, evalue, bitscore]
+        query_column: qseqid
+        subject_column: sseqid
+        qstart_column: qstart
+        qend_column: qend
+        sstart_column: sstart
+        send_column: send
+        evalue_column: evalue
+        bitscore_column: bitscore
+        pident_column: pident
+        max_hits_per_query: 5
+```
+
 ### 10.2 `hmmer_tblout`
 
-This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order.
+This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
 
 ```yaml
 arguments:
@@ -51,7 +108,32 @@ result_parser: hmmer_tblout
 max_hits_per_query: 5
 ```
 
-### 10.3 `busco_json`
+### 10.3 `hmmer_domtblout`
+
+For structured per-domain hits, prefer `--domtblout` and the `hmmer_domtblout` parser. Each non-comment line is one domain: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score are recorded as `evalue`/`bitscore`, and the alignment coordinates become `query_start`/`query_end`; the HMM and envelope coordinates are preserved in `extra_json`, and subject coordinates stay NULL because domtblout does not carry them. EAV hits still respect `max_hits_per_query`, while `analysis_alignments` keeps every domain row.
+
+```yaml
+hmmsearch_pfam_domains:
+  description: Annotation proteins against Pfam-A.hmm (per-domain hits)
+  entity_type: annotation
+  file_role: protein_fasta
+  format: fasta
+  database: /path/to/Pfam-A.hmm
+  database_version: ""
+  output_subdir: hmmsearch_pfam_domains
+  output_suffix: .hmmsearch.domtblout
+  arguments:
+    - --domtblout
+    - ${output}
+    - --cpu
+    - ${threads}
+    - ${database}
+    - ${input}
+  result_parser: hmmer_domtblout
+  max_hits_per_query: 5
+```
+
+### 10.4 `busco_json`
 
 BUSCO typically uses directory output:
 

@@ -283,6 +283,43 @@ database_mode: mutable_cache
 审计的参考库，应在部署阶段另外执行发布方校验或生成 Operon 可复核的清单；运行期不会
 为每个候选输入反复遍历数 TB 数据库。
 
+## 结果解析与比对列
+
+`result_parser` 决定成功的输出如何进入 SQLite：`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout` 或 `busco_json`。各 parser 的语义与完整示例见 [结果解析器与示例](recipe-parsers-examples.md)；本节定义字段契约。
+
+### 8.1 表格列字段
+
+`blast_tabular` 的字段：
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `result_columns` | 无（必填） | 列名，顺序必须与外部程序实际输出完全一致 |
+| `hit_metric_columns` | 前两列之外的所有列 | 作为 EAV hit metric 同步进 `analysis_hits` 的列 |
+| `numeric_columns` | 同 `hit_metric_columns` | 按数值解析的 hit metric 子集 |
+| `query_column` | 第一列 | query ID 列 |
+| `subject_column` | 第二列 | subject ID 列 |
+| `max_hits_per_query` | `5` | `analysis_hits` 中每个 query 保留的 EAV 行数 |
+
+### 8.2 比对列映射键
+
+七个可选键把 `result_columns` 中的列映射到结构化的 `analysis_alignments` 字段：
+
+| 字段 | 默认识别的列名 | 结构化字段 | 类型 |
+|---|---|---|---|
+| `qstart_column` | `qstart` | `query_start` | 整数 |
+| `qend_column` | `qend` | `query_end` | 整数 |
+| `sstart_column` | `sstart` | `subject_start` | 整数 |
+| `send_column` | `send` | `subject_end` | 整数 |
+| `evalue_column` | `evalue` | `evalue` | 浮点 |
+| `bitscore_column` | `bitscore` | `bitscore` | 浮点 |
+| `pident_column` | `pident` | `percent_identity` | 浮点 |
+
+键缺失时 parser 在 `result_columns` 中查找默认常用名；工具使用其他表头时应显式声明（见 [结果解析器与示例](recipe-parsers-examples.md) 中的 rpsblast 示例）；声明的值匹配不到任何列时回退到默认常用名。结构化比对行总是全量写入 `analysis_alignments`——`max_hits_per_query` 只截断 EAV 形式的 `analysis_hits` 行。`result_columns` 中未映射到结构化字段的列原样保存在该行命中的 `extra_json` 中。映射键仅在实际设置时进入参数指纹，因此新增一个键只会让完成缓存失效一次。
+
+### 8.3 `hmmer_domtblout`
+
+`hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明：query 为 HMM profile 名，subject 为目标序列，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject 坐标，保持 NULL）。它同时写 EAV hits 与全量结构化比对行。旧的 `hmmer_tblout` 只读取不含坐标的 `--tblout`，因此不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。
+
 ## 缓存身份
 
 一次已完成分析只有在以下身份全部相同时才会复用：

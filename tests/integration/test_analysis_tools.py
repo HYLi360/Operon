@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import textwrap
+import json
 from pathlib import Path
 
 from tests.helpers import PytestAssertions
@@ -16,7 +17,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.tools import ToolSpec, launcher_prefix
+from operon.tools import ToolSpec, get_recipe, get_tool, launcher_prefix, parse_and_store_results
 
 
 class TestAnalysisTools(PytestAssertions):
@@ -490,3 +491,176 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
         self.assertEqual(main(base), 2)
         self.assertEqual(main([*base, "--param", "unknown=x"]), 2)
+
+    def _write_fake_blast_coords(self) -> Path:
+        script = self.root / "fakeblastc.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            args = sys.argv[1:]
+            if '-version' in args:
+                print('fakeblastc: 1.0')
+                raise SystemExit(0)
+            out = args[args.index('-out') + 1]
+            with open(out, 'w') as handle:
+                handle.write('q1\\ts1\\t99.0\\t100\\t5\\t95\\t10\\t110\\t1e-10\\t500\\n')
+                handle.write('q1\\ts2\\t95.0\\t90\\t7\\t97\\t20\\t100\\t1e-5\\t300\\n')
+                handle.write('q1\\ts3\\t80.0\\t80\\t9\\t99\\t30\\t90\\t0.01\\t100\\n')
+                handle.write('q2\\ts4\\t88.0\\t70\\t11\\t80\\t40\\t100\\t1e-3\\t200\\n')
+        """).strip(), encoding="utf-8")
+        return script
+
+    def _write_fake_hmmsearch_domtblout(self) -> Path:
+        script = self.root / "fakehmmd.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            args = sys.argv[1:]
+            if '-h' in args:
+                print('hmmsearch :: HMMER 3.4')
+                raise SystemExit(0)
+            out = args[args.index('--domtblout') + 1]
+            with open(out, 'w') as handle:
+                handle.write('# HMMER domtblout comment\\n')
+                handle.write('PF00001.28 - 144 query1 - 350 1.2e-30 105.5 0.0 1 2 '
+                             '3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain\\n')
+                handle.write('PF00002.10 - 200 query2 - 180 0.01 34.5 0.2 1 1 '
+                             '0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -\\n')
+        """).strip(), encoding="utf-8")
+        return script
+
+    def _configure_blast_coords_recipe(self):
+        self._write_tool_config(
+            self.root / "fakeblastc.py", "fakeblastc", "fake_nt_coords",
+            "assembly", "genome_fasta", "blast_tabular", self.root / "nt",
+            version_pattern=r"fakeblastc:\s*([^\s]+)",
+        )
+        doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
+        recipe = doc["tools"]["fakeblastc"]["recipes"]["fake_nt_coords"]
+        recipe["result_columns"] = [
+            "qseqid", "sseqid", "pident", "length",
+            "qstart", "qend", "sstart", "send", "evalue", "bitscore",
+        ]
+        recipe["hit_metric_columns"] = ["pident", "length", "evalue", "bitscore"]
+        recipe["max_hits_per_query"] = 2
+        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    def test_blast_alignments_sync_cache_reparse_and_export(self):
+        (self.root / "nt").write_text(">ref1\nACGT\n", encoding="utf-8")
+        self._write_fake_blast_coords()
+        self._configure_blast_coords_recipe()
+        self._add_assembly()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]), 0)
+        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
+        # Alignments are not truncated by max_hits_per_query=2 (q1 keeps all 3).
+        self.assertEqual([(r["query_id"], r["subject_id"], r["hit_rank"]) for r in rows], [
+            ("q1", "s1", 1), ("q1", "s2", 2), ("q1", "s3", 3), ("q2", "s4", 1),
+        ])
+        first = rows[0]
+        self.assertEqual(first["analysis_name"], "fake_nt_coords")
+        self.assertEqual(first["entity_type"], "assembly")
+        self.assertEqual(first["entity_id"], "ASM_000001")
+        self.assertEqual(first["query_start"], 5)
+        self.assertEqual(first["query_end"], 95)
+        self.assertEqual(first["subject_start"], 10)
+        self.assertEqual(first["subject_end"], 110)
+        self.assertAlmostEqual(first["evalue"], 1e-10)
+        self.assertAlmostEqual(first["bitscore"], 500.0)
+        self.assertAlmostEqual(first["percent_identity"], 99.0)
+        self.assertEqual(json.loads(first["extra_json"]), {"length": "100"})
+
+        # EAV hits stay truncated at max_hits_per_query=2 for q1.
+        eav = self.db.query(
+            "SELECT DISTINCT subject_id FROM analysis_hits WHERE query_id='q1' ORDER BY subject_id"
+        )
+        self.assertEqual([r["subject_id"] for r in eav], ["s1", "s2"])
+
+        # Cache hit: no new execution, alignment rows preserved and not duplicated.
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4)
+
+        # Re-parsing the same job replaces rows instead of duplicating them.
+        job = self.db.query("SELECT * FROM analysis_jobs")[0]
+        file_row = self.db.query("SELECT * FROM files")[0]
+        counts = parse_and_store_results(
+            self.db, self.project, get_recipe(self.project, "fake_nt_coords"),
+            get_tool(self.project, "fakeblastc"), job["tool_version"], file_row,
+            job["job_id"], self.project.root / job["output_relative_path"], job["output_sha256"],
+        )
+        self.assertEqual(counts[4], 4)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4)
+
+        tsv_out = self.root / "hits.tsv"
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "analysis", "--hits",
+            "--format", "tsv", "--out", str(tsv_out),
+        ]), 0)
+        lines = tsv_out.read_text(encoding="utf-8").strip().split("\n")
+        self.assertEqual(lines[0], (
+            "analysis_name\tentity_type\tentity_id\tquery_id\tsubject_id\thit_rank\t"
+            "query_start\tquery_end\tsubject_start\tsubject_end\tevalue\tbitscore\tpercent_identity"
+        ))
+        self.assertEqual(len(lines), 5)
+        fields = lines[1].split("\t")
+        self.assertEqual(fields[:6], ["fake_nt_coords", "assembly", "ASM_000001", "q1", "s1", "1"])
+        self.assertEqual(fields[6:10], ["5", "95", "10", "110"])
+
+        json_out = self.root / "hits.json"
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "analysis", "--hits",
+            "--format", "json", "--evalue-max", "1e-4", "--out", str(json_out),
+        ]), 0)
+        data = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual({(d["query_id"], d["subject_id"]) for d in data}, {("q1", "s1"), ("q1", "s2")})
+        self.assertTrue(all(d["evalue"] <= 1e-4 for d in data))
+
+        filtered = self.root / "filtered.tsv"
+        self.assertEqual(main([
+            "--project", str(self.root), "report", "analysis", "--hits",
+            "--format", "tsv", "--query-id", "q2", "--subject-id", "s4", "--out", str(filtered),
+        ]), 0)
+        filtered_lines = filtered.read_text(encoding="utf-8").strip().split("\n")
+        self.assertEqual(len(filtered_lines), 2)
+        self.assertIn("q2\ts4", filtered_lines[1])
+
+    def test_hmmsearch_domtblout_recipe_syncs_alignments(self):
+        database = self.root / "Pfam-A.hmm"
+        database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
+        script = self._write_fake_hmmsearch_domtblout()
+        self._write_tool_config(
+            script, "fakehmmd", "fake_pfam_dom", "assembly", "genome_fasta",
+            "hmmer_domtblout", database,
+            version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
+        )
+        doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
+        doc["tools"]["fakehmmd"]["recipes"]["fake_pfam_dom"]["arguments"] = [
+            "--domtblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
+        ]
+        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        self._add_assembly()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam_dom"]), 0)
+        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
+        self.assertEqual([(r["query_id"], r["subject_id"]) for r in rows], [
+            ("query1", "PF00001.28"), ("query2", "PF00002.10"),
+        ])
+        first = rows[0]
+        self.assertEqual(first["query_start"], 10)
+        self.assertEqual(first["query_end"], 130)
+        self.assertIsNone(first["subject_start"])
+        self.assertIsNone(first["percent_identity"])
+        self.assertAlmostEqual(first["evalue"], 1.5e-30)
+        self.assertAlmostEqual(first["bitscore"], 104.0)
+        self.assertEqual(json.loads(first["extra_json"]), {
+            "hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132",
+        })
+        hits = self.db.query(
+            "SELECT query_id, subject_id, metric_name FROM analysis_hits "
+            "ORDER BY query_id, subject_id, metric_name"
+        )
+        self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits], [
+            ("query1", "PF00001.28", "evalue"),
+            ("query1", "PF00001.28", "score"),
+            ("query2", "PF00002.10", "evalue"),
+            ("query2", "PF00002.10", "score"),
+        ])

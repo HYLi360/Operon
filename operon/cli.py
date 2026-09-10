@@ -471,11 +471,20 @@ def _parser() -> argparse.ArgumentParser:
     rp = report_sub.add_parser("decisions", help="show current QC decisions")
     rp.add_argument("--profile")
     rp.add_argument("--include-retired", action="store_true")
-    rp = report_sub.add_parser("analysis", help="show synchronized analysis summaries or hits")
+    rp = report_sub.add_parser("analysis", help="show synchronized analysis summaries or alignment hits")
     rp.add_argument("--analysis")
     rp.add_argument("--entity-type")
     rp.add_argument("--entity-id")
-    rp.add_argument("--hits", action="store_true", help="show top-hit rows instead of job summaries")
+    rp.add_argument("--hits", action="store_true",
+                    help="show structured alignment hit rows instead of job summaries")
+    rp.add_argument("--format", choices=["text", "tsv", "json"], default="text",
+                    help="output format for --hits (default: aligned text table)")
+    rp.add_argument("--out", metavar="PATH",
+                    help="write --hits output atomically to PATH instead of stdout")
+    rp.add_argument("--query-id", help="filter --hits rows by query id")
+    rp.add_argument("--subject-id", help="filter --hits rows by subject id")
+    rp.add_argument("--evalue-max", type=float, metavar="VALUE",
+                    help="keep only --hits rows with evalue <= VALUE")
     rp.add_argument("--limit", type=int, default=20)
     rp.add_argument("--include-retired", action="store_true")
     rp = report_sub.add_parser("coverage", help="measure NCBI family/genus coverage against a frozen reference set")
@@ -1365,12 +1374,24 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
 
 
 def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
+    out_format = getattr(args, "format", "text") or "text"
+    out_path = getattr(args, "out", None)
+    query_id = getattr(args, "query_id", None)
+    subject_id = getattr(args, "subject_id", None)
+    evalue_max = getattr(args, "evalue_max", None)
+    if not args.hits and (
+        out_path or out_format != "text" or query_id or subject_id or evalue_max is not None
+    ):
+        raise ValidationError(
+            "--format/--out/--query-id/--subject-id/--evalue-max require --hits"
+        )
     if args.hits:
         sql = """
-            SELECT h.entity_type, h.entity_id, h.analysis_name, h.query_id, h.subject_id,
-                   h.metric_name, h.metric_value, h.hit_rank, j.tool_version
-            FROM analysis_hits h
-            JOIN analysis_jobs j ON j.job_id = h.job_id
+            SELECT a.analysis_name, a.entity_type, a.entity_id, a.query_id, a.subject_id,
+                   a.hit_rank, a.query_start, a.query_end, a.subject_start, a.subject_end,
+                   a.evalue, a.bitscore, a.percent_identity
+            FROM analysis_alignments a
+            JOIN analysis_jobs j ON j.job_id = a.job_id
             WHERE j.status='completed'
         """
         if (
@@ -1379,7 +1400,7 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
         ):
             sql += (
                 " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
-                "WHERE er.entity_type=h.entity_type AND er.entity_id=h.entity_id)"
+                "WHERE er.entity_type=a.entity_type AND er.entity_id=a.entity_id)"
             )
     else:
         sql = """
@@ -1400,28 +1421,64 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
     params: list[Any] = []
     if args.analysis:
         if args.hits:
-            sql += " AND h.analysis_name=?"
+            sql += " AND a.analysis_name=?"
         else:
             sql += " AND r.analysis_name=?"
         params.append(args.analysis)
     if args.entity_type:
         if args.hits:
-            sql += " AND h.entity_type=?"
+            sql += " AND a.entity_type=?"
         else:
             sql += " AND r.entity_type=?"
         params.append(args.entity_type)
     if args.entity_id:
         if args.hits:
-            sql += " AND h.entity_id=?"
+            sql += " AND a.entity_id=?"
         else:
             sql += " AND r.entity_id=?"
         params.append(args.entity_id)
     if args.hits:
-        sql += " ORDER BY h.entity_id, h.query_id, h.hit_rank, h.metric_name LIMIT ?"
+        if query_id:
+            sql += " AND a.query_id=?"
+            params.append(query_id)
+        if subject_id:
+            sql += " AND a.subject_id=?"
+            params.append(subject_id)
+        if evalue_max is not None:
+            sql += " AND a.evalue IS NOT NULL AND a.evalue<=?"
+            params.append(float(evalue_max))
+        sql += " ORDER BY a.entity_id, a.query_id, a.hit_rank LIMIT ?"
     else:
         sql += " ORDER BY r.entity_id, r.metric_name, j.job_id DESC LIMIT ?"
     params.append(int(args.limit))
     rows = db.conn.execute(sql, params).fetchall()
+    if args.hits:
+        headers = list(rows[0].keys()) if rows else [
+            "analysis_name", "entity_type", "entity_id", "query_id", "subject_id",
+            "hit_rank", "query_start", "query_end", "subject_start", "subject_end",
+            "evalue", "bitscore", "percent_identity",
+        ]
+        if out_format == "json":
+            text = json.dumps(
+                [{h: row[h] for h in headers} for row in rows],
+                ensure_ascii=False, indent=2,
+            ) + "\n"
+        elif out_format == "tsv":
+            lines = ["\t".join(headers)]
+            lines.extend(
+                "\t".join("" if row[h] is None else str(row[h]) for h in headers)
+                for row in rows
+            )
+            text = "\n".join(lines) + "\n"
+        elif rows:
+            text = format_table(headers, ([row[h] for h in headers] for row in rows)) + "\n"
+        else:
+            text = "(no analysis results)\n"
+        if out_path:
+            atomic_write_text(out_path, text)
+        else:
+            sys.stdout.write(text)
+        return 0
     if not rows:
         print("(no analysis results)")
     else:

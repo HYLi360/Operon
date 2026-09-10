@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import textwrap
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -333,22 +334,157 @@ def test_blast_and_hmmer_parsers_cover_malformed_and_rank_limits(tmp_path):
         "hit_metric_columns": ["score", "label", "missing"],
         "numeric_columns": ["score"],
     })
-    hits = list(tools.parse_hits(blast, r))
+    hits, alignments = tools.parse_hits(blast, r)
     assert len(hits) == 4
     assert any(hit["metric_numeric"] is None for hit in hits)
+    assert [a["query_id"] for a in alignments] == ["q1", "q1", "q1"]
+    assert all(
+        a[field] is None
+        for a in alignments
+        for field in ("qstart", "qend", "sstart", "send", "evalue", "bitscore", "pident")
+    )
+    assert alignments[0]["extra"] == {"score": "10", "label": "text"}
 
     hmmer = tmp_path / "hmmer.tbl"
     hmmer.write_text(
         "# comment\nshort row\nt1 x q1 x 1e-5 20\nt2 x q1 x bad score\nt3 x q1 x 1e-9 30\n",
         encoding="utf-8",
     )
-    hits = list(tools.parse_hits(hmmer, recipe(result_parser="hmmer_tblout")))
+    hits, alignments = tools.parse_hits(hmmer, recipe(result_parser="hmmer_tblout"))
     assert len(hits) == 4
+    assert alignments == []
     assert any(hit["metric_numeric"] is None for hit in hits)
-    assert tools.parse_hits(hmmer, recipe(result_parser="none")) == []
-    assert tools.parse_hits(hmmer, recipe(result_parser="busco_json")) == []
+    assert tools.parse_hits(hmmer, recipe(result_parser="none")) == ([], [])
+    assert tools.parse_hits(hmmer, recipe(result_parser="busco_json")) == ([], [])
     with pytest.raises(ExternalToolError, match="unsupported result_parser"):
         tools.parse_hits(hmmer, recipe(result_parser="unknown"))
+
+
+def test_blast_alignment_columns_explicit_mapping_and_autodetect(tmp_path):
+    blast = tmp_path / "blast.tsv"
+    blast.write_text(
+        "q1\ts1\t99.0\t5\t50\t10\t200\t1e-10\t500\tremark a\n",
+        encoding="utf-8",
+    )
+    explicit = recipe(result_parser="blast_tabular", raw={
+        "result_columns": ["q", "s", "pid", "qs", "qe", "ss", "se", "ev", "bs", "note"],
+        "hit_metric_columns": ["ev"],
+        "qstart_column": "qs", "qend_column": "qe", "sstart_column": "ss",
+        "send_column": "se", "evalue_column": "ev", "bitscore_column": "bs",
+        "pident_column": "pid",
+    })
+    hits, alignments = tools.parse_hits(blast, explicit)
+    assert len(hits) == 1
+    assert alignments == [{
+        "query_id": "q1", "subject_id": "s1", "rank": 1,
+        "qstart": 5, "qend": 50, "sstart": 10, "send": 200,
+        "evalue": 1e-10, "bitscore": 500.0, "pident": 99.0,
+        "extra": {"note": "remark a"},
+    }]
+
+    auto = recipe(result_parser="blast_tabular", raw={
+        "result_columns": ["qseqid", "sseqid", "pident", "qstart", "qend",
+                           "sstart", "send", "evalue", "bitscore", "stitle"],
+        "hit_metric_columns": ["evalue", "bitscore"],
+    })
+    autodetected = tmp_path / "auto.tsv"
+    autodetected.write_text(
+        "q1\ts1\t99.0\t5\t50\t10\t200\t1e-10\t500\tsome subject title\n",
+        encoding="utf-8",
+    )
+    _hits, alignments = tools.parse_hits(autodetected, auto)
+    assert alignments[0]["qstart"] == 5
+    assert alignments[0]["send"] == 200
+    assert alignments[0]["evalue"] == 1e-10
+    assert alignments[0]["bitscore"] == 500.0
+    assert alignments[0]["pident"] == 99.0
+    assert alignments[0]["extra"] == {"stitle": "some subject title"}
+
+    missing = tmp_path / "missing.tsv"
+    missing.write_text("q1\ts1\t99.0\t100\t1e-10\t500\n", encoding="utf-8")
+    degraded = recipe(result_parser="blast_tabular", raw={
+        "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+    })
+    _hits, alignments = tools.parse_hits(missing, degraded)
+    assert alignments[0]["qstart"] is None
+    assert alignments[0]["qend"] is None
+    assert alignments[0]["sstart"] is None
+    assert alignments[0]["send"] is None
+    assert alignments[0]["evalue"] == 1e-10
+    assert alignments[0]["bitscore"] == 500.0
+    assert alignments[0]["pident"] == 99.0
+    assert alignments[0]["extra"] == {"length": "100"}
+
+    bad_numbers = tmp_path / "bad.tsv"
+    bad_numbers.write_text("q1\ts1\t??\tnan\t5\tx\t1e-10\t500\n", encoding="utf-8")
+    bad = recipe(result_parser="blast_tabular", raw={
+        "result_columns": ["qseqid", "sseqid", "pident", "qstart", "qend", "sstart",
+                           "evalue", "bitscore"],
+    })
+    _hits, alignments = tools.parse_hits(bad_numbers, bad)
+    assert alignments[0]["pident"] is None
+    assert alignments[0]["qstart"] is None
+    assert alignments[0]["qend"] == 5
+    assert alignments[0]["sstart"] is None
+
+
+def test_blast_alignments_ignore_max_hits_truncation(tmp_path):
+    blast = tmp_path / "blast.tsv"
+    blast.write_text(
+        "q1\ts1\t1e-10\nq1\ts2\t1e-5\nq1\ts3\t0.01\nq2\ts4\t1e-3\n",
+        encoding="utf-8",
+    )
+    r = recipe(result_parser="blast_tabular", max_hits_per_query=2, raw={
+        "result_columns": ["qseqid", "sseqid", "evalue"],
+    })
+    hits, alignments = tools.parse_hits(blast, r)
+    assert [(h["query_id"], h["subject_id"], h["rank"]) for h in hits] == [
+        ("q1", "s1", 1), ("q1", "s2", 2), ("q2", "s4", 1),
+    ]
+    assert [(a["query_id"], a["subject_id"], a["rank"]) for a in alignments] == [
+        ("q1", "s1", 1), ("q1", "s2", 2), ("q1", "s3", 3), ("q2", "s4", 1),
+    ]
+
+
+def test_hmmer_domtblout_parser(tmp_path):
+    domtblout = tmp_path / "hmmer.domtblout"
+    domtblout.write_text(
+        textwrap.dedent("""\
+            #--- domtblout header
+            # target name  accession ...
+            PF00001.28 - 144 query1 - 350 1.2e-30 105.5 0.0 1 2 3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain
+            PF00001.28 - 144 query1 - 350 1.2e-30 105.5 0.0 2 2 1.1e-09 5.2e-07 24.1 0.0 121 144 200 223 198 225 0.80 kinase domain
+            PF00002.10 - 200 query2 - 180 0.01 34.5 0.2 1 1 0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -
+            short row
+        """),
+        encoding="utf-8",
+    )
+    r = recipe(result_parser="hmmer_domtblout", max_hits_per_query=1)
+    hits, alignments = tools.parse_hits(domtblout, r)
+    assert [(h["query_id"], h["subject_id"], h["metric_name"], h["rank"]) for h in hits] == [
+        ("query1", "PF00001.28", "evalue", 1),
+        ("query1", "PF00001.28", "score", 1),
+        ("query2", "PF00002.10", "evalue", 1),
+        ("query2", "PF00002.10", "score", 1),
+    ]
+    assert len(alignments) == 3
+    first = alignments[0]
+    assert first["query_id"] == "query1"
+    assert first["subject_id"] == "PF00001.28"
+    assert first["rank"] == 1
+    assert first["qstart"] == 10
+    assert first["qend"] == 130
+    assert first["sstart"] is None and first["send"] is None
+    assert first["evalue"] == 1.5e-30
+    assert first["bitscore"] == 104.0
+    assert first["pident"] is None
+    assert first["extra"] == {"hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132"}
+    second = alignments[1]
+    assert second["rank"] == 2
+    assert second["evalue"] == 5.2e-07
+    assert second["qstart"] == 200 and second["qend"] == 223
+    assert alignments[2]["query_id"] == "query2"
+    assert alignments[2]["qstart"] == 20 and alignments[2]["qend"] == 165
 
 
 def test_print_tools_table_records_detection_errors(tmp_path, monkeypatch):

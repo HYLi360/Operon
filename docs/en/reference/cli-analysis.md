@@ -44,9 +44,9 @@ For each run, the recipe:
 4. Validates `--param NAME=VALUE` against the recipe `parameters` declarations and renders arguments. In addition to `${input}`, `${output}`, `${database}`, and `${threads}`, placeholders include `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, `${entity_id}`, and declared `${<parameter>}` values. Runtime parameters enter output naming and the cache fingerprint.
 5. Skips execution when the completed-job cache in `analysis_jobs` matches, unless `--force` is used. If the exact fingerprint misses but an old completed job has the same input and an output whose hash verifies, the output is adopted under the current fingerprint and reported as `adopted` instead of recomputed.
 6. Validates that a `file` or `directory` output exists and is non-empty, then calculates its content hash.
-7. Parses results into `analysis_hits` and `analysis_results`, and synchronizes summary metrics to `qc_results`.
+7. Parses results into `analysis_hits` and `analysis_results`, and synchronizes summary metrics to `qc_results`. Parsers with coordinates additionally write every parsed hit as a structured row to `analysis_alignments` (untruncated by `max_hits_per_query`).
 
-Supported result parsers are `blast_tabular`, `hmmer_tblout`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
+Supported result parsers are `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
 
 `--backend` overrides `project.yaml`'s `execution.backend` and can be `local` (default), `slurm`, or `ssh`. Tool-version detection also uses the selected backend. See [Remote Execution with Slurm and SSH](../guides/remote-execution.md). With SSH `storage_remote`, a locally missing candidate input in `REMOTE_ONLY` state is first validated against the remote manifest and actual content, then used in place remotely.
 
@@ -102,10 +102,14 @@ Inspects the profile snapshots recorded into `qc_profiles` during evaluate:
 
 ```bash
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
-  [--hits] [--limit N] [--include-retired]
+  [--hits [--format {text,tsv,json}] [--out PATH] \
+          [--query-id ID] [--subject-id ID] [--evalue-max VALUE]] \
+  [--limit N] [--include-retired]
 ```
 
 - By default, displays summary metrics from `analysis_results`.
-- `--hits` displays top hits from `analysis_hits`.
+- `--hits` displays the structured alignment hit rows stored in `analysis_alignments` for `completed` jobs, with columns `analysis_name`, `entity_type`, `entity_id`, `query_id`, `subject_id`, `hit_rank`, `query_start`, `query_end`, `subject_start`, `subject_end`, `evalue`, `bitscore`, `percent_identity`. The rows are the full parsed hit set, not the `max_hits_per_query`-truncated EAV view.
+- `--format` selects the `--hits` rendering: an aligned `text` table (default), `tsv` with a header row, or a `json` array. `--out PATH` writes the chosen format atomically to a file instead of stdout.
+- `--query-id`, `--subject-id`, and `--evalue-max` filter the `--hits` rows (e-value filter keeps rows with `evalue <= VALUE`). All of `--format`/`--out`/`--query-id`/`--subject-id`/`--evalue-max` require `--hits`; passing any of them without it is a validation error.
 - `--limit` defaults to 20.
 - Effectively retired entities are excluded by default; `--include-retired` displays historical results.

@@ -362,21 +362,25 @@ def test_analysis_results_support_metrics_and_hits(project_db, capsys):
         (1, "a", "organism", "ORG1", "F1", "score", "1")
     )
     db.conn.execute(
-        "INSERT INTO analysis_hits(job_id, analysis_name, entity_type, entity_id, query_id, subject_id, "
-        "file_id, metric_name, metric_value, hit_rank) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (1, "a", "organism", "ORG1", "q", "s", "F1", "bitscore", "10", 1),
+        "INSERT INTO analysis_alignments(job_id, analysis_name, entity_type, entity_id, query_id, "
+        "subject_id, file_id, hit_rank, evalue, bitscore) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (1, "a", "organism", "ORG1", "q", "s", "F1", 1, 1e-5, 10.0),
     )
     db.conn.commit()
     filters = dict(analysis="a", entity_type="organism", entity_id="ORG1", limit=10)
     assert cli._cmd_analysis_results(ns(hits=False, **filters), db) == 0
     assert "score" in capsys.readouterr().out
     assert cli._cmd_analysis_results(ns(hits=True, **filters), db) == 0
-    assert "bitscore" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "bitscore" in out and "hit_rank" in out
     assert cli._cmd_analysis_results(ns(hits=True, analysis="missing", entity_type=None,
                                         entity_id=None, limit=10), db) == 0
     assert "no analysis results" in capsys.readouterr().out
     assert cli._cmd_analysis_results(ns(hits=False, analysis=None, entity_type=None,
                                         entity_id=None, limit=10), db) == 0
+    with pytest.raises(ValidationError, match="require --hits"):
+        cli._cmd_analysis_results(ns(hits=False, analysis=None, entity_type=None,
+                                     entity_id=None, limit=10, format="tsv"), db)
 
 
 def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkeypatch, capsys):

@@ -56,10 +56,12 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
 5. 命中 `analysis_jobs` 完成缓存时直接跳过，除非 `--force`；精确指纹未命中但存在
    输入相同、输出哈希验证一致的旧完成结果时，收养该结果（状态 `adopted`）而非重算；
 6. 按 `output_kind: file|directory` 校验输出存在/非空并计算内容哈希；
-7. 解析结果写入 `analysis_hits`/`analysis_results`，并同步汇总指标到 `qc_results`。
+7. 解析结果写入 `analysis_hits`/`analysis_results`，并同步汇总指标到 `qc_results`；
+   带坐标的 parser 还会把每条解析出的命中以结构化行写入 `analysis_alignments`
+   （不受 `max_hits_per_query` 截断）。
 
-结果 parser 支持 `blast_tabular`、`hmmer_tblout`、`busco_json` 和 `none`。
-`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON summary，写入 BUSCO
+结果 parser 支持 `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`busco_json` 和
+`none`。`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON summary，写入 BUSCO
 完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
 
 `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认）、
@@ -143,10 +145,21 @@ operon profiles show NAME [--snapshot-id N]
 
 ```bash
 operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
-  [--hits] [--limit N] [--include-retired]
+  [--hits [--format {text,tsv,json}] [--out PATH] \
+          [--query-id ID] [--subject-id ID] [--evalue-max VALUE]] \
+  [--limit N] [--include-retired]
 ```
 
 - 默认显示 `analysis_results` 汇总指标。
-- `--hits` 显示 `analysis_hits` 中的 top hits。
+- `--hits` 显示 `completed` 作业存储在 `analysis_alignments` 中的结构化比对命中行，列为
+  `analysis_name`、`entity_type`、`entity_id`、`query_id`、`subject_id`、`hit_rank`、
+  `query_start`、`query_end`、`subject_start`、`subject_end`、`evalue`、`bitscore`、
+  `percent_identity`。这些行是完整的解析命中集合，而不是被 `max_hits_per_query` 截断的
+  EAV 视图。
+- `--format` 选择 `--hits` 的输出形式：对齐的 `text` 表格（默认）、带表头的 `tsv` 或
+  `json` 数组。`--out PATH` 把所选格式原子写入文件而不是 stdout。
+- `--query-id`、`--subject-id`、`--evalue-max` 过滤 `--hits` 行（e-value 过滤保留
+  `evalue <= VALUE` 的行）。`--format`/`--out`/`--query-id`/`--subject-id`/`--evalue-max`
+  都必须配合 `--hits` 使用，单独传入属于校验错误。
 - `--limit` 默认 20。
 - 默认排除有效退役实体；`--include-retired` 显示历史结果。

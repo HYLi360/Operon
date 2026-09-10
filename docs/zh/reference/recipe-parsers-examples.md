@@ -7,13 +7,18 @@
 | parser | 预期输出 | 主要回写 |
 |---|---|---|
 | `none` | 任意已验证 artifact | 只保存作业与输出 provenance，不解析业务指标 |
-| `blast_tabular` | tab-separated 文件 | top hits、query/hit 汇总、best e-value |
+| `blast_tabular` | tab-separated 文件 | top hits、query/hit 汇总、best e-value，以及全量结构化比对行 |
 | `hmmer_tblout` | HMMER `--tblout` 文件 | query-target 的 e-value/score 与汇总 |
+| `hmmer_domtblout` | HMMER `--domtblout` 文件 | per-domain 的 i-Evalue/score 命中与全量结构化比对行 |
 | `busco_json` | BUSCO 输出目录或 JSON 文件 | 完整率、单拷贝/重复、碎片/缺失、lineage 与版本元数据 |
 
 所有汇总 metric 写入 `analysis_results`，并以 `qc_stage: analysis:<recipe>` 同步到
 `qc_results`；因此它们会自然出现在 `report qc` 宽表导出中，也可以直接被 QC profile 使用。
-top hits 另外写入 `analysis_hits`。
+top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hits_per_query`）。
+带坐标的 parser（`blast_tabular`、`hmmer_domtblout`）还会把每条解析出的命中以结构化行写入
+`analysis_alignments`——query/subject ID、命中排名、query/subject 区间、e-value、bitscore
+与 identity 百分比各有独立列，未映射的列保存在 `extra_json`；该表不受
+`max_hits_per_query` 截断，`report analysis --hits` 读取的就是它。
 
 ### 10.1 `blast_tabular`
 
@@ -39,10 +44,71 @@ max_hits_per_query: 5
 其余列作为 hit metric；上述专用字段可以覆盖。输入顺序决定 hit rank，因此应让工具按
 希望保留的优先级输出。
 
+当输出包含 BLAST 坐标列时会被自动识别，每条命中行同时以结构化形式写入
+`analysis_alignments`：
+
+```yaml
+arguments:
+  - -outfmt
+  - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+```
+
+常用名 `qstart`/`qend`/`sstart`/`send`/`evalue`/`bitscore`/`pident` 会被默认识别；工具
+使用其他表头时用 `qstart_column`/`qend_column`/`sstart_column`/`send_column`/
+`evalue_column`/`bitscore_column`/`pident_column` 显式覆盖。比对行不受
+`max_hits_per_query` 影响，始终全量写入。
+
+以 rpsblast 为例，显式声明全部列映射的完整 recipe：
+
+```yaml
+tools:
+  rpsblast:
+    executable: rpsblast
+    run_method: "conda run --no-capture-output -n blast"
+    version_args: ["-version"]
+    version_pattern: 'rpsblast:\s*([^\s]+)'
+    recipes:
+      rpsblast_cdd:
+        description: Annotation proteins against the CDD database
+        entity_type: annotation
+        file_role: protein_fasta
+        format: fasta
+        database: /data/db/cdd/Cdd
+        database_version: "3.21"
+        output_subdir: rpsblast_cdd
+        output_suffix: .rpsblast.tsv
+        arguments:
+          - -db
+          - ${database}
+          - -query
+          - ${input}
+          - -out
+          - ${output}
+          - -outfmt
+          - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+          - -num_threads
+          - ${threads}
+        result_parser: blast_tabular
+        result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+        hit_metric_columns: [pident, length, evalue, bitscore]
+        query_column: qseqid
+        subject_column: sseqid
+        qstart_column: qstart
+        qend_column: qend
+        sstart_column: sstart
+        send_column: send
+        evalue_column: evalue
+        bitscore_column: bitscore
+        pident_column: pident
+        max_hits_per_query: 5
+```
+
 ### 10.2 `hmmer_tblout`
 
 该 parser 按标准 HMMER tblout 读取 target、query、full-sequence E-value 和 score，忽略
-注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。
+注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。tblout 不含比对
+坐标，因此该 parser 不会写 `analysis_alignments` 行。
 
 ```yaml
 arguments:
@@ -56,7 +122,37 @@ result_parser: hmmer_tblout
 max_hits_per_query: 5
 ```
 
-### 10.3 `busco_json`
+### 10.3 `hmmer_domtblout`
+
+需要结构化的 per-domain 命中时，建议改用 `--domtblout` 与 `hmmer_domtblout` parser。每
+条非注释行对应一个 domain：query 为 HMM profile 名，subject 为目标序列，单 domain 的
+i-Evalue 与 domain score 记录为 `evalue`/`bitscore`，比对坐标进入
+`query_start`/`query_end`；HMM 与 envelope 坐标保存在 `extra_json`，subject 坐标因
+domtblout 不含而保持 NULL。EAV hits 仍受 `max_hits_per_query` 限制，而
+`analysis_alignments` 保留全部 domain 行。
+
+```yaml
+hmmsearch_pfam_domains:
+  description: Annotation proteins against Pfam-A.hmm (per-domain hits)
+  entity_type: annotation
+  file_role: protein_fasta
+  format: fasta
+  database: /path/to/Pfam-A.hmm
+  database_version: ""
+  output_subdir: hmmsearch_pfam_domains
+  output_suffix: .hmmsearch.domtblout
+  arguments:
+    - --domtblout
+    - ${output}
+    - --cpu
+    - ${threads}
+    - ${database}
+    - ${input}
+  result_parser: hmmer_domtblout
+  max_hits_per_query: 5
+```
+
+### 10.4 `busco_json`
 
 BUSCO 通常使用目录输出：
 

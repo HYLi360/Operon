@@ -27,7 +27,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
 
@@ -715,6 +715,12 @@ def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_ve
         "output_suffix": recipe.output_suffix,
         "result_glob": str(recipe.raw.get("result_glob", "") or ""),
     }
+    for key in (
+        "qstart_column", "qend_column", "sstart_column", "send_column",
+        "evalue_column", "bitscore_column", "pident_column",
+    ):
+        if recipe.raw.get(key) is not None:
+            payload[key] = str(recipe.raw[key])
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
@@ -1187,9 +1193,11 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         )
         _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
         output_sha = sha256_path(output_path)
-        hit_count, query_count, query_with_hit_count, metric_count = parse_and_store_results(
-            db, project, recipe, tool, version, file_record, job_id, output_path, output_sha,
-            runtime_parameters=runtime_parameters,
+        hit_count, query_count, query_with_hit_count, metric_count, alignment_count = (
+            parse_and_store_results(
+                db, project, recipe, tool, version, file_record, job_id, output_path, output_sha,
+                runtime_parameters=runtime_parameters,
+            )
         )
         finished = now_iso()
         with db.transaction() as conn:
@@ -1207,7 +1215,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             "command": " ".join(command), "output": output_rel, "status": "completed",
             "hit_count": hit_count, "query_count": query_count,
             "query_with_hit_count": query_with_hit_count,
-            "metric_count": metric_count,
+            "metric_count": metric_count, "alignment_count": alignment_count,
         }
     except ShutdownRequested as exc:
         # Graceful shutdown: finalize the job row, drop the partial output
@@ -1233,9 +1241,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
 def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool: ToolSpec,
                             tool_version: str, file_record: dict[str, Any], job_id: int,
                             output_path: Path, output_sha: str,
-                            runtime_parameters: dict[str, str] | None = None) -> tuple[int, int, int, int]:
-    """Parse tool output and synchronize summary + top hits into SQLite."""
-    hits = list(parse_hits(output_path, recipe))
+                            runtime_parameters: dict[str, str] | None = None
+                            ) -> tuple[int, int, int, int, int]:
+    """Parse tool output and synchronize summary + top hits + alignments into SQLite."""
+    hits, alignments = parse_hits(output_path, recipe)
     metrics: list[dict[str, Any]] = []
     if recipe.result_parser == "busco_json":
         metrics = _parse_busco_json(output_path, recipe)
@@ -1265,6 +1274,7 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
     with db.transaction() as conn:
         conn.execute("DELETE FROM analysis_results WHERE job_id=?", (job_id,))
         conn.execute("DELETE FROM analysis_hits WHERE job_id=?", (job_id,))
+        conn.execute("DELETE FROM analysis_alignments WHERE job_id=?", (job_id,))
     for hit in hits:
         db.conn.execute(
             "INSERT INTO analysis_hits(job_id, entity_type, entity_id, file_id, analysis_name, "
@@ -1275,6 +1285,21 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
                 recipe.name, hit["query_id"], hit["subject_id"], hit["metric_name"],
                 str(hit["metric_value"]), hit["metric_numeric"], hit.get("metric_unit"),
                 hit["rank"],
+            ),
+        )
+    for alignment in alignments:
+        db.conn.execute(
+            "INSERT INTO analysis_alignments(job_id, entity_type, entity_id, file_id, analysis_name, "
+            "query_id, subject_id, hit_rank, query_start, query_end, subject_start, subject_end, "
+            "evalue, bitscore, percent_identity, extra_json) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                job_id, file_record["entity_type"], file_record["entity_id"], file_record["file_id"],
+                recipe.name, alignment["query_id"], alignment["subject_id"], alignment["rank"],
+                alignment["qstart"], alignment["qend"], alignment["sstart"], alignment["send"],
+                alignment["evalue"], alignment["bitscore"], alignment["pident"],
+                json.dumps(alignment["extra"], ensure_ascii=False, sort_keys=True)
+                if alignment["extra"] else None,
             ),
         )
     db.conn.commit()
@@ -1308,7 +1333,7 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
     queries = {h["query_id"] for h in hits}
     query_with_hit = {h["query_id"] for h in hits if h.get("rank") == 1}
     hit_pairs = {(h["query_id"], h["subject_id"]) for h in hits}
-    return len(hit_pairs), len(queries), len(query_with_hit), len(metrics)
+    return len(hit_pairs), len(queries), len(query_with_hit), len(metrics), len(alignments)
 
 
 def _result_metric(name: str, value: Any, unit: str | None = None) -> dict[str, Any]:
@@ -1334,14 +1359,17 @@ def _result_metric(name: str, value: Any, unit: str | None = None) -> dict[str, 
     }
 
 
-def parse_hits(output_path: Path, recipe: Recipe) -> Iterable[dict[str, Any]]:
+def parse_hits(output_path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Parse tool output into (EAV hit rows, structured alignment rows)."""
     parser = recipe.result_parser
     if parser in {"none", "busco_json"}:
-        return []
+        return [], []
     if parser == "blast_tabular":
         return _parse_blast_tabular(output_path, recipe)
     if parser == "hmmer_tblout":
-        return _parse_hmmer_tblout(output_path, recipe)
+        return _parse_hmmer_tblout(output_path, recipe), []
+    if parser == "hmmer_domtblout":
+        return _parse_hmmer_domtblout(output_path, recipe)
     raise ExternalToolError(f"unsupported result_parser {parser!r} for {recipe.name}")
 
 
@@ -1437,7 +1465,28 @@ def _parse_busco_json(output_path: Path, recipe: Recipe) -> list[dict[str, Any]]
     return metrics
 
 
-def _parse_blast_tabular(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
+_ALIGNMENT_FIELD_KEYS = (
+    ("qstart", "qstart_column", ("qstart",), True),
+    ("qend", "qend_column", ("qend",), True),
+    ("sstart", "sstart_column", ("sstart",), True),
+    ("send", "send_column", ("send",), True),
+    ("evalue", "evalue_column", ("evalue",), False),
+    ("bitscore", "bitscore_column", ("bitscore",), False),
+    ("pident", "pident_column", ("pident",), False),
+)
+
+
+def _alignment_number(raw: Any, integer: bool = False) -> int | float | None:
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    return int(value) if integer else value
+
+
+def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     columns = [str(c) for c in recipe.raw.get("result_columns", [])]
     if len(columns) < 2:
         raise ValidationError(f"{recipe.name}: result_columns must contain at least query and subject")
@@ -1446,8 +1495,20 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
     query_index = columns.index(recipe.raw.get("query_column", columns[0]))
     subject_index = columns.index(recipe.raw.get("subject_column", columns[1]))
     metric_indexes = [columns.index(c) for c in metric_columns if c in columns]
+    alignment_indexes: dict[str, tuple[int, bool]] = {}
+    for field, recipe_key, common_names, integer in _ALIGNMENT_FIELD_KEYS:
+        declared = recipe.raw.get(recipe_key)
+        if declared is not None and str(declared) in columns:
+            alignment_indexes[field] = (columns.index(str(declared)), integer)
+            continue
+        for name in common_names:
+            if name in columns:
+                alignment_indexes[field] = (columns.index(name), integer)
+                break
+    structured = {index for index, _ in alignment_indexes.values()} | {query_index, subject_index}
     rank: dict[str, int] = {}
     hits: list[dict[str, Any]] = []
+    alignments: list[dict[str, Any]] = []
     with open(path, encoding="utf-8", errors="replace") as handle:
         for raw_line in handle:
             line = raw_line.rstrip("\n\r")
@@ -1461,6 +1522,22 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
             if not query_id or not subject_id:
                 continue
             rank[query_id] = rank.get(query_id, 0) + 1
+            alignment: dict[str, Any] = {
+                "query_id": query_id,
+                "subject_id": subject_id,
+                "rank": rank[query_id],
+                "extra": {
+                    columns[i]: fields[i].strip()
+                    for i in range(len(columns)) if i not in structured
+                },
+            }
+            for field in ("qstart", "qend", "sstart", "send", "evalue", "bitscore", "pident"):
+                mapped = alignment_indexes.get(field)
+                alignment[field] = (
+                    _alignment_number(fields[mapped[0]], integer=mapped[1])
+                    if mapped is not None else None
+                )
+            alignments.append(alignment)
             if rank[query_id] > recipe.max_hits_per_query:
                 continue
             for metric_index, metric_name in zip(metric_indexes, [columns[i] for i in metric_indexes], strict=True):
@@ -1480,7 +1557,7 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
                     "metric_unit": None,
                     "rank": rank[query_id],
                 })
-    return hits
+    return hits, alignments
 
 
 def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
@@ -1516,6 +1593,67 @@ def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
                     "rank": rank[query_name],
                 })
     return hits
+
+
+def _parse_hmmer_domtblout(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    rank: dict[str, int] = {}
+    hits: list[dict[str, Any]] = []
+    alignments: list[dict[str, Any]] = []
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n\r")
+            if not line.strip() or line.startswith("#"):
+                continue
+            # domtblout has 22 fixed whitespace-separated columns; the
+            # description column may contain spaces, so cap the split.
+            fields = line.split(None, 22)
+            if len(fields) < 22:
+                continue
+            target_name = fields[0]
+            query_name = fields[3]
+            if not target_name or not query_name:
+                continue
+            rank[query_name] = rank.get(query_name, 0) + 1
+            try:
+                evalue_numeric: float | None = float(fields[12])
+            except ValueError:
+                evalue_numeric = None
+            try:
+                score_numeric: float | None = float(fields[13])
+            except ValueError:
+                score_numeric = None
+            alignments.append({
+                "query_id": query_name,
+                "subject_id": target_name,
+                "rank": rank[query_name],
+                "qstart": _alignment_number(fields[17], integer=True),
+                "qend": _alignment_number(fields[18], integer=True),
+                "sstart": None,
+                "send": None,
+                "evalue": evalue_numeric,
+                "bitscore": score_numeric,
+                "pident": None,
+                "extra": {
+                    "hmm_from": fields[15], "hmm_to": fields[16],
+                    "env_from": fields[19], "env_to": fields[20],
+                },
+            })
+            if rank[query_name] > recipe.max_hits_per_query:
+                continue
+            for metric_name, raw_value, numeric in (
+                ("evalue", fields[12], evalue_numeric),
+                ("score", fields[13], score_numeric),
+            ):
+                hits.append({
+                    "query_id": query_name,
+                    "subject_id": target_name,
+                    "metric_name": metric_name,
+                    "metric_value": raw_value,
+                    "metric_numeric": numeric,
+                    "metric_unit": None,
+                    "rank": rank[query_name],
+                })
+    return hits, alignments
 
 
 def print_tools_table(project: Project) -> tuple[str, bool]:

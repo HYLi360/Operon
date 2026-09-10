@@ -48,7 +48,7 @@ Key recipe fields:
 | `database_mode` | `reference` (default, content-based identity) or `mutable_cache` (shared growing cache; requires `database_version`). |
 | `arguments` | Command arguments and placeholders. |
 | `parameters` | Runtime parameters allowed through `analyze --param NAME=VALUE`. |
-| `result_parser` | `blast_tabular`, `hmmer_tblout`, `busco_json`, or `none`. |
+| `result_parser` | `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `busco_json`, or `none`. |
 | `result_glob` | Result glob inside a directory output; BUSCO usually uses `short_summary*.json`. |
 | `max_hits_per_query` | Maximum hits per query synchronized to SQLite. |
 | `version` | Optional positive integer (default 1, invalid values rejected); together with the configuration content it enters the recipe snapshot recorded by `analyze`, inspectable via `operon recipes history/show`. |
@@ -107,6 +107,7 @@ Results are written to:
 - `analysis_jobs`: command, tool version, parameter fingerprint, input/database fingerprints, output hash, and status
 - `analysis_results`: `query_count`, `hit_count`, `query_with_hit_count`, `best_evalue`
 - `analysis_hits`: query, subject, metric values, and rank for top hits
+- `analysis_alignments`: every parsed hit as a structured row (query/subject IDs, rank, intervals, e-value, bitscore, percent identity) for parsers with coordinates, never truncated by `max_hits_per_query`
 - `qc_results`: summary metrics under stage `analysis:<recipe>`
 
 The cache key consists of analysis name, `file_id`, input SHA-256, parameter fingerprint, tool version, and database identity. Matching jobs are skipped unless `--force` is used. If the exact fingerprint misses but an old completed job has the same input and a verified output, the output is adopted under the current fingerprint and audited as `adopted`.

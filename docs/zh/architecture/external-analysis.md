@@ -15,7 +15,11 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
    `changes` 审计表留痕，状态记为 `adopted`），否则才重算；
 6. 未命中时以 `conda run`、容器前缀或直接路径启动程序；文件与目录输出都必须存在且非空，stdout/stderr 落盘；
 7. 计算文件或目录内容哈希，解析 top hits 或 BUSCO JSON summary 写入
-   `analysis_hits`/`analysis_results`，并同步同名指标到 `qc_results`。
+   `analysis_hits`/`analysis_results`，并同步同名指标到 `qc_results`。带坐标的 parser
+   （`blast_tabular`、`hmmer_domtblout`）还会把每条解析出的命中以结构化行写入
+   `analysis_alignments`（query/subject ID、命中排名、query/subject 区间、e-value、
+   bitscore、identity 百分比，未映射列进 `extra_json`），不受 `max_hits_per_query`
+   截断；`report analysis --hits` 读取该表。
 
 目录使用由相对路径、空目录、文件大小/内容和符号链接目标组成的确定性树哈希。
 `database_mode: mutable_cache` 用于 BUSCO 等会逐步下载 lineage 的共享缓存，以显式

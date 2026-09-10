@@ -51,7 +51,7 @@ recipe 关键字段：
 | `database_mode` | `reference`（默认，按内容识别）或 `mutable_cache`（共享可增长下载区，要求 `database_version`） |
 | `arguments` | 命令参数；占位符见下表 |
 | `parameters` | 允许由 `analyze --param NAME=VALUE` 设置的受约束运行参数 |
-| `result_parser` | `blast_tabular`、`hmmer_tblout`、`busco_json` 或 `none` |
+| `result_parser` | `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`busco_json` 或 `none` |
 | `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
 | `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
 | `version` | 可选正整数（缺省 1，非法值报错）；与配置内容一起进入 `analyze` 记录的 recipe 快照，可用 `operon recipes history/show` 查看 |
@@ -119,6 +119,7 @@ operon report analysis --analysis blastn_nt --hits
 - `analysis_jobs`：命令、工具版本、参数指纹、输入/数据库指纹、输出内容哈希、状态
 - `analysis_results`：`query_count`、`hit_count`、`query_with_hit_count`、`best_evalue`
 - `analysis_hits`：top hits 的 query、subject、指标值、rank
+- `analysis_alignments`：带坐标的 parser 解析出的每条命中各一行（query/subject ID、rank、区间、e-value、bitscore、identity 百分比），不受 `max_hits_per_query` 截断
 - `qc_results`：同名汇总指标以 `analysis:<recipe>` 为 stage 写入，可继续被 profile 使用
 
 避免重复执行：缓存键由 `analysis_name + file_id + 输入 SHA-256 + 参数指纹 +

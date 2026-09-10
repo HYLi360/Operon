@@ -291,8 +291,12 @@ operon report analysis --analysis blastn_nt --hits
 
 ```bash
 operon analyze --analysis hmmsearch_pfam
-operon report analysis --analysis hmmsearch_pfam --hits
+operon report analysis --analysis hmmsearch_pfam
 ```
+
+默认 `hmmsearch_pfam` recipe 使用 `--tblout`（`hmmer_tblout` parser），输出不含比对坐标，
+因此 `--hits` 没有结构化命中行可看；需要结构化 per-domain 命中时改用 `--domtblout` 与
+`hmmer_domtblout` parser（见 [结果解析器与示例](../reference/recipe-parsers-examples.md)）。
 
 BUSCO 使用目录输出，并直接读取 `short_summary*.json`：
 

@@ -108,7 +108,7 @@ operon report metadata [--output DIRECTORY] [--include-retired]
 
 - `qc`: prints the QC long table; `--export` additionally writes `qc/aggregate/qc_results.tsv` and `qc_results.wide.tsv`.
 - `decisions`: shows `current_decisions` (the latest decision per entity/profile).
-- `analysis`: shows the analysis summaries synced to the database; `--hits` shows top hits instead, with `--limit` defaulting to 20.
+- `analysis`: shows the analysis summaries synced to the database; `--hits` instead shows the structured alignment hit rows from `analysis_alignments`, with `--limit` defaulting to 20 (format, output-file, and filter flags are documented under [report analysis](cli-analysis.md)).
 - `coverage`: computes family/genus coverage only against the named frozen taxonomy reference set. The default `--scope metadata` audits the current `organisms`; `--release VERSION` instead counts the published dataset along `release_members` and the frozen in-release metadata, re-verifying the metadata SHA-256 saved at creation time. The two options are mutually exclusive.
 - Coverage reports are written to `reports/coverage/COV_<input-hash>/`, including numerator/denominator, complete targets, missing lists, included/excluded observations, and provenance. Identical input is verified and the existing report reused.
 - `metadata`: exports a read-only TSV snapshot of `organisms/samples/runs/assemblies/annotations/accessions/files` plus the normalized sources `data_sources/source_links` from the current SQLite database, together with a `manifest.json` containing row counts and SHA-256 values; written to `reports/metadata/` by default. It is a derived report, not a backup, and cannot overwrite the database in reverse.

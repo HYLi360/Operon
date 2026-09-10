@@ -131,8 +131,9 @@ operon report metadata [--output DIRECTORY] [--include-retired]
 - `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
   `qc_results.wide.tsv`。
 - `decisions`：显示 `current_decisions`（每个 entity/profile 的最新判定）。
-- `analysis`：显示同步到数据库的分析汇总；`--hits` 改为显示 top hits，`--limit`
-  默认 20。
+- `analysis`：显示同步到数据库的分析汇总；`--hits` 改为显示 `analysis_alignments` 中的
+  结构化比对命中行，`--limit` 默认 20（格式、输出文件与过滤旗标见
+  [report analysis](cli-analysis.md)）。
 - `coverage`：只对指定的冻结 taxonomy reference set 计算 family/genus 覆盖率。
   默认 `--scope metadata` 审计当前 `organisms`；`--release VERSION` 改为沿
   `release_members` 和 release 内冻结元数据统计已发布数据集，并复核创建时保存的
