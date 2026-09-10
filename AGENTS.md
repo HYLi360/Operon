@@ -46,7 +46,10 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     module is the required production backend; the pure-Python module is the
     behavioral reference used by regression tests. Both must produce
     identical metrics and error messages (enforced by
-    `tests/regression/test_cython_parser_parity.py`).
+    `tests/regression/test_cython_parser_parity.py`). `measure.py` backs
+    `operon qc-measure`, a project-independent measurement-only path whose
+    JSON payload can be imported back through `operon import-qc` (the remote
+    built-in QC workflow).
   - `operon/execution.py` — execution backends for external commands:
     `local` subprocess, `slurm` (sbatch submit + squeue poll), and `ssh`
     (Paramiko; HPC head nodes and cloud VMs, optionally through remote

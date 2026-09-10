@@ -1,6 +1,6 @@
 # Remote Execution with Slurm and SSH
 
-`run-external` and `analyze` use the local subprocess backend (`local`) by default. The `execution:` section in `project.yaml` can switch execution to a local Slurm cluster (`slurm`) or an SSH host (`ssh`), such as an HPC head node or cloud VM.
+`run-external` and `analyze` use the local subprocess backend (`local`) by default. The `execution:` section in `project.yaml` can switch execution to a local Slurm cluster (`slurm`) or an SSH host (`ssh`), such as an HPC head node or cloud VM. For an end-to-end setup that also mirrors and evicts data to the same remote, see [Remote-First Operation](remote-first.md).
 
 All backends use the same provenance contract: exit code, start/end time, and log paths are written to `workflow_runs` and `logs/workflow.jsonl`; success still requires exit code 0 and non-empty expected outputs; input and output checksum validation is unchanged.
 

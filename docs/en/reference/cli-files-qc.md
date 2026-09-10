@@ -54,18 +54,39 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
 - The assembly FASTA `seqid -> length` map is written to `qc/cache/fasta_lengths/` on first use. Later QC runs reuse it only for the same complete content identity. A missing, malformed, or identity-mismatched cache is rebuilt automatically. `--rehash` revalidates the source SHA-256, but the length index can still be reused when content identity is unchanged because the index is keyed by the verified SHA-256.
 - Results are written to `qc_results` by `file_id + file_sha256 + input_identity`.
 - Each file receives its own `QC_COMPLETE`, `QC_FAILED`, or `QC_PENDING` status. The entity state is the worst sibling status (`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`), and the command lists every file status. A failed file makes the command exit non-zero.
+- `qc` is a local-only command (no `--backend`). A file whose status is `REMOTE_ONLY` is skipped rather than failed: no `qc_results` rows are written, the entity state is unchanged, and a `SKIPPED` warning goes to stderr. When an explicit `--file-id` selection is skipped entirely, the command exits with code 1. Either `pull` the bytes back first, or measure remotely with `qc-measure` and load the payload through `import-qc`; see [Remote-First Operation](../guides/remote-first.md).
 - For each file, `logs/workflow.jsonl` records `duration_seconds`, the actual parser backend, primary/related input identity, and high-resolution `stage_timings_seconds`/`qc_timing`. The same details are written to `workflow_runs.execution_details`. See [Built-In QC Performance Diagnostics](../operations/qc-performance.md).
+
+## qc-measure
+
+```bash
+operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
+                  --sha256 HEX --size-bytes N [--file-id FIL_...] \
+                  [--assembly-fasta PATH] [--protein-fasta PATH] [--paired-read PATH] \
+                  [--sample-size N] [--phred-offset {33,64,auto}] \
+                  [--parameter-set NAME] [--out PATH]
+```
+
+- Runs the built-in QC parsers without any project, database, or manifest, so it works anywhere the archived bytes are readable (e.g. an HPC compute node). It is the remote-measurement counterpart of `qc` and produces the same stage/metric names and units.
+- The file's SHA-256 and size are verified against the manifest values before parsing; a mismatch aborts with a non-zero exit code.
+- `--role` selects the FASTA metric group exactly as in `qc`: `genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` produce `assembly_basic`, other roles produce `sequence_basic`.
+- For `--format gff3`, pass `--assembly-fasta` and/or `--protein-fasta` so seqid/coordinate and protein cross-check metrics can be computed; without either the command fails. For paired FASTQ, `--paired-read` adds `paired_read_count_match`.
+- The JSON payload (schema_version 1) goes to stdout, or atomically to `--out` (suitable as a `run-external --expected-output`). Feed it to `operon import-qc --file payload.json` back in the project.
 
 ## import-qc
 
 ```bash
-operon import-qc --file TSV
+operon import-qc --file TSV_OR_JSON
 ```
 
-Required columns:
+Accepts either an external-tool TSV or a `qc-measure` JSON payload (detected by a `.json` suffix or a leading `{`).
+
+TSV required columns:
 
 ```text
 entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set
 ```
 
 Optional columns: `file_id`, `file_sha256`, `metric_unit`, and `evaluated_at`. `file_id` and `file_sha256` must match the manifest when provided.
+
+For a `qc-measure` JSON payload the target file is resolved by `file.file_id`, or by reverse lookup of `file.sha256` when the payload has no file ID (an ambiguous checksum is rejected). The payload SHA-256/size must match the manifest; a payload measured by a different `operon` version only triggers a warning. Both input forms recompute the affected entities' QC state after the import and record an `import-qc` step in `workflow_runs`.

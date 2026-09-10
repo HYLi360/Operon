@@ -76,17 +76,38 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   长度索引，因为索引本身按已验证 SHA-256 键控。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
 - 每个文件都有自己的 `QC_COMPLETE`、`QC_FAILED` 或 `QC_PENDING` 状态；实体状态取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），命令会列出每个文件状态。任一文件失败时命令返回非零。
+- `qc` 是本地专属命令（无 `--backend`）。状态为 `REMOTE_ONLY` 的文件会被跳过而不是判为失败：不写 `qc_results`、不改变实体状态，仅向 stderr 打印 `SKIPPED` 警告；显式 `--file-id` 指定的文件全部被跳过时命令以退出码 1 结束。可先 `pull` 拉回字节再运行，或用 `qc-measure` 远程度量后经 `import-qc` 导入；见 [Remote-First 运行模式](../guides/remote-first.md)。
 - 每个文件的 `logs/workflow.jsonl` 记录包含 `duration_seconds`、实际 parser backend、
   主/关联输入身份及 `stage_timings_seconds`/`qc_timing` 分阶段高精度耗时；同一份详情
   也写入 `workflow_runs.execution_details`。字段定义与代表性复测集合见
   [内置 QC 性能诊断](../operations/qc-performance.md)。
 
+## qc-measure
+
+```bash
+operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
+                  --sha256 HEX --size-bytes N [--file-id FIL_...] \
+                  [--assembly-fasta PATH] [--protein-fasta PATH] [--paired-read PATH] \
+                  [--sample-size N] [--phred-offset {33,64,auto}] \
+                  [--parameter-set NAME] [--out PATH]
+```
+
+- 不依赖任何项目、数据库或 manifest 即可运行内置 QC 解析器，只要归档字节可读（例如 HPC 计算节点）就能执行。它是 `qc` 的远程度量对应物，产出的 stage/metric 名称与单位完全一致。
+- 解析前先按 manifest 值校验文件 SHA-256 与大小；不一致即以非零退出码中止。
+- `--role` 按与 `qc` 相同的规则选择 FASTA 指标组：`genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` 产出 `assembly_basic`，其余 role 产出 `sequence_basic`。
+- `--format gff3` 需通过 `--assembly-fasta` 和/或 `--protein-fasta` 提供关联输入，用于 seqid/坐标与 protein 交叉校验指标；二者都缺失时命令失败。双端 FASTQ 用 `--paired-read` 追加 `paired_read_count_match`。
+- JSON payload（schema_version 1）默认写 stdout；指定 `--out` 时原子写入（可作为 `run-external --expected-output` 拉回）。回到项目后用 `operon import-qc --file payload.json` 落库。
+
 ## import-qc
 
 ```bash
-operon import-qc --file TSV
+operon import-qc --file TSV_OR_JSON
 ```
 
-必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set`。
+接受外部工具 TSV 或 `qc-measure` JSON payload（按 `.json` 后缀或内容以 `{` 开头识别）。
+
+TSV 必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set`。
 可选列：`file_id, file_sha256, metric_unit, evaluated_at`。
 `file_id`/`file_sha256` 与 manifest 不一致时拒绝导入。
+
+对于 `qc-measure` JSON payload，目标文件按 `file.file_id` 定位；payload 无文件 ID 时按 `file.sha256` 反查（checksum 匹配多条 manifest 记录时拒绝）。payload 的 SHA-256/大小必须与 manifest 一致；由不同 `operon` 版本度量的 payload 只产生警告。两种输入形式在导入后都会重算受影响实体的 QC 状态，并在 `workflow_runs` 中记录一条 `import-qc` 步骤。

@@ -8,6 +8,7 @@
 - [外部分析](external-analysis.md)
 - [Slurm 与 SSH 远程执行](remote-execution.md)
 - [SFTP 远程存储](remote-storage.md)
+- [Remote-First 运行模式](remote-first.md)
 - [QC profile](qc-profiles.md)
 - [NCBI Taxonomy 覆盖率](taxonomy-coverage.md)
 - [人工策展、查询与实体生命周期](curation-lifecycle.md)
@@ -23,6 +24,7 @@ file-archiving
 external-analysis
 remote-execution
 remote-storage
+remote-first
 qc-profiles
 taxonomy-coverage
 curation-lifecycle

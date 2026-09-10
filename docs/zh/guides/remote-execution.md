@@ -4,7 +4,8 @@
 
 `run-external` 与 `analyze` 默认在本地以子进程执行外部命令（`local` 后端）。通过
 `project.yaml` 的 `execution:` 段可把执行后端切换为本地 Slurm 集群（`slurm`）或
-SSH 远程主机（`ssh`，HPC 头节点与云虚拟机均适用）。所有后端共用同一份 provenance
+SSH 远程主机（`ssh`，HPC 头节点与云虚拟机均适用）。连同数据镜像与驱逐的端到端
+配置见 [Remote-First 运行模式](remote-first.md)。所有后端共用同一份 provenance
 契约：退出码、起止时间、日志路径照常写入 `workflow_runs` 与 `logs/workflow.jsonl`，
 成功判定（退出码 0 且 `--expected-output` 非空）与输入/输出 SHA-256 校验不变。
 

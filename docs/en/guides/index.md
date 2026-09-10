@@ -8,6 +8,7 @@ These pages are organized by task. Run commands from the project root by default
 - [External Analysis](external-analysis.md)
 - [Remote Execution with Slurm and SSH](remote-execution.md)
 - [SFTP Remote Storage](remote-storage.md)
+- [Remote-First Operation](remote-first.md)
 - [QC Profiles](qc-profiles.md)
 - [NCBI Taxonomy Coverage](taxonomy-coverage.md)
 - [Curation, Queries, and Entity Lifecycle](curation-lifecycle.md)
@@ -23,6 +24,7 @@ file-archiving
 external-analysis
 remote-execution
 remote-storage
+remote-first
 qc-profiles
 taxonomy-coverage
 curation-lifecycle

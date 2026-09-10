@@ -47,7 +47,7 @@ from operon.taxonomy import (
     list_reference_sets,
     list_taxonomy_snapshots,
 )
-from operon.utils import format_table, parse_key_values
+from operon.utils import atomic_write_text, format_table, parse_key_values
 from operon.workflow import (
     flush_run_log,
     get_run,
@@ -265,8 +265,33 @@ def _parser() -> argparse.ArgumentParser:
         help="ignore the unchanged-file verification cache and recompute every input SHA-256",
     )
 
-    p = sub.add_parser("import-qc", help="import external QC metrics (e.g. BUSCO, QUAST, FastQC) from TSV")
+    p = sub.add_parser("import-qc",
+                       help="import external QC metrics (e.g. BUSCO, QUAST, FastQC) from TSV, "
+                            "or built-in metrics measured remotely via 'qc-measure' from JSON")
     p.add_argument("--file", dest="tsv_file", required=True)
+
+    p = sub.add_parser("qc-measure",
+                       help="measure built-in QC metrics for one file without a project "
+                            "(runs anywhere, e.g. on an HPC node; JSON payload for 'import-qc')")
+    p.add_argument("--file", dest="measure_file", required=True, help="file to measure")
+    p.add_argument("--format", dest="fmt", required=True, choices=["fasta", "fastq", "gff3", "other"],
+                   help="file format as recorded in the manifest")
+    p.add_argument("--role", required=True, help="file role as recorded in the manifest")
+    p.add_argument("--sha256", required=True, help="manifest SHA-256 of the file (verified before parsing)")
+    p.add_argument("--size-bytes", type=_nonnegative_int, required=True,
+                   help="manifest size in bytes (verified before parsing)")
+    p.add_argument("--file-id", help="manifest file_id, embedded in the payload for import-qc")
+    p.add_argument("--assembly-fasta", help="related assembly FASTA for gff3 seqid/coordinate metrics")
+    p.add_argument("--protein-fasta", help="related protein FASTA for gff3 protein cross-check metrics")
+    p.add_argument("--paired-read", help="sibling FASTQ for the reads_r1/reads_r2 read-count cross-check")
+    p.add_argument("--sample-size", type=_positive_int, default=1000000)
+    p.add_argument(
+        "--phred-offset", choices=["33", "64", "auto"], default="33",
+        help="FASTQ quality offset (default: 33; auto assumes 33 when ambiguous)",
+    )
+    p.add_argument("--parameter-set", default=None,
+                   help="parameter-set label embedded in the payload (default: builtin_v2)")
+    p.add_argument("--out", help="write the JSON payload here (atomically) instead of stdout")
 
     p = sub.add_parser("run-external",
                        help="run an external tool with structured provenance (stdout/stderr, exit code, expected outputs)")
@@ -1004,20 +1029,181 @@ def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
         phred_offset=args.phred_offset, force_checksum=args.rehash,
     )
     ok = sum(1 for r in results if r["ok"])
+    skipped = [r for r in results if r.get("skipped")]
+    failed = [r for r in results if not r["ok"] and not r.get("skipped")]
     for r in results:
         print(f"{r['file_id']}: {r.get('file_qc_state', 'QC_UNKNOWN')} "
               f"(entity {r.get('entity_qc_state', 'QC_UNKNOWN')})")
-        if not r["ok"]:
+        if r.get("skipped"):
+            print(f"{r['file_id']}: SKIPPED {r['error']}", file=sys.stderr)
+        elif not r["ok"]:
             print(f"{r['file_id']}: FAILED {r['error']}", file=sys.stderr)
         for sibling in r.get("file_statuses", []):
             if sibling["file_id"] != r["file_id"]:
                 print(f"  {sibling['file_id']} ({sibling['file_role']}): {sibling['qc_state']}")
-    print(f"QC complete: {ok}/{len(results)} file(s) passed built-in stages")
-    entity_failed = any(r.get("entity_qc_state") == "QC_FAILED" for r in results)
-    return 0 if ok == len(results) and not entity_failed else 1
+    summary = f"QC complete: {ok}/{len(results)} file(s) passed built-in stages"
+    if skipped:
+        summary += f", {len(skipped)} skipped (REMOTE_ONLY)"
+    print(summary)
+    entity_failed = any(
+        not r.get("skipped") and r.get("entity_qc_state") == "QC_FAILED" for r in results
+    )
+    if failed or entity_failed:
+        return 1
+    if skipped and args.file_id and len(skipped) == len(results):
+        print(f"error: requested file {args.file_id} was skipped: {skipped[0]['error']}",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+def _cmd_qc_measure(args: argparse.Namespace) -> int:
+    from operon.qc_module import DEFAULT_PARAMETER_SET, measure_file
+    try:
+        payload = measure_file(
+            args.measure_file, file_format=args.fmt, file_role=args.role,
+            sha256=args.sha256, size_bytes=args.size_bytes, file_id=args.file_id,
+            sample_size=args.sample_size, phred_offset=args.phred_offset,
+            parameter_set=args.parameter_set or DEFAULT_PARAMETER_SET,
+            assembly_fasta=args.assembly_fasta, protein_fasta=args.protein_fasta,
+            paired_read=args.paired_read,
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if args.out:
+        try:
+            atomic_write_text(args.out, text)
+        except OSError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
+def _log_import_qc_run(project: Project, db: Database, source: str, *,
+                       started_at: str, metric_count: int, payload_format: str,
+                       entities: list[tuple[str, str]]) -> None:
+    entity_type, entity_id = entities[0] if len(entities) == 1 else (None, None)
+    log_run(db, project, {
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "step": "import-qc",
+        "status": "completed",
+        "started_at": started_at,
+        "finished_at": _now_for_cli(),
+        "command": f"operon import-qc --file {source}",
+        "tool": "operon",
+        "execution_details": json.dumps({
+            "source": str(source),
+            "format": payload_format,
+            "metric_count": metric_count,
+            "entities": [f"{kind}:{ident}" for kind, ident in entities],
+        }, ensure_ascii=False, sort_keys=True),
+    })
+
+
+def _recompute_imported_qc_states(db: Database, entities: list[tuple[str, str]]) -> None:
+    from operon.qc_module import _recompute_entity_qc_state
+    for entity_type, entity_id in entities:
+        _recompute_entity_qc_state(db, entity_type, entity_id)
+
+
+def _is_qc_json_payload(path: Path) -> bool:
+    if path.suffix.lower() == ".json":
+        return True
+    with open(path, "rb") as handle:
+        return handle.read(4096).lstrip().startswith(b"{")
+
+
+def _import_qc_json(args: argparse.Namespace, project: Project, db: Database,
+                    started_at: str) -> int:
+    from operon.qc_module import MEASURE_SCHEMA_VERSION, TOOL_NAME
+    source = Path(args.tsv_file)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValidationError(f"{source}: invalid qc-measure JSON payload: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != MEASURE_SCHEMA_VERSION:
+        raise ValidationError(
+            f"{source}: unsupported qc-measure payload schema_version "
+            f"{payload.get('schema_version') if isinstance(payload, dict) else None!r}; "
+            f"expected {MEASURE_SCHEMA_VERSION}"
+        )
+    if payload.get("tool") != TOOL_NAME:
+        raise ValidationError(
+            f"{source}: payload tool {payload.get('tool')!r} is not {TOOL_NAME!r}"
+        )
+    file_info = payload.get("file")
+    if not isinstance(file_info, dict) or not file_info.get("sha256") or file_info.get("size_bytes") is None:
+        raise ValidationError(f"{source}: payload is missing file identity (file.sha256/size_bytes)")
+    payload_sha256 = str(file_info["sha256"]).lower()
+    file_id = (str(file_info["file_id"]).strip() if file_info.get("file_id") else None) or None
+    if file_id:
+        file_row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
+        if not file_row:
+            raise ValidationError(f"{source}: file_id {file_id} does not exist")
+    else:
+        matches = db.conn.execute(
+            "SELECT * FROM files WHERE LOWER(sha256)=?", (payload_sha256,),
+        ).fetchall()
+        if not matches:
+            raise ValidationError(f"{source}: no manifest file matches sha256 {payload_sha256}")
+        if len(matches) > 1:
+            raise ValidationError(
+                f"{source}: sha256 {payload_sha256} matches {len(matches)} manifest files; "
+                f"re-run qc-measure with --file-id"
+            )
+        file_row = matches[0]
+    if payload_sha256 != str(file_row["sha256"]).lower():
+        raise ValidationError(f"{source}: payload sha256 does not match manifest for {file_row['file_id']}")
+    if int(file_info["size_bytes"]) != int(file_row["size_bytes"]):
+        raise ValidationError(f"{source}: payload size_bytes does not match manifest for {file_row['file_id']}")
+    tool_version = str(payload.get("tool_version") or "")
+    if tool_version != __version__:
+        print(
+            f"warning: payload was measured by {TOOL_NAME} {tool_version or 'unknown'} but this "
+            f"installation is {__version__}; importing anyway",
+            file=sys.stderr,
+        )
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, list):
+        raise ValidationError(f"{source}: payload metrics must be a list")
+    db.require_active_entity(file_row["entity_type"], file_row["entity_id"])
+    evaluated_at = _now_for_cli()
+    count = 0
+    for item in metrics:
+        db.insert_qc_result({
+            "entity_type": file_row["entity_type"],
+            "entity_id": file_row["entity_id"],
+            "file_id": file_row["file_id"],
+            "file_sha256": file_row["sha256"],
+            "input_identity": f"file:{file_row['file_id']}:{file_row['sha256']}",
+            "qc_stage": item["qc_stage"],
+            "metric_name": item["metric_name"],
+            "metric_value": item.get("metric_value"),
+            "metric_numeric": item.get("metric_numeric"),
+            "metric_unit": item.get("metric_unit"),
+            "tool": TOOL_NAME,
+            "tool_version": tool_version,
+            "parameter_set": item.get("parameter_set") or payload.get("parameter_set") or "external",
+            "evaluated_at": evaluated_at,
+        })
+        count += 1
+    entities = [(file_row["entity_type"], file_row["entity_id"])]
+    _recompute_imported_qc_states(db, entities)
+    _log_import_qc_run(project, db, str(args.tsv_file), started_at=started_at,
+                       metric_count=count, payload_format="json", entities=entities)
+    print(f"imported {count} built-in QC metric(s) for {file_row['file_id']}")
+    return 0
 
 
 def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
+    started_at = _now_for_cli()
+    if _is_qc_json_payload(Path(args.tsv_file)):
+        return _import_qc_json(args, project, db, started_at)
     rows = read_tsv(args.tsv_file)
     required = ["entity_type", "entity_id", "qc_stage", "metric_name", "metric_value", "tool", "tool_version",
                 "parameter_set"]
@@ -1025,6 +1211,7 @@ def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> 
     if missing:
         raise ValidationError(f"{args.tsv_file}: missing columns {missing}")
     count = 0
+    entities: list[tuple[str, str]] = []
     for row in rows:
         db.require_active_entity(row["entity_type"], row["entity_id"])
         file_id = (row.get("file_id") or "").strip() or None
@@ -1065,7 +1252,13 @@ def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> 
             "evaluated_at": row.get("evaluated_at") or _now_for_cli(),
         }
         db.insert_qc_result(record)
+        entity = (row["entity_type"], row["entity_id"])
+        if entity not in entities:
+            entities.append(entity)
         count += 1
+    _recompute_imported_qc_states(db, entities)
+    _log_import_qc_run(project, db, str(args.tsv_file), started_at=started_at,
+                       metric_count=count, payload_format="tsv", entities=entities)
     print(f"imported {count} external QC metric(s)")
     return 0
 
@@ -1944,6 +2137,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_init(args)
         if args.command == "init-demo":
             return _cmd_init_demo(args)
+        if args.command == "qc-measure":
+            return _cmd_qc_measure(args)
         if args.command == "backup" and args.backup_command == "verify":
             return _cmd_backup_verify(args)
         if args.command == "tui":

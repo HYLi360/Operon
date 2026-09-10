@@ -126,5 +126,6 @@ operon ingest --source remote://mycluster/raw/assemblies/ASM_000001/ASM_000001.g
   --entity-type assembly --entity-id ASM_000001 --role genome_fasta
 ```
 
-分工：本节是“按内容校验的远端镜像”；第 15 节仍是针对 `operon.sqlite`、`config/`
-等本地目录的整体备份与迁移。
+分工：本节是“按内容校验的远端镜像”；数据与计算都在 HPC、本地只做事件记录的
+完整流程见 [Remote-First 运行模式](remote-first.md)；第 15 节仍是针对
+`operon.sqlite`、`config/` 等本地目录的整体备份与迁移。

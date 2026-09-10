@@ -110,4 +110,4 @@ operon ingest --source remote://mycluster/raw/assemblies/ASM_000001/ASM_000001.g
   --entity-type assembly --entity-id ASM_000001 --role genome_fasta
 ```
 
-This page covers content-verified remote mirroring. For whole-project backup and migration of `operon.sqlite`, `config/`, and related directories, see [Backup, Migration, and Resumption](backup-migration.md).
+This page covers content-verified remote mirroring. For the full workflow that keeps data and compute on an HPC while the local project only records events, see [Remote-First Operation](remote-first.md). For whole-project backup and migration of `operon.sqlite`, `config/`, and related directories, see [Backup, Migration, and Resumption](backup-migration.md).
