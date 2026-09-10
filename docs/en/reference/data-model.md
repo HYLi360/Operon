@@ -93,6 +93,7 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | `analysis_jobs` | External analysis jobs: command, version, parameter fingerprint, input/database fingerprints, output checksums, cache state; `recipe_snapshot_id` points back to the recipe snapshot that produced the job |
 | `recipe_snapshots` | Content-addressed recipe snapshots (canonicalized JSON of the verbatim recipe plus its referenced tool spec, with its SHA-256), deduplicated by `UNIQUE(recipe_name, recipe_version, recipe_sha256)`; recorded by `analyze` |
 | `analysis_results` / `analysis_hits` | Analysis summary metrics and top-hits long tables synced into the database |
+| `sequences` | One row per FASTA record (`file_id`, `file_sha256`, `entity_type`, `entity_id`, `seqid`, `length`; `UNIQUE(file_id, seqid)`), populated by built-in FASTA QC (annotation QC also syncs its assembly's sequences) and by `import-qc` of a `qc-measure` payload; powers seqid reverse lookup in `show` and read-only SQL |
 | `taxonomy_snapshots` | NCBI Taxonomy versions, source manifest identities, node counts, and import status |
 | `taxonomy_nodes` / `taxonomy_aliases` | Frozen taxonomy tree nodes and secondary/merged TaxID mappings |
 | `taxonomy_reference_sets` | Denominator TSV identities and per-rank row counts compiled from coverage profiles and taxonomy versions |

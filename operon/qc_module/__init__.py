@@ -366,6 +366,24 @@ def _cached_fasta_lengths(project: Project, record: dict[str, Any], path: Path,
     }
 
 
+def _sync_sequences(db: Database, record: dict[str, Any], lengths: dict[str, int]) -> None:
+    """Replace the sequences-table rows for one file with its measured lengths."""
+    with db.transaction():
+        db.conn.execute("DELETE FROM sequences WHERE file_id=?", (record["file_id"],))
+        db.conn.executemany(
+            "INSERT INTO sequences (file_id, file_sha256, entity_type, entity_id, seqid, length) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    record["file_id"], record["sha256"],
+                    record["entity_type"], record["entity_id"],
+                    seqid, int(length),
+                )
+                for seqid, length in lengths.items()
+            ],
+        )
+
+
 def _qc_timing_details(record: dict[str, Any], file_info: dict[str, Any],
                        timings: dict[str, float], related_inputs: list[dict[str, Any]],
                        duration: float) -> dict[str, Any]:
@@ -469,6 +487,7 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
     )
     parseable = 1
     error: str | None = None
+    sequence_lengths: dict[str, int] | None = None
     metrics: list[dict[str, Any] | None] = [
         metric(entity_type, entity_id, "file_integrity", "file_exists", file_info["exists"]),
         metric(entity_type, entity_id, "file_integrity", "size_bytes", file_info["size_bytes"], "bytes", parameter_set),
@@ -505,6 +524,9 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
                 metric(entity_type, entity_id, stage, name, value, unit, parameter_set)
                 for stage, name, value, unit in _fasta_metric_specs(stats, record["file_role"])
             )
+            sequence_lengths, _length_cache_info = _cached_fasta_lengths(
+                project, record, path, timings,
+            )
         elif record["format"] == "fastq":
             read_parameter_set = f"{parameter_set}:sample_{sample_size}:phred_{phred_offset}"
             stats = _timed_call(
@@ -540,6 +562,11 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             timings, "qc_results_write", _write,
             db, metrics, record, related_inputs,
         )
+        if sequence_lengths is not None:
+            _timed_call(
+                timings, "sequences_sync", _sync_sequences,
+                db, record, sequence_lengths,
+            )
         entity_qc_state, sibling_statuses = _timed_call(
             timings, "state_qc_complete", _recompute_entity_qc_state,
             db, entity_type, entity_id,
@@ -617,6 +644,8 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
             "file_role": row["assembly_file_role"],
             "format": row["assembly_format"],
             "compression": row["assembly_compression"],
+            "entity_type": "assembly",
+            "entity_id": row["assembly_id"],
         }
         assembly_path, assembly_descriptor = _verify_related_input(
             db, project, assembly_record, kind="assembly_fasta",
@@ -628,6 +657,10 @@ def _annotation_metrics(db: Database, project: Project, gff_record: dict[str, An
             project, assembly_record, assembly_path, timings,
         )
         assembly_descriptor["length_cache"] = cache_info
+        _timed_call(
+            timings, "sequences_sync", _sync_sequences,
+            db, assembly_record, assembly_lengths,
+        )
     parser_timings: dict[str, float] = {}
     try:
         stats = gff3_stats(

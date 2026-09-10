@@ -177,12 +177,14 @@ def measure_file(path: str | Path, *, file_format: str, file_role: str,
         _payload_metric("file_integrity", "size_bytes", actual_size, "bytes", parameter_set),
         _payload_metric("file_integrity", "sha256_match", True, None, parameter_set),
     ]
+    sequences: dict[str, int] | None = None
     if file_format == "fasta":
         stats = fasta_stats(path)
         entries.extend(
             _payload_metric(stage, name, value, unit, parameter_set)
             for stage, name, value, unit in _fasta_metric_specs(stats, file_role)
         )
+        sequences = fasta_lengths(path)
     elif file_format == "fastq":
         read_parameter_set = f"{parameter_set}:sample_{sample_size}:phred_{phred_offset}"
         stats = fastq_stats(path, sample_size=sample_size, phred_offset=phred_offset)
@@ -233,4 +235,5 @@ def measure_file(path: str | Path, *, file_format: str, file_role: str,
             "file_role": file_role,
         },
         "metrics": [entry for entry in entries if entry is not None],
+        **({"sequences": sequences} if sequences is not None else {}),
     }

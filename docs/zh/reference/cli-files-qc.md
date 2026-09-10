@@ -74,6 +74,10 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   `qc/cache/fasta_lengths/`；后续 QC 按完整内容身份复用。缓存缺失、格式损坏或身份不
   匹配时自动重建。`--rehash` 强制重新验证源文件 SHA-256，但内容身份未变时仍可复用
   长度索引，因为索引本身按已验证 SHA-256 键控。
+- 每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表
+  （`file_id + file_sha256 + 实体 + seqid + length`，复用同一份长度缓存），支撑
+  `show` 与 `query` 的 seqid 反查。annotation GFF3 的 QC 会额外地把它实际读取的
+  assembly FASTA 的序列同步进表。同一文件的行在每次成功度量时整体替换。
 - 结果按 `file_id + file_sha256 + input_identity` 写入 `qc_results`。
 - 每个文件都有自己的 `QC_COMPLETE`、`QC_FAILED` 或 `QC_PENDING` 状态；实体状态取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），命令会列出每个文件状态。任一文件失败时命令返回非零。
 - `qc` 是本地专属命令（无 `--backend`）。状态为 `REMOTE_ONLY` 的文件会被跳过而不是判为失败：不写 `qc_results`、不改变实体状态，仅向 stderr 打印 `SKIPPED` 警告；显式 `--file-id` 指定的文件全部被跳过时命令以退出码 1 结束。可先 `pull` 拉回字节再运行，或用 `qc-measure` 远程度量后经 `import-qc` 导入；见 [Remote-First 运行模式](../guides/remote-first.md)。
@@ -96,7 +100,7 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
 - 解析前先按 manifest 值校验文件 SHA-256 与大小；不一致即以非零退出码中止。
 - `--role` 按与 `qc` 相同的规则选择 FASTA 指标组：`genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` 产出 `assembly_basic`，其余 role 产出 `sequence_basic`。
 - `--format gff3` 需通过 `--assembly-fasta` 和/或 `--protein-fasta` 提供关联输入，用于 seqid/坐标与 protein 交叉校验指标；二者都缺失时命令失败。双端 FASTQ 用 `--paired-read` 追加 `paired_read_count_match`。
-- JSON payload（schema_version 1）默认写 stdout；指定 `--out` 时原子写入（可作为 `run-external --expected-output` 拉回）。回到项目后用 `operon import-qc --file payload.json` 落库。
+- JSON payload（schema_version 1）默认写 stdout；指定 `--out` 时原子写入（可作为 `run-external --expected-output` 拉回）。回到项目后用 `operon import-qc --file payload.json` 落库。`--format fasta` 的 payload 还额外携带 `sequences` 对象（seqid 到长度的映射），`import-qc` 会把它写入项目的 `sequences` 表。
 
 ## import-qc
 
@@ -110,4 +114,4 @@ TSV 必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, to
 可选列：`file_id, file_sha256, metric_unit, evaluated_at`。
 `file_id`/`file_sha256` 与 manifest 不一致时拒绝导入。
 
-对于 `qc-measure` JSON payload，目标文件按 `file.file_id` 定位；payload 无文件 ID 时按 `file.sha256` 反查（checksum 匹配多条 manifest 记录时拒绝）。payload 的 SHA-256/大小必须与 manifest 一致；由不同 `operon` 版本度量的 payload 只产生警告。两种输入形式在导入后都会重算受影响实体的 QC 状态，并在 `workflow_runs` 中记录一条 `import-qc` 步骤。
+对于 `qc-measure` JSON payload，目标文件按 `file.file_id` 定位；payload 无文件 ID 时按 `file.sha256` 反查（checksum 匹配多条 manifest 记录时拒绝）。payload 的 SHA-256/大小必须与 manifest 一致；由不同 `operon` 版本度量的 payload 只产生警告。FASTA payload 的 `sequences` 映射会同步进所定位文件的 `sequences` 表。两种输入形式在导入后都会重算受影响实体的 QC 状态，并在 `workflow_runs` 中记录一条 `import-qc` 步骤。

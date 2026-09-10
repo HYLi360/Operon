@@ -43,6 +43,21 @@ def resolve_identifier(db: Database, identifier: str) -> tuple[str, str]:
     return next(iter(unique))
 
 
+def sequence_hits(db: Database, identifier: str) -> list[dict[str, Any]]:
+    """Return every sequences-table row whose seqid matches ``identifier``."""
+    rows = db.conn.execute(
+        """
+        SELECT s.seqid, s.length, s.entity_type, s.entity_id, s.file_id, f.relative_path
+        FROM sequences s
+        JOIN files f ON f.file_id = s.file_id
+        WHERE s.seqid=?
+        ORDER BY s.entity_type, s.entity_id, s.file_id
+        """,
+        (identifier.strip(),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def _organism_for(db: Database, entity_type: str, entity_id: str) -> str:
     if entity_type == "organism":
         return entity_id

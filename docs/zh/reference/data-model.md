@@ -106,6 +106,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态；`recipe_snapshot_id` 回指产生该作业的 recipe 快照 |
 | `recipe_snapshots` | 内容寻址的 recipe 快照（recipe 原文 + 引用 tool spec 原文的规范化 JSON 及其 SHA-256），`UNIQUE(recipe_name, recipe_version, recipe_sha256)` 去重；由 `analyze` 记录 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
+| `sequences` | 每条 FASTA 记录一行（`file_id`、`file_sha256`、`entity_type`、`entity_id`、`seqid`、`length`；`UNIQUE(file_id, seqid)`），由内置 FASTA QC 填充（annotation QC 还会同步其 assembly 的序列），`import-qc` 导入 `qc-measure` payload 时也会写入；支撑 `show` 与只读 SQL 的 seqid 反查 |
 | `taxonomy_snapshots` | NCBI Taxonomy 版本、来源 manifest 身份、节点数与导入状态 |
 | `taxonomy_nodes` / `taxonomy_aliases` | 冻结的分类树节点与 secondary/merged TaxID 映射 |
 | `taxonomy_reference_sets` | coverage profile 与 taxonomy 版本编译出的分母 TSV 身份和各 rank 行数 |

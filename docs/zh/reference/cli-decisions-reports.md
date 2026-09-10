@@ -190,7 +190,14 @@ operon show ASM_000001 --include-retired
 
 裸 accession 对应多个实体时拒绝并要求使用带 namespace 的写法。`--json` 输出完整机器可读
 对象，并包含 `scope`、`include_superseded`、`include_retired`、`supersessions` 和
-`retirements` 字段。`show` 使用 SQLite
+`retirements` 字段。
+
+当标识符不匹配任何实体或 accession 时，`show` 会回退查询 `sequences` 表：若该标识符是
+内置 QC 度量过的 FASTA 记录的 seqid，输出会列出每条匹配序列的长度、所属实体、文件 ID 和
+manifest 路径（`--json` 输出 `{"query": ..., "match": "sequence", "sequences": [...]}`）。
+两种查找都不命中时才报告标识符不存在。
+
+`show` 使用 SQLite
 只读连接，因此可安全检查只读挂载或只读数据库副本。若只读介质上仍有非空
 `operon.sqlite-wal`，命令会拒绝 immutable 回退并要求先在可写挂载上 checkpoint，避免忽略
 未合并事务而显示过期数据。

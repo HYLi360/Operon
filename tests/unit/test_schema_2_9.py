@@ -21,7 +21,7 @@ class TestSchema29(PytestAssertions):
         self.addCleanup(self.db.close)
 
     def test_schema_2_9_columns_and_tables_exist(self):
-        self.assertEqual(SCHEMA_VERSION, "2.9")
+        self.assertEqual(SCHEMA_VERSION, "2.10")
         for column in ("max_rss_mb", "duration_seconds", "avg_rss_mb", "cpu_seconds"):
             self.assertIn(column, self.db.table_columns("workflow_runs"))
         self.assertIn("recipe_snapshot_id", self.db.table_columns("analysis_jobs"))

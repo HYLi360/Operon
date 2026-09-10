@@ -18,8 +18,8 @@ from operon.backup import create_backup, verify_backup
 from operon.config import Project, load_project
 from operon.coverage import report_coverage
 from operon.database import Database
-from operon.entity_view import entity_graph
-from operon.errors import OperonError, ValidationError
+from operon.entity_view import entity_graph, sequence_hits
+from operon.errors import EntityNotFoundError, OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
 from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table
@@ -1120,7 +1120,7 @@ def _is_qc_json_payload(path: Path) -> bool:
 
 def _import_qc_json(args: argparse.Namespace, project: Project, db: Database,
                     started_at: str) -> int:
-    from operon.qc_module import MEASURE_SCHEMA_VERSION, TOOL_NAME
+    from operon.qc_module import MEASURE_SCHEMA_VERSION, TOOL_NAME, _sync_sequences
     source = Path(args.tsv_file)
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
@@ -1192,6 +1192,9 @@ def _import_qc_json(args: argparse.Namespace, project: Project, db: Database,
             "evaluated_at": evaluated_at,
         })
         count += 1
+    sequences = payload.get("sequences")
+    if isinstance(sequences, dict):
+        _sync_sequences(db, dict(file_row), {str(seqid): int(length) for seqid, length in sequences.items()})
     entities = [(file_row["entity_type"], file_row["entity_id"])]
     _recompute_imported_qc_states(db, entities)
     _log_import_qc_run(project, db, str(args.tsv_file), started_at=started_at,
@@ -1923,13 +1926,33 @@ def _cmd_import(args: argparse.Namespace, project: Project, db: Database) -> int
 
 
 def _cmd_show(args: argparse.Namespace, db: Database) -> int:
-    graph = entity_graph(
-        db,
-        args.identifier,
-        scope=getattr(args, "scope", "matched"),
-        include_superseded=getattr(args, "include_superseded", False),
-        include_retired=getattr(args, "include_retired", False),
-    )
+    try:
+        graph = entity_graph(
+            db,
+            args.identifier,
+            scope=getattr(args, "scope", "matched"),
+            include_superseded=getattr(args, "include_superseded", False),
+            include_retired=getattr(args, "include_retired", False),
+        )
+    except EntityNotFoundError:
+        hits = sequence_hits(db, args.identifier)
+        if not hits:
+            raise
+        if args.json:
+            print(json.dumps(
+                {"query": args.identifier, "match": "sequence", "sequences": hits},
+                ensure_ascii=False, indent=2,
+            ))
+            return 0
+        print(f"Matched:  sequence {args.identifier}")
+        print(f"\nSequences ({len(hits)})")
+        print(format_table(
+            ["seqid", "length", "entity_type", "entity_id", "file_id", "relative_path"],
+            ([row[column] for column in
+              ("seqid", "length", "entity_type", "entity_id", "file_id", "relative_path")]
+             for row in hits),
+        ))
+        return 0
     if args.json:
         print(json.dumps(graph, ensure_ascii=False, indent=2))
         return 0
