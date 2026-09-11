@@ -103,6 +103,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--project", default=".", help="project root or project.yaml path (default: current directory)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
+    from operon.timetree import add_parser as add_timetree_parser
+    add_timetree_parser(sub)
 
     p = sub.add_parser("init", help="initialize a new Operon project")
     p.add_argument("path", nargs="?", default=".")
@@ -2256,6 +2258,9 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_init_demo(args)
         if args.command == "qc-measure":
             return _cmd_qc_measure(args)
+        if args.command == "timetree":
+            from operon.timetree import run_cli
+            return run_cli(args)
         if args.command == "backup" and args.backup_command == "verify":
             return _cmd_backup_verify(args)
         if args.command == "tui":
