@@ -159,7 +159,7 @@ def _validate_condition(condition: Any, where: str) -> None:
 
 def _validate_best_by(best_by: Any, where: str) -> list[dict[str, Any]]:
     if best_by is None:
-        return [{"field": "hit_rank", "direction": "asc"}]
+        return [{"field": "hit_rank", "direction": "asc", "rank": None, "default": None}]
     if not isinstance(best_by, list) or not best_by:
         raise ValidationError(f"{where}: 'best_by' must be a non-empty list")
     entries = []

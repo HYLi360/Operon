@@ -176,6 +176,19 @@ class TestProfileValidation(PytestAssertions):
                          [{"field": "evalue", "direction": "asc", "rank": None, "default": None}])
         self.assertEqual([rule["label"] for rule in spec["rules"]], ["HIT", "NONE", "OTHER"])
 
+    def test_source_without_best_by_uses_sortable_default(self):
+        profile = self._profile()
+        del profile["sources"]["core"]["best_by"]
+        spec = validate_classification_profile(profile, "tier")
+        default = [{"field": "hit_rank", "direction": "asc", "rank": None, "default": None}]
+        self.assertEqual(spec["sources"]["core"]["best_by"], default)
+        key = _best_sort_key(spec["sources"]["core"]["best_by"])
+        low = {"hit_rank": 1, "alignment_id": 1}
+        high = {"hit_rank": 2, "alignment_id": 2}
+        missing = {"alignment_id": 3}
+        ordered = sorted([missing, high, low], key=key)
+        self.assertEqual([row["alignment_id"] for row in ordered], [1, 2, 3])
+
     def test_validation_errors(self):
         bad_profiles = [
             self._profile(applies_to=["annotation"]),
