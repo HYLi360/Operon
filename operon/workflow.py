@@ -370,12 +370,18 @@ def run_external_command(
         stage_inputs: Iterable[str | Path] = (),
         executor: Any = None,
         run_id: str | None = None,
+        commands: Iterable[Iterable[str]] | None = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 
     stdout/stderr are preserved as files, exit code is captured, and the run is
     recorded as structured JSON.  Completion is only recorded after all expected
     outputs exist and are non-empty.
+
+    ``commands`` replaces the single ``argv`` with an ordered chain of argv
+    lists executed through the same executor under one run record: the first
+    non-zero step aborts the chain (the error names the failing step) and each
+    step's argv and exit code are listed in ``execution_details``.
 
     ``inputs`` declares input artifacts: each must exist, is hashed, and the
     sorted ``path:sha256`` lines are combined into the run's ``input_sha256``.
@@ -398,6 +404,11 @@ def run_external_command(
     logs = project.logs_root
     logs.mkdir(parents=True, exist_ok=True)
     run_id = run_id or new_run_id()
+    argv_steps = (
+        [[str(a) for a in block] for block in commands]
+        if commands is not None
+        else [[str(a) for a in argv]]
+    )
     stdout_file = logs / f"{run_id}.stdout.log"
     stderr_file = logs / f"{run_id}.stderr.log"
     record: dict[str, Any] = {
@@ -405,7 +416,11 @@ def run_external_command(
         "entity_type": entity_type,
         "entity_id": entity_id,
         "step": step,
-        "command": shlex.join(str(a) for a in argv),
+        "command": (
+            " && ".join(shlex.join(block) for block in argv_steps)
+            if len(argv_steps) > 1
+            else shlex.join(str(a) for a in argv)
+        ),
         "parameter_set": parameter_set,
         "started_at": started,
         "tool": tool,
@@ -463,11 +478,31 @@ def run_external_command(
                 environment = probe()
             except Exception:
                 environment = None  # probe failures must never affect the run
-        result = executor.run(
-            argv, cwd=cwd, stdout_path=stdout_file, stderr_path=stderr_file,
-            timeout=timeout, threads=threads, run_id=run_id,
-            stage_inputs=resolved_stage_inputs, expected_outputs=resolved_outputs,
-        )
+        step_records: list[dict[str, Any]] = []
+        result = None
+        for step_index, step_argv in enumerate(argv_steps, start=1):
+            if len(argv_steps) > 1:
+                step_stdout = logs / f"{run_id}.step{step_index}.stdout.log"
+                step_stderr = logs / f"{run_id}.step{step_index}.stderr.log"
+                step_run_id = f"{run_id}-s{step_index}"
+            else:
+                step_stdout, step_stderr, step_run_id = stdout_file, stderr_file, run_id
+            result = executor.run(
+                step_argv, cwd=cwd, stdout_path=step_stdout, stderr_path=step_stderr,
+                timeout=timeout, threads=threads, run_id=step_run_id,
+                stage_inputs=resolved_stage_inputs if step_index == 1 else (),
+                expected_outputs=resolved_outputs if step_index == len(argv_steps) else (),
+            )
+            step_records.append({
+                "index": step_index,
+                "argv": step_argv,
+                "exit_code": result.exit_code,
+                "stdout_file": str(step_stdout),
+                "stderr_file": str(step_stderr),
+            })
+            stdout_file, stderr_file = step_stdout, step_stderr
+            if result.exit_code != 0 or result.error:
+                break
         record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
         record["scheduler_job_id"] = result.scheduler_job_id
         # Duck-typed executors may predate the resources field.
@@ -478,6 +513,8 @@ def run_external_command(
         record["avg_rss_mb"] = resources.get("avg_rss_mb")
         record["cpu_seconds"] = resources.get("cpu_seconds")
         details = dict(result.details)
+        if len(argv_steps) > 1:
+            details["steps"] = step_records
         if input_entries:
             details["inputs"] = input_entries
         if extra_details:
@@ -488,10 +525,18 @@ def run_external_command(
             environment = result.details["environment"]
         if result.exit_code != 0:
             record["error"] = result.error or f"exit code {result.exit_code}"
+            if len(argv_steps) > 1:
+                record["error"] = (
+                    f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
+                )
             record["status"] = "failed"
         elif result.error:
             record["status"] = "failed"
             record["error"] = result.error
+            if len(argv_steps) > 1:
+                record["error"] = (
+                    f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
+                )
         else:
             for path in resolved_outputs:
                 if not path_is_nonempty(path):

@@ -157,7 +157,7 @@ def test_list_helpers(project: Project) -> None:
     assert "coverage_viridiplantae_v1" not in names
 
     tools = data.list_tools(project)
-    assert {tool["name"] for tool in tools} == {"blastn", "blastp", "hmmsearch", "busco"}
+    assert {tool["name"] for tool in tools} == {"blastn", "blastp", "hmmsearch", "busco", "rpsblast"}
 
     recipes = data.list_recipes(project)
     by_name = {recipe["name"]: recipe for recipe in recipes}
@@ -621,7 +621,7 @@ def test_config_screen_recipe_save_end_to_end(project: Project) -> None:
             panel.query_one("#config-tabs", TabbedContent).active = "tab-tools"
             await pilot.pause()
             recipes_table = panel.query_one("#recipes-table", DataTable)
-            assert recipes_table.row_count == 5
+            assert recipes_table.row_count == 6
 
             panel._load_recipe("blastn_nt")
             await pilot.pause()

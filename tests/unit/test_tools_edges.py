@@ -495,3 +495,180 @@ def test_print_tools_table_records_detection_errors(tmp_path, monkeypatch):
     monkeypatch.setattr(tools, "detect_tool_version", lambda *_a: (_ for _ in ()).throw(ExternalToolError("no")))
     table, ok = tools.print_tools_table(p)
     assert ok is False and "ERROR" in table and "a" in table
+
+
+
+RPSBPROC_SAMPLE = (
+    "#Post-RPSBLAST Processing Utility\n"
+    "#DATA\n"
+    "DATA\n"
+    "SESSION\t1\tblastp\t2.16.0+\tcdd/Cdd\tBLOSUM62\t0.001\n"
+    "QUERY\tQuery_1\tPeptide\t153\tAchn000591|Actinidia chinensis|bHLH|Achn000591\n"
+    "DOMAINS\n"
+    "1\tQuery_1\tSpecific\t381460\t51\t110\t5.61192e-33\t110.945\tcd11454\tbHLH_AtIND_like\t-\t469605\n"
+    "1\tQuery_1\tSuperfamily\t473069\t60\t120\t1.5e-20\t90.1\tcl17169\tRRM_SF\t-\t-\n"
+    "ENDDOMAINS\n"
+    "SITES\n"
+    "1\tQuery_1\tSpecific\tputative DNA binding site\tQ55,S56\t9\t9\t381460\n"
+    "ENDSITES\n"
+    "MOTIFS\n"
+    "1\tQuery_1\tsome motif\t1\t10\t381460\n"
+    "ENDMOTIFS\n"
+    "ENDQUERY\tQuery_1\n"
+    "QUERY\tQuery_2\tPeptide\t95\tAchn008041 no domain hits\n"
+    "ENDQUERY\tQuery_2\n"
+    "ENDSESSION\t1\n"
+    "SESSION\t2\tblastp\t2.16.0+\tcdd/Cdd\tBLOSUM62\t0.001\n"
+    "QUERY\tQuery_1\tPeptide\t50\tsession two définition, with spaces\n"
+    "DOMAINS\n"
+    "2\tQuery_1\tNon-specific\t381399\t5\t40\t4.10927e-12\t55.6503\tcd11393\tbHLH_AtbHLH_like\tNC\t469605\n"
+    "ENDDOMAINS\n"
+    "ENDQUERY\tQuery_1\n"
+    "ENDSESSION\t2\n"
+    "ENDDATA\n"
+    "trailing garbage is ignored\n"
+    "1\tQuery_9\tSpecific\t1\n"
+)
+
+
+def test_rpsbproc_parser_sessions_definitions_and_extras(tmp_path):
+    out = tmp_path / "res.out"
+    out.write_text(RPSBPROC_SAMPLE, encoding="utf-8")
+    hits, alignments = tools.parse_hits(out, recipe(result_parser="rpsbproc_tabular"))
+    assert [(a["query_id"], a["subject_id"], a["rank"]) for a in alignments] == [
+        ("Achn000591|Actinidia chinensis|bHLH|Achn000591", "cd11454", 1),
+        ("Achn000591|Actinidia chinensis|bHLH|Achn000591", "cl17169", 2),
+        ("session two définition, with spaces", "cd11393", 1),
+    ]
+    first = alignments[0]
+    assert first["qstart"] == 51 and first["qend"] == 110
+    assert first["sstart"] is None and first["send"] is None and first["pident"] is None
+    assert first["evalue"] == 5.61192e-33
+    assert first["bitscore"] == 110.945
+    assert first["extra"] == {
+        "hit_type": "Specific", "pssm_id": "381460", "short_name": "bHLH_AtIND_like",
+        "incomplete": "-", "superfamily_pssm": "469605",
+        "session": "1", "rps_query_id": "Query_1",
+    }
+    assert alignments[1]["extra"]["hit_type"] == "Superfamily"
+    assert alignments[1]["extra"]["superfamily_pssm"] == "-"
+    third = alignments[2]
+    assert third["extra"]["hit_type"] == "Non-specific"
+    assert third["extra"]["incomplete"] == "NC"
+    assert third["extra"]["session"] == "2"
+    assert [(h["metric_name"], h["rank"]) for h in hits] == [
+        ("evalue", 1), ("bitscore", 1),
+        ("evalue", 2), ("bitscore", 2),
+        ("evalue", 1), ("bitscore", 1),
+    ]
+    assert hits[0]["query_id"] == "Achn000591|Actinidia chinensis|bHLH|Achn000591"
+    assert hits[0]["subject_id"] == "cd11454"
+    assert hits[0]["metric_numeric"] == 5.61192e-33
+
+
+def test_rpsbproc_parser_eav_truncated_alignments_full(tmp_path):
+    out = tmp_path / "res.out"
+    out.write_text(RPSBPROC_SAMPLE, encoding="utf-8")
+    r = recipe(result_parser="rpsbproc_tabular", max_hits_per_query=1)
+    hits, alignments = tools.parse_hits(out, r)
+    assert len(alignments) == 3
+    truncated = [
+        (h["query_id"], h["rank"]) for h in hits
+        if h["query_id"].startswith("Achn000591")
+    ]
+    assert truncated == [("Achn000591|Actinidia chinensis|bHLH|Achn000591", 1)] * 2
+
+
+def test_rpsbproc_parser_hard_errors(tmp_path):
+    duplicate = (
+        "DATA\nSESSION\t1\tblastp\tdb\tBLOSUM62\t0.001\n"
+        "QUERY\tQuery_1\tPeptide\t10\tdef one\nENDQUERY\n"
+        "QUERY\tQuery_1\tPeptide\t10\tdef two\nENDQUERY\n"
+        "ENDSESSION\t1\nENDDATA\n"
+    )
+    out = tmp_path / "dup.out"
+    out.write_text(duplicate, encoding="utf-8")
+    with pytest.raises(ExternalToolError, match="duplicate rpsbproc query"):
+        tools.parse_hits(out, recipe(result_parser="rpsbproc_tabular"))
+
+    malformed_query = "DATA\nSESSION\t1\tx\nQUERY\tQuery_1\tPeptide\nENDDATA\n"
+    out.write_text(malformed_query, encoding="utf-8")
+    with pytest.raises(ExternalToolError, match="malformed rpsbproc QUERY"):
+        tools.parse_hits(out, recipe(result_parser="rpsbproc_tabular"))
+
+    malformed_domain = (
+        "DATA\nSESSION\t1\tx\nQUERY\tQuery_1\tPeptide\t10\td\nDOMAINS\n"
+        "1\tQuery_1\tSpecific\t381460\t51\nENDDOMAINS\nENDQUERY\nENDDATA\n"
+    )
+    out.write_text(malformed_domain, encoding="utf-8")
+    with pytest.raises(ExternalToolError, match="malformed rpsbproc domain record"):
+        tools.parse_hits(out, recipe(result_parser="rpsbproc_tabular"))
+
+    orphan_domain = (
+        "DATA\nSESSION\t1\tx\nDOMAINS\n"
+        "1\tQuery_1\tSpecific\t381460\t51\t110\t1e-5\t50\tcd1\tx\t-\t-\n"
+        "ENDDOMAINS\nENDDATA\n"
+    )
+    out.write_text(orphan_domain, encoding="utf-8")
+    with pytest.raises(ExternalToolError, match="without a preceding QUERY"):
+        tools.parse_hits(out, recipe(result_parser="rpsbproc_tabular"))
+
+
+def test_recipe_commands_config_validation(tmp_path, monkeypatch):
+    p = project(tmp_path)
+
+    def load(config):
+        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+
+    load({"tools": {"t": {"recipes": {"a": {
+        "arguments": ["-x"],
+        "commands": [{"arguments": ["step"]}],
+    }}}}})
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        tools.get_recipe(p, "a")
+
+    for bad in ("not-a-list", [], ["step"], [{"arguments": []}], [{"name": "x"}]):
+        load({"tools": {"t": {"recipes": {"a": {"commands": bad}}}}})
+        with pytest.raises(ValidationError, match="commands"):
+            tools.get_recipe(p, "a")
+
+    load({"tools": {"t": {"recipes": {"a": {
+        "commands": [
+            {"arguments": ["rpsblast", "-query", "${input}"]},
+            {"arguments": ["rpsbproc", "-o", "${output}"]},
+        ],
+    }}}}})
+    r = tools.get_recipe(p, "a")
+    assert r.commands == [
+        ["rpsblast", "-query", "${input}"],
+        ["rpsbproc", "-o", "${output}"],
+    ]
+    assert r.arguments == []
+
+
+def test_render_arguments_work_dir_placeholder(tmp_path):
+    file_record = {"file_id": "F1", "file_role": "protein_fasta",
+                   "entity_type": "annotation", "entity_id": "A1"}
+    r = recipe()
+    rendered = tools.render_arguments(
+        r, input_path=tmp_path / "in.faa", output_path=tmp_path / "out.tsv",
+        database_path=None, threads=2, file_record=file_record,
+        work_dir=tmp_path / "out.tsv.work",
+        arguments=["-out", "${work_dir}/hits.asn"],
+    )
+    assert rendered == ["-out", str(tmp_path / "out.tsv.work" / "hits.asn")]
+    with pytest.raises(ValidationError, match="unresolved placeholder"):
+        tools.render_arguments(
+            r, input_path=tmp_path / "in.faa", output_path=tmp_path / "out.tsv",
+            database_path=None, threads=2, file_record=file_record,
+            arguments=["${work_dir}/hits.asn"],
+        )
+
+
+def test_parameter_fingerprint_commands_opt_in():
+    r = recipe()
+    plain = tools.parameter_fingerprint(r, ["a"], 1, "v")
+    assert plain == tools.parameter_fingerprint(r, ["a"], 1, "v", commands=None)
+    with_commands = tools.parameter_fingerprint(r, ["a"], 1, "v", commands=[["x"], ["y"]])
+    assert with_commands != plain
+    assert with_commands != tools.parameter_fingerprint(r, ["a"], 1, "v", commands=[["x"], ["z"]])

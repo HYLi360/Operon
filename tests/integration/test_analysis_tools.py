@@ -664,3 +664,201 @@ class TestAnalysisTools(PytestAssertions):
             ("query2", "PF00002.10", "evalue"),
             ("query2", "PF00002.10", "score"),
         ])
+
+
+class TestRpsbprocCommandChain(PytestAssertions):
+    def setup_method(self):
+        super().setup_method()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_RPS_001"]), 0)
+        self.project = load_project(self.root)
+        self.db = Database(self.project.db_path)
+        self.addCleanup(self.db.close)
+
+    def _write_fake_rpsblast(self) -> Path:
+        script = self.root / "fakerpsblast.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            from pathlib import Path
+            args = sys.argv[1:]
+            if '-version' in args:
+                print('rpsblast: 9.9.9')
+                raise SystemExit(0)
+            out = Path(args[args.index('-out') + 1])
+            assert out.parent.is_dir(), 'work dir was not created'
+            assert args[args.index('-outfmt') + 1] == '11'
+            out.write_text('FAIL\\n' if '-bad' in args else 'ASN1\\n', encoding='utf-8')
+        """).strip(), encoding="utf-8")
+        return script
+
+    def _write_fake_rpsbproc(self) -> Path:
+        script = self.root / "fakerpsbproc.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            from pathlib import Path
+            args = sys.argv[1:]
+            inp = Path(args[args.index('-i') + 1])
+            out = Path(args[args.index('-o') + 1])
+            assert inp.is_file(), 'intermediate rpsblast output missing'
+            if inp.read_text(encoding='utf-8').strip() == 'FAIL':
+                raise SystemExit(3)
+            with open(out, 'w') as handle:
+                handle.write('DATA\\n')
+                handle.write('SESSION\\t1\\tblastp\\t2.16.0+\\tcdd/Cdd\\tBLOSUM62\\t0.001\\n')
+                handle.write('QUERY\\tQuery_1\\tPeptide\\t120\\tprot1|Testus|bHLH|prot1\\n')
+                handle.write('DOMAINS\\n')
+                handle.write('1\\tQuery_1\\tSpecific\\t381460\\t10\\t60\\t1e-20\\t80.5\\tcd00001\\tbHLH\\t-\\t469605\\n')
+                handle.write('1\\tQuery_1\\tSuperfamily\\t473069\\t20\\t80\\t1e-10\\t60.1\\tcl00001\\tbHLH_SF\\t-\\t-\\n')
+                handle.write('ENDDOMAINS\\n')
+                handle.write('SITES\\nENDSITES\\n')
+                handle.write('ENDQUERY\\tQuery_1\\n')
+                handle.write('ENDSESSION\\t1\\n')
+                handle.write('ENDDATA\\n')
+        """).strip(), encoding="utf-8")
+        return script
+
+    def _write_chain_config(self, rpsblast: Path, rpsbproc: Path, database: Path,
+                            step1_extra: list[str] | None = None, with_arguments: bool = False):
+        recipe = {
+            "entity_type": "annotation", "file_role": "protein_fasta",
+            "format": "fasta",
+            "database": str(database), "database_version": "cdd-test",
+            "output_subdir": "rps_cdd", "output_suffix": ".rpsbproc.tsv",
+            "commands": [
+                {"arguments": [
+                    str(rpsblast), "-query", "${input}", "-db", "${database}",
+                    "-out", "${work_dir}/hits.asn", "-outfmt", "11",
+                    "-num_threads", "${threads}", *(step1_extra or []),
+                ]},
+                {"arguments": [
+                    str(rpsbproc), "-i", "${work_dir}/hits.asn", "-o", "${output}",
+                ]},
+            ],
+            "result_parser": "rpsbproc_tabular",
+            "max_hits_per_query": 1,
+        }
+        if with_arguments:
+            recipe["arguments"] = ["-query", "${input}"]
+        config = {
+            "version": 1,
+            "tools": {
+                "rpsblast": {
+                    "executable": str(rpsblast), "run_method": sys.executable,
+                    "version_args": ["-version"], "version_pattern": r"rpsblast:\s*([^\s]+)",
+                    "recipes": {"rps_cdd": recipe},
+                }
+            },
+        }
+        self.project.tools_config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    def _add_annotation(self):
+        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
+        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row("annotations", {
+            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
+            "annotation_source": "test", "annotation_version": 1,
+        })
+        proteins = self.root / "proteins.faa"
+        proteins.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
+        return ingest_file(
+            self.db, self.project, proteins, "annotation", "ANN_000001", "protein_fasta"
+        )
+
+    def _output_dir(self) -> Path:
+        return self.project.analysis_root / "rps_cdd" / "ANN_000001"
+
+    def test_command_chain_runs_caches_and_stores_alignments(self):
+        database = self.root / "Cdd"
+        database.write_text("fake cdd\n", encoding="utf-8")
+        rpsblast = self._write_fake_rpsblast()
+        rpsbproc = self._write_fake_rpsbproc()
+        self._write_chain_config(rpsblast, rpsbproc, database)
+        self._add_annotation()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+        job = self.db.query("SELECT * FROM analysis_jobs")[0]
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(job["tool_version"], "9.9.9")
+        self.assertIn(" && ", job["command"])
+        parameter_set = json.loads(job["parameter_set"])
+        self.assertEqual(len(parameter_set["commands"]), 2)
+
+        runs = self.db.query("SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'")
+        self.assertEqual(len(runs), 1)
+        details = json.loads(runs[0]["execution_details"])
+        self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 0])
+        self.assertEqual(details["steps"][0]["argv"][:2], [sys.executable, str(rpsblast)])
+        self.assertEqual(details["steps"][1]["argv"][:2], [sys.executable, str(rpsbproc)])
+        self.assertTrue(all(Path(s["stdout_file"]).is_file() for s in details["steps"]))
+
+        alignments = self.db.query("SELECT * FROM analysis_alignments ORDER BY hit_rank")
+        self.assertEqual(
+            [(r["query_id"], r["subject_id"], r["hit_rank"]) for r in alignments],
+            [("prot1|Testus|bHLH|prot1", "cd00001", 1), ("prot1|Testus|bHLH|prot1", "cl00001", 2)],
+        )
+        first = alignments[0]
+        self.assertEqual(first["query_start"], 10)
+        self.assertEqual(first["query_end"], 60)
+        self.assertAlmostEqual(first["evalue"], 1e-20)
+        self.assertAlmostEqual(first["bitscore"], 80.5)
+        self.assertEqual(json.loads(first["extra_json"]), {
+            "hit_type": "Specific", "pssm_id": "381460", "short_name": "bHLH",
+            "incomplete": "-", "superfamily_pssm": "469605",
+            "session": "1", "rps_query_id": "Query_1",
+        })
+        hits = self.db.query("SELECT * FROM analysis_hits ORDER BY metric_name")
+        self.assertEqual([(h["metric_name"], h["hit_rank"]) for h in hits],
+                         [("bitscore", 1), ("evalue", 1)])
+
+        # The scratch work directory is removed once the run finishes.
+        self.assertTrue((self._output_dir()).is_dir())
+        self.assertEqual(list(self._output_dir().glob("*.work")), [])
+
+        # Identical rerun is a cache hit: no new job, alignments not duplicated.
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 2)
+
+        # --force supersedes the cached row and re-executes both steps.
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd", "--force"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='superseded'")[0]["n"], 1)
+        completed = self.db.query("SELECT job_id FROM analysis_jobs WHERE status='completed'")[0]
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments WHERE job_id=?",
+                          (completed["job_id"],))[0]["n"], 2)
+        self.assertEqual(list(self._output_dir().glob("*.work")), [])
+
+    def test_command_chain_second_step_failure_fails_job(self):
+        database = self.root / "Cdd"
+        database.write_text("fake cdd\n", encoding="utf-8")
+        rpsblast = self._write_fake_rpsblast()
+        rpsbproc = self._write_fake_rpsbproc()
+        self._write_chain_config(rpsblast, rpsbproc, database, step1_extra=["-bad"])
+        self._add_annotation()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 1)
+        job = self.db.query("SELECT * FROM analysis_jobs")[0]
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("step 2/2 failed", job["error"])
+        runs = self.db.query("SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'")
+        self.assertEqual(len(runs), 1)
+        details = json.loads(runs[0]["execution_details"])
+        self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 3])
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 0)
+        self.assertEqual(list(self._output_dir().glob("*.work")), [])
+
+    def test_recipe_rejects_commands_and_arguments_together(self):
+        database = self.root / "Cdd"
+        database.write_text("fake cdd\n", encoding="utf-8")
+        rpsblast = self._write_fake_rpsblast()
+        rpsbproc = self._write_fake_rpsbproc()
+        self._write_chain_config(rpsblast, rpsbproc, database, with_arguments=True)
+        self._add_annotation()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 2)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
