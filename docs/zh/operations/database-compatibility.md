@@ -96,6 +96,14 @@ NOT EXISTS），账本记录为 `2.9-lineage-recipes-resources`；不改写任�
 `tests/unit/test_schema_2_10.py` 的 `test_schema_2_10_tables_exist` 与
 `test_migration_backfills_dropped_2_10_objects`。
 
+`Database._migrate_schema_2_11()` 为 2.10 项目纯加法增加 `sequence_labels`
+表（按 `file_id + seqid + profile_name` 主键存储逐序列分类标签，附带判定所用
+profile 的内容哈希、可审计的判定细节与判定时间戳，由 `operon classify-sequences`
+写入）及其标签索引。迁移幂等（CREATE TABLE/INDEX IF NOT EXISTS），账本记录为
+`2.11-sequence-labels`；不改写任何既有行。只要仍支持打开 2.10 项目就必须保留。
+对应测试为 `tests/unit/test_schema_2_11.py` 的 `test_schema_2_11_tables_exist`
+与 `test_migration_backfills_dropped_2_11_objects`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。

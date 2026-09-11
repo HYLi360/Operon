@@ -20,7 +20,7 @@ class TestSchema210(PytestAssertions):
         self.addCleanup(self.db.close)
 
     def test_schema_2_10_tables_exist(self):
-        self.assertEqual(SCHEMA_VERSION, "2.10")
+        self.assertEqual(SCHEMA_VERSION, "2.11")
         self.assertEqual(
             self.db.table_columns("sequences"),
             ["sequence_row_id", "file_id", "file_sha256", "entity_type",

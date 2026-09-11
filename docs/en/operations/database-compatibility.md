@@ -43,6 +43,8 @@ The migration does not delete or rewrite existing assembly, annotation, file, QC
 
 `Database._migrate_schema_2_10()` adds, purely additively, for 2.9 projects: the `sequences` table (per-sequence lengths keyed by `file_id + seqid`, populated by built-in FASTA QC and `import-qc`) and the `analysis_alignments` table (alignment hit rows for external analysis jobs), plus their indexes. The migration is idempotent (CREATE TABLE/INDEX IF NOT EXISTS) and recorded in the ledger as `2.10-sequences-alignments`; it rewrites no existing rows. It must be kept as long as opening 2.9 projects is supported. The corresponding tests are `test_schema_2_10_tables_exist` and `test_migration_backfills_dropped_2_10_objects` in `tests/unit/test_schema_2_10.py`.
 
+`Database._migrate_schema_2_11()` adds, purely additively, for 2.10 projects: the `sequence_labels` table (per-sequence classification labels keyed by `file_id + seqid + profile_name`, with the deciding profile content hash, audit details, and decision timestamp, written by `operon classify-sequences`) plus its label index. The migration is idempotent (CREATE TABLE/INDEX IF NOT EXISTS) and recorded in the ledger as `2.11-sequence-labels`; it rewrites no existing rows. It must be kept as long as opening 2.10 projects is supported. The corresponding tests are `test_schema_2_11_tables_exist` and `test_migration_backfills_dropped_2_11_objects` in `tests/unit/test_schema_2_11.py`.
+
 The corresponding regression test is `test_v1_qc_and_decisions_migrate_without_data_loss` in `tests/regression/test_correctness.py`. When the migration code is removed, remove that test as well, and record the incompatibility with legacy databases in the 1.0 release notes.
 
 ## Automatic project metadata-schema upgrades

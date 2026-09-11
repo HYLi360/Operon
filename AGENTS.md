@@ -27,7 +27,7 @@ principle-to-implementation mapping.
 Current version markers (must stay consistent across code and docs):
 
 - `operon` 0.7.0 (`pyproject.toml`)
-- database schema 2.10 (`operon/database.py`, `SCHEMA_VERSION`)
+- database schema 2.11 (`operon/database.py`, `SCHEMA_VERSION`)
 - metadata schema 1.4 (`operon/schema.py`, `METADATA_SCHEMA_VERSION`)
 
 The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).

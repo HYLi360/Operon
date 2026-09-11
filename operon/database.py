@@ -19,7 +19,7 @@ from typing import Any, Iterable, Iterator
 from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 
-SCHEMA_VERSION = "2.10"
+SCHEMA_VERSION = "2.11"
 
 MANUAL_TABLES = [
     "organisms",
@@ -366,6 +366,17 @@ CREATE INDEX IF NOT EXISTS idx_sequences_entity ON sequences(entity_type, entity
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_query ON analysis_alignments(analysis_name, query_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_subject ON analysis_alignments(subject_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_job ON analysis_alignments(job_id, query_id, hit_rank);
+CREATE TABLE IF NOT EXISTS sequence_labels (
+    file_id TEXT NOT NULL REFERENCES files(file_id),
+    seqid TEXT NOT NULL,
+    label TEXT NOT NULL,
+    profile_name TEXT NOT NULL,
+    profile_sha256 TEXT NOT NULL,
+    details_json TEXT,
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (file_id, seqid, profile_name)
+);
+CREATE INDEX IF NOT EXISTS idx_sequence_labels_label ON sequence_labels(label);
 CREATE INDEX IF NOT EXISTS idx_files_entity ON files(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
 CREATE INDEX IF NOT EXISTS idx_accessions_internal ON accessions(internal_type, internal_id);
@@ -718,6 +729,7 @@ class Database:
         self._migrate_environment_schema_2_8()
         self._migrate_schema_2_9()
         self._migrate_schema_2_10()
+        self._migrate_schema_2_11()
         self._ensure_current_schema_objects()
         self._conn.execute(
             "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -1019,6 +1031,32 @@ class Database:
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
             "VALUES('2.10-sequences-alignments', ?, datetime('now'), NULL)",
+            (migration_sha256,),
+        )
+
+    def _migrate_schema_2_11(self) -> None:
+        """Add the per-sequence classification label store."""
+        self._conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS sequence_labels (
+                file_id TEXT NOT NULL REFERENCES files(file_id),
+                seqid TEXT NOT NULL,
+                label TEXT NOT NULL,
+                profile_name TEXT NOT NULL,
+                profile_sha256 TEXT NOT NULL,
+                details_json TEXT,
+                decided_at TEXT NOT NULL,
+                PRIMARY KEY (file_id, seqid, profile_name)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sequence_labels_label ON sequence_labels(label);
+            """
+        )
+        migration_document = "operon schema 2.11: sequence classification labels"
+        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.11-sequence-labels', ?, datetime('now'), NULL)",
             (migration_sha256,),
         )
 
