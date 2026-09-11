@@ -10,9 +10,10 @@
 | `blast_tabular` | Tab-separated file | Top hits, query/hit summary, best e-value, plus full structured alignment rows |
 | `hmmer_tblout` | HMMER `--tblout` file | Query-target e-value/score and summary |
 | `hmmer_domtblout` | HMMER `--domtblout` file | Per-domain i-Evalue/score hits plus full structured alignment rows |
+| `rpsbproc_tabular` | rpsbproc tabular report | Per-domain e-value/bitscore hits plus full structured alignment rows |
 | `busco_json` | BUSCO output directory or JSON file | Completeness, single-copy/duplicated, fragmented/missing, lineage and version metadata |
 
-All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
+All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
 
 ### 10.1 `blast_tabular`
 
@@ -92,6 +93,8 @@ tools:
         max_hits_per_query: 5
 ```
 
+When the rpsblast run is instead post-processed by `rpsbproc` (the recommended CDD pipeline), use a `commands` chain with the `rpsbproc_tabular` parser — see below.
+
 ### 10.2 `hmmer_tblout`
 
 This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
@@ -150,6 +153,78 @@ The JSON must contain at least `results.Complete percentage` and `results.n_mark
 - Marker count, domain, and one-line summary;
 - Lineage name, creation date, BUSCO count, and species count;
 - datasets/OrthoDB/dataset versions, NCBI taxid, and BUSCO software version.
+
+### 10.5 `rpsbproc_tabular`
+
+NCBI's CDD pipeline runs `rpsblast` with ASN.1 output (`-outfmt 11`) and renders the archive into a tabular report with `rpsbproc`. The report is structured in `DATA`/`SESSION`/`QUERY`/`DOMAINS`/`ENDDATA` blocks; each line inside a `DOMAINS` block is one domain with 12 columns:
+
+```text
+session  query-id  hit-type  PSSM-ID  from  to  E-Value  bitscore  accession  short-name  incomplete  superfamily-PSSM-ID
+```
+
+The parser attributes domain rows to their enclosing `QUERY` block, keyed by `(session, query-id)` because the `Query_N` numbering repeats across sessions — a repeated key is an error, as is a malformed row. `SITES`/`MOTIFS` blocks and anything after `ENDDATA` are ignored. For every domain row:
+
+- `query_id` is the QUERY definition line (matching the FASTA header of the input), `subject_id` is the accession;
+- `from`/`to` become `query_start`/`query_end`; e-value and bitscore are parsed as numbers;
+- `hit_type`, `pssm_id`, `short_name`, `incomplete`, `superfamily_pssm`, `session`, and `rps_query_id` are preserved in `extra_json`.
+
+EAV hits keep the usual `max_hits_per_query` truncation; `analysis_alignments` keeps every domain row. A query without any domain produces no rows — downstream selection recognizes "no hit" by left-joining against the `sequences` table (see `select-sequences` in [External Analysis Commands](cli-analysis.md)). The parser needs no column declarations:
+
+```yaml
+result_parser: rpsbproc_tabular
+max_hits_per_query: 5
+```
+
+The default `tools.yaml` template ships a complete `rpsblast_cdd` recipe that couples both programs through a `commands` chain (field contract in [Recipe field reference](recipe-fields.md)):
+
+```yaml
+tools:
+  rpsblast:
+    description: NCBI RPS-BLAST against CDD, post-processed by rpsbproc
+    executable: rpsblast
+    run_method: "conda run --no-capture-output -n blast"
+    version_args: ["-version"]
+    version_pattern: 'rpsblast:\s*([^\s]+)'
+    recipes:
+      rpsblast_cdd:
+        description: Annotation proteins against CDD via rpsblast + rpsbproc
+        entity_type: annotation
+        file_role: protein_fasta
+        format: fasta
+        database: /path/to/cdd/Cdd
+        database_version: ""
+        output_subdir: rpsblast_cdd
+        output_suffix: .rpsbproc.tsv
+        commands:
+          - arguments:
+              - rpsblast
+              - -query
+              - ${input}
+              - -db
+              - ${database}
+              - -out
+              - ${work_dir}/hits.asn
+              - -outfmt
+              - "11"
+              - -evalue
+              - "0.001"
+              - -num_threads
+              - ${threads}
+          - arguments:
+              - rpsbproc
+              - -i
+              - ${work_dir}/hits.asn
+              - -o
+              - ${output}
+              - -e
+              - "0.001"
+              - -m
+              - rep
+        result_parser: rpsbproc_tabular
+        max_hits_per_query: 5
+```
+
+Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
 
 ## BUSCO example
 

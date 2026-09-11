@@ -116,3 +116,13 @@ operon query "SELECT subject_id, hit_rank, query_start, query_end, evalue, bitsc
 ```
 
 The same rows are available without SQL through `operon report analysis --hits --query-id PF00046`, with `--format tsv|json` and `--out` for downstream consumption.
+
+## Domain-focused variant: scan, select, extract, date
+
+A domain-centric study — for example a superfamily defined by one CDD/Pfam domain — can stay inside the project for the first rounds and hand off to the workflow manager later:
+
+1. **Scan**: run the `rpsblast_cdd` recipe (the rpsblast + rpsbproc command chain parsed by `rpsbproc_tabular`) over the protein FASTAs; every domain row lands in `analysis_alignments` with hit type, accession, and short name.
+2. **Select**: `operon select-sequences --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 ...` splits each proteome into domain carriers and non-carriers. Control completeness with the e-value threshold, never a max-hits cutoff — a truncated tool hit list silently breaks the "no hit" complement (see [External Analysis](external-analysis.md)).
+3. **Extract**: `operon extract-domains --analysis rpsblast_cdd --flank 5 --min-length 30 ...` writes the flanked domain FASTA plus a per-region manifest; adopt both products so later recipes and exports can select them.
+4. **Align and build trees externally**: the adopted domain FASTAs feed the external aligner and tree inference exactly as in steps 2–3 above. Measure the resulting alignment on any machine with `operon alignment-qc --alignment ... --outdir ...` (per-sequence and per-column metrics) before adopting the alignment and trees back.
+5. **Date the species tree**: `operon timetree calibrations --taxa A,B,C --out calibrations.tsv` compiles MCMCTree calibration priors from TimeTree (with the required Kumar et al. 2022 citation printed on every query); adopt the TSV alongside the dating inputs. For the stricter reviewed-constraint workflow, `operon timetree fetch` freezes the raw per-pair evidence into an immutable snapshot and `operon timetree calibrate` compiles only approved, rationalized soft bounds onto the rooted tree. See [timetree](../reference/cli-analysis.md#timetree).

@@ -5,7 +5,8 @@
 外部程序统一在 `config/tools.yaml` 中配置，避免在每次运行时手工拼接命令。新项目由
 `operon init` 自动生成；旧项目在第一次运行 `tools-check` 或 `analyze` 时若文件缺失
 也会自动补建，不会覆盖已有配置。默认模板给出 `blastn_nt`、`blastp_nr`、
-`hmmsearch_pfam`、`busco_autolineage` 和 `busco_lineage` recipe；需要按本机环境修改启动方式与数据库路径。
+`hmmsearch_pfam`、`busco_autolineage`、`busco_lineage` 与命令链形式的 `rpsblast_cdd`
+recipe；需要按本机环境修改启动方式与数据库路径。
 本文保留日常操作所需的速查；完整执行模型、全部字段、占位符、缓存身份、parser 专用
 选项和接入新工具的检查清单见 [Recipe 配置参考](../reference/recipe-overview.md)。
 
@@ -50,8 +51,9 @@ recipe 关键字段：
 | `database_checksum` | 可选；提供后作为严格数据库身份 |
 | `database_mode` | `reference`（默认，按内容识别）或 `mutable_cache`（共享可增长下载区，要求 `database_version`） |
 | `arguments` | 命令参数；占位符见下表 |
+| `commands` | 有序的多步命令链（与 `arguments` 互斥）；各步共享确定性的 `${work_dir}` 暂存目录 |
 | `parameters` | 允许由 `analyze --param NAME=VALUE` 设置的受约束运行参数 |
-| `result_parser` | `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`busco_json` 或 `none` |
+| `result_parser` | `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular`、`busco_json` 或 `none` |
 | `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
 | `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
 | `version` | 可选正整数（缺省 1，非法值报错）；与配置内容一起进入 `analyze` 记录的 recipe 快照，可用 `operon recipes history/show` 查看 |
@@ -64,6 +66,9 @@ recipe 关键字段：
 | `${input_parent}` / `${input_name}` / `${input_stem}` | 输入父目录、文件名、stem |
 | `${output_parent}` / `${output_name}` / `${output_stem}` | 输出父目录、artifact 名称、stem |
 | `${file_id}` / `${file_role}` / `${entity_type}` / `${entity_id}` | 当前 manifest 和实体标识 |
+
+使用 `commands` 命令链的 recipe 还可使用 `${work_dir}`：每次运行确定性的中间产物暂存
+目录，运行前重建、结束后清理。
 
 目录输入也可用 `ingest` 归档；系统复制整棵目录并按相对路径与文件内容计算稳定哈希：
 
@@ -277,6 +282,66 @@ operon run-external \
 - stdout/stderr 保存到 `logs/<WF_ID>.stdout.log` 和 `.stderr.log`。
 - 运行记录同时写入 `logs/workflow.jsonl` 与 `workflow_runs` 表。
 - 只有退出码为 0 且所有 `--expected-output` 存在且非空，才记录 `completed`；否则记录 `failed` 并返回非零。
+
+## 序列筛选与域提取
+
+parser 会把结构化命中行写入 `analysis_alignments` 的分析（`blast_tabular`、
+`hmmer_domtblout`、`rpsbproc_tabular`）可以直接驱动序列级子集划分，无需再解析工具输出。
+两个命令负责物化 FASTA 子集并记录 provenance；产物经 `adopt` 重新登记进 manifest。
+
+**完整性必须用 e-value 阈值控制，而不是 max hits 上限。** `max_target_seqs` 式的截断会
+让工具静默丢掉真实命中，此后任何"无命中序列"的判定都是错的。应保持工具输出的命中列表
+完整（在 recipe 中调高或去掉 max hits 限制），把严格性放在筛选时的 `--evalue-max` 等
+阈值上：`analysis_alignments` 保存全量解析命中，阈值可以随时调整而不必重跑分析。
+
+`select-sequences` 输出一个 manifest FASTA 中序列有（或没有）匹配命中的子集：
+
+```bash
+# 在 e-value <= 1e-5 下有 Specific 类 CDD 命中的蛋白：
+operon select-sequences --file-id FIL_000003 \
+  --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 \
+  --out analysis/external/cdd_positives.faa \
+  --manifest analysis/external/cdd_positives.tsv
+
+# 补集——没有任何匹配命中的序列：
+operon select-sequences --file-id FIL_000003 \
+  --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 \
+  --require-no-hit \
+  --out analysis/external/cdd_negatives.faa \
+  --manifest analysis/external/cdd_negatives.tsv
+```
+
+筛选语义：重复的 `--analysis` 之间是 OR（任一 analysis 命中即入选，如 blast OR
+hmmsearch）；`--subject-like`、`--evalue-max`、`--min-span`、`--hit-type` 之间是 AND。
+跨 analysis 的交集（blast AND hmmsearch）分两步：先按第一个 analysis 筛选并 `adopt`
+子集，再从 adopt 后的文件按第二个 analysis 筛选。需要按分类群差异化阈值时，按批次跑
+分析，并用 `--entity-type`/`--entity-id` 限制计入的比对范围。
+
+`extract-domains` 把命中区间本身从 FASTA 中切出，支持侧翼扩展与边界截断：
+
+```bash
+operon extract-domains --file-id FIL_000003 \
+  --analysis rpsblast_cdd --subject-like 'bhlh%' --evalue-max 1e-5 \
+  --flank 5 --min-length 30 --best-only \
+  --out analysis/external/bhlh_domains.faa \
+  --manifest analysis/external/bhlh_domains.tsv
+```
+
+`--best-only`（默认）每个 query 只保留 e-value 最优的区间；`--all-regions` 输出全部
+区间，header 为 `<seqid>|region:<start>-<end>`。manifest TSV 记录全部候选区间，包括
+被排除者及其原因。区间也可以来自外部坐标表（`--regions-tsv`，列为 `seqid,start,end`）
+而非某个 analysis。
+
+两个命令都只向 `workflow_runs` 写入含完整命令行的 provenance 步骤，不会自行登记产物。
+显式 adopt 产物，后续 recipe 才能把它选作输入：
+
+```bash
+operon adopt --file analysis/external/bhlh_domains.faa \
+  --entity-type annotation --entity-id ANN_000001 \
+  --role bhlh_domain_fasta --format fasta --derived-from FIL_000003
+```
+
+完整参数契约见参考页：[extract-domains 与 select-sequences](../reference/cli-analysis.md)。
 
 ## 回注册外部工作流产出（adopt）
 

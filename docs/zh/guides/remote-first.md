@@ -88,6 +88,10 @@ operon analyze --analysis blastn_nt --backend ssh \
 `REMOTE_ONLY` 输入经 `storage_remote` 在远端原位消费；运行成功后期望输出会被拉回
 项目内。见 [Slurm 与 SSH 远程执行](remote-execution.md)。
 
+带 `commands` 命令链的 recipe（如 `rpsblast_cdd`）与远端后端兼容：每一步按顺序通过
+同一个远端 executor 执行，确定性的 `${work_dir}` 暂存目录——与项目根下的其他路径一样——
+会映射到远端 root，在运行前于远端创建、结束后清理。
+
 ### e. 远程运行内置 QC
 
 先在 HPC 上安装 `operon`（版本要求见下文“限制”），在远端原位度量文件，把 JSON

@@ -2,7 +2,7 @@
 
 External programs are declared in `config/tools.yaml`; command lines are not assembled manually for each run. New projects receive the file from `operon init`. Older projects create a missing file on the first `tools-check` or `analyze` run without overwriting an existing configuration.
 
-The default template contains `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, `busco_autolineage`, and `busco_lineage`. Edit launch methods and database paths for the local environment. For the complete execution model, field contract, placeholders, cache identity, parser options, and new-tool checklist, see the [Recipe Configuration Model](../reference/recipe-overview.md).
+The default template contains `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, `busco_autolineage`, `busco_lineage`, and the command-chain `rpsblast_cdd`. Edit launch methods and database paths for the local environment. For the complete execution model, field contract, placeholders, cache identity, parser options, and new-tool checklist, see the [Recipe Configuration Model](../reference/recipe-overview.md).
 
 ## Configure program launch
 
@@ -47,13 +47,14 @@ Key recipe fields:
 | `database_checksum` | Optional explicit checksum for strict database identity. |
 | `database_mode` | `reference` (default, content-based identity) or `mutable_cache` (shared growing cache; requires `database_version`). |
 | `arguments` | Command arguments and placeholders. |
+| `commands` | Ordered multi-step command chain (mutually exclusive with `arguments`); steps share the deterministic `${work_dir}` scratch directory. |
 | `parameters` | Runtime parameters allowed through `analyze --param NAME=VALUE`. |
-| `result_parser` | `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `busco_json`, or `none`. |
+| `result_parser` | `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, `busco_json`, or `none`. |
 | `result_glob` | Result glob inside a directory output; BUSCO usually uses `short_summary*.json`. |
 | `max_hits_per_query` | Maximum hits per query synchronized to SQLite. |
 | `version` | Optional positive integer (default 1, invalid values rejected); together with the configuration content it enters the recipe snapshot recorded by `analyze`, inspectable via `operon recipes history/show`. |
 
-Placeholders include `${input}`, `${output}`, `${database}`, `${threads}`, `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, and `${entity_id}`.
+Placeholders include `${input}`, `${output}`, `${database}`, `${threads}`, `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, and `${entity_id}`. Recipes with a `commands` chain additionally get `${work_dir}`, a deterministic per-run scratch directory for intermediate artifacts that is rebuilt before the run and cleaned up afterwards.
 
 A directory can be archived as an input artifact:
 
@@ -217,6 +218,53 @@ operon run-external \
 - stdout and stderr are saved to `logs/<WF_ID>.stdout.log` and `.stderr.log`.
 - Run records are written to `logs/workflow.jsonl` and `workflow_runs`.
 - The run is `completed` only when the exit code is 0 and every `--expected-output` exists and is non-empty; otherwise it is `failed` and the command exits non-zero.
+
+## Sequence selection and domain extraction
+
+Analyses whose parser writes structured rows to `analysis_alignments` (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) can drive sequence-level subsetting without re-parsing tool output. Two commands materialize FASTA subsets with provenance; the products re-enter the manifest through `adopt`.
+
+Control completeness with e-value thresholds, not max-hit limits. A `max_target_seqs`-style cutoff silently drops true hits from the tool's output, and any later "sequences without a hit" selection is then wrong. Keep the tool's hit list complete (raise or drop the max-hits limit in the recipe) and encode stringency in selection-time thresholds such as `--evalue-max`: `analysis_alignments` stores the full parsed hit set, so thresholds stay re-adjustable without re-running the analysis.
+
+`select-sequences` writes the subset of one manifest FASTA whose sequences have (or lack) matching hits:
+
+```bash
+# Proteins with a Specific CDD hit at e-value <= 1e-5:
+operon select-sequences --file-id FIL_000003 \
+  --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 \
+  --out analysis/external/cdd_positives.faa \
+  --manifest analysis/external/cdd_positives.tsv
+
+# The complement — sequences with no matching hit:
+operon select-sequences --file-id FIL_000003 \
+  --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 \
+  --require-no-hit \
+  --out analysis/external/cdd_negatives.faa \
+  --manifest analysis/external/cdd_negatives.tsv
+```
+
+Filter semantics: a repeated `--analysis` is OR-ed (a hit in any listed analysis counts, e.g. blast OR hmmsearch); `--subject-like`, `--evalue-max`, `--min-span`, and `--hit-type` are AND-ed. An intersection across analyses (blast AND hmmsearch) takes two runs: select with the first analysis, `adopt` the subset, then select again from the adopted file with the second analysis. For taxon-specific thresholds, run the analysis in per-taxon batches and restrict which alignments count with `--entity-type`/`--entity-id`.
+
+`extract-domains` cuts the hit intervals themselves out of a FASTA, with flanks and boundary truncation:
+
+```bash
+operon extract-domains --file-id FIL_000003 \
+  --analysis rpsblast_cdd --subject-like 'bhlh%' --evalue-max 1e-5 \
+  --flank 5 --min-length 30 --best-only \
+  --out analysis/external/bhlh_domains.faa \
+  --manifest analysis/external/bhlh_domains.tsv
+```
+
+`--best-only` (default) keeps the best-evalue region per query; `--all-regions` emits every region with `<seqid>|region:<start>-<end>` headers. The manifest TSV records every candidate region, including exclusions and their reasons. Regions can also come from an external coordinate table (`--regions-tsv` with columns `seqid,start,end`) instead of an analysis.
+
+Both commands write a `workflow_runs` provenance step with the full command line but never register their output themselves. Adopt the product explicitly so downstream recipes can select it as input:
+
+```bash
+operon adopt --file analysis/external/bhlh_domains.faa \
+  --entity-type annotation --entity-id ANN_000001 \
+  --role bhlh_domain_fasta --format fasta --derived-from FIL_000003
+```
+
+The full flag contract is in the reference: [extract-domains and select-sequences](../reference/cli-analysis.md).
 
 ## Re-register external workflow outputs (adopt)
 

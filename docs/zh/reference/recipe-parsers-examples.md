@@ -10,12 +10,13 @@
 | `blast_tabular` | tab-separated 文件 | top hits、query/hit 汇总、best e-value，以及全量结构化比对行 |
 | `hmmer_tblout` | HMMER `--tblout` 文件 | query-target 的 e-value/score 与汇总 |
 | `hmmer_domtblout` | HMMER `--domtblout` 文件 | per-domain 的 i-Evalue/score 命中与全量结构化比对行 |
+| `rpsbproc_tabular` | rpsbproc 表格报告 | per-domain 的 e-value/bitscore 命中与全量结构化比对行 |
 | `busco_json` | BUSCO 输出目录或 JSON 文件 | 完整率、单拷贝/重复、碎片/缺失、lineage 与版本元数据 |
 
 所有汇总 metric 写入 `analysis_results`，并以 `qc_stage: analysis:<recipe>` 同步到
 `qc_results`；因此它们会自然出现在 `report qc` 宽表导出中，也可以直接被 QC profile 使用。
 top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hits_per_query`）。
-带坐标的 parser（`blast_tabular`、`hmmer_domtblout`）还会把每条解析出的命中以结构化行写入
+带坐标的 parser（`blast_tabular`、`hmmer_domtblout`、`rpsbproc_tabular`）还会把每条解析出的命中以结构化行写入
 `analysis_alignments`——query/subject ID、命中排名、query/subject 区间、e-value、bitscore
 与 identity 百分比各有独立列，未映射的列保存在 `extra_json`；该表不受
 `max_hits_per_query` 截断，`report analysis --hits` 读取的就是它。
@@ -104,6 +105,9 @@ tools:
         max_hits_per_query: 5
 ```
 
+如果 rpsblast 的结果改由 `rpsbproc` 后处理（推荐的 CDD 流程），应使用 `commands` 命令链
+配合 `rpsbproc_tabular` parser——见下文。
+
 ### 10.2 `hmmer_tblout`
 
 该 parser 按标准 HMMER tblout 读取 target、query、full-sequence E-value 和 score，忽略
@@ -171,6 +175,89 @@ result_glob: short_summary*.json
 - marker 数、domain 与 one-line summary；
 - lineage 名称、创建日期、BUSCO 数与物种数；
 - datasets/OrthoDB/dataset 版本、NCBI taxid 与 BUSCO 软件版本。
+
+### 10.5 `rpsbproc_tabular`
+
+NCBI 的 CDD 流程让 `rpsblast` 输出 ASN.1 归档（`-outfmt 11`），再由 `rpsbproc` 渲染成
+表格报告。报告按 `DATA`/`SESSION`/`QUERY`/`DOMAINS`/`ENDDATA` 块组织；`DOMAINS` 块中
+每行是一条 domain，共 12 列：
+
+```text
+session  query-id  hit-type  PSSM-ID  from  to  E-Value  bitscore  accession  short-name  incomplete  superfamily-PSSM-ID
+```
+
+parser 把 domain 行归入其所在的 `QUERY` 块，以 `(session, query-id)` 为键——因为
+`Query_N` 编号跨 session 重复；键重复或行格式错误都会报错。`SITES`/`MOTIFS` 块以及
+`ENDDATA` 之后的内容被忽略。对每条 domain 行：
+
+- `query_id` 取 QUERY 的 definition line（与输入 FASTA 标题对应），`subject_id` 取
+  accession；
+- `from`/`to` 成为 `query_start`/`query_end`；e-value 与 bitscore 按数值解析；
+- `hit_type`、`pssm_id`、`short_name`、`incomplete`、`superfamily_pssm`、`session` 与
+  `rps_query_id` 保存在 `extra_json` 中。
+
+EAV hits 照常按 `max_hits_per_query` 截断，`analysis_alignments` 保留全部 domain 行。
+没有任何 domain 的 query 不产生行——下游筛选通过对 `sequences` 表左连接识别"无命中"
+（见 [外部分析命令](cli-analysis.md) 中的 `select-sequences`）。该 parser 无需列声明：
+
+```yaml
+result_parser: rpsbproc_tabular
+max_hits_per_query: 5
+```
+
+默认 `tools.yaml` 模板附带完整的 `rpsblast_cdd` recipe，用 `commands` 命令链把两个程序
+耦合起来（字段契约见 [Recipe 字段参考](recipe-fields.md)）：
+
+```yaml
+tools:
+  rpsblast:
+    description: NCBI RPS-BLAST against CDD, post-processed by rpsbproc
+    executable: rpsblast
+    run_method: "conda run --no-capture-output -n blast"
+    version_args: ["-version"]
+    version_pattern: 'rpsblast:\s*([^\s]+)'
+    recipes:
+      rpsblast_cdd:
+        description: Annotation proteins against CDD via rpsblast + rpsbproc
+        entity_type: annotation
+        file_role: protein_fasta
+        format: fasta
+        database: /path/to/cdd/Cdd
+        database_version: ""
+        output_subdir: rpsblast_cdd
+        output_suffix: .rpsbproc.tsv
+        commands:
+          - arguments:
+              - rpsblast
+              - -query
+              - ${input}
+              - -db
+              - ${database}
+              - -out
+              - ${work_dir}/hits.asn
+              - -outfmt
+              - "11"
+              - -evalue
+              - "0.001"
+              - -num_threads
+              - ${threads}
+          - arguments:
+              - rpsbproc
+              - -i
+              - ${work_dir}/hits.asn
+              - -o
+              - ${output}
+              - -e
+              - "0.001"
+              - -m
+              - rep
+        result_parser: rpsbproc_tabular
+        max_hits_per_query: 5
+```
+
+第 1 步把 ASN.1 归档写入本次运行的 `${work_dir}`，第 2 步把它渲染为 `${output}`；暂存
+目录在运行结束后清理。rpsbproc 的参数在不同构建间有差异，请按本地安装的 rpsbproc
+版本调整第二个命令块。
 
 ## BUSCO 示例
 

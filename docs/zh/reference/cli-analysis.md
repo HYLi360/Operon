@@ -63,9 +63,19 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
    带坐标的 parser 还会把每条解析出的命中以结构化行写入 `analysis_alignments`
    （不受 `max_hits_per_query` 截断）。
 
-结果 parser 支持 `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`busco_json` 和
-`none`。`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON summary，写入 BUSCO
-完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
+结果 parser 支持 `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular`、
+`busco_json` 和 `none`。`busco_json` 从目录的 `result_glob` 中选择唯一 specific JSON
+summary，写入 BUSCO 完整率、单拷贝/重复、碎片化、缺失、marker 数和 lineage 等指标。
+
+recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（两者互斥）。渲染后的各步
+按顺序通过同一个后端执行，共享一条 `analysis_jobs` 记录；第一个非零退出的步骤中止整条链
+并使 job 失败，错误形如 `step N/M failed: ...`。每一步有独立日志
+`logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码记录在该次运行的
+`execution_details.steps` 中。中间产物放在确定性的 `${work_dir}` 暂存目录（输出旁的
+`<output_name>.work`），运行前删除重建、结束或失败后移除；`--keep-partial` 会保留它。
+只有最后一步需要产出 `${output}`。渲染后的 `commands` 参与参数指纹。字段契约见
+[Recipe 字段参考](recipe-fields.md) 的"命令链"一节，完整示例见
+[结果解析器与示例](recipe-parsers-examples.md) 的 `rpsblast_cdd`。
 
 非 `--dry-run` 执行时，`analyze` 会按处理进度逐文件打印进度行，形如
 `[i/N] file_id: running|done|failed`；dry-run 保持安静，只打印计划表格。
@@ -109,7 +119,8 @@ operon analyze --analysis busco_lineage \
 缓存命中同样记录当前配置的快照，续跑收养的作业继承原作业的快照 id。详见下文
 `recipes` 命令与 [外部分析执行模型](../architecture/external-analysis.md)。
 
-默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`（可自行增删）。
+默认 recipe：`blastn_nt`、`blastp_nr`、`hmmsearch_pfam`、`busco_autolineage`、
+`busco_lineage` 与命令链形式的 `rpsblast_cdd`（可自行增删）。
 `config/tools.yaml` 的完整字段和执行语义见 [Recipe 配置参考](recipe-overview.md)。
 
 ## recipes
@@ -169,3 +180,88 @@ operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
   都必须配合 `--hits` 使用，单独传入属于校验错误。
 - `--limit` 默认 20。
 - 默认排除有效退役实体；`--include-retired` 显示历史结果。
+
+## extract-domains
+
+```bash
+operon extract-domains --file-id FIL_... \
+  (--analysis NAME | --regions-tsv TSV) \
+  [--flank N] [--min-length N] [--best-only | --all-regions] \
+  [--subject-like PATTERN] [--evalue-max E] \
+  --out FASTA [--manifest TSV]
+```
+
+- 从 `analysis_alignments`（只统计 `completed` 作业）中存储的 query 区间切割一个 manifest
+  FASTA 的对应子序列。`--analysis` 指定提供区间的已完成分析；`--subject-like`（SQL LIKE，
+  同时匹配 `subject_id` 与 `extra_json` 中的 `short_name`）与 `--evalue-max` 进一步收窄。
+  也可以用 `--regions-tsv` 提供外部坐标（列为 `seqid,start,end`，可选 `subject`、`evalue`），
+  以支持非 analysis 来源的区间。
+- `--flank`（默认 5）把每个区间向两端扩展并在序列边界截断；`--min-length`（默认 30）在
+  扩展前丢弃更短的区间。
+- `--best-only`（默认）每个 query 只保留 e-value 最优的一个区间，header 保持原 seqid；
+  `--all-regions` 每个区间输出一条记录，header 为 `<seqid>|region:<start>-<end>`，使用
+  扩展并截断后的坐标。
+- 输出 FASTA 原子写入。`--manifest` 记录全部候选区间——包括被排除的及其原因
+  （`missing_coordinates`、`below_min_length`、`seqid_not_in_fasta`、
+  `region_outside_sequence`）——含来源文件、analysis、subject、原坐标与截取后坐标、长度和
+  e-value。
+- 源文件为 `REMOTE_ONLY` 时会报出可操作错误：先用 `operon pull` 取回再重跑。每次运行向
+  `workflow_runs` 写入一条含完整命令行的 `extract-domains` 步骤；产物通过 `operon adopt`
+  重新登记进 manifest（见 [外部分析](../guides/external-analysis.md)）。
+
+## select-sequences
+
+```bash
+operon select-sequences --file-id FIL_... \
+  [--analysis NAME ...] [--subject-like PATTERN] [--evalue-max E] \
+  [--min-span N] [--hit-type TYPE] [--entity-type TYPE] [--entity-id ID] \
+  [--require-hit | --require-no-hit] \
+  --out FASTA [--manifest TSV]
+```
+
+- 输出一个 manifest FASTA 中序列在 `analysis_alignments`（只统计 `completed` 作业）有（或
+  没有）匹配命中的子集。重复的 `--analysis` 之间是 OR（任一 analysis 命中即计入）；
+  `--subject-like`、`--evalue-max`、`--min-span`、`--hit-type`（与 `extra_json` 中
+  `hit_type` 精确匹配）之间是 AND。一个条件都不给属于错误。
+- `--require-hit`（默认）保留至少有一条匹配命中的序列；`--require-no-hit` 保留其补集，
+  以 `sequences` 表中的 seqid 全集做差集（该表无此文件的行时回退为扫描 FASTA 本身）。
+- `--entity-type`/`--entity-id` 限制只统计哪些作业的比对，支持按分类群分批的策略。
+- `--manifest` 列出文件中每条序列的入选状态与依据（`matched_analysis`、`best_evalue`、
+  `best_subject`、`hit_count`）。
+- 向 `workflow_runs` 写入 `select-sequences` 步骤；子集通过 `operon adopt` 重新登记进
+  manifest。
+
+## timetree
+
+```bash
+operon timetree taxon --name NAME
+operon timetree pairwise (--taxon NAME | --taxon-id N) ...
+operon timetree mrca (--taxon NAME ... | --taxa A,B,C) [--taxon-id N ...]
+operon timetree timeline --taxon NAME
+operon timetree calibrations (--taxa A,B,C | --taxon NAME ...) [--pairs] [--out TSV]
+operon timetree fetch --pairs TSV --output DIR
+operon timetree calibrate --snapshot DIR --tree FILE --taxa TSV --constraints TSV --output DIR
+```
+
+`timetree` 命令组查询 TimeTree REST API 获取分化时间证据，并编制 MCMCTree 标定先验。
+任何 TimeTree 数据的使用都必须引用 Kumar et al. 2022（Mol Biol Evol，
+<https://doi.org/10.1093/molbev/msac174>）；每次查询都会打印该引用。
+
+- `taxon` 把学名解析为 TimeTree/NCBI 分类候选（`taxon_id`、`scientific_name`、`rank`）。
+  `pairwise` 报告恰好两个分类单元的分化时间摘要；`mrca` 报告 N 个分类单元 MRCA 的摘要；
+  `timeline` 列出一个分类单元回溯到 last universal ancestor 的节点时间表。分类单元用
+  重复的 `--taxon NAME` / `--taxon-id N` 给出（`mrca` 与 `calibrations` 也接受逗号分隔的
+  `--taxa`）；名称多解时绝不自动选择——错误会列出候选并要求改用 `--taxon-id`。所有查询
+  子命令接受 `--format text|json`（默认 `text`）与绕过缓存的 `--refresh`。
+- 响应缓存在项目内 `adapters_cache/timetree/<sha256(url)>.json`，保存请求 URL、获取时间与
+  原始 body，保证重放查询可审计。TimeTree 的使用条款禁止镜像或再分发其数据库，因此只按
+  实际查询缓存，且请求保持串行并在每次真实请求间停顿。每次查询向 `workflow_runs` 记录
+  一条 `timetree:<subcommand>` 步骤。
+- `calibrations` 编制 MCMCTree 标定先验表：默认对整组做一次 MRCA 查询，`--pairs` 则逐对
+  查询。十列：`node_label`、`taxa`、`taxon_ids`、`age_median`、`ci_low`、`ci_high`、
+  `study_count`、`source`、`queried_at`、`cache_file`。`--out` 额外写出 TSV；需要纳入版本
+  管理时用 `operon adopt` 归档进项目。
+- `fetch` 与 `calibrate` 与项目无关，只操作显式文件路径：`fetch` 把选定 NCBI 分类单元对
+  的摘要与逐研究证据下载为一个新的不可变快照目录（原始响应加带校验的清单，绝不覆盖
+  已有运行）；`calibrate` 把此类快照中经审阅的软界标定编译到一棵有根、严格二分的物种树
+  上（每条约束都要求 `approved=yes` 与理由；摘要置信区间是证据，绝不能当作化石界标）。

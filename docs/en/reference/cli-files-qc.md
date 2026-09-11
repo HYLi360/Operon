@@ -75,6 +75,17 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
 - For `--format gff3`, pass `--assembly-fasta` and/or `--protein-fasta` so seqid/coordinate and protein cross-check metrics can be computed; without either the command fails. For paired FASTQ, `--paired-read` adds `paired_read_count_match`.
 - The JSON payload (schema_version 1) goes to stdout, or atomically to `--out` (suitable as a `run-external --expected-output`). Feed it to `operon import-qc --file payload.json` back in the project. For `--format fasta` the payload additionally carries a `sequences` object mapping each seqid to its length, which `import-qc` writes into the project's `sequences` table.
 
+## alignment-qc
+
+```bash
+operon alignment-qc --alignment ALIGNED_FASTA --outdir DIR
+```
+
+- Measures per-sequence and per-column QC metrics for an aligned FASTA without any project, database, or manifest — like `qc-measure`, it runs anywhere the file is readable. Gap characters are `-` and `.`.
+- Writes three report files into `--outdir`: `sequence_qc.tsv` (`safe_id`, `alignment_length`, `non_gap_sites`, `coverage`, `gap_fraction`), `column_qc.tsv` (`column_1based`, `occupancy`, `distinct_residues`, `consensus`, `consensus_fraction`), and `alignment_qc.json` (sequence count, alignment length, mean/median coverage, and the number of columns with occupancy ≥ 0.9 / ≥ 0.7). Fractions are printed with six decimals; the summary JSON is also written to stdout.
+- An empty alignment or sequences of unequal length are rejected with an error and a non-zero exit code.
+- The core computation is a single-pass pure function (`compute_alignment_qc` in `operon/alignment.py`) over `(header, sequence)` records — the pure-Python reference implementation whose results a future Cython build must reproduce byte-for-byte.
+
 ## import-qc
 
 ```bash

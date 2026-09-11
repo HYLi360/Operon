@@ -183,6 +183,7 @@ Here `sample with spaces` is a single argument and is not split again on spaces.
 | `${output_stem}` | Output stem in the `Path.stem` sense |
 | `${database}` | Resolved absolute path of the database or shared cache; empty string when not configured |
 | `${threads}` | CLI `--threads` or the project default thread count |
+| `${work_dir}` | Deterministic per-run scratch directory for intermediate artifacts; defined only in `commands` chains (see below) |
 | `${file_id}` | Stable file ID of the current input |
 | `${file_role}` | Current manifest file role |
 | `${entity_type}` | Current entity type |
@@ -212,6 +213,46 @@ ${<parameter>}
 ```
 
 It cannot reference `${output}`, `${output_parent}`, or `${output_name}` itself. `output_name` is not rendered when the configuration is loaded; unrecognized placeholders are reported when the recipe is rendered, i.e. when `analyze` runs (including `--dry-run`).
+
+### 6.4 Command chains (`commands`)
+
+Some tools are really two programs in sequence — for example `rpsblast` emits an ASN.1 archive (`-outfmt 11`) that `rpsbproc` then renders into the tabular report. A recipe can declare such a pipeline with `commands`, a non-empty list of command blocks where each block carries its own `arguments` list:
+
+```yaml
+commands:
+  - arguments:
+      - rpsblast
+      - -query
+      - ${input}
+      - -db
+      - ${database}
+      - -out
+      - ${work_dir}/hits.asn
+      - -outfmt
+      - "11"
+  - arguments:
+      - rpsbproc
+      - -i
+      - ${work_dir}/hits.asn
+      - -o
+      - ${output}
+```
+
+- `commands` and the single-command `arguments` field are mutually exclusive on the same recipe.
+- Each block's `arguments` is rendered with the same placeholders as a single command, plus `${work_dir}`: a deterministic scratch directory named `<output_name>.work` next to the output artifact. It is deleted and recreated before the run, and removed again after the run finishes (or fails); `analyze --keep-partial` keeps it for debugging. The path is deterministic because the rendered commands enter the cache fingerprint.
+- Steps run in order through the same executor (the tool's `run_method` prefix applies to every step) under one `analysis_jobs` row. The first step with a non-zero exit code aborts the chain and fails the whole job; the error message names the failing step (`step N/M failed: ...`).
+- Each step gets its own logs, `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`, and every step's argv and exit code is recorded in the run's `execution_details.steps`.
+- Only the last step is expected to produce `${output}`; the non-empty check, content hash, and result parsing run once after the chain completes.
+- The rendered `commands` participate in the parameter fingerprint and the recipe snapshot, so editing any step invalidates the completed cache exactly once.
+
+A complete `rpsblast` + `rpsbproc` recipe appears in [Result parsers and examples](recipe-parsers-examples.md).
+
+The `commands` system is NOT intended to replace Snakemake or Nextflow, but rather to bundle tools that are frequently used together
+to reduce repetitive work, and avoid using the “bulky” Snakemake or Nextflow in such scenario. We have intentionally imposed the following hard constraints on the `commands`:
+
+- Each program must use a shared runtime environment. For example, if you run the RPS-BLAST recipe using Conda, you must have both NCBI-BLAST+ and `rpsbproc` installed in the Conda
+environment.
+- Because executing command chains introduces uncertainty, recipes that use `commands` cannot benefit from cache hits.
 
 ## Databases and cache directories
 
@@ -265,7 +306,7 @@ Here `database_checksum` is the recipe's explicit declaration of a frozen databa
 
 ## Result parsing and alignment columns
 
-`result_parser` selects how a successful output enters SQLite: `none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, or `busco_json`. Per-parser semantics and complete examples live in [Result parsers and examples](recipe-parsers-examples.md); this section defines the field contract.
+`result_parser` selects how a successful output enters SQLite: `none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, or `busco_json`. Per-parser semantics and complete examples live in [Result parsers and examples](recipe-parsers-examples.md); this section defines the field contract.
 
 ### 8.1 Tabular column fields
 
@@ -299,6 +340,10 @@ When a key is absent, the parser looks for the default common name in `result_co
 ### 8.3 `hmmer_domtblout`
 
 `hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` (HMM and envelope coordinates go to `extra_json`; subject coordinates are not present in domtblout and stay NULL). It writes both EAV hits and full structured alignment rows. The older `hmmer_tblout` parser reads only `--tblout`, which carries no coordinates, so it never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes.
+
+### 8.4 `rpsbproc_tabular`
+
+`rpsbproc_tabular` parses the tabular report produced by NCBI `rpsbproc` (the `DATA`/`SESSION`/`QUERY`/`DOMAINS` structure) and needs no column declarations. Each domain row has 12 columns (session, query id, hit type, PSSM id, from, to, e-value, bitscore, accession, short name, incomplete, superfamily PSSM id). The alignment `query_id` is the QUERY definition line and `subject_id` is the accession; `from`/`to` become `query_start`/`query_end`, e-value and bitscore are parsed as numbers, and the remaining fields (`hit_type`, `pssm_id`, `short_name`, `incomplete`, `superfamily_pssm`, `session`, `rps_query_id`) are preserved in `extra_json`. EAV hits are truncated to `max_hits_per_query` per query as usual, while `analysis_alignments` keeps every domain row; queries without any domain produce no rows. It is the intended parser for `commands` chains that pipe `rpsblast -outfmt 11` into `rpsbproc` (see "Command chains" above).
 
 ## Cache identity
 

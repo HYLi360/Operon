@@ -193,6 +193,7 @@ arguments:
 | `${output_stem}` | `Path.stem` 意义上的输出 stem |
 | `${database}` | 解析后的数据库或共享缓存绝对路径；未配置时为空字符串 |
 | `${threads}` | CLI `--threads` 或项目默认线程数 |
+| `${work_dir}` | 每次运行确定性的中间产物暂存目录；仅在 `commands` 命令链中定义（见下文） |
 | `${file_id}` | 当前输入的稳定文件 ID |
 | `${file_role}` | 当前 manifest 文件角色 |
 | `${entity_type}` | 当前实体类型 |
@@ -224,6 +225,55 @@ ${<parameter>}
 
 它不能引用 `${output}`、`${output_parent}` 或 `${output_name}` 本身。`output_name` 在配置加载时
 并不渲染；无法识别的占位符在 recipe 渲染时报错，即 `analyze` 运行时（含 `--dry-run`）。
+
+### 6.4 命令链（`commands`）
+
+有些工具本质上是前后两个程序——例如 `rpsblast` 产出 ASN.1 归档（`-outfmt 11`），再由
+`rpsbproc` 渲染成表格报告。recipe 可以用 `commands` 声明这样的流水线：一个非空的命令块
+列表，每个块自带 `arguments` 列表：
+
+```yaml
+commands:
+  - arguments:
+      - rpsblast
+      - -query
+      - ${input}
+      - -db
+      - ${database}
+      - -out
+      - ${work_dir}/hits.asn
+      - -outfmt
+      - "11"
+  - arguments:
+      - rpsbproc
+      - -i
+      - ${work_dir}/hits.asn
+      - -o
+      - ${output}
+```
+
+- `commands` 与单命令形式的 `arguments` 在同一个 recipe 上互斥。
+- 每个块的 `arguments` 使用与单命令相同的占位符渲染，外加 `${work_dir}`：输出 artifact
+  旁边名为 `<output_name>.work` 的确定性暂存目录。运行前删除并重建，运行结束（或失败）
+  后再次移除；`analyze --keep-partial` 会保留它以便排查。路径必须确定，因为渲染后的命令
+  参与缓存指纹。
+- 各步按顺序通过同一个 executor 执行（工具的 `run_method` 前缀作用于每一步），共享同一条
+  `analysis_jobs` 记录。第一个非零退出的步骤中止整条链并使整个 job 失败；错误信息指明失败
+  步骤（`step N/M failed: ...`）。
+- 每一步有独立日志 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码
+  记录在该次运行的 `execution_details.steps` 中。
+- 只有最后一步需要产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次。
+- 渲染后的 `commands` 参与参数指纹与 recipe 快照，因此编辑任一步骤只会让完成缓存失效一次。
+
+完整的 `rpsblast` + `rpsbproc` recipe 见 [结果解析器与示例](recipe-parsers-examples.md)。
+
+recipe `commands` 系统存在的目的并非取代 Snakemake/Nextflow，而是将经常共同使用的工具捆绑在一起，
+减轻重复劳动，并避免在这种情况下使用“大块头”的 Snakemake/Nextflow。我们有意为 `commands`
+系统增加了这些硬限制：
+
+- 各程序只能使用共同的运行环境。例如，如果您使用 Conda 执行 RPS-BLAST recipe，您需要在 Conda
+环境中同时安装 NCBI-BLAST+ 和 `rpsbproc`。
+- 由于命令链的执行会引入不确定性，使用 `commands` 的 Recipe 不能享受缓存命中。
 
 ## 数据库与缓存目录
 
@@ -285,7 +335,7 @@ database_mode: mutable_cache
 
 ## 结果解析与比对列
 
-`result_parser` 决定成功的输出如何进入 SQLite：`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout` 或 `busco_json`。各 parser 的语义与完整示例见 [结果解析器与示例](recipe-parsers-examples.md)；本节定义字段契约。
+`result_parser` 决定成功的输出如何进入 SQLite：`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular` 或 `busco_json`。各 parser 的语义与完整示例见 [结果解析器与示例](recipe-parsers-examples.md)；本节定义字段契约。
 
 ### 8.1 表格列字段
 
@@ -319,6 +369,10 @@ database_mode: mutable_cache
 ### 8.3 `hmmer_domtblout`
 
 `hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明：query 为 HMM profile 名，subject 为目标序列，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject 坐标，保持 NULL）。它同时写 EAV hits 与全量结构化比对行。旧的 `hmmer_tblout` 只读取不含坐标的 `--tblout`，因此不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。
+
+### 8.4 `rpsbproc_tabular`
+
+`rpsbproc_tabular` 解析 NCBI `rpsbproc` 产出的表格报告（`DATA`/`SESSION`/`QUERY`/`DOMAINS` 结构），无需列声明。每条 domain 行有 12 列（session、query id、hit type、PSSM id、from、to、e-value、bitscore、accession、short name、incomplete、superfamily PSSM id）。比对行的 `query_id` 取 QUERY 的 definition line，`subject_id` 取 accession；`from`/`to` 成为 `query_start`/`query_end`，e-value 与 bitscore 按数值解析，其余字段（`hit_type`、`pssm_id`、`short_name`、`incomplete`、`superfamily_pssm`、`session`、`rps_query_id`）保存在 `extra_json` 中。EAV hits 照常按 `max_hits_per_query` 截断，`analysis_alignments` 保留全部 domain 行；没有任何 domain 的 query 不产生行。它是把 `rpsblast -outfmt 11` 接入 `rpsbproc` 的 `commands` 命令链的目标 parser（见上文"命令链"一节）。
 
 ## 缓存身份
 

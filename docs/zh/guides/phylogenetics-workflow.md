@@ -116,3 +116,27 @@ operon query "SELECT subject_id, hit_rank, query_start, query_end, evalue, bitsc
 ```
 
 不写 SQL 也可以通过 `operon report analysis --hits --query-id PF00046` 查看同样的行，并用 `--format tsv|json` 与 `--out` 供下游消费。
+
+## 域聚焦变体：扫描、筛选、提取、定年
+
+以域为中心的研究——例如由单个 CDD/Pfam 结构域定义的基因超家族——可以把前几轮留在
+项目内部完成，再交给工作流管理器：
+
+1. **扫描**：对蛋白 FASTA 运行 `rpsblast_cdd` recipe（rpsblast + rpsbproc 命令链，由
+   `rpsbproc_tabular` 解析）；每条 domain 行带着 hit type、accession 与 short name 进入
+   `analysis_alignments`。
+2. **筛选**：`operon select-sequences --analysis rpsblast_cdd --hit-type Specific --evalue-max 1e-5 ...`
+   把每个蛋白组划分为含域与不含域两个子集。完整性用 e-value 阈值控制，绝不用 max hits
+   截断——被截断的命中列表会静默破坏"无命中"补集的判定（见 [外部分析](external-analysis.md)）。
+3. **提取**：`operon extract-domains --analysis rpsblast_cdd --flank 5 --min-length 30 ...`
+   写出带侧翼的域 FASTA 与逐区间 manifest；adopt 两个产物，后续 recipe 与 export 才能
+   选它们。
+4. **外部比对与建树**：adopt 后的域 FASTA 按上文第二、三步的方式交给外部比对与建树
+   流程。建树前可在任意机器上用 `operon alignment-qc --alignment ... --outdir ...`
+   度量比对（逐序列与逐列指标），再把比对与树 adopt 回库。
+5. **物种树定年**：`operon timetree calibrations --taxa A,B,C --out calibrations.tsv`
+   从 TimeTree 编制 MCMCTree 标定先验（每次查询都会打印必须引用的 Kumar et al. 2022
+   文献）；把 TSV 与定年输入一起 adopt。更严格的审阅约束流程用
+   `operon timetree fetch` 把逐对原始证据冻结为不可变快照，再用
+   `operon timetree calibrate` 只把经批准、带理由的软界标定编译到有根树上。见
+   [timetree](../reference/cli-analysis.md#timetree)。

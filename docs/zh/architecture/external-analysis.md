@@ -16,7 +16,7 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 6. 未命中时以 `conda run`、容器前缀或直接路径启动程序；文件与目录输出都必须存在且非空，stdout/stderr 落盘；
 7. 计算文件或目录内容哈希，解析 top hits 或 BUSCO JSON summary 写入
    `analysis_hits`/`analysis_results`，并同步同名指标到 `qc_results`。带坐标的 parser
-   （`blast_tabular`、`hmmer_domtblout`）还会把每条解析出的命中以结构化行写入
+   （`blast_tabular`、`hmmer_domtblout`、`rpsbproc_tabular`）还会把每条解析出的命中以结构化行写入
    `analysis_alignments`（query/subject ID、命中排名、query/subject 区间、e-value、
    bitscore、identity 百分比，未映射列进 `extra_json`），不受 `max_hits_per_query`
    截断；`report analysis --hits` 读取该表。
@@ -24,6 +24,20 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 目录使用由相对路径、空目录、文件大小/内容和符号链接目标组成的确定性树哈希。
 `database_mode: mutable_cache` 用于 BUSCO 等会逐步下载 lineage 的共享缓存，以显式
 `database_version` 标识其逻辑版本；不可变参考库仍使用默认的 `reference` 内容身份。
+
+recipe 也可以用 `commands` 命令链代替单命令（与 `arguments` 互斥）。渲染后的各步按顺序
+通过同一个 executor 执行，共享一条运行记录与一条 `analysis_jobs` 行；每步有独立的
+`logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码记录在该次运行的
+`execution_details.steps` 中。第一个非零退出的步骤中止整条链并使 job 失败，错误形如
+`step N/M failed`。中间产物放在确定性的 `${work_dir}` 暂存目录（输出旁的
+`<output_name>.work`），执行前删除重建、成功或失败后移除（`--keep-partial` 保留）；路径
+必须确定，因为渲染后的命令参与参数指纹与缓存身份。期望输出校验、内容哈希与结果解析在
+最后一步之后执行一次。SSH 后端配置 remote root 时，该暂存目录与项目根下其他路径一样映射
+到远端 root 并在远端创建。典型例子是把 `rpsblast -outfmt 11`（ASN.1 归档）与 `rpsbproc`
+耦合，后者的表格报告由 `rpsbproc_tabular` 解析：`DATA`/`SESSION`/`QUERY`/`DOMAINS` 块中的
+domain 行成为全量 `analysis_alignments` 行（query 取 QUERY 的 definition line，subject 取
+accession，坐标来自 `from`/`to` 列，hit type/PSSM ID/short name 留在 `extra_json`），EAV
+hits 照常按 `max_hits_per_query` 截断。
 
 外部命令的实际执行由 `execution.py` 的后端抽象接管，`run_external_command` 通过
 `get_executor(project, backend)` 选择后端：

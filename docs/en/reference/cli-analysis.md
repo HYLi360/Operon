@@ -47,7 +47,9 @@ For each run, the recipe:
 6. Validates that a `file` or `directory` output exists and is non-empty, then calculates its content hash.
 7. Parses results into `analysis_hits` and `analysis_results`, and synchronizes summary metrics to `qc_results`. Parsers with coordinates additionally write every parsed hit as a structured row to `analysis_alignments` (untruncated by `max_hits_per_query`).
 
-Supported result parsers are `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
+Supported result parsers are `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, `busco_json`, and `none`. `busco_json` selects a unique specific JSON summary from a directory using `result_glob` and writes BUSCO completeness, single-copy/duplicated, fragmented, missing, marker-count, and lineage metrics.
+
+A recipe can declare a `commands` chain instead of a single `arguments` command (the two are mutually exclusive). The rendered steps execute in order through the same backend under one `analysis_jobs` row; the first step with a non-zero exit code aborts the chain and fails the job with a `step N/M failed: ...` error. Each step gets its own `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`, and every step's argv and exit code is listed in the run's `execution_details.steps`. Intermediate artifacts belong in the deterministic `${work_dir}` scratch directory (`<output_name>.work` next to the output), which is deleted and rebuilt before the run and removed after it finishes or fails; `--keep-partial` preserves it. Only the last step must produce `${output}`. The rendered `commands` participate in the parameter fingerprint. See "Command chains" in the [Recipe field reference](recipe-fields.md) and the `rpsblast_cdd` example in [Result parsers and examples](recipe-parsers-examples.md).
 
 Outside `--dry-run`, `analyze` prints one progress line per file as processing advances, in the form `[i/N] file_id: running|done|failed`; dry runs stay silent and print only the plan table.
 
@@ -75,7 +77,7 @@ If a process is killed by SIGKILL or another uncatchable mechanism, a residual `
 
 Before each candidate file is processed, the current recipe together with its referenced tool spec is snapshotted into `recipe_snapshots` (content-addressed, deduplicated), and `analysis_jobs.recipe_snapshot_id` points back to that snapshot; cache hits record a snapshot of the current configuration as well, and jobs adopted during resume inherit the original job's snapshot id. See the `recipes` command below and the [external analysis execution model](../architecture/external-analysis.md).
 
-Default recipes are `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, and `busco_autolineage`; they can be changed. For the complete `config/tools.yaml` contract, see the [Recipe Configuration Model](recipe-overview.md).
+Default recipes are `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, `busco_autolineage`, `busco_lineage`, and the command-chain `rpsblast_cdd`; they can be changed. For the complete `config/tools.yaml` contract, see the [Recipe Configuration Model](recipe-overview.md).
 
 ## recipes
 
@@ -116,3 +118,54 @@ operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
 - `--query-id`, `--subject-id`, and `--evalue-max` filter the `--hits` rows (e-value filter keeps rows with `evalue <= VALUE`). All of `--format`/`--out`/`--query-id`/`--subject-id`/`--evalue-max` require `--hits`; passing any of them without it is a validation error.
 - `--limit` defaults to 20.
 - Effectively retired entities are excluded by default; `--include-retired` displays historical results.
+
+## extract-domains
+
+```bash
+operon extract-domains --file-id FIL_... \
+  (--analysis NAME | --regions-tsv TSV) \
+  [--flank N] [--min-length N] [--best-only | --all-regions] \
+  [--subject-like PATTERN] [--evalue-max E] \
+  --out FASTA [--manifest TSV]
+```
+
+- Extracts query intervals stored in `analysis_alignments` (only `completed` jobs count) as substrings of one manifest FASTA. `--analysis` names the completed analysis whose alignments define the regions; `--subject-like` (SQL LIKE matched against `subject_id` and the hit's `short_name` in `extra_json`) and `--evalue-max` narrow them. Alternatively `--regions-tsv` supplies external coordinates with columns `seqid,start,end` (optional `subject`,`evalue`) for regions that did not come from an analysis.
+- `--flank` (default 5) extends each region on both sides, truncated at sequence boundaries; `--min-length` (default 30) discards shorter regions before flanking.
+- `--best-only` (default) keeps the single best-evalue region per query and headers stay the plain seqid; `--all-regions` emits one record per region with headers `<seqid>|region:<start>-<end>` using the extracted (post-flank, boundary-truncated) coordinates.
+- The output FASTA is written atomically. `--manifest` records every candidate region — including excluded ones with their reason (`missing_coordinates`, `below_min_length`, `seqid_not_in_fasta`, `region_outside_sequence`) — with source file, analysis, subject, original and extracted coordinates, length, and e-value.
+- A `REMOTE_ONLY` source file fails with an actionable error: restore it with `operon pull` and re-run. Each run writes an `extract-domains` step with the full command line to `workflow_runs`; the product re-enters the manifest through `operon adopt` (see [External Analysis](../guides/external-analysis.md)).
+
+## select-sequences
+
+```bash
+operon select-sequences --file-id FIL_... \
+  [--analysis NAME ...] [--subject-like PATTERN] [--evalue-max E] \
+  [--min-span N] [--hit-type TYPE] [--entity-type TYPE] [--entity-id ID] \
+  [--require-hit | --require-no-hit] \
+  --out FASTA [--manifest TSV]
+```
+
+- Writes the subset of one manifest FASTA whose sequences have (or lack) matching alignment hits in `analysis_alignments` (only `completed` jobs count). A repeated `--analysis` is OR-ed (a hit in any listed analysis counts); `--subject-like`, `--evalue-max`, `--min-span`, and `--hit-type` (exact match against the hit's `hit_type` in `extra_json`) are AND-ed. Passing no criterion at all is an error.
+- `--require-hit` (default) keeps sequences with at least one matching hit; `--require-no-hit` keeps the complement, computed against the full seqid set of the `sequences` table (falling back to scanning the FASTA itself when the table has no rows for the file).
+- `--entity-type`/`--entity-id` restrict which jobs' alignments count, supporting per-taxon batch strategies.
+- `--manifest` lists every sequence of the file with its selection state and evidence (`matched_analysis`, `best_evalue`, `best_subject`, `hit_count`).
+- Writes a `select-sequences` step to `workflow_runs`; the subset re-enters the manifest through `operon adopt`.
+
+## timetree
+
+```bash
+operon timetree taxon --name NAME
+operon timetree pairwise (--taxon NAME | --taxon-id N) ...
+operon timetree mrca (--taxon NAME ... | --taxa A,B,C) [--taxon-id N ...]
+operon timetree timeline --taxon NAME
+operon timetree calibrations (--taxa A,B,C | --taxon NAME ...) [--pairs] [--out TSV]
+operon timetree fetch --pairs TSV --output DIR
+operon timetree calibrate --snapshot DIR --tree FILE --taxa TSV --constraints TSV --output DIR
+```
+
+The `timetree` group queries the TimeTree REST API for divergence-time evidence and compiles MCMCTree calibration priors. Any use of TimeTree data must cite Kumar et al. 2022 (Mol Biol Evol, <https://doi.org/10.1093/molbev/msac174>); the citation is printed on every query.
+
+- `taxon` resolves a scientific name to TimeTree/NCBI taxonomy candidates (`taxon_id`, `scientific_name`, `rank`). `pairwise` reports the divergence-time summary for exactly two taxa; `mrca` for the MRCA of N taxa; `timeline` lists the node timetable from one taxon back to the last universal ancestor. Taxa are given as repeated `--taxon NAME` / `--taxon-id N` (or comma-separated `--taxa` for `mrca` and `calibrations`); an ambiguous name is never auto-resolved — the error lists the candidates and asks for `--taxon-id`. All query commands accept `--format text|json` (default `text`) and `--refresh` to bypass the cache.
+- Responses are cached inside the project at `adapters_cache/timetree/<sha256(url)>.json`, keeping the request URL, fetch time, and verbatim body so replayed queries stay auditable. TimeTree's terms forbid mirroring or redistributing the database, so only the exact queries made are cached, and requests stay serial with a pause between them. Each query records a `timetree:<subcommand>` step in `workflow_runs`.
+- `calibrations` builds a calibration prior table for MCMCTree: one whole-set MRCA row by default, or one row per pair with `--pairs`. Columns are `node_label`, `taxa`, `taxon_ids`, `age_median`, `ci_low`, `ci_high`, `study_count`, `source`, `queried_at`, `cache_file`. `--out` additionally writes the TSV; archive it into the project with `operon adopt` when it should be versioned.
+- `fetch` and `calibrate` are project-independent and work on explicit file paths: `fetch` downloads the summary and per-study evidence for selected NCBI taxon pairs into a new immutable snapshot directory (raw responses plus a checksummed manifest, never overwriting a prior run); `calibrate` compiles reviewed soft bounds from such a snapshot onto a rooted, strictly bifurcating species tree (every constraint needs `approved=yes` and a rationale; summary confidence intervals are evidence, never fossil bounds).

@@ -36,9 +36,11 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
 
 - `operon/` — the Python package (CLI entry points: `operon/cli.py`,
   `operon/__main__.py`; console script `operon = operon.cli:main`).
-  - `operon/adapters/` — external source adapters (currently NCBI Datasets,
-    offline-first: JSON/JSONL, ZIP, or unpacked directories, plus optional
-    online download).
+  - `operon/adapters/` — external source adapters: NCBI Datasets
+    (offline-first: JSON/JSONL, ZIP, or unpacked directories, plus optional
+    online download) and TimeTree (query-cache-only REST client caching the
+    verbatim responses of exact queries under `adapters_cache/timetree/`;
+    mirroring or redistribution is forbidden by TimeTree's terms).
   - `operon/qc_module/` — streaming FASTA/FASTQ/GFF3/protein parsers and
     built-in QC stages. `parsers.py` is the pure-Python reference
     implementation; `_parsers.pyx` is the Cython-accelerated build of the
@@ -99,7 +101,12 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     NCBI Taxonomy snapshots and coverage denominators), `release.py` +
     `export.py` (immutable releases and selective exports), `lifecycle.py`
     (audited reversible entity retirement), `lineage.py` (adopting external
-    workflow outputs), `backup.py`, `reports.py`, `table_import.py`,
+    workflow outputs), `sequence_tools.py` (alignment-driven domain
+    extraction and sequence selection), `alignment.py` (pure-Python
+    multiple-alignment QC reference implementation behind
+    `operon alignment-qc`), `timetree.py` (TimeTree query/calibration CLI
+    group backed by the query-cache adapter), `backup.py`, `reports.py`,
+    `table_import.py`,
     `import_wizard.py`, `entity_view.py`, `environment.py`
     (execution-environment capture), `shutdown.py` (graceful SIGINT/SIGTERM
     handling), `ncbi_reconcile.py` (development-era adapter anomaly repair),

@@ -78,6 +78,8 @@ operon analyze --analysis blastn_nt --backend ssh \
 
 `REMOTE_ONLY` inputs are consumed in place through `storage_remote`; expected outputs are retrieved back into the project after a successful run. See [Remote Execution with Slurm and SSH](remote-execution.md).
 
+Recipes with a `commands` chain (such as `rpsblast_cdd`) are compatible with the remote backends: every step executes in order through the same remote executor, and the deterministic `${work_dir}` scratch directory — like any path under the project root — is mapped to the remote root, created there before the run, and cleaned up afterwards.
+
 ### e. Run the built-in QC remotely
 
 Install `operon` on the HPC (see the limitations below), measure the file in place, pull the JSON payload back as a run output, and import it into `qc_results`:
