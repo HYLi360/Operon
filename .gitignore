@@ -26,3 +26,5 @@ junit.xml
 htmlcov/
 /site/
 /docs/_build/
+/workflows/
+/HPC/
