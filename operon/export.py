@@ -20,6 +20,7 @@ from operon import __version__
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
+from operon.entity_view import _organism_for
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
 from operon.workflow import log_run
@@ -37,6 +38,28 @@ QC_COLUMNS = [
     "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit",
     "tool", "tool_version", "parameter_set", "evaluated_at",
 ]
+
+TAXA_COLUMNS = [
+    "file_id", "organism_id", "scientific_name", "taxon_id",
+    "taxonomy_source", "taxonomy_version",
+]
+
+
+def _export_taxa(db: Database, members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Freeze normalized organism metadata; never infer taxa from filenames."""
+    cache: dict[tuple[str, str], dict[str, Any]] = {}
+    rows = []
+    for member in members:
+        key = (member["entity_type"], member["entity_id"])
+        if key[0] == "taxonomy_snapshot":
+            continue
+        if key not in cache:
+            organism_id = _organism_for(db, *key)
+            cache[key] = dict(db.conn.execute(
+                "SELECT * FROM organisms WHERE organism_id=?", (organism_id,),
+            ).fetchone())
+        rows.append({"file_id": member["file_id"], **cache[key]})
+    return rows
 
 
 def _select_files(
@@ -257,6 +280,7 @@ def _export_files_in_workspace(
         })
 
     write_tsv(output_root / "manifest.tsv", MANIFEST_COLUMNS, manifest_rows)
+    write_tsv(output_root / "taxa.tsv", TAXA_COLUMNS, _export_taxa(db, members))
 
     if include_qc:
         pairs = sorted({(row["entity_type"], row["entity_id"]) for row in manifest_rows})
@@ -293,6 +317,7 @@ def _export_files_in_workspace(
         "package_version": __version__,
         "link_kind": link_kind,
         "manifest_sha256": manifest_sha256,
+        "taxa_sha256": sha256_file(output_root / "taxa.tsv"),
     }
     (output_root / "provenance.json").write_text(
         json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
