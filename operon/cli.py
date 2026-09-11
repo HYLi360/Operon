@@ -297,6 +297,13 @@ def _parser() -> argparse.ArgumentParser:
                    help="parameter-set label embedded in the payload (default: builtin_v2)")
     p.add_argument("--out", help="write the JSON payload here (atomically) instead of stdout")
 
+    p = sub.add_parser("alignment-qc",
+                       help="measure per-sequence and per-column QC metrics for an aligned FASTA "
+                            "without a project (runs anywhere, like 'qc-measure')")
+    p.add_argument("--alignment", required=True, help="aligned FASTA file")
+    p.add_argument("--outdir", required=True,
+                   help="output directory for sequence_qc.tsv, column_qc.tsv and alignment_qc.json")
+
     p = sub.add_parser("run-external",
                        help="run an external tool with structured provenance (stdout/stderr, exit code, expected outputs)")
     p.add_argument("--step", required=True, help="workflow step name, e.g. busco / quast / fastp")
@@ -1169,8 +1176,19 @@ def _cmd_qc_measure(args: argparse.Namespace) -> int:
     return 0
 
 
-def _log_import_qc_run(project: Project, db: Database, source: str, *,
-                       started_at: str, metric_count: int, payload_format: str,
+def _cmd_alignment_qc(args: argparse.Namespace) -> int:
+    from operon.alignment import alignment_qc, render_summary_json, write_alignment_qc
+    try:
+        result = alignment_qc(args.alignment)
+        write_alignment_qc(result, args.outdir)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    sys.stdout.write(render_summary_json(result.summary))
+    return 0
+
+
+def _log_import_qc_run(project: Project, db: Database, source: str, *,                       started_at: str, metric_count: int, payload_format: str,
                        entities: list[tuple[str, str]]) -> None:
     entity_type, entity_id = entities[0] if len(entities) == 1 else (None, None)
     log_run(db, project, {
@@ -2375,6 +2393,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_init_demo(args)
         if args.command == "qc-measure":
             return _cmd_qc_measure(args)
+        if args.command == "alignment-qc":
+            return _cmd_alignment_qc(args)
         if args.command == "timetree":
             from operon.timetree import run_cli
             return run_cli(args)
