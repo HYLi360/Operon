@@ -145,3 +145,71 @@ operon report decisions \
 ```
 
 Existing projects are not overwritten by `operon init`. Copy the profile from a new project template or create the versioned YAML manually under `config/profiles/`.
+
+## Sequence classification profiles
+
+A profile of `kind: sequence_classification` labels individual sequences instead of deciding entities. The alignment hits stored in `analysis_alignments` are observed data; the profile decides. Run it with `operon classify-sequences --profile NAME` (see the [command reference](../reference/cli-analysis.md#classify-sequences)); labels land in `sequence_labels` with full audit. Every threshold lives in this YAML — never in code.
+
+```yaml
+kind: sequence_classification
+version: 1
+description: bHLH tier classification from CDD core hits plus a Pfam rescue
+applies_to:
+  entity_type: annotation
+  file_role: protein_fasta
+sources:
+  core:
+    analysis: rpsbproc_cdd
+    # A core hit is CDD cl00081 or a bhlh/bhlh_* short name ...
+    filter:
+      - any:
+          - {field: subject_id, operator: "==", value: cl00081}
+          - {field: short_name, operator: like, value: bhlh}
+          - {field: short_name, operator: like, value: bhlh_%}
+      # ... but a bhlh-myc_n short name never counts as a core hit.
+      - not: {field: short_name, operator: "==", value: bhlh-myc_n}
+    best_by:
+      - {field: hit_type, rank: {Specific: 0, Motif: 1, Partial: 2}}
+      - {field: incomplete, rank: {"-": 0, NC: 1}}
+      - {field: evalue, direction: asc}
+      - {field: bitscore, direction: desc}
+      - {field: span, direction: desc}
+  rescue:
+    analysis: hmmsearch_pf00010
+    filter:
+      - {field: subject_id, operator: "==", value: PF00010}
+    best_by:
+      - {field: evalue, direction: asc}
+rules:
+  - label: A
+    source: core
+    when:
+      - {field: hit_type, operator: "==", value: Specific}
+      - {field: incomplete, operator: "==", value: "-"}
+      - {field: span, operator: ">=", value: 40}
+  - label: B
+    source: core
+    when:
+      - {field: span, operator: ">=", value: 30}
+      - {field: incomplete, operator: "!=", value: NC}
+  - label: R
+    source: rescue
+    when:
+      - {field: i_evalue, operator: "<=", value: 1e-5}
+      - {field: span, operator: ">=", value: 30}
+  - {label: U, source: core, absent: true}
+  - {label: C, default: true}
+```
+
+Grammar:
+
+- `applies_to` is a mapping with `entity_type` and `file_role` (unlike the list form of `kind: qc` profiles); it selects the target manifest files. Superseded and effectively retired entities are excluded.
+- `sources` names the hit sources the rules can reference. Each source declares:
+  - `analysis`: the analysis name whose `analysis_alignments` rows count; only rows of the latest `completed` job per target file contribute.
+  - `filter`: which rows count as hits at all (a list of conditions, AND-ed; empty means every row).
+  - `best_by`: an ordered best-hit ranking; the first surviving row per seqid is the best hit the rules see. Each entry is a `field` with `direction: asc|desc` (default `asc`), or a `rank` map from value to rank (unmapped values sort after all mapped ones; an entry-level `default` sets their rank explicitly). Without `best_by`, rows order by `hit_rank` ascending.
+- `rules` are evaluated in order and the first match wins. A rule carries a `label` plus exactly one of: a non-empty `when` list of conditions checked against the source's best hit, `absent: true` (the source has no hit row at all for the sequence — tier U above), or `default: true` (catch-all; takes no `source`/`when`/`absent`). A sequence matched by nothing stays unlabeled.
+- Conditions — the grammar is shared between `filter` and `when` — are mappings with a `field` and an `operator`: `>=`, `<=`, `>`, `<`, `==`, `!=` (numeric, with string fallback for equality), `in`/`not_in` (with a `values` list), `between` (with `min`/`max`), `exists`, and `like` (case-insensitive SQL LIKE pattern with `%` and `_` wildcards). A condition may instead be `any: [...]` (a group whose conditions are OR-ed) or `not: {...}` (negation of a single condition); the top-level list is always AND-ed.
+- Fields resolve against the alignment columns (`subject_id`, `hit_rank`, `query_start`, `query_end`, `evalue`, `bitscore`, `percent_identity`, …), then the derived `span` field (`query_end - query_start + 1`) and `seqid` (the query id up to the first whitespace), and finally the keys of the hit row's `extra_json` — parser-specific fields such as `hit_type`, `incomplete`, `short_name`, or `i_evalue`. A missing field never satisfies a condition.
+
+Re-running with the same profile content and the same inputs is a no-op; editing the profile re-decides the affected sequences and audits every label change in `changes`.

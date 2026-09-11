@@ -44,12 +44,12 @@ operon run-external --step astral_species_tree \
 
 ## 第三步：把中间产物与结果收养回库
 
-流程结束后，用批量 adopt 清单把值得保留的产物——关键中间产物（框架树、各亚族比对）与最终结果（物种树、TreeShrink 输出、Notung 协调结果）——重新注册回数据库。TSV 形式需要包含 `path`、`entity_type`、`entity_id`、`role`、`derived_from` 的表头行；`format`、`compression` 与 `workflow_run_id` 列可选（省略时自动探测）。`derived_from` 填写逗号分隔的、必须已注册的 file_id；相对路径按项目根目录解析：
+流程结束后，用批量 adopt 清单把值得保留的产物——关键中间产物（框架树、亚族指派表）与最终结果（物种树、TreeShrink 输出、Notung 协调结果）——重新注册回数据库。TSV 形式需要包含 `path`、`entity_type`、`entity_id`、`role`、`derived_from` 的表头行；`format`、`compression` 与 `workflow_run_id` 列可选（省略时自动探测）。`derived_from` 填写逗号分隔的、必须已注册的 file_id；相对路径按项目根目录解析：
 
 ```text
 path	entity_type	entity_id	role	format	compression	derived_from
 analysis/external/superfamily_round1/results/framework.treefile	organism	ORG_000001	superfamily_framework_tree	other	none	FIL_000012
-analysis/external/superfamily_round1/results/subfamilies/OG000102.aln.faa	organism	ORG_000001	subfamily_alignment	fasta	none	FIL_000012,FIL_000013
+analysis/external/superfamily_round1/results/subfamily_assignments.tsv	organism	ORG_000001	subfamily_assignments	other	none	FIL_000021
 analysis/external/superfamily_round1/results/astral.species_tree.nwk	organism	ORG_000001	species_tree	other	none	FIL_000021
 analysis/external/superfamily_round1/results/treeshrink/	organism	ORG_000001	treeshrink_output	directory	none	FIL_000021
 analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_reconciliation	directory	none	FIL_000021,FIL_000022
@@ -59,11 +59,55 @@ analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_
 operon adopt --from-manifest adopt_manifest.tsv
 ```
 
-role 由工作流自由命名。每个产物实体化到 `analysis/adopted/<entity_id>/` 下（树文件通常探测为 `other`，比对为 `fasta`；目录产物按 `format: directory`、`compression: none` 收养），继承 ingest 的幂等/冲突不变量，并写入指回输入的 `file_lineage` 谱系边。整批在同一事务中提交；失败时只删除本批新建的产物。
+role 由工作流自由命名。每个产物实体化到 `analysis/adopted/<entity_id>/` 下（树文件通常探测为 `other`，比对为 `fasta`；目录产物按 `format: directory`、`compression: none` 收养），继承 ingest 的幂等/冲突不变量，并写入指回输入的 `file_lineage` 谱系边。整批在同一事务中提交；失败时只删除本批新建的产物。各亚族序列集这类数据决定数量的单元**不**在这里逐条手写收养——下一步改用 fanout 从已收养的指派表扇出。
 
-## 第四步：以收养产物为输入做级联分析
+## 第四步：扇出数据决定的单元，再做级联分析
 
-收养后的文件是普通 manifest 成员，因此 `analyze` recipe 可以通过 `entity_type + file_role + format` 把它选为输入。例如用一个声明了 `entity_type: organism`、`file_role: subfamily_alignment`、`format: fasta` 的 recipe 对所有收养来的亚族比对做结构域扫描，或对收养的 FASTA 直接 `operon qc --file-id FIL_...`。结果与针对原始文件的分析一样流入 `analysis_results`/`analysis_alignments`/`qc_results`，因此每一轮流程都可以建立在上一轮收养产物之上。
+亚族划分是整条流程中形状由数据决定的环节：只有外部 assign-subfamilies 步骤读完已收养的框架树之后，亚族数量才知道。不要逐亚族手写 adopt 清单条目。让外部步骤产出干净的两列指派 TSV（`unit`、`seqid`——诸如丢弃未解析序列这类项目专属的过滤在那里完成），按第三步收养该 TSV，然后用 `operon fanout` 准入这些单元：
+
+```bash
+# 先看计划：不写文件，也不写运行记录。
+operon fanout --assignments-file FIL_000022 \
+  --source-file FIL_000012 \
+  --entity-type organism --entity-id ORG_000001 \
+  --role-prefix subfamily_alignment --dry-run
+
+operon fanout --assignments-file FIL_000022 \
+  --source-file FIL_000012 \
+  --entity-type organism --entity-id ORG_000001 \
+  --role-prefix subfamily_alignment
+```
+
+`fanout` 把每个被指派的 seqid 对声明的 `--source-file` 的 `sequences` 注册表解析（解析不到的 seqid 是指名道姓的硬错误；一个 seqid 出现在多个来源中需收窄 `--source-file` 消歧），随后逐单元物化一个 FASTA 到 `analysis/derived/ORG_000001/` 下，并以 `subfamily_alignment:SF01`、`subfamily_alignment:SF02`…… 的 role 注册，同时写入指回源 FASTA 与指派 TSV 的 `file_lineage` 谱系边。输入不变时重跑是空操作（`reused`）；同一单元 role 下字节不同则抛 `ConflictError`。见 [fanout 参考](../reference/cli-decisions-reports.md#fanout)。
+
+由于单元数量由数据决定，下游 recipe 声明 role 前缀而不是精确 role：
+
+```yaml
+# config/tools.yaml
+tools:
+  iqtree:
+    executable: iqtree2
+    version_args: ["--version"]
+    version_pattern: '([0-9][^\s]*)'
+    recipes:
+      iqtree_subfamily:
+        entity_type: organism
+        file_role_prefix: "subfamily_alignment:"
+        format: fasta
+        output_suffix: .treefile
+        arguments: [-s, ${input}, -T, ${threads}, --prefix, ${output_stem}]
+        result_parser: none
+```
+
+完整字段契约见 [Recipe 字段参考](../reference/recipe-fields.md)；随后：
+
+```bash
+operon analyze --analysis iqtree_subfamily
+```
+
+`analyze` 对每个单元文件跑一个作业，串行或经配置的后端执行；缓存、收养与审计与任何其他输入完全一致。再往上的编排——重试、并行，以及针对单元产物的 TreeShrink/Notung 批处理——照旧归工作流管理器。
+
+收养与扇出的文件在其他方面都是普通 manifest 成员：带精确 role 的收养文件仍按 `entity_type + file_role + format` 被选中，FASTA 可以用 `operon qc --file-id FIL_...` 重新 QC，结果与针对原始文件的分析一样流入 `analysis_results`/`analysis_alignments`/`qc_results`，因此每一轮流程都可以建立在上一轮的产物之上。
 
 ## 第五步：评估并发布
 

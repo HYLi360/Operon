@@ -39,7 +39,7 @@ operon analyze --analysis NAME \
 
 For each run, the recipe:
 
-1. Selects files or directory inputs from the `files` manifest using `entity_type + file_role + format`.
+1. Selects files or directory inputs from the `files` manifest using `entity_type + file_role + format` (a recipe may instead declare `file_role_prefix` for a plain prefix match on `file_role`; see [Recipe field reference](recipe-fields.md)).
 2. Rechecks file SHA-256 or directory tree hash according to `input_kind`.
 3. Detects and records the external tool version.
 4. Validates `--param NAME=VALUE` against the recipe `parameters` declarations and renders arguments. In addition to `${input}`, `${output}`, `${database}`, and `${threads}`, placeholders include `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, `${entity_id}`, and declared `${<parameter>}` values. Runtime parameters enter output naming and the cache fingerprint.
@@ -98,7 +98,7 @@ operon profiles history [NAME]
 operon profiles show NAME [--snapshot-id N]
 ```
 
-Inspects the profile snapshots recorded into `qc_profiles` during evaluate:
+Inspects the profile snapshots recorded into `qc_profiles` during `evaluate` and `classify-sequences`:
 
 - `history`: without NAME, summarizes per profile (snapshot count and latest recording time); with NAME, lists that profile's snapshot history (snapshot_id/version/sha256 prefix/recorded_at/number of associated decisions).
 - `show`: prints a snapshot document as YAML (the latest one by default). Also print-only: to restore from the CLI, copy the output back into `config/profiles/` manually — no in-place rewrite. The TUI Config screen (QC Profiles tab) offers the audited alternative: restore a snapshot into the profile editor and save it as the next version with a new recorded snapshot.
@@ -150,6 +150,24 @@ operon select-sequences --file-id FIL_... \
 - `--entity-type`/`--entity-id` restrict which jobs' alignments count, supporting per-taxon batch strategies.
 - `--manifest` lists every sequence of the file with its selection state and evidence (`matched_analysis`, `best_evalue`, `best_subject`, `hit_count`).
 - Writes a `select-sequences` step to `workflow_runs`; the subset re-enters the manifest through `operon adopt`.
+
+## classify-sequences
+
+```bash
+operon classify-sequences --profile NAME
+```
+
+Labels every sequence of the profile's target files from stored alignment hits, writing one row per labeled sequence into `sequence_labels`. `--profile` is resolved from `config/profiles/<name>.yaml` and must declare `kind: sequence_classification`; the full YAML grammar is described under [Sequence classification profiles](../guides/qc-profiles.md#sequence-classification-profiles). Thresholds are never hard-coded in the engine — they live in the versioned profile.
+
+- Target files are the manifest files matching the profile's `applies_to.entity_type` + `applies_to.file_role`; superseded and effectively retired entities are excluded. Per file, each seqid registered in the `sequences` table is classified against the hits of the latest `completed` job per declared source analysis in `analysis_alignments`.
+- Rules are evaluated in order and the first match wins; a sequence matched by no rule (and no `default`) stays unlabeled. Each label records its decision evidence (rule index, source, job/alignment id, observed values) in `details_json`.
+- Idempotent and audited: re-running with the same profile content and the same inputs changes nothing and appends no `changes` rows; a changed profile rewrites the affected labels, audits each change (object type `sequence_label`), and deletes labels that no longer apply. The content-addressed profile snapshot is recorded in `qc_profiles` exactly as `evaluate` records it (inspectable with `operon profiles history`/`show`).
+- Each run writes one `workflow_runs` row (step `classify-sequences`) with per-label counts in `execution_details`, and prints a per-label summary table.
+- Exit codes: 0 on success, including a no-op rerun; 2 on validation errors (unknown profile, wrong profile `kind`, malformed profile).
+
+```bash
+operon classify-sequences --profile bhlh
+```
 
 ## timetree
 

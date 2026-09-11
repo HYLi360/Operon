@@ -44,12 +44,12 @@ operon run-external --step astral_species_tree \
 
 ## Step 3: adopt intermediates and results back
 
-After the pipeline finishes, re-register the products worth keeping — key intermediates (the framework tree, per-subfamily alignments) and final results (the species tree, TreeShrink output, Notung reconciliation) — with a batch adopt manifest. The TSV form needs a header row with `path`, `entity_type`, `entity_id`, `role`, and `derived_from`; `format`, `compression`, and `workflow_run_id` columns are optional (auto-detected when omitted). `derived_from` carries comma-separated file IDs that must already be registered; relative paths resolve from the project root:
+After the pipeline finishes, re-register the products worth keeping — key intermediates (the framework tree, the subfamily assignment table) and final results (the species tree, TreeShrink output, Notung reconciliation) — with a batch adopt manifest. The TSV form needs a header row with `path`, `entity_type`, `entity_id`, `role`, and `derived_from`; `format`, `compression`, and `workflow_run_id` columns are optional (auto-detected when omitted). `derived_from` carries comma-separated file IDs that must already be registered; relative paths resolve from the project root:
 
 ```text
 path	entity_type	entity_id	role	format	compression	derived_from
 analysis/external/superfamily_round1/results/framework.treefile	organism	ORG_000001	superfamily_framework_tree	other	none	FIL_000012
-analysis/external/superfamily_round1/results/subfamilies/OG000102.aln.faa	organism	ORG_000001	subfamily_alignment	fasta	none	FIL_000012,FIL_000013
+analysis/external/superfamily_round1/results/subfamily_assignments.tsv	organism	ORG_000001	subfamily_assignments	other	none	FIL_000021
 analysis/external/superfamily_round1/results/astral.species_tree.nwk	organism	ORG_000001	species_tree	other	none	FIL_000021
 analysis/external/superfamily_round1/results/treeshrink/	organism	ORG_000001	treeshrink_output	directory	none	FIL_000021
 analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_reconciliation	directory	none	FIL_000021,FIL_000022
@@ -59,11 +59,55 @@ analysis/external/superfamily_round1/results/notung/	organism	ORG_000001	notung_
 operon adopt --from-manifest adopt_manifest.tsv
 ```
 
-Roles are freely named by your workflow. Every product is materialized under `analysis/adopted/<entity_id>/` (tree/alignment files typically detect as format `other` or `fasta`; directories adopt as `format: directory` with `compression: none`), inherits the ingest idempotency/conflict invariants, and gains `file_lineage` edges back to its inputs. The full batch commits in one transaction; on failure only newly created artifacts are removed.
+Roles are freely named by your workflow. Every product is materialized under `analysis/adopted/<entity_id>/` (tree/alignment files typically detect as format `other` or `fasta`; directories adopt as `format: directory` with `compression: none`), inherits the ingest idempotency/conflict invariants, and gains `file_lineage` edges back to its inputs. The full batch commits in one transaction; on failure only newly created artifacts are removed. Data-determined units such as the per-subfamily sequence sets are *not* adopted row by row here — the next step fans them out from the adopted assignment table instead.
 
-## Step 4: cascade analyses onto adopted products
+## Step 4: fan out data-determined units, then cascade analyses
 
-An adopted file is a normal manifest member, so `analyze` recipes can select it as input through `entity_type + file_role + format`. For example, domain-scanning every adopted subfamily alignment with a recipe declaring `entity_type: organism`, `file_role: subfamily_alignment`, `format: fasta`, or re-QCing an adopted FASTA with `operon qc --file-id FIL_...`. Results flow into `analysis_results`/`analysis_alignments`/`qc_results` exactly like analyses over raw files, so each workflow round can build on the adopted output of the previous round.
+Subfamily assignment is the point where the pipeline's shape becomes data-dependent: only after the external assign-subfamilies step reads the adopted framework tree is the number of subfamilies known. Do not hand-write one adopt manifest entry per subfamily. Have the external step emit a clean two-column assignment TSV (`unit`, `seqid` — project-specific filtering such as dropping unresolved sequences happens there), adopt that TSV as shown in step 3, then admit the units with `operon fanout`:
+
+```bash
+# Inspect the plan first: no files, no run row.
+operon fanout --assignments-file FIL_000022 \
+  --source-file FIL_000012 \
+  --entity-type organism --entity-id ORG_000001 \
+  --role-prefix subfamily_alignment --dry-run
+
+operon fanout --assignments-file FIL_000022 \
+  --source-file FIL_000012 \
+  --entity-type organism --entity-id ORG_000001 \
+  --role-prefix subfamily_alignment
+```
+
+`fanout` resolves every assigned seqid against the `sequences` registry of the declared `--source-file`s (an unresolvable seqid is a hard error that names it; a seqid present in several sources must be disambiguated by narrowing `--source-file`), then materializes one FASTA per unit under `analysis/derived/ORG_000001/` and registers it with role `subfamily_alignment:SF01`, `subfamily_alignment:SF02`, …, plus `file_lineage` edges back to the source FASTA and the assignment TSV. Re-running with unchanged inputs is a no-op (`reused`); different bytes under the same unit role raise `ConflictError`. See the [fanout reference](../reference/cli-decisions-reports.md#fanout).
+
+Because the unit count is data-dependent, the downstream recipe declares a role prefix instead of an exact role:
+
+```yaml
+# config/tools.yaml
+tools:
+  iqtree:
+    executable: iqtree2
+    version_args: ["--version"]
+    version_pattern: '([0-9][^\s]*)'
+    recipes:
+      iqtree_subfamily:
+        entity_type: organism
+        file_role_prefix: "subfamily_alignment:"
+        format: fasta
+        output_suffix: .treefile
+        arguments: [-s, ${input}, -T, ${threads}, --prefix, ${output_stem}]
+        result_parser: none
+```
+
+See [Recipe field reference](../reference/recipe-fields.md) for the full field contract; then:
+
+```bash
+operon analyze --analysis iqtree_subfamily
+```
+
+`analyze` runs one job per unit file, serially or through the configured backend, with caching, adoption, and audit exactly as for any other input. Orchestration beyond that — retries, parallelism, and the TreeShrink/Notung batches over the unit products — stays with the workflow manager, as before.
+
+Adopted and fanned-out files are normal manifest members in every other respect: an adopted file with an exact role is selected by `entity_type + file_role + format` as before, a FASTA can be re-QC'd with `operon qc --file-id FIL_...`, and results flow into `analysis_results`/`analysis_alignments`/`qc_results` exactly like analyses over raw files, so each workflow round can build on the products of the previous round.
 
 ## Step 5: evaluate and release
 

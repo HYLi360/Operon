@@ -6,7 +6,7 @@
 
 A single `analyze` run performs, in order:
 
-1. Selects the input from the `files` manifest using `entity_type + file_role + format`;
+1. Selects the input from the `files` manifest using `entity_type + file_role + format` (or a `file_role_prefix` match in place of the exact `file_role`);
 2. Uses `input_kind` to check whether the path should actually be a file or a directory, and re-verifies the content hash;
 3. Probes the external tool version, resolves the database path, and computes the database identity;
 4. Computes the unique target path of the output artifact;
@@ -20,7 +20,7 @@ Configuration fields fall into five groups:
 | Question | Corresponding fields |
 |---|---|
 | Which program, launched from where? | tool-level `executable`, `run_method`, version fields |
-| Which archived data may be used as input? | `entity_type`, `file_role`, `format`, `input_kind` |
+| Which archived data may be used as input? | `entity_type`, `file_role` (or `file_role_prefix`), `format`, `input_kind` |
 | Where do results go, as file or directory? | `output_subdir`, `output_kind`, `output_name`, `output_suffix` |
 | How is the command line composed? | `arguments` or `commands`, plus placeholders and optional step version probes |
 | How is the database identified and output machine-read? | `database*`, `result_parser`, and parser-specific fields |

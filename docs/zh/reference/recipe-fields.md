@@ -8,6 +8,7 @@
 |---|---|---|
 | `entity_type` | 空 | 限定 `assembly`、`annotation`、`organism` 等实体类型 |
 | `file_role` | 空 | 必须与 manifest 中的 `files.file_role` 精确匹配 |
+| `file_role_prefix` | 空 | 对 `files.file_role` 做纯字符前缀匹配；与 `file_role` 互斥 |
 | `format` | 空 | 必须与 manifest 中的 `files.format` 精确匹配 |
 | `input_kind` | `format: directory` 时为 `directory`，否则为 `file` | 运行时要求输入路径的实际类型 |
 
@@ -15,6 +16,13 @@
 
 - `file_role` 和 `format` 回答“从 manifest 选哪一条记录”；
 - `input_kind` 回答“该记录指向的路径在文件系统中是什么”。
+
+`file_role` 与 `file_role_prefix` 互斥。前缀是纯字符前缀而不是模式——通配符
+（`%`、`*`、`?`）在 recipe 加载时即被拒绝——因此
+`file_role_prefix: "subfamily_alignment:"` 会选中 `subfamily_alignment:SF01`、
+`subfamily_alignment:SF02` 等。典型用途是选中 `operon fanout` 物化的逐单元文件：
+单元数量由数据决定，无法枚举成精确 role。每个被选中的文件仍具有唯一的
+实体 + role 身份，manifest 的冲突不变量不受影响。
 
 普通 protein FASTA：
 

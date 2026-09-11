@@ -19,7 +19,10 @@ manifest）；外部工作流消费这组产物后，用 adopt 把派生 artifac
 产物可继续被 QC、evaluate、export、release，并被 `analyze` 选为下游 recipe 的输入
 （级联分析）。下游流程应通过这组契约读写，而不是直接读数据库。级联工作流的编排
 （依赖图、并行、重试）归 snakemake/nextflow 等工作流管理器；`operon` 负责数据准入、
-谱系与发布，`run-pipeline` 只覆盖单文件的简易串联。adopt 的批量 manifest 格式见
+谱系与发布，`run-pipeline` 只覆盖单文件的简易串联。准入侧有一个例外：当下游分析
+单元的数量由数据决定时（例如只有分类完成后才知道数量的亚族），这些单元的准入归
+`operon` 负责——`operon fanout` 把逐单元文件物化并带谱系注册到
+`analysis/derived/` 下；而对这些单元跑分析的编排仍归执行器与工作流引擎。adopt 的批量 manifest 格式见
 [外部分析操作指南](../guides/external-analysis.md)。export 与 release 语义互补：
 release 面向发布（QC 准入、不可变快照），export 面向分析输入（任意选择条件、按需物化）。
 
@@ -35,4 +38,6 @@ inode 共享，可对 `standardized/` 或 release 显式使用硬链接。
 执行后端按 `execution.py` 的抽象扩展：当前提供 `local`、`slurm` 与 `ssh` 三种，
 新增后端只需实现同一 executor 接口即可接入 `run-external`/`analyze`。暂不支持
 云厂商 SDK（AWS Batch、GCP Batch 等）与 Slurm 数组作业；远程存储目前仅有 SFTP
-镜像，对象存储（S3 等）同样属于扩展方向。
+镜像，对象存储（S3 等）同样属于扩展方向。数据依赖的扇出并不需要数组作业：
+`operon fanout` 把每个单元准入为独立的 manifest 文件，`analyze` 配合
+`file_role_prefix` recipe 即可通过任意后端逐单元各提交一个作业。

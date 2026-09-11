@@ -105,6 +105,47 @@ adopt 回注册输出侧 manifest。
 - 派生 role 由产生它的工作流自由命名，不受 `schemas.yaml` 内置 role 清单限制
   （该清单只在导入路径生效）。
 
+## fanout
+
+```bash
+operon fanout --assignments-file FILE_ID \
+  --source-file FILE_ID [--source-file FILE_ID ...] \
+  --entity-type TYPE --entity-id ID --role-prefix PREFIX \
+  [--unit-column COL] [--seqid-column COL] \
+  [--parent-run-id RID] [--actor NAME] [--dry-run]
+```
+
+把数据决定数量的分析单元（例如只有分类完成后才知道数量的亚族）逐单元物化为一个
+FASTA，并注册为一等 manifest 文件。这是动态扇出的"准入"一半：`operon` 负责创建
+并登记带谱系的派生单元；对这些单元跑分析的编排仍归执行后端或工作流管理器。
+
+- 指派文件是带表头行的 TSV，默认包含 `unit` 与 `seqid` 两列（其他列名用
+  `--unit-column`/`--seqid-column` 指定）。它必须已注册进 manifest——通常经
+  `operon adopt`——因为按 `file_id` 引用能保证谱系起点已在库中。完全重复的
+  `(unit, seqid)` 行会被丢弃并计数；unit 或 seqid 为空是错误。
+- 每个 seqid 都对声明的 `--source-file`（可重复）的 `sequences` 注册表解析，取
+  第一个空白分隔 token。任何 seqid 在所有来源中都找不到时是硬错误，并列出全部
+  不可解析的 seqid；一个 seqid 出现在多个来源中属于歧义，需要收窄
+  `--source-file` 消歧。读取字节前会先对照 manifest 校验每个源文件的 SHA-256；
+  `sequences` 注册表落后于当前字节时会要求先重跑 QC。
+- 锚定实体（`--entity-type`/`--entity-id`）必须已存在且处于活动状态。每个单元以
+  role `<role_prefix>:<unit>`（如 `subfamily_alignment:SF07`）注册到
+  `analysis/derived/<entity_id>/` 下——operon 内部的派生物与 `analysis/adopted/`
+  下的外部收养 artifact 分开存放。
+- 注册走与 `adopt` 相同的 ingest 路径并继承其不变量：相同字节幂等复用既有
+  `FIL_`（状态显示为 `reused`），同实体同 role 不同字节抛 `ConflictError`。
+  `file_lineage` 谱系边从每个单元文件指回每个源文件和指派文件。
+- 所有校验先于任何写入完成；注册、谱系边与运行簿记在单一事务中提交，失败时仅
+  删除本次运行新建的归档目标。每次运行写入一行 `workflow_runs`（step 为
+  `fanout`，`execution_details` 含单元清单与计数）；`--parent-run-id` 可关联
+  注册指派文件的那次 adopt 运行。
+- `--dry-run` 只打印计划的单元（unit、序列数、role），不写任何东西——不写文件
+  也不写运行记录。
+
+recipe 声明相同的 `file_role_prefix` 前缀即可一次选中全部单元文件，`operon
+analyze --analysis NAME` 随之对每个单元跑一个作业；见
+[Recipe 字段参考](recipe-fields.md)。
+
 ## run-pipeline
 
 ```bash

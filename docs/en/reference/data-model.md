@@ -76,7 +76,7 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | `entity_state` | Entity-level state machine, including the database schema marker row |
 | `workflow_runs` | Structured run records (mirroring `logs/workflow.jsonl`), including executor, scheduler job ID, execution details, and resource-usage columns (`duration_seconds`, `max_rss_mb`, `avg_rss_mb`, `cpu_seconds`; NULL when collection is unavailable, never affecting the run verdict) |
 | `execution_environments` | Content-addressed execution-environment documents (hostname, OS/kernel, Python/operon versions, relevant environment variables, docker probe); referenced by `workflow_runs` and `analysis_jobs` through `environment_id` |
-| `file_lineage` | Lineage edges from a derived file to its input files (`derived_file_id`, `input_file_id`, optional `workflow_run_id`, `created_at`), written by `operon adopt`; `UNIQUE(derived_file_id, input_file_id)` makes repeated adopts idempotent |
+| `file_lineage` | Lineage edges from a derived file to its input files (`derived_file_id`, `input_file_id`, optional `workflow_run_id`, `created_at`), written by `operon adopt` and `operon fanout`; `UNIQUE(derived_file_id, input_file_id)` makes repeated adopts idempotent |
 | `data_sources` | External databases/repositories, providers, record URLs, citations, licenses, and normalized content identity |
 | `source_links` | Many-to-many associations between sources and organism/sample/run/assembly/annotation/file, plus import provenance |
 | `schema_migrations` | Stable IDs, script identities, and application times of applied database migrations |
@@ -95,6 +95,7 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | `analysis_results` / `analysis_hits` | Analysis summary metrics and top-hits long tables synced into the database |
 | `sequences` | One row per FASTA record (`file_id`, `file_sha256`, `entity_type`, `entity_id`, `seqid`, `length`; `UNIQUE(file_id, seqid)`), populated by built-in FASTA QC (annotation QC also syncs its assembly's sequences) and by `import-qc` of a `qc-measure` payload; powers seqid reverse lookup in `show` and read-only SQL |
 | `analysis_alignments` | Every parsed alignment hit of a completed analysis job as a structured row (job/entity/file identity, `query_id`, `subject_id`, `hit_rank`, query/subject intervals, `evalue`, `bitscore`, `percent_identity`, `extra_json`); written in full, never truncated by `max_hits_per_query`, and read by `report analysis --hits` |
+| `sequence_labels` | Per-sequence classification labels (`file_id`, `seqid`, `label`, `profile_name`, `profile_sha256`, `details_json`, `decided_at`; primary key `file_id + seqid + profile_name`), written by `operon classify-sequences` from versioned `sequence_classification` profiles; every label change is audited in `changes` |
 | `taxonomy_snapshots` | NCBI Taxonomy versions, source manifest identities, node counts, and import status |
 | `taxonomy_nodes` / `taxonomy_aliases` | Frozen taxonomy tree nodes and secondary/merged TaxID mappings |
 | `taxonomy_reference_sets` | Denominator TSV identities and per-rank row counts compiled from coverage profiles and taxonomy versions |

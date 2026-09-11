@@ -83,6 +83,27 @@ Registers derived artifacts produced by external analyses/workflows back into th
 - Every adopt writes one `workflow_runs` row (step `adopt`, `execution_details` containing the actor and an items summary); `--actor` defaults to `$USER` or `adopt`.
 - Derived roles are freely named by the producing workflow and are not restricted to the built-in role list in `schemas.yaml` (that list only applies to the import path).
 
+## fanout
+
+```bash
+operon fanout --assignments-file FILE_ID \
+  --source-file FILE_ID [--source-file FILE_ID ...] \
+  --entity-type TYPE --entity-id ID --role-prefix PREFIX \
+  [--unit-column COL] [--seqid-column COL] \
+  [--parent-run-id RID] [--actor NAME] [--dry-run]
+```
+
+Materializes data-determined analysis units — for example subfamilies whose count is only known after classification — as one FASTA per unit and registers them as first-class manifest files. This is the admission half of dynamic fan-out: `operon` creates and registers the derived units with lineage; orchestrating the analyses over them stays with the execution backend or the workflow manager.
+
+- The assignments file is a TSV with a header row and, by default, `unit` and `seqid` columns (`--unit-column`/`--seqid-column` select other names). It must already be registered in the manifest — typically through `operon adopt` — because referencing it by `file_id` guarantees the lineage starting point is in the database. Exact duplicate `(unit, seqid)` rows are dropped and counted; an empty unit or seqid is an error.
+- Every seqid is resolved against the `sequences` registry of the declared `--source-file`s (repeatable), using the first whitespace-delimited token. A seqid found in no source is a hard error listing every unresolvable seqid; a seqid found in more than one source is ambiguous and must be disambiguated by narrowing `--source-file`. Each source file's SHA-256 is verified against the manifest before its bytes are read, and a `sequences` registry that predates the current bytes asks for a QC re-run first.
+- The anchor entity (`--entity-type`/`--entity-id`) must exist and be active. Each unit registers with role `<role_prefix>:<unit>` (e.g. `subfamily_alignment:SF07`) under `analysis/derived/<entity_id>/` — operon-internal derivations live apart from externally adopted artifacts under `analysis/adopted/`.
+- Registration goes through the same ingest path as `adopt` and inherits its invariants: identical bytes reuse the existing `FIL_` idempotently (reported as `reused`), while the same entity + role with different bytes raises `ConflictError`. `file_lineage` edges point from each unit file back to every source file and to the assignments file.
+- All validation runs before any write; registration, lineage edges, and run bookkeeping commit in one transaction, and on failure only archive targets newly created by this run are removed. Each run writes one `workflow_runs` row (step `fanout`, `execution_details` containing the unit list and counts); `--parent-run-id` can link it to the adopt run that registered the assignments.
+- `--dry-run` prints the planned units (unit, sequence count, role) and writes nothing — no files and no run row.
+
+A recipe declaring `file_role_prefix` with the same prefix then selects all unit files at once, so `operon analyze --analysis NAME` runs one job per unit; see [Recipe field reference](recipe-fields.md).
+
 ## run-pipeline
 
 ```bash

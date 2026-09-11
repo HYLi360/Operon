@@ -8,6 +8,7 @@
 |---|---|---|
 | `entity_type` | empty | Restricts to entity types such as `assembly`, `annotation`, `organism` |
 | `file_role` | empty | Must exactly match `files.file_role` in the manifest |
+| `file_role_prefix` | empty | Plain character-prefix match on `files.file_role`; mutually exclusive with `file_role` |
 | `format` | empty | Must exactly match `files.format` in the manifest |
 | `input_kind` | `directory` when `format: directory`, otherwise `file` | The actual type the input path must have at runtime |
 
@@ -15,6 +16,8 @@ Selection fields and the runtime object type are two independent concepts:
 
 - `file_role` and `format` answer "which manifest record to select";
 - `input_kind` answers "what kind of filesystem object that record's path is".
+
+`file_role` and `file_role_prefix` are mutually exclusive. The prefix is a plain character prefix, not a pattern — wildcard characters (`%`, `*`, `?`) are rejected when the recipe loads — so `file_role_prefix: "subfamily_alignment:"` selects `subfamily_alignment:SF01`, `subfamily_alignment:SF02`, and so on. Its typical use is selecting the per-unit files materialized by `operon fanout`, whose count is data-dependent and therefore cannot be enumerated as exact roles. Each selected file still has a unique entity + role identity, so the manifest conflict invariants are unaffected.
 
 A plain protein FASTA:
 

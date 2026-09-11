@@ -6,7 +6,8 @@
 
 一次 `analyze` 运行依次完成：
 
-1. 用 `entity_type + file_role + format` 在 `files` manifest 中选择输入；
+1. 用 `entity_type + file_role + format`（或以 `file_role_prefix` 前缀匹配代替精确
+   `file_role`）在 `files` manifest 中选择输入；
 2. 用 `input_kind` 检查它在文件系统中究竟应当是文件还是目录，并复核内容哈希；
 3. 探测外部工具版本，解析数据库路径并计算数据库身份；
 4. 计算输出 artifact 的唯一目标路径；
@@ -21,7 +22,7 @@
 | 问题 | 对应字段 |
 |---|---|
 | 用哪个程序、从哪里启动？ | tool 层的 `executable`、`run_method`、版本字段 |
-| 哪些已归档数据可以输入？ | `entity_type`、`file_role`、`format`、`input_kind` |
+| 哪些已归档数据可以输入？ | `entity_type`、`file_role`（或 `file_role_prefix`）、`format`、`input_kind` |
 | 结果放在哪里、是文件还是目录？ | `output_subdir`、`output_kind`、`output_name`、`output_suffix` |
 | 命令行怎么组成？ | `arguments` 或 `commands`，以及占位符和可选的 step 版本探测 |
 | 数据库如何识别、输出如何机读？ | `database*`、`result_parser` 及 parser 专用字段 |

@@ -49,7 +49,9 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
 
 按 recipe 自动完成：
 
-1. 从 files manifest 中选取匹配 `entity_type + file_role + format` 的文件或目录输入；
+1. 从 files manifest 中选取匹配 `entity_type + file_role + format` 的文件或目录输入
+   （recipe 也可以改用 `file_role_prefix` 对 `file_role` 做纯字符前缀匹配，见
+   [Recipe 字段参考](recipe-fields.md)）；
 2. 按 `input_kind` 重新校验文件 SHA-256 或目录内容树哈希；
 3. 探测并记录外部程序版本；
 4. 校验 recipe `parameters` 中声明的 `--param NAME=VALUE`，再渲染参数；除 `${input}`、`${output}`、`${database}`、`${threads}` 外，还支持
@@ -148,7 +150,7 @@ operon profiles history [NAME]
 operon profiles show NAME [--snapshot-id N]
 ```
 
-查看 evaluate 时记录到 `qc_profiles` 的 profile 快照：
+查看 evaluate 与 classify-sequences 时记录到 `qc_profiles` 的 profile 快照：
 
 - `history`：不带 NAME 时按 profile 汇总（快照数与最近记录时间）；带 NAME 时列出
   该 profile 的快照历史（snapshot_id/version/sha256 前缀/recorded_at/关联
@@ -230,6 +232,38 @@ operon select-sequences --file-id FIL_... \
   `best_subject`、`hit_count`）。
 - 向 `workflow_runs` 写入 `select-sequences` 步骤；子集通过 `operon adopt` 重新登记进
   manifest。
+
+## classify-sequences
+
+```bash
+operon classify-sequences --profile NAME
+```
+
+根据已存储的比对命中为 profile 目标文件中的每条序列打标签，每条被打标的序列向
+`sequence_labels` 写入一行。`--profile` 从 `config/profiles/<name>.yaml` 解析，
+且必须声明 `kind: sequence_classification`；完整的 YAML 语法见
+[序列分类 profile](../guides/qc-profiles.md)。
+阈值从不硬编码在引擎里——全部落在版本化的 profile 中。
+
+- 目标文件是匹配 profile 的 `applies_to.entity_type` + `applies_to.file_role` 的
+  manifest 文件；被取代（superseded）与有效退役的实体会被排除。对每个文件，
+  `sequences` 表中登记的每个 seqid 都会与 `analysis_alignments` 中该文件各来源
+  analysis 最新一个 `completed` 作业的命中进行比对判定。
+- 规则按顺序求值，首条命中生效；没有被任何规则（也没有 `default`）命中的序列
+  保持无标签。每个标签把判定依据（规则序号、来源、job/alignment id、观测值）记入
+  `details_json`。
+- 幂等且带审计：以相同 profile 内容与相同输入重跑不做任何修改，也不追加
+  `changes` 行；profile 变更后会改写受影响的标签、逐条审计（对象类型
+  `sequence_label`），并删除不再适用的标签。内容寻址的 profile 快照与 `evaluate`
+  一样记录进 `qc_profiles`（可用 `operon profiles history`/`show` 查看）。
+- 每次运行写入一行 `workflow_runs`（step 为 `classify-sequences`），
+  `execution_details` 含各标签计数，并打印逐标签汇总表。
+- 退出码：成功（包括空操作的幂等重跑）为 0；校验错误（未知 profile、profile
+  `kind` 不符、profile 格式非法）为 2。
+
+```bash
+operon classify-sequences --profile bhlh
+```
 
 ## timetree
 

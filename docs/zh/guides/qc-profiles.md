@@ -156,3 +156,94 @@ operon report decisions \
 
 旧项目的 `operon init` 配置不会被自动覆盖；需要从新项目模板复制该 profile，或按本文
 示例在原项目 `config/profiles/` 中创建同名版本化 YAML。
+
+## 序列分类 profile
+
+`kind: sequence_classification` 的 profile 给单条序列打标签，而不是对实体做判定。
+存储在 `analysis_alignments` 中的比对命中是观测数据，判定由 profile 做出。用
+`operon classify-sequences --profile NAME` 运行（见
+[命令参考](../reference/cli-analysis.md)）；标签写入 `sequence_labels` 并带完整审计。
+所有阈值都写在这份 YAML 里——绝不在代码中。
+
+```yaml
+kind: sequence_classification
+version: 1
+description: 由 CDD 核心命中加 Pfam 补救命中构成的 bHLH 分级
+applies_to:
+  entity_type: annotation
+  file_role: protein_fasta
+sources:
+  core:
+    analysis: rpsbproc_cdd
+    # 核心命中：CDD cl00081 或 bhlh/bhlh_* 短名……
+    filter:
+      - any:
+          - {field: subject_id, operator: "==", value: cl00081}
+          - {field: short_name, operator: like, value: bhlh}
+          - {field: short_name, operator: like, value: bhlh_%}
+      # ……但 bhlh-myc_n 短名永远不算核心命中。
+      - not: {field: short_name, operator: "==", value: bhlh-myc_n}
+    best_by:
+      - {field: hit_type, rank: {Specific: 0, Motif: 1, Partial: 2}}
+      - {field: incomplete, rank: {"-": 0, NC: 1}}
+      - {field: evalue, direction: asc}
+      - {field: bitscore, direction: desc}
+      - {field: span, direction: desc}
+  rescue:
+    analysis: hmmsearch_pf00010
+    filter:
+      - {field: subject_id, operator: "==", value: PF00010}
+    best_by:
+      - {field: evalue, direction: asc}
+rules:
+  - label: A
+    source: core
+    when:
+      - {field: hit_type, operator: "==", value: Specific}
+      - {field: incomplete, operator: "==", value: "-"}
+      - {field: span, operator: ">=", value: 40}
+  - label: B
+    source: core
+    when:
+      - {field: span, operator: ">=", value: 30}
+      - {field: incomplete, operator: "!=", value: NC}
+  - label: R
+    source: rescue
+    when:
+      - {field: i_evalue, operator: "<=", value: 1e-5}
+      - {field: span, operator: ">=", value: 30}
+  - {label: U, source: core, absent: true}
+  - {label: C, default: true}
+```
+
+语法：
+
+- `applies_to` 是含 `entity_type` 与 `file_role` 的映射（注意与 `kind: qc`
+  profile 的列表形式不同）；它选定目标 manifest 文件。被取代（superseded）与
+  有效退役的实体会被排除。
+- `sources` 声明规则可引用的命名命中来源。每个来源包含：
+  - `analysis`：命中来自哪个 analysis 的 `analysis_alignments` 行；只有每个目标
+    文件最新一个 `completed` 作业的行参与判定。
+  - `filter`：哪些行算命中（条件列表，按 AND 组合；空列表表示所有行都算）。
+  - `best_by`：有序的 best-hit 排序；每个 seqid 幸存的第一行就是规则所见的最佳
+    命中。每项是一个 `field` 加 `direction: asc|desc`（默认 `asc`），或一个把
+    取值映射为名次的 `rank` 映射（未列出的取值排在所有已列出取值之后；条目级
+    `default` 可显式指定它们的名次）。不写 `best_by` 时按 `hit_rank` 升序。
+- `rules` 按顺序求值，首条命中生效。每条规则带一个 `label`，再加三者之一：
+  非空的 `when` 条件列表（对该来源的最佳命中求值）、`absent: true`（该来源对此
+  序列完全没有命中行——如上例中的 U 级），或 `default: true`（兜底；不接受
+  `source`/`when`/`absent`）。没有命中任何规则的序列保持无标签。
+- 条件——`filter` 与 `when` 共用同一语法——是含 `field` 与 `operator` 的映射：
+  `>=`、`<=`、`>`、`<`、`==`、`!=`（数值比较，等值比较有字符串回退）、
+  `in`/`not_in`（配 `values` 列表）、`between`（配 `min`/`max`）、`exists`，以及
+  `like`（大小写不敏感的 SQL LIKE 模式，`%` 与 `_` 为通配符）。条件也可以是
+  `any: [...]`（组内按 OR 组合）或 `not: {...}`（对单个条件取反）；顶层列表始终
+  按 AND 组合。
+- 字段先解析到比对列（`subject_id`、`hit_rank`、`query_start`、`query_end`、
+  `evalue`、`bitscore`、`percent_identity`……），再解析到派生字段 `span`
+  （`query_end - query_start + 1`）与 `seqid`（query id 取第一个空白前的部分），
+  最后解析到命中行 `extra_json` 的键——`hit_type`、`incomplete`、`short_name`、
+  `i_evalue` 等 parser 特有字段。字段缺失时条件永不成立。
+
+以相同 profile 内容与相同输入重跑是空操作；修改 profile 后会重新判定受影响的
+序列，并在 `changes` 中逐条审计每次标签变更。

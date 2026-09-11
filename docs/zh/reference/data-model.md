@@ -89,7 +89,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应），含 executor、scheduler job ID、执行详情与资源使用列（`duration_seconds`、`max_rss_mb`、`avg_rss_mb`、`cpu_seconds`；采集不到留 NULL，不影响任务判定） |
 | `execution_environments` | 内容寻址的执行环境文档（hostname、OS/kernel、Python/operon 版本、相关环境变量、docker 探测）；`workflow_runs` 与 `analysis_jobs` 经 `environment_id` 引用 |
-| `file_lineage` | 派生文件到输入文件的谱系边（`derived_file_id`、`input_file_id`、可选 `workflow_run_id`、`created_at`），由 `operon adopt` 写入；`UNIQUE(derived_file_id, input_file_id)` 使重复 adopt 幂等 |
+| `file_lineage` | 派生文件到输入文件的谱系边（`derived_file_id`、`input_file_id`、可选 `workflow_run_id`、`created_at`），由 `operon adopt` 与 `operon fanout` 写入；`UNIQUE(derived_file_id, input_file_id)` 使重复 adopt 幂等 |
 | `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `schema_migrations` | 已应用数据库迁移的稳定 ID、脚本身份和应用时间 |
@@ -108,6 +108,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
 | `sequences` | 每条 FASTA 记录一行（`file_id`、`file_sha256`、`entity_type`、`entity_id`、`seqid`、`length`；`UNIQUE(file_id, seqid)`），由内置 FASTA QC 填充（annotation QC 还会同步其 assembly 的序列），`import-qc` 导入 `qc-measure` payload 时也会写入；支撑 `show` 与只读 SQL 的 seqid 反查 |
 | `analysis_alignments` | 已完成分析作业解析出的每条比对命中各占一行（job/实体/文件身份、`query_id`、`subject_id`、`hit_rank`、query/subject 区间、`evalue`、`bitscore`、`percent_identity`、`extra_json`）；全量写入，不受 `max_hits_per_query` 截断，`report analysis --hits` 读取该表 |
+| `sequence_labels` | 逐序列的分类标签（`file_id`、`seqid`、`label`、`profile_name`、`profile_sha256`、`details_json`、`decided_at`；主键 `file_id + seqid + profile_name`），由 `operon classify-sequences` 依据版本化的 `sequence_classification` profile 写入；每次标签变更都在 `changes` 中留有审计 |
 | `taxonomy_snapshots` | NCBI Taxonomy 版本、来源 manifest 身份、节点数与导入状态 |
 | `taxonomy_nodes` / `taxonomy_aliases` | 冻结的分类树节点与 secondary/merged TaxID 映射 |
 | `taxonomy_reference_sets` | coverage profile 与 taxonomy 版本编译出的分母 TSV 身份和各 rank 行数 |
