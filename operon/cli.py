@@ -390,6 +390,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--out", required=True, help="output FASTA path (written atomically)")
     p.add_argument("--manifest", help="optional TSV manifest listing every sequence's selection state")
 
+    p = sub.add_parser("classify-sequences",
+                       help="label the sequences of the target files with a versioned "
+                            "sequence_classification profile and store the labels in the database")
+    p.add_argument("--profile", required=True,
+                   help="profile name resolved from config/profiles/<name>.yaml "
+                        "(kind: sequence_classification)")
+
     p = sub.add_parser("remotes", help="list configured remotes (project.yaml remotes:) and test connectivity")
 
     p = sub.add_parser("push",
@@ -1660,6 +1667,24 @@ def _cmd_select_sequences(args: argparse.Namespace, project: Project, db: Databa
     return 0
 
 
+def _cmd_classify_sequences(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.classify import classify_sequences
+    command = shlex.join(["operon", "classify-sequences", "--profile", args.profile])
+    result = classify_sequences(db, project, profile_name=args.profile, command=command)
+    labeled = result["sequences"] - result["unlabeled"]
+    print(f"labeled {labeled} of {result['sequences']} sequence(s) "
+          f"across {result['files']} file(s) with profile {result['profile']}; "
+          f"unlabeled: {result['unlabeled']}")
+    if result["label_counts"]:
+        print(format_table(
+            ["label", "sequences"],
+            ([label, count] for label, count in result["label_counts"].items()),
+        ))
+    print(f"labels written: {result['labels_written']}, "
+          f"removed: {result['labels_removed']} (run {result['run_id']})")
+    return 0
+
+
 def _cmd_remotes(args: argparse.Namespace, project: Project) -> int:
     from operon.remotes import check_remote, list_remotes
     names = sorted(list_remotes(project))
@@ -2424,6 +2449,7 @@ def main(argv: list[str] | None = None) -> int:
                 "analyze": lambda: _cmd_analyze(args, project, db),
                 "extract-domains": lambda: _cmd_extract_domains(args, project, db),
                 "select-sequences": lambda: _cmd_select_sequences(args, project, db),
+                "classify-sequences": lambda: _cmd_classify_sequences(args, project, db),
                 "remotes": lambda: _cmd_remotes(args, project),
                 "push": lambda: _cmd_push(args, project, db),
                 "pull": lambda: _cmd_pull(args, project, db),
