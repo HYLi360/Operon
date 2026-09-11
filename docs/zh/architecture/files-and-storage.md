@@ -13,7 +13,7 @@
 
 `standardize` 默认**复制**到 `standardized/`，使 raw、standardized、release 三层互不共享可写 inode；`--link hardlink` 或 `--link symlink` 是显式兼容选项。
 
-### 7.1 远程镜像（SFTP）
+### 远程镜像（SFTP）
 
 `project.yaml` 的 `remotes:` 段可配置一个或多个 SFTP 远程镜像（`operon/remotes.py`），
 把 manifest 文件同步到远端而不破坏本节的不变量：
@@ -40,7 +40,7 @@
 paramiko 是核心运行时依赖，但仍在代码中惰性导入，因此仅本地命令不会初始化 SSH
 组件。
 
-### 7.2 本地控制面与远程数据面
+### 本地控制面与远程数据面
 
 `operon` 0.3 的远程模型把“存、算、执行”拆为三个可组合角色：
 

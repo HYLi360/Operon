@@ -2,7 +2,7 @@
 
 ## 导入或下载 NCBI Datasets 组装
 
-### 3.1 先预览已有元数据
+### 先预览已有元数据
 
 适配器接受 NCBI Datasets 的 JSON/JSONL report、dataformat TSV/CSV、完整 ZIP
 或解包目录。推荐第一次先运行 dry-run：
@@ -24,7 +24,7 @@ operon ncbi-datasets \
 operon ncbi-datasets --input /data/assembly_data_report.jsonl
 ```
 
-### 3.2 导入已有 ZIP 并自动归档文件
+### 导入已有 ZIP 并自动归档文件
 
 ```bash
 operon ncbi-datasets --input /data/ncbi_dataset.zip
@@ -49,7 +49,7 @@ operon ncbi-datasets --input /data/ncbi_dataset.zip
 operon ncbi-datasets --input /data/ncbi_dataset.zip --no-archive-files
 ```
 
-### 3.3 在线下载并自动归档
+### 在线下载并自动归档
 
 ```bash
 export NCBI_EMAIL='you@example.org'
@@ -124,7 +124,7 @@ operon ncbi-datasets --accession-file accessions.txt \
 `resumes_run_id` 指向旧运行；旧运行保持 `failed`/`interrupted`，每条 accession 的尝试
 结果保存在 `adapter_run_items`，已完成内容由 manifest 精确跳过。
 
-### 3.4 去重与版本规则
+### 去重与版本规则
 
 - taxon ID 相同：复用 organism；
 - BioSample accession 相同：复用 sample；
@@ -144,7 +144,7 @@ paired GCA/GCF 的来源 report 或 genome 可以具有不同字节。canonical 
 因此不会把来源差异误判为同一角色覆盖。annotation 身份包含来源 accession、provider、
 version 和 release date；旧库第一次重导时通过严格相同元数据兼容匹配接续原 `ANN_`。
 
-### 3.5 修复旧 adapter 遗留
+### 修复旧 adapter 遗留
 
 先只预览：
 

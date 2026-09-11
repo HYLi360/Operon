@@ -137,7 +137,7 @@ operon report analysis --analysis blastn_nt --hits
 每次运行前系统还会重新校验输入文件 SHA-256 或目录树哈希与 manifest 一致；被改动过
 的 raw 输入会被直接拒绝，不会进入外部程序。
 
-### 7.1 原生运行 BUSCO 并解析 JSON summary
+### 原生运行 BUSCO 并解析 JSON summary
 
 默认 `busco_autolineage` recipe 使用普通 protein FASTA 输入和目录输出。BUSCO 的
 `-o` 是短 run name，因此配置使用 `${output_name}`；`--out_path` 使用

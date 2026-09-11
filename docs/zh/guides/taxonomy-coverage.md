@@ -143,7 +143,7 @@ genus   67890    Examplea
 
 ## 生成覆盖率报告
 
-### 5.1 metadata 口径（默认）
+### metadata 口径（默认）
 
 ```bash
 operon report coverage \
@@ -155,7 +155,7 @@ operon report coverage \
 会按冻结 taxonomy 的 alias 表映射到 current TaxID。GTDB、缺失 TaxID、在快照中未知或
 被 profile 排除的观察会进入排除清单，不计入分子。
 
-### 5.2 release 口径
+### release 口径
 
 ```bash
 operon report coverage \
@@ -172,7 +172,7 @@ operon report coverage \
 release 的新口径。早于这一 checksum 契约创建的开发期 release 需要重新创建后才能
 用于 release-scope coverage。
 
-### 5.3 公式与输出
+### 公式与输出
 
 每个目标 rank 独立计算：
 

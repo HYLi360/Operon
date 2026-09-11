@@ -30,7 +30,7 @@ schema + 交叉引用 + 冲突预检       类型、必填、允许值、外键�
   `data_sources.tsv` 与 `source_links.tsv`。修改这些 report 不会改变数据库。
 - `metadata/` 目录仅为旧布局保留，不自动读写 TSV。
 
-### 6.1 NCBI Datasets adapter
+### NCBI Datasets adapter
 
 `ncbi-datasets` 在通用 TSV 流程之前增加来源适配层，但不建立第二套数据模型：
 
@@ -76,7 +76,7 @@ adapter run 在开始处理前写入 `running` workflow；每个 accession 的�
 通过 `changes.workflow_run_id` 关联具体运行。旧 adapter 异常由显式 `ncbi-reconcile`
 生成和应用补偿计划，使用 `entity_supersessions` 保留所有旧行和文件。
 
-### 6.2 NCBI Taxonomy coverage 快照
+### NCBI Taxonomy coverage 快照
 
 taxonomy coverage 与 NCBI genome adapter 分离：前者读取 NCBI Datasets
 `taxonomy_report.jsonl`/package，或含 `nodes.dmp`、`names.dmp`（以及可选

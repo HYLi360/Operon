@@ -2,7 +2,7 @@
 
 ## Input selection
 
-### 4.1 Selection fields
+### Selection fields
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -47,7 +47,7 @@ operon --project . ingest \
 
 A directory hash is determined by relative paths, empty directories, file sizes and contents, and symlink targets — not by mtime, owner, or permissions. If any file's content, name, or structure inside the directory changes, the manifest hash re-check before the run fails.
 
-### 4.2 Additional `analyze` filtering
+### Additional `analyze` filtering
 
 The recipe determines the base candidate set; the command line can narrow it further:
 
@@ -119,7 +119,7 @@ The external program must create exactly the `${output}` computed by the recipe.
 
 ## Parameters and placeholders
 
-### 6.1 Declaring safe runtime parameters
+### Declaring safe runtime parameters
 
 When a recipe needs a value chosen per run (for example a BUSCO lineage), do not allow arbitrary arguments to be appended to the command. The recipe must first declare the name, requirement, and constraints through `parameters`:
 
@@ -169,7 +169,7 @@ Here `sample with spaces` is a single argument and is not split again on spaces.
 - "--cpu ${threads}"
 ```
 
-### 6.2 Placeholders available in `arguments`
+### Placeholders available in `arguments`
 
 | Placeholder | Rendered content |
 |---|---|
@@ -198,7 +198,7 @@ Placeholders can be embedded inside an argument:
 
 But shell environment variables, `~`, globs, and command substitution are not expanded. Paths need no manual shell quoting because `operon` passes the argv array directly.
 
-### 6.3 Placeholders available in `output_name`
+### Placeholders available in `output_name`
 
 `output_name` is rendered before the full output path is established, so it supports only:
 
@@ -214,7 +214,7 @@ ${<parameter>}
 
 It cannot reference `${output}`, `${output_parent}`, or `${output_name}` itself. `output_name` is not rendered when the configuration is loaded; unrecognized placeholders are reported when the recipe is rendered, i.e. when `analyze` runs (including `--dry-run`).
 
-### 6.4 Command chains (`commands`)
+### Command chains (`commands`)
 
 Some tools are really two programs in sequence — for example `rpsblast` emits an ASN.1 archive (`-outfmt 11`) that `rpsbproc` then renders into the tabular report. A recipe can declare such a pipeline with `commands`, a non-empty list of command blocks where each block carries its own `arguments` list:
 
@@ -263,7 +263,7 @@ environment.
 | `database_checksum` | empty | Optional explicit SHA-256 identity, suitable for frozen large databases |
 | `database_mode` | `reference` | `reference` or `mutable_cache` |
 
-### 7.1 `reference`
+### `reference`
 
 For databases that must not change during analysis:
 
@@ -279,7 +279,7 @@ A single file is identified by content SHA-256 by default; a directory uses a fa
 database_checksum: 0123456789abcdef...
 ```
 
-### 7.2 `mutable_cache`
+### `mutable_cache`
 
 For shared directories such as BUSCO's, which gradually download lineages at runtime:
 
@@ -293,7 +293,7 @@ The directory is created automatically before the actual run. Its identity is de
 
 If the goal is strict freezing and offline reproduction, pre-download the chosen lineage, switch BUSCO to `--lineage_dataset ... --offline`, and then use `reference` mode with a maintained version or checksum.
 
-### 7.3 Databases on SSH remotes
+### Databases on SSH remotes
 
 When SSH uses a non-empty `remote_root`, paths under the local project root in `${database}` are mapped to the remote root; absolute paths outside the project root are kept as-is. `operon` never uploads large reference databases with every job:
 
@@ -308,7 +308,7 @@ Here `database_checksum` is the recipe's explicit declaration of a frozen databa
 
 `result_parser` selects how a successful output enters SQLite: `none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, or `busco_json`. Per-parser semantics and complete examples live in [Result parsers and examples](recipe-parsers-examples.md); this section defines the field contract.
 
-### 8.1 Tabular column fields
+### Tabular column fields
 
 For `blast_tabular`:
 
@@ -321,7 +321,7 @@ For `blast_tabular`:
 | `subject_column` | second column | Subject ID column |
 | `max_hits_per_query` | `5` | EAV hit rows kept per query in `analysis_hits` |
 
-### 8.2 Alignment column mapping keys
+### Alignment column mapping keys
 
 Seven optional keys map columns of `result_columns` onto the structured `analysis_alignments` fields:
 
@@ -337,11 +337,11 @@ Seven optional keys map columns of `result_columns` onto the structured `analysi
 
 When a key is absent, the parser looks for the default common name in `result_columns`; declare the key explicitly when the tool uses a different header (see the rpsblast example in [Result parsers and examples](recipe-parsers-examples.md)); a declared value that matches no column falls back to the default common names. Structured alignment rows are always written to `analysis_alignments` in full — `max_hits_per_query` truncates only the EAV `analysis_hits` rows. Columns of `result_columns` not mapped to a structured field are preserved verbatim in the alignment row's `extra_json`. A mapping key enters the parameter fingerprint only when it is actually set, so adding a key invalidates the completed cache exactly once.
 
-### 8.3 `hmmer_domtblout`
+### `hmmer_domtblout`
 
 `hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` (HMM and envelope coordinates go to `extra_json`; subject coordinates are not present in domtblout and stay NULL). It writes both EAV hits and full structured alignment rows. The older `hmmer_tblout` parser reads only `--tblout`, which carries no coordinates, so it never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes.
 
-### 8.4 `rpsbproc_tabular`
+### `rpsbproc_tabular`
 
 `rpsbproc_tabular` parses the tabular report produced by NCBI `rpsbproc` (the `DATA`/`SESSION`/`QUERY`/`DOMAINS` structure) and needs no column declarations. Each domain row has 12 columns (session, query id, hit type, PSSM id, from, to, e-value, bitscore, accession, short name, incomplete, superfamily PSSM id). The alignment `query_id` is the QUERY definition line and `subject_id` is the accession; `from`/`to` become `query_start`/`query_end`, e-value and bitscore are parsed as numbers, and the remaining fields (`hit_type`, `pssm_id`, `short_name`, `incomplete`, `superfamily_pssm`, `session`, `rps_query_id`) are preserved in `extra_json`. EAV hits are truncated to `max_hits_per_query` per query as usual, while `analysis_alignments` keeps every domain row; queries without any domain produce no rows. It is the intended parser for `commands` chains that pipe `rpsblast -outfmt 11` into `rpsbproc` (see "Command chains" above).
 

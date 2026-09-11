@@ -4,7 +4,7 @@
 
 本节按顺序建立最小完整项目。每一步均可单独执行，失败后可从同一命令重跑。
 
-### 3.1 初始化项目
+### 初始化项目
 
 ```bash
 operon init ./my-genome-project --project-id PRJ_MY_001 --name "My first genome project"
@@ -25,7 +25,7 @@ raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
 > 提示：全局选项 `--project` 必须放在子命令之前。进入项目目录后可以省略它；
 > 在项目外则使用 `operon --project /path/to/my-genome-project <子命令>`。
 
-### 3.2 使用交互式导入向导
+### 使用交互式导入向导
 
 对于合作方交付、本地 pipeline 或其他非 NCBI 数据，直接启动纯英文向导：
 
@@ -40,7 +40,7 @@ organism 使用 scientific name 自动补全选择。source 会明确区分 INSD
 汇总页可选择 `Edit source`、`Edit files` 等章节；修改完成后会直接回到汇总页，不会继续
 原先的线性问题序列。只有选择 `Execute import` 并确认剩余警告后才会写 SQLite 和归档文件。
 
-### 3.3 从 NCBI Datasets 一步导入（推荐用于公开组装）
+### 从 NCBI Datasets 一步导入（推荐用于公开组装）
 
 如果已有 NCBI Datasets report 或 genome package，不需要逐字段执行 `add`：
 
@@ -70,7 +70,7 @@ operon ncbi-datasets --accession-file accessions.txt \
 GCA/GCF/BioSample/Taxonomy 映射，并把 ZIP 原件保存到
 `raw/metadata/ncbi_datasets/`。若使用此方式，可直接跳到“校验归档”。
 
-### 3.4 手工录入元数据
+### 手工录入元数据
 
 `operon` 至少需要建立如下关系链：
 
@@ -124,7 +124,7 @@ operon add run \
 
 如果只有组装没有 reads，跳过 run 即可。
 
-### 3.5 查看和导出元数据
+### 查看和导出元数据
 
 ```bash
 operon query "SELECT * FROM assemblies"
@@ -136,7 +136,7 @@ operon report metadata
 改变数据库。快照还包含 `data_sources.tsv` 与 `source_links.tsv`，用于审阅来源、引用、
 License 及其关联对象。批量写入应使用 `operon import table` 的 CSV/XLSX 模板与预览流程。
 
-### 3.6 手工归档文件到 raw
+### 手工归档文件到 raw
 
 以组装 FASTA 为例：
 
@@ -173,7 +173,7 @@ operon ingest --source /data/SRR999999999_2.fastq.gz \
   --entity-type run --entity-id RUN_000001 --role reads_r2
 ```
 
-### 3.7 校验归档
+### 校验归档
 
 ```bash
 operon verify
@@ -181,7 +181,7 @@ operon verify
 
 正常时每个文件状态为 `CHECKSUM_VERIFIED`。如果文件被移动、删除或篡改，会显示 `MISSING` 或 `CHECKSUM_FAILED`，且命令返回非零退出码。
 
-### 3.8 标准化
+### 标准化
 
 ```bash
 operon standardize
@@ -193,7 +193,7 @@ operon standardize
 operon standardize --link hardlink
 ```
 
-### 3.9 运行内置 QC
+### 运行内置 QC
 
 ```bash
 # 全部已归档文件
@@ -220,7 +220,7 @@ operon report qc --export
 # 生成 qc/aggregate/qc_results.tsv 与 qc_results.wide.tsv
 ```
 
-### 3.10 外部 QC 指标（可选）
+###0 外部 QC 指标（可选）
 
 例如 BUSCO 结果整理为 TSV 后：
 
@@ -237,7 +237,7 @@ tool, tool_version, parameter_set
 
 可选列 `file_id`、`file_sha256`；提供时会与 manifest 交叉校验。具体格式见 How-to 手册。
 
-### 3.11 运行封装式 BLAST / HMMER / BUSCO 分析
+###1 运行封装式 BLAST / HMMER / BUSCO 分析
 
 外部分析程序在 `config/tools.yaml` 中配置。默认模板提供 `blastn_nt`、
 `blastp_nr`、`hmmsearch_pfam` 与 `busco_autolineage` recipe，需先按本机环境修改
@@ -335,7 +335,7 @@ operon evaluate --profile annotation_busco_viridiplantae_odb12_v1 \
 内容哈希。文件和目录都受相同缓存校验；相同输入、参数、工具版本和数据库身份会自动命中缓存而跳过执行；
 `--force` 可强制重跑。
 
-### 3.12 运行规则引擎
+###2 运行规则引擎
 
 ```bash
 operon evaluate --profile assembly_production_v1
@@ -354,7 +354,7 @@ assembly     ASM_000002  assembly_production_v1  FAIL      LOW_CONTIGUITY
 `report decisions` 默认展示最新一条。profile 必须用 `kind: qc` 与同目录中的
 `kind: taxonomy_coverage` 覆盖率画像区分。
 
-### 3.13 人工策展（可选，但必须留痕）
+###3 人工策展（可选，但必须留痕）
 
 ```bash
 operon curate \
@@ -369,7 +369,7 @@ operon curate \
 
 自动判定不会被覆盖，策展写入 `curated_*` 字段和 `changes` 审计表。
 
-### 3.14 只读 SQL 查询
+###4 只读 SQL 查询
 
 ```bash
 # 一个 protein 文件属于哪个 assembly/sample/organism
@@ -387,7 +387,7 @@ WHERE f.file_role='protein_fasta'
 
 `query` 使用只读连接和 authorizer：`SELECT` 与只读 schema PRAGMA 可用，DML、DDL、写 PRAGMA、ATTACH/VACUUM 会被拒绝。
 
-### 3.15 创建 release
+###5 创建 release
 
 ```bash
 operon release --version 2026.08 --profile assembly_production_v1

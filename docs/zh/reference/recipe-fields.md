@@ -2,7 +2,7 @@
 
 ## 输入选择
 
-### 4.1 选择字段
+### 选择字段
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -48,7 +48,7 @@ operon --project . ingest \
 目录哈希由相对路径、空目录、文件大小与内容以及符号链接目标确定，不依赖 mtime、属主
 或权限。目录中任一文件内容、名字或结构发生变化，运行前的 manifest 哈希复核都会失败。
 
-### 4.2 `analyze` 的额外过滤
+### `analyze` 的额外过滤
 
 recipe 决定基础候选集合；命令行还可进一步收窄：
 
@@ -124,7 +124,7 @@ analysis/busco/ANN_000001/FIL_000003.busco/
 
 ## 参数与占位符
 
-### 6.1 声明安全的运行时参数
+### 声明安全的运行时参数
 
 当一个 recipe 需要在每次运行时选择一个值（例如 BUSCO lineage），不要允许任意参数
 直接追加到命令末尾。recipe 必须先通过 `parameters` 声明名字、是否必需和约束：
@@ -179,7 +179,7 @@ arguments:
 - "--cpu ${threads}"
 ```
 
-### 6.2 arguments 中可用的占位符
+### arguments 中可用的占位符
 
 | 占位符 | 渲染内容 |
 |---|---|
@@ -209,7 +209,7 @@ arguments:
 但不会执行 shell 的环境变量、`~`、glob 或命令替换。路径本身不需要人工加 shell 引号，
 因为 `operon` 直接传递 argv 数组。
 
-### 6.3 `output_name` 中可用的占位符
+### `output_name` 中可用的占位符
 
 `output_name` 在完整输出路径建立之前先渲染，因此只支持：
 
@@ -226,7 +226,7 @@ ${<parameter>}
 它不能引用 `${output}`、`${output_parent}` 或 `${output_name}` 本身。`output_name` 在配置加载时
 并不渲染；无法识别的占位符在 recipe 渲染时报错，即 `analyze` 运行时（含 `--dry-run`）。
 
-### 6.4 命令链（`commands`）
+### 命令链（`commands`）
 
 有些工具本质上是前后两个程序——例如 `rpsblast` 产出 ASN.1 归档（`-outfmt 11`），再由
 `rpsbproc` 渲染成表格报告。recipe 可以用 `commands` 声明这样的流水线：一个非空的命令块
@@ -284,7 +284,7 @@ recipe `commands` 系统存在的目的并非取代 Snakemake/Nextflow，而是�
 | `database_checksum` | 空 | 可选的显式 SHA-256 身份，适合冻结的大型数据库 |
 | `database_mode` | `reference` | `reference` 或 `mutable_cache` |
 
-### 7.1 `reference`
+### `reference`
 
 适合分析期间不应改变的数据库：
 
@@ -301,7 +301,7 @@ database_mode: reference
 database_checksum: 0123456789abcdef...
 ```
 
-### 7.2 `mutable_cache`
+### `mutable_cache`
 
 适合 BUSCO 这类运行时会逐步下载 lineage 的共享目录：
 
@@ -318,7 +318,7 @@ database_mode: mutable_cache
 如果目标是严格冻结与离线复现，应预先下载指定 lineage，把 BUSCO 改为
 `--lineage_dataset ... --offline`，再使用 `reference` 模式并维护版本或 checksum。
 
-### 7.3 SSH 远程数据库
+### SSH 远程数据库
 
 当 SSH 使用非空 `remote_root` 时，`${database}` 中位于本地项目根下的路径会映射到
 远端 root；项目根之外的绝对路径保持原样。`operon` 不会把大型参考库随每个任务上传：
@@ -337,7 +337,7 @@ database_mode: mutable_cache
 
 `result_parser` 决定成功的输出如何进入 SQLite：`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular` 或 `busco_json`。各 parser 的语义与完整示例见 [结果解析器与示例](recipe-parsers-examples.md)；本节定义字段契约。
 
-### 8.1 表格列字段
+### 表格列字段
 
 `blast_tabular` 的字段：
 
@@ -350,7 +350,7 @@ database_mode: mutable_cache
 | `subject_column` | 第二列 | subject ID 列 |
 | `max_hits_per_query` | `5` | `analysis_hits` 中每个 query 保留的 EAV 行数 |
 
-### 8.2 比对列映射键
+### 比对列映射键
 
 七个可选键把 `result_columns` 中的列映射到结构化的 `analysis_alignments` 字段：
 
@@ -366,11 +366,11 @@ database_mode: mutable_cache
 
 键缺失时 parser 在 `result_columns` 中查找默认常用名；工具使用其他表头时应显式声明（见 [结果解析器与示例](recipe-parsers-examples.md) 中的 rpsblast 示例）；声明的值匹配不到任何列时回退到默认常用名。结构化比对行总是全量写入 `analysis_alignments`——`max_hits_per_query` 只截断 EAV 形式的 `analysis_hits` 行。`result_columns` 中未映射到结构化字段的列原样保存在该行命中的 `extra_json` 中。映射键仅在实际设置时进入参数指纹，因此新增一个键只会让完成缓存失效一次。
 
-### 8.3 `hmmer_domtblout`
+### `hmmer_domtblout`
 
 `hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明：query 为 HMM profile 名，subject 为目标序列，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject 坐标，保持 NULL）。它同时写 EAV hits 与全量结构化比对行。旧的 `hmmer_tblout` 只读取不含坐标的 `--tblout`，因此不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。
 
-### 8.4 `rpsbproc_tabular`
+### `rpsbproc_tabular`
 
 `rpsbproc_tabular` 解析 NCBI `rpsbproc` 产出的表格报告（`DATA`/`SESSION`/`QUERY`/`DOMAINS` 结构），无需列声明。每条 domain 行有 12 列（session、query id、hit type、PSSM id、from、to、e-value、bitscore、accession、short name、incomplete、superfamily PSSM id）。比对行的 `query_id` 取 QUERY 的 definition line，`subject_id` 取 accession；`from`/`to` 成为 `query_start`/`query_end`，e-value 与 bitscore 按数值解析，其余字段（`hit_type`、`pssm_id`、`short_name`、`incomplete`、`superfamily_pssm`、`session`、`rps_query_id`）保存在 `extra_json` 中。EAV hits 照常按 `max_hits_per_query` 截断，`analysis_alignments` 保留全部 domain 行；没有任何 domain 的 query 不产生行。它是把 `rpsblast -outfmt 11` 接入 `rpsbproc` 的 `commands` 命令链的目标 parser（见上文"命令链"一节）。
 

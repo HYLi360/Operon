@@ -2,7 +2,7 @@
 
 ## 数据模型
 
-### 5.1 核心实体
+### 核心实体
 
 ```text
 organisms (ORG_)
@@ -23,7 +23,7 @@ assembly        ASM_000001     NCBI_Assembly    GCA_000000001     1
 sample          SMP_000001     NCBI_BioSample   SAMN0000001       1
 ```
 
-### 5.2 files：文件清单
+### files：文件清单
 
 `files` 是归档文件的 manifest。关键字段：
 
@@ -34,7 +34,7 @@ relative_path, source_url, size_bytes, sha256, downloaded_at, status
 
 文件身份由 `file_id + sha256 + size_bytes` 定义。`relative_path` 只表示文件当前位于项目中的位置。
 
-### 5.3 qc_results：QC 长表
+### qc_results：QC 长表
 
 内置 QC 和外部 QC 都写入同一张长表。当前版本每条结果额外绑定：
 
@@ -65,7 +65,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 结果；宽表因每个 metric 只能有一列，仅提供最近值的浏览视图。规则引擎可通过
 `source.qc_stage` 只读取指定 stage，避免正式判定被另一个分析变体的“最新值”改变。
 
-### 5.4 qc_profiles 与 decisions：可追溯判定
+### qc_profiles 与 decisions：可追溯判定
 
 规则引擎每次 `evaluate` 都会：
 
@@ -82,7 +82,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 （`NOT_EVALUATED`），`ignore` 会在 decision 的 reason_codes 中留下持久化痕迹；
 没有隐式分类回退。
 
-### 5.5 其他系统表
+### 其他系统表
 
 | 表 | 用途 |
 |---|---|
@@ -114,7 +114,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `coverage_reports` / `coverage_report_metrics` | 不可变输入身份对应的覆盖率报告历史与 family/genus 指标 |
 | `changes` | 人工修改审计日志 |
 
-### 5.6 实体退役与恢复：先隔离，再决定是否物理清除
+### 实体退役与恢复：先隔离，再决定是否物理清除
 
 `retire` 是控制面状态变化，不是文件操作。它向 `entity_lifecycle_events` 追加一个直接
 `RETIRE` 事件，同时向 `changes` 追加审计行；不会删除数据库行、移动文件、修改 checksum、
