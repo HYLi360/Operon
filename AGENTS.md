@@ -107,7 +107,11 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     `export.py` (immutable releases and selective exports), `lifecycle.py`
     (audited reversible entity retirement), `lineage.py` (adopting external
     workflow outputs), `sequence_tools.py` (alignment-driven domain
-    extraction and sequence selection), `timetree.py` (TimeTree query/calibration CLI
+    extraction and sequence selection), `classify.py` (versioned
+    sequence_classification profiles labelling `sequence_labels`),
+    `fanout.py` (data-derived fan-out of registered sequence files into
+    per-unit FASTAs under `analysis/derived/`, selected downstream by recipe
+    `file_role_prefix`), `timetree.py` (TimeTree query/calibration CLI
     group backed by the query-cache adapter), `backup.py`, `reports.py`,
     `table_import.py`,
     `import_wizard.py`, `entity_view.py`, `environment.py`

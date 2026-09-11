@@ -475,6 +475,28 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-run-id", help="workflow run that produced the artifact")
     p.add_argument("--actor", help="recorded in the adopt workflow run (default: $USER or 'adopt')")
 
+    p = sub.add_parser("fanout",
+                       help="materialize per-unit FASTA files from a registered assignment "
+                            "manifest (unit/seqid TSV) and register them under "
+                            "analysis/derived/ with lineage")
+    p.add_argument("--assignments-file", required=True, metavar="FILE_ID",
+                   help="registered manifest file holding the unit/seqid assignment TSV")
+    p.add_argument("--source-file", action="append", required=True, metavar="FILE_ID",
+                   help="registered source sequence file the seqids resolve against; repeatable")
+    p.add_argument("--entity-type", required=True,
+                   help="existing active entity that owns the fanned-out unit files")
+    p.add_argument("--entity-id", required=True)
+    p.add_argument("--role-prefix", required=True,
+                   help="unit files are registered with role <prefix>:<unit>")
+    p.add_argument("--unit-column", default="unit",
+                   help="assignment TSV column holding the unit name (default: unit)")
+    p.add_argument("--seqid-column", default="seqid",
+                   help="assignment TSV column holding the sequence id (default: seqid)")
+    p.add_argument("--parent-run-id", help="workflow run that produced the assignments")
+    p.add_argument("--actor", help="recorded in the fanout workflow run (default: $USER or 'fanout')")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the planned units and write nothing (no run row either)")
+
     p = sub.add_parser("recipes",
                        help="list configured analysis recipes and inspect recorded recipe snapshots")
     recipes_sub = p.add_subparsers(dest="recipes_command", required=True)
@@ -1881,6 +1903,45 @@ def _cmd_adopt(args: argparse.Namespace, project: Project, db: Database) -> int:
     return 0
 
 
+def _cmd_fanout(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.fanout import fanout_units
+    actor = (args.actor or os.environ.get("USER") or "fanout").strip()
+    command_parts = [
+        "operon", "fanout",
+        "--assignments-file", args.assignments_file,
+        "--entity-type", args.entity_type, "--entity-id", args.entity_id,
+        "--role-prefix", args.role_prefix,
+        "--unit-column", args.unit_column, "--seqid-column", args.seqid_column,
+    ]
+    for source_file in args.source_file:
+        command_parts += ["--source-file", source_file]
+    if args.parent_run_id:
+        command_parts += ["--parent-run-id", args.parent_run_id]
+    result = fanout_units(
+        db, project,
+        assignments_file_id=args.assignments_file,
+        source_file_ids=args.source_file,
+        entity_type=args.entity_type, entity_id=args.entity_id,
+        role_prefix=args.role_prefix,
+        unit_column=args.unit_column, seqid_column=args.seqid_column,
+        parent_run_id=args.parent_run_id, actor=actor, dry_run=args.dry_run,
+        command=shlex.join(command_parts),
+    )
+    if result["dry_run"]:
+        print(format_table(["unit", "sequences", "role"], (
+            [unit["unit"], unit["sequences"], unit["role"]] for unit in result["units"]
+        )))
+        print(f"dry-run: {len(result['units'])} planned unit(s); nothing was written")
+        return 0
+    print(format_table(["unit", "sequences", "role", "file_id", "status"], (
+        [unit["unit"], unit["sequences"], unit["role"], unit["file_id"], unit["status"]]
+        for unit in result["units"]
+    )))
+    print(f"fanout: {result['created']} created, {result['reused']} reused "
+          f"(run {result['run_id']})")
+    return 0
+
+
 def _print_snapshot_document(document: str) -> None:
     """Print a stored snapshot document as YAML (fall back to the raw text)."""
     import yaml
@@ -1899,7 +1960,7 @@ def _cmd_recipes(args: argparse.Namespace, project: Project, db: Database) -> in
         print(format_table(
             ["name", "version", "tool", "entity_type", "file_role", "format"],
             ([recipe.name, recipe.version, recipe.tool_name, recipe.entity_type or "*",
-              recipe.file_role, recipe.fmt] for recipe in recipes),
+              recipe.file_role or f"{recipe.file_role_prefix}*", recipe.fmt] for recipe in recipes),
         ))
         return 0
     if args.recipes_command == "history":
@@ -2460,6 +2521,7 @@ def main(argv: list[str] | None = None) -> int:
                 "release": lambda: _cmd_release(args, project, db),
                 "export": lambda: _cmd_export(args, project, db),
                 "adopt": lambda: _cmd_adopt(args, project, db),
+                "fanout": lambda: _cmd_fanout(args, project, db),
                 "recipes": lambda: _cmd_recipes(args, project, db),
                 "profiles": lambda: _cmd_profiles(args, project, db),
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),

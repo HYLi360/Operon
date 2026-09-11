@@ -331,6 +331,7 @@ class Recipe:
     result_parser: str
     max_hits_per_query: int
     raw: dict[str, Any]
+    file_role_prefix: str = ""
     version: int = 1
     commands: list[RecipeCommand] = field(default_factory=list)
 
@@ -411,6 +412,19 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                     f"analysis {analysis_name!r}: version must be a positive integer"
                 )
             fmt = str(raw.get("format", "")).strip()
+            file_role = str(raw.get("file_role", "")).strip()
+            file_role_prefix = str(raw.get("file_role_prefix", "")).strip()
+            if file_role and file_role_prefix:
+                raise ValidationError(
+                    f"analysis {analysis_name!r}: 'file_role' and 'file_role_prefix' "
+                    "are mutually exclusive"
+                )
+            if file_role_prefix and any(char in file_role_prefix for char in "%*?"):
+                raise ValidationError(
+                    f"analysis {analysis_name!r}: file_role_prefix {file_role_prefix!r} "
+                    "must not contain wildcard characters (% * ?); matching is a "
+                    "plain character prefix, not a pattern"
+                )
             input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
             output_kind = str(raw.get("output_kind", "file")).strip()
             if input_kind not in {"file", "directory"}:
@@ -526,7 +540,8 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                 version=raw_version,
                 description=str(raw.get("description", "")),
                 entity_type=str(raw.get("entity_type", "")).strip(),
-                file_role=str(raw.get("file_role", "")).strip(),
+                file_role=file_role,
+                file_role_prefix=file_role_prefix,
                 fmt=fmt,
                 input_kind=input_kind,
                 database=str(raw.get("database", "") or ""),
@@ -751,14 +766,22 @@ def detect_tool_version(tool: ToolSpec, config: dict[str, Any], timeout: float =
 
 def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None,
                     entity_id: str | None = None) -> list[dict[str, Any]]:
-    sql = (
-        "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
+    if recipe.file_role_prefix:
+        sql = (
+            "SELECT * FROM files WHERE substr(file_role, 1, ?)=? AND format=? AND NOT EXISTS ("
+        )
+        params: list[Any] = [len(recipe.file_role_prefix), recipe.file_role_prefix, recipe.fmt]
+    else:
+        sql = (
+            "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
+        )
+        params = [recipe.file_role, recipe.fmt]
+    sql += (
         "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
         "AND s.object_id=files.entity_id) AND NOT EXISTS ("
         "SELECT 1 FROM effective_retired_entities r WHERE r.entity_type=files.entity_type "
         "AND r.entity_id=files.entity_id)"
     )
-    params: list[Any] = [recipe.file_role, recipe.fmt]
     if recipe.entity_type:
         sql += " AND entity_type=?"
         params.append(recipe.entity_type)
@@ -1072,8 +1095,12 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
     if limit is not None:
         files = files[: max(0, int(limit))]
     if not files:
+        role_selector = (
+            f"file_role_prefix={recipe.file_role_prefix}"
+            if recipe.file_role_prefix else f"file_role={recipe.file_role}"
+        )
         print(f"no candidate files for {analysis_name} "
-              f"(entity_type={recipe.entity_type or 'any'}, file_role={recipe.file_role}, format={recipe.fmt})")
+              f"(entity_type={recipe.entity_type or 'any'}, {role_selector}, format={recipe.fmt})")
         return []
 
     from operon.execution import get_executor
@@ -1133,7 +1160,8 @@ def _require_artifact_kind(path: Path, kind: str, label: str) -> None:
 def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path: Path,
                         runtime_parameters: dict[str, str] | None = None) -> str:
     if not recipe.output_name_template:
-        return f"{file_record['file_id']}.{recipe.file_role}{recipe.output_suffix}"
+        role = recipe.file_role or str(file_record["file_role"])
+        return f"{file_record['file_id']}.{role}{recipe.output_suffix}"
     context = {
         "file_id": str(file_record["file_id"]),
         "file_role": str(file_record["file_role"]),

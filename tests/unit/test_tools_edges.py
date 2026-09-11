@@ -199,6 +199,33 @@ def test_output_name_must_render_to_a_single_safe_component(tmp_path):
             )
 
 
+def test_file_role_prefix_validation(tmp_path, monkeypatch):
+    p = project(tmp_path)
+
+    def recipe_with(raw):
+        config = {"tools": {"t": {"recipes": {"a": raw}}}}
+        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+        return tools.get_recipe(p, "a")
+
+    parsed = recipe_with({"file_role_prefix": "subfamily_alignment:", "format": "fasta"})
+    assert parsed.file_role_prefix == "subfamily_alignment:"
+    assert parsed.file_role == ""
+    # Both set is rejected, as are wildcard characters in the prefix.
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        recipe_with({"file_role": "a", "file_role_prefix": "b:"})
+    for bad in ("a%:", "a*:", "a?:"):
+        with pytest.raises(ValidationError, match="wildcard"):
+            recipe_with({"file_role_prefix": bad})
+    # Prefix-based output names fall back to the file's own role.
+    name = tools._render_output_name(
+        recipe(file_role="", file_role_prefix="subfamily_alignment:", output_suffix=".tsv"),
+        {"file_id": "F1", "file_role": "subfamily_alignment:SF01",
+         "entity_type": "annotation", "entity_id": "ANN_000001"},
+        tmp_path / "in.faa",
+    )
+    assert name == "F1.subfamily_alignment:SF01.tsv"
+
+
 def test_remove_output_artifact_refuses_paths_outside_analysis_root(tmp_path):
     p = project(tmp_path)
     p.analysis_root.mkdir()
