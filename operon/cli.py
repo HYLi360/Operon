@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -332,6 +333,55 @@ def _parser() -> argparse.ArgumentParser:
                    help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it")
     p.add_argument("--backend", choices=["local", "slurm", "ssh"],
                    help="execution backend (default: execution.backend in project.yaml)")
+
+    p = sub.add_parser("extract-domains",
+                       help="extract alignment query regions (e.g. domains) from a manifest FASTA; "
+                            "register the result with 'operon adopt'")
+    p.add_argument("--file-id", required=True, help="manifest FASTA to extract from")
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("--analysis",
+                        help="completed analysis whose stored alignments define the regions")
+    source.add_argument("--regions-tsv",
+                        help="external TSV with columns seqid,start,end (optional subject,evalue)")
+    p.add_argument("--flank", type=_nonnegative_int, default=5,
+                   help="extend each region by N residues on both sides, truncated at sequence "
+                        "boundaries (default: 5)")
+    p.add_argument("--min-length", type=_positive_int, default=30,
+                   help="discard regions shorter than N residues before flanking (default: 30)")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--best-only", action="store_true",
+                      help="keep only the best-evalue region per query, headers keep the seqid (default)")
+    mode.add_argument("--all-regions", action="store_true",
+                      help="emit one record per region, headers become <seqid>|region:<start>-<end>")
+    p.add_argument("--subject-like", metavar="PATTERN",
+                   help="SQL LIKE pattern matched against subject_id and the hit short_name")
+    p.add_argument("--evalue-max", type=float, metavar="E",
+                   help="only use alignments with evalue <= E")
+    p.add_argument("--out", required=True, help="output FASTA path (written atomically)")
+    p.add_argument("--manifest", help="optional TSV manifest of extracted and excluded regions")
+
+    p = sub.add_parser("select-sequences",
+                       help="write the subset of a manifest FASTA whose sequences have (or lack) "
+                            "matching analysis hits; register the result with 'operon adopt'")
+    p.add_argument("--file-id", required=True, help="manifest FASTA to subset")
+    p.add_argument("--analysis", action="append", default=[],
+                   help="completed analysis name; repeatable, names are OR-ed")
+    p.add_argument("--subject-like", metavar="PATTERN",
+                   help="SQL LIKE pattern matched against subject_id and the hit short_name")
+    p.add_argument("--evalue-max", type=float, metavar="E",
+                   help="only count alignments with evalue <= E")
+    p.add_argument("--min-span", type=_positive_int, metavar="N",
+                   help="only count alignments spanning at least N query residues")
+    p.add_argument("--hit-type", help="only count alignments whose hit_type matches exactly")
+    selection = p.add_mutually_exclusive_group()
+    selection.add_argument("--require-hit", action="store_true",
+                           help="keep sequences with at least one matching hit (default)")
+    selection.add_argument("--require-no-hit", action="store_true",
+                           help="keep sequences without any matching hit")
+    p.add_argument("--entity-type", help="only count alignments recorded for this entity type")
+    p.add_argument("--entity-id", help="only count alignments recorded for this entity")
+    p.add_argument("--out", required=True, help="output FASTA path (written atomically)")
+    p.add_argument("--manifest", help="optional TSV manifest listing every sequence's selection state")
 
     p = sub.add_parser("remotes", help="list configured remotes (project.yaml remotes:) and test connectivity")
 
@@ -1525,6 +1575,73 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
     return 0
 
 
+def _cmd_extract_domains(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.sequence_tools import extract_domains
+    command_parts = ["operon", "extract-domains", "--file-id", args.file_id]
+    if args.analysis:
+        command_parts += ["--analysis", args.analysis]
+    else:
+        command_parts += ["--regions-tsv", args.regions_tsv]
+    command_parts += ["--flank", str(args.flank), "--min-length", str(args.min_length)]
+    command_parts.append("--all-regions" if args.all_regions else "--best-only")
+    if args.subject_like:
+        command_parts += ["--subject-like", args.subject_like]
+    if args.evalue_max is not None:
+        command_parts += ["--evalue-max", str(args.evalue_max)]
+    command_parts += ["--out", args.out]
+    if args.manifest:
+        command_parts += ["--manifest", args.manifest]
+    result = extract_domains(
+        db, project,
+        file_id=args.file_id, out=args.out, command=shlex.join(command_parts),
+        analysis=args.analysis, regions_tsv=args.regions_tsv,
+        flank=args.flank, min_length=args.min_length,
+        best_only=not args.all_regions,
+        subject_like=args.subject_like, evalue_max=args.evalue_max,
+        manifest=args.manifest,
+    )
+    print(f"extracted {result['extracted']} region record(s), "
+          f"excluded {result['excluded']} (see manifest)")
+    print(f"output: {result['output']}")
+    return 0
+
+
+def _cmd_select_sequences(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.sequence_tools import select_sequences
+    command_parts = ["operon", "select-sequences", "--file-id", args.file_id]
+    for name in args.analysis:
+        command_parts += ["--analysis", name]
+    if args.subject_like:
+        command_parts += ["--subject-like", args.subject_like]
+    if args.evalue_max is not None:
+        command_parts += ["--evalue-max", str(args.evalue_max)]
+    if args.min_span is not None:
+        command_parts += ["--min-span", str(args.min_span)]
+    if args.hit_type:
+        command_parts += ["--hit-type", args.hit_type]
+    command_parts.append("--require-no-hit" if args.require_no_hit else "--require-hit")
+    if args.entity_type:
+        command_parts += ["--entity-type", args.entity_type]
+    if args.entity_id:
+        command_parts += ["--entity-id", args.entity_id]
+    command_parts += ["--out", args.out]
+    if args.manifest:
+        command_parts += ["--manifest", args.manifest]
+    result = select_sequences(
+        db, project,
+        file_id=args.file_id, out=args.out, command=shlex.join(command_parts),
+        analyses=args.analysis, subject_like=args.subject_like,
+        evalue_max=args.evalue_max, min_span=args.min_span, hit_type=args.hit_type,
+        require_hit=not args.require_no_hit,
+        entity_type=args.entity_type, entity_id=args.entity_id,
+        manifest=args.manifest,
+    )
+    print(f"selected {result['selected']} of {result['total']} sequence(s), "
+          f"excluded {result['excluded']}")
+    print(f"output: {result['output']}")
+    return 0
+
+
 def _cmd_remotes(args: argparse.Namespace, project: Project) -> int:
     from operon.remotes import check_remote, list_remotes
     names = sorted(list_remotes(project))
@@ -2285,6 +2402,8 @@ def main(argv: list[str] | None = None) -> int:
                 "run-external": lambda: _cmd_run_external(args, project, db),
                 "tools-check": lambda: _cmd_tools_check(project),
                 "analyze": lambda: _cmd_analyze(args, project, db),
+                "extract-domains": lambda: _cmd_extract_domains(args, project, db),
+                "select-sequences": lambda: _cmd_select_sequences(args, project, db),
                 "remotes": lambda: _cmd_remotes(args, project),
                 "push": lambda: _cmd_push(args, project, db),
                 "pull": lambda: _cmd_pull(args, project, db),
