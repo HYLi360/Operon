@@ -5,9 +5,10 @@ FASTA file and writes the classic three-file report (``sequence_qc.tsv``,
 ``column_qc.tsv``, ``alignment_qc.json``).  Gap characters are ``-`` and
 ``.``.
 
-This is the pure-Python reference implementation.  A future Cython build
-(``operon/qc/_alignment.pyx``)
-must produce byte-identical results; parity is enforced by regression tests.
+This is the pure-Python reference implementation.  The production backend
+is the Cython build ``operon/qc/_alignment.pyx`` (compiled in place as
+``operon.qc._alignment``); both must produce byte-identical results, and
+parity is enforced by ``tests/regression/test_cython_alignment_parity.py``.
 To keep that enforceable, the core computation (``compute_alignment_qc``) is
 a pure function over an iterable of ``(header, sequence)`` records with no
 I/O and no side effects; all file I/O lives in the thin wrappers

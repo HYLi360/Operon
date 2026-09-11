@@ -23,6 +23,12 @@ from operon.qc._parsers import (
     gff3_stats,
     protein_stats,
 )
+from operon.qc._alignment import alignment_qc, compute_alignment_qc
+from operon.qc.alignment import (
+    AlignmentQCResult,
+    render_summary_json,
+    write_alignment_qc,
+)
 from operon.qc.measure import (
     ASSEMBLY_FILE_ROLES,
     ASSEMBLY_METRICS,

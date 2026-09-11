@@ -75,6 +75,7 @@ jobs:
           CIBW_SKIP: "*-musllinux_*"
           CIBW_TEST_COMMAND: >-
             python -c "import operon; import operon.qc._parsers;
+            import operon.qc._alignment;
             print(operon.__version__)" && operon --help
       - uses: actions/upload-artifact@v7
         with:

@@ -101,7 +101,8 @@ How the principles map to implementations:
 | `operon/qc/parsers.py` | Pure-Python behavioral reference implementation, used to regression-test the Cython parsers' metrics and error semantics |
 | `operon/qc/_parsers.pyx` | Cython production parsers required by built-in QC; metric output and error messages match the pure-Python reference bit for bit |
 | `operon/qc/__init__.py` | Assembles built-in QC stages, loads the Cython parsers, and writes metrics into `qc_results` |
-| `operon/qc/alignment.py` | Pure-Python multiple-alignment QC reference implementation behind `operon alignment-qc`; the future Cython build must reproduce its results byte-for-byte |
+| `operon/qc/alignment.py` | Pure-Python multiple-alignment QC reference implementation; the Cython backend must reproduce its results byte-for-byte |
+| `operon/qc/_alignment.pyx` | Cython production backend for `operon alignment-qc`; results byte-identical to the pure-Python reference |
 | `operon/rules.py` | Loads profiles, computes PASS/FAIL decisions, stores profile snapshots and decision history |
 | `operon/taxonomy.py` | Archives/imports immutable NCBI Taxonomy, compiles frozen denominators and provenance per coverage profile |
 | `operon/coverage.py` | Validates reference sets, computes family/genus coverage and missing lists against frozen metadata or release scopes |

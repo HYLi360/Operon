@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *.so
 operon/qc/_parsers.c
+operon/qc/_alignment.c
 *.egg-info/
 *.sqlite
 *.sqlite-wal

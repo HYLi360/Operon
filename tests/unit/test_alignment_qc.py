@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from operon.qc.alignment import (
+from operon.qc import (
     AlignmentQCResult,
     alignment_qc,
     compute_alignment_qc,

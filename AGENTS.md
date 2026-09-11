@@ -44,8 +44,10 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   - `operon/qc/` — home for all QC functionality: streaming
     FASTA/FASTQ/GFF3/protein parsers and built-in QC stages, plus alignment
     QC (`alignment.py`, the pure-Python multiple-alignment QC reference
-    implementation behind `operon alignment-qc`; a Cython build
-    `_alignment.pyx` is coming). `parsers.py` is the pure-Python reference
+    implementation behind `operon alignment-qc`, and `_alignment.pyx`, its
+    Cython production backend; parity enforced by
+    `tests/regression/test_cython_alignment_parity.py`). `parsers.py` is the
+    pure-Python reference
     implementation; `_parsers.pyx` is the Cython-accelerated build of the
     same API (compiled in place as `operon.qc._parsers`). The Cython
     module is the required production backend; the pure-Python module is the

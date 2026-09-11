@@ -1177,7 +1177,7 @@ def _cmd_qc_measure(args: argparse.Namespace) -> int:
 
 
 def _cmd_alignment_qc(args: argparse.Namespace) -> int:
-    from operon.qc.alignment import alignment_qc, render_summary_json, write_alignment_qc
+    from operon.qc import alignment_qc, render_summary_json, write_alignment_qc
     try:
         result = alignment_qc(args.alignment)
         write_alignment_qc(result, args.outdir)

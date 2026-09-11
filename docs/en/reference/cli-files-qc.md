@@ -84,7 +84,7 @@ operon alignment-qc --alignment ALIGNED_FASTA --outdir DIR
 - Measures per-sequence and per-column QC metrics for an aligned FASTA without any project, database, or manifest — like `qc-measure`, it runs anywhere the file is readable. Gap characters are `-` and `.`.
 - Writes three report files into `--outdir`: `sequence_qc.tsv` (`safe_id`, `alignment_length`, `non_gap_sites`, `coverage`, `gap_fraction`), `column_qc.tsv` (`column_1based`, `occupancy`, `distinct_residues`, `consensus`, `consensus_fraction`), and `alignment_qc.json` (sequence count, alignment length, mean/median coverage, and the number of columns with occupancy ≥ 0.9 / ≥ 0.7). Fractions are printed with six decimals; the summary JSON is also written to stdout.
 - An empty alignment or sequences of unequal length are rejected with an error and a non-zero exit code.
-- The core computation is a single-pass pure function (`compute_alignment_qc` in `operon/qc/alignment.py`) over `(header, sequence)` records — the pure-Python reference implementation whose results a future Cython build must reproduce byte-for-byte.
+- The core computation is a single-pass pure function (`compute_alignment_qc`) over `(header, sequence)` records. The Cython build in `operon/qc/_alignment.pyx` is the production backend; `operon/qc/alignment.py` is the pure-Python reference implementation whose results it must reproduce byte-for-byte (parity is enforced by regression tests).
 
 ## import-qc
 

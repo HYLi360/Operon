@@ -14,7 +14,10 @@ setup(
     include_package_data=False,
     exclude_package_data={"": ["*.c"]},
     ext_modules=cythonize(
-        [Extension("operon.qc._parsers", ["operon/qc/_parsers.pyx"])],
+        [
+            Extension("operon.qc._parsers", ["operon/qc/_parsers.pyx"]),
+            Extension("operon.qc._alignment", ["operon/qc/_alignment.pyx"]),
+        ],
         language_level=3,
     )
 )
