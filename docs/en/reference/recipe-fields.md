@@ -236,14 +236,17 @@ commands:
       - ${work_dir}/hits.asn
       - -o
       - ${output}
+    version_args: [-version]
+    version_pattern: 'rpsbproc:\s*([^\s]+)'
 ```
 
 - `commands` and the single-command `arguments` field are mutually exclusive on the same recipe.
 - Each block's `arguments` is rendered with the same placeholders as a single command, plus `${work_dir}`: a deterministic scratch directory named `<output_name>.work` next to the output artifact. It is deleted and recreated before the run, and removed again after the run finishes (or fails); `analyze --keep-partial` keeps it for debugging. The path is deterministic because the rendered commands enter the cache fingerprint.
-- Steps run in order through the same executor (the tool's `run_method` prefix applies to every step) under one `analysis_jobs` row. The first step with a non-zero exit code aborts the chain and fails the whole job; the error message names the failing step (`step N/M failed: ...`).
-- Each step gets its own logs, `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`, and every step's argv and exit code is recorded in the run's `execution_details.steps`.
+- Steps run in order through the same executor (the parent tool's `run_method` prefix applies to every step) under one `analysis_jobs` row. The first step with a non-zero exit code aborts the chain and fails the whole job; the error message names the failing step (`step N/M failed: ...`).
+- A command block may declare `version_args` (a non-empty argument list appended to that block's executable) and `version_pattern` (an optional extraction regex). The probe runs through the same launcher and executor. A step whose executable equals the parent tool's `executable` inherits the already-probed tool version when it has no command-level probe. Any other unconfigured executable is recorded as version `unknown`; `operon` never guesses a version flag.
+- Each step gets its own logs, `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`. Its `argv`, `executable`, `tool_version`, `tool_version_raw`, `version_source`, `version_command`, and `exit_code` are recorded in the run's `execution_details.steps`.
 - Only the last step is expected to produce `${output}`; the non-empty check, content hash, and result parsing run once after the chain completes.
-- The rendered `commands` participate in the parameter fingerprint and the recipe snapshot, so editing any step invalidates the completed cache exactly once.
+- The rendered `commands` and their version-probe declarations are preserved in the recipe snapshot. Step-level version collection is provenance-only and does not change the current cache policy or fingerprint.
 
 A complete `rpsblast` + `rpsbproc` recipe appears in [Result parsers and examples](recipe-parsers-examples.md).
 

@@ -70,6 +70,10 @@ recipe 关键字段：
 使用 `commands` 命令链的 recipe 还可使用 `${work_dir}`：每次运行确定性的中间产物暂存
 目录，运行前重建、结束后清理。
 
+所有 command block 都使用顶层 tool 的 `run_method`。调用其他程序的 block 可以增加
+`version_args` 与 `version_pattern`；该程序的版本会与 argv、退出码一起记录在
+`workflow_runs.execution_details.steps` 中。
+
 目录输入也可用 `ingest` 归档；系统复制整棵目录并按相对路径与文件内容计算稳定哈希：
 
 ```bash

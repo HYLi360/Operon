@@ -220,11 +220,13 @@ tools:
               - "0.001"
               - -m
               - rep
+            version_args: [-version]
+            version_pattern: 'rpsbproc:\s*([^\s]+)'
         result_parser: rpsbproc_tabular
         max_hits_per_query: 5
 ```
 
-Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
+Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. The first step inherits the parent `rpsblast` tool version, while the second records the independent `rpsbproc -version` result in step provenance. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
 
 ## BUSCO example
 

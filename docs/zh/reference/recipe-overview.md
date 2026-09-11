@@ -10,7 +10,7 @@
 2. 用 `input_kind` 检查它在文件系统中究竟应当是文件还是目录，并复核内容哈希；
 3. 探测外部工具版本，解析数据库路径并计算数据库身份；
 4. 计算输出 artifact 的唯一目标路径；
-5. 将 `${...}` 占位符渲染成参数数组；
+5. 将 `${...}` 占位符渲染成单个参数数组或有序 `commands` 命令链；
 6. 用输入、参数、工具版本和数据库身份查找已完成缓存；
 7. 未命中缓存时运行外部程序，并验证文件或目录输出存在且非空；
 8. 计算输出内容哈希，通过 result parser 写入 `analysis_results`、`analysis_hits` 和
@@ -23,7 +23,7 @@
 | 用哪个程序、从哪里启动？ | tool 层的 `executable`、`run_method`、版本字段 |
 | 哪些已归档数据可以输入？ | `entity_type`、`file_role`、`format`、`input_kind` |
 | 结果放在哪里、是文件还是目录？ | `output_subdir`、`output_kind`、`output_name`、`output_suffix` |
-| 命令行怎么组成？ | `arguments` 与占位符 |
+| 命令行怎么组成？ | `arguments` 或 `commands`，以及占位符和可选的 step 版本探测 |
 | 数据库如何识别、输出如何机读？ | `database*`、`result_parser` 及 parser 专用字段 |
 
 ## YAML 层级
@@ -78,6 +78,10 @@ tool 定义的任何变更都产生新快照。历史用 `operon recipes history
 （Tools & Recipes 标签页）中编辑 recipe：结构化表单在每次内容有变化的保存时递增版本并记录
 相同形态的快照（内容未变的保存是 no-op）——注意 TUI 保存会规范化 YAML 格式并丢弃手写注释，所有版本均
 保存在 `recipe_snapshots` 中。
+
+对于共享同一执行环境的紧耦合程序，`commands` 用有序 command block 取代 `arguments`。
+每个附加程序可以声明自己的 `version_args` 与 `version_pattern`；完整约束见
+[命令链字段说明](recipe-fields.md#命令链commands)。
 
 ## tool 层字段
 

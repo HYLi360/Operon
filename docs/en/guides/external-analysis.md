@@ -56,6 +56,8 @@ Key recipe fields:
 
 Placeholders include `${input}`, `${output}`, `${database}`, `${threads}`, `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, and `${entity_id}`. Recipes with a `commands` chain additionally get `${work_dir}`, a deterministic per-run scratch directory for intermediate artifacts that is rebuilt before the run and cleaned up afterwards.
 
+All command blocks use the parent tool's `run_method`. A block invoking another program can add `version_args` and `version_pattern`; that program's version is then recorded in `workflow_runs.execution_details.steps` alongside the command argv and exit code.
+
 A directory can be archived as an input artifact:
 
 ```bash

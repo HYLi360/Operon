@@ -10,7 +10,7 @@ A single `analyze` run performs, in order:
 2. Uses `input_kind` to check whether the path should actually be a file or a directory, and re-verifies the content hash;
 3. Probes the external tool version, resolves the database path, and computes the database identity;
 4. Computes the unique target path of the output artifact;
-5. Renders `${...}` placeholders into an argument array;
+5. Renders `${...}` placeholders into one argument array or an ordered `commands` chain;
 6. Looks up a completed cache entry using input, arguments, tool version, and database identity;
 7. On a cache miss, runs the external program and verifies that the file or directory output exists and is non-empty;
 8. Computes the output content hash and writes results into `analysis_results`, `analysis_hits`, and `qc_results` through the result parser.
@@ -22,7 +22,7 @@ Configuration fields fall into five groups:
 | Which program, launched from where? | tool-level `executable`, `run_method`, version fields |
 | Which archived data may be used as input? | `entity_type`, `file_role`, `format`, `input_kind` |
 | Where do results go, as file or directory? | `output_subdir`, `output_kind`, `output_name`, `output_suffix` |
-| How is the command line composed? | `arguments` and placeholders |
+| How is the command line composed? | `arguments` or `commands`, plus placeholders and optional step version probes |
 | How is the database identified and output machine-read? | `database*`, `result_parser`, and parser-specific fields |
 
 ## YAML hierarchy
@@ -68,6 +68,8 @@ tools:
 One tool may contain multiple recipes — for example, the same `blastp` can use different databases, parameters, and result limits. Recipe names should be unique across the whole configuration; otherwise lookups silently use the first matching entry.
 
 A recipe may declare an optional `version:` (a positive integer, default 1; non-positive integers and booleans are configuration errors at load time). `analyze` records the verbatim recipe together with its referenced tool spec as a content-addressed snapshot in the `recipe_snapshots` table, and `analysis_jobs` points back through `recipe_snapshot_id`; any change to the recipe or the tool definition produces a new snapshot. Use `operon recipes history NAME` to list the history and `operon recipes show NAME [--snapshot-id N]` to print a snapshot document as YAML, which a human can copy back into `config/tools.yaml` (the CLI never rewrites the file in place). Recipes can also be edited directly in the TUI Config screen (Tools & Recipes tab): a structured form that bumps the version and records the same snapshot shape on every changed save (an unchanged save is a no-op) — note that TUI saves normalize the YAML formatting and drop hand-written comments, with every version preserved in `recipe_snapshots`.
+
+For tightly coupled programs that share one execution environment, `commands` replaces `arguments` with ordered command blocks. Each secondary program may declare its own `version_args` and `version_pattern`; see the [command-chain field contract](recipe-fields.md#command-chains-commands).
 
 ## Tool-level fields
 

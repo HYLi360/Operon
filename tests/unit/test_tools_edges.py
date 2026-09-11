@@ -268,6 +268,45 @@ def test_remote_version_capture(tmp_path):
         tools._version_output_via_executor(Failed(), ["tool"], 1)
 
 
+def test_command_step_provenance_inherits_probes_and_marks_unknown(monkeypatch):
+    commands = [
+        tools.RecipeCommand(["primary", "run"]),
+        tools.RecipeCommand(
+            ["secondary", "run"], ["-version"], r"secondary:\s*(\S+)"
+        ),
+        tools.RecipeCommand(["unversioned", "run"]),
+    ]
+    r = recipe(commands=commands)
+    tool = tool_spec(executable="primary", run_method="env run")
+    captured = []
+
+    def detect(command, pattern, label, **_kwargs):
+        captured.append((command, pattern, label))
+        return "2.0", "secondary: 2.0"
+
+    monkeypatch.setattr(tools, "_detect_version_record", detect)
+    details = tools.command_step_provenance(
+        r, tool, {}, [command.arguments for command in commands],
+        "1.0", "primary: 1.0",
+    )
+
+    assert details[0] == {
+        "executable": "primary",
+        "tool_version": "1.0",
+        "tool_version_raw": "primary: 1.0",
+        "version_source": "tool",
+        "version_command": ["env", "run", "primary", "--version"],
+    }
+    assert details[1]["tool_version"] == "2.0"
+    assert details[1]["version_source"] == "command"
+    assert captured == [
+        (["env", "run", "secondary", "-version"], r"secondary:\s*(\S+)", "secondary")
+    ]
+    assert details[2]["tool_version"] == "unknown"
+    assert details[2]["version_source"] == "unconfigured"
+    assert details[2]["version_command"] is None
+
+
 @pytest.mark.parametrize(
     ("value", "rendered", "numeric"),
     [
@@ -632,17 +671,34 @@ def test_recipe_commands_config_validation(tmp_path, monkeypatch):
         with pytest.raises(ValidationError, match="commands"):
             tools.get_recipe(p, "a")
 
+    invalid_versions = [
+        ({"arguments": ["step"], "version_args": []}, "version_args"),
+        ({"arguments": ["step"], "version_args": "-version"}, "version_args"),
+        ({"arguments": ["step"], "version_pattern": 3}, "version_pattern"),
+        ({"arguments": ["step"], "version_pattern": "step (.+)"}, "requires version_args"),
+    ]
+    for block, message in invalid_versions:
+        load({"tools": {"t": {"recipes": {"a": {"commands": [block]}}}}})
+        with pytest.raises(ValidationError, match=message):
+            tools.get_recipe(p, "a")
+
     load({"tools": {"t": {"recipes": {"a": {
         "commands": [
             {"arguments": ["rpsblast", "-query", "${input}"]},
-            {"arguments": ["rpsbproc", "-o", "${output}"]},
+            {
+                "arguments": ["rpsbproc", "-o", "${output}"],
+                "version_args": ["-version"],
+                "version_pattern": r"rpsbproc:\s*(\S+)",
+            },
         ],
     }}}}})
     r = tools.get_recipe(p, "a")
-    assert r.commands == [
-        ["rpsblast", "-query", "${input}"],
-        ["rpsbproc", "-o", "${output}"],
+    assert [command.arguments for command in r.commands] == [
+        ["rpsblast", "-query", "${input}"], ["rpsbproc", "-o", "${output}"],
     ]
+    assert r.commands[0].version_args is None
+    assert r.commands[1].version_args == ["-version"]
+    assert r.commands[1].version_pattern == r"rpsbproc:\s*(\S+)"
     assert r.arguments == []
 
 

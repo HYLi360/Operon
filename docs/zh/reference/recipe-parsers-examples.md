@@ -251,13 +251,16 @@ tools:
               - "0.001"
               - -m
               - rep
+            version_args: [-version]
+            version_pattern: 'rpsbproc:\s*([^\s]+)'
         result_parser: rpsbproc_tabular
         max_hits_per_query: 5
 ```
 
 第 1 步把 ASN.1 归档写入本次运行的 `${work_dir}`，第 2 步把它渲染为 `${output}`；暂存
-目录在运行结束后清理。rpsbproc 的参数在不同构建间有差异，请按本地安装的 rpsbproc
-版本调整第二个命令块。
+目录在运行结束后清理。第 1 步继承顶层 `rpsblast` tool 的版本，第 2 步则在 step provenance
+中独立记录 `rpsbproc -version` 的结果。rpsbproc 的参数在不同构建间有差异，请按本地安装的
+rpsbproc 版本调整第二个命令块。
 
 ## BUSCO 示例
 

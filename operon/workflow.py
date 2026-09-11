@@ -371,6 +371,7 @@ def run_external_command(
         executor: Any = None,
         run_id: str | None = None,
         commands: Iterable[Iterable[str]] | None = None,
+        command_details: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 
@@ -382,6 +383,10 @@ def run_external_command(
     lists executed through the same executor under one run record: the first
     non-zero step aborts the chain (the error names the failing step) and each
     step's argv and exit code are listed in ``execution_details``.
+
+    ``command_details`` supplies provenance collected by the caller for each
+    command (for example executable and version information). Its length must
+    match the command chain; execution-owned fields cannot be overridden.
 
     ``inputs`` declares input artifacts: each must exist, is hashed, and the
     sorted ``path:sha256`` lines are combined into the run's ``input_sha256``.
@@ -409,6 +414,11 @@ def run_external_command(
         if commands is not None
         else [[str(a) for a in argv]]
     )
+    step_details = [dict(item) for item in command_details or ()]
+    if step_details and len(step_details) != len(argv_steps):
+        raise ValidationError(
+            "command_details length must match the number of command steps"
+        )
     stdout_file = logs / f"{run_id}.stdout.log"
     stderr_file = logs / f"{run_id}.stderr.log"
     record: dict[str, Any] = {
@@ -493,13 +503,15 @@ def run_external_command(
                 stage_inputs=resolved_stage_inputs if step_index == 1 else (),
                 expected_outputs=resolved_outputs if step_index == len(argv_steps) else (),
             )
-            step_records.append({
+            step_record = dict(step_details[step_index - 1]) if step_details else {}
+            step_record.update({
                 "index": step_index,
                 "argv": step_argv,
                 "exit_code": result.exit_code,
                 "stdout_file": str(step_stdout),
                 "stderr_file": str(step_stderr),
             })
+            step_records.append(step_record)
             stdout_file, stderr_file = step_stdout, step_stderr
             if result.exit_code != 0 or result.error:
                 break

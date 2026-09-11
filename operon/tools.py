@@ -247,6 +247,8 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                                 "-e", "0.001",
                                 "-m", "rep",
                             ],
+                            "version_args": ["-version"],
+                            "version_pattern": r"rpsbproc:\s*([^\s]+)",
                         },
                     ],
                     "result_parser": "rpsbproc_tabular",
@@ -321,7 +323,16 @@ class Recipe:
     max_hits_per_query: int
     raw: dict[str, Any]
     version: int = 1
-    commands: list[list[str]] = field(default_factory=list)
+    commands: list[RecipeCommand] = field(default_factory=list)
+
+
+@dataclass
+class RecipeCommand:
+    """One command in a recipe chain, executed in the parent tool's environment."""
+
+    arguments: list[str]
+    version_args: list[str] | None = None
+    version_pattern: str = ""
 
 
 def get_tool(project: Project, tool_name: str) -> ToolSpec:
@@ -425,7 +436,7 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                     )
                 parameters[name] = dict(parameter_spec)
             raw_commands = raw.get("commands")
-            commands: list[list[str]] = []
+            commands: list[RecipeCommand] = []
             if raw_commands is not None:
                 if raw.get("arguments"):
                     raise ValidationError(
@@ -435,7 +446,7 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                     raise ValidationError(
                         f"analysis {analysis_name!r}: commands must be a non-empty list of command blocks"
                     )
-                for block in raw_commands:
+                for block_index, block in enumerate(raw_commands, start=1):
                     if (
                         not isinstance(block, dict)
                         or not isinstance(block.get("arguments"), list)
@@ -445,7 +456,33 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                             f"analysis {analysis_name!r}: each commands block requires "
                             "a non-empty 'arguments' list"
                         )
-                    commands.append([str(x) for x in block["arguments"]])
+                    raw_version_args = block.get("version_args")
+                    if raw_version_args is not None and (
+                        not isinstance(raw_version_args, list) or not raw_version_args
+                    ):
+                        raise ValidationError(
+                            f"analysis {analysis_name!r}: commands block {block_index} "
+                            "version_args must be a non-empty list when configured"
+                        )
+                    raw_version_pattern = block.get("version_pattern", "")
+                    if not isinstance(raw_version_pattern, str):
+                        raise ValidationError(
+                            f"analysis {analysis_name!r}: commands block {block_index} "
+                            "version_pattern must be a string"
+                        )
+                    if raw_version_pattern and raw_version_args is None:
+                        raise ValidationError(
+                            f"analysis {analysis_name!r}: commands block {block_index} "
+                            "version_pattern requires version_args"
+                        )
+                    commands.append(RecipeCommand(
+                        arguments=[str(x) for x in block["arguments"]],
+                        version_args=(
+                            [str(x) for x in raw_version_args]
+                            if raw_version_args is not None else None
+                        ),
+                        version_pattern=raw_version_pattern,
+                    ))
             return Recipe(
                 name=analysis_name,
                 tool_name=tool_name,
@@ -505,18 +542,15 @@ def tool_command(tool: ToolSpec, config: dict[str, Any]) -> list[str]:
     return [*launcher_prefix(tool, config), tool.executable]
 
 
-def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0,
-                               executor: Any = None) -> tuple[str, str]:
-    """Run version_args; return (parsed_version, raw_output_for_provenance)."""
-    if not tool.version_args:
-        return "unknown", "version_args not configured"
-    command = [*tool_command(tool, config), *tool.version_args]
+def _detect_version_record(command: list[str], pattern: str, label: str,
+                           timeout: float = 120.0, executor: Any = None) -> tuple[str, str]:
+    """Run a version command and return parsed and raw provenance values."""
     executor_identity = (
         executor.cache_identity() if executor is not None and hasattr(executor, "cache_identity")
         else (executor.describe() if executor is not None else "local")
     )
     cache_key = json.dumps(
-        {"command": command, "pattern": tool.version_pattern, "executor": executor_identity},
+        {"command": command, "pattern": pattern, "executor": executor_identity},
         sort_keys=True,
     )
     if cache_key in _VERSION_CACHE:
@@ -528,11 +562,11 @@ def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: 
             proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
         except FileNotFoundError as exc:
             raise ExternalToolError(
-                f"cannot launch {tool.name}: {exc}; check config/tools.yaml run_method/executable") from exc
+                f"cannot launch {label}: {exc}; check config/tools.yaml launch and version settings"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise ExternalToolError(f"{tool.name} version detection timed out after {timeout}s") from exc
+            raise ExternalToolError(f"{label} version detection timed out after {timeout}s") from exc
         combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    pattern = tool.version_pattern or ""
     if pattern:
         match = re.search(pattern, combined, flags=re.IGNORECASE)
         if match:
@@ -549,9 +583,87 @@ def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: 
             _VERSION_CACHE[cache_key] = (line[:200], combined.strip()[:4000])
             return _VERSION_CACHE[cache_key]
     raise ExternalToolError(
-        f"could not determine version of {tool.name} (command: {' '.join(command)}); "
+        f"could not determine version of {label} (command: {' '.join(command)}); "
         f"set 'version_pattern' in config/tools.yaml"
     )
+
+
+def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0,
+                               executor: Any = None) -> tuple[str, str]:
+    """Run a tool's version_args; return parsed and raw provenance values."""
+    if not tool.version_args:
+        return "unknown", "version_args not configured"
+    command = [*tool_command(tool, config), *tool.version_args]
+    return _detect_version_record(
+        command, tool.version_pattern, tool.name, timeout=timeout, executor=executor,
+    )
+
+
+def command_step_provenance(
+        recipe: Recipe,
+        tool: ToolSpec,
+        config: dict[str, Any],
+        rendered_commands: list[list[str]],
+        tool_version: str,
+        tool_version_raw: str,
+        *,
+        executor: Any = None,
+        dry_run: bool = False,
+        timeout: float = 120.0,
+) -> list[dict[str, Any]]:
+    """Collect program identity and version provenance for a command chain.
+
+    A step invoking the parent tool executable inherits its already-probed
+    version. Other programs are probed only when their command block declares
+    ``version_args``; no version flag is guessed.
+    """
+    if len(recipe.commands) != len(rendered_commands):
+        raise ValidationError(f"{recipe.name}: rendered command count does not match recipe")
+    provenance: list[dict[str, Any]] = []
+    launcher = launcher_prefix(tool, config)
+    skip_remote_probe = (
+        dry_run and executor is not None and getattr(executor, "name", "local") != "local"
+    )
+    for command_spec, rendered in zip(recipe.commands, rendered_commands):
+        executable = rendered[0]
+        if command_spec.version_args is not None:
+            source = "command"
+            version_command = [*launcher, executable, *command_spec.version_args]
+            if skip_remote_probe:
+                version = f"not probed (backend={executor.describe()})"
+                version_raw = ""
+            else:
+                try:
+                    version, version_raw = _detect_version_record(
+                        version_command, command_spec.version_pattern, executable,
+                        timeout=timeout, executor=executor,
+                    )
+                except ExternalToolError as exc:
+                    if not dry_run:
+                        raise
+                    version = f"unavailable ({exc})"
+                    version_raw = str(exc)
+        elif executable == tool.executable:
+            source = "tool"
+            version = tool_version
+            version_raw = tool_version_raw
+            version_command = (
+                [*tool_command(tool, config), *tool.version_args]
+                if tool.version_args else None
+            )
+        else:
+            source = "unconfigured"
+            version = "unknown"
+            version_raw = "version_args not configured for command"
+            version_command = None
+        provenance.append({
+            "executable": executable,
+            "tool_version": version,
+            "tool_version_raw": version_raw,
+            "version_source": source,
+            "version_command": version_command,
+        })
+    return provenance
 
 
 def _version_output_via_executor(executor: Any, command: list[str], timeout: float) -> str:
@@ -1110,7 +1222,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 recipe, input_path=input_path, output_path=output_path,
                 database_path=database_path, threads=threads, file_record=file_record,
                 runtime_parameters=runtime_parameters, work_dir=work_dir,
-                arguments=block,
+                arguments=block.arguments,
             )
             for block in recipe.commands
         ]
@@ -1127,6 +1239,13 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             raise
         version = f"unavailable ({exc})"
         version_raw = str(exc)
+    step_provenance = (
+        command_step_provenance(
+            recipe, tool, config, rendered_commands, version, version_raw,
+            executor=executor, dry_run=dry_run,
+        )
+        if rendered_commands else None
+    )
     parameter_sha = parameter_fingerprint(
         recipe, rendered_args, threads, version, runtime_parameters=runtime_parameters,
         commands=rendered_commands or None,
@@ -1316,6 +1435,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             stage_inputs=[input_path] if executor.name == "ssh" and not input_is_remote else (),
             executor=executor,
             commands=step_commands,
+            command_details=step_provenance,
         )
         _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
         output_sha = sha256_path(output_path)

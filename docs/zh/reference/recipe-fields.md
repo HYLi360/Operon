@@ -250,6 +250,8 @@ commands:
       - ${work_dir}/hits.asn
       - -o
       - ${output}
+    version_args: [-version]
+    version_pattern: 'rpsbproc:\s*([^\s]+)'
 ```
 
 - `commands` 与单命令形式的 `arguments` 在同一个 recipe 上互斥。
@@ -257,13 +259,19 @@ commands:
   旁边名为 `<output_name>.work` 的确定性暂存目录。运行前删除并重建，运行结束（或失败）
   后再次移除；`analyze --keep-partial` 会保留它以便排查。路径必须确定，因为渲染后的命令
   参与缓存指纹。
-- 各步按顺序通过同一个 executor 执行（工具的 `run_method` 前缀作用于每一步），共享同一条
+- 各步按顺序通过同一个 executor 执行（顶层 tool 的 `run_method` 前缀作用于每一步），共享同一条
   `analysis_jobs` 记录。第一个非零退出的步骤中止整条链并使整个 job 失败；错误信息指明失败
   步骤（`step N/M failed: ...`）。
-- 每一步有独立日志 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码
-  记录在该次运行的 `execution_details.steps` 中。
+- command block 可声明 `version_args`（追加到该 block executable 后的非空参数列表）与
+  `version_pattern`（可选的提取正则）；探测经由同一个 launcher 和 executor。若某一步的
+  executable 等于顶层 tool 的 `executable` 且没有自己的探测配置，它继承已探测的顶层版本。
+  其他未配置的 executable 记为 `unknown`；`operon` 不猜测版本参数。
+- 每一步有独立日志 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`；该步的 `argv`、
+  `executable`、`tool_version`、`tool_version_raw`、`version_source`、`version_command` 与
+  `exit_code` 都记录在本次运行的 `execution_details.steps` 中。
 - 只有最后一步需要产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次。
-- 渲染后的 `commands` 参与参数指纹与 recipe 快照，因此编辑任一步骤只会让完成缓存失效一次。
+- 渲染后的 `commands` 与版本探测声明保存在 recipe 快照中。step-level 版本收集只用于
+  provenance，不改变当前缓存策略或缓存指纹。
 
 完整的 `rpsblast` + `rpsbproc` recipe 见 [结果解析器与示例](recipe-parsers-examples.md)。
 

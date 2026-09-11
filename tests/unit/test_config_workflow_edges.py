@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -13,7 +14,7 @@ from operon import workflow
 from operon.cli import main
 from operon.config import Project, load_project
 from operon.database import Database
-from operon.errors import ConfigError, ConflictError
+from operon.errors import ConfigError, ConflictError, ValidationError
 
 
 @pytest.fixture
@@ -103,6 +104,43 @@ def test_failed_exit_code_is_not_masked_by_missing_output_check(project_db):
     row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
     assert row["status"] == "failed"
     assert row["error"] == "exit code 3"
+
+
+def test_command_step_details_are_aligned_and_execution_fields_are_owned(project_db):
+    project, db = project_db
+
+    class Executor:
+        def describe(self):
+            return "fake"
+
+        def run(self, *_args, **_kwargs):
+            return SimpleNamespace(
+                exit_code=0, error=None, scheduler_job_id=None,
+                details={"backend": "fake"},
+            )
+
+    with pytest.raises(ValidationError, match="command_details length"):
+        workflow.run_external_command(
+            db, project, ["one"], step="bad-details", executor=Executor(),
+            commands=[["one"], ["two"]], command_details=[{"tool_version": "1"}],
+        )
+
+    workflow.run_external_command(
+        db, project, ["one"], step="step-details", executor=Executor(),
+        commands=[["one"], ["two"]],
+        command_details=[
+            {"executable": "one", "tool_version": "1", "index": 99},
+            {"executable": "two", "tool_version": "2", "exit_code": 99},
+        ],
+    )
+    row = db.query(
+        "SELECT execution_details FROM workflow_runs WHERE step='step-details'"
+    )[0]
+    details = json.loads(row["execution_details"])
+    assert [(step["index"], step["executable"], step["tool_version"], step["exit_code"])
+            for step in details["steps"]] == [
+        (1, "one", "1", 0), (2, "two", "2", 0),
+    ]
 
 
 @pytest.mark.parametrize(

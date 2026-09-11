@@ -26,9 +26,14 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 `database_version` 标识其逻辑版本；不可变参考库仍使用默认的 `reference` 内容身份。
 
 recipe 也可以用 `commands` 命令链代替单命令（与 `arguments` 互斥）。渲染后的各步按顺序
-通过同一个 executor 执行，共享一条运行记录与一条 `analysis_jobs` 行；每步有独立的
-`logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码记录在该次运行的
-`execution_details.steps` 中。第一个非零退出的步骤中止整条链并使 job 失败，错误形如
+通过同一个 executor 与顶层 tool 的 `run_method` 执行，共享一条运行记录与一条
+`analysis_jobs` 行。调用顶层 `executable` 的 step 继承已经探测的 tool 版本；其他程序可在
+command block 中声明自己的 `version_args` 与 `version_pattern`，并经同一个 launcher/executor
+探测。未配置的附加程序明确记录为 `unknown`，系统不会猜测版本参数。每步有独立的
+`logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 `argv`、`executable`、
+`tool_version`、`tool_version_raw`、`version_source`、`version_command` 与 `exit_code` 都记录在
+`execution_details.steps` 中。第一个非零退出的步骤
+中止整条链并使 job 失败，错误形如
 `step N/M failed`。中间产物放在确定性的 `${work_dir}` 暂存目录（输出旁的
 `<output_name>.work`），执行前删除重建、成功或失败后移除（`--keep-partial` 保留）；路径
 必须确定，因为渲染后的命令参与参数指纹与缓存身份。期望输出校验、内容哈希与结果解析在
@@ -37,7 +42,7 @@ recipe 也可以用 `commands` 命令链代替单命令（与 `arguments` 互斥
 耦合，后者的表格报告由 `rpsbproc_tabular` 解析：`DATA`/`SESSION`/`QUERY`/`DOMAINS` 块中的
 domain 行成为全量 `analysis_alignments` 行（query 取 QUERY 的 definition line，subject 取
 accession，坐标来自 `from`/`to` 列，hit type/PSSM ID/short name 留在 `extra_json`），EAV
-hits 照常按 `max_hits_per_query` 截断。
+hits 照常按 `max_hits_per_query` 截断。step-level 版本收集只用于 provenance，不改变缓存身份。
 
 外部命令的实际执行由 `execution.py` 的后端抽象接管，`run_external_command` 通过
 `get_executor(project, backend)` 选择后端：

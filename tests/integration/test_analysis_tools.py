@@ -699,6 +699,9 @@ class TestRpsbprocCommandChain(PytestAssertions):
             import sys
             from pathlib import Path
             args = sys.argv[1:]
+            if '-version' in args:
+                print('rpsbproc: 0.5.0')
+                raise SystemExit(0)
             inp = Path(args[args.index('-i') + 1])
             out = Path(args[args.index('-o') + 1])
             assert inp.is_file(), 'intermediate rpsblast output missing'
@@ -732,9 +735,13 @@ class TestRpsbprocCommandChain(PytestAssertions):
                     "-out", "${work_dir}/hits.asn", "-outfmt", "11",
                     "-num_threads", "${threads}", *(step1_extra or []),
                 ]},
-                {"arguments": [
-                    str(rpsbproc), "-i", "${work_dir}/hits.asn", "-o", "${output}",
-                ]},
+                {
+                    "arguments": [
+                        str(rpsbproc), "-i", "${work_dir}/hits.asn", "-o", "${output}",
+                    ],
+                    "version_args": ["-version"],
+                    "version_pattern": r"rpsbproc:\s*([^\s]+)",
+                },
             ],
             "result_parser": "rpsbproc_tabular",
             "max_hits_per_query": 1,
@@ -792,6 +799,17 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 0])
         self.assertEqual(details["steps"][0]["argv"][:2], [sys.executable, str(rpsblast)])
         self.assertEqual(details["steps"][1]["argv"][:2], [sys.executable, str(rpsbproc)])
+        self.assertEqual(
+            [(step["executable"], step["tool_version"], step["version_source"])
+             for step in details["steps"]],
+            [(str(rpsblast), "9.9.9", "tool"), (str(rpsbproc), "0.5.0", "command")],
+        )
+        self.assertIn("rpsblast: 9.9.9", details["steps"][0]["tool_version_raw"])
+        self.assertIn("rpsbproc: 0.5.0", details["steps"][1]["tool_version_raw"])
+        self.assertEqual(
+            details["steps"][1]["version_command"],
+            [sys.executable, str(rpsbproc), "-version"],
+        )
         self.assertTrue(all(Path(s["stdout_file"]).is_file() for s in details["steps"]))
 
         alignments = self.db.query("SELECT * FROM analysis_alignments ORDER BY hit_rank")
