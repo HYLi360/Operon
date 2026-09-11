@@ -262,16 +262,21 @@ commands:
 - 各步按顺序通过同一个 executor 执行（顶层 tool 的 `run_method` 前缀作用于每一步），共享同一条
   `analysis_jobs` 记录。第一个非零退出的步骤中止整条链并使整个 job 失败；错误信息指明失败
   步骤（`step N/M failed: ...`）。
-- command block 可声明 `version_args`（追加到该 block executable 后的非空参数列表）与
-  `version_pattern`（可选的提取正则）；探测经由同一个 launcher 和 executor。若某一步的
-  executable 等于顶层 tool 的 `executable` 且没有自己的探测配置，它继承已探测的顶层版本。
-  其他未配置的 executable 记为 `unknown`；`operon` 不猜测版本参数。
+- 第一个命令是 recipe 的逻辑归属：记录在作业上的 `tool_version`——也即混入缓存身份的
+  版本——就是第一个命令的版本。它来自第一个块自己声明的 `version_args`/`version_pattern`
+  （若已声明），否则来自顶层 tool 的探测；因此 recipe 加载时会拒绝第一个命令的 executable
+  与 tool 的 `executable` 不一致、且第一个块未声明自己探测配置的命令链。后续任何块也可以
+  声明 `version_args`（追加到该块 executable 后的非空参数列表）与 `version_pattern`（可选的
+  提取正则）；探测经由同一个 launcher 和 executor。若某一步的 executable 等于顶层 tool 的
+  `executable` 且没有自己的探测配置，它继承已探测的顶层版本。其他未配置的 executable 记为
+  `unknown`；`operon` 不猜测版本参数。
 - 每一步有独立日志 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`；该步的 `argv`、
   `executable`、`tool_version`、`tool_version_raw`、`version_source`、`version_command` 与
   `exit_code` 都记录在本次运行的 `execution_details.steps` 中。
 - 只有最后一步需要产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次。
-- 渲染后的 `commands` 与版本探测声明保存在 recipe 快照中。step-level 版本收集只用于
-  provenance，不改变当前缓存策略或缓存指纹。
+- 渲染后的 `commands` 与版本探测声明保存在 recipe 快照中。每个探测到的步骤版本也会混入
+  缓存指纹，因此升级任何一步的程序（例如 `rpsbproc`）都会使精确缓存失效——即使 recipe
+  文本与主工具版本没有变化；验证输出收养仍然适用，与主工具升级时完全相同。
 
 完整的 `rpsblast` + `rpsbproc` recipe 见 [结果解析器与示例](recipe-parsers-examples.md)。
 
@@ -279,9 +284,10 @@ recipe `commands` 系统存在的目的并非取代 Snakemake/Nextflow，而是�
 减轻重复劳动，并避免在这种情况下使用“大块头”的 Snakemake/Nextflow。我们有意为 `commands`
 系统增加了这些硬限制：
 
-- 各程序只能使用共同的运行环境。例如，如果您使用 Conda 执行 RPS-BLAST recipe，您需要在 Conda
-环境中同时安装 NCBI-BLAST+ 和 `rpsbproc`。
-- 由于命令链的执行会引入不确定性，使用 `commands` 的 Recipe 不能享受缓存命中。
+- 各程序只能使用共同的运行环境——一个 recipe 对应一个环境。例如，如果您使用 Conda 执行
+  RPS-BLAST recipe，您需要在同一个 Conda 环境中同时安装 NCBI-BLAST+ 和 `rpsbproc`。按步骤
+  设置环境的写法（例如在命令块内写 `run_method`）会在 recipe 加载时被拒绝；确实需要跨多个
+  环境的流水线应交给 Snakemake/Nextflow，再通过 `operon adopt` 把结果收进数据库。
 
 ## 数据库与缓存目录
 
@@ -393,7 +399,8 @@ analysis name
 + 渲染后的 arguments
 + 解析后的运行时参数
 + threads
-+ tool version
++ tool version（`commands` 命令链：第一个命令的版本，
+  加上后续每一步探测到的版本）
 + parser/output 相关 recipe 设置
 + database identity
 ```

@@ -259,7 +259,8 @@ tools:
 
 第 1 步把 ASN.1 归档写入本次运行的 `${work_dir}`，第 2 步把它渲染为 `${output}`；暂存
 目录在运行结束后清理。第 1 步继承顶层 `rpsblast` tool 的版本，第 2 步则在 step provenance
-中独立记录 `rpsbproc -version` 的结果。rpsbproc 的参数在不同构建间有差异，请按本地安装的
+中独立记录 `rpsbproc -version` 的结果；两个探测到的版本都参与缓存身份，因此仅升级
+`rpsbproc` 也足以使精确缓存失效。rpsbproc 的参数在不同构建间有差异，请按本地安装的
 rpsbproc 版本调整第二个命令块。
 
 ## BUSCO 示例

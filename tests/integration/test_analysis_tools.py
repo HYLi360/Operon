@@ -17,6 +17,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
+from operon import tools as tools_module
 from operon.tools import ToolSpec, get_recipe, get_tool, launcher_prefix, parse_and_store_results
 
 
@@ -869,6 +870,39 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 3])
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 0)
         self.assertEqual(list(self._output_dir().glob("*.work")), [])
+
+    def test_command_chain_step_version_change_invalidates_cache(self):
+        database = self.root / "Cdd"
+        database.write_text("fake cdd\n", encoding="utf-8")
+        rpsblast = self._write_fake_rpsblast()
+        rpsbproc = self._write_fake_rpsbproc()
+        self._write_chain_config(rpsblast, rpsbproc, database)
+        self._add_annotation()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        first_sha = self.db.query("SELECT parameter_sha256 FROM analysis_jobs")[0]["parameter_sha256"]
+
+        # A later step's version upgrade must invalidate the exact cache even
+        # though the recipe text, inputs and primary tool version are unchanged.
+        rpsbproc.write_text(
+            rpsbproc.read_text(encoding="utf-8").replace("0.5.0", "0.6.0"),
+            encoding="utf-8",
+        )
+        tools_module._VERSION_CACHE.clear()  # same probe command, new answer
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual(len(jobs), 2)
+        self.assertTrue(all(j["status"] == "completed" for j in jobs))
+        self.assertEqual(jobs[1]["tool_version"], "9.9.9")
+        self.assertNotEqual(jobs[1]["parameter_sha256"], first_sha)
+        # The byte-identical output is adopted under the new fingerprint
+        # instead of being recomputed, and the adoption is audited.
+        self.assertEqual(jobs[1]["workflow_run_id"], jobs[0]["workflow_run_id"])
+        changes = self.db.query(
+            "SELECT * FROM changes WHERE object_type='analysis_job' AND new_value='completed'")
+        self.assertTrue(any("adopted verified output" in c["reason"] for c in changes))
 
     def test_recipe_rejects_commands_and_arguments_together(self):
         database = self.root / "Cdd"

@@ -26,8 +26,11 @@ recipe 声明输入类目、artifact 类型、启动方式、参数和结果解�
 `database_version` 标识其逻辑版本；不可变参考库仍使用默认的 `reference` 内容身份。
 
 recipe 也可以用 `commands` 命令链代替单命令（与 `arguments` 互斥）。渲染后的各步按顺序
-通过同一个 executor 与顶层 tool 的 `run_method` 执行，共享一条运行记录与一条
-`analysis_jobs` 行。调用顶层 `executable` 的 step 继承已经探测的 tool 版本；其他程序可在
+通过同一个 executor 与顶层 tool 的 `run_method` 执行（一个 recipe 一个环境，是刻意的
+能力限制），共享一条运行记录与一条 `analysis_jobs` 行。第一个命令是 recipe 的逻辑归属：
+作业的 `tool_version` 与缓存身份中的版本成分都来自它——优先取第一个块自己声明的
+`version_args`/`version_pattern`，否则回退到顶层 tool 的探测（recipe 加载时强制二者指向
+同一程序）。调用顶层 `executable` 的 step 继承已经探测的 tool 版本；其他程序可在
 command block 中声明自己的 `version_args` 与 `version_pattern`，并经同一个 launcher/executor
 探测。未配置的附加程序明确记录为 `unknown`，系统不会猜测版本参数。每步有独立的
 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 `argv`、`executable`、
@@ -42,7 +45,8 @@ command block 中声明自己的 `version_args` 与 `version_pattern`，并经�
 耦合，后者的表格报告由 `rpsbproc_tabular` 解析：`DATA`/`SESSION`/`QUERY`/`DOMAINS` 块中的
 domain 行成为全量 `analysis_alignments` 行（query 取 QUERY 的 definition line，subject 取
 accession，坐标来自 `from`/`to` 列，hit type/PSSM ID/short name 留在 `extra_json`），EAV
-hits 照常按 `max_hits_per_query` 截断。step-level 版本收集只用于 provenance，不改变缓存身份。
+hits 照常按 `max_hits_per_query` 截断。每个探测到的步骤版本都混入缓存指纹：升级任何一步的
+程序（即使 recipe 文本与主工具版本未变）都会使精确缓存失效，验证输出收养照常适用。
 
 外部命令的实际执行由 `execution.py` 的后端抽象接管，`run_external_command` 通过
 `get_executor(project, backend)` 选择后端：

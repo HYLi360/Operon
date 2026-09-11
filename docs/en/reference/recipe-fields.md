@@ -243,19 +243,17 @@ commands:
 - `commands` and the single-command `arguments` field are mutually exclusive on the same recipe.
 - Each block's `arguments` is rendered with the same placeholders as a single command, plus `${work_dir}`: a deterministic scratch directory named `<output_name>.work` next to the output artifact. It is deleted and recreated before the run, and removed again after the run finishes (or fails); `analyze --keep-partial` keeps it for debugging. The path is deterministic because the rendered commands enter the cache fingerprint.
 - Steps run in order through the same executor (the parent tool's `run_method` prefix applies to every step) under one `analysis_jobs` row. The first step with a non-zero exit code aborts the chain and fails the whole job; the error message names the failing step (`step N/M failed: ...`).
-- A command block may declare `version_args` (a non-empty argument list appended to that block's executable) and `version_pattern` (an optional extraction regex). The probe runs through the same launcher and executor. A step whose executable equals the parent tool's `executable` inherits the already-probed tool version when it has no command-level probe. Any other unconfigured executable is recorded as version `unknown`; `operon` never guesses a version flag.
+- The first command is the recipe's logical owner: the `tool_version` recorded on the job — and mixed into the cache identity — is the first command's version. It comes from the first block's own `version_args`/`version_pattern` when declared, otherwise from the parent tool's probe, so recipe loading rejects a chain whose first command's executable differs from the tool's `executable` unless the first block declares its own probe. Any later block may also declare `version_args` (a non-empty argument list appended to that block's executable) and `version_pattern` (an optional extraction regex); the probe runs through the same launcher and executor. A step whose executable equals the parent tool's `executable` inherits the already-probed tool version when it has no command-level probe. Any other unconfigured executable is recorded as version `unknown`; `operon` never guesses a version flag.
 - Each step gets its own logs, `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`. Its `argv`, `executable`, `tool_version`, `tool_version_raw`, `version_source`, `version_command`, and `exit_code` are recorded in the run's `execution_details.steps`.
 - Only the last step is expected to produce `${output}`; the non-empty check, content hash, and result parsing run once after the chain completes.
-- The rendered `commands` and their version-probe declarations are preserved in the recipe snapshot. Step-level version collection is provenance-only and does not change the current cache policy or fingerprint.
+- The rendered `commands` and their version-probe declarations are preserved in the recipe snapshot. Every probed step version is also mixed into the cache fingerprint, so upgrading any step's program (for example `rpsbproc`) invalidates the exact cache even when the recipe text and the primary tool version are unchanged; verified-output adoption still applies, exactly as for a primary tool upgrade.
 
 A complete `rpsblast` + `rpsbproc` recipe appears in [Result parsers and examples](recipe-parsers-examples.md).
 
 The `commands` system is NOT intended to replace Snakemake or Nextflow, but rather to bundle tools that are frequently used together
 to reduce repetitive work, and avoid using the “bulky” Snakemake or Nextflow in such scenario. We have intentionally imposed the following hard constraints on the `commands`:
 
-- Each program must use a shared runtime environment. For example, if you run the RPS-BLAST recipe using Conda, you must have both NCBI-BLAST+ and `rpsbproc` installed in the Conda
-environment.
-- Because executing command chains introduces uncertainty, recipes that use `commands` cannot benefit from cache hits.
+- Each program must use a shared runtime environment — one recipe, one environment. For example, if you run the RPS-BLAST recipe using Conda, you must have both NCBI-BLAST+ and `rpsbproc` installed in the same Conda environment. Per-step environment keys (such as `run_method` inside a command block) are rejected when the recipe is loaded; pipelines that genuinely span multiple environments belong to Snakemake/Nextflow, with their results brought back into the database via `operon adopt`.
 
 ## Databases and cache directories
 
@@ -359,7 +357,8 @@ analysis name
 + rendered arguments
 + resolved runtime parameters
 + threads
-+ tool version
++ tool version (for a `commands` chain: the first command's version,
+  plus the probed version of every later step)
 + parser/output-related recipe settings
 + database identity
 ```

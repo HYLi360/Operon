@@ -682,7 +682,7 @@ def test_recipe_commands_config_validation(tmp_path, monkeypatch):
         with pytest.raises(ValidationError, match=message):
             tools.get_recipe(p, "a")
 
-    load({"tools": {"t": {"recipes": {"a": {
+    load({"tools": {"t": {"executable": "rpsblast", "recipes": {"a": {
         "commands": [
             {"arguments": ["rpsblast", "-query", "${input}"]},
             {
@@ -700,6 +700,55 @@ def test_recipe_commands_config_validation(tmp_path, monkeypatch):
     assert r.commands[1].version_args == ["-version"]
     assert r.commands[1].version_pattern == r"rpsbproc:\s*(\S+)"
     assert r.arguments == []
+
+
+def test_recipe_commands_single_environment_and_ownership(tmp_path, monkeypatch):
+    p = project(tmp_path)
+
+    def load(config):
+        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+
+    # Per-step environments are rejected by design: one recipe, one environment.
+    load({"tools": {"t": {"executable": "step", "recipes": {"a": {
+        "commands": [{"arguments": ["step"], "run_method": "conda run -n other"}],
+    }}}}})
+    with pytest.raises(ValidationError, match="unsupported key"):
+        tools.get_recipe(p, "a")
+
+    # The first command is the recipe's logical owner: without its own probe
+    # it must be the tool's executable.
+    load({"tools": {"t": {"executable": "other", "recipes": {"a": {
+        "commands": [{"arguments": ["step"]}],
+    }}}}})
+    with pytest.raises(ValidationError, match="logical owner"):
+        tools.get_recipe(p, "a")
+
+    # A first block with its own probe may differ from the tool executable.
+    load({"tools": {"t": {"executable": "other", "recipes": {"a": {
+        "commands": [
+            {"arguments": ["step"], "version_args": ["--version"],
+             "version_pattern": r"step\s+(\S+)"},
+            {"arguments": ["helper"]},
+        ],
+    }}}}})
+    r = tools.get_recipe(p, "a")
+    assert r.commands[0].version_args == ["--version"]
+    assert r.commands[0].version_pattern == r"step\s+(\S+)"
+
+
+def test_recipe_version_probe_command_anchors_on_first_command():
+    r = recipe(commands=[
+        tools.RecipeCommand(["owner", "run"], ["--version"], r"owner\s+(\S+)"),
+        tools.RecipeCommand(["helper", "run"]),
+    ])
+    tool = tool_spec(executable="tool", run_method="env run")
+    probe = tools.recipe_version_probe_command(
+        r, tool, {}, [["owner", "run"], ["helper", "run"]])
+    assert probe == (["env", "run", "owner", "--version"], r"owner\s+(\S+)", "owner")
+    # No first-block probe -> the caller falls back to the tool-level probe.
+    r2 = recipe(commands=[tools.RecipeCommand(["tool", "run"])])
+    assert tools.recipe_version_probe_command(r2, tool, {}, [["tool", "run"]]) is None
+    assert tools.recipe_version_probe_command(r2, tool, {}, []) is None
 
 
 def test_render_arguments_work_dir_placeholder(tmp_path):
@@ -728,3 +777,19 @@ def test_parameter_fingerprint_commands_opt_in():
     with_commands = tools.parameter_fingerprint(r, ["a"], 1, "v", commands=[["x"], ["y"]])
     assert with_commands != plain
     assert with_commands != tools.parameter_fingerprint(r, ["a"], 1, "v", commands=[["x"], ["z"]])
+
+
+def test_parameter_fingerprint_includes_command_versions():
+    r = recipe()
+    commands = [["primary", "run"], ["secondary", "run"]]
+    base = tools.parameter_fingerprint(r, ["a"], 1, "v", commands=commands)
+    v1 = tools.parameter_fingerprint(
+        r, ["a"], 1, "v", commands=commands,
+        command_versions=[["primary", "1.0"], ["secondary", "2.0"]],
+    )
+    v2 = tools.parameter_fingerprint(
+        r, ["a"], 1, "v", commands=commands,
+        command_versions=[["primary", "1.0"], ["secondary", "2.1"]],
+    )
+    assert v1 != base
+    assert v1 != v2

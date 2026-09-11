@@ -226,7 +226,7 @@ tools:
         max_hits_per_query: 5
 ```
 
-Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. The first step inherits the parent `rpsblast` tool version, while the second records the independent `rpsbproc -version` result in step provenance. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
+Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. The first step inherits the parent `rpsblast` tool version, while the second records the independent `rpsbproc -version` result in step provenance; both probed versions participate in the cache identity, so an `rpsbproc` upgrade alone already invalidates the exact cache. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
 
 ## BUSCO example
 

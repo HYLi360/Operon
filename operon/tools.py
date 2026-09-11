@@ -5,8 +5,12 @@ passed as ad-hoc command strings.  A recipe declares:
 
   * which manifest file or directory artifacts are valid inputs;
   * how to launch the program (direct executable or `conda run -n <env>`),
-    either as a single command or as a `commands` chain executed in order;
-  * how to detect and record the program version;
+    either as a single command or as a `commands` chain executed in order —
+    every step of a chain shares the parent tool's single `run_method`
+    environment by deliberate limitation;
+  * how to detect and record program versions: the first command of a chain
+    is the recipe's logical owner, later commands may declare their own
+    probes, and every probed step version participates in cache identity;
   * whether the output is a file or directory and how arguments are rendered;
   * how to parse the output back into SQLite.
 
@@ -275,6 +279,11 @@ def ensure_tools_config(project: Project) -> Path:
             "# The rpsblast_cdd recipe chains rpsblast into rpsbproc; rpsbproc\n"
             "# flags differ between builds, so adjust the second command block\n"
             "# to your local rpsbproc version.\n"
+            "# A commands chain runs every step in the parent tool's single\n"
+            "# run_method environment (by design: one recipe, one environment).\n"
+            "# The first command is the recipe's logical owner; later blocks may\n"
+            "# declare their own version_args/version_pattern probes, and every\n"
+            "# probed step version participates in the analysis cache identity.\n"
             + yaml.safe_dump(DEFAULT_TOOLS_CONFIG, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
@@ -456,6 +465,18 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                             f"analysis {analysis_name!r}: each commands block requires "
                             "a non-empty 'arguments' list"
                         )
+                    unknown_keys = sorted(
+                        set(block) - {"arguments", "version_args", "version_pattern"}
+                    )
+                    if unknown_keys:
+                        raise ValidationError(
+                            f"analysis {analysis_name!r}: commands block {block_index} "
+                            f"has unsupported key(s): {', '.join(unknown_keys)}; every step "
+                            "of a chain runs in the parent tool's single run_method "
+                            "environment by deliberate limitation — per-step environments "
+                            "are not supported (use an external workflow engine such as "
+                            "Snakemake/Nextflow and 'adopt' for multi-environment pipelines)"
+                        )
                     raw_version_args = block.get("version_args")
                     if raw_version_args is not None and (
                         not isinstance(raw_version_args, list) or not raw_version_args
@@ -483,6 +504,22 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
                         ),
                         version_pattern=raw_version_pattern,
                     ))
+                # The first command is the recipe's logical owner: the job's
+                # recorded tool_version and the version component of cache
+                # identity describe its program. Without its own probe that
+                # program must be the tool's executable, otherwise the
+                # tool-level probe would silently describe a different binary.
+                if commands and commands[0].version_args is None:
+                    tool_executable = str(raw_tool.get("executable", tool_name))
+                    first_executable = commands[0].arguments[0]
+                    if first_executable != tool_executable:
+                        raise ValidationError(
+                            f"analysis {analysis_name!r}: the first command "
+                            f"({first_executable!r}) is the recipe's logical owner but "
+                            f"does not match the tool's executable ({tool_executable!r}); "
+                            "declare version_args/version_pattern on the first command "
+                            "block, or point the tool's executable at it"
+                        )
             return Recipe(
                 name=analysis_name,
                 tool_name=tool_name,
@@ -599,6 +636,27 @@ def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: 
     )
 
 
+def recipe_version_probe_command(
+        recipe: Recipe, tool: ToolSpec, config: dict[str, Any],
+        rendered_commands: list[list[str]]) -> tuple[list[str], str, str] | None:
+    """Version probe for the recipe's logical owner (the first chain command).
+
+    Returns ``(command, pattern, label)`` when the first command block declares
+    its own ``version_args``; otherwise ``None`` and the caller falls back to
+    the tool-level probe, which recipe validation guarantees targets the first
+    command's program.
+    """
+    if not rendered_commands or recipe.commands[0].version_args is None:
+        return None
+    first = recipe.commands[0]
+    executable = rendered_commands[0][0]
+    return (
+        [*launcher_prefix(tool, config), executable, *first.version_args],
+        first.version_pattern,
+        executable,
+    )
+
+
 def command_step_provenance(
         recipe: Recipe,
         tool: ToolSpec,
@@ -615,7 +673,8 @@ def command_step_provenance(
 
     A step invoking the parent tool executable inherits its already-probed
     version. Other programs are probed only when their command block declares
-    ``version_args``; no version flag is guessed.
+    ``version_args``; no version flag is guessed. Every probed step version
+    also enters the analysis cache fingerprint via ``parameter_fingerprint``.
     """
     if len(recipe.commands) != len(rendered_commands):
         raise ValidationError(f"{recipe.name}: rendered command count does not match recipe")
@@ -887,7 +946,8 @@ def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
 
 def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_version: str,
                           runtime_parameters: dict[str, str] | None = None,
-                          commands: list[list[str]] | None = None) -> str:
+                          commands: list[list[str]] | None = None,
+                          command_versions: list[list[str]] | None = None) -> str:
     payload = {
         "analysis_name": recipe.name,
         "tool": recipe.tool_name,
@@ -905,6 +965,11 @@ def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_ve
     }
     if commands is not None:
         payload["commands"] = commands
+    if command_versions is not None:
+        # [executable, probed version] per chain step: upgrading any step's
+        # program invalidates the exact cache even when the recipe text and
+        # the primary tool version are unchanged.
+        payload["command_versions"] = command_versions
     for key in (
         "qstart_column", "qend_column", "sstart_column", "send_column",
         "evalue_column", "bitscore_column", "pident_column",
@@ -1226,12 +1291,19 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             )
             for block in recipe.commands
         ]
+    owner_probe = recipe_version_probe_command(recipe, tool, config, rendered_commands)
     try:
         if dry_run and executor.name != "local":
             # Do not submit cluster jobs or open SSH connections for a dry run;
             # the cache verdict below may be approximate without the version.
             version = f"not probed (backend={executor.describe()})"
             version_raw = ""
+        elif owner_probe is not None:
+            # The first chain command is the recipe's logical owner: its
+            # declared probe, not the tool-level one, defines tool_version.
+            version, version_raw = _detect_version_record(
+                *owner_probe, executor=executor,
+            )
         else:
             version, version_raw = detect_tool_version_record(tool, config, executor=executor)
     except ExternalToolError as exc:
@@ -1249,6 +1321,10 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     parameter_sha = parameter_fingerprint(
         recipe, rendered_args, threads, version, runtime_parameters=runtime_parameters,
         commands=rendered_commands or None,
+        command_versions=(
+            [[step["executable"], step["tool_version"]] for step in step_provenance]
+            if step_provenance else None
+        ),
     )
     cached = find_cached_job(
         db, recipe.name, file_record["file_id"], parameter_sha, actual_sha, db_identity
