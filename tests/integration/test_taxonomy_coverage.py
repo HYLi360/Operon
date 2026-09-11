@@ -14,7 +14,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import qc_file
+from operon.qc import qc_file
 from operon.release import create_release
 from operon.rules import evaluate_entity
 from operon.schema import read_tsv

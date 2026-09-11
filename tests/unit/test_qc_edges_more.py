@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from operon import qc_module as qc
+from operon import qc as qc
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database

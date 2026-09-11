@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from operon.errors import QCError
-from operon.qc_module import parsers
+from operon.qc import parsers
 
 
 def test_binary_line_endings_across_one_byte_chunks_and_trailing_line(tmp_path):

@@ -12,7 +12,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import measure_file, qc_file
+from operon.qc import measure_file, qc_file
 from operon.utils import sha256_file
 
 FASTA = ">ctg1\n" + "ACGT" * 50 + "\n>ctg2\n" + "GGGG" * 25 + "\n"

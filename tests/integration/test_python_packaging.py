@@ -54,7 +54,7 @@ def test_sdist_contains_complete_project_source(tmp_path):
         f"{prefix}pyproject.toml",
         f"{prefix}setup.py",
         f"{prefix}operon/cli.py",
-        f"{prefix}operon/qc_module/_parsers.pyx",
+        f"{prefix}operon/qc/_parsers.pyx",
         f"{prefix}operon/tui/app.tcss",
         f"{prefix}operon/tui/assets/splash.png",
         f"{prefix}operon/tui/assets/splash.rgb.z",

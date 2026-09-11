@@ -15,7 +15,7 @@ from typing import Any
 from operon.config import Project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import qc_all
+from operon.qc import qc_all
 from operon.release import create_release
 from operon.reports import export_qc_tsv
 from operon.rules import evaluate_all

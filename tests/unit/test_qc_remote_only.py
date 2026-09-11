@@ -11,7 +11,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import qc_all
+from operon.qc import qc_all
 
 
 class TestQCRemoteOnly(PytestAssertions):

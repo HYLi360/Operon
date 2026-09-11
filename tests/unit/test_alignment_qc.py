@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from operon.alignment import (
+from operon.qc.alignment import (
     AlignmentQCResult,
     alignment_qc,
     compute_alignment_qc,
@@ -69,7 +69,7 @@ def naive_alignment_qc(records):
 
 def formatted_result(result: AlignmentQCResult):
     """Render a result through the public write layer into comparable dicts."""
-    from operon.alignment import (
+    from operon.qc.alignment import (
         _format_consensus_fraction,
         _format_coverage,
         _format_gap_fraction,

@@ -6,7 +6,7 @@ FASTA file and writes the classic three-file report (``sequence_qc.tsv``,
 ``.``.
 
 This is the pure-Python reference implementation.  A future Cython build
-(e.g. ``operon/_alignment.pyx`` or an extension inside ``operon.qc_module``)
+(``operon/qc/_alignment.pyx``)
 must produce byte-identical results; parity is enforced by regression tests.
 To keep that enforceable, the core computation (``compute_alignment_qc``) is
 a pure function over an iterable of ``(header, sequence)`` records with no
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from operon.errors import QCError
-from operon.qc_module._parsers import iter_fasta
+from operon.qc._parsers import iter_fasta
 from operon.utils import atomic_write_text
 
 GAP_CHARACTERS = frozenset("-.")

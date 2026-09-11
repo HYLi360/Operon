@@ -84,9 +84,10 @@
 | `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
 | `operon/backup.py` | SQLite 一致备份、control/results/full scope、checksum manifest 校验 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
-| `../operon/qc_module/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
-| `../operon/qc_module/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
-| `../operon/qc_module/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |
+| `../operon/qc/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
+| `../operon/qc/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
+| `../operon/qc/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |
+| `../operon/qc/alignment.py` | `operon alignment-qc` 背后的纯 Python 多序列比对 QC 参考实现；未来的 Cython 构建必须逐字节复现其结果 |
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
 | `operon/taxonomy.py` | 归档/导入不可变 NCBI Taxonomy，按 coverage profile 编译冻结分母及 provenance |
 | `operon/coverage.py` | 校验 reference set，对 metadata 或 release 冻结范围计算 family/genus 覆盖率与缺失清单 |

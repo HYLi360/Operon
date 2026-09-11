@@ -12,7 +12,7 @@
 
 - `operon/`: the Python package; CLI entry points are `operon/cli.py` and `operon/__main__.py`.
 - `operon/adapters/`: external source adapters, currently NCBI Datasets.
-- `operon/qc_module/`: streaming parsers and built-in QC. `parsers.py` is the pure-Python behavioral reference; `_parsers.pyx` is the Cython implementation used in production. The two must keep metrics and error texts identical through parity regression tests.
+- `operon/qc/`: home for all QC functionality — streaming sequence-file parsers, built-in QC, and alignment QC (`alignment.py`). `parsers.py` is the pure-Python behavioral reference; `_parsers.pyx` is the Cython implementation used in production. The two must keep metrics and error texts identical through parity regression tests.
 - `operon/execution.py`: the `local`, `slurm`, and `ssh` execution backends.
 - `operon/remotes.py`: SFTP mirrors, push/pull, and remote URL downloads.
 - `tests/`: `unit/`, `integration/`, `regression/`, `compatibility/` tests.

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from operon import cli, qc_module, reports
+from operon import cli, qc, reports
 from operon.adapters.ncbi_datasets import _PlanBuilder, _find_archived_assembly
 from operon.cli import main
 from operon.config import load_project
@@ -224,10 +224,10 @@ def test_active_consumers_exclude_retired_entities(lifecycle_project, monkeypatc
         )
 
     called: list[str] = []
-    monkeypatch.setattr(qc_module, "qc_file", lambda _db, _project, file_id, **_kwargs: (
+    monkeypatch.setattr(qc, "qc_file", lambda _db, _project, file_id, **_kwargs: (
         called.append(file_id) or {"file_id": file_id, "ok": True, "error": None}
     ))
-    qc_module.qc_all(db, project)
+    qc.qc_all(db, project)
     assert called == ["FIL_000002"]
 
     output = reports.export_metadata_report(db, project, tmp_path / "active-report")

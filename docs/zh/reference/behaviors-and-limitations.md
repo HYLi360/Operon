@@ -72,17 +72,17 @@
 
 ## 内置 QC 解析
 
-- **FASTA 序列行内部的空白会计入无效碱基。** 行首尾会被去除，但内部空格保留并推高 `invalid_base_count`；序列数据必须为 ASCII（`qc_module/parsers.py`）。
-- **seqid 是 header 的第一个空白分隔 token。** 重复检测分别统计完整 header 与 seqid（`qc_module/parsers.py`）。
-- **protein 内部终止子计数会原谅末尾的 `*`。** 末尾终止子会被减去（下限 0）；`missing_start` 要求第一个残基为 `M`（`qc_module/parsers.py`）。
-- **FASTQ 重复率只基于前 N 条 reads。** `duplicate_sampling_strategy=first_n`，默认采样 1,000,000 条；在远大于采样量的文件中，集中在后段的重复序列不可见（`qc_module/parsers.py`）。
-- **Phred `auto` 在区间重叠时假定 33。** Sanger/Illumina 质量区间重叠时静默取 33；不确定性只通过 `quality_encoding=ambiguous_assumed_phred33` 体现。ASCII 33–126 之外的质量字符会中止 QC（`qc_module/parsers.py`）。
-- **GFF3 容忍多种不规则性。** 制表符字段数 ≠9 的行计入 `coordinate_error_count` 并跳过；`##FASTA` 之后的内容被忽略；CDS 三联检查只看坐标、忽略 phase 列；Parent 完整性对照整个文件检查，因此前向引用可以通过（`qc_module/parsers.py`）。
-- **`parseable` 只存在于有解析器的格式。** FASTA/FASTQ/GFF3 会记录；其他格式使 `parseable == 1` 门槛永远处于 `NOT_EVALUATED`（`qc_module/__init__.py`）。
-- **配对 reads 匹配会被静默跳过**——当同批 FASTQ 没有 manifest 行或不在磁盘上时，既无指标也无警告（`qc_module/__init__.py`）。
-- **损坏的 FASTA 长度缓存会被静默重建。** 摘要/计数不匹配时删除并重建缓存（`qc_module/__init__.py`）。
+- **FASTA 序列行内部的空白会计入无效碱基。** 行首尾会被去除，但内部空格保留并推高 `invalid_base_count`；序列数据必须为 ASCII（`qc/parsers.py`）。
+- **seqid 是 header 的第一个空白分隔 token。** 重复检测分别统计完整 header 与 seqid（`qc/parsers.py`）。
+- **protein 内部终止子计数会原谅末尾的 `*`。** 末尾终止子会被减去（下限 0）；`missing_start` 要求第一个残基为 `M`（`qc/parsers.py`）。
+- **FASTQ 重复率只基于前 N 条 reads。** `duplicate_sampling_strategy=first_n`，默认采样 1,000,000 条；在远大于采样量的文件中，集中在后段的重复序列不可见（`qc/parsers.py`）。
+- **Phred `auto` 在区间重叠时假定 33。** Sanger/Illumina 质量区间重叠时静默取 33；不确定性只通过 `quality_encoding=ambiguous_assumed_phred33` 体现。ASCII 33–126 之外的质量字符会中止 QC（`qc/parsers.py`）。
+- **GFF3 容忍多种不规则性。** 制表符字段数 ≠9 的行计入 `coordinate_error_count` 并跳过；`##FASTA` 之后的内容被忽略；CDS 三联检查只看坐标、忽略 phase 列；Parent 完整性对照整个文件检查，因此前向引用可以通过（`qc/parsers.py`）。
+- **`parseable` 只存在于有解析器的格式。** FASTA/FASTQ/GFF3 会记录；其他格式使 `parseable == 1` 门槛永远处于 `NOT_EVALUATED`（`qc/__init__.py`）。
+- **配对 reads 匹配会被静默跳过**——当同批 FASTQ 没有 manifest 行或不在磁盘上时，既无指标也无警告（`qc/__init__.py`）。
+- **损坏的 FASTA 长度缓存会被静默重建。** 摘要/计数不匹配时删除并重建缓存（`qc/__init__.py`）。
 - **Cython 与纯 Python 解析器零容忍差异。** 指标与错误消息字符串必须逐字节一致；由 `tests/regression/test_cython_parser_parity.py` 强制。
-- **实体 QC 状态取同层文件的最差结果。** 每个文件状态都会报告；任一文件失败即为 `QC_FAILED`，有文件待处理时为 `QC_RUNNING`，否则为 `QC_COMPLETE`（`qc_module/__init__.py`）。
+- **实体 QC 状态取同层文件的最差结果。** 每个文件状态都会报告；任一文件失败即为 `QC_FAILED`，有文件待处理时为 `QC_RUNNING`，否则为 `QC_COMPLETE`（`qc/__init__.py`）。
 
 ## 外部分析
 

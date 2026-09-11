@@ -12,7 +12,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon.qc_module import file_qc_status
+from operon.qc import file_qc_status
 from operon.rules import evaluate_entity
 from operon.utils import sha256_file
 

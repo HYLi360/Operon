@@ -15,8 +15,8 @@ from operon.config import load_project
 from operon.database import Database
 import operon.files as files_module
 from operon.files import ingest_file
-import operon.qc_module as qc_module
-from operon.qc_module import PARSER_BACKEND, qc_all
+import operon.qc as qc
+from operon.qc import PARSER_BACKEND, qc_all
 from operon.rules import evaluate_entity
 from operon.utils import now_iso
 
@@ -182,7 +182,7 @@ class TestQCAndRules(PytestAssertions):
     def test_unparsed_format_records_integrity_without_parseable(self):
         row = self._add_other_format_file()
         self.assertEqual(row["format"], "other")
-        result = qc_module.qc_file(self.db, self.project, row["file_id"])
+        result = qc.qc_file(self.db, self.project, row["file_id"])
         self.assertTrue(result["ok"], result)
         self.assertIsNone(result["error"])
         names = {
@@ -216,7 +216,7 @@ class TestQCAndRules(PytestAssertions):
 
     def test_unparsed_format_is_not_evaluated_by_integrity_profile(self):
         row = self._add_other_format_file()
-        result = qc_module.qc_file(self.db, self.project, row["file_id"])
+        result = qc.qc_file(self.db, self.project, row["file_id"])
         self.assertTrue(result["ok"], result)
         decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "file_integrity_v1")
         self.assertEqual(decision["decision"], "NOT_EVALUATED")
@@ -235,7 +235,7 @@ class TestQCAndRules(PytestAssertions):
             source = self.root / f"{role}.fastq"
             source.write_text(fastq, encoding="utf-8")
             ingest_file(self.db, self.project, source, "run", "RUN_000001", role)
-        with patch("operon.qc_module.fastq_record_count", wraps=qc_module.fastq_record_count) as counter:
+        with patch("operon.qc.fastq_record_count", wraps=qc.fastq_record_count) as counter:
             results = qc_all(self.db, self.project, entity_type="run")
         self.assertTrue(all(item["ok"] for item in results), results)
         self.assertEqual(counter.call_count, 1)
@@ -266,7 +266,7 @@ class TestQCAndRules(PytestAssertions):
 
     def test_annotation_fasta_lengths_are_cached_across_qc_runs(self):
         assembly_row, gff_row, protein_row = self._add_annotation_inputs()
-        with patch("operon.qc_module.fasta_lengths", wraps=qc_module.fasta_lengths) as scanner:
+        with patch("operon.qc.fasta_lengths", wraps=qc.fasta_lengths) as scanner:
             first = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
             second = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
             self.assertTrue(first["ok"], first)
@@ -368,7 +368,7 @@ class TestQCAndRules(PytestAssertions):
     def test_annotation_qc_rejects_changed_related_assembly_before_cache_use(self):
         assembly_row, gff_row, _protein_row = self._add_annotation_inputs()
         assembly_path = self.project.root / assembly_row["relative_path"]
-        with patch("operon.qc_module.fasta_lengths", wraps=qc_module.fasta_lengths) as scanner:
+        with patch("operon.qc.fasta_lengths", wraps=qc.fasta_lengths) as scanner:
             first = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
             self.assertTrue(first["ok"], first)
             original = assembly_path.read_text(encoding="utf-8")

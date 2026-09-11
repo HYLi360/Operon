@@ -74,17 +74,17 @@ covered by the current implementation and regression tests:
 
 ## Built-in QC parsing
 
-- **Whitespace inside FASTA sequence lines is counted as invalid bases.** Lines are stripped at the ends but interior spaces remain and inflate `invalid_base_count`; sequence data must be ASCII (`qc_module/parsers.py`).
-- **The seqid is the first whitespace token of the header.** Duplicate detection separately counts full headers and seqids (`qc_module/parsers.py`).
-- **Protein internal-stop counting forgives a terminal `*`.** A trailing stop codon is subtracted (clamped at 0); `missing_start` requires the first residue to be `M` (`qc_module/parsers.py`).
-- **FASTQ duplication is measured on the first N reads only.** `duplicate_sampling_strategy=first_n` with the default sample of 1,000,000 reads; duplicates clustered late in a much larger file are invisible (`qc_module/parsers.py`).
-- **Phred `auto` assumes 33 when ranges overlap.** Overlapping Sanger/Illumina quality ranges are resolved silently; the uncertainty is only visible via `quality_encoding=ambiguous_assumed_phred33`. Quality characters outside ASCII 33–126 abort QC (`qc_module/parsers.py`).
-- **GFF3 tolerates several irregularities.** Rows with ≠9 tab-separated fields count as `coordinate_error_count` and are skipped; content after `##FASTA` is ignored; the CDS multiple-of-3 check uses coordinates only and ignores the phase column; Parent integrity is checked against the whole file, so forward references pass (`qc_module/parsers.py`).
-- **`parseable` exists only for formats with a parser.** FASTA/FASTQ/GFF3 record it; other formats leave the `parseable == 1` gates permanently `NOT_EVALUATED` (`qc_module/__init__.py`).
-- **Paired-read matching is silently skipped** when the sibling FASTQ has no manifest row or is not on disk — no metric and no warning (`qc_module/__init__.py`).
-- **A corrupt FASTA-length cache is silently rebuilt.** Digest/count mismatch deletes and regenerates the cache (`qc_module/__init__.py`).
+- **Whitespace inside FASTA sequence lines is counted as invalid bases.** Lines are stripped at the ends but interior spaces remain and inflate `invalid_base_count`; sequence data must be ASCII (`qc/parsers.py`).
+- **The seqid is the first whitespace token of the header.** Duplicate detection separately counts full headers and seqids (`qc/parsers.py`).
+- **Protein internal-stop counting forgives a terminal `*`.** A trailing stop codon is subtracted (clamped at 0); `missing_start` requires the first residue to be `M` (`qc/parsers.py`).
+- **FASTQ duplication is measured on the first N reads only.** `duplicate_sampling_strategy=first_n` with the default sample of 1,000,000 reads; duplicates clustered late in a much larger file are invisible (`qc/parsers.py`).
+- **Phred `auto` assumes 33 when ranges overlap.** Overlapping Sanger/Illumina quality ranges are resolved silently; the uncertainty is only visible via `quality_encoding=ambiguous_assumed_phred33`. Quality characters outside ASCII 33–126 abort QC (`qc/parsers.py`).
+- **GFF3 tolerates several irregularities.** Rows with ≠9 tab-separated fields count as `coordinate_error_count` and are skipped; content after `##FASTA` is ignored; the CDS multiple-of-3 check uses coordinates only and ignores the phase column; Parent integrity is checked against the whole file, so forward references pass (`qc/parsers.py`).
+- **`parseable` exists only for formats with a parser.** FASTA/FASTQ/GFF3 record it; other formats leave the `parseable == 1` gates permanently `NOT_EVALUATED` (`qc/__init__.py`).
+- **Paired-read matching is silently skipped** when the sibling FASTQ has no manifest row or is not on disk — no metric and no warning (`qc/__init__.py`).
+- **A corrupt FASTA-length cache is silently rebuilt.** Digest/count mismatch deletes and regenerates the cache (`qc/__init__.py`).
 - **Cython and pure-Python parsers have zero tolerated differences.** Metrics and error message strings must match byte-identically; this is enforced by `tests/regression/test_cython_parser_parity.py`.
-- **Entity QC state is the worst sibling result.** Each file's status is reported, and an entity is `QC_FAILED` if any sibling failed, `QC_RUNNING` while any sibling is pending, otherwise `QC_COMPLETE` (`qc_module/__init__.py`).
+- **Entity QC state is the worst sibling result.** Each file's status is reported, and an entity is `QC_FAILED` if any sibling failed, `QC_RUNNING` while any sibling is pending, otherwise `QC_COMPLETE` (`qc/__init__.py`).
 
 ## External analyses
 

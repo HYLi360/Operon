@@ -135,14 +135,14 @@ def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys)
     captured = capsys.readouterr()
     assert "cached" in captured.out and "ERROR bad" in captured.err
 
-    monkeypatch.setattr("operon.qc_module.qc_all", lambda *_a, **_k: [
+    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [
         {"file_id": "F1", "ok": True}, {"file_id": "F2", "ok": False, "error": "bad"},
     ])
     args = ns(entity_type=None, entity_id=None, file_id=None, sample_size=None,
               phred_offset=None, rehash=False)
     assert cli._cmd_qc(args, project, db) == 1
     assert "FAILED bad" in capsys.readouterr().err
-    monkeypatch.setattr("operon.qc_module.qc_all", lambda *_a, **_k: [
+    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [
         {"file_id": "F1", "ok": True, "file_qc_state": "QC_COMPLETE",
          "entity_qc_state": "QC_FAILED", "file_statuses": []},
     ])
@@ -412,11 +412,11 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkey
 
     monkeypatch.setattr(cli, "ingest_file", lambda *_a, **_k: {"file_id": "F1", "sha256": "abcdef"})
     monkeypatch.setattr(cli, "standardize_file", lambda *_a, **_k: {"target": "std"})
-    monkeypatch.setattr("operon.qc_module.qc_file", lambda *_a: {"ok": False, "error": "bad"})
+    monkeypatch.setattr("operon.qc.qc_file", lambda *_a: {"ok": False, "error": "bad"})
     pipeline = ns(source="x", entity_type="assembly", entity_id="A", role="genome_fasta",
                   fmt=None, compression=None, source_url=None, profile=None)
     assert cli._cmd_run_pipeline(pipeline, project, db) == 1
-    monkeypatch.setattr("operon.qc_module.qc_file", lambda *_a: {"ok": True})
+    monkeypatch.setattr("operon.qc.qc_file", lambda *_a: {"ok": True})
     monkeypatch.setattr(cli, "evaluate_entity", lambda *_a: {"decision": "PASS", "reason_codes": []})
     assert cli._cmd_run_pipeline(pipeline, project, db) == 0
 

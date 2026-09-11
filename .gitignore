@@ -5,7 +5,7 @@ dist/
 __pycache__/
 *.py[cod]
 *.so
-operon/qc_module/_parsers.c
+operon/qc/_parsers.c
 *.egg-info/
 *.sqlite
 *.sqlite-wal
@@ -14,6 +14,7 @@ logs/
 raw/
 standardized/
 qc/
+!operon/qc/
 analysis/
 reports/
 releases/

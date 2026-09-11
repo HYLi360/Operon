@@ -98,9 +98,10 @@ How the principles map to implementations:
 | `operon/entity_view.py` | Internal ID/accession resolution and organism-rooted entity graph expansion |
 | `operon/backup.py` | Consistent SQLite backup, control/results/full scopes, checksum manifest verification |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP parsing, REST download, Entrez fallback, stable-ID deduplication, and automatic archiving |
-| `operon/qc_module/parsers.py` | Pure-Python behavioral reference implementation, used to regression-test the Cython parsers' metrics and error semantics |
-| `operon/qc_module/_parsers.pyx` | Cython production parsers required by built-in QC; metric output and error messages match the pure-Python reference bit for bit |
-| `operon/qc_module/__init__.py` | Assembles built-in QC stages, loads the Cython parsers, and writes metrics into `qc_results` |
+| `operon/qc/parsers.py` | Pure-Python behavioral reference implementation, used to regression-test the Cython parsers' metrics and error semantics |
+| `operon/qc/_parsers.pyx` | Cython production parsers required by built-in QC; metric output and error messages match the pure-Python reference bit for bit |
+| `operon/qc/__init__.py` | Assembles built-in QC stages, loads the Cython parsers, and writes metrics into `qc_results` |
+| `operon/qc/alignment.py` | Pure-Python multiple-alignment QC reference implementation behind `operon alignment-qc`; the future Cython build must reproduce its results byte-for-byte |
 | `operon/rules.py` | Loads profiles, computes PASS/FAIL decisions, stores profile snapshots and decision history |
 | `operon/taxonomy.py` | Archives/imports immutable NCBI Taxonomy, compiles frozen denominators and provenance per coverage profile |
 | `operon/coverage.py` | Validates reference sets, computes family/genus coverage and missing lists against frozen metadata or release scopes |

@@ -74,7 +74,7 @@ jobs:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_*"
           CIBW_TEST_COMMAND: >-
-            python -c "import operon; import operon.qc_module._parsers;
+            python -c "import operon; import operon.qc._parsers;
             print(operon.__version__)" && operon --help
       - uses: actions/upload-artifact@v7
         with:

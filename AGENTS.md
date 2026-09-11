@@ -41,10 +41,13 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     online download) and TimeTree (query-cache-only REST client caching the
     verbatim responses of exact queries under `adapters_cache/timetree/`;
     mirroring or redistribution is forbidden by TimeTree's terms).
-  - `operon/qc_module/` — streaming FASTA/FASTQ/GFF3/protein parsers and
-    built-in QC stages. `parsers.py` is the pure-Python reference
+  - `operon/qc/` — home for all QC functionality: streaming
+    FASTA/FASTQ/GFF3/protein parsers and built-in QC stages, plus alignment
+    QC (`alignment.py`, the pure-Python multiple-alignment QC reference
+    implementation behind `operon alignment-qc`; a Cython build
+    `_alignment.pyx` is coming). `parsers.py` is the pure-Python reference
     implementation; `_parsers.pyx` is the Cython-accelerated build of the
-    same API (compiled in place as `operon.qc_module._parsers`). The Cython
+    same API (compiled in place as `operon.qc._parsers`). The Cython
     module is the required production backend; the pure-Python module is the
     behavioral reference used by regression tests. Both must produce
     identical metrics and error messages (enforced by
@@ -102,9 +105,7 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     `export.py` (immutable releases and selective exports), `lifecycle.py`
     (audited reversible entity retirement), `lineage.py` (adopting external
     workflow outputs), `sequence_tools.py` (alignment-driven domain
-    extraction and sequence selection), `alignment.py` (pure-Python
-    multiple-alignment QC reference implementation behind
-    `operon alignment-qc`), `timetree.py` (TimeTree query/calibration CLI
+    extraction and sequence selection), `timetree.py` (TimeTree query/calibration CLI
     group backed by the query-cache adapter), `backup.py`, `reports.py`,
     `table_import.py`,
     `import_wizard.py`, `entity_view.py`, `environment.py`

@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from operon.qc_module._parsers import (
+from operon.qc._parsers import (
     fasta_lengths,
     fasta_stats,
     fastq_record_count,
@@ -23,7 +23,7 @@ from operon.qc_module._parsers import (
     gff3_stats,
     protein_stats,
 )
-from operon.qc_module.measure import (
+from operon.qc.measure import (
     ASSEMBLY_FILE_ROLES,
     ASSEMBLY_METRICS,
     DEFAULT_PARAMETER_SET,

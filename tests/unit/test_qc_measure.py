@@ -15,7 +15,7 @@ from operon.config import load_project
 from operon.database import Database
 from operon.errors import ChecksumError, QCError, ValidationError
 from operon.files import ingest_file
-from operon.qc_module import file_qc_status, measure_file, qc_file
+from operon.qc import file_qc_status, measure_file, qc_file
 from operon.utils import sha256_file
 
 FASTA = ">ctg1\n" + "ACGT" * 50 + "\n>ctg2\n" + "GGGG" * 25 + "\n"

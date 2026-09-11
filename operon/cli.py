@@ -1104,7 +1104,7 @@ def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -
 
 
 def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
-    from operon.qc_module import qc_all
+    from operon.qc import qc_all
 
     def progress(index: int, total: int, result: dict[str, Any]) -> None:
         if result.get("skipped"):
@@ -1151,7 +1151,7 @@ def _cmd_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 
 def _cmd_qc_measure(args: argparse.Namespace) -> int:
-    from operon.qc_module import DEFAULT_PARAMETER_SET, measure_file
+    from operon.qc import DEFAULT_PARAMETER_SET, measure_file
     try:
         payload = measure_file(
             args.measure_file, file_format=args.fmt, file_role=args.role,
@@ -1177,7 +1177,7 @@ def _cmd_qc_measure(args: argparse.Namespace) -> int:
 
 
 def _cmd_alignment_qc(args: argparse.Namespace) -> int:
-    from operon.alignment import alignment_qc, render_summary_json, write_alignment_qc
+    from operon.qc.alignment import alignment_qc, render_summary_json, write_alignment_qc
     try:
         result = alignment_qc(args.alignment)
         write_alignment_qc(result, args.outdir)
@@ -1210,7 +1210,7 @@ def _log_import_qc_run(project: Project, db: Database, source: str, *,          
 
 
 def _recompute_imported_qc_states(db: Database, entities: list[tuple[str, str]]) -> None:
-    from operon.qc_module import _recompute_entity_qc_state
+    from operon.qc import _recompute_entity_qc_state
     for entity_type, entity_id in entities:
         _recompute_entity_qc_state(db, entity_type, entity_id)
 
@@ -1224,7 +1224,7 @@ def _is_qc_json_payload(path: Path) -> bool:
 
 def _import_qc_json(args: argparse.Namespace, project: Project, db: Database,
                     started_at: str) -> int:
-    from operon.qc_module import MEASURE_SCHEMA_VERSION, TOOL_NAME, _sync_sequences
+    from operon.qc import MEASURE_SCHEMA_VERSION, TOOL_NAME, _sync_sequences
     source = Path(args.tsv_file)
     try:
         payload = json.loads(source.read_text(encoding="utf-8"))
@@ -1986,7 +1986,7 @@ def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) 
     result = standardize_file(db, project, row["file_id"])
     print(f"       -> {result['target']}")
     print(f"[3/4] QC {row['file_id']}")
-    from operon.qc_module import qc_file
+    from operon.qc import qc_file
     qc_result = qc_file(db, project, row["file_id"])
     if not qc_result["ok"]:
         print(f"       -> QC FAILED: {qc_result['error']}", file=sys.stderr)

@@ -14,4 +14,4 @@ prune docs/_build
 recursive-include operon *.py *.pyx *.tcss
 recursive-include operon/tui/assets *.png *.z *.md
 recursive-include tests *.py
-exclude operon/qc_module/_parsers.c
+exclude operon/qc/_parsers.c

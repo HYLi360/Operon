@@ -1,7 +1,7 @@
 """Parity regressions: the Cython parsers must match the pure-Python ones.
 
-`operon.qc_module._parsers` is the required production backend, while
-`operon.qc_module.parsers` is its behavioral reference. Both backends must
+`operon.qc._parsers` is the required production backend, while
+`operon.qc.parsers` is its behavioral reference. Both backends must
 produce byte-identical metric dicts and identical QCError messages, because QC
 metrics feed the versioned rule profiles.
 """
@@ -13,9 +13,9 @@ import gzip
 import pytest
 
 from operon.errors import QCError
-from operon.qc_module import parsers as py_parsers
+from operon.qc import parsers as py_parsers
 
-from operon.qc_module import _parsers as cy_parsers
+from operon.qc import _parsers as cy_parsers
 
 FASTA_TEXT = (
     ">ctg1 circular\nACGTNacgtn--RY\nNNN\n"

@@ -7,8 +7,8 @@ import gzip
 import pytest
 
 from operon.errors import QCError
-from operon.qc_module import _parsers as cy_parsers
-from operon.qc_module import parsers as py_parsers
+from operon.qc import _parsers as cy_parsers
+from operon.qc import parsers as py_parsers
 
 
 BACKENDS = [pytest.param(py_parsers, id="python"), pytest.param(cy_parsers, id="cython")]

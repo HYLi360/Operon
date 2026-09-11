@@ -230,7 +230,7 @@ def run_qc(
     raising from it aborts the batch between files (results for files
     already processed are kept).
     """
-    from operon.qc_module import qc_all
+    from operon.qc import qc_all
 
     with _open_writable(project) as db:
         return qc_all(

@@ -113,7 +113,7 @@ operon alignment-qc --alignment ALIGNED_FASTA --outdir DIR
 - 与 `qc-measure` 同类：不依赖任何项目、数据库或 manifest，对一个多序列比对 FASTA 度量逐序列与逐列的 QC 指标，只要文件可读即可运行。gap 字符为 `-` 与 `.`。
 - 向 `--outdir` 写出三个报告文件：`sequence_qc.tsv`（`safe_id`、`alignment_length`、`non_gap_sites`、`coverage`、`gap_fraction`）、`column_qc.tsv`（`column_1based`、`occupancy`、`distinct_residues`、`consensus`、`consensus_fraction`）与 `alignment_qc.json`（序列数、比对长度、平均/中位覆盖度、occupancy ≥ 0.9 / ≥ 0.7 的列数）。比例值保留六位小数；汇总 JSON 同时写到 stdout。
 - 空比对或序列长度不一致会以错误和非零退出码拒绝。
-- 核心计算是对 `(header, sequence)` 记录的单次遍历纯函数（`operon/alignment.py` 的 `compute_alignment_qc`）——纯 Python 参考实现，未来的 Cython 构建必须逐字节复现其结果。
+- 核心计算是对 `(header, sequence)` 记录的单次遍历纯函数（`operon/qc/alignment.py` 的 `compute_alignment_qc`）——纯 Python 参考实现，未来的 Cython 构建必须逐字节复现其结果。
 
 ## import-qc
 

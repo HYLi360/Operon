@@ -1,7 +1,7 @@
 """Project-independent built-in QC measurement (`operon qc-measure`).
 
 This module measures the exact same metrics as the in-project stages in
-``operon.qc_module`` but needs no project, database, or manifest: it verifies
+``operon.qc`` but needs no project, database, or manifest: it verifies
 the caller-supplied file identity (SHA-256 + size) and returns a JSON-ready
 payload that ``operon import-qc`` can load into ``qc_results`` later.  It is
 meant to run anywhere the archived bytes are available (e.g. an HPC node),
@@ -20,7 +20,7 @@ from typing import Any
 
 from operon import __version__
 from operon.errors import ChecksumError, QCError
-from operon.qc_module._parsers import (
+from operon.qc._parsers import (
     fasta_lengths,
     fasta_stats,
     fastq_record_count,
