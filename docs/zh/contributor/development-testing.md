@@ -27,6 +27,37 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 排除规则、secondary TaxID、分母/报告幂等，以及活动 metadata 修改不影响 release
 冻结口径。
 
+## 快速本地验证
+
+全量测试串行执行约需七分钟；下面这套流程的目标是每次改动最多只跑一次全量。
+
+1. **只重跑失败项。** `python -m pytest --lf -q --no-cov` 先重放 pytest 的 last-failed 缓存。
+2. **迭代时遇到首个失败即停**：`python -m pytest tests/unit -x -q --no-cov`，并只指定你改动的
+   文件或用例，而不是整个类目。
+3. **并行执行。** `python -m pytest -n 4 --dist loadfile`（pytest-xdist）把耗时压到约四分之一
+   ——24 核工作站上从约 7 分钟降到 2 分钟以内；`--dist loadfile` 保证同一个测试文件只落在一个
+   worker 上，这是 Textual UI 测试所需要的。它已包含在 `test` 与 `dev` extras 中（`python -m pip install -e '.[dev]'`）。
+   覆盖率统计最贵：迭代时用 `--no-cov`，最后只测一次。
+4. **一次跑完跨版本矩阵。** `scripts/setup-test-matrix.sh` 用 uv 安装 CPython 3.10–3.13 并在
+   `.matrix/` 下为每个版本建 venv（3.14 用项目自带的 `.venv`），`scripts/run-test-matrix.sh`
+   并发跑完五个版本：
+
+   ```bash
+   scripts/setup-test-matrix.sh                      # 每台机器执行一次
+   scripts/run-test-matrix.sh                        # 全量 × 五个版本，约 3 分钟
+   scripts/run-test-matrix.sh tests/unit -x          # 其余 pytest 参数原样透传
+   MATRIX_JOBS=8 scripts/run-test-matrix.sh          # 每个版本的 worker 数
+   ```
+
+   每个版本的日志在 `.matrix/logs/<version>.log`，失败后可直接用对应解释器重跑。脚本在 Linux
+   与 macOS 上均可运行；`.matrix/` 已被 git 忽略。
+5. **平台相关代码不能只靠单个矩阵任务验证。** Linux 与 macOS 在环境探测所调用的系统工具、以及
+   `pathlib`/`resource` 行为上都不同。凡是用 `sys.platform`/`os.name` 分支或调用系统工具的代码，
+   都应带一个能在 Linux 上复现对端平台条件的测试（例如不含 GNU `timeout` 的空 `PATH`），而不是
+   依赖 macOS 任务去发现。
+6. **CI 为昂贵部分把关。** `gate` 任务（单解释器、四 worker 跑单元测试 + 严格文档构建）通过后才会
+   启动十任务矩阵，因此有问题的 push 会在约两分钟内被拒绝；矩阵每个任务同样使用四 worker。
+
 ## 对 Codex/ChatGPT 的特别提醒
 
 受沙箱环境独有限制，执行TUI部分测试代码时可能出现卡死问题，这常常发生在 Codex/ChatGPT 上。

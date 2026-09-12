@@ -131,6 +131,9 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   (`.readthedocs.yaml`).
 - `benchmarks/` — representative entity sets for QC performance diagnostics
   (see `docs/*/operations/qc-performance.md`).
+- `scripts/` — local developer tooling; `setup-test-matrix.sh` and
+  `run-test-matrix.sh` build and drive the uv-managed Python 3.10–3.14
+  matrix under .matrix/ (see `docs/*/contributor/development-testing.md`).
 
 ## Setup, test, and build
 
@@ -147,13 +150,17 @@ python -m pytest                    # full suite (coverage gate: >=95% combined
 python -m pytest tests/unit         # by category: unit / integration /
                                     # regression / compatibility
 
+python -m pytest --lf -q --no-cov   # iterate: last failures, no coverage
+python -m pytest -n 4 --dist loadfile   # parallel full suite (xdist, in the dev/test extras)
+scripts/run-test-matrix.sh          # whole suite on 3.10-3.14 concurrently
+
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
 sphinx-build -W --keep-going -b html docs docs/_build/html  # strict docs build
 ```
 
 Run the relevant test category after any change; run the full suite before
-considering work done. CI (`.github/workflows/deploy.yml`) runs pytest on
+considering work done. CI (`.github/workflows/test.yml`) runs pytest on
 Python 3.10–3.14 and the strict Sphinx build. Releases are published
 exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
