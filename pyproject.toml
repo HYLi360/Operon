@@ -14,12 +14,7 @@ requires-python = ">=3.10"
 classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
 ]
 
 license = "AGPL-3.0-or-later"
@@ -28,8 +23,8 @@ license-files = ["LICENSE"]
 dependencies = [
     "aiohttp>=3.9",
     "biopython>=1.85",
-    "PyYAML>=6.0",
     "paramiko>=3.4",
+    "PyYAML>=6.0",
     "questionary>=2.1",
     "requests>=2.32",
     "textual>=8.0",
@@ -42,12 +37,12 @@ Issues = "https://github.com/HYLi360/Operon/issues"
 [project.optional-dependencies]
 test = [
     "coverage>=7.0",
+    "cython>=3.0",
     "paramiko>=3.4",
-    "pytest-cov>=7.0",
     "pytest>=8.0",
+    "pytest-cov>=7.0",
     "setuptools>=77",
     "textual>=8.0",
-    "cython>=3.0"
 ]
 docs = [
     "Sphinx>=7.4,<9",
@@ -58,8 +53,9 @@ docs = [
 dev = [
     "coverage>=7.0",
     "cython>=3.0",
-    "pytest-cov>=7.0",
     "pytest>=8.0",
+    "pytest-cov>=7.0",
+    "setuptools>=77",
     "tomli>=2.0; python_version < '3.11'",
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
@@ -102,7 +98,13 @@ source = ["operon"]
 
 [tool.coverage.report]
 show_missing = true
+skip_covered = true
+precision = 2
 fail_under = 90
-exclude_lines = [
+exclude_also = [
     "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "@overload",
 ]
