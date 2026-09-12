@@ -725,6 +725,135 @@ class TestAnalysisTools(PytestAssertions):
             ("seq2", "PF00002.10", "score"),
         ])
 
+    def _set_environment_policy(self, recipe_name: str, policy: str):
+        config = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
+        for tool_cfg in config["tools"].values():
+            if recipe_name in tool_cfg.get("recipes", {}):
+                tool_cfg["recipes"][recipe_name]["environment_policy"] = policy
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    def _prepare_cached_fakeblast_job(self, policy: str | None = None):
+        database = self.root / "nt"
+        database.write_text(">ref1\nACGT\n", encoding="utf-8")
+        self._write_fake_blast()
+        self._write_tool_config(
+            self.root / "fakeblast.py", "fakeblast", "fake_nt",
+            "assembly", "genome_fasta", "blast_tabular", database,
+            version_pattern=r"fakeblast:\s*([^\s]+)",
+        )
+        if policy is not None:
+            self._set_environment_policy("fake_nt", policy)
+        self._add_assembly()
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        job = self.db.query("SELECT * FROM analysis_jobs")[0]
+        self.assertEqual(job["status"], "completed")
+        return job
+
+    def _changed_environment_document(self, job):
+        import pytest
+        from operon.environment import relevance_fingerprint
+        row = self.db.conn.execute(
+            "SELECT document FROM execution_environments WHERE environment_id=?",
+            (job["environment_id"],),
+        ).fetchone()
+        document = json.loads(row["document"])
+        if relevance_fingerprint(document) is None:
+            pytest.skip("local capture produced no sub-fingerprints on this host")
+        return dict(document, system_fingerprint="changed-system")
+
+    def _cache_reuse_details(self):
+        return [
+            details
+            for run in self.db.query("SELECT * FROM workflow_runs ORDER BY rowid")
+            if run["execution_details"]
+            and (details := json.loads(run["execution_details"])).get("cache_reuse")
+        ]
+
+    def test_environment_policy_warn_reuses_with_warning(self, capsys, monkeypatch):
+        job = self._prepare_cached_fakeblast_job()
+        changed = self._changed_environment_document(job)
+        import operon.environment_capture
+        monkeypatch.setattr(
+            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed)
+        capsys.readouterr()
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        out = capsys.readouterr().out
+        self.assertIn("environment_policy=warn", out)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        notes = self._cache_reuse_details()
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["environment_compare"], "mismatch")
+        warning = notes[0]["environment_warning"]
+        self.assertNotEqual(
+            warning["cached_relevance_fingerprint"], warning["current_relevance_fingerprint"])
+
+    def test_environment_policy_strict_recomputes_on_change(self, capsys, monkeypatch):
+        job = self._prepare_cached_fakeblast_job(policy="strict")
+        changed = self._changed_environment_document(job)
+        import operon.environment_capture
+        monkeypatch.setattr(
+            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed)
+        capsys.readouterr()
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        self.assertIn("environment_policy=strict", capsys.readouterr().out)
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0]["status"], "superseded")
+        self.assertEqual(jobs[1]["status"], "completed")
+        self.assertEqual(self._cache_reuse_details(), [])
+        rerun = self.db.query("SELECT * FROM workflow_runs ORDER BY rowid")[-1]
+        details = json.loads(rerun["execution_details"])
+        self.assertEqual(
+            details["environment_policy_check"]["environment_compare"], "mismatch")
+
+    def test_environment_policy_unavailable_for_legacy_cached_document(self):
+        job = self._prepare_cached_fakeblast_job()
+        with self.db.transaction():
+            legacy_id = self.db.record_environment({"hostname": "sha256:legacy", "os": "Linux"})
+            self.db.conn.execute("UPDATE analysis_jobs SET environment_id=? WHERE job_id=?",
+                                 (legacy_id, job["job_id"]))
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        notes = self._cache_reuse_details()
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["environment_compare"], "unavailable")
+
+    def test_environment_policy_strict_degrades_to_warn_on_slurm(self, monkeypatch):
+        self._prepare_cached_fakeblast_job(policy="strict")
+        import operon.execution
+
+        class FakeSlurm:
+            name = "slurm"
+
+            def describe(self):
+                return "slurm"
+
+            # Matches the first run's LocalExecutor identity so the cached
+            # version probe answer is reused instead of submitting a job.
+            def cache_identity(self):
+                return "local"
+
+            def probe_environment(self):
+                return None
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(
+            operon.execution, "get_executor", lambda *args, **kwargs: FakeSlurm())
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        notes = self._cache_reuse_details()
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["environment_policy_degraded"], "strict->warn")
+        self.assertEqual(notes[0]["environment_compare"], "unavailable")
+
 
 class TestRpsbprocCommandChain(PytestAssertions):
     def setup_method(self):

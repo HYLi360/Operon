@@ -115,7 +115,9 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     group backed by the query-cache adapter), `backup.py`, `reports.py`,
     `table_import.py`,
     `import_wizard.py`, `entity_view.py`, `environment.py`
-    (execution-environment capture), `shutdown.py` (graceful SIGINT/SIGTERM
+    (execution-environment capture with at-capture redaction; recipe
+    `environment_policy` governs environment-aware cache reuse),
+    `shutdown.py` (graceful SIGINT/SIGTERM
     handling), `ncbi_reconcile.py` (development-era adapter anomaly repair),
     `demo.py` (deterministic synthetic demo project), `errors.py`,
     `utils.py`.

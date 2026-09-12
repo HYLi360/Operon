@@ -396,6 +396,26 @@ operon --project . analyze \
   --dry-run
 ```
 
+### Environment policy on cache reuse
+
+A recipe can also gate cache reuse on the execution environment with the optional `environment_policy` field:
+
+| Value | Behavior on a cache hit with a mismatching environment |
+|---|---|
+| `ignore` | Reuse unconditionally; environment capture stays provenance-only |
+| `warn` (default) | Reuse the cached result, record a warning in the run details, and print it |
+| `strict` | Treat the hit as a miss and recompute |
+
+Any other value is rejected at configuration validation. Like `hmmer_mode` and the alignment column-mapping keys, `environment_policy` enters the parameter fingerprint only when it is explicitly set, so setting or changing it invalidates the completed cache exactly once.
+
+The comparison key is the environment-relevance fingerprint: the composite of the captured document's `system_fingerprint`, `hardware_fingerprint`, and `conda.package_fingerprint`. Hostname, paths, CPU affinity, and runtime threading variables are excluded — the thread count already participates in the parameter fingerprint, and affinity is transient scheduler state. Matching fingerprints reuse the cache without further output.
+
+Behavior differs per backend and per document age:
+
+- `local` and direct `ssh` probe the environment before the payload, so both sides of the comparison are always available.
+- `slurm` and remote Slurm have no pre-job probe and cannot compare before reuse; `strict` degrades to `warn` and the run details record `environment_policy_degraded: strict→warn`.
+- When either side's environment document lacks sub-fingerprints (captures recorded before database schema {{ db_schema }}), the comparison is recorded as `environment_compare: unavailable`: `warn` reuses as usual and `strict` likewise degrades to `warn`, so legacy documents never cause spurious recomputation.
+
 ## Slurm resource overrides
 
 When the project uses the Slurm execution backend (`execution.backend: slurm` in `project.yaml`, or `--backend slurm` on the command line), all recipes share the resource settings of `execution.slurm` by default. An individual recipe can override same-named fields with a `slurm:` mapping (empty values and empty strings do not override) — for example, adjusting memory and time limit for BUSCO alone:

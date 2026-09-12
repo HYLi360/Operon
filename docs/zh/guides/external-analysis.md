@@ -428,5 +428,14 @@ micromamba create -p ./restored-env --file explicit.txt
 以及实际输出校验和（或明确选择的数值容差）。独立的包指纹排除安装 prefix；包清单一致
 并不能证明手动修改的已安装文件或 pip 包也已恢复。
 
-环境捕获不改变既有缓存复用或自动沿用策略。测试实际重算时使用 `analyze --force`；
-`run-external` 也会直接执行命令。旧运行缺少指纹并不意味着环境相同。
+缓存复用也可以对已捕获的环境做出反应。recipe 字段 `environment_policy`（默认
+`warn`）在完成缓存命中时比对"环境相关性指纹"——由 system、hardware 与 conda 包
+三个子指纹复合而成。`warn` 下环境不一致仍复用结果，但在 run details 中记录警告并
+打印；`strict` 改为重算；`ignore` 则让环境捕获保持纯粹的 provenance。对结果确实
+可能依赖工具链或硬件的分析（数值计算库、GPU kernel、JIT 编译的比对器）使用
+`strict`；对确定性工具、只需要 provenance 的场景使用 `ignore`。该字段仅在显式
+设置时进入参数指纹，因此启用它只会让完成缓存精确失效一次。Slurm 后端没有作业前
+探针，`strict` 会降级为 `warn` 并在 run details 中记录该降级；数据库 schema
+{{ db_schema }} 之前捕获的记录缺少可比较的子指纹，比对记为 `unavailable` 并回退
+到 `warn` 行为，而不会强制重算——旧运行缺少指纹绝不意味着环境相同。测试实际
+重算时使用 `analyze --force`；`run-external` 也会直接执行命令。

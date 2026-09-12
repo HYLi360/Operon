@@ -346,7 +346,21 @@ checksums (or an explicitly chosen numeric tolerance). The independent package
 fingerprint excludes the installation prefix. A matching package inventory does
 not prove that manually edited installed files or pip packages have been restored.
 
-Environment capture does not change existing cache reuse or automatic adoption.
-Use `analyze --force` when testing an actual recomputation; `run-external` also
-executes the command directly. Missing fingerprints in older runs do not imply
-an environment match.
+Cache reuse can also react to the captured environment. The recipe field
+`environment_policy` (default `warn`) compares an environment-relevance
+fingerprint — the composite of the system, hardware and conda-package
+sub-fingerprints — whenever a completed cache entry hits. With `warn`, a
+mismatching environment still reuses the result but records a warning in the
+run details and prints it; `strict` recomputes instead; `ignore` keeps
+environment capture purely as provenance. Use `strict` for analyses whose
+results can genuinely depend on the toolchain or hardware (numerical
+libraries, GPU kernels, JIT-compiled aligners), and `ignore` for deterministic
+tools where provenance is all you need. The field enters the parameter
+fingerprint only when explicitly set, so adopting it invalidates the completed
+cache exactly once. On Slurm backends there is no pre-job probe, so `strict`
+degrades to `warn` with the downgrade recorded in the run details; captures
+recorded before database schema {{ db_schema }} lack comparable sub-fingerprints,
+so the comparison is logged as `unavailable` and falls back to `warn` behavior
+rather than forcing a recompute — missing fingerprints in older runs never
+imply an environment match. Use `analyze --force` when testing an actual
+recomputation; `run-external` also executes the command directly.

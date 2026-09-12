@@ -177,6 +177,8 @@
 - **探针的 `home` 键是瞬态的。** 远端探测输出一行 `home=$HOME`，仅用于脱敏替换，随后被删除；它既不进入入库文档，也不进入任何指纹（`environment_capture.py`）。
 - **脱敏先于指纹计算。** `environment_id` 与各子指纹由脱敏后的文档计算，因此同配置在不同主机上的捕获会去重到同一条环境记录（`environment.py`）。
 - **脱敏之前的旧环境文档不迁移。** 引入脱敏之前写入的记录保留可读的 hostname 与 home 路径：文档按内容寻址、不可变，新捕获只是产生新的 `environment_id`，与旧记录并存（`environment.py`）。
+- **Slurm 上 `strict` 环境策略降级为 `warn`。** Slurm 与远端 Slurm 后端没有作业前探针，缓存命中被复用之前无法进行环境比对；`environment_policy: strict` 被降级为 `warn`，并在 run details 中记录 `environment_policy_degraded: strict→warn`（`tools.py`）。
+- **旧环境文档的比对记为 `unavailable`。** 数据库 schema {{ db_schema }} 之前捕获的记录没有子指纹，因此缓存命中比对的任一侧缺少子指纹时，run details 记录 `environment_compare: unavailable`：`warn` 照常复用，`strict` 降级为 `warn`，而不会使缓存失效（`environment.py`、`tools.py`）。
 - **第二次信号跳过清理。** 第一次 SIGINT/SIGTERM 触发优雅关机（退出码 130）；清理期间的第二次信号直接 `os._exit(128+signum)`。`graceful_shutdown` 在主线程之外是 no-op（`shutdown.py`）。
 
 ## CLI 约定

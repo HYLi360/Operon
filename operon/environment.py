@@ -142,6 +142,35 @@ def environment_fingerprint(env: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def relevance_fingerprint(document: dict[str, Any]) -> str | None:
+    """Fingerprint of the environment aspects relevant to rerunning a tool.
+
+    Combines the sub-fingerprints present in the document
+    (``system_fingerprint``, ``hardware_fingerprint`` and the conda
+    ``package_fingerprint``); the set of present keys participates so a
+    capture without hardware data never collides with one that has it.
+    Transient sections (hostname, affinity, runtime settings) are excluded by
+    construction.  Legacy documents without any sub-fingerprint are not
+    comparable and yield ``None``.
+    """
+    if not isinstance(document, dict):
+        return None
+    parts: dict[str, str] = {}
+    for key in ("system_fingerprint", "hardware_fingerprint"):
+        value = document.get(key)
+        if isinstance(value, str) and value:
+            parts[key] = value
+    conda = document.get("conda")
+    if isinstance(conda, dict):
+        value = conda.get("package_fingerprint")
+        if isinstance(value, str) and value:
+            parts["conda.package_fingerprint"] = value
+    if not parts:
+        return None
+    canonical = json.dumps(parts, sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def environment_summary(document: dict[str, Any]) -> str:
     """Render a single-line human summary of an environment document.
 

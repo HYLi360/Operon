@@ -22,6 +22,7 @@ from operon.environment import (
     environment_summary,
     local_environment,
     parse_probe_output,
+    relevance_fingerprint,
 )
 
 
@@ -145,6 +146,75 @@ class TestEnvironmentDocuments(PytestAssertions):
     def test_parse_probe_output_dockerenv_flag(self):
         self.assertEqual(parse_probe_output("dockerenv=1\n"), {"dockerenv": True})
         self.assertEqual(parse_probe_output("dockerenv=\n"), {})
+
+
+class TestRelevanceFingerprint(PytestAssertions):
+    def _rich_document(self):
+        return {
+            "hostname": "sha256:0123456789abcdef",
+            "os": "Linux",
+            "system_fingerprint": "sys-1",
+            "hardware_fingerprint": "hw-1",
+            "conda": {"status": "captured", "package_fingerprint": "conda-1"},
+            "cpu_affinity": "0-3",
+            "runtime_settings": {"OMP_NUM_THREADS": "4", "TZ": "UTC"},
+        }
+
+    def test_legacy_document_without_sub_fingerprints_is_not_comparable(self):
+        self.assertIsNone(relevance_fingerprint({}))
+        self.assertIsNone(relevance_fingerprint({"hostname": "sha256:x", "os": "Linux"}))
+        self.assertIsNone(relevance_fingerprint({"conda": {"status": "not_detected"}}))
+        self.assertIsNone(relevance_fingerprint(None))
+
+    def test_subset_presence_participates(self):
+        system_only = relevance_fingerprint({"system_fingerprint": "sys-1"})
+        with_hardware = relevance_fingerprint(
+            {"system_fingerprint": "sys-1", "hardware_fingerprint": "hw-1"})
+        with_conda = relevance_fingerprint(
+            {"system_fingerprint": "sys-1", "conda": {"package_fingerprint": "conda-1"}})
+        self.assertIsNotNone(system_only)
+        self.assertNotEqual(system_only, with_hardware)
+        self.assertNotEqual(system_only, with_conda)
+        self.assertNotEqual(with_hardware, with_conda)
+
+    def test_stable_against_transient_sections_and_key_order(self):
+        document = self._rich_document()
+        baseline = relevance_fingerprint(document)
+        reordered = dict(reversed(list(document.items())))
+        self.assertEqual(relevance_fingerprint(reordered), baseline)
+        mutated = self._rich_document()
+        mutated["hostname"] = "sha256:fedcba9876543210"
+        mutated["cpu_affinity"] = "0-95"
+        mutated["runtime_settings"] = {"OMP_NUM_THREADS": "16"}
+        self.assertEqual(relevance_fingerprint(mutated), baseline)
+
+    def test_sensitive_to_system_hardware_and_conda_changes(self):
+        baseline = relevance_fingerprint(self._rich_document())
+        changed = self._rich_document()
+        changed["system_fingerprint"] = "sys-2"
+        self.assertNotEqual(relevance_fingerprint(changed), baseline)
+        changed = self._rich_document()
+        changed["hardware_fingerprint"] = "hw-2"
+        self.assertNotEqual(relevance_fingerprint(changed), baseline)
+        changed = self._rich_document()
+        changed["conda"]["package_fingerprint"] = "conda-2"
+        self.assertNotEqual(relevance_fingerprint(changed), baseline)
+
+    def test_rich_capture_round_trip(self):
+        probe = (
+            "capture_schema=1\nos=Linux\nos_release=6.1\nmachine=x86_64\n"
+            "hostname=node\nhome=/home/u\nconda_present=0\ncapture_complete=1\n"
+        )
+        parsed = parse_probe_output(probe)
+        fingerprint = relevance_fingerprint(parsed)
+        self.assertIsNotNone(fingerprint)
+        self.assertEqual(
+            fingerprint,
+            relevance_fingerprint({
+                "system_fingerprint": parsed["system_fingerprint"],
+                "hardware_fingerprint": parsed["hardware_fingerprint"],
+            }),
+        )
 
 
 class TestEnvironmentSummary(PytestAssertions):

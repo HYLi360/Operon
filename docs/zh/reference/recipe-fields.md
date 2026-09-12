@@ -455,6 +455,33 @@ operon --project . analyze \
   --dry-run
 ```
 
+### 缓存复用的环境策略
+
+recipe 还可以通过可选字段 `environment_policy` 让缓存复用对执行环境做出反应：
+
+| 取值 | 缓存命中但环境不一致时的行为 |
+|---|---|
+| `ignore` | 无条件复用；环境捕获仅作为 provenance |
+| `warn`（默认） | 复用缓存结果，在 run details 中记录警告并打印 |
+| `strict` | 视为未命中并重算 |
+
+其他取值在配置校验时报错。与 `hmmer_mode` 和比对列映射键一样，`environment_policy`
+仅在显式设置时进入参数指纹，因此设置或变更它只会让完成缓存精确失效一次。
+
+比对键是"环境相关性指纹"：由捕获文档中的 `system_fingerprint`、
+`hardware_fingerprint` 与 `conda.package_fingerprint` 复合而成。hostname、路径、
+CPU 亲和性和运行时线程变量被排除——线程数已经参与参数指纹，而亲和性是瞬时调度
+状态。指纹一致时照常复用缓存，没有额外输出。
+
+不同后端与不同年代的文档行为不同：
+
+- `local` 与直连 `ssh` 在执行计算命令前探测环境，因此比对双方总是可用；
+- `slurm` 与远端 Slurm 没有作业前探针，无法在复用前比对；`strict` 降级为
+  `warn`，并在 run details 中记录 `environment_policy_degraded: strict→warn`；
+- 任一侧环境文档缺少子指纹（数据库 schema {{ db_schema }} 之前捕获的记录）时，
+  比对记为 `environment_compare: unavailable`：`warn` 照常复用，`strict` 同样
+  降级为 `warn`，旧文档永远不会引发误重算。
+
 ## Slurm 资源覆盖
 
 当项目使用 Slurm 执行后端（`project.yaml` 的 `execution.backend: slurm`，或命令行

@@ -45,6 +45,8 @@ from operon.utils import now_iso, sha256_file, sha256_path
 _VERSION_CACHE: dict[str, tuple[str, str]] = {}
 _DATABASE_IDENTITY_CACHE: dict[str, str] = {}
 
+ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
+
 DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
     "version": 1,
     "conda": {
@@ -434,6 +436,12 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             if output_kind not in {"file", "directory"}:
                 raise ValidationError(
                     f"analysis {analysis_name!r}: output_kind must be 'file' or 'directory'"
+                )
+            environment_policy = str(raw.get("environment_policy", "warn") or "warn").strip()
+            if environment_policy not in ENVIRONMENT_POLICIES:
+                raise ValidationError(
+                    f"analysis {analysis_name!r}: environment_policy must be one of "
+                    f"{', '.join(ENVIRONMENT_POLICIES)}; got {environment_policy!r}"
                 )
             if fmt == "directory" and input_kind != "directory":
                 raise ValidationError(
@@ -996,6 +1004,7 @@ def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_ve
     for key in (
         "qstart_column", "qend_column", "sstart_column", "send_column",
         "evalue_column", "bitscore_column", "pident_column", "hmmer_mode",
+        "environment_policy",
     ):
         if recipe.raw.get(key) is not None:
             payload[key] = str(recipe.raw[key])
@@ -1032,6 +1041,145 @@ def find_adoptable_job(db: Database, analysis_name: str, file_id: str) -> dict[s
         (analysis_name, file_id),
     ).fetchone()
     return dict(row) if row else None
+
+
+def recipe_environment_policy(recipe: Recipe) -> str:
+    """The recipe's cache-reuse policy; validated at load time in get_recipe."""
+    return str(recipe.raw.get("environment_policy", "warn") or "warn")
+
+
+def _cached_environment_document(db: Database, environment_id: Any) -> dict[str, Any] | None:
+    if not environment_id:
+        return None
+    row = db.conn.execute(
+        "SELECT document FROM execution_environments WHERE environment_id=?",
+        (str(environment_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        document = json.loads(row["document"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def _has_pre_job_probe(executor: Any) -> bool:
+    # Slurm (direct or over SSH) probes the compute side inside the submitted
+    # job, so no pre-job environment comparison is possible there.
+    if executor.name == "slurm":
+        return False
+    if executor.name == "ssh" and getattr(executor, "scheduler", "none") == "slurm":
+        return False
+    return True
+
+
+def _current_environment_document(executor: Any, command: list[str],
+                                  cwd: Path) -> dict[str, Any] | None:
+    """Probe the current execution side; failures degrade to None, never raise."""
+    try:
+        if executor.name == "local":
+            from operon.environment_capture import capture_local
+            document = capture_local(command, cwd)
+        else:
+            probe = getattr(executor, "probe_environment", None)
+            document = probe() if probe is not None else None
+    except Exception:
+        return None
+    return document if isinstance(document, dict) and document else None
+
+
+def _cache_environment_decision(db: Database, recipe: Recipe, executor: Any,
+                                cached: dict[str, Any], command: list[str],
+                                cwd: Path) -> dict[str, Any]:
+    """Judge an exact cache hit against the recipe's ``environment_policy``.
+
+    Returns a dict with ``reuse`` (False means treat the hit as a miss and
+    recompute), ``details`` for a run record (None when the environments match
+    and the reuse stays silent), ``warning`` text for the CLI, and the probed
+    current ``environment`` document when one was captured.  Probe and
+    comparison failures never raise and never block a reuse.
+    """
+    from operon.environment import relevance_fingerprint
+    policy = recipe_environment_policy(recipe)
+    decision: dict[str, Any] = {
+        "policy": policy, "reuse": True, "details": None, "warning": None,
+        "environment": None,
+    }
+    if policy == "ignore":
+        return decision
+    details: dict[str, Any] = {
+        "environment_policy": policy,
+        "cached_environment_id": cached.get("environment_id"),
+    }
+    if not _has_pre_job_probe(executor):
+        if policy == "strict":
+            details["environment_compare"] = "unavailable"
+            details["environment_policy_degraded"] = "strict->warn"
+            decision["details"] = details
+        return decision
+    current_document = _current_environment_document(executor, command, cwd)
+    current = relevance_fingerprint(current_document) if current_document else None
+    cached_document = _cached_environment_document(db, cached.get("environment_id"))
+    cached_relevance = relevance_fingerprint(cached_document) if cached_document else None
+    if current is None or cached_relevance is None:
+        # An incomparable side must not silently defeat strict, nor punish warn.
+        details["environment_compare"] = "unavailable"
+        if policy == "strict":
+            details["environment_policy_degraded"] = "strict->warn"
+        decision["details"] = details
+        decision["environment"] = current_document
+        return decision
+    details["cached_relevance_fingerprint"] = cached_relevance
+    details["current_relevance_fingerprint"] = current
+    decision["environment"] = current_document
+    if current == cached_relevance:
+        return decision
+    details["environment_compare"] = "mismatch"
+    if policy == "strict":
+        decision["reuse"] = False
+        decision["details"] = details
+        return decision
+    details["environment_warning"] = {
+        "message": "cached result was produced under a different execution environment",
+        "cached_relevance_fingerprint": cached_relevance,
+        "current_relevance_fingerprint": current,
+    }
+    decision["details"] = details
+    decision["warning"] = (
+        f"warning: reusing cached {recipe.name} result although the execution environment "
+        f"changed (environment_policy=warn; cached {cached_relevance[:12]}..., "
+        f"current {current[:12]}...)"
+    )
+    return decision
+
+
+def _record_cache_reuse_note(db: Database, project: Project, recipe: Recipe, tool: ToolSpec,
+                             file_record: dict[str, Any], cached: dict[str, Any],
+                             executor: Any, threads: int, command_display: str,
+                             decision: dict[str, Any]) -> None:
+    """Persist the environment comparison behind a cache reuse as a run record."""
+    from operon.workflow import log_run
+    details = dict(decision["details"])
+    details["cache_reuse"] = True
+    record: dict[str, Any] = {
+        "entity_type": file_record["entity_type"],
+        "entity_id": file_record["entity_id"],
+        "step": f"analysis:{recipe.name}",
+        "status": "completed",
+        "command": command_display,
+        "tool": tool.name,
+        "tool_version": cached["tool_version"],
+        "parameter_set": f"{recipe.name}:{cached['tool_version']}",
+        "threads": threads,
+        "executor": executor.describe(),
+        "execution_details": json.dumps(details, ensure_ascii=False, sort_keys=True),
+    }
+    environment = decision.get("environment")
+    if environment:
+        with db.transaction():
+            record["environment_id"] = db.record_environment(environment)
+    log_run(db, project, record)
 
 
 def _find_verified_adoptee(db: Database, project: Project, analysis_name: str,
@@ -1367,6 +1515,14 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         command = [*tool_command(tool, config), *rendered_args]
         command_display = " ".join(command)
 
+    env_decision: dict[str, Any] | None = None
+    if cached is not None and not force and not dry_run:
+        env_decision = _cache_environment_decision(
+            db, recipe, executor, cached,
+            step_commands[0] if step_commands else command,
+            project.root,
+        )
+
     if dry_run:
         adoptee = (
             None if runtime_parameters
@@ -1397,7 +1553,15 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
     )
 
     if cached is not None and not force:
-        if output_path.exists() and sha256_path(output_path) == cached["output_sha256"]:
+        strict_miss = env_decision is not None and not env_decision["reuse"]
+        if not strict_miss and output_path.exists() and sha256_path(output_path) == cached["output_sha256"]:
+            if env_decision is not None and env_decision["details"]:
+                _record_cache_reuse_note(
+                    db, project, recipe, tool, file_record, cached,
+                    executor, threads, command_display, env_decision,
+                )
+                if env_decision["warning"]:
+                    print(f"{file_record['file_id']}: {env_decision['warning']}")
             return {
                 "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
                 "entity_id": file_record["entity_id"], "analysis": recipe.name,
@@ -1405,7 +1569,11 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                 "tool_version": cached["tool_version"], "command": command_display,
                 "output": output_rel, "status": "cached",
             }
-        # Cached row exists but its output was deleted/modified: re-run and record a new job.
+        if strict_miss:
+            print(f"{file_record['file_id']}: execution environment changed and "
+                  f"{recipe.name} sets environment_policy=strict; recomputing")
+        # Cached row exists but is not reusable (output deleted/modified, or a
+        # strict environment mismatch): re-run and record a new job.
         with db.transaction() as conn:
             conn.execute("UPDATE analysis_jobs SET status='superseded' WHERE job_id=?", (cached["job_id"],))
         cached = None
@@ -1540,6 +1708,12 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             executor=executor,
             commands=step_commands,
             command_details=step_provenance,
+            extra_details=(
+                {"environment_policy_check": env_decision["details"]}
+                if env_decision is not None and not env_decision["reuse"]
+                and env_decision["details"]
+                else None
+            ),
         )
         _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
         output_sha = sha256_path(output_path)

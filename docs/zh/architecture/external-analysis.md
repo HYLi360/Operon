@@ -87,7 +87,7 @@ Conda 快照保存包名、版本、build、subdir、依赖、安装包 URL 和�
 
 探测采用尽力而为策略，总时限 30 秒（NVIDIA 查询为 5 秒），依赖 POSIX shell、`base64` 和常见系统工具。缺少 `timeout` 时标记不可用，避免无期限阻塞。`capture_status` 区分 complete、partial、failed、unavailable 和 unsupported_launcher。旧文档仍可读取，可能没有这些字段。保留旧的控制端探测作为后备，其 Python 版本不能解释为目标解释器版本。
 
-**待讨论事项：** 环境指纹当前仅用于溯源。环境变化是否应使精确缓存失效，以及何时允许沿用经过校验的历史输出，仍待讨论；本次不改变这两种复用策略。
+环境指纹同时驱动 recipe 级的复用策略：可选字段 `environment_policy` 取值为 `ignore`、`warn`（默认）或 `strict`，其他取值在配置校验时报错。该字段仅在显式设置时进入参数指纹——与 `hmmer_mode` 和比对列映射键同一机制——因此设置或变更它只会让完成缓存精确失效一次。以非 `ignore` 策略命中完成缓存时，`operon` 会比对"环境相关性指纹"：由文档中的 `system_fingerprint`、`hardware_fingerprint` 与 `conda.package_fingerprint` 复合而成。hostname、路径、CPU 亲和性和运行时线程变量刻意排除在外——线程数已经参与参数指纹，而亲和性是瞬时调度状态。指纹一致时照常复用缓存；不一致时，`warn` 复用缓存结果、同时在 run details 中记录警告并打印，`strict` 则把命中视为未命中并重算。没有作业前探针的后端（`slurm` 与远端 Slurm）无法在复用前比对，因此 `strict` 降级为 `warn`，并在 run details 中记录该降级。任一侧环境文档缺少子指纹（数据库 schema {{ db_schema }} 之前捕获的记录）时，比对记为 `unavailable`：`warn` 照常复用，`strict` 同样降级为 `warn`，旧的 provenance 永远不会引发误重算。
 
 Recipe 版本与快照（schema 2.9）：<!-- version-pin -->recipe 新增可选 `version:` 字段（正整数，缺省 1，
 非法值在配置校验时报错）。`analyze` 处理每个候选文件时把当前 recipe 连同其引用的

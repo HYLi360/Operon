@@ -59,7 +59,10 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
    `${output_name}`、`${output_stem}`、`${file_id}`、`${file_role}`、`${entity_type}`、`${entity_id}`；
    以及声明后的 `${<parameter>}`；运行参数同时进入输出命名和缓存指纹；
 5. 命中 `analysis_jobs` 完成缓存时直接跳过，除非 `--force`；精确指纹未命中但存在
-   输入相同、输出哈希验证一致的旧完成结果时，收养该结果（状态 `adopted`）而非重算；
+   输入相同、输出哈希验证一致的旧完成结果时，收养该结果（状态 `adopted`）而非重算。
+   缓存命中时，`environment_policy` 非 `ignore` 的 recipe 还会比对环境相关性指纹，
+   不一致时给出警告（`strict` 下改为重算），见
+   [Recipe 字段参考](recipe-fields.md)的"缓存复用的环境策略"；
 6. 按 `output_kind: file|directory` 校验输出存在/非空并计算内容哈希；
 7. 解析结果写入 `analysis_hits`/`analysis_results`，并同步汇总指标到 `qc_results`；
    带坐标的 parser 还会把每条解析出的命中以结构化行写入 `analysis_alignments`

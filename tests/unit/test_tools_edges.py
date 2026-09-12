@@ -665,6 +665,147 @@ def test_parameter_fingerprint_includes_hmmer_mode():
         tools.parameter_fingerprint(recipe(raw={"hmmer_mode": "hmmscan"}), *args)
 
 
+def test_environment_policy_validation_and_default(tmp_path, monkeypatch):
+    p = project(tmp_path)
+    raw_recipe = {"file_role": "genome_fasta", "format": "fasta"}
+    config = {"tools": {"tool": {"executable": "x", "recipes": {"analysis": raw_recipe}}}}
+    monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+    loaded = tools.get_recipe(p, "analysis")
+    assert tools.recipe_environment_policy(loaded) == "warn"
+    for valid in ("ignore", "warn", "strict"):
+        raw_recipe["environment_policy"] = valid
+        assert tools.recipe_environment_policy(tools.get_recipe(p, "analysis")) == valid
+    raw_recipe["environment_policy"] = "panic"
+    with pytest.raises(ValidationError, match="environment_policy must be"):
+        tools.get_recipe(p, "analysis")
+
+
+def test_parameter_fingerprint_includes_explicit_environment_policy():
+    args = (["a"], 1, "v")
+    plain = tools.parameter_fingerprint(recipe(), *args)
+    # Only an explicit setting enters the fingerprint; the default does not.
+    assert plain != tools.parameter_fingerprint(recipe(raw={"environment_policy": "warn"}), *args)
+    assert tools.parameter_fingerprint(recipe(raw={"environment_policy": "ignore"}), *args) != \
+        tools.parameter_fingerprint(recipe(raw={"environment_policy": "strict"}), *args)
+
+
+class _FakeExecutor:
+    def __init__(self, name, document=None, scheduler="none"):
+        self.name = name
+        self._document = document
+        self.scheduler = scheduler
+
+    def describe(self):
+        return self.name
+
+    def probe_environment(self):
+        return self._document
+
+
+def _decision_setup(tmp_path, document):
+    from operon.database import Database
+    db = Database(tmp_path / "meta.sqlite")
+    environment_id = db.record_environment(document) if document is not None else None
+    return db, {"environment_id": environment_id}
+
+
+_RICH_DOCUMENT = {
+    "hostname": "sha256:abc",
+    "system_fingerprint": "sys-1",
+    "hardware_fingerprint": "hw-1",
+    "conda": {"status": "captured", "package_fingerprint": "conda-1"},
+}
+
+
+def _local_executor(monkeypatch, document):
+    import operon.environment_capture
+    monkeypatch.setattr(operon.environment_capture, "capture_local",
+                        lambda *args, **kwargs: document)
+    return _FakeExecutor("local")
+
+
+def test_cache_environment_decision_matching_documents_stay_silent(tmp_path, monkeypatch):
+    db, cached = _decision_setup(tmp_path, dict(_RICH_DOCUMENT))
+    executor = _local_executor(monkeypatch, dict(_RICH_DOCUMENT))
+    decision = tools._cache_environment_decision(db, recipe(), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"] and decision["details"] is None and decision["warning"] is None
+    # environment_policy=ignore never probes nor compares.
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "ignore"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"] and decision["details"] is None
+    db.close()
+
+
+def test_cache_environment_decision_mismatch_warn_and_strict(tmp_path, monkeypatch):
+    changed = dict(_RICH_DOCUMENT, system_fingerprint="sys-2")
+    db, cached = _decision_setup(tmp_path, dict(_RICH_DOCUMENT))
+    executor = _local_executor(monkeypatch, changed)
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "warn"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_compare"] == "mismatch"
+    warning = decision["details"]["environment_warning"]
+    assert warning["cached_relevance_fingerprint"] != warning["current_relevance_fingerprint"]
+    assert "environment_policy=warn" in decision["warning"]
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "strict"}), executor, cached, ["x"], tmp_path)
+    assert not decision["reuse"]
+    assert decision["details"]["environment_compare"] == "mismatch"
+    assert decision["warning"] is None
+    db.close()
+
+
+def test_cache_environment_decision_unavailable_degrades_strict(tmp_path, monkeypatch):
+    db, cached = _decision_setup(tmp_path, {"hostname": "sha256:old", "os": "Linux"})
+    executor = _local_executor(monkeypatch, dict(_RICH_DOCUMENT))
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "warn"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_compare"] == "unavailable"
+    assert "environment_policy_degraded" not in decision["details"]
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "strict"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_compare"] == "unavailable"
+    assert decision["details"]["environment_policy_degraded"] == "strict->warn"
+    db.close()
+
+
+def test_cache_environment_decision_slurm_degrades_strict_without_probe(tmp_path):
+    db, cached = _decision_setup(tmp_path, dict(_RICH_DOCUMENT))
+    executor = _FakeExecutor("slurm")
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "warn"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"] and decision["details"] is None
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "strict"}), executor, cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_policy_degraded"] == "strict->warn"
+    assert decision["details"]["environment_compare"] == "unavailable"
+    remote_slurm = _FakeExecutor("ssh", scheduler="slurm")
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "strict"}), remote_slurm, cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_policy_degraded"] == "strict->warn"
+    db.close()
+
+
+def test_cache_environment_decision_probe_failure_never_raises(tmp_path, monkeypatch):
+    import operon.environment_capture
+
+    def failing(*args, **kwargs):
+        raise RuntimeError("probe exploded")
+
+    monkeypatch.setattr(operon.environment_capture, "capture_local", failing)
+    db, cached = _decision_setup(tmp_path, dict(_RICH_DOCUMENT))
+    decision = tools._cache_environment_decision(
+        db, recipe(raw={"environment_policy": "strict"}), _FakeExecutor("local"),
+        cached, ["x"], tmp_path)
+    assert decision["reuse"]
+    assert decision["details"]["environment_compare"] == "unavailable"
+    db.close()
+
+
 def test_print_tools_table_records_detection_errors(tmp_path, monkeypatch):
     p = project(tmp_path)
     config = {"tools": {"bad": {"recipes": {"a": {}}}, "ignored": []}}
