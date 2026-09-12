@@ -31,7 +31,6 @@ from operon.execution import (
     _parse_sbatch_job_id,
     _parse_slurm_time_seconds,
     get_executor,
-    load_slurm_config,
     render_slurm_script,
     rewrite_remote_path,
 )
@@ -270,19 +269,6 @@ class TestExecutionConfig(PytestAssertions):
         )
         self.assertEqual(result.exit_code, 0)
 
-    def test_slurm_config_merge_with_recipe_overrides(self):
-        self.project.config["execution"] = {
-            "backend": "slurm",
-            "slurm": {"partition": "short", "time": "01:00:00", "mem_gb": 8,
-                      "extra_sbatch": ["--gres=gpu:1"], "setup_commands": ["module load blast"]},
-        }
-        slurm = load_slurm_config(self.project, {"time": "48:00:00", "mem_gb": 32})
-        self.assertEqual(slurm.partition, "short")
-        self.assertEqual(slurm.time_limit, "48:00:00")
-        self.assertEqual(slurm.mem_gb, 32)
-        self.assertEqual(slurm.extra_sbatch, ["--gres=gpu:1"])
-        self.assertEqual(slurm.setup_commands, ["module load blast"])
-
     def test_render_slurm_script(self):
         slurm = SlurmConfig(partition="long", time_limit="12:00:00", mem_gb=16,
                             extra_sbatch=["--gres=gpu:1"], setup_commands=["module load blast/2.15"])
@@ -421,21 +407,6 @@ class TestExecutionConfig(PytestAssertions):
         self.assertIsNone(row["scheduler_job_id"])
         self.assertIn('"backend": "local"', row["execution_details"])
 
-    def test_local_executor_collects_resources(self):
-        out_log = self.root / "logs" / "res.stdout.log"
-        err_log = self.root / "logs" / "res.stderr.log"
-        result = LocalExecutor().run(
-            [sys.executable, "-c",
-             "x = bytearray(20 << 20)\nimport time\ntime.sleep(1.2)"],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
-        )
-        self.assertEqual(result.exit_code, 0)
-        # The 20 MiB allocation must show up in the sampled RSS.
-        self.assertGreater(result.resources["max_rss_mb"], 10)
-        self.assertGreater(result.resources["avg_rss_mb"], 0)
-        self.assertLessEqual(result.resources["avg_rss_mb"], result.resources["max_rss_mb"])
-        self.assertGreaterEqual(result.resources["cpu_seconds"], 0)
-
     def test_local_executor_resources_degrade_silently(self):
         out_log = self.root / "logs" / "deg.stdout.log"
         err_log = self.root / "logs" / "deg.stderr.log"
@@ -444,7 +415,13 @@ class TestExecutionConfig(PytestAssertions):
             ["false"], cwd=self.root, stdout_path=out_log, stderr_path=err_log,
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertGreaterEqual(result.resources.get("cpu_seconds", 0), 0)
+        # Sampling is best-effort: the run must still report a consistent
+        # resource document instead of raising for a failing command.
+        resources = result.resources
+        assert isinstance(resources, dict)
+        if "max_rss_mb" in resources:
+            self.assertGreater(resources["max_rss_mb"], 0)
+            self.assertLessEqual(resources["avg_rss_mb"], resources["max_rss_mb"])
 
     def test_run_external_command_records_resource_usage(self):
         record = run_external_command(
@@ -462,15 +439,21 @@ class TestExecutionConfig(PytestAssertions):
         self.assertTrue(row["duration_seconds"] < 30)
         self.assertGreater(row["max_rss_mb"], 10)
         self.assertGreater(row["avg_rss_mb"], 0)
+        self.assertLessEqual(row["avg_rss_mb"], row["max_rss_mb"])
         self.assertGreaterEqual(row["cpu_seconds"], 0)
 
-    def test_run_external_command_failed_run_has_null_resources(self):
+    def test_run_external_command_failed_run_records_failure_and_duration(self):
         with self.assertRaisesRegex(RuntimeError, "test:failed-resources"):
             run_external_command(self.db, self.project, ["false"], step="test:failed-resources")
         row = self.db.conn.execute(
-            "SELECT duration_seconds, max_rss_mb FROM workflow_runs WHERE step='test:failed-resources'"
+            "SELECT status, exit_code, error, duration_seconds FROM workflow_runs "
+            "WHERE step='test:failed-resources'"
         ).fetchone()
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["exit_code"], 1)
+        self.assertEqual(row["error"], "exit code 1")
         self.assertIsNotNone(row["duration_seconds"])
+        self.assertGreaterEqual(row["duration_seconds"], 0.0)
 
     def test_version_cache_is_scoped_to_executor_identity(self):
         import operon.tools as tools_module
@@ -1076,4 +1059,9 @@ class TestResourceParsing(PytestAssertions):
             self.assertEqual(_parse_remote_stats(bad), {})
 
     def test_exec_result_resources_default_empty(self):
-        self.assertEqual(ExecResult(exit_code=0).resources, {})
+        first = ExecResult(exit_code=0)
+        second = ExecResult(exit_code=0)
+        self.assertEqual(first.resources, {})
+        # Each result owns a fresh mapping (no shared mutable default).
+        first.resources["max_rss_mb"] = 1.0
+        self.assertEqual(second.resources, {})

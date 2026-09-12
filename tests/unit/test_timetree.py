@@ -335,8 +335,20 @@ def test_build_calibrations_pairs(tmp_path):
 
 # --- CLI -------------------------------------------------------------------
 
+_QUERY_COMMANDS = {"taxon", "pairwise", "mrca", "timeline", "calibrations"}
+
+
 def _run_cli(project: Project, *argv: str) -> int:
-    return main(["--project", str(project.root), *argv])
+    """Run a `timetree` query command without request pacing.
+
+    Every HTTP interaction in this module is mocked, so the default 0.5 s
+    inter-request pause is pure test latency.
+    """
+    args = list(argv)
+    if len(args) >= 2 and args[0] == "timetree" and args[1] in _QUERY_COMMANDS \
+            and "--delay" not in args:
+        args[2:2] = ["--delay", "0"]
+    return main(["--project", str(project.root), *args])
 
 
 def _workflow_steps(project: Project) -> list[tuple[str, str]]:

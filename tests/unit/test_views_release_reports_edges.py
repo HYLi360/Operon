@@ -55,20 +55,6 @@ def test_identifier_resolution_missing_ambiguous_and_namespaced(project_db):
         entity_view.resolve_identifier(db, "MISSING")
 
 
-@pytest.mark.parametrize(
-    ("entity_type", "entity_id"),
-    [
-        ("organism", "ORG_000001"), ("sample", "SMP_000001"),
-        ("run", "RUN_000001"), ("assembly", "ASM_000001"),
-        ("annotation", "ANN_000001"),
-    ],
-)
-def test_resolve_organism_for_every_entity_type(project_db, entity_type, entity_id):
-    _project, db = project_db
-    _insert_graph(db)
-    assert entity_view._organism_for(db, entity_type, entity_id) == "ORG_000001"
-
-
 def test_organism_resolution_and_graph_empty_branches(project_db):
     _project, db = project_db
     with pytest.raises(EntityNotFoundError, match="cannot resolve organism"):
@@ -199,19 +185,10 @@ def test_release_rolls_back_published_tree_when_state_commit_fails(project_db, m
     assert db.conn.execute("SELECT 1 FROM releases WHERE version='state-failure'").fetchone() is None
 
 
-def test_report_filters_wide_rows_and_decision_reason_formats(project_db):
-    project, db = project_db
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "s",
-        "metric_name": "m", "metric_value": "1", "metric_numeric": 1,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    assert len(reports.qc_rows(db, entity_type="organism", entity_id="ORG_000001")) == 1
-    columns, rows = reports.qc_wide(db, "organism")
-    assert "m" in columns and rows[0]["m"] == 1
-    assert "ORG_000001" in reports.print_qc_table(db, "organism", "ORG_000001")
-    reports.export_qc_tsv(db, project, "organism")
-
+def test_decision_reason_code_formats(project_db):
+    # The QC report/wide-pivot paths are asserted by
+    # tests/unit/test_support_edges.py::test_report_queries_wide_pivot_and_reason_rendering.
+    _project, db = project_db
     db.upsert_decision({
         "entity_type": "organism", "entity_id": "ORG_000001", "profile": "p",
         "profile_version": 1, "decision": "PASS", "reason_codes": json.dumps(["A", "B"]),

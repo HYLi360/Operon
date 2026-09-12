@@ -142,7 +142,8 @@ python3 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'   # runtime + pytest + Cython + Sphinx;
                                     # also compiles the qc parsers extension
 
-python -m pytest                    # full suite (coverage gate: 90% branch)
+python -m pytest                    # full suite (coverage gate: >=95% combined
+                                    # line+branch, and >=95% branch coverage)
 python -m pytest tests/unit         # by category: unit / integration /
                                     # regression / compatibility
 

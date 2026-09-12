@@ -21,7 +21,6 @@ from operon.import_wizard import (
     _ask_organism,
     _commit,
     _source_validation_errors,
-    _synchronize_new_entity_links,
     run_dataset_wizard,
 )
 from operon.workflow import log_run
@@ -500,24 +499,3 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
         db.close()
 
 
-def test_wizard_review_edit_relinks_new_descendants():
-    draft = {
-        "organism": {"action": "create", "id": "ORG_000002", "row": {"organism_id": "ORG_000002"}},
-        "sample": {"action": "create", "id": "SMP_000002", "row": {
-            "sample_id": "SMP_000002", "organism_id": "ORG_000001",
-        }},
-        "run": {"action": "create", "id": "RUN_000002", "row": {
-            "run_id": "RUN_000002", "sample_id": "SMP_000001",
-        }},
-        "assembly": {"action": "create", "id": "ASM_000002", "row": {
-            "assembly_id": "ASM_000002", "sample_id": "SMP_000001",
-        }},
-        "annotation": {"action": "create", "id": "ANN_000002", "row": {
-            "annotation_id": "ANN_000002", "assembly_id": "ASM_000001",
-        }},
-    }
-    _synchronize_new_entity_links(draft)
-    assert draft["sample"]["row"]["organism_id"] == "ORG_000002"
-    assert draft["run"]["row"]["sample_id"] == "SMP_000002"
-    assert draft["assembly"]["row"]["sample_id"] == "SMP_000002"
-    assert draft["annotation"]["row"]["assembly_id"] == "ASM_000002"

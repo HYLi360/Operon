@@ -80,47 +80,53 @@ def test_sdist_contains_complete_project_source(tmp_path):
     )
 
 
-def test_python_package_build_uses_only_setuptools_and_cython():
-    pyproject = _load_pyproject()
-    assert not any(
-        requirement.startswith("cx-Freeze")
-        for requirement in pyproject["build-system"]["requires"]
-    )
-    assert not any(
-        requirement.startswith(("cx-Freeze", "Cython"))
-        for requirement in pyproject["project"]["dependencies"]
-    )
+def _requirement_lists(pyproject: dict, section: str) -> list[str]:
+    if section == "build-system":
+        return list(pyproject["build-system"]["requires"])
+    if section == "dependencies":
+        return list(pyproject["project"]["dependencies"])
+    return list(pyproject["project"]["optional-dependencies"][section])
 
 
-def test_no_extra_references_cxfreeze():
-    pyproject = _load_pyproject()
-    optional = pyproject["project"].get("optional-dependencies", {})
-    for extra, requirements in optional.items():
-        assert not any(
-            requirement.lower().startswith("cx-freeze")
-            for requirement in requirements
-        ), f"extra {extra!r} still references cx-Freeze"
+def _package_name(requirement: str) -> str:
+    return re.split(r"[<>=!;\s\[]", requirement, maxsplit=1)[0].lower()
 
 
-def test_cython_is_available_to_test_and_dev_tooling():
-    pyproject = _load_pyproject()
-    optional = pyproject["project"]["optional-dependencies"]
-    for extra in ("test", "dev"):
-        assert any(
-            requirement.lower().startswith("cython>=3.0")
-            for requirement in optional[extra]
-        )
+@pytest.mark.parametrize(
+    ("section", "required", "marker", "forbidden", "only"),
+    [
+        # Building the Cython extension needs setuptools + Cython, nothing else.
+        ("build-system", ("cython>=3.0", "setuptools>="), None, (), ("cython", "setuptools")),
+        # Cython is a build/test tool: it must never become a runtime dependency.
+        ("dependencies", (), None, ("cython",), ()),
+        ("test", ("cython>=3.0",), None, (), ()),
+        ("dev", ("cython>=3.0", "tomli>=2.0"), "python_version < '3.11'", (), ()),
+        ("docs", ("tomli>=2.0",), "python_version < '3.11'", (), ()),
+    ],
+    ids=["build-system", "runtime-dependencies", "test-extra", "dev-extra", "docs-extra"],
+)
+def test_pyproject_dependency_contract(section, required, marker, forbidden, only):
+    """The requirement sets that keep the package buildable and installable.
 
-
-def test_python_310_tomli_is_an_explicit_docs_and_dev_dependency():
-    pyproject = _load_pyproject()
-    optional = pyproject["project"]["optional-dependencies"]
-    for extra in ("docs", "dev"):
-        assert any(
-            requirement.startswith("tomli>=2.0")
-            and "python_version < '3.11'" in requirement
-            for requirement in optional[extra]
-        )
+    Every case reads the same pyproject requirement lists, so they share one
+    parametrized check instead of four near-identical test bodies.
+    """
+    requirements = _requirement_lists(_load_pyproject(), section)
+    lowered = [requirement.lower() for requirement in requirements]
+    for prefix in required:
+        assert any(requirement.startswith(prefix) for requirement in lowered), \
+            f"{section} must require {prefix}: {requirements}"
+    for prefix in forbidden:
+        assert not any(requirement.startswith(prefix) for requirement in lowered), \
+            f"{section} must not require {prefix}: {requirements}"
+    if only:
+        assert sorted(_package_name(requirement) for requirement in requirements) == sorted(only), \
+            requirements
+    if marker:
+        # Python 3.10 has no stdlib tomllib, so the conditional pin must stay
+        # attached to the requirement instead of installing it unconditionally.
+        conditional = [r for r in requirements if _package_name(r) == "tomli"]
+        assert conditional and all(marker in requirement for requirement in conditional), requirements
 
 
 def test_pyproject_is_the_single_application_version_source():

@@ -58,11 +58,11 @@ def test_state_validation_illegal_transition_and_missing_run(project_db):
         workflow.finish_run(db, project, "WF_MISSING", status="failed")
 
 
-@pytest.mark.parametrize(
-    ("exit_code", "error", "expected"),
-    [(3, None, "exit code 3"), (0, "reported failure", "reported failure")],
-)
-def test_external_command_result_failures_are_recorded(project_db, exit_code, error, expected):
+def test_external_command_reported_error_is_recorded(project_db):
+    """A zero exit code with an executor-reported error is still a failure.
+
+    The non-zero exit-code branch is asserted by the following test.
+    """
     project, db = project_db
 
     class Executor:
@@ -71,14 +71,17 @@ def test_external_command_result_failures_are_recorded(project_db, exit_code, er
 
         def run(self, *_a, **_k):
             return SimpleNamespace(
-                exit_code=exit_code,
-                error=error,
+                exit_code=0,
+                error="reported failure",
                 scheduler_job_id=None,
                 details={"backend": "fake"},
             )
 
-    with pytest.raises(RuntimeError, match=expected):
+    with pytest.raises(RuntimeError, match="reported failure"):
         workflow.run_external_command(db, project, ["fake"], step="edge", executor=Executor())
+    row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
+    assert row["status"] == "failed"
+    assert row["error"] == "reported failure"
 
 
 def test_failed_exit_code_is_not_masked_by_missing_output_check(project_db):

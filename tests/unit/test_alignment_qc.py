@@ -107,22 +107,9 @@ def random_alignment(rng: random.Random, n_sequences: int, n_columns: int):
 
 
 class TestNaiveParity:
-    def test_dot_gaps(self):
-        assert_parity([
-            ("a", "AC.T"),
-            ("b", "A..T"),
-            ("c", "GC.A"),
-        ])
-
-    def test_single_sequence(self):
-        assert_parity([("only", "ACGT-AC.GT")])
-
-    def test_all_gap_column(self):
-        assert_parity([
-            ("a", "A-C"),
-            ("b", "G.T"),
-            ("c", "T-A"),
-        ])
+    # Corpora already covered by tests/regression/test_cython_alignment_parity.py
+    # (dot gaps, single sequence, all-gap column, consensus tie) are deliberately
+    # not repeated here; the regression file runs both backends on them.
 
     def test_single_residue_column(self):
         assert_parity([
@@ -138,14 +125,6 @@ class TestNaiveParity:
         assert_parity([
             ("a", "----"),
             ("b", "ACGT"),
-        ])
-
-    def test_consensus_tie_uses_first_encountered(self):
-        assert_parity([
-            ("a", "A"),
-            ("b", "C"),
-            ("c", "C"),
-            ("d", "A"),
         ])
 
     def test_even_sequence_count_median(self):

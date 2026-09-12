@@ -90,7 +90,7 @@ def fetch_snapshot(pairs_file, output, *, timeout=30, retries=3, delay=1.0):
             for flag in ("summaryjson", "json"):
                 url = f"{API}/pairwise/{a}/{b}/{flag}"
                 response = None
-                for attempt in range(retries):
+                for attempt in range(retries):  # pragma: no branch
                     try:
                         response = session.get(url, timeout=timeout)
                         response.raise_for_status()

@@ -41,11 +41,32 @@ def test_build_source_parses_with_python_310_grammar(source_path: Path) -> None:
 
 @pytest.mark.compatibility
 def test_runtime_is_within_supported_window() -> None:
-    assert sys.version_info >= (3, 10)
+    """The interpreter running the suite must satisfy the advertised window."""
+    assert sys.version_info[:2] >= (3, 10)
+    for source_path in SOURCE_FILES:
+        ast.parse(
+            source_path.read_text(encoding="utf-8"),
+            filename=str(source_path),
+            feature_version=sys.version_info[:2],
+        )
 
 
 @pytest.mark.compatibility
-def test_cli_imports_on_supported_runtime() -> None:
+def test_cli_version_flag_prints_version_and_exits_zero(capsys) -> None:
+    """`--version` is a documented CLI contract; exercise it on this runtime."""
+    from operon import __version__
     from operon.cli import main
 
-    assert callable(main)
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+
+    assert excinfo.value.code == 0
+    assert capsys.readouterr().out.strip() == f"operon {__version__}"
+
+
+@pytest.mark.compatibility
+def test_database_schema_version_is_the_release_marker() -> None:
+    """The single literal pin of the current database schema version."""
+    from operon.database import SCHEMA_VERSION
+
+    assert SCHEMA_VERSION == "2.11"

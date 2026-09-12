@@ -84,14 +84,6 @@ def test_data_source_requires_source_type(db):
         db.register_data_source({})
 
 
-def test_data_source_full_record_is_accepted(db):
-    source = db.register_data_source({
-        "source_type": "non_insdc", "provider": "X", "database_name": "D",
-        "citation": "doi:10.1/x", "license_name": "CC0-1.0",
-    })
-    assert source["source_id"] == "SRC_000001"
-
-
 def test_data_source_idempotency_and_link_validation(db):
     source = db.register_data_source({
         "source_type": "insdc", "provider": "NCBI", "database_name": "Assembly",

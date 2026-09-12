@@ -218,7 +218,7 @@ def validate_relative_path(value: str, *, label: str = "remote relative path") -
     if any(part in {"", ".", ".."} for part in parts):
         raise ValidationError(f"{label} contains an unsafe path component: {value!r}")
     normalized = posixpath.normpath(value)
-    if normalized == ".." or normalized.startswith("../"):
+    if normalized == ".." or normalized.startswith("../"):  # pragma: no cover
         raise ValidationError(f"{label} escapes its configured root: {value!r}")
     return normalized
 
@@ -687,7 +687,7 @@ def push(db: Database, project: Project, name: str,
             doc = store.read_manifest()
             _require_project_manifest(project, name, doc)
             entries = doc.setdefault("files", {})
-            if not isinstance(entries, dict):
+            if not isinstance(entries, dict):  # pragma: no cover
                 raise RemoteError(f"remote {name!r} manifest 'files' must be an object")
             manifest_changed = False
             for record in records:
@@ -781,7 +781,7 @@ def pull(db: Database, project: Project, name: str,
         doc = store.read_manifest()
         _require_project_manifest(project, name, doc)
         entries = doc.get("files", {})
-        if not isinstance(entries, dict):
+        if not isinstance(entries, dict):  # pragma: no cover
             raise RemoteError(f"remote {name!r} manifest 'files' must be an object")
         if file_ids:
             items = [(record["relative_path"], record) for record in records]

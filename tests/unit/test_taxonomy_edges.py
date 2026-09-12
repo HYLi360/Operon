@@ -374,38 +374,34 @@ def _upgraded_file_fields(text: str) -> dict:
     return yaml.safe_load(text)["tables"]["files"]["fields"]
 
 
-def test_schema_upgrade_allows_taxonomy_snapshot_entity_type(project_db):
+@pytest.mark.parametrize(
+    ("field", "key", "expected"),
+    [
+        ("entity_type", "allowed",
+         ["organism", "sample", "run", "assembly", "annotation", "taxonomy_snapshot"]),
+        ("entity_id", "pattern", r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$"),
+        ("file_role", "allowed", ["genome_fasta", "taxonomy_package", "other"]),
+    ],
+    ids=["entity-type", "entity-id-pattern", "file-role-order"],
+)
+def test_schema_upgrade_rewrites_legacy_fields(project_db, field, key, expected):
+    """One legacy 1.2 upgrade extends each files-table field for taxonomy."""
     project, _db = project_db
-    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
-    assert "taxonomy_snapshot" in fields["entity_type"]["allowed"]
+    assert _upgraded_file_fields(_upgrade_legacy_schema(project))[field][key] == expected
 
 
-def test_schema_upgrade_extends_entity_id_pattern_to_taxonomy_ids(project_db):
-    project, _db = project_db
-    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
-    assert fields["entity_id"]["pattern"] == r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$"
-
-
-def test_schema_upgrade_inserts_taxonomy_package_role_before_other(project_db):
-    project, _db = project_db
-    fields = _upgraded_file_fields(_upgrade_legacy_schema(project))
-    assert fields["file_role"]["allowed"] == ["genome_fasta", "taxonomy_package", "other"]
-
-
-def test_schema_upgrade_bumps_legacy_version_to_1_3(project_db):
-    project, _db = project_db
-    document = yaml.safe_load(_upgrade_legacy_schema(project))
-    assert document["schema_version"] == "1.3"
-
-
-def test_schema_upgrade_writes_extended_schema_back_to_disk(project_db):
+def test_schema_upgrade_version_canonical_header_and_idempotency(project_db):
     project, _db = project_db
     legacy_text = yaml.safe_dump(_legacy_schema_document())
     upgraded = _upgrade_legacy_schema(project)
+    assert yaml.safe_load(upgraded)["schema_version"] == "1.3"
     assert upgraded != legacy_text
     assert upgraded.startswith(
         "# Operon metadata schema (YAML). Extended for NCBI Taxonomy snapshots.\n"
     )
+    # Re-running the upgrade leaves the already-extended file untouched.
+    taxonomy._ensure_taxonomy_metadata_schema(project)
+    assert project.schema_path.read_bytes() == upgraded.encode("utf-8")
 
 
 def test_schema_upgrade_wraps_custom_entity_id_pattern_in_alternation(project_db):
@@ -416,14 +412,6 @@ def test_schema_upgrade_wraps_custom_entity_id_pattern_in_alternation(project_db
     pattern = fields["entity_id"]["pattern"]
     assert re.fullmatch(pattern, "X_1")
     assert re.fullmatch(pattern, "TAX_000001")
-
-
-def test_schema_upgrade_leaves_upgraded_schema_file_untouched(project_db):
-    project, _db = project_db
-    _upgrade_legacy_schema(project)
-    upgraded_once = project.schema_path.read_bytes()
-    taxonomy._ensure_taxonomy_metadata_schema(project)
-    assert project.schema_path.read_bytes() == upgraded_once
 
 
 def _minimal_taxonomy_jsonl(path: Path) -> Path:

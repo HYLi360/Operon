@@ -180,8 +180,16 @@ def test_filesystem_identity_and_opening_paths(tmp_path):
     (root / "link").symlink_to("file")
     entries = [p.relative_to(root).as_posix() for p in utils.iter_directory_entries(root)]
     assert entries == ["empty", "file", "link"]
+    # Golden digests: the directory hash covers relative paths, the empty
+    # directory, file bytes/sizes and the symlink target (but not mtimes), and
+    # it must not depend on the absolute location of the tree.
+    assert utils.sha256_directory(root) == (
+        "17e5dec18b35f5b60b12b1d96badd4607421099f081a8f3d88f20e9648012490"
+    )
     assert utils.sha256_path(root) == utils.sha256_directory(root)
-    assert utils.sha256_path(root / "file") == utils.sha256_file(root / "file")
+    assert utils.sha256_path(root / "file") == (
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"  # sha256("abc")
+    )
     assert utils.path_size_bytes(root) == 3
     assert utils.path_size_bytes(root / "file") == 3
     with pytest.raises(FileNotFoundError):
@@ -236,7 +244,10 @@ def test_table_and_numeric_utility_edges():
     rendered = utils.format_table(["header"], [])
     assert rendered.count("header") == 1
     assert rendered.count("-" * len("header")) == 1
-    assert "" in utils.format_table(["a"], [[None]])
+    # A None cell renders as an empty field rather than the literal "None".
+    none_table = utils.format_table(["a"], [[None]])
+    assert "None" not in none_table
+    assert none_table.splitlines()[:2] == ["a", "-"]
     assert utils.parse_key_values(["--a=1", "b=two=parts"]) == {"a": "1", "b": "two=parts"}
     with pytest.raises(ValueError, match="expected key=value"):
         utils.parse_key_values(["bad"])

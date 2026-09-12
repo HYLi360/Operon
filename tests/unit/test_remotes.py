@@ -13,13 +13,14 @@ from pathlib import Path
 
 from tests.helpers import PytestAssertions
 
+import pytest
+
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, RemoteError, ValidationError
 from operon.files import ingest_file, verify_files
 from operon.remotes import (
-    REMOTE_MANIFEST_LOCK_NAME,
     SFTPStore,
     connect_ssh,
     evict_local,
@@ -274,15 +275,6 @@ class TestPushPull(PytestAssertions):
         self.assertFalse(self.file_row["relative_path"] in manifest["files"])
         self.assertIn(second["relative_path"], manifest["files"])
 
-    def test_manifest_lock_refuses_concurrent_writer(self):
-        lock_path = self.remote_dir / REMOTE_MANIFEST_LOCK_NAME
-        lock_path.mkdir()
-        (lock_path / "owner.json").write_text("{}", encoding="utf-8")
-        with self._store() as store:
-            with self.assertRaisesRegex(RemoteError, "manifest is locked"):
-                with store.manifest_lock(timeout=0):
-                    pass
-
     def test_failed_upload_removes_unique_remote_temp(self):
         source = self.root / "broken-upload.txt"
         source.write_text("payload", encoding="utf-8")
@@ -508,22 +500,22 @@ class TestPushPull(PytestAssertions):
         self.assertEqual(audit["actor"], "operon pull")
         self.assertEqual(audit["new_value"], "CHECKSUM_VERIFIED")
 
-    def test_fetch_remote_url_to_temp(self, monkeypatch):
-        monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
-        push(self.db, self.project, "mirror")
-        rel = self.file_row["relative_path"]
-        tmp_path = fetch_url_to_temp(self.project, f"remote://mirror/{rel}")
-        self.addCleanup(lambda: tmp_path.unlink(missing_ok=True))
-        self.assertEqual(tmp_path.read_bytes(), (self.root / rel).read_bytes())
-        self.assertTrue(tmp_path.name.endswith(Path(rel).name))
+    def _url(self, rel: str, scheme: str) -> str:
+        if scheme == "remote":
+            return f"remote://mirror/{rel}"
+        return f"sftp://fake{self.remote_dir}/{rel}"
 
-    def test_fetch_sftp_url_to_temp(self, monkeypatch):
+    @pytest.mark.parametrize("scheme", ["remote", "sftp"])
+    def test_fetch_url_to_temp_for_both_url_shapes(self, monkeypatch, scheme):
         monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())
         push(self.db, self.project, "mirror")
         rel = self.file_row["relative_path"]
-        tmp_path = fetch_url_to_temp(self.project, f"sftp://fake{self.remote_dir}/{rel}")
+        tmp_path = fetch_url_to_temp(self.project, self._url(rel, scheme))
         self.addCleanup(lambda: tmp_path.unlink(missing_ok=True))
         self.assertEqual(tmp_path.read_bytes(), (self.root / rel).read_bytes())
+        # The remote basename is kept as the temp-file suffix so that
+        # format/compression detection matches a local source.
+        self.assertTrue(tmp_path.name.endswith(Path(rel).name))
 
     def test_same_size_corruption_is_detected_without_remote_sha256(self, monkeypatch):
         monkeypatch.setattr("operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient())

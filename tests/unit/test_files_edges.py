@@ -13,7 +13,7 @@ from operon.config import load_project
 from operon.database import Database
 from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
 from operon.remotes import placeholder_path
-from operon.utils import sha256_file, sha256_path
+from operon.utils import sha256_path
 
 
 @pytest.fixture
@@ -183,15 +183,35 @@ def test_local_verification_cache_missing_size_cached_and_changed(project_db, tm
 
 
 def test_verification_cache_ignores_nonfiles_and_wrong_size(project_db, tmp_path, monkeypatch):
-    _project, db = project_db
+    project, db = project_db
     record = {"file_id": "F", "sha256": "x", "size_bytes": 1}
     files.remember_local_file_verification(db, record, tmp_path / "missing")
     source = tmp_path / "source"
     source.write_text("xx", encoding="utf-8")
     files.remember_local_file_verification(db, record, source)
     assert db.query("SELECT * FROM local_file_verifications WHERE file_id='F'") == []
+
+    # With a real manifest row the only thing standing between the call and a
+    # cache entry is the stat failure, which the helper must swallow.
+    archived = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    path = project.root / archived["relative_path"]
+    # Ingestion caches its own verification; clear it so the helper is the only
+    # thing that can (re)create the row below.
+    with db.transaction():
+        db.conn.execute(
+            "DELETE FROM local_file_verifications WHERE file_id=?", (archived["file_id"],))
+    real_is_file = Path.is_file
     monkeypatch.setattr(Path, "is_file", lambda _self: (_ for _ in ()).throw(OSError("stat")))
-    files.remember_local_file_verification(db, record, source)
+    files.remember_local_file_verification(db, archived, path)
+    assert db.query(
+        "SELECT * FROM local_file_verifications WHERE file_id=?", (archived["file_id"],)
+    ) == []
+    # Once stat works again the same call caches the verification.
+    monkeypatch.setattr(Path, "is_file", real_is_file)
+    files.remember_local_file_verification(db, archived, path)
+    assert [row["file_id"] for row in db.query("SELECT * FROM local_file_verifications")] == [
+        archived["file_id"]
+    ]
 
 
 def test_standardize_missing_remote_tampered_links_and_idempotency(project_db, tmp_path, monkeypatch):

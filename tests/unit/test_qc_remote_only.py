@@ -139,21 +139,3 @@ class TestQCRemoteOnly(PytestAssertions):
             0,
         )
         self.assertEqual(self._qc_run_count(row["file_id"]), 1)
-
-    def test_normal_local_file_batch_unaffected(self):
-        row = self._ingest_assembly()
-
-        results = qc_all(self.db, self.project)
-
-        self.assertEqual(len(results), 1)
-        result = results[0]
-        self.assertTrue(result["ok"])
-        self.assertFalse(result["skipped"])
-        self.assertEqual(result["file_qc_state"], "QC_COMPLETE")
-        self.assertEqual(result["entity_qc_state"], "QC_COMPLETE")
-        self.assertGreater(
-            self.db.conn.execute(
-                "SELECT COUNT(*) AS n FROM qc_results WHERE file_id=?", (row["file_id"],),
-            ).fetchone()["n"],
-            0,
-        )

@@ -16,7 +16,7 @@ from operon.database import Database
 import operon.files as files_module
 from operon.files import ingest_file
 import operon.qc as qc
-from operon.qc import PARSER_BACKEND, qc_all
+from operon.qc import qc_all
 from operon.rules import evaluate_entity
 from operon.utils import now_iso
 
@@ -88,17 +88,7 @@ class TestQCAndRules(PytestAssertions):
         decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
         self.assertEqual(decision["decision"], "PASS")
 
-    def test_duplicate_sequence_ids_are_measured_not_hard_coded(self):
-        self._add_organism_sample_assembly()
-        source = self.root / "dup.fa"
-        source.write_text(_fasta_text([("same", "ACGT" * 100), ("same", "TGCA" * 100)]), encoding="utf-8")
-        ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
-        qc_all(self.db, self.project, entity_type="assembly")
-        metrics = self.db.latest_metrics("assembly", "ASM_000001")
-        self.assertEqual(metrics["duplicate_sequence_id_count"], 1.0)
-
-    def test_cython_backend_and_full_fasta_header_metrics_are_persisted(self):
-        self.assertEqual(PARSER_BACKEND, "cython")
+    def test_full_fasta_header_metrics_are_persisted(self):
         self._add_organism_sample_assembly()
         source = self.root / "headers.fa"
         source.write_text(

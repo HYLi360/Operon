@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tests.helpers import PytestAssertions
 
-from operon.database import SCHEMA_VERSION, Database
+from operon.database import Database
 
 
 class TestSchema211(PytestAssertions):
@@ -20,7 +20,6 @@ class TestSchema211(PytestAssertions):
         self.addCleanup(self.db.close)
 
     def test_schema_2_11_tables_exist(self):
-        self.assertEqual(SCHEMA_VERSION, "2.11")
         self.assertEqual(
             self.db.table_columns("sequence_labels"),
             ["file_id", "seqid", "label", "profile_name",

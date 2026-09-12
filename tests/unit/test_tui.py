@@ -134,14 +134,46 @@ def test_project_summary(demo_project: Project) -> None:
     assert summary["latest_release"]["version"] == "2026.08.demo"
 
 
-def test_attention_items(demo_project: Project) -> None:
-    attention = data.attention_items(demo_project)
-    assert attention["failed_run_count"] == len(attention["runs"]) or len(attention["runs"]) <= 10
-    assert all(r["status"] in {"failed", "interrupted"} for r in attention["runs"])
-    assert attention["decisions"], "demo project should have REVIEW/FAIL decisions"
-    for row in attention["decisions"]:
+def test_attention_items(demo_project: Project, tmp_path: Path) -> None:
+    # The demo run history is clean, but its decisions still need review.
+    demo_attention = data.attention_items(demo_project)
+    assert demo_attention["failed_run_count"] == 0
+    assert demo_attention["runs"] == []
+    assert demo_attention["decisions"], "demo project should have REVIEW/FAIL decisions"
+    for row in demo_attention["decisions"]:
         assert (row.get("curated_decision") or row["decision"]) in {"REVIEW", "FAIL"}
+
+    # A project with real failures surfaces them: the count is the full total,
+    # while the runs page honours the limit; healthy files stay out.
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / "attention-project")
+    db = Database(project.db_path)
+    try:
+        for file_id, status in (("FIL_000001", "CORRUPT"), ("FIL_000002", "CHECKSUM_VERIFIED")):
+            db.insert_row("files", {
+                "file_id": file_id, "entity_type": "assembly", "entity_id": "ASM_000001",
+                "file_role": "genome_fasta", "relative_path": f"raw/{file_id}.fa",
+                "sha256": "a" * 64, "size_bytes": 1, "status": status, "format": "fasta",
+                "compression": "none",
+            })
+        log_run(db, project, {"step": "qc", "status": "failed", "error": "injected"})
+        log_run(db, project, {"step": "qc", "status": "interrupted"})
+        log_run(db, project, {"step": "qc", "status": "completed"})
+    finally:
+        db.close()
+
+    attention = data.attention_items(project)
+    assert attention["failed_run_count"] == 2
+    assert len(attention["runs"]) == 2
+    assert all(r["status"] in {"failed", "interrupted"} for r in attention["runs"])
+    assert [f["file_id"] for f in attention["files"]] == ["FIL_000001"]
     assert all(f["status"] not in data.HEALTHY_FILE_STATUSES for f in attention["files"])
+
+    page = data.attention_items(project, limit=1)
+    assert page["failed_run_count"] == 2, "the count is the total, not the page"
+    assert len(page["runs"]) == 1, "the page honours the limit"
 
 
 def test_entity_tree(demo_project: Project) -> None:
@@ -196,7 +228,9 @@ def test_entity_metrics(demo_project: Project) -> None:
 def test_list_files_filters(demo_project: Project) -> None:
     all_files = data.list_files(demo_project)
     assert len(all_files) >= 9
-    assert all("locations" in record or True for record in all_files)
+    # Every row carries the residency aggregate; the demo has no mirrors, so
+    # the aggregate is NULL rather than a missing or empty string.
+    assert all(record["locations"] is None for record in all_files)
 
     by_entity = data.list_files(demo_project, entity="ASM_000001")
     assert by_entity
@@ -245,12 +279,28 @@ def test_list_workflow_runs(demo_project: Project) -> None:
     assert len(data.list_workflow_runs(demo_project, limit=1)) == 1
 
 
-def test_workflow_run_detail(demo_project: Project) -> None:
+def test_workflow_run_detail(demo_project: Project, tmp_path: Path) -> None:
     run = data.list_workflow_runs(demo_project, limit=1)[0]
     detail = data.workflow_run_detail(demo_project, run["run_id"])
     assert detail["run_id"] == run["run_id"]
-    assert isinstance(detail.get("execution_details"), (dict, list, str, type(None)))
+    # Stored execution_details JSON is decoded into a mapping.
+    assert isinstance(detail["execution_details"], dict)
+    assert detail["execution_details"]["input"]["kind"] == "primary"
     assert data.workflow_run_detail(demo_project, "WF_does_not_exist") is None
+
+    # Unparseable stored details degrade to the raw string instead of raising.
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / "corrupt-details-project")
+    db = Database(project.db_path)
+    try:
+        broken = log_run(db, project, {
+            "step": "demo", "status": "completed", "execution_details": "not json",
+        })
+    finally:
+        db.close()
+    assert data.workflow_run_detail(project, broken["run_id"])["execution_details"] == "not json"
 
 
 def test_workflow_run_detail_environment_summary(tmp_path: Path) -> None:
@@ -458,14 +508,6 @@ def test_entities_screen(demo_project: Project) -> None:
             assert "contig_n50 = 5000.0 bp" in detail_text
             assert "operon.builtin@" in detail_text
             assert "Analysis metrics" in detail_text
-
-            # No retired entities in the demo; toggling only flips the flag.
-            panel.action_toggle_retired()
-            await pilot.pause()
-            await _settled(app)
-            assert panel.include_retired is False
-            assert [n["entity_id"] for n in panel.tree_data] == ["ORG_000001", "ORG_000002"]
-            panel.action_toggle_retired()
 
     _run(scenario())
 
@@ -1007,8 +1049,12 @@ def test_splash_resources_and_small_terminal(monkeypatch):
     from operon.tui import splash
 
     png = files("operon.tui").joinpath("assets/splash.png").read_bytes()
-    assert struct.unpack(">II", png[16:24]) == (1024, 768)
-    assert len(splash.lake_pixels()) == 256 * 192 * 3
+    width, height = struct.unpack(">II", png[16:24])
+    assert (width, height) == (1024, 768)
+    # The pre-sampled companion is the 4x downsampled PNG, three bytes per pixel.
+    pixels = splash.lake_pixels()
+    assert len(pixels) == (width // 4) * (height // 4) * 3
+    assert len(set(pixels)) > 1, "splash artwork must not be a flat colour"
     assert splash.lake_text(0, 0).plain == ""
     for width, height in [(1, 1), (20, 5), (80, 24), (140, 45)]:
         rendered = splash.lake_text(width, height)

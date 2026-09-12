@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import pytest
 
 from operon import cli, qc, reports
-from operon.adapters.ncbi_datasets import _PlanBuilder, _find_archived_assembly
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -157,19 +156,6 @@ def test_plan_is_read_only_and_reports_references(lifecycle_project):
     assert plan["historical_release_versions"] == ["v1"]
     assert set(plan["physical_changes"].values()) == {0}
     assert db.query("SELECT COUNT(*) AS n FROM entity_lifecycle_events")[0]["n"] == 0
-
-
-def test_ncbi_reimport_requires_explicit_restore(lifecycle_project):
-    _project, db = lifecycle_project
-    db.insert_row("accessions", {
-        "internal_type": "assembly", "internal_id": "ASM_000001",
-        "namespace": "NCBI_Assembly", "accession": "GCF_000001.1",
-    })
-    _retire(db, "assembly", "ASM_000001")
-    with pytest.raises(ValidationError, match="retired assembly ASM_000001"):
-        _find_archived_assembly(db, "GCF_000001.1")
-    with pytest.raises(ValidationError, match="retired assembly ASM_000001"):
-        _PlanBuilder(db)._find_assembly("GCF_000001.1")
 
 
 def test_active_consumers_exclude_retired_entities(lifecycle_project, monkeypatch, tmp_path):

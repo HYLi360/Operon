@@ -177,7 +177,7 @@ class TestMeasureFileParity(PytestAssertions):
     def test_parser_failure_propagates(self):
         source = self.root / "broken.fa"
         source.write_text("not a fasta at all\n", encoding="utf-8")
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(QCError, "sequence data before first FASTA header"):
             measure_file(source, file_format="fasta", file_role="genome_fasta", **_identity(source))
 
 

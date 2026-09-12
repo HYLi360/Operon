@@ -281,7 +281,8 @@ def _store(tmp_path: Path):
 def test_store_properties_paths_exists_and_matches(tmp_path):
     store, client, root = _store(tmp_path)
     assert store.client is client
-    assert store.sftp is client.sftp and store.sftp is client.sftp
+    first = store.sftp
+    assert first is client.sftp and store.sftp is first
     assert store.remote_path("a/b") == str(root / "a" / "b")
     assert not store.exists("missing")
     file = root / "file"

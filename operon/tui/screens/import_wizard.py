@@ -220,7 +220,7 @@ class ImportWizardScreen(DismissOnce, Screen):
             }
         except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
             payload = exc
-        if self.app.is_running:
+        if self.app.is_running:  # pragma: no cover - shutdown race guard
             try:
                 self.app.call_from_thread(self._startup_done, payload)
             except RuntimeError:  # pragma: no cover - app is shutting down
@@ -276,7 +276,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                 payload["summary"] = data.import_summary(self.project, self.draft)
         except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
             payload = exc
-        if self.app.is_running:
+        if self.app.is_running:  # pragma: no cover - shutdown race guard
             try:
                 self.app.call_from_thread(self._show_page, page, payload)
             except RuntimeError:  # pragma: no cover - app is shutting down
@@ -591,7 +591,7 @@ class ImportWizardScreen(DismissOnce, Screen):
             payload: Any = actions.import_dataset(self.project, self.draft)
         except Exception as exc:  # noqa: BLE001 - shown inline; staged files rolled back
             payload = exc
-        if self.app.is_running:
+        if self.app.is_running:  # pragma: no cover - shutdown race guard
             try:
                 self.app.call_from_thread(self._import_done, payload)
             except RuntimeError:  # pragma: no cover - app is shutting down

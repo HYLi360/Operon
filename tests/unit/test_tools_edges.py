@@ -67,7 +67,9 @@ def test_tool_config_loading_and_launcher_modes(tmp_path, monkeypatch):
     assert tools.get_tool(p, "t").run_method == ""
     config["tools"]["t"]["run_method"] = "conda run -n e"
     spec = tools.get_tool(p, "t")
-    assert tools.launcher_prefix(spec, {"conda": {"bin": "/custom/conda"}})[0] == "/custom/conda"
+    assert tools.launcher_prefix(spec, {"conda": {"bin": "/custom/conda"}}) == [
+        "/custom/conda", "run", "-n", "e",
+    ]
     assert tools.tool_command(spec, {})[-1] == "exe"
     assert tools.launcher_prefix(replace(spec, run_method=""), {}) == []
 

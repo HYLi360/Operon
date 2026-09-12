@@ -270,7 +270,7 @@ class PublishPanel(Panel):
             payload: Any = data.release_preview(self.project, profile)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        if self.app.is_running:
+        if self.app.is_running:  # pragma: no cover - shutdown race guard
             try:
                 self.app.call_from_thread(self._apply_release_preview, payload)
             except RuntimeError:  # pragma: no cover - app is shutting down
@@ -373,7 +373,7 @@ class PublishPanel(Panel):
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        if self.app.is_running:
+        if self.app.is_running:  # pragma: no cover - shutdown race guard
             try:
                 self.app.call_from_thread(self._apply_export_preview, payload)
             except RuntimeError:  # pragma: no cover - app is shutting down

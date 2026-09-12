@@ -176,14 +176,23 @@ def test_qc_missing_file_and_qc_all_forwards_force_checksum(tmp_path, monkeypatc
             "status": "CHECKSUM_VERIFIED",
         })
         calls = []
-        monkeypatch.setattr(qc, "qc_file", lambda *_a, **kwargs: calls.append(kwargs) or {"ok": True})
+
+        def fake_qc_file(*args, **kwargs):
+            calls.append((args, kwargs))
+            return {"ok": True}
+
+        monkeypatch.setattr(qc, "qc_file", fake_qc_file)
         assert qc.qc_all(db, project, entity_type="assembly") == []
         assert calls == []
         results = qc.qc_all(
             db, project, entity_type="organism", entity_id="ORG_1", file_id="FIL_1",
             force_checksum=True,
         )
-        assert results == [{"ok": True}]
-        assert len(calls) == 1 and calls[0]["force_checksum"] is True
+        # qc_all's own contract: one result per selected file, the selection
+        # narrowed to FIL_1, and every option forwarded to qc_file.
+        assert len(results) == 1
+        assert [args[2] for args, _kwargs in calls] == ["FIL_1"]
+        assert calls[0][1]["force_checksum"] is True
+        assert calls[0][1]["parameter_set"] == qc.DEFAULT_PARAMETER_SET
     finally:
         db.close()

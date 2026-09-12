@@ -109,7 +109,6 @@ def test_load_reference_set_validation_cases(tmp_path, monkeypatch, case, messag
     path, reference, snapshot, project = _reference_fixture(tmp_path, rows)
     parsed = {"ranks": ["family", "genus"]}
     if case == "empty_rank":
-        parsed = {"ranks": ["family", "genus"]}
         rows = [{"rank": "family", "taxid": 10, "scientific_name": "F"}]
         path, reference, snapshot, project = _reference_fixture(tmp_path, rows)
         reference["genus_count"] = 0

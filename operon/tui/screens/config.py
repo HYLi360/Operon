@@ -400,6 +400,12 @@ class ConfigPanel(Panel):
     # -- layout -----------------------------------------------------------
 
     def compose(self) -> ComposeResult:
+        # ``# pragma: no branch`` marks below: CPython 3.14's default
+        # ``sys.monitoring`` coverage core never reports the with-statement
+        # entry/exit arcs of these five blocks, although every line inside them
+        # executes in the headless UI tests (the same code reports 100% branch
+        # coverage under COVERAGE_CORE=ctrace).  The pragma suppresses only
+        # those unmeasurable arcs; no line is excluded from measurement.
         with TabbedContent(id="config-tabs"):
             with TabPane("QC Profiles", id="tab-profiles"):
                 with Horizontal(id="profiles-layout"):
@@ -408,7 +414,7 @@ class ConfigPanel(Panel):
                         with Horizontal(classes="config-buttons"):
                             yield Button("New profile", id="profile-new")
                             yield Button("History", id="profile-history", disabled=True)
-                    with VerticalScroll(id="profile-editor"):
+                    with VerticalScroll(id="profile-editor"):  # pragma: no branch
                         yield Static("select a profile", id="profile-heading")
                         yield Static("Description", classes="modal-label")
                         yield Input(id="profile-description")
@@ -423,17 +429,17 @@ class ConfigPanel(Panel):
                         yield Static("Warning rules", classes="modal-label")
                         yield Vertical(id="profile-warnings-rules")
                         yield Button("add rule", id="profile-add-warnings")
-                        with Horizontal(classes="config-buttons"):
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save profile", id="profile-save",
                                          variant="primary", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
-                with Vertical(id="tools-layout"):
+                with Vertical(id="tools-layout"):  # pragma: no branch
                     with Horizontal(classes="config-buttons"):
                         yield Button("Check tools", id="tools-check")
                     yield DataTable(id="tools-table", cursor_type="row")
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
-                    with VerticalScroll(id="recipe-editor"):
+                    with VerticalScroll(id="recipe-editor"):  # pragma: no branch
                         yield Static("select a recipe", id="recipe-heading")
                         yield Static("Description", classes="modal-label")
                         yield Input(id="recipe-description")
@@ -461,7 +467,7 @@ class ConfigPanel(Panel):
                                     id="recipe-hit-metric-columns")
                         yield Input(placeholder="max_hits_per_query", id="recipe-max-hits")
                         yield Static("", id="recipe-extras-note")
-                        with Horizontal(classes="config-buttons"):
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save recipe", id="recipe-save",
                                          variant="primary", disabled=True)
                             yield Button("History", id="recipe-history", disabled=True)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from tests.helpers import PytestAssertions
 
+import pytest
 import yaml
 
 from operon.cli import main
@@ -18,7 +19,7 @@ from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
 from operon import tools as tools_module
-from operon.tools import ToolSpec, get_recipe, get_tool, launcher_prefix, parse_and_store_results
+from operon.tools import get_recipe, get_tool, parse_and_store_results
 
 
 class TestAnalysisTools(PytestAssertions):
@@ -283,17 +284,6 @@ class TestAnalysisTools(PytestAssertions):
             ("query2", "PF00002", "evalue"),
             ("query2", "PF00002", "score"),
         ])
-
-    def test_conda_run_method_is_supported(self):
-        tool = ToolSpec(
-            name="blastn", executable="blastn",
-            run_method="conda run --no-capture-output -n blast",
-            version_args=["-version"], version_pattern="x",
-            description="", recipes={}, raw={},
-        )
-        config = {"conda": {"bin": "/opt/conda/bin/conda", "run_args": ["run", "--no-capture-output"]}}
-        prefix = launcher_prefix(tool, config)
-        self.assertEqual(prefix, ["/opt/conda/bin/conda", "run", "--no-capture-output", "-n", "blast"])
 
     def test_directory_input_and_output_are_hashed_cached_and_verified(self):
         script = self._write_fake_directory_tool()
@@ -642,26 +632,37 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual(len(filtered_lines), 2)
         self.assertIn("q2\ts4", filtered_lines[1])
 
-    def test_hmmsearch_domtblout_recipe_syncs_alignments(self):
+    @pytest.mark.parametrize(
+        ("writer", "tool_name", "recipe_name", "queries"),
+        [
+            ("_write_fake_hmmsearch_domtblout", "fakehmmd", "fake_pfam_dom", ("query1", "query2")),
+            ("_write_fake_hmmsearch_header_domtblout", "fakehmms", "fake_pfam_search",
+             ("seq1", "seq2")),
+        ],
+        ids=["query-oriented", "header-oriented"],
+    )
+    def test_hmmsearch_domtblout_recipe_syncs_alignments(
+        self, writer, tool_name, recipe_name, queries,
+    ):
         database = self.root / "Pfam-A.hmm"
         database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
-        script = self._write_fake_hmmsearch_domtblout()
+        script = getattr(self, writer)()
         self._write_tool_config(
-            script, "fakehmmd", "fake_pfam_dom", "assembly", "genome_fasta",
+            script, tool_name, recipe_name, "assembly", "genome_fasta",
             "hmmer_domtblout", database,
             version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
         )
         doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
-        doc["tools"]["fakehmmd"]["recipes"]["fake_pfam_dom"]["arguments"] = [
+        doc["tools"][tool_name]["recipes"][recipe_name]["arguments"] = [
             "--domtblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
         ]
         self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
         self._add_assembly()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam_dom"]), 0)
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", recipe_name]), 0)
         rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
         self.assertEqual([(r["query_id"], r["subject_id"]) for r in rows], [
-            ("query1", "PF00001.28"), ("query2", "PF00002.10"),
+            (queries[0], "PF00001.28"), (queries[1], "PF00002.10"),
         ])
         first = rows[0]
         self.assertEqual(first["query_start"], 10)
@@ -678,51 +679,10 @@ class TestAnalysisTools(PytestAssertions):
             "ORDER BY query_id, subject_id, metric_name"
         )
         self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits], [
-            ("query1", "PF00001.28", "evalue"),
-            ("query1", "PF00001.28", "score"),
-            ("query2", "PF00002.10", "evalue"),
-            ("query2", "PF00002.10", "score"),
-        ])
-
-    def test_hmmsearch_header_domtblout_recipe_swaps_orientation(self):
-        database = self.root / "Pfam-A.hmm"
-        database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
-        script = self._write_fake_hmmsearch_header_domtblout()
-        self._write_tool_config(
-            script, "fakehmms", "fake_pfam_search", "assembly", "genome_fasta",
-            "hmmer_domtblout", database,
-            version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
-        )
-        doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
-        doc["tools"]["fakehmms"]["recipes"]["fake_pfam_search"]["arguments"] = [
-            "--domtblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
-        ]
-        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
-        self._add_assembly()
-
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam_search"]), 0)
-        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
-        self.assertEqual([(r["query_id"], r["subject_id"]) for r in rows], [
-            ("seq1", "PF00001.28"), ("seq2", "PF00002.10"),
-        ])
-        first = rows[0]
-        self.assertEqual(first["query_start"], 10)
-        self.assertEqual(first["query_end"], 130)
-        self.assertIsNone(first["subject_start"])
-        self.assertAlmostEqual(first["evalue"], 1.5e-30)
-        self.assertAlmostEqual(first["bitscore"], 104.0)
-        self.assertEqual(json.loads(first["extra_json"]), {
-            "hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132",
-        })
-        hits = self.db.query(
-            "SELECT query_id, subject_id, metric_name FROM analysis_hits "
-            "ORDER BY query_id, subject_id, metric_name"
-        )
-        self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits], [
-            ("seq1", "PF00001.28", "evalue"),
-            ("seq1", "PF00001.28", "score"),
-            ("seq2", "PF00002.10", "evalue"),
-            ("seq2", "PF00002.10", "score"),
+            (queries[0], "PF00001.28", "evalue"),
+            (queries[0], "PF00001.28", "score"),
+            (queries[1], "PF00002.10", "evalue"),
+            (queries[1], "PF00002.10", "score"),
         ])
 
     def _set_environment_policy(self, recipe_name: str, policy: str):

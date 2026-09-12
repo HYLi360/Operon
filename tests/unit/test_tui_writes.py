@@ -12,7 +12,7 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
-from textual.widgets import Button, DataTable, Input, Select, Static, Tree
+from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tree
 
 from operon.config import Project
 from operon.database import Database
@@ -20,6 +20,7 @@ from operon.demo import init_demo
 from operon.errors import ConflictError, ValidationError
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
+from operon.tui.screens.common import ErrorDialog
 from operon.tui.screens.decisions import CurateModal, DecisionsPanel, EvaluateModal
 from operon.tui.screens.entities import EntitiesPanel, LifecycleModal
 from operon.tui.screens.files import FilesPanel
@@ -757,6 +758,9 @@ def test_qc_modal_double_dismiss_does_not_crash(project: Project) -> None:
 
 
 def test_verify_modal_end_to_end(project: Project) -> None:
+    """Verifying a corrupted artifact reports CHECKSUM_FAILED instead of passing."""
+    verified: dict[str, str] = {}
+
     async def scenario() -> None:
         app = OperonApp(project)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -766,6 +770,13 @@ def test_verify_modal_end_to_end(project: Project) -> None:
             panel = app.query_one(FilesPanel)
             table = panel.query_one("#files-table", DataTable)
             file_id = panel.files[0]["file_id"]
+            verified["file_id"] = file_id
+
+            # Corrupt the archived bytes in place (same size) so the recomputed
+            # digest can no longer match the manifest entry.
+            artifact = project.root / panel.files[0]["relative_path"]
+            original = artifact.read_bytes()
+            artifact.write_bytes(b"X" + original[1:])
 
             table.focus()
             table.move_cursor(row=0, animate=False)
@@ -776,15 +787,22 @@ def test_verify_modal_end_to_end(project: Project) -> None:
             assert isinstance(modal, VerifyModal)
             assert file_id in _static_text(modal.query_one("#modal-command", Static))
             await _click(pilot, "#confirm")
-            await pilot.pause()
-            await _settled(app)
-            await pilot.pause()
-            assert not isinstance(app.screen, VerifyModal)
+
+            # The failure is reported in the error dialog, not as a success toast.
+            await _wait_until(
+                lambda: isinstance(app.screen, ErrorDialog), "verification failure dialog")
+            assert "1 of 1 file(s) failed verification" in _static_text(
+                app.screen.query_one("#modal-title", Label))
+            body = _static_text(app.screen.query_one("#error-dialog-body", Static))
+            assert f"{file_id}: CHECKSUM_FAILED" in body
+            await pilot.press("escape")
+            await _wait_until(
+                lambda: not isinstance(app.screen, VerifyModal), "verify modal closed")
 
     _run(scenario())
-    row = _query(project, "SELECT status FROM files ORDER BY file_id LIMIT 1")[0]
-    # Demo files were standardized after their initial verification; both are healthy.
-    assert row["status"] in {"CHECKSUM_VERIFIED", "STANDARDIZED"}
+    row = _query(
+        project, "SELECT status FROM files WHERE file_id=?", (verified["file_id"],))[0]
+    assert row["status"] == "CHECKSUM_FAILED"
 
 
 def test_ingest_modal_inline_validation(project: Project) -> None:

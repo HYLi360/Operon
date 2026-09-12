@@ -36,6 +36,10 @@ def test_slurm_config_merging_and_validation(tmp_path):
     }})
     cfg = execution.load_slurm_config(p, {"partition": "override", "mem_gb": "3", "time": ""})
     assert cfg.partition == "override" and cfg.mem_gb == 3 and cfg.time_limit == "01:00:00"
+    # Keys the recipe does not override are inherited from project.yaml ...
+    assert cfg.extra_sbatch == ["--qos=x"] and cfg.setup_commands == ["module load x"]
+    # ... and an explicit recipe override wins over the project default.
+    assert execution.load_slurm_config(p, {"time": "48:00:00"}).time_limit == "48:00:00"
     for raw in (
         {"mem_gb": -1}, {"poll_interval": -1},
         {"extra_sbatch": ["one\ntwo"]}, {"setup_commands": ["one\rtwo"]},
@@ -119,11 +123,18 @@ def test_slurm_command_helpers(monkeypatch, tmp_path):
     ))
     assert execution._squeue_job_gone("squeue", "1") is False
 
+    launched: list[tuple] = []
     monkeypatch.setattr(execution.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: launched.append(args))
     execution._scancel_slurm_job("1")
+    # No scancel binary on PATH: nothing is launched.
+    assert launched == []
     monkeypatch.setattr(execution.shutil, "which", lambda _name: "scancel")
-    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(OSError()))
     execution._scancel_slurm_job("1")
+    assert launched == [(["scancel", "1"],)]
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(OSError()))
+    # A failing scancel is still swallowed by design (best-effort cancellation).
+    assert execution._scancel_slurm_job("1") is None
 
 
 def test_slurm_exit_code_file_sacct_and_unavailable(monkeypatch, tmp_path):
@@ -462,7 +473,17 @@ def _remote_slurm_executor(tmp_path, monkeypatch):
     return ssh, root
 
 
-def test_remote_slurm_exitcode_falls_back_to_sacct(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("sacct_stdout", "expected_exit_code", "expected_error"),
+    [
+        ("bad\n4:0|||||\n", 4, None),
+        ("bad:x|||||\n", None, "exit code is unavailable"),
+    ],
+    ids=["sacct-reports-exit-code", "sacct-unavailable"],
+)
+def test_remote_slurm_exitcode_falls_back_to_sacct(
+    tmp_path, monkeypatch, sacct_stdout, expected_exit_code, expected_error,
+):
     ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
 
     def fake_exec(_client, command, **_kwargs):
@@ -473,33 +494,16 @@ def test_remote_slurm_exitcode_falls_back_to_sacct(tmp_path, monkeypatch):
         if command.startswith("cat "):
             return 1, ""  # the exitcode file never becomes visible
         if command.startswith("sacct"):
-            return 0, "bad\n4:0|||||\n"
+            return 0, sacct_stdout
         return 0, ""
 
     monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
     result = ssh._run_via_slurm(None, FakeSFTP(), ["true"], cwd=root,
                                 stdout_path=root / "logs" / "o", stderr_path=root / "logs" / "e",
                                 timeout=None, threads=None, run_id="sacct")
-    assert result.exit_code == 4 and result.scheduler_job_id == "42"
-
-
-def test_remote_slurm_exitcode_unavailable_is_terminal_failure(tmp_path, monkeypatch):
-    ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
-
-    def fake_exec(_client, command, **_kwargs):
-        if command.startswith("sbatch"):
-            return 0, "42"
-        if command.startswith("squeue"):
-            return 0, ""
-        if command.startswith("cat "):
-            return 1, ""
-        if command.startswith("sacct"):
-            return 0, "bad:x|||||\n"
-        return 0, ""
-
-    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
-    result = ssh._run_via_slurm(None, FakeSFTP(), ["true"], cwd=root,
-                                stdout_path=root / "logs" / "o", stderr_path=root / "logs" / "e",
-                                timeout=None, threads=None, run_id="gone")
-    assert result.exit_code is None and "exit code is unavailable" in result.error
+    assert result.exit_code == expected_exit_code
     assert result.scheduler_job_id == "42"
+    if expected_error is None:
+        assert result.error is None
+    else:
+        assert expected_error in result.error

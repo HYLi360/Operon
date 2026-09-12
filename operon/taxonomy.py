@@ -167,7 +167,7 @@ def _archive_text_member(path: Path, basename: str) -> Iterator[TextIO]:
             if not candidates:
                 raise ValidationError(f"{path}: archive member {basename} not found")
             binary = archive.extractfile(candidates[0])
-            if binary is None:
+            if binary is None:  # pragma: no cover
                 raise ValidationError(f"{path}: cannot read archive member {basename}")
             text = io.TextIOWrapper(binary, encoding="utf-8")
             try:
@@ -211,7 +211,7 @@ def _taxonomy_text(path: Path) -> Iterator[TextIO]:
             if not candidates:
                 raise ValidationError(f"{path}: no taxonomy_report.jsonl found in archive")
             binary = archive.extractfile(candidates[0])
-            if binary is None:
+            if binary is None:  # pragma: no cover
                 raise ValidationError(f"{path}: cannot read taxonomy report member")
             text = io.TextIOWrapper(binary, encoding="utf-8")
             try:

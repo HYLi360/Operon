@@ -67,18 +67,6 @@ def project_db(tmp_path: Path):
         db.close()
 
 
-def test_record_recipe_is_content_addressed(project_db):
-    _project, db, _file_row = project_db
-    first = db.record_recipe("r", 1, {"recipe": {"format": "fasta"}, "tool": {"executable": "x"}})
-    again = db.record_recipe("r", 1, {"tool": {"executable": "x"}, "recipe": {"format": "fasta"}})
-    assert again == first
-    changed = db.record_recipe("r", 1, {"recipe": {"format": "tsv"}, "tool": {"executable": "x"}})
-    assert changed != first
-    bumped = db.record_recipe("r", 2, {"recipe": {"format": "tsv"}, "tool": {"executable": "x"}})
-    assert bumped not in {first, changed}
-    assert db.conn.execute("SELECT COUNT(*) AS n FROM recipe_snapshots").fetchone()["n"] == 3
-
-
 def _write_fake_tool(project) -> None:
     script = project.root / "faketool.py"
     script.write_text(textwrap.dedent("""

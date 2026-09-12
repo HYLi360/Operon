@@ -35,7 +35,7 @@ from typing import Any, Iterable
 
 try:
     import resource
-except ImportError:  # non-Unix platforms have no getrusage
+except ImportError:  # pragma: no cover - the stdlib 'resource' module exists on every supported (POSIX) platform
     resource = None  # type: ignore[assignment]
 
 from operon.config import Project
