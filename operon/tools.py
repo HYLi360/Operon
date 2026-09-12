@@ -143,6 +143,7 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                         "${input}",
                     ],
                     "result_parser": "hmmer_tblout",
+                    "hmmer_mode": "hmmsearch",
                     "max_hits_per_query": 5,
                 }
             },
@@ -995,7 +996,7 @@ def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_ve
         payload["command_versions"] = command_versions
     for key in (
         "qstart_column", "qend_column", "sstart_column", "send_column",
-        "evalue_column", "bitscore_column", "pident_column",
+        "evalue_column", "bitscore_column", "pident_column", "hmmer_mode",
     ):
         if recipe.raw.get(key) is not None:
             payload[key] = str(recipe.raw[key])
@@ -1918,7 +1919,39 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any
     return hits, alignments
 
 
+_HMMER_PROGRAM_HEADER = re.compile(r"^#\s*(\S+)\s*::")
+
+
+def _hmmer_swap(path: Path, recipe: Recipe) -> bool:
+    """Whether to swap query/subject: True normalizes hmmsearch output so
+    query_id is the searched sequence and subject_id the HMM profile.
+
+    An explicit recipe ``hmmer_mode`` wins; otherwise the program name in the
+    first ``# <program> ::`` header line decides; files without either keep
+    the hmmscan mapping.
+    """
+    mode = recipe.raw.get("hmmer_mode")
+    if mode:
+        if mode == "hmmsearch":
+            return True
+        if mode == "hmmscan":
+            return False
+        raise ValidationError(
+            f"{recipe.name}: hmmer_mode must be 'hmmsearch' or 'hmmscan', got {mode!r}"
+        )
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for raw_line in handle:
+            line = raw_line.rstrip("\n\r")
+            if not line.startswith("#"):
+                break
+            match = _HMMER_PROGRAM_HEADER.match(line)
+            if match:
+                return match.group(1) == "hmmsearch"
+    return False
+
+
 def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
+    swap = _hmmer_swap(path, recipe)
     rank: dict[str, int] = {}
     hits: list[dict[str, Any]] = []
     with open(path, encoding="utf-8", errors="replace") as handle:
@@ -1931,6 +1964,8 @@ def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
                 continue
             target_name = fields[0]
             query_name = fields[2]
+            if swap:
+                target_name, query_name = query_name, target_name
             if not target_name or not query_name:
                 continue
             rank[query_name] = rank.get(query_name, 0) + 1
@@ -1954,6 +1989,7 @@ def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
 
 
 def _parse_hmmer_domtblout(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    swap = _hmmer_swap(path, recipe)
     rank: dict[str, int] = {}
     hits: list[dict[str, Any]] = []
     alignments: list[dict[str, Any]] = []
@@ -1969,6 +2005,8 @@ def _parse_hmmer_domtblout(path: Path, recipe: Recipe) -> tuple[list[dict[str, A
                 continue
             target_name = fields[0]
             query_name = fields[3]
+            if swap:
+                target_name, query_name = query_name, target_name
             if not target_name or not query_name:
                 continue
             rank[query_name] = rank.get(query_name, 0) + 1

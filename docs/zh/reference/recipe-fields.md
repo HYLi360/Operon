@@ -388,9 +388,23 @@ database_mode: mutable_cache
 
 键缺失时 parser 在 `result_columns` 中查找默认常用名；工具使用其他表头时应显式声明（见 [结果解析器与示例](recipe-parsers-examples.md) 中的 rpsblast 示例）；声明的值匹配不到任何列时回退到默认常用名。结构化比对行总是全量写入 `analysis_alignments`——`max_hits_per_query` 只截断 EAV 形式的 `analysis_hits` 行。`result_columns` 中未映射到结构化字段的列原样保存在该行命中的 `extra_json` 中。映射键仅在实际设置时进入参数指纹，因此新增一个键只会让完成缓存失效一次。
 
+### `hmmer_tblout`
+
+`hmmer_tblout` 只读取 HMMER `--tblout` 输出，无需列声明：每个 query–profile 对的 full-sequence E-value 与 score，外加常规的 EAV hits。tblout 不含比对坐标，因此该 parser 不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。命中方向的归一化与 `hmmer_domtblout` 完全一致，见下文"HMMER 命中方向与 `hmmer_mode`"。
+
+### HMMER 命中方向与 `hmmer_mode`
+
+`hmmer_tblout` 与 `hmmer_domtblout` 落库时都会归一化命中方向：无论文件由哪个 HMMER 程序产出，`query_id` 恒为被分析的序列，`subject_id` 恒为 HMM profile。之所以需要归一化，是因为 hmmsearch 把序列放在 target 列、profile 放在 query 列，而 hmmscan、phmmer、jackhmmer 恰好相反。parser 按三级优先级决定是否交换两列：
+
+1. **recipe 字段 `hmmer_mode`**——可选，取值为 `hmmsearch` 或 `hmmscan`。设置后优先级最高，覆盖文件头部，用于头部行被剥离的文件（拼接或裁剪过的输出）。其他取值视为非法并被拒绝。
+2. **头部嗅探**——HMMER 输出恒以 `# <program> :: ...` 行开头。程序为 `hmmsearch` 时交换两列；其余程序维持既有映射。
+3. **回退**——既无字段也无程序头时，parser 维持既有（hmmscan 形态）映射，向后兼容方向归一化出现之前解析的文件。
+
+交换之后 `rank` 按序列计数，因此 `max_hits_per_query` 也按序列截断——与其他 parser 保持一致。与上文的比对列映射键一样，`hmmer_mode` 仅在实际设置时进入参数指纹，因此设置或变更它只会让完成缓存失效一次。
+
 ### `hmmer_domtblout`
 
-`hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明：query 为 HMM profile 名，subject 为目标序列，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject 坐标，保持 NULL）。它同时写 EAV hits 与全量结构化比对行。旧的 `hmmer_tblout` 只读取不含坐标的 `--tblout`，因此不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。
+`hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明。方向归一化（见上文）之后，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`——在 hmmsearch 与 hmmscan 两种方向下它们都是序列坐标（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject/profile 坐标，`subject_start`/`subject_end` 保持 NULL）。它同时写 EAV hits 与全量结构化比对行。
 
 ### `rpsbproc_tabular`
 

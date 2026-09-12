@@ -528,6 +528,24 @@ class TestAnalysisTools(PytestAssertions):
         """).strip(), encoding="utf-8")
         return script
 
+    def _write_fake_hmmsearch_header_domtblout(self) -> Path:
+        script = self.root / "fakehmms.py"
+        script.write_text(textwrap.dedent("""
+            import sys
+            args = sys.argv[1:]
+            if '-h' in args:
+                print('hmmsearch :: HMMER 3.4')
+                raise SystemExit(0)
+            out = args[args.index('--domtblout') + 1]
+            with open(out, 'w') as handle:
+                handle.write('# hmmsearch :: search profile(s) against sequence database\\n')
+                handle.write('seq1 - 350 PF00001.28 - 144 1.2e-30 105.5 0.0 1 2 '
+                             '3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain\\n')
+                handle.write('seq2 - 180 PF00002.10 - 200 0.01 34.5 0.2 1 1 '
+                             '0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -\\n')
+        """).strip(), encoding="utf-8")
+        return script
+
     def _configure_blast_coords_recipe(self):
         self._write_tool_config(
             self.root / "fakeblastc.py", "fakeblastc", "fake_nt_coords",
@@ -664,6 +682,47 @@ class TestAnalysisTools(PytestAssertions):
             ("query1", "PF00001.28", "score"),
             ("query2", "PF00002.10", "evalue"),
             ("query2", "PF00002.10", "score"),
+        ])
+
+    def test_hmmsearch_header_domtblout_recipe_swaps_orientation(self):
+        database = self.root / "Pfam-A.hmm"
+        database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
+        script = self._write_fake_hmmsearch_header_domtblout()
+        self._write_tool_config(
+            script, "fakehmms", "fake_pfam_search", "assembly", "genome_fasta",
+            "hmmer_domtblout", database,
+            version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
+        )
+        doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
+        doc["tools"]["fakehmms"]["recipes"]["fake_pfam_search"]["arguments"] = [
+            "--domtblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
+        ]
+        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        self._add_assembly()
+
+        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam_search"]), 0)
+        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
+        self.assertEqual([(r["query_id"], r["subject_id"]) for r in rows], [
+            ("seq1", "PF00001.28"), ("seq2", "PF00002.10"),
+        ])
+        first = rows[0]
+        self.assertEqual(first["query_start"], 10)
+        self.assertEqual(first["query_end"], 130)
+        self.assertIsNone(first["subject_start"])
+        self.assertAlmostEqual(first["evalue"], 1.5e-30)
+        self.assertAlmostEqual(first["bitscore"], 104.0)
+        self.assertEqual(json.loads(first["extra_json"]), {
+            "hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132",
+        })
+        hits = self.db.query(
+            "SELECT query_id, subject_id, metric_name FROM analysis_hits "
+            "ORDER BY query_id, subject_id, metric_name"
+        )
+        self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits], [
+            ("seq1", "PF00001.28", "evalue"),
+            ("seq1", "PF00001.28", "score"),
+            ("seq2", "PF00002.10", "evalue"),
+            ("seq2", "PF00002.10", "score"),
         ])
 
 

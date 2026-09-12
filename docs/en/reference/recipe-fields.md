@@ -341,9 +341,23 @@ Seven optional keys map columns of `result_columns` onto the structured `analysi
 
 When a key is absent, the parser looks for the default common name in `result_columns`; declare the key explicitly when the tool uses a different header (see the rpsblast example in [Result parsers and examples](recipe-parsers-examples.md)); a declared value that matches no column falls back to the default common names. Structured alignment rows are always written to `analysis_alignments` in full — `max_hits_per_query` truncates only the EAV `analysis_hits` rows. Columns of `result_columns` not mapped to a structured field are preserved verbatim in the alignment row's `extra_json`. A mapping key enters the parameter fingerprint only when it is actually set, so adding a key invalidates the completed cache exactly once.
 
+### `hmmer_tblout`
+
+`hmmer_tblout` reads only HMMER `--tblout` output and needs no column declarations: full-sequence E-value and score per query–profile pair, plus the usual EAV hits. tblout carries no alignment coordinates, so this parser never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes. Hit direction is normalized exactly as for `hmmer_domtblout`; see "HMMER hit direction and `hmmer_mode`" below.
+
+### HMMER hit direction and `hmmer_mode`
+
+Both `hmmer_tblout` and `hmmer_domtblout` normalize hit direction when writing to the database: `query_id` is always the analyzed sequence and `subject_id` is always the HMM profile, regardless of which HMMER program produced the file. Normalization is needed because hmmsearch places the sequence in the target column and the profile in the query column, while hmmscan, phmmer, and jackhmmer use the opposite order. The parser decides whether to swap the columns in three tiers:
+
+1. **Recipe field `hmmer_mode`** — optional; `hmmsearch` or `hmmscan`. When set it has the highest priority and overrides the header, which covers files whose header lines were stripped (concatenated or trimmed outputs). Any other value is rejected as invalid.
+2. **Header sniffing** — HMMER output always begins with a `# <program> :: ...` line. `hmmsearch` swaps the columns; every other program keeps the existing mapping.
+3. **Fallback** — with neither the field nor a program header, the parser keeps the existing (hmmscan-style) mapping, preserving backward compatibility for files parsed before direction normalization existed.
+
+After a swap, `rank` is counted per sequence, so `max_hits_per_query` also truncates per sequence — consistent with every other parser. Like the alignment mapping keys above, `hmmer_mode` enters the parameter fingerprint only when it is actually set, so setting or changing it invalidates the completed cache exactly once.
+
 ### `hmmer_domtblout`
 
-`hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` (HMM and envelope coordinates go to `extra_json`; subject coordinates are not present in domtblout and stay NULL). It writes both EAV hits and full structured alignment rows. The older `hmmer_tblout` parser reads only `--tblout`, which carries no coordinates, so it never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes.
+`hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations. After direction normalization (see above), the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` — these are sequence coordinates under both hmmsearch and hmmscan (HMM and envelope coordinates go to `extra_json`; domtblout does not carry subject/profile coordinates, so `subject_start`/`subject_end` stay NULL). It writes both EAV hits and full structured alignment rows.
 
 ### `rpsbproc_tabular`
 

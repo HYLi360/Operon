@@ -553,6 +553,118 @@ def test_hmmer_domtblout_parser(tmp_path):
     assert alignments[2]["qstart"] == 20 and alignments[2]["qend"] == 165
 
 
+def test_hmmer_domtblout_hmmsearch_header_swaps_orientation(tmp_path):
+    domtblout = tmp_path / "hmmer.domtblout"
+    domtblout.write_text(
+        textwrap.dedent("""\
+            # hmmsearch :: search profile(s) against sequence database
+            # target name  accession ...
+            query1 - 350 PF00001.28 - 144 1.2e-30 105.5 0.0 1 2 3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain
+            query1 - 350 PF00001.28 - 144 1.2e-30 105.5 0.0 2 2 1.1e-09 5.2e-07 24.1 0.0 121 144 200 223 198 225 0.80 kinase domain
+            query2 - 180 PF00002.10 - 200 0.01 34.5 0.2 1 1 0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -
+        """),
+        encoding="utf-8",
+    )
+    r = recipe(result_parser="hmmer_domtblout", max_hits_per_query=1)
+    hits, alignments = tools.parse_hits(domtblout, r)
+    assert [(h["query_id"], h["subject_id"], h["metric_name"], h["rank"]) for h in hits] == [
+        ("query1", "PF00001.28", "evalue", 1),
+        ("query1", "PF00001.28", "score", 1),
+        ("query2", "PF00002.10", "evalue", 1),
+        ("query2", "PF00002.10", "score", 1),
+    ]
+    assert len(alignments) == 3
+    first = alignments[0]
+    assert first["query_id"] == "query1"
+    assert first["subject_id"] == "PF00001.28"
+    assert first["rank"] == 1
+    assert first["qstart"] == 10
+    assert first["qend"] == 130
+    assert first["evalue"] == 1.5e-30
+    assert first["bitscore"] == 104.0
+    assert first["extra"] == {"hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132"}
+    assert alignments[1]["rank"] == 2
+    assert alignments[2]["query_id"] == "query2"
+    assert alignments[2]["rank"] == 1
+
+
+def test_hmmer_domtblout_hmmscan_header_keeps_orientation(tmp_path):
+    domtblout = tmp_path / "hmmer.domtblout"
+    domtblout.write_text(
+        textwrap.dedent("""\
+            # hmmscan :: search sequence(s) against a profile database
+            PF00001.28 - 144 query1 - 350 1.2e-30 105.5 0.0 1 2 3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain
+            PF00002.10 - 200 query2 - 180 0.01 34.5 0.2 1 1 0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -
+        """),
+        encoding="utf-8",
+    )
+    hits, alignments = tools.parse_hits(domtblout, recipe(result_parser="hmmer_domtblout"))
+    assert [(h["query_id"], h["subject_id"]) for h in hits] == [
+        ("query1", "PF00001.28"), ("query1", "PF00001.28"),
+        ("query2", "PF00002.10"), ("query2", "PF00002.10"),
+    ]
+    assert [(a["query_id"], a["subject_id"]) for a in alignments] == [
+        ("query1", "PF00001.28"), ("query2", "PF00002.10"),
+    ]
+
+
+def test_hmmer_mode_recipe_field_overrides_header_sniffing(tmp_path):
+    domtblout = tmp_path / "hmmer.domtblout"
+    domtblout.write_text(
+        "query1 - 350 PF00001.28 - 144 1.2e-30 105.5 0.0 1 2 3.4e-33 1.5e-30 104.0 0.0 "
+        "1 120 10 130 10 132 0.95 kinase domain\n",
+        encoding="utf-8",
+    )
+    r = recipe(result_parser="hmmer_domtblout", raw={"hmmer_mode": "hmmsearch"})
+    _hits, alignments = tools.parse_hits(domtblout, r)
+    assert [(a["query_id"], a["subject_id"]) for a in alignments] == [("query1", "PF00001.28")]
+
+    conflict = tmp_path / "conflict.domtblout"
+    conflict.write_text(
+        "# hmmsearch :: search profile(s) against sequence database\n"
+        "PF00001.28 - 144 query1 - 350 1.2e-30 105.5 0.0 1 2 3.4e-33 1.5e-30 104.0 0.0 "
+        "1 120 10 130 10 132 0.95 kinase domain\n",
+        encoding="utf-8",
+    )
+    r = recipe(result_parser="hmmer_domtblout", raw={"hmmer_mode": "hmmscan"})
+    _hits, alignments = tools.parse_hits(conflict, r)
+    assert [(a["query_id"], a["subject_id"]) for a in alignments] == [("query1", "PF00001.28")]
+
+    bad = recipe(result_parser="hmmer_domtblout", raw={"hmmer_mode": "phmmer"})
+    with pytest.raises(ValidationError, match="hmmer_mode must be"):
+        tools.parse_hits(domtblout, bad)
+
+
+def test_hmmer_tblout_hmmsearch_header_swaps_orientation(tmp_path):
+    tblout = tmp_path / "hmmer.tblout"
+    tblout.write_text(
+        "# hmmsearch :: search profile(s) against sequence database\n"
+        "seq1 x PF00001.28 x 1e-5 20\n"
+        "seq1 x PF00002.10 x 1e-9 30\n"
+        "seq2 x PF00001.28 x bad score\n",
+        encoding="utf-8",
+    )
+    hits, alignments = tools.parse_hits(tblout, recipe(result_parser="hmmer_tblout"))
+    assert alignments == []
+    assert [(h["query_id"], h["subject_id"], h["rank"]) for h in hits] == [
+        ("seq1", "PF00001.28", 1),
+        ("seq1", "PF00001.28", 1),
+        ("seq1", "PF00002.10", 2),
+        ("seq1", "PF00002.10", 2),
+        ("seq2", "PF00001.28", 1),
+        ("seq2", "PF00001.28", 1),
+    ]
+
+
+def test_parameter_fingerprint_includes_hmmer_mode():
+    args = (["a"], 1, "v")
+    plain = tools.parameter_fingerprint(recipe(), *args)
+    assert plain != tools.parameter_fingerprint(recipe(raw={"hmmer_mode": "hmmsearch"}), *args)
+    assert plain != tools.parameter_fingerprint(recipe(raw={"hmmer_mode": "hmmscan"}), *args)
+    assert tools.parameter_fingerprint(recipe(raw={"hmmer_mode": "hmmsearch"}), *args) != \
+        tools.parameter_fingerprint(recipe(raw={"hmmer_mode": "hmmscan"}), *args)
+
+
 def test_print_tools_table_records_detection_errors(tmp_path, monkeypatch):
     p = project(tmp_path)
     config = {"tools": {"bad": {"recipes": {"a": {}}}, "ignored": []}}

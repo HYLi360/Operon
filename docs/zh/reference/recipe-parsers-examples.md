@@ -111,7 +111,11 @@ tools:
 ### 10.2 `hmmer_tblout`
 
 该 parser 按标准 HMMER tblout 读取 target、query、full-sequence E-value 和 score，忽略
-注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。tblout 不含比对
+注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。命中方向在
+写回时归一化：无论文件由哪个 HMMER 程序产出，`query_id` 恒为被分析的序列，
+`subject_id` 恒为 HMM profile——由 recipe 字段 `hmmer_mode`、其次文件首行的
+`# <program> :: ...` 决定是否交换 hmmsearch 的列序；两者皆无的文件维持 hmmscan
+形态映射（字段契约见 [Recipe 字段参考](recipe-fields.md)）。tblout 不含比对
 坐标，因此该 parser 不会写 `analysis_alignments` 行。
 
 ```yaml
@@ -123,15 +127,22 @@ arguments:
   - ${database}
   - ${input}
 result_parser: hmmer_tblout
+hmmer_mode: hmmsearch
 max_hits_per_query: 5
 ```
+
+`hmmer_mode: hmmsearch` 与上面的参数顺序（`${database}` 在 `${input}` 之前）相匹配；
+即使输出日后丢失 `# hmmsearch :: ...` 头部行，解析仍能保持正确。
 
 ### 10.3 `hmmer_domtblout`
 
 需要结构化的 per-domain 命中时，建议改用 `--domtblout` 与 `hmmer_domtblout` parser。每
-条非注释行对应一个 domain：query 为 HMM profile 名，subject 为目标序列，单 domain 的
+条非注释行对应一个 domain。与 `hmmer_tblout` 一样，命中被归一化为 `query_id` 是被分析
+序列、`subject_id` 是 HMM profile——由 `hmmer_mode` 与程序头决定是否交换，回退同样是
+hmmscan 形态映射。单 domain 的
 i-Evalue 与 domain score 记录为 `evalue`/`bitscore`，比对坐标进入
-`query_start`/`query_end`；HMM 与 envelope 坐标保存在 `extra_json`，subject 坐标因
+`query_start`/`query_end`（在 hmmsearch 与 hmmscan 两种方向下都是序列坐标）；HMM 与
+envelope 坐标保存在 `extra_json`，subject 坐标因
 domtblout 不含而保持 NULL。EAV hits 仍受 `max_hits_per_query` 限制，而
 `analysis_alignments` 保留全部 domain 行。
 
@@ -153,6 +164,7 @@ hmmsearch_pfam_domains:
     - ${database}
     - ${input}
   result_parser: hmmer_domtblout
+  hmmer_mode: hmmsearch
   max_hits_per_query: 5
 ```
 

@@ -97,7 +97,7 @@ When the rpsblast run is instead post-processed by `rpsbproc` (the recommended C
 
 ### 10.2 `hmmer_tblout`
 
-This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
+This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. Hit direction is normalized on write-back: `query_id` is always the analyzed sequence and `subject_id` always the HMM profile, whichever HMMER program produced the file — the recipe field `hmmer_mode`, then the `# <program> :: ...` header line, decide whether the hmmsearch column order is swapped, and files with neither keep the hmmscan-style mapping (field contract in [Recipe field reference](recipe-fields.md)). tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
 
 ```yaml
 arguments:
@@ -108,12 +108,15 @@ arguments:
   - ${database}
   - ${input}
 result_parser: hmmer_tblout
+hmmer_mode: hmmsearch
 max_hits_per_query: 5
 ```
 
+`hmmer_mode: hmmsearch` matches the argument order above (`${database}` before `${input}`); it also keeps parsing correct if the output later loses its `# hmmsearch :: ...` header line.
+
 ### 10.3 `hmmer_domtblout`
 
-For structured per-domain hits, prefer `--domtblout` and the `hmmer_domtblout` parser. Each non-comment line is one domain: the query is the HMM profile name, the subject is the target sequence, the per-domain i-Evalue and domain score are recorded as `evalue`/`bitscore`, and the alignment coordinates become `query_start`/`query_end`; the HMM and envelope coordinates are preserved in `extra_json`, and subject coordinates stay NULL because domtblout does not carry them. EAV hits still respect `max_hits_per_query`, while `analysis_alignments` keeps every domain row.
+For structured per-domain hits, prefer `--domtblout` and the `hmmer_domtblout` parser. Each non-comment line is one domain. As with `hmmer_tblout`, hits are normalized so that `query_id` is the analyzed sequence and `subject_id` the HMM profile — `hmmer_mode` and the program header decide whether to swap, with the same hmmscan-style fallback. The per-domain i-Evalue and domain score are recorded as `evalue`/`bitscore`, and the alignment coordinates become `query_start`/`query_end` (sequence coordinates under both hmmsearch and hmmscan); the HMM and envelope coordinates are preserved in `extra_json`, and subject coordinates stay NULL because domtblout does not carry them. EAV hits still respect `max_hits_per_query`, while `analysis_alignments` keeps every domain row.
 
 ```yaml
 hmmsearch_pfam_domains:
@@ -133,6 +136,7 @@ hmmsearch_pfam_domains:
     - ${database}
     - ${input}
   result_parser: hmmer_domtblout
+  hmmer_mode: hmmsearch
   max_hits_per_query: 5
 ```
 
