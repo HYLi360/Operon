@@ -701,17 +701,32 @@ def test_tui_command_launches_app_without_writable_database(project, monkeypatch
     assert launched == [project.root, "run"]
 
 
-# Database.__init__ does not close its sqlite connection when schema setup
-# fails, so finalization of the abandoned connection emits a ResourceWarning.
-@pytest.mark.filterwarnings("ignore::ResourceWarning")
-def test_main_reports_corrupt_database_as_database_error(tmp_path, capsys):
+def test_main_reports_corrupt_database_as_database_error(tmp_path, capsys, monkeypatch):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
     project = load_project(tmp_path)
     project.db_path.write_bytes(b"this is not a sqlite database")
     for sidecar in ("-wal", "-shm"):
         Path(f"{project.db_path}{sidecar}").unlink(missing_ok=True)
+    # A failed schema setup must not leave the handle to the garbage collector:
+    # capture every connection the constructor opens and require that the one
+    # that failed is closed before the error surfaces.
+    import operon.database as database_module
+
+    opened: list = []
+    real_connect = database_module.sqlite3.connect
+
+    def recording_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(database_module.sqlite3, "connect", recording_connect)
     assert main(["--project", str(tmp_path), "status"]) == 1
     assert "error: database error:" in capsys.readouterr().err
+    assert opened, "the corrupt database was never opened"
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            connection.execute("SELECT 1")
 
 
 # --------------------------------------------------------------------------- #

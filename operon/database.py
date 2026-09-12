@@ -688,6 +688,11 @@ class Database:
                     and "unable to open database file" not in message
             ):
                 raise
+        except BaseException:
+            # Corrupt or otherwise unreadable files raise DatabaseError; never
+            # abandon an open handle to the garbage collector.
+            conn.close()
+            raise
         wal_path = Path(f"{path}-wal")
         if wal_path.is_file() and wal_path.stat().st_size > 0:
             raise sqlite3.OperationalError(
@@ -696,8 +701,12 @@ class Database:
             )
         immutable_uri = f"{base_uri}&immutable=1"
         conn = sqlite3.connect(immutable_uri, uri=True, timeout=30)
-        conn.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
-        return conn
+        try:
+            conn.execute("SELECT 1 FROM sqlite_schema LIMIT 1").fetchone()
+            return conn
+        except BaseException:
+            conn.close()
+            raise
 
     def __init__(self, path: str | Path, read_only: bool = False):
         self.path = Path(path)
@@ -705,39 +714,52 @@ class Database:
         self._savepoint_counter = 0
         if read_only:
             self._conn = self._open_read_only(self.path)
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA foreign_keys=ON")
-            self._conn.execute("PRAGMA query_only=ON")
-            self._conn.execute("PRAGMA busy_timeout=30000")
+            try:
+                self._conn.row_factory = sqlite3.Row
+                self._conn.execute("PRAGMA foreign_keys=ON")
+                self._conn.execute("PRAGMA query_only=ON")
+                self._conn.execute("PRAGMA busy_timeout=30000")
+            except BaseException:
+                self._conn.close()
+                raise
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.path), timeout=30)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA foreign_keys=ON")
-        self._conn.execute("PRAGMA busy_timeout=30000")
-        self._conn.executescript(DDL)
-        # TODO(1.0): remove the pre-1.0 migration call after the final release
-        # stops accepting databases created by development versions.
-        self._migrate_pre_1_0_schema()
-        self._migrate_remote_schema_2_2()
-        self._migrate_taxonomy_schema_2_3()
-        self._migrate_source_schema_2_4()
-        self._migrate_integrity_cache_schema_2_5()
-        self._migrate_recovery_schema_2_6()
-        self._migrate_lifecycle_schema_2_7()
-        self._migrate_environment_schema_2_8()
-        self._migrate_schema_2_9()
-        self._migrate_schema_2_10()
-        self._migrate_schema_2_11()
-        self._ensure_current_schema_objects()
-        self._conn.execute(
-            "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
-            "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "
-                                                                                         "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
-                                                                                         "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"
-        )
-        self._conn.commit()
+        # A connection that fails schema setup (for example a corrupt file, a
+        # failed migration or an interrupted open) must be closed before the
+        # exception leaves the constructor; otherwise finalization of the
+        # abandoned handle emits a ResourceWarning and the file lock survives
+        # until the garbage collector runs.
+        try:
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=30000")
+            self._conn.executescript(DDL)
+            # TODO(1.0): remove the pre-1.0 migration call after the final release
+            # stops accepting databases created by development versions.
+            self._migrate_pre_1_0_schema()
+            self._migrate_remote_schema_2_2()
+            self._migrate_taxonomy_schema_2_3()
+            self._migrate_source_schema_2_4()
+            self._migrate_integrity_cache_schema_2_5()
+            self._migrate_recovery_schema_2_6()
+            self._migrate_lifecycle_schema_2_7()
+            self._migrate_environment_schema_2_8()
+            self._migrate_schema_2_9()
+            self._migrate_schema_2_10()
+            self._migrate_schema_2_11()
+            self._ensure_current_schema_objects()
+            self._conn.execute(
+                "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
+                "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "
+                                                                                             "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
+                                                                                             "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"
+            )
+            self._conn.commit()
+        except BaseException:
+            self._conn.close()
+            raise
 
     def _migrate_pre_1_0_schema(self) -> None:
         """Upgrade development-era databases without discarding history.
