@@ -4,7 +4,7 @@ This document corresponds to `operon` {{ operon_version }}, internal database sc
 
 ## Design goals
 
-`operon` is a small, verifiable, traceable management system for genomic data. It follows these principles:
+The [Project Overview](../overview.md) describes what `operon` does and where its boundaries are. The architecture rests on these principles:
 
 1. Structured metadata is the single source of truth.
 2. Raw data is immutable; derived data is rebuildable.
@@ -114,6 +114,23 @@ How the principles map to implementations:
 | `operon/release.py` | Generates immutable release directories and checksums |
 | `operon/reports.py` | QC long/wide table export, derived metadata snapshots, status and decision reports |
 | `operon/demo.py` | Generates a deterministic synthetic demo project |
+| `operon/__main__.py` | `python -m operon` entry point; delegates to `operon.cli.main` |
+| `operon/errors.py` | `OperonError` hierarchy (validation, conflict, checksum, remote, configuration) that the CLI maps to exit code 2 |
+| `operon/utils.py` | Shared helpers: `now_iso` timestamps, atomic file/directory replacement, SHA-256 helpers, table rendering |
+| `operon/profiles.py` | Loads and validates the versioned YAML profiles shared by the rule engine and taxonomy coverage |
+| `operon/metadata_files.py` | Compatibility notice for the retired live metadata TSV directory; SQLite is the only writable metadata source |
+| `operon/qc/measure.py` | Project-independent `operon qc-measure` measurement path whose JSON payload is imported back through `operon import-qc` |
+| `operon/classify.py` | `sequence_classification` profiles: labels per sequence from stored alignment hits into `sequence_labels` |
+| `operon/sequence_tools.py` | `extract-domains` / `select-sequences`: materializes FASTA subsets from stored alignment intervals |
+| `operon/fanout.py` | Data-derived fan-out of registered sequence files into per-unit FASTAs under `analysis/derived/` with `file_lineage` edges |
+| `operon/lineage.py` | Adopts external workflow outputs into the manifest under `analysis/adopted/` and records lineage edges |
+| `operon/export.py` | Selective release-style export of a filtered file subset with manifest, checksums, and provenance |
+| `operon/environment.py` | Execution-environment documents: at-capture redaction, sub-fingerprints, and cache-reuse policy comparison |
+| `operon/environment_capture.py` | Compute-side, Python-independent environment probes and portable Conda reconstruction |
+| `operon/timetree.py` | `operon timetree` group: immutable TimeTree snapshots, reviewed MCMCTree calibration compilation, and query commands |
+| `operon/adapters/timetree.py` | TimeTree REST client caching the verbatim responses of exact queries under `adapters_cache/timetree/` |
+| `operon/ncbi_reconcile.py` | Audited `operon ncbi-reconcile` repair plans for development-era NCBI adapter anomalies |
+| `operon/tui/` | Optional Textual terminal UI: read-only data access (`data.py`), short-lived write actions (`actions.py`), and screens for entities, files, runs, decisions, config, publish, coverage, and the dataset import wizard |
 
 ## Project directory structure
 

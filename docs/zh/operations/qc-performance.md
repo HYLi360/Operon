@@ -13,6 +13,8 @@ QC 记录保留原有的 `started_at`、`finished_at`、`tool`、`tool_version`�
 - `duration_seconds`：以 `time.perf_counter()` 测量的总耗时，单位为秒；
 - `file_id`、`file_role`、`file_format`、`input_size_bytes` 和 `input_sha256`：
   当前命令直接处理的 manifest 文件身份；
+- `checksum_verification_method`：本次运行记录的文件完整性校验方式，与
+  `qc_timing.integrity.verification_method` 一致；
 - `parser_backend`：实际使用的解析器后端，当前默认是 `cython`；
 - `stage_timings_seconds`：便于流式工具直接聚合的分阶段耗时；
 - `qc_timing`：带 `schema_version`、时钟类型、主输入、关联输入和分阶段耗时的完整结构。
@@ -46,20 +48,23 @@ QC 记录保留原有的 `started_at`、`finished_at`、`tool`、`tool_version`�
 | `protein_fasta_integrity` | 校验关联 protein FASTA 的 manifest 内容身份 |
 | `protein_stats` | 扫描关联 protein FASTA |
 | `qc_results_write` | 批量写入 `qc_results` |
+| `sequences_sync` | 用测得的逐 seqid 长度替换该 FASTA 在 `sequences` 表中的行；annotation QC 还会同步关联 assembly |
 | `state_qc_complete` / `state_qc_failed` | 写入最终状态及审计记录 |
 | `unattributed` | 指标字典构造等未单独包裹的小段耗时，不与以上阶段重叠 |
 
 计时值保留到微秒级是为了减少短任务的整秒量化误差，不代表操作系统调度和文件系统
 噪声也具有微秒级稳定性。性能结论应基于同一环境中的多次配对运行和阶段耗时中位数。
 
-## 532 个 annotation 的代表性复测集合
+## 代表性复测集合
 
 机器可读清单位于代码仓库的
-`benchmarks/qc_representative_entities.tsv`。
-它根据 2026-08-18 的旧实现与 2026-08-29 的 Cython 实测结果分层选择：
+`benchmarks/qc_representative_entities.tsv`；同目录下的
+`benchmarks/alignment_qc_benchmark.py` 是 alignment QC 的基准脚本。
+annotation 集合根据 2026-08-18 的旧实现与 2026-08-29 的 Cython 实测结果分层选择：
 
 - `largest_*_regression` / `*_net_regression`：新版本整体耗时增加的对象；
 - `largest_input*`：最大输入和最长任务，用于放大稳定热点；
+- `large_input_annotation_regression`：整体较大且 annotation 阶段在新版本中退化的对象；
 - `annotation_speedup_control`：annotation 阶段曾明显变快的反例，避免只分析退化样本；
 - `*_baseline_q*`：按三份 annotation 归档文件总大小选取的规模基线；
 - `large_near_neutral_control`：较大但整体接近不变的控制对象。
@@ -116,8 +121,8 @@ assembly，`assembly_fasta_lengths` 三轮分别为 417.9、403.7、403.4 秒，
 重建；缓存头中的 SHA-256 摘要还会检测格式合法但内容已变化的索引行。JSONL 中
 `built`、`hit` 或 `write_failed` 明确记录本轮行为。
 
-0.5.3 在同一 18 个实体、54 个文件、HDD 环境的三轮复测中，首轮 18 个缓存均为
-`built`，后两轮 36 次均为 `hit`。0.5.2 后两轮平均总耗时为 670.13 秒，0.5.3
+0.5.3 在同一 18 个实体、54 个文件、HDD 环境的三轮复测中，首轮 18 个缓存均为 <!-- version-pin -->
+`built`，后两轮 36 次均为 `hit`。0.5.2 后两轮平均总耗时为 670.13 秒，0.5.3 <!-- version-pin -->
 热缓存平均为 269.05 秒，耗时下降 59.85%，整体约 2.49 倍；annotation GFF3 文件
 合计由 588.51 秒降至 186.32 秒，约 3.16 倍。每轮约 403.6 秒的 assembly 扫描被
 约 4.43 秒的缓存加载取代。18 个索引合计约 114 MiB，相对于每轮 66.58 GB 的原始

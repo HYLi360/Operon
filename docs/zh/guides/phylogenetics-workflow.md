@@ -21,10 +21,10 @@
 operon export --output analysis/external/superfamily_round1 \
   --entity-type annotation \
   --file-role protein_fasta \
-  --decision PASS --profile default
+  --decision PASS --profile annotation_release_v1
 ```
 
-`--decision` 需搭配 `--profile`，匹配 `current_decisions` 中的有效判定（PASS、PASS_WITH_WARNINGS 等），因此进入工作流的输入恰好是 QC 放行的子集。全部选择条件见 [export 参考](../reference/cli-decisions-reports.md)。
+`--decision` 需搭配 `--profile`，且 profile 名必须真实存在于 `config/profiles/`。`annotation_release_v1` 是 `operon init` 写入该目录的六个 profile 之一（`file_integrity_v1`、`assembly_production_v1`、`annotation_release_v1`、`annotation_busco_viridiplantae_odb12_v1`、`reads_qc_v1`，以及 coverage 示例 `coverage_viridiplantae_v1`），`operon` 并不附带名为 `default` 的 profile。判定匹配 `current_decisions` 中的有效结果（PASS、PASS_WITH_WARNINGS 等），因此进入工作流的输入恰好是 QC 放行的子集。全部选择条件见 [export 参考](../reference/cli-decisions-reports.md)。
 
 ## 第二步：运行外部流程
 
@@ -44,7 +44,7 @@ operon run-external --step astral_species_tree \
 
 ## 第三步：把中间产物与结果收养回库
 
-流程结束后，用批量 adopt 清单把值得保留的产物——关键中间产物（框架树、亚族指派表）与最终结果（物种树、TreeShrink 输出、Notung 协调结果）——重新注册回数据库。TSV 形式需要包含 `path`、`entity_type`、`entity_id`、`role`、`derived_from` 的表头行；`format`、`compression` 与 `workflow_run_id` 列可选（省略时自动探测）。`derived_from` 填写逗号分隔的、必须已注册的 file_id；相对路径按项目根目录解析：
+流程结束后，用批量 adopt 清单把值得保留的产物——关键中间产物（框架树、亚族指派表）与最终结果（物种树、TreeShrink 输出、Notung 协调结果）——重新注册回数据库；必填列与可选列见 [adopt 参考](../reference/cli-decisions-reports.md#adopt)。例如：
 
 ```text
 path	entity_type	entity_id	role	format	compression	derived_from
@@ -72,13 +72,17 @@ operon fanout --assignments-file FIL_000022 \
   --entity-type organism --entity-id ORG_000001 \
   --role-prefix subfamily_alignment --dry-run
 
+# 确认后再准入这些单元。
 operon fanout --assignments-file FIL_000022 \
   --source-file FIL_000012 \
   --entity-type organism --entity-id ORG_000001 \
   --role-prefix subfamily_alignment
 ```
 
-`fanout` 把每个被指派的 seqid 对声明的 `--source-file` 的 `sequences` 注册表解析（解析不到的 seqid 是指名道姓的硬错误；一个 seqid 出现在多个来源中需收窄 `--source-file` 消歧），随后逐单元物化一个 FASTA 到 `analysis/derived/ORG_000001/` 下，并以 `subfamily_alignment:SF01`、`subfamily_alignment:SF02`…… 的 role 注册，同时写入指回源 FASTA 与指派 TSV 的 `file_lineage` 谱系边。输入不变时重跑是空操作（`reused`）；同一单元 role 下字节不同则抛 `ConflictError`。见 [fanout 参考](../reference/cli-decisions-reports.md#fanout)。
+每个单元都会在 `analysis/derived/ORG_000001/` 下注册为一个 FASTA，role 为
+`subfamily_alignment:<unit>`，并写入指回源 FASTA 与指派 TSV 的谱系，下游分析正是据此
+选择它们。参数语义、seqid 解析规则与幂等/冲突行为见
+[fanout 参考](../reference/cli-decisions-reports.md#fanout)。
 
 由于单元数量由数据决定，下游 recipe 声明 role 前缀而不是精确 role：
 
@@ -114,7 +118,7 @@ operon analyze --analysis iqtree_subfamily
 收养产物参与标准质量门槛。对有内置解析器的格式运行 `operon qc`（外部指标则走 `run-external` + `import-qc`），随后 `operon evaluate --profile <name>`，最后：
 
 ```bash
-operon release --version v1.0 --profile default
+operon release --version v1.0 --profile annotation_release_v1
 ```
 
 只有有效判定放行的实体进入 release，其余写入 `exclusions.tsv`。由于收养的中间产物携带谱系边，release 始终可以回溯解释到最初的原始输入。
@@ -184,3 +188,57 @@ operon query "SELECT subject_id, hit_rank, query_start, query_end, evalue, bitsc
    `operon timetree fetch` 把逐对原始证据冻结为不可变快照，再用
    `operon timetree calibrate` 只把经批准、带理由的软界标定编译到有根树上。见
    [timetree](../reference/cli-analysis.md#timetree)。
+
+## 用 TimeTree 定年
+
+`timetree` 命令组是获取次级标定的官方路径：每次查询都会打印必须引用的
+Kumar et al. 2022 文献，所有响应都缓存在 `adapters_cache/timetree/` 下。每条缓存记录
+保存请求 URL、HTTP 状态码、获取时间与逐字响应体；缓存记录不可读时会直接报错，而不是
+悄悄重新查询，因此损坏的缓存证据绝不会被当作新结果使用。只有你实际发出的查询才会
+被缓存——TimeTree 的条款禁止镜像或再分发该数据库。
+
+五个查询子命令覆盖探索阶段：
+
+```bash
+operon timetree taxon --name "Arabidopsis thaliana"
+operon timetree pairwise --taxon "Arabidopsis thaliana" --taxon "Oryza sativa"
+operon timetree mrca --taxa A,B,C
+operon timetree timeline --taxon "Arabidopsis thaliana"
+operon timetree calibrations --taxa A,B,C --out calibrations.tsv
+```
+
+`taxon` 把学名解析为候选 taxon ID，遇到同名歧义时绝不自动选择——错误信息会列出候选，
+便于改用 `--taxon-id`。`pairwise` 与 `mrca` 分别给出恰好两个类群、以及 N 个类群 MRCA
+的分歧时间摘要；`timeline` 列出从某个类群回溯到最后共同祖先的节点时间表；
+`calibrations` 生成 MCMCTree 先验表（默认一行整体 MRCA，加 `--pairs` 则逐对一行），
+再用 `--out` 额外写成 TSV，可交给 `operon adopt` 登记。`--format json`、`--refresh`、
+`--timeout`、`--retries` 与 `--delay` 的语义见
+[timetree 参考](../reference/cli-analysis.md#timetree)。
+
+更严格的审阅约束流程用
+`operon timetree fetch --pairs pairs.tsv --output snapshot/` 把逐对证据冻结为新的
+不可变快照目录（输出目录已存在时绝不覆盖）：
+
+- `snapshot.json`：带校验和的清单，每个类群对一条记录，并为每个已保存响应记录 SHA-256；
+- `raw/<taxon_a>_<taxon_b>.<flag>.json`：TimeTree 的逐字响应，`<flag>` 为 `summaryjson`
+  （分歧时间摘要）或 `json`（逐研究证据）；
+- `candidates.tsv`：逐对一行的审阅工作表——名称、`age_ma`、给出的置信区间、`studies`，
+  以及初始为 `no` 的 `approved` 列。
+
+随后用
+`operon timetree calibrate --snapshot snapshot/ --tree species.nwk --taxa taxa.tsv --constraints constraints.tsv --output dated/`
+只把经批准、带理由的软界编译到有根且严格二分的树上。输入契约如下：
+
+- `--taxa` TSV 表头为 `leaf,taxon_id`：每片叶子恰好出现一次，各映射到唯一一个正整数
+  NCBI taxon ID；
+- `--constraints` TSV 表头为
+  `taxon_a,taxon_b,members,min_ma,max_ma,approved,rationale`：类群对必须同时存在于快照
+  与 taxa 表中，`members` 必须恰好等于目标 MRCA 支系的逗号分隔叶集合，`approved` 必须为
+  `yes`，`rationale` 必须非空；`min_ma` 必须小于 `max_ma`，且各标定不得违反祖先/后代
+  的时间顺序。
+
+输出目录包含 `calibrated.tree`（PAML 格式：首行为 `<leaf-count> 1`，随后是删去枝长、
+在受约束节点带 `B(low,high)` 标签的拓扑）、`constraints.tsv` 的逐字节副本，以及
+`provenance.json`——其中记录快照、输入树、taxa 表、constraints 表与标定树的 SHA-256。
+`--unit-ma`（默认 100）声明一个时间单位等于多少 Ma，因此默认值下
+`min_ma=20, max_ma=30` 会编码为 `B(0.2,0.3)`。

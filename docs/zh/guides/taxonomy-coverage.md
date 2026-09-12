@@ -2,6 +2,8 @@
 
 本页说明如何以显式版本的 NCBI Taxonomy 为分母，审计当前元数据或不可变 release 的科/属覆盖率。
 
+## 工作流程
+
 ```text
 NCBI taxonomy_report.jsonl / Datasets package / taxdump archive
         │ operon taxonomy import --version <显式版本>

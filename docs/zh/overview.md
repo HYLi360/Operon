@@ -16,20 +16,10 @@
 
 ## 适用边界
 
-Operon 负责数据准入、身份校验、provenance、规则判定和发布。它不替代下游比较基因组分析流程；此类分析可在 `analysis/` 中由外部工具完成，并将结果回写到 Operon。当前内置来源适配器覆盖 NCBI Datasets，taxonomy 覆盖率仅支持 NCBI Taxonomy。
+Operon 负责数据准入、身份校验、provenance、规则判定和发布。它不替代下游比较基因组分析流程；此类分析可在 `analysis/` 中由外部工具完成，并将结果回写到 Operon。当前内置来源适配器覆盖 NCBI Datasets，taxonomy 覆盖率目前仅支持 NCBI Taxonomy；GTDB 与 NCBI↔GTDB crosswalk 属于后续扩展工作。
 
 任务型页面未覆盖的隐式语义、边界情形与已知问题汇总于[隐式行为、边界情形与已知问题](reference/behaviors-and-limitations.md)。
 
 ## 推荐工作流
 
-```text
-metadata import/add
-  -> ingest
-  -> verify
-  -> standardize
-  -> qc / analyze
-  -> evaluate / curate
-  -> release
-```
-
-详见[日常操作顺序](getting-started/daily-workflow.md)。
+完整操作顺序见[日常操作顺序](getting-started/daily-workflow.md)。

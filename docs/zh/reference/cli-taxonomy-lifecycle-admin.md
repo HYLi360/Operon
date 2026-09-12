@@ -106,3 +106,7 @@ operon set-state --entity-type TYPE --entity-id ID --state STATE \
 | `0` | 成功 |
 | `1` | 命令完成但检查未通过，或运行期失败（如 coverage 未达 YAML 阈值、verify/QC/外部命令失败） |
 | `2` | `operon` 领域错误（配置错误、校验失败、实体不存在、冲突等） |
+
+部分前置检查抛出的是普通 Python 异常而非领域错误，因此退出码为 1：`set-state --state <未知值>`
+对未知状态抛出裸 `ValueError`（`workflow.py`），`release`/`export` 对已存在的目标目录抛出
+`FileExistsError`。可把退出码 1 理解为“命令拒绝执行或执行失败”，具体原因以打印的消息为准。

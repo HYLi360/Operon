@@ -30,16 +30,12 @@ operon qc --entity-type run --entity-id RUN_000001
 `ambiguous_assumed_phred33`。R1 与 R2 的 `read_count` 会分别以各自的
 `input_identity` 保存，同时系统会写入 `paired_read_count_match`。
 
-`ingest` 和 `operon verify` 已经完整核对过 SHA-256；文件的 size/device/inode/mtime/
-ctime 均未变化时，后续 `operon qc` 会复用这一结果，避免在大容量 HDD 上先完整读一遍
-校验和、再读一遍做解析。需要强制重新读取全部字节审计时使用 `operon qc --rehash`；
-`operon verify` 本身始终执行完整内容校验。
-
-annotation GFF3 还会验证并读取关联的 assembly/protein。assembly FASTA 第一次参与
-坐标检查时，`operon` 流式建立 `qc/cache/fasta_lengths/` 下的长度索引；后续运行无需
-再次扫描数 GB 的序列内容。索引由 assembly 的 `file_id + sha256 + size_bytes` 标识，
-损坏时自动重建，可安全删除。`--rehash` 会重新校验所有实际输入，但只要 assembly
-内容 SHA-256 未变，已验证的长度索引仍可继续使用。
+`ingest` 和 `operon verify` 已经完整核对过 SHA-256；文件的 stat 指纹未变化时，后续
+`operon qc` 会复用这一结果；assembly 的 `seqid -> length` 索引按相同内容身份缓存在
+`qc/cache/fasta_lengths/` 下，annotation QC 对实际读取的 assembly/protein 也做同样的
+身份校验。需要强制重新读取全部字节审计时使用 `operon qc --rehash`（`operon verify`
+本身始终执行完整内容校验）。两种缓存都是可删除、可重建的派生数据，具体保证见
+[QC 流水线](../architecture/qc-and-rules.md)。
 
 ## 归档组装与注释
 
@@ -75,12 +71,7 @@ assembly	ASM_000001	FIL_000001	busco	complete_percent	96.4	percent	busco	5.8.2	e
 assembly	ASM_000001	FIL_000001	quast	contig_n50	2845913	bp	quast	5.2.0	default
 ```
 
-必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set`。
-
-可选列：
-
-- `file_id`：必须是 manifest 中存在的文件，且其 entity 与行中的 entity 一致。
-- `file_sha256`：如果给出，必须与 manifest 中该文件的 SHA-256 一致。
+必填列、可选列以及 `file_id`/`file_sha256` 的 manifest 校验见 [import-qc](../reference/cli-files-qc.md#import-qc)；`metric_unit` 省略时单位为空，`evaluated_at` 省略时使用导入时刻。
 
 导入：
 

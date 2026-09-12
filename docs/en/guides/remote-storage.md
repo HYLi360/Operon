@@ -47,67 +47,24 @@ operon pull --remote mycluster
 operon locations
 ```
 
-The remote model preserves the raw-file invariants:
-
-- Files and directory artifacts are verified by SHA-256 plus size and are idempotent. Directory hashes include relative paths, empty directories, file contents, and symlink targets. Different bytes at the remote path produce `ConflictError`.
-- The remote maintains `operon-manifest.json` v2 with a `project_id`. Atomic replacement requires the SFTP server's OpenSSH `posix-rename@openssh.com` extension. If unsupported, the operation fails closed rather than deleting the old manifest before writing the new one.
-- A batch push publishes the manifest once. Remote `.operon-manifest.lock` serializes read-modify-write access. If a crash leaves a lock, the error gives the exact path; remove it manually only after confirming that no push is active.
-- Remote relative paths must remain safely under the remote root. By default, `pull` checks every record against local SQLite `file_id + relative_path + sha256 + size_bytes`; the remote manifest cannot rewrite local identity.
-- Every transfer writes workflow provenance (`push:<name>` or `pull:<name>`), and successful locations are recorded in `file_locations`.
-- A failed item does not stop the rest of a push/pull/evict batch. Every item receives a result, and the command exits with code 1 if any item has `error`.
-- After `pull` restores a missing local file, `files.status` returns to `CHECKSUM_VERIFIED` and the change is audited in `changes`. A file that was already `STANDARDIZED` before eviction keeps the `STANDARDIZED` status after restore.
+Remote mirrors preserve the raw-file invariants: file and directory artifacts are verified by SHA-256 plus size and are idempotent, different bytes at the remote path raise `ConflictError`, and directory hashes cover relative paths, empty directories, file contents, and symlink targets. Atomic manifest replacement needs the SFTP server's OpenSSH `posix-rename@openssh.com` extension and fails closed without it; if a crash leaves `.operon-manifest.lock` behind, remove it manually only after confirming that no push is active. A file that was already `STANDARDIZED` before eviction keeps that status after `pull` restores it. Batch publication, manifest v2 identity, and per-item exit codes are specified in [Remote storage commands](../reference/cli-remote.md).
 
 ## Keep the control plane local and large files remote
 
-A common HPC workflow is:
-
-```bash
-# 1. Archive locally first to establish trusted identity.
-operon ingest --source ASM.fna.gz \
-  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
-
-# 2. Push to the remote; push verifies remote content and records file_locations.
-operon push --remote mycluster --file-id FIL_000001
-
-# 3. Verify the remote again, then remove local bytes.
-operon evict --remote mycluster --file-id FIL_000001
-operon locations --file-id FIL_000001
-
-# locations is a cached view; verify checks the remote manifest and content live.
-operon verify --file-id FIL_000001
-
-# 4. Run remotely without downloading the input.
-operon analyze --analysis blastn_nt --backend ssh \
-  --entity-type assembly --entity-id ASM_000001
-
-# 5. Hydrate the file only when a local workflow needs its bytes.
-operon pull --remote mycluster --file-id FIL_000001
-```
-
-Point execution at the same remote mirror:
+The complete archive → push → evict → analyze → pull workflow lives in [Remote-First Operation](remote-first.md). To let `analyze` consume locally absent (`REMOTE_ONLY`) inputs in place, point execution at the same remote mirror:
 
 ```yaml
 execution:
   backend: ssh
   ssh:
-    storage_remote: mycluster
+    storage_remote: mycluster   # inherits the remote's host and root
     scheduler: slurm            # or none for direct execution on the SSH host
 ```
 
-`evict` explicitly deletes local bytes; without `--file-id`, it processes every manifest object. It first validates local identity, remote manifest identity, and actual remote SHA-256/tree hash. The state change is written to `changes`. `standardize` and `release` require local bytes, so run `pull` first. External `analyze` can consume `REMOTE_ONLY` input directly.
+Eviction writes a small placeholder pointer file under `.operon/placeholders/<file_id>.json` (deleted again when `pull` restores the bytes). The first remote-only status also extends `config/schemas.yaml` with the `REMOTE_ONLY` file status. `schema_version` is raised to 1.2 only when that file still carries the legacy value `""`, `1.0`, or `1.1`; a project on a current schema keeps its version and only gains the new enum value. Whenever the file is changed it is rewritten with normalized formatting, so hand-written comments in it are dropped.
 
-Eviction writes a small placeholder pointer file under `.operon/placeholders/<file_id>.json` (deleted again when `pull` restores the bytes). The first remote-only status also extends `config/schemas.yaml` with the `REMOTE_ONLY` file status and bumps its `schema_version` to 1.2 — the file is rewritten with normalized formatting, so hand-written comments in it are dropped.
+`standardize` and `release` need local bytes, so `pull` first; the command-level semantics of `evict` and of `locations` as a cached view versus a live `verify` are in [Remote storage commands](../reference/cli-remote.md).
 
-When a local object is missing, `verify` checks the remote in real time rather than treating `file_locations.status=AVAILABLE` as permanent proof. A deleted or damaged remote object returns `MISSING` and updates the cache. An unreachable SSH host returns `REMOTE_UNVERIFIED` and exit code 1 while preserving the last persistent state, so a network failure is not misclassified as data loss.
-
-Remote files can also be archived directly from URLs:
-
-```bash
-operon ingest --source sftp://hyli360@hpc.example.org:22/data/ASM.fna.gz \
-  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
-
-operon ingest --source remote://mycluster/raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz \
-  --entity-type assembly --entity-id ASM_000001 --role genome_fasta
-```
+Remote files can also be archived directly from `sftp://` and `remote://` URLs; see [ingest](../reference/cli-files-qc.md#ingest).
 
 This page covers content-verified remote mirroring. For the full workflow that keeps data and compute on an HPC while the local project only records events, see [Remote-First Operation](remote-first.md). For whole-project backup and migration of `operon.sqlite`, `config/`, and related directories, see [Backup, Migration, and Resumption](backup-migration.md).

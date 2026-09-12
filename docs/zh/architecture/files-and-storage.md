@@ -13,7 +13,7 @@
 
 `standardize` 默认**复制**到 `standardized/`，使 raw、standardized、release 三层互不共享可写 inode；`--link hardlink` 或 `--link symlink` 是显式兼容选项。
 
-### 远程镜像（SFTP）
+## 远程镜像（SFTP）
 
 `project.yaml` 的 `remotes:` 段可配置一个或多个 SFTP 远程镜像（`operon/remotes.py`），
 把 manifest 文件同步到远端而不破坏本节的不变量：
@@ -22,25 +22,23 @@
   `sha256sum` 时通过 SFTP 流式计算 SHA-256，绝不退化为仅比较大小；目录使用与
   本地完全相同的确定性树哈希（含空目录和符号链接目标）；
 - 远端维护 `operon-manifest.json` v2 清单（project_id + relative_path →
-  file_id/sha256/size/kind/synced_at），清单更新要求服务器支持 OpenSSH POSIX rename
-  扩展，以“唯一临时文件 + 原子替换”发布；一次 push 批次只发布一次清单，读—改—写
-  由远端原子目录 `.operon-manifest.lock` 串行化，避免多控制端并发 push 丢失条目；
+  file_id/sha256/size/kind/synced_at），清单更新以原子方式发布，并在多个控制端
+  并发写入之间串行化；
 - 所有相对路径在本地和远端均做根目录约束，拒绝绝对路径、`..` 与路径逃逸；远端
   清单的 `project_id` 和每条身份都必须与本地 SQLite 一致；
 - 每次传输复用 `workflow_runs` 记录 provenance（step 为 `push:<name>` /
   `pull:<name>`）；成功位置同时缓存到 `file_locations`；
-- push/pull/evict 采用逐条结果语义：单项失败写入 `error` 后继续批内其余对象，CLI
-  在存在任一错误时返回非零；
 - `pull` 恢复本地缺失文件后把 `files.status` 恢复为 `CHECKSUM_VERIFIED`，该变化与
-  `verify`/`evict` 的状态变化一样写入 `changes`；
-- `ingest --source` 也可直接接受 `sftp://[user@]host[:port]/path` 与
-  `remote://<name>/<path>`；后者必须存在于远端清单并先校验身份，前者下载后由
-  ingest 计算新身份，再走与本地文件完全相同的归档流程。
+  `verify`/`evict` 的状态变化一样写入 `changes`。
+
+清单发布与加锁、批次语义与逐条退出码，以及 `sftp://`/`remote://` ingest 属于命令级
+细节，见[远程存储命令](../reference/cli-remote.md)与
+[文件与 QC 命令](../reference/cli-files-qc.md#ingest)。
 
 paramiko 是核心运行时依赖，但仍在代码中惰性导入，因此仅本地命令不会初始化 SSH
 组件。
 
-### 本地控制面与远程数据面
+## 本地控制面与远程数据面
 
 `operon` 0.3 的远程模型把“存、算、执行”拆为三个可组合角色：
 

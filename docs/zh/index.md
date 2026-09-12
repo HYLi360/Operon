@@ -1,6 +1,6 @@
 # Operon 文档
 
-Operon 是一个面向大规模基因组数据的文件型数据库，覆盖元数据管理、文件归档、质量控制、规则判定、外部分析、远程存算和版本化发布。
+[项目概述](overview.md)介绍 Operon 的能力与适用边界：一个面向大规模基因组数据的文件型数据库。
 
 本文档对应 `operon` {{ operon_version }}、数据库内部 schema {{ db_schema }}、metadata schema {{ metadata_schema }}。文档按使用者任务分层，中文与英文页面保持相同的目录结构。
 
@@ -36,9 +36,4 @@ contributor/index
 
 ## 核心概念
 
-- SQLite 中的结构化元数据是唯一可写事实来源。
-- 原始文件不可变；派生文件必须可重建。
-- 文件身份由 `file_id + sha256 + size_bytes` 定义，路径只表示当前位置。
-- QC 程序只产生指标；准入判定由版本化 YAML profile 执行。
-- 所有处理都记录到状态机、SQLite 和 JSONL provenance。
-- release 是带 manifest、checksum、排除清单和 provenance 的不可变快照。
+设计不变量统一在[架构总览](architecture/overview.md)中说明。

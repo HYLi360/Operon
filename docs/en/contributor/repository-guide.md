@@ -2,11 +2,7 @@
 
 ## Project principles
 
-1. Structured metadata in SQLite is the single source of truth.
-2. Raw data is immutable; derived data must be rebuildable.
-3. File identity is `file_id + sha256 + size_bytes`; paths do not constitute identity.
-4. QC code only computes metrics; thresholds live in versioned YAML profiles under `config/profiles/`.
-5. All processing must run through explicit, idempotent state machines with machine-readable provenance.
+The five core design invariants are stated once in the [Architecture overview](../architecture/overview.md#design-goals); keep them intact when changing code.
 
 ## Repository structure
 

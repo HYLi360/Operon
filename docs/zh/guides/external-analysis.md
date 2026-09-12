@@ -41,34 +41,16 @@ recipe 关键字段：
 
 | 字段 | 含义 |
 |---|---|
-| `entity_type` / `file_role` / `format` | 从 manifest 中自动选择输入 artifact 的范围；目录使用 `format: directory` |
-| `input_kind` | `file`（默认）或 `directory`；执行前严格检查并重新计算内容哈希 |
-| `output_kind` | `file`（默认）或 `directory`；两者都支持非空校验、内容哈希与缓存复核 |
-| `output_subdir` / `output_suffix` | 控制默认的 `analysis/<recipe>/<entity_id>/<file_id>.<role><suffix>` 名称 |
-| `output_name` | 可选的单层名称模板，覆盖默认名称；BUSCO 应使用 `${file_id}.busco` 以避开 SEPP 的 `fasta` 路径替换缺陷 |
-| `database` | 参考数据库或共享下载缓存路径；相对路径按项目根目录解析 |
-| `database_version` | 数据库版本标签，参与缓存身份 |
-| `database_checksum` | 可选；提供后作为严格数据库身份 |
-| `database_mode` | `reference`（默认，按内容识别）或 `mutable_cache`（共享可增长下载区，要求 `database_version`） |
-| `arguments` | 命令参数；占位符见下表 |
-| `commands` | 有序的多步命令链（与 `arguments` 互斥）；各步共享确定性的 `${work_dir}` 暂存目录 |
+| `entity_type` / `file_role` / `format` | 从 manifest 中自动选择输入 artifact 的范围 |
+| `input_kind` / `output_kind` | 输入与输出 artifact 的实际类型：`file` 或 `directory` |
+| `output_subdir` / `output_suffix` / `output_name` | 控制默认的 `analysis/<recipe>/<entity_id>/<file_id>.<role><suffix>` 输出路径与名称 |
+| `database` / `database_version` / `database_mode` | 参考数据库或共享下载缓存，以及参与缓存复用的身份 |
+| `arguments` / `commands` | 命令参数，或有序的多步命令链（二者互斥）；命令链各步共享确定性的 `${work_dir}` 暂存目录 |
 | `parameters` | 允许由 `analyze --param NAME=VALUE` 设置的受约束运行参数 |
-| `result_parser` | `blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular`、`busco_json` 或 `none` |
-| `result_glob` | 目录输出中 parser 要读取的结果文件 glob；BUSCO 通常为 `short_summary*.json` |
-| `max_hits_per_query` | 每个 query 同步进 SQLite 的最大命中数 |
-| `version` | 可选正整数（缺省 1，非法值报错）；与配置内容一起进入 `analyze` 记录的 recipe 快照，可用 `operon recipes history/show` 查看 |
+| `result_parser` / `result_glob` | 输出所用的 parser，以及目录输出中要读取的结果 glob |
+| `max_hits_per_query` / `version` | 每个 query 同步进 SQLite 的最大命中数；进入 recipe 快照的版本号 |
 
-可用占位符：
-
-| 占位符 | 内容 |
-|---|---|
-| `${input}` / `${output}` / `${database}` / `${threads}` | 完整输入 artifact、完整输出 artifact、数据库路径、线程数 |
-| `${input_parent}` / `${input_name}` / `${input_stem}` | 输入父目录、文件名、stem |
-| `${output_parent}` / `${output_name}` / `${output_stem}` | 输出父目录、artifact 名称、stem |
-| `${file_id}` / `${file_role}` / `${entity_type}` / `${entity_id}` | 当前 manifest 和实体标识 |
-
-使用 `commands` 命令链的 recipe 还可使用 `${work_dir}`：每次运行确定性的中间产物暂存
-目录，运行前重建、结束后清理。
+完整字段契约、默认值、允许值与全部占位符见 [Recipe 配置参考](../reference/recipe-fields.md)。
 
 所有 command block 都使用顶层 tool 的 `run_method`。调用其他程序的 block 可以增加
 `version_args` 与 `version_pattern`；该程序的版本会与 argv、退出码一起记录在
@@ -141,64 +123,28 @@ operon report analysis --analysis blastn_nt --hits
 每次运行前系统还会重新校验输入文件 SHA-256 或目录树哈希与 manifest 一致；被改动过
 的 raw 输入会被直接拒绝，不会进入外部程序。
 
-### 原生运行 BUSCO 并解析 JSON summary
+## 原生运行 BUSCO 并解析 JSON summary
 
 默认 `busco_autolineage` recipe 使用普通 protein FASTA 输入和目录输出。BUSCO 的
 `-o` 是短 run name，因此配置使用 `${output_name}`；`--out_path` 使用
-`${output_parent}`，BUSCO 最终创建的目录恰好就是 `${output}`：
+`${output_parent}`，BUSCO 最终创建的目录恰好就是 `${output}`。这里只需注意两项设置：
+随附的启动方式与较窄的结果 glob：
 
 ```yaml
 tools:
   busco:
-    executable: busco
-    run_method:
-      mode: conda
-      bin: mamba
-      env: busco_6.1.0
-    version_args: ["--version"]
-    version_pattern: 'BUSCO\s+([^\s]+)'
+    run_method: "mamba run -n busco_6.1.0"   # 随附默认值；也接受 {mode, bin, env} mapping 形式
     recipes:
       busco_autolineage:
-        description: BUSCO auto-lineage in protein mode
-        entity_type: annotation
-        file_role: protein_fasta
-        format: fasta
-        input_kind: file
-
-        # 共享、可增长的 BUSCO lineage 下载区；运行前自动创建。
-        database: resources/busco_downloads
-        database_version: odb12
-        database_mode: mutable_cache
-
-        output_subdir: busco
-        output_kind: directory
-        # 不要让 BUSCO/SEPP 的输出父路径含有字符串 "fasta"；SEPP 会对完整路径
-        # 执行 replace("fasta", "jplace")，从而生成一个不存在的父目录。
-        output_name: ${file_id}.busco
-        arguments:
-          - -m
-          - protein
-          - -i
-          - ${input}
-          - -o
-          - ${output_name}
-          - --out_path
-          - ${output_parent}
-          - --download_path
-          - ${database}
-          - -c
-          - ${threads}
-          - --auto-lineage
-          - --opt-out-run-stats
-          - --tar
+        output_name: ${file_id}.busco        # 避开 SEPP 的 "fasta" 路径替换缺陷
         result_parser: busco_json
-        result_glob: short_summary*.json
+        result_glob: short_summary.specific.*.json
 ```
 
-如果希望完全可复现，先准备并冻结所需 lineage 数据，删除 `--auto-lineage`、指定
-`--lineage_dataset`，加上 `--offline`，并把 `database_mode` 改为 `reference`；数据更新时
-同步更新 `database_version` 或 `database_checksum`。`mutable_cache` 的身份由路径、显式
-版本和可选 checksum 决定，不会因自动下载了另一个 lineage 而使旧作业缓存失效。
+完整随附 recipe、`run_method` 的 mapping 形式与 SEPP 路径缺陷见
+[结果解析器与示例](../reference/recipe-parsers-examples.md)与
+[Recipe 配置模型](../reference/recipe-overview.md)；数据库相关字段见
+[Recipe 配置参考](../reference/recipe-fields.md)。
 
 运行并查看结果：
 
@@ -242,7 +188,7 @@ warnings:
     code: HIGH_BUSCO_DUPLICATION
 ```
 
-#### 指定 lineage、保留多个 BUSCO 结果
+### 指定 lineage、保留多个 BUSCO 结果
 
 绿色植物跨度很大，不适合把整个项目强制到同一个 lineage。默认仍建议全库运行
 `busco_autolineage`；需要对某个类群按固定标尺复核时使用 `busco_lineage`：
@@ -364,36 +310,13 @@ operon adopt \
   --derived-from FIL_000001
 ```
 
-批量模式供工作流在 rule 末尾一次回注册整批产出。manifest 可以是 JSON（list of
-dict）：
-
-```json
-[
-  {
-    "path": "analysis/external/ASM_000002/megahit/final.contigs.fa",
-    "entity_type": "assembly",
-    "entity_id": "ASM_000002",
-    "role": "megahit_contigs",
-    "format": "fasta",
-    "derived_from": ["FIL_000001"]
-  }
-]
-```
-
-也可以是带表头的 TSV（`format`、`compression`、`workflow_run_id` 列可选；
-`derived_from` 列用逗号分隔多个 file_id）：
-
-```text
-path	entity_type	entity_id	role	format	derived_from
-analysis/external/ASM_000002/megahit/final.contigs.fa	assembly	ASM_000002	megahit_contigs	fasta	FIL_000001,FIL_000004
-```
+批量模式供工作流在 rule 末尾一次回注册整批产出：传入 JSON 记录列表或带表头的 TSV，
+必填列与可选列见 [adopt 参考](../reference/cli-decisions-reports.md#adopt)：
 
 ```bash
 operon adopt --from-manifest adopt_manifest.json
 ```
 
-- 每条必须含 `path`、`entity_type`、`entity_id`、`role`、`derived_from`（至少一个已
-  注册的 file_id）；相对路径按项目根解析。
 - 产物物化到 `analysis/adopted/<entity_id>/`；同实体同 role 相同字节幂等复用，不同
   字节报 `ConflictError`。整批预检查后在同一事务中注册；提交前失败会回滚元数据、谱系、
   状态和工作流记录，并删除新建制品，保留既有文件。目标被冲突内容占用时，应先显式处理

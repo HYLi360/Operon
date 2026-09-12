@@ -3,27 +3,22 @@
 ## 备份与迁移
 
 推荐由 `backup` 命令创建 SQLite 一致快照，而不是在数据库运行期间直接复制文件。
-`--output` 目录必须位于项目根之外且尚不存在，`backup create` 否则会拒绝执行：
+目标目录必须位于项目根之外且尚不存在，`backup create` 否则会拒绝执行：
 
 ```bash
-# 配置、SQLite、审计与 workflow 日志
 operon backup create --output /backups/my-project-control --scope control
-
-# 另加 QC、analysis、reports、taxonomy、releases
 operon backup create --output /backups/my-project-results --scope results
-
-# 再加 raw、standardized 和本地占位符等全部项目管理数据
 operon backup create --output /backups/my-project-full --scope full
 
 operon backup verify --input /backups/my-project-full
 ```
 
-注意范围边界：`results` 不包含 `raw/` 与 `standardized/`（通常最难重建的字节），
-因此不能作为可恢复的 `full` 替代品；只有 `full` 能恢复数据文件。
+三个 scope 的准确目录集合见 [backup 参考](../reference/cli-taxonomy-lifecycle-admin.md#backup)。
+`results` 不包含 `raw/` 与 `standardized/`（通常最难重建的字节），因此只有 `full`
+能恢复数据文件。
 
-`backup verify` 按精确快照校验：除检查 manifest 所列文件的大小与 SHA-256 外，也会拒绝
-备份目录中任何未列入 manifest 的额外文件。不要把注释、临时文件或恢复记录直接放进备份
-目录；需要附加说明时放在备份目录之外。
+`backup verify` 按精确快照校验，并拒绝备份目录中任何未列入 manifest 的额外文件：
+注释、临时文件或恢复记录都应放在备份目录之外。
 
 新备份采用 manifest 格式 2，仍支持校验格式 1 的旧备份。符号链接按其目标文本记录和校验，包括失效链接和目录链接，不跟随目标。标准化视图中指向项目内部的绝对链接会改为备份内的相对路径，使完整备份可以独立迁移。归档目录制品内部的链接保留原始文本，以维持制品身份。外部链接的目标内容不纳入备份；恢复链接不等于恢复其外部目标。
 
@@ -34,9 +29,7 @@ operon backup verify --input /backups/my-project-full
 `report metadata` 不是备份：它只导出便于浏览和交换的 metadata/manifest TSV，不包含
 完整 QC、decision、changes、workflow、remote location 和数据库迁移状态。
 
-更稳妥的做法是定期创建 release，并在 release 目录执行
-`sha256sum -c checksums.sha256`（Linux）或
-`shasum -a 256 -c checksums.sha256`（macOS）。
+更稳妥的做法是定期创建 release，并按[创建 release](../getting-started/first-project.md)中的步骤在 release 目录完成校验。
 
 备份策略可按重建成本分级：
 

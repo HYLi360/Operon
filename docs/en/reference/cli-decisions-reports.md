@@ -59,7 +59,8 @@ Materializes database entities into a directory by file identity for consumption
   - `manifest.tsv` with columns `file_id`, `entity_type`, `entity_id`, `file_role`, `format`, `compression`, `export_relative_path`, `original_relative_path`, `source_url`, `size_bytes`, `sha256`; `sha256` is recomputed over the materialized bytes;
   - `qc.tsv`: a QC long-table snapshot of the exported entities, written by default; skipped with `--no-qc`. QC is fetched in bounded batches so exports with thousands of entities do not exceed SQLite expression/parameter limits; entity/stage/metric ordering is preserved;
   - `checksums.sha256`: checksums of the exported bytes;
-  - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the manifest SHA-256.
+  - `taxa.tsv`: one row per exported file recording `file_id`, `organism_id`, `scientific_name`, `taxon_id`, `taxonomy_source`, and `taxonomy_version`;
+  - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the `manifest_sha256` and `taxa_sha256` identities.
 - Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
 - Semantically complementary to release: release targets publication (QC-gated, immutable snapshot), while export targets analysis inputs (arbitrary selection criteria, materialized on demand).
 
@@ -74,7 +75,7 @@ operon adopt --from-manifest FILE [--actor NAME]
 
 Registers derived artifacts produced by external analyses/workflows back into the database as first-class files: they enter the `files` manifest, become eligible for QC, evaluate, export, and release, and can be selected by `analyze` candidate matching (`entity_type + file_role + format`) as inputs to downstream recipes, enabling cascading analysis. Together with export this closes the contract loop: export provides the input-side manifest, and after the external workflow consumes it, adopt re-registers the output side.
 
-- The two modes are mutually exclusive: `--file` single-file mode requires `--entity-type`/`--entity-id`/`--role` plus at least one `--derived-from` (repeatable); `--from-manifest` batch mode lets snakemake/nextflow re-register a whole batch of outputs at the end of a rule. The manifest format is described in the [external analysis guide](../guides/external-analysis.md).
+- The two modes are mutually exclusive: `--file` single-file mode requires `--entity-type`/`--entity-id`/`--role` plus at least one `--derived-from` (repeatable); `--from-manifest` batch mode lets snakemake/nextflow re-register a whole batch of outputs at the end of a rule. The batch manifest is a JSON list of records or a TSV with a header row: every record requires `path`, `entity_type`, `entity_id`, `role`, and `derived_from` (at least one already-registered file_id); `format`, `compression`, and `workflow_run_id` are optional and auto-detected when omitted, `derived_from` carries comma-separated file_ids, and relative paths resolve from the project root.
 - Artifacts are materialized under `analysis/adopted/<entity_id>/`, never inside the immutable `raw/` archive.
 - Inherits the ingest idempotency/conflict invariants: same entity, same role, same bytes reuse the same `FIL_` idempotently; different bytes raise `ConflictError`.
 - Every `derived_from` file_id must already be registered, and the target entity must be active. Preflight checks the entire batch for invalid paths, formats, and conflicting content (including two items with the same entity/role). An occupied adoption target with different content is rejected without relocation or quarantine.
@@ -110,10 +111,10 @@ A recipe declaring `file_role_prefix` with the same prefix then selects all unit
 operon run-pipeline \
   --source FILE --entity-type {run|assembly|annotation} --entity-id ID \
   --role ROLE [--format FMT] [--compression C] [--source-url URL] \
-  [--profile NAME]
+  [--profile NAME] [--yes]
 ```
 
-Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code.
+Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs.
 
 ## report
 
@@ -127,9 +128,9 @@ operon report coverage --reference-set NAME@TAXONOMY_VERSION --release VERSION
 operon report metadata [--output DIRECTORY] [--include-retired]
 ```
 
-- `qc`: prints the QC long table; `--export` additionally writes `qc/aggregate/qc_results.tsv` and `qc_results.wide.tsv`.
+- `qc`: prints the QC long table; `--export` additionally writes `qc/aggregate/qc_results.tsv` and `qc/aggregate/qc_results.wide.tsv`.
 - `decisions`: shows `current_decisions` (the latest decision per entity/profile).
-- `analysis`: shows the analysis summaries synced to the database; `--hits` instead shows the structured alignment hit rows from `analysis_alignments`, with `--limit` defaulting to 20 (format, output-file, and filter flags are documented under [report analysis](cli-analysis.md)).
+- `analysis`: shows the analysis summaries synced to the database; `--hits` instead shows the structured alignment hit rows from `analysis_alignments` (format, output-file, and filter flags are documented under [report analysis](cli-analysis.md)).
 - `coverage`: computes family/genus coverage only against the named frozen taxonomy reference set. The default `--scope metadata` audits the current `organisms`; `--release VERSION` instead counts the published dataset along `release_members` and the frozen in-release metadata, re-verifying the metadata SHA-256 saved at creation time. The two options are mutually exclusive.
 - Coverage reports are written to `reports/coverage/COV_<input-hash>/`, including numerator/denominator, complete targets, missing lists, included/excluded observations, and provenance. Identical input is verified and the existing report reused.
 - `metadata`: exports a read-only TSV snapshot of `organisms/samples/runs/assemblies/annotations/accessions/files` plus the normalized sources `data_sources/source_links` from the current SQLite database, together with a `manifest.json` containing row counts and SHA-256 values; written to `reports/metadata/` by default. It is a derived report, not a backup, and cannot overwrite the database in reverse.

@@ -61,8 +61,9 @@ schema migration。对应回归测试为
 `test_schema_2_6_adds_resumable_adapter_and_repair_history`。
 
 `Database._migrate_lifecycle_schema_2_7()` 为 2.6 项目纯加法增加
-`entity_lifecycle_events`、`current_entity_lifecycle` 与
-`effective_retired_entities`。事件表只追加 `RETIRE`/`RESTORE`，恢复事件通过
+`entity_lifecycle_events` 表及其两个索引；`current_entity_lifecycle` 与
+`effective_retired_entities` 视图并非在此创建，而是由
+`Database._ensure_current_schema_objects()` 创建。事件表只追加 `RETIRE`/`RESTORE`，恢复事件通过
 `reverts_event_id` 和对应的 `changes.reverts_change_id` 指回被撤销的直接退役；有效退役
 视图则沿 organism → sample → run/assembly → annotation 所有权关系传播状态。迁移不删除、
 移动或改写 metadata、file、QC、analysis、release、workflow 或归档字节。只要仍支持打开

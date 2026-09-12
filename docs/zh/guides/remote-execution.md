@@ -45,7 +45,9 @@ operon run-external --step quast --backend ssh \
   --expected-output qc/quast_out/report.tsv
 ```
 
-Slurm 后端的前提与行为：
+## Slurm 后端
+
+前提与行为：
 
 - 项目目录必须位于与计算节点共享的文件系统上；`sbatch`/`squeue` 需在 PATH 中，
   缺失时报配置错误。
@@ -58,7 +60,9 @@ Slurm 后端的前提与行为：
   在共享文件系统上短暂不可见时会先重试，提交输出前有警告行也能解析最终 job ID。
 - 超时按 `--timeout`（秒）控制，超时尝试 `scancel`。
 
-SSH 后端的前提与行为：
+## SSH 后端
+
+前提与行为：
 
 - 控制端可以运行 Linux 或 macOS。本地项目路径先解析再映射，因此 macOS 的
   `/var` 与 `/private/var` 等文件系统别名会识别为同一项目根目录，同时仍严格拒绝
@@ -103,6 +107,8 @@ SSH 后端的前提与行为：
 
 工具版本探测（`version_args + version_pattern`）在非 `local` 后端时也通过同一
 后端执行，无需在远端手工准备。
+
+## Recipe 级 Slurm 覆盖
 
 单个 recipe 可用 `slurm:` mapping 覆盖 `execution.slurm` 的同名字段，例如给
 BUSCO 单独调整内存与时间（完整字段见 [Recipe 配置参考](../reference/recipe-overview.md)）：

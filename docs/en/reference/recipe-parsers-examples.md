@@ -13,11 +13,11 @@
 | `rpsbproc_tabular` | rpsbproc tabular report | Per-domain e-value/bitscore hits plus full structured alignment rows |
 | `busco_json` | BUSCO output directory or JSON file | Completeness, single-copy/duplicated, fragmented/missing, lineage and version metadata |
 
-All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
+All summary metrics are written to `analysis_results` and synced to `qc_results` with `qc_stage: analysis:<recipe>`; they therefore appear naturally in the `report qc` wide-table export and can be consumed directly by QC profiles. Every hit-producing parser writes the same concrete metric names — `query_count` (distinct queries), `query_with_hit_count` (queries with a rank-1 hit), `hit_count` (distinct query–subject pairs), and `best_evalue` (only when a hit carries an e-value); `busco_json` writes the BUSCO completeness metrics instead. Top hits are additionally written to `analysis_hits` (EAV rows, truncated to `max_hits_per_query` per query). Parsers with coordinates (`blast_tabular`, `hmmer_domtblout`, `rpsbproc_tabular`) also write every parsed hit as a structured row to `analysis_alignments` — query/subject IDs, hit rank, query/subject intervals, e-value, bitscore, and percent identity as dedicated columns, with unmapped columns kept in `extra_json`; this table is never truncated by `max_hits_per_query`, and `report analysis --hits` reads from it.
 
 ### 10.1 `blast_tabular`
 
-At least the columns must be declared:
+At least two columns (the query and subject columns) must be declared:
 
 ```yaml
 result_parser: blast_tabular
@@ -48,56 +48,49 @@ result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, eva
 
 The common names `qstart`/`qend`/`sstart`/`send`/`evalue`/`bitscore`/`pident` are detected by default; `qstart_column`/`qend_column`/`sstart_column`/`send_column`/`evalue_column`/`bitscore_column`/`pident_column` override them when a tool uses different headers. Alignment rows are written in full regardless of `max_hits_per_query`.
 
-For rpsblast, which emits no standard coordinate header names in some pipelines, declare the mapping explicitly:
+For rpsblast, which emits no standard coordinate header names in some pipelines, declare the mapping explicitly. The shipped `rpsblast_cdd` recipe instead couples `rpsblast` with `rpsbproc` through a `commands` chain (see 10.5 `rpsbproc_tabular` below); for a single-command `rpsblast -outfmt 6` pipeline, an alternative recipe (here `rpsblast_cdd_outfmt6`) shows the same parser fields at recipe level — add the tool-level `executable`, `run_method`, and version probe as usual:
 
 ```yaml
-tools:
-  rpsblast:
-    executable: rpsblast
-    run_method: "conda run --no-capture-output -n blast"
-    version_args: ["-version"]
-    version_pattern: 'rpsblast:\s*([^\s]+)'
-    recipes:
-      rpsblast_cdd:
-        description: Annotation proteins against the CDD database
-        entity_type: annotation
-        file_role: protein_fasta
-        format: fasta
-        database: /data/db/cdd/Cdd
-        database_version: "3.21"
-        output_subdir: rpsblast_cdd
-        output_suffix: .rpsblast.tsv
-        arguments:
-          - -db
-          - ${database}
-          - -query
-          - ${input}
-          - -out
-          - ${output}
-          - -outfmt
-          - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
-          - -num_threads
-          - ${threads}
-        result_parser: blast_tabular
-        result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
-        hit_metric_columns: [pident, length, evalue, bitscore]
-        query_column: qseqid
-        subject_column: sseqid
-        qstart_column: qstart
-        qend_column: qend
-        sstart_column: sstart
-        send_column: send
-        evalue_column: evalue
-        bitscore_column: bitscore
-        pident_column: pident
-        max_hits_per_query: 5
+rpsblast_cdd_outfmt6:
+  description: Annotation proteins against the CDD database
+  entity_type: annotation
+  file_role: protein_fasta
+  format: fasta
+  database: /data/db/cdd/Cdd
+  database_version: "3.21"
+  output_subdir: rpsblast_cdd
+  output_suffix: .rpsblast.tsv
+  arguments:
+    - -db
+    - ${database}
+    - -query
+    - ${input}
+    - -out
+    - ${output}
+    - -outfmt
+    - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+    - -num_threads
+    - ${threads}
+  result_parser: blast_tabular
+  result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+  hit_metric_columns: [pident, length, evalue, bitscore]
+  query_column: qseqid
+  subject_column: sseqid
+  qstart_column: qstart
+  qend_column: qend
+  sstart_column: sstart
+  send_column: send
+  evalue_column: evalue
+  bitscore_column: bitscore
+  pident_column: pident
+  max_hits_per_query: 5
 ```
 
-When the rpsblast run is instead post-processed by `rpsbproc` (the recommended CDD pipeline), use a `commands` chain with the `rpsbproc_tabular` parser — see below.
+When the rpsblast run is post-processed by `rpsbproc` (the recommended CDD pipeline), use a `commands` chain with the `rpsbproc_tabular` parser — see below.
 
 ### 10.2 `hmmer_tblout`
 
-This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. Hit direction is normalized on write-back: `query_id` is always the analyzed sequence and `subject_id` always the HMM profile, whichever HMMER program produced the file — the recipe field `hmmer_mode`, then the `# <program> :: ...` header line, decide whether the hmmsearch column order is swapped, and files with neither keep the hmmscan-style mapping (field contract in [Recipe field reference](recipe-fields.md)). tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
+This parser reads target, query, full-sequence E-value, and score from a standard HMMER tblout, ignores comment lines, and keeps the first `max_hits_per_query` targets per query in input order. Hit direction is normalized on write-back — `query_id` is always the analyzed sequence and `subject_id` always the HMM profile, whichever HMMER program produced the file; the `hmmer_mode` field and the header fallback that decide the swap are specified in the [Recipe field reference](recipe-fields.md). tblout carries no alignment coordinates, so this parser writes no `analysis_alignments` rows.
 
 ```yaml
 arguments:
@@ -116,7 +109,7 @@ max_hits_per_query: 5
 
 ### 10.3 `hmmer_domtblout`
 
-For structured per-domain hits, prefer `--domtblout` and the `hmmer_domtblout` parser. Each non-comment line is one domain. As with `hmmer_tblout`, hits are normalized so that `query_id` is the analyzed sequence and `subject_id` the HMM profile — `hmmer_mode` and the program header decide whether to swap, with the same hmmscan-style fallback. The per-domain i-Evalue and domain score are recorded as `evalue`/`bitscore`, and the alignment coordinates become `query_start`/`query_end` (sequence coordinates under both hmmsearch and hmmscan); the HMM and envelope coordinates are preserved in `extra_json`, and subject coordinates stay NULL because domtblout does not carry them. EAV hits still respect `max_hits_per_query`, while `analysis_alignments` keeps every domain row.
+For structured per-domain hits, prefer `--domtblout` and the `hmmer_domtblout` parser. Each non-comment line is one domain. As with `hmmer_tblout`, hits are normalized so that `query_id` is the analyzed sequence and `subject_id` the HMM profile (the swap rules are the `hmmer_mode` contract in the [Recipe field reference](recipe-fields.md)). The per-domain i-Evalue and domain score are recorded as `evalue`/`bitscore`, and the alignment coordinates become `query_start`/`query_end` (sequence coordinates under both hmmsearch and hmmscan); the HMM and envelope coordinates are preserved under the named `extra_json` keys `hmm_from`, `hmm_to`, `env_from`, and `env_to`, and subject coordinates stay NULL because domtblout does not carry them. EAV hits still respect `max_hits_per_query`, while `analysis_alignments` keeps every domain row.
 
 ```yaml
 hmmsearch_pfam_domains:
@@ -146,10 +139,10 @@ BUSCO typically uses directory output:
 
 ```yaml
 result_parser: busco_json
-result_glob: short_summary*.json
+result_glob: short_summary.specific.*.json
 ```
 
-`result_glob` must stay inside the output directory — no absolute paths and no `..`. If it matches exactly one JSON, that file is used; if both generic and specific summaries exist, the unique `short_summary.specific.*.json` wins; if multiple specific summaries still match, the parser refuses to guess and you should narrow the glob.
+`result_glob` must stay inside the output directory — no absolute paths and no `..`. If it matches exactly one JSON, that file is used; if both generic and specific summaries exist, the unique `short_summary.specific.*.json` wins; if multiple specific summaries still match, the parser refuses to guess and you should narrow the glob. The shipped `busco_autolineage` and `busco_lineage` recipes use the narrower `short_summary.specific.*.json`; the broader `short_summary*.json` is also valid because a unique specific summary wins over a generic one, but it matches more files.
 
 The JSON must contain at least `results.Complete percentage` and `results.n_markers`. Parsed results include:
 
@@ -277,7 +270,7 @@ tools:
           - --tar
 
         result_parser: busco_json
-        result_glob: short_summary*.json
+        result_glob: short_summary.specific.*.json
 ```
 
 BUSCO's `-o` is a short run name, not an input path, and should not receive the full `${output}`; `--out_path` is the parent directory. Hence the separate use of `${output_name}` and `${output_parent}`.

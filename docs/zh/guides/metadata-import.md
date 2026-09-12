@@ -42,15 +42,16 @@ ASM_000001,SMP_000001,GCA_000000001,1,chromosome,SPAdes v4.0.0
 operon import dataset
 ```
 
-向导界面暂时全部使用英文，已有 organism 使用 scientific name 自动补全。source 章节
-要求明确选择 INSDC 或非 INSDC，并记录 database/repository 与 provider，同时询问记录 URL、
-引用文献和 License。非 INSDC 数据必须提供 citation/DOI 与 License 名称或 SPDX identifier；
-INSDC 来源可将这两项留空。taxonomy ID、sequencing、genome FASTA 或部分 annotation 文件
-仍可跳过，汇总审阅会保留醒目的 warning。选择 `Edit ...` 修改某一章节后会直接回到汇总
-审阅，而不会接着运行原向导的后续章节。最终确认前不会修改 SQLite 或归档文件。
+向导界面暂时全部使用英文；其提问流程、INSDC/非 INSDC 来源规则、非 INSDC 数据的
+citation/License 必填要求与汇总审阅流程见 [import](../reference/cli-project-metadata.md#import)。
 
 成功导入后，规范化来源写入 `data_sources`，并通过 `source_links` 关联本次选择/创建的
 entity 与归档 file；相同来源内容按身份复用。`report metadata` 和 release 都会包含这两张表。
+
+`report metadata` 还会在 TSV 旁写出 `manifest.json`，记录 `report_type`
+（`operon_metadata`）、`created_at`、`metadata_schema_version`（导出所用
+`config/schemas.yaml` 的版本）、`database` 绝对路径、`include_retired` 标志，以及
+`tables` 映射——为每个导出的 `<table>.tsv` 列出 `row_count` 与 `sha256`。
 
 ## 扩展元数据字段
 

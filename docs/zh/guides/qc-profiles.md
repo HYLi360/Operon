@@ -162,7 +162,7 @@ operon report decisions \
 `kind: sequence_classification` 的 profile 给单条序列打标签，而不是对实体做判定。
 存储在 `analysis_alignments` 中的比对命中是观测数据，判定由 profile 做出。用
 `operon classify-sequences --profile NAME` 运行（见
-[命令参考](../reference/cli-analysis.md)）；标签写入 `sequence_labels` 并带完整审计。
+[命令参考](../reference/cli-analysis.md#classify-sequences)）；标签写入 `sequence_labels` 并带完整审计。
 所有阈值都写在这份 YAML 里——绝不在代码中。
 
 ```yaml
@@ -243,7 +243,9 @@ rules:
   `evalue`、`bitscore`、`percent_identity`……），再解析到派生字段 `span`
   （`query_end - query_start + 1`）与 `seqid`（query id 取第一个空白前的部分），
   最后解析到命中行 `extra_json` 的键——`hit_type`、`incomplete`、`short_name`、
-  `i_evalue` 等 parser 特有字段。字段缺失时条件永不成立。
+  `i_evalue` 等 parser 特有字段。字段缺失时，无论用什么 operator（包括 `!=`、
+  `not_in` 与 `exists`）判定都为 False，因此只有把条件包进 `not: {...}` 才会成立
+  ——对这个 False 取反即为 True。
 
 以相同 profile 内容与相同输入重跑是空操作；修改 profile 后会重新判定受影响的
 序列，并在 `changes` 中逐条审计每次标签变更。

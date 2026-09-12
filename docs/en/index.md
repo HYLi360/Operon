@@ -1,6 +1,6 @@
 # Operon Documentation
 
-Operon is a file-backed database for large-scale genomic data. It supports metadata management, immutable file archiving, quality control (QC), rule-based decisions, external analysis, remote storage and execution, and versioned dataset releases.
+The [Project Overview](overview.md) introduces Operon, a file-backed database for large-scale genomic data, and lists its capabilities and boundaries.
 
 This documentation matches `operon` {{ operon_version }}, database schema {{ db_schema }}, and metadata schema {{ metadata_schema }}. The Chinese and English documentation use the same directory structure.
 
@@ -36,9 +36,4 @@ contributor/index
 
 ## Core concepts
 
-- Structured metadata in SQLite is the only writable source of truth.
-- Raw files are immutable; derived data must be rebuildable.
-- File identity is `file_id + sha256 + size_bytes`; a path only records the current location.
-- QC tools produce metrics. Acceptance decisions are produced by versioned YAML profiles.
-- Processing is recorded in the entity state machine, SQLite, and JSONL provenance logs.
-- A release is an immutable snapshot containing a manifest, checksums, exclusions, metadata snapshots, and provenance.
+The design invariants are stated once in the [Architecture overview](architecture/overview.md#design-goals).

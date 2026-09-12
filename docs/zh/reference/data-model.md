@@ -1,8 +1,6 @@
 # 数据模型
 
-## 数据模型
-
-### 核心实体
+## 核心实体
 
 ```text
 organisms (ORG_)
@@ -15,15 +13,18 @@ organisms (ORG_)
                             └── protein FASTA
 ```
 
-外部 accession 放在独立的 `accessions` 表中，不作为主键：
+外部 accession 放在独立的 `accessions` 表中，且从不作为实体的主键：
 
 ```text
-internal_type   internal_id    namespace        accession         version
-assembly        ASM_000001     NCBI_Assembly    GCA_000000001     1
-sample          SMP_000001     NCBI_BioSample   SAMN0000001       1
+internal_type   internal_id    namespace        accession         version   is_primary
+assembly        ASM_000001     NCBI_Assembly    GCA_000000001     1         1
+sample          SMP_000001     NCBI_BioSample   SAMN0000001       1         1
 ```
 
-### files：文件清单
+该表自身的主键是 `(namespace, accession)`，因此一个 accession 至多映射到一个内部实体；
+当一个实体有多个 accession 时，`is_primary` 标记其中的主 accession。
+
+## files：文件清单
 
 `files` 是归档文件的 manifest。关键字段：
 
@@ -34,7 +35,7 @@ relative_path, source_url, size_bytes, sha256, downloaded_at, status
 
 文件身份由 `file_id + sha256 + size_bytes` 定义。`relative_path` 只表示文件当前位于项目中的位置。
 
-### qc_results：QC 长表
+## qc_results：QC 长表
 
 内置 QC 和外部 QC 都写入同一张长表。当前版本每条结果额外绑定：
 
@@ -65,7 +66,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 结果；宽表因每个 metric 只能有一列，仅提供最近值的浏览视图。规则引擎可通过
 `source.qc_stage` 只读取指定 stage，避免正式判定被另一个分析变体的“最新值”改变。
 
-### qc_profiles 与 decisions：可追溯判定
+## qc_profiles 与 decisions：可追溯判定
 
 规则引擎每次 `evaluate` 都会：
 
@@ -82,28 +83,32 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 （`NOT_EVALUATED`），`ignore` 会在 decision 的 reason_codes 中留下持久化痕迹；
 没有隐式分类回退。
 
-### 其他系统表
+## 其他系统表
+
+下表中除标注“(view)”的条目外都是 `CREATE TABLE` 定义；`current_entity_lifecycle` 与
+`effective_retired_entities` 是 `CREATE VIEW` 定义。
 
 | 表 | 用途 |
 |---|---|
 | `entity_state` | 实体级状态机，含数据库 schema 标记行 |
+| `id_counters` | 按实体类型分配的 ID 计数器（`entity_type` 主键、`next_number`），支撑稳定的 `ORG_`/`SMP_`/`RUN_`/`ASM_`/`ANN_`/`FIL_` 标识；ID 在写锁下从计数器预留，因此失败插入后会留下空号 |
 | `workflow_runs` | 结构化运行记录（与 `logs/workflow.jsonl` 对应），含 executor、scheduler job ID、执行详情与资源使用列（`duration_seconds`、`max_rss_mb`、`avg_rss_mb`、`cpu_seconds`；采集不到留 NULL，不影响任务判定） |
-| `execution_environments` | 内容寻址的执行环境文档（hostname、OS/kernel、Python/operon 版本、相关环境变量、docker 探测）；`workflow_runs` 与 `analysis_jobs` 经 `environment_id` 引用 |
-| `file_lineage` | 派生文件到输入文件的谱系边（`derived_file_id`、`input_file_id`、可选 `workflow_run_id`、`created_at`），由 `operon adopt` 与 `operon fanout` 写入；`UNIQUE(derived_file_id, input_file_id)` 使重复 adopt 幂等 |
-| `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份 |
+| `execution_environments` | 内容寻址的执行环境文档（hostname、OS/kernel、Python/operon 版本、相关环境变量、docker 探测）；`workflow_runs.environment_id` 与 `analysis_jobs.environment_id` 指向它，但两列都没有声明外键，引用由应用层维护 |
+| `file_lineage` | 派生文件到输入文件的谱系边（`derived_file_id`、`input_file_id`、可选 `workflow_run_id`、`created_at`），由 `operon adopt` 与 `operon fanout` 写入；`derived_file_id` 声明了指向 `files(file_id)` 的外键，`input_file_id` 没有；`UNIQUE(derived_file_id, input_file_id)` 使重复 adopt 幂等 |
+| `data_sources` | 外部数据库/仓库、提供者、记录 URL、引用文献、License 与规范化内容身份；`source_type` 仅允许 `insdc`/`non_insdc`，且非 INSDC 行必须同时提供 citation 与 License 名称（CHECK 约束） |
 | `source_links` | 来源与 organism/sample/run/assembly/annotation/file 的多对多关联及导入 provenance |
 | `schema_migrations` | 已应用数据库迁移的稳定 ID、脚本身份和应用时间 |
-| `adapter_run_items` | 可恢复 adapter 的 accession/item 级状态、尝试、错误与结果 write-set |
+| `adapter_run_items` | 可恢复 adapter 的 accession/item 级状态、尝试、错误与结果 write-set；`status` 仅允许 `pending`、`downloading`、`completed`、`skipped`、`failed`、`interrupted` |
 | `ncbi_assembly_records` | GCA/GCF 来源记录到稳定 `ASM_` 的映射、canonical 标记及来源文件指针 |
 | `ncbi_annotation_records` | 来源 accession/provider/version/date 规范化得到的 annotation 身份 |
 | `entity_supersessions` | 不删除旧行的逻辑替代关系及 repair provenance |
-| `entity_lifecycle_events` | 实体的 append-only `RETIRE`/`RESTORE` 历史、原因、证据、操作者、workflow 与反向事件指针 |
-| `current_entity_lifecycle` | 每个实体最新直接生命周期事件；只表达该实体自身，不传播祖先状态 |
-| `effective_retired_entities` | 当前有效退役集合；沿 organism → sample → run/assembly → annotation 传播，并保留根退役事件身份 |
+| `entity_lifecycle_events` | 实体的 `RETIRE`/`RESTORE` 历史、原因、证据、操作者、workflow 与反向事件指针；`object_type` 仅允许 `organism`、`sample`、`run`、`assembly`、`annotation`，`action` 仅允许 `RETIRE`/`RESTORE`。该历史按约定保持 append-only：schema 未声明任何触发器，因此直接 SQL 写入不会被阻止 |
+| `current_entity_lifecycle`（view） | 每个实体最新直接生命周期事件；只表达该实体自身，不传播祖先状态 |
+| `effective_retired_entities`（view） | 当前有效退役集合；沿 organism → sample → run/assembly → annotation 传播，并保留根退役事件身份 |
 | `file_locations` | `file_id` 在各远程镜像上的 URI、身份副本、可用状态与最近校验时间；可由远端清单重建 |
 | `local_file_verifications` | 最近一次完整本地 SHA-256 通过时的 stat 指纹；仅为可重建的 QC 加速缓存，不改变 manifest 文件身份 |
 | `releases` / `release_members` | release 元数据与成员文件清单 |
-| `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态；`recipe_snapshot_id` 回指产生该作业的 recipe 快照 |
+| `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态；completed cache 由部分唯一索引 `idx_analysis_jobs_completed_cache` 表达，键为 `(analysis_name, file_id, parameter_sha256, input_sha256, database_identity)` 且带 `WHERE status='completed'`，因此 superseded 或失败的行永远不会满足缓存查找；`recipe_snapshot_id` 回指产生该作业的 recipe 快照 |
 | `recipe_snapshots` | 内容寻址的 recipe 快照（recipe 原文 + 引用 tool spec 原文的规范化 JSON 及其 SHA-256），`UNIQUE(recipe_name, recipe_version, recipe_sha256)` 去重；由 `analyze` 记录 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
 | `sequences` | 每条 FASTA 记录一行（`file_id`、`file_sha256`、`entity_type`、`entity_id`、`seqid`、`length`；`UNIQUE(file_id, seqid)`），由内置 FASTA QC 填充（annotation QC 还会同步其 assembly 的序列），`import-qc` 导入 `qc-measure` payload 时也会写入；支撑 `show` 与只读 SQL 的 seqid 反查 |
@@ -115,24 +120,36 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `coverage_reports` / `coverage_report_metrics` | 不可变输入身份对应的覆盖率报告历史与 family/genus 指标 |
 | `changes` | 人工修改审计日志 |
 
-### 实体退役与恢复：先隔离，再决定是否物理清除
+## metadata schema 层
 
-`retire` 是控制面状态变化，不是文件操作。它向 `entity_lifecycle_events` 追加一个直接
-`RETIRE` 事件，同时向 `changes` 追加审计行；不会删除数据库行、移动文件、修改 checksum、
-撤销既有 QC/analysis/workflow，也不会改写已经创建的 release。退役一个父实体会在
-`effective_retired_entities` 中使其所有权后代有效退役：organism 覆盖 sample、run、assembly
-和 annotation，sample 覆盖自己的 run、assembly 和 annotation，assembly 覆盖 annotation。
+上表通过版本化的项目 metadata schema 载入：项目初始化时把 `default_schemas()`
+（`operon/schema.py`）写入 `config/schemas.yaml`，`Schema` 载入该文档并以其中的
+`schema_version` 作为 metadata schema 标记。内置契约版本是 `operon/schema.py` 中的
+`METADATA_SCHEMA_VERSION`，当前版本为 {{ metadata_schema }}。
 
-`restore` 只反转目标自身最近的直接 `RETIRE`，并追加一个指回原事件/原审计行的
-`RESTORE`，不删除历史。由祖先继承退役的子实体不能单独恢复，必须先恢复造成隔离的根；
-反之，子实体若另有自己的直接退役，即使父实体恢复也仍保持退役。这使逆过程与原过程严格
-对应，不会把独立的人工决定一起抹掉。
+- **表契约。** `default_schemas()` 为每张表（`organisms`、`samples`、`runs`、
+  `assemblies`、`annotations`、`accessions`、`files`）声明 TSV `file`、`primary_key`、
+  可选 `unique` 约束，以及逐字段契约：`type`、`required`、`pattern`、`allowed` 与
+  `min`/`max`。
+- **内部 ID 模式。** 内部 ID 匹配 `^ORG_\d{6}$`、`^SMP_\d{6}$`、`^RUN_\d{6}$`、
+  `^ASM_\d{6}$`、`^ANN_\d{6}$` 与 `^FIL_\d{6}$`；taxonomy 快照使用 `TAX_` 前缀，
+  `files.entity_id` 接受 `(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}`。ID 来自 `id_counters`，
+  从不来自外部 accession。
+- **受控词汇表。** 声明了 `allowed` 的字段会拒绝其他任何取值，例如
+  `taxonomy_source`（`NCBI`/`GTDB`/`other`）、`sex`、`library_strategy`、
+  `library_source`、`library_layout`、`platform`、`assembly_level`、
+  `reference_status`、`source_database`、`accessions.internal_type`，以及
+  `files.entity_type`/`file_role`/`format`/`compression`/`status`。
+- **缺失值。** 原始取值 `""`（空串）、`na`、`n/a`、`null` 与 `none` 在去除空白并转小写后
+  归一化为 NULL；必填字段出现这些取值会报校验错误，而显式列入 `allowed` 的取值会被保留
+  （例如 `compression: none`）。
 
-活动数据消费者默认排除有效退役实体，包括 `show` 的后代计数、status/report、批量 QC、
-规则判定、外部分析候选、metadata coverage、NCBI 重导入复用和新 release。显式查询历史时
-可用对应的 `--include-retired`；`retired` 列出当前直接及继承状态。备份、校验、远程驻留、
-只读 SQL、已有 release 和审计历史仍保留完整归档视角。
+`Schema.validate_and_normalize()` 在写入任何行之前拒绝未知表/字段、类型不匹配、越界数值
+以及不在受控词汇表内的取值。
 
-当前架构没有 `purge`。退役计划会列出后代、文件及 QC/decision/analysis/workflow/source/
-remote/release 引用，并明确 `physical_changes` 全为零。未来若增加物理清除，必须以这份可审计
-状态和引用图为前置条件，另行定义保留期、release/远端引用保护、可恢复窗口和不可逆确认。
+## 实体退役与恢复：先隔离，再决定是否物理清除
+
+`retire` 写入 `entity_lifecycle_events` 事件行与 `changes` 审计行；
+`effective_retired_entities` 解析继承退役，`retired` / `show --include-retired` 暴露该状态。
+事件配对规则、隐藏退役实体的消费者清单以及“不提供 `purge`”策略见
+[Release、生命周期与正确性保证](../architecture/release-lifecycle.md)。

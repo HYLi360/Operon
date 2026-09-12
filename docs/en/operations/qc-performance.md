@@ -10,6 +10,7 @@ A QC record keeps the original `started_at`, `finished_at`, `tool`, `tool_versio
 
 - `duration_seconds`: total elapsed time measured with `time.perf_counter()`, in seconds;
 - `file_id`, `file_role`, `file_format`, `input_size_bytes`, and `input_sha256`: the identity of the manifest file directly processed by this command;
+- `checksum_verification_method`: the integrity-verification method recorded for this run, mirroring `qc_timing.integrity.verification_method`;
 - `parser_backend`: the parser backend actually used — currently `cython` by default;
 - `stage_timings_seconds`: per-stage timings shaped for direct aggregation by streaming tools;
 - `qc_timing`: the full structure with `schema_version`, clock type, primary input, related inputs, and per-stage timings.
@@ -39,17 +40,19 @@ The main stages:
 | `protein_fasta_integrity` | Verifying the manifest content identity of the associated protein FASTA |
 | `protein_stats` | Scanning the associated protein FASTA |
 | `qc_results_write` | Batch write into `qc_results` |
+| `sequences_sync` | Replacing the `sequences` rows of the measured FASTA with its per-seqid lengths; annotation QC also syncs the associated assembly |
 | `state_qc_complete` / `state_qc_failed` | Writing the final state and audit record |
 | `unattributed` | Small segments not individually wrapped, such as metric-dict construction; does not overlap the stages above |
 
 Timing values are kept at microsecond resolution to reduce whole-second quantization error on short tasks; this does not mean OS scheduling and filesystem noise are microsecond-stable. Performance conclusions should be based on multiple paired runs in the same environment and on per-stage medians.
 
-## The representative re-measurement set of 532 annotations
+## The representative re-measurement set
 
-The machine-readable list lives at `benchmarks/qc_representative_entities.tsv` in the code repository. It was selected in strata based on measurements of the old implementation from 2026-08-18 and the Cython implementation from 2026-08-29:
+The machine-readable list lives at `benchmarks/qc_representative_entities.tsv` in the code repository; the same directory holds `benchmarks/alignment_qc_benchmark.py`, the benchmark script for alignment QC. The annotation set was selected in strata based on measurements of the old implementation from 2026-08-18 and the Cython implementation from 2026-08-29:
 
 - `largest_*_regression` / `*_net_regression`: objects whose total time increased in the new version;
 - `largest_input*`: the largest inputs and longest tasks, amplifying stable hotspots;
+- `large_input_annotation_regression`: a large input whose annotation stage regressed in the new version;
 - `annotation_speedup_control`: counterexamples where the annotation stage became noticeably faster, avoiding analysis of regressed samples only;
 - `*_baseline_q*`: size baselines selected by the combined size of the three archived annotation files;
 - `large_near_neutral_control`: large but overall near-unchanged control objects.
@@ -85,7 +88,7 @@ Accordingly, the current implementation adds two optimizations aimed directly at
 
 After assembly FASTAs were added on 2026-08-31, the same 18 entities on HDD required reading about 66.58 GB of assembly per round, with `assembly_fasta_lengths` at 417.9, 403.7, and 403.4 seconds across three rounds — about 60% of total time. The length map is therefore now stored under `qc/cache/fasta_lengths/` keyed by the assembly's `file_id + sha256 + size_bytes + cache format`: the first run still does a full scan, while later processes record `related_inputs[].length_cache.status=hit` and only pay the index-loading cost. A corrupt cache is deleted and rebuilt automatically; a SHA-256 digest in the cache header also detects index rows whose format is legal but whose content has changed. The JSONL records this round's behavior explicitly as `built`, `hit`, or `write_failed`.
 
-In 0.5.3's three-round re-measurement of the same 18 entities, 54 files, on HDD, the first round built all 18 caches (`built`) and the following two rounds hit all 36 times (`hit`). The average total time of the last two rounds of 0.5.2 was 670.13 seconds; 0.5.3 with warm caches averaged 269.05 seconds — a 59.85% reduction, about 2.49× overall; annotation GFF3 files dropped from 588.51 to 186.32 seconds combined, about 3.16×. An assembly scan of about 403.6 seconds per round was replaced by about 4.43 seconds of cache loading. The 18 indexes total about 114 MiB — small relative to 66.58 GB of raw assembly reads per round.
+In 0.5.3's three-round re-measurement of the same 18 entities, 54 files, on HDD, the first round built all 18 caches (`built`) and the following two rounds hit all 36 times (`hit`). The average total time of the last two rounds of 0.5.2 was 670.13 seconds; 0.5.3 with warm caches averaged 269.05 seconds — a 59.85% reduction, about 2.49× overall; annotation GFF3 files dropped from 588.51 to 186.32 seconds combined, about 3.16×. An assembly scan of about 403.6 seconds per round was replaced by about 4.43 seconds of cache loading. The 18 indexes total about 114 MiB — small relative to 66.58 GB of raw assembly reads per round. <!-- version-pin -->
 
 ## Identifying optimization hotspots
 

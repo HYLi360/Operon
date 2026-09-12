@@ -15,6 +15,9 @@
 
 所有汇总 metric 写入 `analysis_results`，并以 `qc_stage: analysis:<recipe>` 同步到
 `qc_results`；因此它们会自然出现在 `report qc` 宽表导出中，也可以直接被 QC profile 使用。
+所有产出命中的 parser 写入的具体 metric 名相同——`query_count`（去重后的 query 数）、
+`query_with_hit_count`（有 rank-1 命中的 query 数）、`hit_count`（去重后的 query–subject 对）
+与 `best_evalue`（仅当命中带有 e-value 时）；`busco_json` 则写入 BUSCO 完整率指标。
 top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hits_per_query`）。
 带坐标的 parser（`blast_tabular`、`hmmer_domtblout`、`rpsbproc_tabular`）还会把每条解析出的命中以结构化行写入
 `analysis_alignments`——query/subject ID、命中排名、query/subject 区间、e-value、bitscore
@@ -23,7 +26,7 @@ top hits 另外写入 `analysis_hits`（EAV 行，每个 query 截断到 `max_hi
 
 ### 10.1 `blast_tabular`
 
-至少需要声明两列：
+至少需要声明两列（query 与 subject）：
 
 ```yaml
 result_parser: blast_tabular
@@ -60,49 +63,46 @@ result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, eva
 `evalue_column`/`bitscore_column`/`pident_column` 显式覆盖。比对行不受
 `max_hits_per_query` 影响，始终全量写入。
 
-以 rpsblast 为例，显式声明全部列映射的完整 recipe：
+以 rpsblast 为例，显式声明全部列映射：随附的 `rpsblast_cdd` recipe 实际用 `commands`
+命令链把 `rpsblast` 与 `rpsbproc` 耦合（见下文 10.5 `rpsbproc_tabular`）；
+若改用单命令的 `rpsblast -outfmt 6` 流程，另一个 recipe（此处名为
+`rpsblast_cdd_outfmt6`）在 recipe 级展示同样的 parser 字段，tool 级 `executable`、
+`run_method` 与版本探测照常补充：
 
 ```yaml
-tools:
-  rpsblast:
-    executable: rpsblast
-    run_method: "conda run --no-capture-output -n blast"
-    version_args: ["-version"]
-    version_pattern: 'rpsblast:\s*([^\s]+)'
-    recipes:
-      rpsblast_cdd:
-        description: Annotation proteins against the CDD database
-        entity_type: annotation
-        file_role: protein_fasta
-        format: fasta
-        database: /data/db/cdd/Cdd
-        database_version: "3.21"
-        output_subdir: rpsblast_cdd
-        output_suffix: .rpsblast.tsv
-        arguments:
-          - -db
-          - ${database}
-          - -query
-          - ${input}
-          - -out
-          - ${output}
-          - -outfmt
-          - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
-          - -num_threads
-          - ${threads}
-        result_parser: blast_tabular
-        result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
-        hit_metric_columns: [pident, length, evalue, bitscore]
-        query_column: qseqid
-        subject_column: sseqid
-        qstart_column: qstart
-        qend_column: qend
-        sstart_column: sstart
-        send_column: send
-        evalue_column: evalue
-        bitscore_column: bitscore
-        pident_column: pident
-        max_hits_per_query: 5
+rpsblast_cdd_outfmt6:
+  description: Annotation proteins against the CDD database
+  entity_type: annotation
+  file_role: protein_fasta
+  format: fasta
+  database: /data/db/cdd/Cdd
+  database_version: "3.21"
+  output_subdir: rpsblast_cdd
+  output_suffix: .rpsblast.tsv
+  arguments:
+    - -db
+    - ${database}
+    - -query
+    - ${input}
+    - -out
+    - ${output}
+    - -outfmt
+    - "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore"
+    - -num_threads
+    - ${threads}
+  result_parser: blast_tabular
+  result_columns: [qseqid, sseqid, pident, length, qstart, qend, sstart, send, evalue, bitscore]
+  hit_metric_columns: [pident, length, evalue, bitscore]
+  query_column: qseqid
+  subject_column: sseqid
+  qstart_column: qstart
+  qend_column: qend
+  sstart_column: sstart
+  send_column: send
+  evalue_column: evalue
+  bitscore_column: bitscore
+  pident_column: pident
+  max_hits_per_query: 5
 ```
 
 如果 rpsblast 的结果改由 `rpsbproc` 后处理（推荐的 CDD 流程），应使用 `commands` 命令链
@@ -112,10 +112,9 @@ tools:
 
 该 parser 按标准 HMMER tblout 读取 target、query、full-sequence E-value 和 score，忽略
 注释行，并按输入顺序保留每个 query 的前 `max_hits_per_query` 个 target。命中方向在
-写回时归一化：无论文件由哪个 HMMER 程序产出，`query_id` 恒为被分析的序列，
-`subject_id` 恒为 HMM profile——由 recipe 字段 `hmmer_mode`、其次文件首行的
-`# <program> :: ...` 决定是否交换 hmmsearch 的列序；两者皆无的文件维持 hmmscan
-形态映射（字段契约见 [Recipe 字段参考](recipe-fields.md)）。tblout 不含比对
+写回时归一化——无论文件由哪个 HMMER 程序产出，`query_id` 恒为被分析的序列，
+`subject_id` 恒为 HMM profile；决定是否交换的 `hmmer_mode` 字段与头部回退规则见
+[Recipe 字段参考](recipe-fields.md)。tblout 不含比对
 坐标，因此该 parser 不会写 `analysis_alignments` 行。
 
 ```yaml
@@ -138,12 +137,13 @@ max_hits_per_query: 5
 
 需要结构化的 per-domain 命中时，建议改用 `--domtblout` 与 `hmmer_domtblout` parser。每
 条非注释行对应一个 domain。与 `hmmer_tblout` 一样，命中被归一化为 `query_id` 是被分析
-序列、`subject_id` 是 HMM profile——由 `hmmer_mode` 与程序头决定是否交换，回退同样是
-hmmscan 形态映射。单 domain 的
+序列、`subject_id` 是 HMM profile（交换规则即
+[Recipe 字段参考](recipe-fields.md) 中的
+`hmmer_mode` 契约）。单 domain 的
 i-Evalue 与 domain score 记录为 `evalue`/`bitscore`，比对坐标进入
 `query_start`/`query_end`（在 hmmsearch 与 hmmscan 两种方向下都是序列坐标）；HMM 与
-envelope 坐标保存在 `extra_json`，subject 坐标因
-domtblout 不含而保持 NULL。EAV hits 仍受 `max_hits_per_query` 限制，而
+envelope 坐标以具名 `extra_json` 键 `hmm_from`、`hmm_to`、`env_from`、`env_to` 保存，
+subject 坐标因 domtblout 不含而保持 NULL。EAV hits 仍受 `max_hits_per_query` 限制，而
 `analysis_alignments` 保留全部 domain 行。
 
 ```yaml
@@ -174,12 +174,15 @@ BUSCO 通常使用目录输出：
 
 ```yaml
 result_parser: busco_json
-result_glob: short_summary*.json
+result_glob: short_summary.specific.*.json
 ```
 
 `result_glob` 必须保持在输出目录内，不能是绝对路径或含 `..`。如果只命中一个 JSON，
 直接使用；如果 generic 与 specific summary 同时存在，优先唯一的
 `short_summary.specific.*.json`；多个 specific summary 仍然匹配时拒绝猜测，应收窄 glob。
+随附的 `busco_autolineage` 与 `busco_lineage` recipe 使用的就是较窄的
+`short_summary.specific.*.json`；较宽的 `short_summary*.json` 同样有效（唯一的 specific
+summary 优先于 generic），但会匹配更多文件。
 
 至少要求 JSON 中存在 `results.Complete percentage` 和 `results.n_markers`。解析结果包括：
 
@@ -320,7 +323,7 @@ tools:
           - --tar
 
         result_parser: busco_json
-        result_glob: short_summary*.json
+        result_glob: short_summary.specific.*.json
 ```
 
 BUSCO 的 `-o` 是短 run name，不是输入路径，也不应传完整 `${output}`；`--out_path` 才是

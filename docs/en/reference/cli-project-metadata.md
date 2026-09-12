@@ -17,6 +17,51 @@ operon init [path] [--project-id PRJ_000001] [--name NAME]
 
 Creates `project.yaml`, an empty current-schema `operon.sqlite`, `config/`, and lifecycle directories. Read-only preview commands can run immediately after initialization. `metadata/` retains only the 0.4 migration note; empty TSV files that could be imported back are no longer generated. Existing `project.yaml` causes an error.
 
+## project.yaml reference
+
+`operon init` writes every key below into `project.yaml`; relative paths resolve against the project root. Extra keys are ignored, and optional keys fall back to the default shown when omitted. The directly indexed keys — `project.id`, the `storage` roots other than `taxonomy_root`, the four `database` keys, and `qc.default_profile` — must be present.
+
+| Section | Key | Type | Default | Meaning |
+|---|---|---|---|---|
+| `project` | `id` | string | `PRJ_000001` (`init --project-id`) | Stable project identifier, shown by the TUI and used as the fallback name. |
+| `project` | `name` | string | `init --name`, otherwise the project ID | Human-readable project name shown in the TUI. |
+| `project` | `description` | string | `""` | Free-text description; accepted and preserved, but read by no current code path. |
+| `storage` | `raw_root` | path | `raw` | Root of the immutable archived originals. |
+| `storage` | `standardized_root` | path | `standardized` | Root of the standardized copies. |
+| `storage` | `qc_root` | path | `qc` | Built-in QC outputs, aggregate tables, and QC caches. |
+| `storage` | `analysis_root` | path | `analysis` | External-analysis outputs, adopted files, and fan-out products. |
+| `storage` | `reports_root` | path | `reports` | Default output root of `report metadata` and other derived reports. |
+| `storage` | `logs_root` | path | `logs` | Workflow JSONL logs and per-run execution logs. |
+| `storage` | `releases_root` | path | `releases` | Immutable release directories. |
+| `storage` | `taxonomy_root` | path | `taxonomy` | Taxonomy snapshots and compiled reference sets; when the key is absent the reader falls back to `taxonomy`. |
+| `database` | `path` | path | `operon.sqlite` | The single writable SQLite database. |
+| `database` | `metadata_dir` | path | `metadata` | Legacy-layout compatibility directory; structured metadata lives in SQLite. |
+| `database` | `schema_path` | path | `config/schemas.yaml` | YAML metadata schema. |
+| `database` | `profiles_dir` | path | `config/profiles` | Directory of QC, taxonomy-coverage, and sequence-classification profiles. |
+| `qc` | `default_profile` | string | `assembly_production_v1` | Profile used by `evaluate` and the rule engine when `--profile` is omitted. |
+| `qc` | `sample_reads_for_duplicates` | integer | `1000000` | Accepted but unused: duplicate and overrepresented-read metrics take their sample size from `qc --sample-size`, whose default is the same value. |
+| `resources` | `default_threads` | integer | `4` | Thread count recipes use when `--threads` is not given. |
+| `resources` | `max_memory_gb` | integer | `64` | Accepted but unused: no code path reads it. |
+| `execution` | `backend` | choice (`local`, `slurm`, `ssh`) | `local` | Default execution backend; `--backend` overrides it per command. |
+| `execution.slurm` | `partition` | string | `""` | Slurm partition; empty omits `--partition`. |
+| `execution.slurm` | `time` | string | `24:00:00` | Wall-clock limit passed as `--time`. |
+| `execution.slurm` | `mem_gb` | integer | `0` | Memory requested as `--mem` in GB; `0` omits it. |
+| `execution.slurm` | `extra_sbatch` | list of string | `[]` | Extra single-line `#SBATCH` directives. |
+| `execution.slurm` | `setup_commands` | list of string | `[]` | Single-line shell commands inserted before the recipe command. |
+| `execution.slurm` | `poll_interval` | number | `15` | `squeue` polling interval in seconds. |
+| `execution.ssh` | `host` | string | `""` | SSH host to submit from, usually the login node. |
+| `execution.ssh` | `user` | string | `""` | SSH user name. |
+| `execution.ssh` | `port` | integer | `22` | SSH port. |
+| `execution.ssh` | `key_file` | path | `""` | Private key file; empty uses the SSH agent or the default keys. |
+| `execution.ssh` | `remote_root` | string | `""` | Absolute remote POSIX path of the project; empty means a shared filesystem. |
+| `execution.ssh` | `storage_remote` | string | `""` | Name of a `remotes:` entry whose host and root are inherited for `REMOTE_ONLY` inputs. |
+| `execution.ssh` | `scheduler` | choice (`none`, `slurm`) | `none` | `none` runs commands directly on the host; `slurm` submits through sbatch/squeue. |
+| `execution.ssh` | `connect_timeout` | number | `30` | Connection timeout in seconds. |
+| `execution.ssh` | `known_hosts` | path | `""` | Additional `known_hosts` file. |
+| `execution.ssh` | `host_key_sha256` | string | `""` | Pinned host-key fingerprint (`SHA256:...`). |
+| `execution.ssh` | `insecure_accept_unknown_host` | boolean | `false` | Accept unknown host keys; intended only for temporary test environments. |
+| `remotes` | *(mapping keyed by remote name)* | mapping | `{}` | SFTP mirrors. Each entry accepts `type` (`sftp`), `host`, `user`, `port`, `key_file`, `root`, `connect_timeout`, `known_hosts`, `host_key_sha256`, and `insecure_accept_unknown_host`; see [SFTP Remote Storage](../guides/remote-storage.md). |
+
 ## init-demo
 
 ```bash

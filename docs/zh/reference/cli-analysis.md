@@ -30,7 +30,7 @@ operon run-external \
 - `--threads N` 记录并向执行后端申请线程数。
 - `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认，
   本地子进程）、`slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上
-  执行）。配置与前提见 [How-to 操作手册](../guides/index.md)第 9 节。
+  执行）。配置与前提见 [Slurm 与 SSH 远程执行](../guides/remote-execution.md)。
 
 ## tools-check
 
@@ -87,7 +87,7 @@ recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（�
 
 `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认）、
 `slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上执行）；工具版本探测
-也经同一后端执行。配置、前提与日志位置见 [How-to 操作手册](../guides/index.md)第 9 节。
+也经同一后端执行。配置、前提与日志位置见 [Slurm 与 SSH 远程执行](../guides/remote-execution.md)。
 若 SSH 配置了 `storage_remote`，本地缺失但状态为 `REMOTE_ONLY` 的候选输入会先严格
 验证远端清单和实际内容，再在远端原位使用。
 
@@ -289,7 +289,9 @@ operon timetree calibrate --snapshot DIR --tree FILE --taxa TSV --constraints TS
   `timeline` 列出一个分类单元回溯到 last universal ancestor 的节点时间表。分类单元用
   重复的 `--taxon NAME` / `--taxon-id N` 给出（`mrca` 与 `calibrations` 也接受逗号分隔的
   `--taxa`）；名称多解时绝不自动选择——错误会列出候选并要求改用 `--taxon-id`。所有查询
-  子命令接受 `--format text|json`（默认 `text`）与绕过缓存的 `--refresh`。
+  子命令接受 `--format text|json`（默认 `text`）、绕过缓存的 `--refresh`，以及网络控制
+  `--timeout`（秒，默认 30）、`--retries`（默认 3）与 `--delay`（真实请求之间的间隔秒数，
+  默认 0.5）。
 - 响应缓存在项目内 `adapters_cache/timetree/<sha256(url)>.json`，保存请求 URL、获取时间与
   原始 body，保证重放查询可审计。TimeTree 的使用条款禁止镜像或再分发其数据库，因此只按
   实际查询缓存，且请求保持串行并在每次真实请求间停顿。每次查询向 `workflow_runs` 记录
@@ -300,8 +302,11 @@ operon timetree calibrate --snapshot DIR --tree FILE --taxa TSV --constraints TS
   管理时用 `operon adopt` 归档进项目。
 - `fetch` 与 `calibrate` 与项目无关，只操作显式文件路径：`fetch` 把选定 NCBI 分类单元对
   的摘要与逐研究证据下载为一个新的不可变快照目录（原始响应加带校验的清单，绝不覆盖
-  已有运行）；`calibrate` 把此类快照中经审阅的软界标定编译到一棵有根、严格二分的物种树
+  已有运行；`--timeout` 默认 30 秒，`--retries` 默认 3）；`calibrate` 把此类快照中经审阅的
+  软界标定编译到一棵有根、严格二分的物种树
   上（每条约束都要求 `approved=yes` 与理由；摘要置信区间是证据，绝不能当作化石界标）。
+  `--unit-ma`（默认 100）声明一个时间单位代表多少 Ma：每条界标都会除以它，例如
+  `min_ma=20, max_ma=30` 在 `unit_ma=100` 下编码为 `B(0.2,0.3)`。
 
 ## environments
 

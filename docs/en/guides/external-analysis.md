@@ -37,24 +37,16 @@ Key recipe fields:
 
 | Field | Meaning |
 |---|---|
-| `entity_type` / `file_role` / `format` | Selects input artifacts from the manifest. Use `format: directory` for directories. |
-| `input_kind` | `file` (default) or `directory`; the actual type and content hash are checked before execution. |
-| `output_kind` | `file` (default) or `directory`; both support non-empty checks, content hashing, and cache validation. |
-| `output_subdir` / `output_suffix` | Controls the default `analysis/<recipe>/<entity_id>/<file_id>.<role><suffix>` path. |
-| `output_name` | Optional single-component name template. For BUSCO, use `${file_id}.busco` to avoid the SEPP `fasta` path replacement defect. |
-| `database` | Reference database or shared download-cache path. Relative paths resolve from the project root. |
-| `database_version` | Logical database version; participates in cache identity. |
-| `database_checksum` | Optional explicit checksum for strict database identity. |
-| `database_mode` | `reference` (default, content-based identity) or `mutable_cache` (shared growing cache; requires `database_version`). |
-| `arguments` | Command arguments and placeholders. |
-| `commands` | Ordered multi-step command chain (mutually exclusive with `arguments`); steps share the deterministic `${work_dir}` scratch directory. |
+| `entity_type` / `file_role` / `format` | Selects input artifacts from the manifest. |
+| `input_kind` / `output_kind` | `file` or `directory`, for the input and the output artifact. |
+| `output_subdir` / `output_suffix` / `output_name` | Control the default `analysis/<recipe>/<entity_id>/<file_id>.<role><suffix>` output path and name. |
+| `database` / `database_version` / `database_mode` | Reference database or shared download cache, and the identity used for cache reuse. |
+| `arguments` / `commands` | Command arguments, or an ordered multi-step chain (mutually exclusive); chain steps share the deterministic `${work_dir}` scratch directory. |
 | `parameters` | Runtime parameters allowed through `analyze --param NAME=VALUE`. |
-| `result_parser` | `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, `busco_json`, or `none`. |
-| `result_glob` | Result glob inside a directory output; BUSCO usually uses `short_summary*.json`. |
-| `max_hits_per_query` | Maximum hits per query synchronized to SQLite. |
-| `version` | Optional positive integer (default 1, invalid values rejected); together with the configuration content it enters the recipe snapshot recorded by `analyze`, inspectable via `operon recipes history/show`. |
+| `result_parser` / `result_glob` | Parser for the output and, for directory outputs, the result glob inside it. |
+| `max_hits_per_query` / `version` | Hits per query synchronized to SQLite; recipe version for the recorded snapshot. |
 
-Placeholders include `${input}`, `${output}`, `${database}`, `${threads}`, `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, and `${entity_id}`. Recipes with a `commands` chain additionally get `${work_dir}`, a deterministic per-run scratch directory for intermediate artifacts that is rebuilt before the run and cleaned up afterwards.
+The complete field contract, defaults, allowed values, and every placeholder are in the [Recipe field reference](../reference/recipe-fields.md).
 
 All command blocks use the parent tool's `run_method`. A block invoking another program can add `version_args` and `version_pattern`; that program's version is then recorded in `workflow_runs.execution_details.steps` alongside the command argv and exit code.
 
@@ -119,52 +111,20 @@ Input SHA-256 or directory tree hash is rechecked against the manifest before ev
 
 ## Run BUSCO natively and parse JSON summaries
 
-The default `busco_autolineage` recipe uses protein FASTA input and directory output. BUSCO `-o` is a short run name, so the recipe passes `${output_name}`; `--out_path` receives `${output_parent}`. BUSCO then creates exactly `${output}`.
+The default `busco_autolineage` recipe uses protein FASTA input and directory output. BUSCO `-o` is a short run name, so the recipe passes `${output_name}`; `--out_path` receives `${output_parent}`. BUSCO then creates exactly `${output}`. The two settings worth noting here are the shipped launcher and the narrow result glob:
 
 ```yaml
 tools:
   busco:
-    executable: busco
-    run_method:
-      mode: conda
-      bin: mamba
-      env: busco_6.1.0
-    version_args: ["--version"]
-    version_pattern: 'BUSCO\s+([^\s]+)'
+    run_method: "mamba run -n busco_6.1.0"   # shipped default; a {mode, bin, env} mapping is also accepted
     recipes:
       busco_autolineage:
-        description: BUSCO auto-lineage in protein mode
-        entity_type: annotation
-        file_role: protein_fasta
-        format: fasta
-        input_kind: file
-        database: resources/busco_downloads
-        database_version: odb12
-        database_mode: mutable_cache
-        output_subdir: busco
-        output_kind: directory
-        output_name: ${file_id}.busco
-        arguments:
-          - -m
-          - protein
-          - -i
-          - ${input}
-          - -o
-          - ${output_name}
-          - --out_path
-          - ${output_parent}
-          - --download_path
-          - ${database}
-          - -c
-          - ${threads}
-          - --auto-lineage
-          - --opt-out-run-stats
-          - --tar
+        output_name: ${file_id}.busco        # avoids the SEPP "fasta" path defect
         result_parser: busco_json
-        result_glob: short_summary*.json
+        result_glob: short_summary.specific.*.json
 ```
 
-For strict reproducibility, download and freeze the required lineage datasets in advance, remove `--auto-lineage`, set `--lineage_dataset`, add `--offline`, and use `database_mode: reference`. Update `database_version` or `database_checksum` when the data changes. A `mutable_cache` identity is based on path, explicit version, and optional checksum; downloading another lineage later does not invalidate older jobs.
+The complete shipped recipe, the `run_method` mapping form, and the SEPP path caveat are in [Result parsers and examples](../reference/recipe-parsers-examples.md) and the [Recipe Configuration Model](../reference/recipe-overview.md); the database fields are in the [Recipe field reference](../reference/recipe-fields.md).
 
 Run and inspect BUSCO:
 
@@ -181,7 +141,30 @@ The output directory resembles:
 analysis/busco/ANN_000001/FIL_000003.busco/
 ```
 
-`busco_json` selects a unique `short_summary.specific.*.json` from `result_glob`. If several specific summaries match, the parser rejects the ambiguous result; narrow the glob. Parsed metrics include complete/single-copy/duplicated/fragmented/missing percentages and counts, marker count, domain, lineage dataset, dataset date, OrthoDB/dataset versions, species count, NCBI taxid, and BUSCO report version. They are written to both `analysis_results` and `qc_results`.
+`busco_json` selects a unique `short_summary.specific.*.json` from `result_glob`. If several specific summaries match, the parser rejects the ambiguous result; narrow the glob. Parsed metrics include:
+
+- `busco_complete_percent` / `busco_complete_count`
+- `busco_single_copy_percent` / `busco_single_copy_count`
+- `busco_duplicated_percent` / `busco_duplicated_count`
+- `busco_fragmented_percent` / `busco_fragmented_count`
+- `busco_missing_percent` / `busco_missing_count`
+- `busco_n_markers`, `busco_domain`, `busco_lineage_dataset`
+- dataset date, OrthoDB/dataset versions, species count, NCBI taxid, and BUSCO report version
+
+The values are written to both `analysis_results` and `qc_results` and can be referenced directly from a QC profile, for example:
+
+```yaml
+required:
+  - metric: busco_complete_percent
+    operator: ">="
+    value: 95
+    code: LOW_BUSCO_COMPLETENESS
+warnings:
+  - metric: busco_duplicated_percent
+    operator: ">"
+    value: 20
+    code: HIGH_BUSCO_DUPLICATION
+```
 
 ### Fixed lineages and coexisting results
 
@@ -282,33 +265,12 @@ operon adopt \
   --derived-from FIL_000001
 ```
 
-Batch mode lets a workflow re-register all outputs at the end of a rule. The manifest can be JSON (a list of dicts):
-
-```json
-[
-  {
-    "path": "analysis/external/ASM_000002/megahit/final.contigs.fa",
-    "entity_type": "assembly",
-    "entity_id": "ASM_000002",
-    "role": "megahit_contigs",
-    "format": "fasta",
-    "derived_from": ["FIL_000001"]
-  }
-]
-```
-
-or a TSV with a header row (the `format`, `compression`, and `workflow_run_id` columns are optional; the `derived_from` column carries comma-separated file_ids):
-
-```text
-path	entity_type	entity_id	role	format	derived_from
-analysis/external/ASM_000002/megahit/final.contigs.fa	assembly	ASM_000002	megahit_contigs	fasta	FIL_000001,FIL_000004
-```
+Batch mode lets a workflow re-register all outputs at the end of a rule: pass a JSON list of records or a TSV with a header row, using the required and optional columns described in the [adopt reference](../reference/cli-decisions-reports.md#adopt):
 
 ```bash
 operon adopt --from-manifest adopt_manifest.json
 ```
 
-- Each item requires `path`, `entity_type`, `entity_id`, `role`, and `derived_from` (at least one already-registered file_id); relative paths resolve from the project root.
 - Artifacts are materialized under `analysis/adopted/<entity_id>/`; same entity and role with identical bytes is reused idempotently, different bytes raise `ConflictError`. The whole batch is preflighted, then registered in one transaction. A failure before commit rolls back metadata, lineage, state and workflow rows and removes newly created artifacts; existing files are preserved. Resolve conflicting occupied targets explicitly before retrying. Completed JSONL records are written only after commit.
 - Roles are freely named by the workflow; lineage edges are written to the `file_lineage` table and can be audited with `operon query`.
 

@@ -21,10 +21,10 @@ This is the export/adopt contract described in [Extension boundaries](../archite
 operon export --output analysis/external/superfamily_round1 \
   --entity-type annotation \
   --file-role protein_fasta \
-  --decision PASS --profile default
+  --decision PASS --profile annotation_release_v1
 ```
 
-`--decision` requires `--profile` and matches the effective decision in `current_decisions` (PASS, PASS_WITH_WARNINGS, and so on), so the workflow input is exactly the QC-approved subset. See the [export reference](../reference/cli-decisions-reports.md) for all selection criteria.
+`--decision` requires `--profile`, and the profile must exist in `config/profiles/`. `annotation_release_v1` is one of the six profiles `operon init` writes there (`file_integrity_v1`, `assembly_production_v1`, `annotation_release_v1`, `annotation_busco_viridiplantae_odb12_v1`, `reads_qc_v1`, and the coverage example `coverage_viridiplantae_v1`); no profile named `default` ships with `operon`. The decision is matched in `current_decisions` (PASS, PASS_WITH_WARNINGS, and so on), so the workflow input is exactly the QC-approved subset. See the [export reference](../reference/cli-decisions-reports.md) for all selection criteria.
 
 ## Step 2: run the external pipeline
 
@@ -44,7 +44,7 @@ operon run-external --step astral_species_tree \
 
 ## Step 3: adopt intermediates and results back
 
-After the pipeline finishes, re-register the products worth keeping — key intermediates (the framework tree, the subfamily assignment table) and final results (the species tree, TreeShrink output, Notung reconciliation) — with a batch adopt manifest. The TSV form needs a header row with `path`, `entity_type`, `entity_id`, `role`, and `derived_from`; `format`, `compression`, and `workflow_run_id` columns are optional (auto-detected when omitted). `derived_from` carries comma-separated file IDs that must already be registered; relative paths resolve from the project root:
+After the pipeline finishes, re-register the products worth keeping — key intermediates (the framework tree, the subfamily assignment table) and final results (the species tree, TreeShrink output, Notung reconciliation) — with a batch adopt manifest; the required and optional columns are in the [adopt reference](../reference/cli-decisions-reports.md#adopt). For example:
 
 ```text
 path	entity_type	entity_id	role	format	compression	derived_from
@@ -72,13 +72,14 @@ operon fanout --assignments-file FIL_000022 \
   --entity-type organism --entity-id ORG_000001 \
   --role-prefix subfamily_alignment --dry-run
 
+# Then admit the units.
 operon fanout --assignments-file FIL_000022 \
   --source-file FIL_000012 \
   --entity-type organism --entity-id ORG_000001 \
   --role-prefix subfamily_alignment
 ```
 
-`fanout` resolves every assigned seqid against the `sequences` registry of the declared `--source-file`s (an unresolvable seqid is a hard error that names it; a seqid present in several sources must be disambiguated by narrowing `--source-file`), then materializes one FASTA per unit under `analysis/derived/ORG_000001/` and registers it with role `subfamily_alignment:SF01`, `subfamily_alignment:SF02`, …, plus `file_lineage` edges back to the source FASTA and the assignment TSV. Re-running with unchanged inputs is a no-op (`reused`); different bytes under the same unit role raise `ConflictError`. See the [fanout reference](../reference/cli-decisions-reports.md#fanout).
+Each unit becomes a registered FASTA under `analysis/derived/ORG_000001/` with the role `subfamily_alignment:<unit>` and lineage back to the source FASTA and the assignment TSV, which is what the downstream analysis selects on. The flag contract, the seqid-resolution rules, and the reuse/conflict behaviour are in the [fanout reference](../reference/cli-decisions-reports.md#fanout).
 
 Because the unit count is data-dependent, the downstream recipe declares a role prefix instead of an exact role:
 
@@ -114,7 +115,7 @@ Adopted and fanned-out files are normal manifest members in every other respect:
 Adopted products participate in the standard quality gate. Run `operon qc` for the formats with built-in parsers (or `run-external` + `import-qc` for external metrics), then `operon evaluate --profile <name>` and finally:
 
 ```bash
-operon release --version v1.0 --profile default
+operon release --version v1.0 --profile annotation_release_v1
 ```
 
 Only entities whose effective decision admits them enter the release; everything else lands in `exclusions.tsv`. Because adopted intermediates carry lineage edges, the release remains explainable back to the original raw inputs.
@@ -170,3 +171,32 @@ A domain-centric study — for example a superfamily defined by one CDD/Pfam dom
 3. **Extract**: `operon extract-domains --analysis rpsblast_cdd --flank 5 --min-length 30 ...` writes the flanked domain FASTA plus a per-region manifest; adopt both products so later recipes and exports can select them.
 4. **Align and build trees externally**: the adopted domain FASTAs feed the external aligner and tree inference exactly as in steps 2–3 above. Measure the resulting alignment on any machine with `operon alignment-qc --alignment ... --outdir ...` (per-sequence and per-column metrics) before adopting the alignment and trees back.
 5. **Date the species tree**: `operon timetree calibrations --taxa A,B,C --out calibrations.tsv` compiles MCMCTree calibration priors from TimeTree (with the required Kumar et al. 2022 citation printed on every query); adopt the TSV alongside the dating inputs. For the stricter reviewed-constraint workflow, `operon timetree fetch` freezes the raw per-pair evidence into an immutable snapshot and `operon timetree calibrate` compiles only approved, rationalized soft bounds onto the rooted tree. See [timetree](../reference/cli-analysis.md#timetree).
+
+## Dating with TimeTree
+
+The `timetree` group is the supported path to secondary calibrations; it prints the required Kumar et al. 2022 citation on every query, and every response is cached under `adapters_cache/timetree/`. A cache record keeps the request URL, HTTP status, retrieval time, and the verbatim response body. An unreadable cache record is a hard error rather than a silent re-query, so damaged cache evidence is never passed off as a fresh result. Only the exact queries you make are cached — TimeTree's terms forbid mirroring or redistributing the database.
+
+Five query subcommands cover the exploratory work:
+
+```bash
+operon timetree taxon --name "Arabidopsis thaliana"
+operon timetree pairwise --taxon "Arabidopsis thaliana" --taxon "Oryza sativa"
+operon timetree mrca --taxa A,B,C
+operon timetree timeline --taxon "Arabidopsis thaliana"
+operon timetree calibrations --taxa A,B,C --out calibrations.tsv
+```
+
+`taxon` resolves a scientific name to candidate taxon IDs and never auto-picks among ambiguous names — the error lists the candidates so you can pass `--taxon-id`. `pairwise` and `mrca` report divergence-time summaries for exactly two taxa and for the MRCA of N taxa; `timeline` lists the node timetable from one taxon back to the last universal ancestor; `calibrations` builds the MCMCTree prior table (one whole-set MRCA row, or one row per pair with `--pairs`), and `--out` also writes it as a TSV that `operon adopt` can register. `--format json`, `--refresh`, `--timeout`, `--retries`, and `--delay` behave as described in the [timetree reference](../reference/cli-analysis.md#timetree).
+
+For the stricter reviewed-constraint path, `operon timetree fetch --pairs pairs.tsv --output snapshot/` freezes the per-pair evidence into a new immutable snapshot directory (an existing output directory is never overwritten):
+
+- `snapshot.json`: the checksummed manifest, with one record per pair and a SHA-256 for every stored response.
+- `raw/<taxon_a>_<taxon_b>.<flag>.json`: the verbatim TimeTree responses, where `<flag>` is `summaryjson` (the divergence-time summary) or `json` (the per-study evidence).
+- `candidates.tsv`: a review worksheet with one row per pair — names, `age_ma`, the reported confidence interval, `studies`, and an `approved` column that starts as `no`.
+
+`operon timetree calibrate --snapshot snapshot/ --tree species.nwk --taxa taxa.tsv --constraints constraints.tsv --output dated/` then compiles only approved, rationalized bounds onto a rooted, strictly bifurcating tree. The input contracts are:
+
+- `--taxa` TSV header `leaf,taxon_id`: every tree leaf exactly once, each mapped to one unique positive NCBI taxon ID.
+- `--constraints` TSV header `taxon_a,taxon_b,members,min_ma,max_ma,approved,rationale`: the pair must be present in the snapshot and in the taxa table, `members` must equal the exact comma-separated leaf set of the target MRCA clade, `approved` must be `yes`, and `rationale` must be non-empty. `min_ma` must be less than `max_ma`, and bounds may not contradict ancestor/descendant ordering.
+
+The output directory contains `calibrated.tree` (PAML format: a `<leaf-count> 1` header line followed by the topology with branch lengths removed and `B(low,high)` labels on the constrained nodes), a byte copy of `constraints.tsv`, and `provenance.json` with the SHA-256 values of the snapshot, the input tree, the taxa table, the constraints table, and the calibrated tree. `--unit-ma` (default 100) states how many Ma one time unit represents, so `min_ma=20, max_ma=30` with the default becomes `B(0.2,0.3)`.

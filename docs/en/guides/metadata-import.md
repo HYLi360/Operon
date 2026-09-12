@@ -42,9 +42,11 @@ To import a complete dataset together with files:
 operon import dataset
 ```
 
-The wizard currently uses English. Existing organisms can be selected by scientific name. The source section requires an explicit INSDC/non-INSDC choice and records database/repository and provider, record URL, citation, and license. Non-INSDC data must include a citation or DOI and a license name or SPDX identifier. These fields are optional for INSDC sources. Taxonomy IDs, sequencing fields, genome FASTA, and some annotation files can be skipped, but the summary keeps visible warnings. Editing a section returns directly to the summary rather than continuing the original linear sequence. Nothing is written until final confirmation.
+The wizard runs in English; its prompts, the INSDC/non-INSDC source rules, the mandatory citation/license fields for non-INSDC data, and the summary-review flow are described in [import](../reference/cli-project-metadata.md#import).
 
 After import, normalized sources are written to `data_sources` and linked to selected/created entities and archived files through `source_links`. Identical source content is reused by identity. Both tables are included in `report metadata` and releases.
+
+`report metadata` writes a `manifest.json` next to the TSVs. It records `report_type` (`operon_metadata`), `created_at`, `metadata_schema_version` (the version of `config/schemas.yaml` used for the export), the absolute `database` path, the `include_retired` flag, and a `tables` mapping that lists every exported `<table>.tsv` with its `row_count` and `sha256`.
 
 ## Extend metadata fields
 

@@ -70,10 +70,9 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   指纹变化时自动重新计算 SHA-256。`--rehash` 无条件绕过该缓存，适合定期审计、迁移
   存储后的首轮检查或性能基线中的冷校验测试。对 annotation GFF3，它同时重新校验
   实际读取的 assembly 和 protein 关联输入，而不只是主 GFF3。
-- assembly FASTA 的 `seqid -> length` 映射首次使用时写入
-  `qc/cache/fasta_lengths/`；后续 QC 按完整内容身份复用。缓存缺失、格式损坏或身份不
-  匹配时自动重建。`--rehash` 强制重新验证源文件 SHA-256，但内容身份未变时仍可复用
-  长度索引，因为索引本身按已验证 SHA-256 键控。
+- assembly FASTA 的 `seqid -> length` 映射是可重建缓存，位于 `qc/cache/fasta_lengths/`
+  下，仅在完整内容身份相同时复用；`--rehash` 会重新校验源 SHA-256，但已验证的索引
+  仍可继续使用。具体保证见 [QC 流水线](../architecture/qc-and-rules.md)。
 - 每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表
   （`file_id + file_sha256 + 实体 + seqid + length`，复用同一份长度缓存），支撑
   `show` 与 `query` 的 seqid 反查。annotation GFF3 的 QC 会额外地把它实际读取的
@@ -123,8 +122,13 @@ operon import-qc --file TSV_OR_JSON
 
 接受外部工具 TSV 或 `qc-measure` JSON payload（按 `.json` 后缀或内容以 `{` 开头识别）。
 
-TSV 必填列：`entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set`。
-可选列：`file_id, file_sha256, metric_unit, evaluated_at`。
-`file_id`/`file_sha256` 与 manifest 不一致时拒绝导入。
+TSV 必填列：
+
+```text
+entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set
+```
+
+可选列：`file_id`、`file_sha256`、`metric_unit`、`evaluated_at`；其中
+`file_id`/`file_sha256` 提供时必须与 manifest 一致。
 
 对于 `qc-measure` JSON payload，目标文件按 `file.file_id` 定位；payload 无文件 ID 时按 `file.sha256` 反查（checksum 匹配多条 manifest 记录时拒绝）。payload 的 SHA-256/大小必须与 manifest 一致；由不同 `operon` 版本度量的 payload 只产生警告。FASTA payload 的 `sequences` 映射会同步进所定位文件的 `sequences` 表。两种输入形式在导入后都会重算受影响实体的 QC 状态，并在 `workflow_runs` 中记录一条 `import-qc` 步骤。

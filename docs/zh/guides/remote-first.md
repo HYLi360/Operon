@@ -29,7 +29,6 @@ remotes:                            # 字段细节见《SFTP 远程存储》
   mycluster:
     type: sftp
     host: hpc.example.org
-    user: hyli360
     root: /data/operon-mirror
 
 execution:                          # 字段细节见《Slurm 与 SSH 远程执行》
@@ -38,6 +37,9 @@ execution:                          # 字段细节见《Slurm 与 SSH 远程执�
     storage_remote: mycluster       # 同一镜像；自动继承 host 与 root
     scheduler: slurm                # 或 none，直接在 SSH 主机上执行
 ```
+
+这里只列出本流程需要的键；其余 `remotes:` 与 `execution:` 字段见
+[SFTP 远程存储](remote-storage.md)与 [Slurm 与 SSH 远程执行](remote-execution.md)。
 
 配置 `storage_remote` 后，本地缺失（`REMOTE_ONLY`）的输入会先对照本地 manifest、
 远端清单和远端实际字节完成校验，再直接在远端 root 下原位消费——不会仅为跑一个作业
@@ -117,6 +119,12 @@ operon evaluate
 [qc-measure](../reference/cli-files-qc.md#qc-measure) 与
 [import-qc](../reference/cli-files-qc.md#import-qc)。
 
+`qc-measure` 默认把每行的 `parameter_set` 标为 `builtin_v2`。FASTQ 使用复合标签
+——`builtin_v2:sample_<取样量>:phred_<偏移>`——因此读段级指标背后的取样量与 Phred
+设置会保留在标签中。`--parameter-set NAME` 可替换基础标签。`qc_results` 的 upsert
+键包含 `parameter_set`，所以自定义参数集写入的行会与默认参数集在同一 file、stage、
+metric 下的行并存，而不是互相覆盖。
+
 该命令需要文件的 manifest 身份信息，可用以下任一方式查询：
 
 ```bash
@@ -136,9 +144,8 @@ operon pull --remote mycluster --file-id FIL_000001
 
 ### g. 两个面都要备份
 
-项目含 `REMOTE_ONLY` 文件时，本地备份必须包含保存 `file_locations` 的 SQLite
-数据库，远端镜像 root（包括 `operon-manifest.json` 与实际对象）需要独立备份。
-占位指针文件不能作为恢复凭据。见 [备份、迁移与续跑](backup-migration.md)。
+含 `REMOTE_ONLY` 文件时，本地数据库与远端镜像 root 是两个独立的备份对象；
+见 [备份、迁移与续跑](backup-migration.md)。
 
 ## 限制
 

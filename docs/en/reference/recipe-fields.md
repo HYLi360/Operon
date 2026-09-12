@@ -153,7 +153,7 @@ operon analyze --analysis busco_lineage \
 
 Runtime parameters can be used as placeholders like `${lineage_dataset}` in `arguments` and `output_name`. Parameter values enter the argument fingerprint; the command fails before launching the external program if a parameter is undeclared, a required value is missing, a value violates pattern/choices, a value is passed twice, or unresolved placeholders remain.
 
-A recipe with runtime parameters does not use cross-fingerprint "output adoption": only an identical parameter fingerprint can hit the cache. This prevents an existing output for one lineage from being treated as an equivalent result for another.
+A recipe that resolves at least one runtime parameter does not use cross-fingerprint "output adoption": only an identical parameter fingerprint can hit the cache. This prevents an existing output for one lineage from being treated as an equivalent result for another. A recipe that declares parameters but resolves none of them — no `required`, no `default`, and no `--param` supplied — still gets adoption.
 
 `arguments` is an argument array, not a shell command string. Each YAML list item corresponds to one argv element:
 
@@ -224,23 +224,19 @@ Some tools are really two programs in sequence — for example `rpsblast` emits 
 ```yaml
 commands:
   - arguments:
-      - rpsblast
-      - -query
+      - build-index
+      - --input
       - ${input}
-      - -db
-      - ${database}
-      - -out
-      - ${work_dir}/hits.asn
-      - -outfmt
-      - "11"
+      - --index
+      - ${work_dir}/index.bin
   - arguments:
-      - rpsbproc
-      - -i
-      - ${work_dir}/hits.asn
-      - -o
+      - search
+      - --index
+      - ${work_dir}/index.bin
+      - --output
       - ${output}
-    version_args: [-version]
-    version_pattern: 'rpsbproc:\s*([^\s]+)'
+    version_args: [--version]
+    version_pattern: 'search\s+([^\s]+)'
 ```
 
 - `commands` and the single-command `arguments` field are mutually exclusive on the same recipe.
@@ -251,7 +247,7 @@ commands:
 - Only the last step is expected to produce `${output}`; the non-empty check, content hash, and result parsing run once after the chain completes.
 - The rendered `commands` and their version-probe declarations are preserved in the recipe snapshot. Every probed step version is also mixed into the cache fingerprint, so upgrading any step's program (for example `rpsbproc`) invalidates the exact cache even when the recipe text and the primary tool version are unchanged; verified-output adoption still applies, exactly as for a primary tool upgrade.
 
-A complete `rpsblast` + `rpsbproc` recipe appears in [Result parsers and examples](recipe-parsers-examples.md).
+The shipped `rpsblast` + `rpsbproc` command-chain recipe (`rpsblast_cdd`) is the worked example in [Result parsers and examples](recipe-parsers-examples.md) 10.5.
 
 The `commands` system is NOT intended to replace Snakemake or Nextflow, but rather to bundle tools that are frequently used together
 to reduce repetitive work, and avoid using the “bulky” Snakemake or Nextflow in such scenario. We have intentionally imposed the following hard constraints on the `commands`:
@@ -310,7 +306,7 @@ Here `database_checksum` is the recipe's explicit declaration of a frozen databa
 
 ## Result parsing and alignment columns
 
-`result_parser` selects how a successful output enters SQLite: `none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`, `rpsbproc_tabular`, or `busco_json`. Per-parser semantics and complete examples live in [Result parsers and examples](recipe-parsers-examples.md); this section defines the field contract.
+`result_parser` names the parser that turns a successful output into SQLite rows; the allowed values and what each one reads and writes back are listed in [Result parsers and examples](recipe-parsers-examples.md). This section defines the field contract. Every hit-producing parser records the summary metrics `query_count`, `query_with_hit_count`, `hit_count`, and `best_evalue` in `analysis_results` and syncs them to `qc_results` under `analysis:<recipe>`; `busco_json` records the BUSCO completeness metrics instead.
 
 ### Tabular column fields
 
@@ -343,7 +339,7 @@ When a key is absent, the parser looks for the default common name in `result_co
 
 ### `hmmer_tblout`
 
-`hmmer_tblout` reads only HMMER `--tblout` output and needs no column declarations: full-sequence E-value and score per query–profile pair, plus the usual EAV hits. tblout carries no alignment coordinates, so this parser never writes `analysis_alignments` rows — prefer `--domtblout` for new recipes. Hit direction is normalized exactly as for `hmmer_domtblout`; see "HMMER hit direction and `hmmer_mode`" below.
+`hmmer_tblout` reads only HMMER `--tblout` output and needs no column declarations: full-sequence E-value and score per query–profile pair, plus the usual EAV hits. tblout carries no alignment coordinates, so it writes no `analysis_alignments` rows. Hit direction is normalized exactly as for `hmmer_domtblout`; see "HMMER hit direction and `hmmer_mode`" below. Worked example and parsing details: [Result parsers and examples](recipe-parsers-examples.md) 10.2.
 
 ### HMMER hit direction and `hmmer_mode`
 
@@ -357,11 +353,11 @@ After a swap, `rank` is counted per sequence, so `max_hits_per_query` also trunc
 
 ### `hmmer_domtblout`
 
-`hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations. After direction normalization (see above), the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` — these are sequence coordinates under both hmmsearch and hmmscan (HMM and envelope coordinates go to `extra_json`; domtblout does not carry subject/profile coordinates, so `subject_start`/`subject_end` stay NULL). It writes both EAV hits and full structured alignment rows.
+`hmmer_domtblout` parses HMMER `--domtblout` per-domain rows and needs no column declarations. After direction normalization (see above), the per-domain i-Evalue and domain score become `evalue`/`bitscore`, and the alignment coordinates land in `query_start`/`query_end` — sequence coordinates under both hmmsearch and hmmscan. The HMM and envelope coordinates are written to the named `extra_json` keys `hmm_from`, `hmm_to`, `env_from`, and `env_to`; `subject_start`/`subject_end` stay NULL because domtblout carries no subject/profile coordinates. The parser writes both EAV hits and full structured alignment rows. Worked example and parsing details: [Result parsers and examples](recipe-parsers-examples.md) 10.3.
 
 ### `rpsbproc_tabular`
 
-`rpsbproc_tabular` parses the tabular report produced by NCBI `rpsbproc` (the `DATA`/`SESSION`/`QUERY`/`DOMAINS` structure) and needs no column declarations. Each domain row has 12 columns (session, query id, hit type, PSSM id, from, to, e-value, bitscore, accession, short name, incomplete, superfamily PSSM id). The alignment `query_id` is the QUERY definition line and `subject_id` is the accession; `from`/`to` become `query_start`/`query_end`, e-value and bitscore are parsed as numbers, and the remaining fields (`hit_type`, `pssm_id`, `short_name`, `incomplete`, `superfamily_pssm`, `session`, `rps_query_id`) are preserved in `extra_json`. EAV hits are truncated to `max_hits_per_query` per query as usual, while `analysis_alignments` keeps every domain row; queries without any domain produce no rows. It is the intended parser for `commands` chains that pipe `rpsblast -outfmt 11` into `rpsbproc` (see "Command chains" above).
+`rpsbproc_tabular` parses the tabular report produced by NCBI `rpsbproc` (the `DATA`/`SESSION`/`QUERY`/`DOMAINS` structure) and needs no column declarations: the alignment `query_id` is the QUERY definition line and `subject_id` is the accession, while `from`/`to` become `query_start`/`query_end`. EAV hits are truncated to `max_hits_per_query` per query as usual, while `analysis_alignments` keeps every domain row; queries without any domain produce no rows. It is the intended parser for `commands` chains that pipe `rpsblast -outfmt 11` into `rpsbproc` (see "Command chains" above). The 12-column layout, the `extra_json` field names, and the block/key rules are documented with the shipped recipe in [Result parsers and examples](recipe-parsers-examples.md) 10.5.
 
 ## Cache identity
 
@@ -376,13 +372,17 @@ analysis name
 + threads
 + tool version (for a `commands` chain: the first command's version,
   plus the probed version of every later step)
-+ parser/output-related recipe settings
++ parser and output settings (`result_parser`, `max_hits_per_query`, `input_kind`,
+  `output_kind`, `output_name`, `output_suffix`, `result_glob`, and any explicitly
+  set column-mapping key, `hmmer_mode`, or `environment_policy`)
 + database identity
 ```
 
 After a database record hits, `operon` also checks that the output artifact still exists and recomputes the file or directory hash against the recorded value. If the output was deleted or modified, the old job is marked `superseded` and re-executed.
 
-The second-level continuation when the exact identity misses (verified-output adoption): if an old `completed` job exists for the same `(analysis, file_id)` whose input content hash matches the current one, and whose recorded output artifact is still on disk with a byte-identical hash, `operon` does not recompute. Instead it adopts that output into the current fingerprint — inserting a new `completed` row pointing at the same output under the current parameter fingerprint/database identity (linked to the original `workflow_run_id`), recording the adoption reason in the `changes` audit table, and marking the file as `adopted`. This covers scenarios such as software upgrades changing the fingerprint formula, or recipe renames. Outputs that were modified, or inputs whose content changed, are not adopted and are recomputed as usual. Adoption applies only to completed results with verified outputs; `--force` semantics are unchanged and always recompute. In dry-run output, the status column shows `cached`/`adoptable`/`planned`, meaning a completed-cache hit, the adoption path, and actual execution respectively; under `--force`, even a cache that would have hit shows as `planned`. Recipes declaring runtime parameters disable second-level adoption and allow only exact cache hits.
+That fingerprint does **not** cover every parser/output field: `result_columns`, `hit_metric_columns`, `numeric_columns`, `query_column`, and `subject_column` are absent from it. Changing one of those five alone therefore leaves the fingerprint unchanged, the existing `completed` job is treated as a cache hit, and `operon` neither re-runs the program nor re-parses the stored output — the new column contract only takes effect for jobs that are actually re-executed. Use `--force` to force that re-run.
+
+The second-level continuation when the exact identity misses (verified-output adoption): if an old `completed` job exists for the same `(analysis, file_id)` whose input content hash matches the current one, and whose recorded output artifact is still on disk with a byte-identical hash, `operon` does not recompute. Instead it adopts that output into the current fingerprint — inserting a new `completed` row pointing at the same output under the current parameter fingerprint/database identity (linked to the original `workflow_run_id`), and recording the adoption reason in the `changes` audit table against that new `analysis_job` row. The result record of the adopted run carries `"status": "adopted"`; the manifest `files.status` is not changed by adoption. This covers scenarios such as software upgrades changing the fingerprint formula, or recipe renames. Outputs that were modified, or inputs whose content changed, are not adopted and are recomputed as usual. Adoption applies only to completed results with verified outputs; `--force` semantics are unchanged and always recompute. In dry-run output, the status column shows `cached`/`adoptable`/`planned`, meaning a completed-cache hit, the adoption path, and actual execution respectively; under `--force`, even a cache that would have hit shows as `planned`. Once a recipe resolves at least one runtime parameter, second-level adoption is disabled and only exact cache hits can reuse a result.
 
 `--force` only means "ignore an otherwise valid completed cache". It preserves the historical job record, marks the old record `superseded`, deletes the exact old output target, and creates a new job. It cannot fix wrong parameters, a wrong output name, or failures of the external program itself.
 
@@ -413,7 +413,7 @@ The comparison key is the environment-relevance fingerprint: the composite of th
 Behavior differs per backend and per document age:
 
 - `local` and direct `ssh` probe the environment before the payload, so both sides of the comparison are always available.
-- `slurm` and remote Slurm have no pre-job probe and cannot compare before reuse; `strict` degrades to `warn` and the run details record `environment_policy_degraded: strict→warn`.
+- `slurm` and remote Slurm have no pre-job probe and cannot compare before reuse; `strict` degrades to `warn` and the run details record `environment_policy_degraded: strict->warn`.
 - When either side's environment document lacks sub-fingerprints (captures recorded before database schema {{ db_schema }}), the comparison is recorded as `environment_compare: unavailable`: `warn` reuses as usual and `strict` likewise degrades to `warn`, so legacy documents never cause spurious recomputation.
 
 ## Slurm resource overrides

@@ -2,8 +2,9 @@
 
 ## Setup and test runs
 
+Install the repository checkout with the `dev` extra as described in [Installation](../getting-started/installation.md#install-from-the-repository); it adds pytest, Cython, and Sphinx. Then:
+
 ```bash
-python -m pip install -e '.[dev]'
 python -m pytest
 
 # or run by category
@@ -12,7 +13,6 @@ python -m pytest tests/integration
 python -m pytest tests/regression tests/compatibility
 
 # build the Sphinx documentation strictly
-python -m pip install -e '.[docs]'
 sphinx-build -W --keep-going -b html docs docs/_build/html
 ```
 
@@ -26,6 +26,19 @@ Due to specific limitations of the sandbox environment, executing certain TUI te
 If you are Codex/ChatGPT, please execute TUI-related test code OUTSIDE the sandbox.
 
 This information has also been updated in AGENTS.md.
+
+## Coverage gate
+
+`python -m pytest` always measures coverage (`--cov=operon --cov-branch`, configured in `pyproject.toml`) and fails when the reported total drops below the `fail_under` threshold. The reported total is the combined figure `(covered lines + covered branches) / (valid lines + valid branches)`, so a change that adds only lines without their branches lowers it. Branch coverage must additionally stay at or above 90 % of all valid branches.
+
+Read the gaps with:
+
+```bash
+python -m pytest --cov-report=term-missing          # per-file missing lines and partial branches
+python -m pytest tests/unit                          # the category you are changing
+```
+
+Lines that cannot be exercised by any supported environment — platform-only guards, dependency-import fallbacks that cannot be triggered from an installed checkout, and defensive branches that are unreachable by construction — carry a trailing `# pragma: no cover` comment (already part of `exclude_also` in `pyproject.toml`). The pragma is not a substitute for a test: code reachable through a public entry point must be tested rather than excluded.
 
 ## Documentation synchronization
 

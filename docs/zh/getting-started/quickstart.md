@@ -4,8 +4,6 @@
 
 演示项目使用确定性合成数据，可在不准备真实数据的情况下验证安装和完整流水线。
 
-如果不想先创建真实项目，可以用合成数据体验完整流水线：
-
 ```bash
 operon init-demo ./demo-project --project-id PRJ_DEMO_001
 ```
@@ -29,14 +27,10 @@ operon --project ./demo-project report decisions
 operon --project ./demo-project report qc --entity-type assembly
 ```
 
-演示预期：`ASM_000002` 因 `LOW_CONTIGUITY` 被 FAIL；`ANN_000003` 因 `CDS_NOT_MULTIPLE_OF_3` 与 `BROKEN_GFF3_PARENTS` 被 FAIL；其他实体 PASS。
+演示预期：
 
-验证 release：
+- `ASM_000002` 因 `LOW_CONTIGUITY` 被 FAIL。
+- `ANN_000003` 因 `CDS_NOT_MULTIPLE_OF_3` 与 `BROKEN_GFF3_PARENTS` 被 FAIL。
+- 其他实体 PASS。
 
-```bash
-cd ./demo-project/releases/2026.08.demo
-# Linux
-sha256sum -c checksums.sha256
-# macOS
-shasum -a 256 -c checksums.sha256
-```
+验证 release：本演示的目录是 `./demo-project/releases/2026.08.demo`，具体步骤见[创建 release](first-project.md)。

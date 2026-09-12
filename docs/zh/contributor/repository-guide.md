@@ -2,11 +2,7 @@
 
 ## 项目原则
 
-1. SQLite 中的结构化元数据是唯一事实来源。
-2. 原始数据不可变，派生数据必须可重建。
-3. 文件身份为 `file_id + sha256 + size_bytes`，路径不构成身份。
-4. QC 代码只计算指标；阈值保存在 `config/profiles/` 下的版本化 YAML profile 中。
-5. 所有处理必须以显式、幂等的状态机运行，并记录机器可读 provenance。
+五条核心设计不变量统一在[架构总览](../architecture/overview.md)中说明；改动代码时必须保持不变。
 
 ## 仓库结构
 

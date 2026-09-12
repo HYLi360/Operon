@@ -25,7 +25,6 @@ remotes:                            # field details: SFTP Remote Storage
   mycluster:
     type: sftp
     host: hpc.example.org
-    user: hyli360
     root: /data/operon-mirror
 
 execution:                          # field details: Remote Execution
@@ -34,6 +33,8 @@ execution:                          # field details: Remote Execution
     storage_remote: mycluster       # same mirror; host and root are inherited
     scheduler: slurm                # or none for direct execution on the host
 ```
+
+Only the keys this workflow needs are shown; every other `remotes:` and `execution:` field is documented in [SFTP Remote Storage](remote-storage.md) and [Remote Execution with Slurm and SSH](remote-execution.md#configuration).
 
 With `storage_remote` set, a locally absent (`REMOTE_ONLY`) input is verified against the local manifest, the remote manifest, and the actual remote bytes, then consumed in place under the remote root — it is never pulled back to the workstation just to run a job.
 
@@ -100,6 +101,8 @@ operon evaluate
 
 `qc-measure` verifies the byte identity before parsing and produces the same stage/metric names as local `qc`; `import-qc` recomputes the affected entities' QC state and records an `import-qc` step in `workflow_runs`; `evaluate` then applies the versioned profile as usual. See [qc-measure](../reference/cli-files-qc.md#qc-measure) and [import-qc](../reference/cli-files-qc.md#import-qc).
 
+`qc-measure` labels its rows with `parameter_set = builtin_v2` by default. For FASTQ the label is composite — `builtin_v2:sample_<sample-size>:phred_<offset>` — so the sampling and Phred settings behind the read-level metrics stay visible. `--parameter-set NAME` replaces the base label. Because the `qc_results` upsert key includes `parameter_set`, rows written under a custom set coexist with the default-set rows for the same file, stage, and metric instead of overwriting them.
+
 The command needs the manifest identity of the file. Get it with any of:
 
 ```bash
@@ -119,7 +122,7 @@ operon pull --remote mycluster --file-id FIL_000001
 
 ### g. Back up both planes
 
-With `REMOTE_ONLY` files, the local backup must include the SQLite database holding `file_locations`, and the remote mirror root (including `operon-manifest.json` and the objects) needs its own independent backup. Placeholder files are not recovery evidence. See [Backup, Migration, and Resumption](backup-migration.md).
+`REMOTE_ONLY` files make the local database and the remote mirror root two separate backup targets; see [Backup, Migration, and Resumption](backup-migration.md).
 
 ## Limitations
 

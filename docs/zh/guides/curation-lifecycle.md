@@ -122,8 +122,10 @@ operon set-state --entity-type assembly --entity-id ASM_000001 --state QC_COMPLE
 ```
 
 常规路径强制执行合法迁移表并写入带 message 的 `changes` 审计行；`--force` 绕过迁移检查
-用于人工恢复，审计行仍保证动作可追溯。注意 `RELEASED` 是终态：已进入 release 的实体
-不经 `--force` 不能离开该状态；把状态设置为与当前相同的值是静默 no-op。可能的情况下，
+用于人工恢复，审计行仍保证动作可追溯。`RELEASED` 并非对所有命令都是终态：重跑 `qc`/`evaluate`
+（状态经强制批量路径写入）或 `standardize`（直接写入状态）都能在不用 `--force` 的情况下把实体
+移出该状态；而把状态设置为与当前相同的值虽不写审计行，却仍会覆盖 `entity_state` 的 message 与
+时间戳——见[隐式行为、边界情形与已知问题](../reference/behaviors-and-limitations.md)。可能的情况下，
 优先选择 `curate`（针对判定）或重跑相应步骤（针对 provenance）。
 
 当前没有 `purge`。不要用手工 SQL、`rm` 或删除远端对象代替：物理清除还需要单独设计保留期、

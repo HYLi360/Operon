@@ -19,6 +19,51 @@ operon init [path] [--project-id PRJ_000001] [--name NAME]
 可立即运行只读预览命令。`metadata/` 仅保留 0.4 迁移说明，不再生成可反向导入的空 TSV。
 已存在 `project.yaml` 时报错。
 
+## project.yaml 参考
+
+`operon init` 会把下表所有键写入 `project.yaml`；相对路径按项目根目录解析。多写的键会被忽略，可选键缺失时回退到表中的默认值；而直接按索引读取的键——`project.id`、除 `taxonomy_root` 之外的各 `storage` 根目录、`database` 的四个键，以及 `qc.default_profile`——必须存在。
+
+| 段 | 键 | 类型 | 默认值 | 含义 |
+|---|---|---|---|---|
+| `project` | `id` | string | `PRJ_000001`（`init --project-id`） | 稳定项目标识；TUI 会显示，并在缺省时充当项目名。 |
+| `project` | `name` | string | `init --name`，否则为项目 ID | 供人阅读的项目名，显示在 TUI 中。 |
+| `project` | `description` | string | `""` | 自由文本描述；会被接受并保留，但当前没有任何代码路径读取它。 |
+| `storage` | `raw_root` | path | `raw` | 不可变原始归档文件的根目录。 |
+| `storage` | `standardized_root` | path | `standardized` | standardized 副本的根目录。 |
+| `storage` | `qc_root` | path | `qc` | 内置 QC 输出、汇总表与 QC 缓存。 |
+| `storage` | `analysis_root` | path | `analysis` | 外部分析输出、adopt 产物与 fanout 产物的根目录。 |
+| `storage` | `reports_root` | path | `reports` | `report metadata` 等派生报告的默认输出根目录。 |
+| `storage` | `logs_root` | path | `logs` | workflow JSONL 日志与逐次运行的执行日志。 |
+| `storage` | `releases_root` | path | `releases` | 不可变 release 目录。 |
+| `storage` | `taxonomy_root` | path | `taxonomy` | taxonomy 快照与编译后的 reference set；键缺失时读取方回退到 `taxonomy`。 |
+| `database` | `path` | path | `operon.sqlite` | 唯一可写的 SQLite 数据库。 |
+| `database` | `metadata_dir` | path | `metadata` | 旧布局兼容目录；结构化元数据保存在 SQLite 中。 |
+| `database` | `schema_path` | path | `config/schemas.yaml` | YAML 元数据 schema。 |
+| `database` | `profiles_dir` | path | `config/profiles` | QC、taxonomy coverage 与序列分类 profile 的目录。 |
+| `qc` | `default_profile` | string | `assembly_production_v1` | 未显式给出 `--profile` 时，`evaluate` 与规则引擎使用的 profile。 |
+| `qc` | `sample_reads_for_duplicates` | integer | `1000000` | 已被接受但未被读取：重复率与 overrepresented reads 指标的取样量取自 `qc --sample-size`（默认值相同）。 |
+| `resources` | `default_threads` | integer | `4` | 未显式给出 `--threads` 时 recipe 使用的线程数。 |
+| `resources` | `max_memory_gb` | integer | `64` | 已被接受但未被读取：没有任何代码路径使用它。 |
+| `execution` | `backend` | 取值（`local`、`slurm`、`ssh`） | `local` | 默认执行后端；`--backend` 可按命令覆盖。 |
+| `execution.slurm` | `partition` | string | `""` | Slurm 分区；为空时不写 `--partition`。 |
+| `execution.slurm` | `time` | string | `24:00:00` | 以 `--time` 传入的墙钟时限。 |
+| `execution.slurm` | `mem_gb` | integer | `0` | 以 GB 为单位通过 `--mem` 申请的内存；`0` 表示不写。 |
+| `execution.slurm` | `extra_sbatch` | string 列表 | `[]` | 追加的单行 `#SBATCH` 指令。 |
+| `execution.slurm` | `setup_commands` | string 列表 | `[]` | 插入在 recipe 命令之前的单行 shell 命令。 |
+| `execution.slurm` | `poll_interval` | number | `15` | `squeue` 轮询间隔（秒）。 |
+| `execution.ssh` | `host` | string | `""` | 提交作业所用的 SSH 主机，通常是登录节点。 |
+| `execution.ssh` | `user` | string | `""` | SSH 用户名。 |
+| `execution.ssh` | `port` | integer | `22` | SSH 端口。 |
+| `execution.ssh` | `key_file` | path | `""` | 私钥文件；为空时使用 SSH agent 或默认密钥。 |
+| `execution.ssh` | `remote_root` | string | `""` | 项目在远端的绝对 POSIX 路径；为空表示共享文件系统。 |
+| `execution.ssh` | `storage_remote` | string | `""` | `remotes:` 中某个条目的名称，`REMOTE_ONLY` 输入继承其 host 与 root。 |
+| `execution.ssh` | `scheduler` | 取值（`none`、`slurm`） | `none` | `none` 直接在远端主机执行；`slurm` 经 sbatch/squeue 提交。 |
+| `execution.ssh` | `connect_timeout` | number | `30` | 连接超时（秒）。 |
+| `execution.ssh` | `known_hosts` | path | `""` | 额外的 `known_hosts` 文件。 |
+| `execution.ssh` | `host_key_sha256` | string | `""` | 固定的主机密钥指纹（`SHA256:...`）。 |
+| `execution.ssh` | `insecure_accept_unknown_host` | boolean | `false` | 接受未知主机密钥；只适合临时测试环境。 |
+| `remotes` | *（以远程名称为键的映射）* | mapping | `{}` | SFTP 镜像。每个条目接受 `type`（`sftp`）、`host`、`user`、`port`、`key_file`、`root`、`connect_timeout`、`known_hosts`、`host_key_sha256` 与 `insecure_accept_unknown_host`；见 [SFTP 远程存储](../guides/remote-storage.md)。 |
+
 ## init-demo
 
 ```bash

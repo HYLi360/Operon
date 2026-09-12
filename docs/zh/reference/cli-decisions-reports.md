@@ -67,8 +67,10 @@ operon export --output DIR \
     `source_url`、`size_bytes`、`sha256`；其中 `sha256` 是物化后对导出字节复算的值；
   - `qc.tsv`：默认生成，导出实体的 QC 长表快照；`--no-qc` 跳过。QC 采用有界分批查询，避免数千实体的导出触及 SQLite 表达式或参数上限，并保持实体、阶段、指标的排序；
   - `checksums.sha256`：导出字节的校验和；
+  - `taxa.tsv`：每个导出文件一行，列为 `file_id`、`organism_id`、`scientific_name`、
+    `taxon_id`、`taxonomy_source`、`taxonomy_version`；
   - `provenance.json`：记录全部选择条件、`created_at`、`file_count`、`operon` 版本、
-    `link_kind` 和 manifest SHA-256。
+    `link_kind`、`manifest_sha256` 与 `taxa_sha256` 身份。
 - 每次导出写入一行 `workflow_runs`（step 为 `export`，`output_sha256` 为 manifest
   哈希，`execution_details` 包含选择条件）。
 - 语义上与 release 互补：release 面向发布（QC 准入、不可变快照），export 面向分析
@@ -91,8 +93,10 @@ adopt 回注册输出侧 manifest。
 
 - 两种模式互斥：`--file` 单文件模式要求 `--entity-type`/`--entity-id`/`--role` 与至少
   一个 `--derived-from`（可重复）；`--from-manifest` 批量模式供 snakemake/nextflow
-  在 rule 末尾一次回注册整批产出，manifest 格式见
-  [外部分析操作指南](../guides/external-analysis.md)。
+  在 rule 末尾一次回注册整批产出。批量 manifest 是 JSON 记录列表或带表头的 TSV：
+  每条必须含 `path`、`entity_type`、`entity_id`、`role`、`derived_from`（至少一个已
+  注册的 file_id）；`format`、`compression`、`workflow_run_id` 列可选，省略时自动
+  探测；`derived_from` 用逗号分隔多个 file_id；相对路径按项目根解析。
 - 产物物化到 `analysis/adopted/<entity_id>/`，不进入不可变的 `raw/` 归档。
 - 继承 ingest 的幂等/冲突不变量：同实体同 role 相同字节幂等复用同一 `FIL_`，
   不同字节抛 `ConflictError`。
@@ -152,10 +156,11 @@ analyze --analysis NAME` 随之对每个单元跑一个作业；见
 operon run-pipeline \
   --source FILE --entity-type {run|assembly|annotation} --entity-id ID \
   --role ROLE [--format FMT] [--compression C] [--source-url URL] \
-  [--profile NAME]
+  [--profile NAME] [--yes]
 ```
 
-依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。
+依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。当判定会复用已有
+curated 决定时，命令会先询问一次；`--yes` 在非交互运行时跳过该确认。
 
 ## report
 
@@ -170,10 +175,10 @@ operon report metadata [--output DIRECTORY] [--include-retired]
 ```
 
 - `qc`：打印 QC 长表；`--export` 额外写出 `qc/aggregate/qc_results.tsv` 与
-  `qc_results.wide.tsv`。
+  `qc/aggregate/qc_results.wide.tsv`。
 - `decisions`：显示 `current_decisions`（每个 entity/profile 的最新判定）。
 - `analysis`：显示同步到数据库的分析汇总；`--hits` 改为显示 `analysis_alignments` 中的
-  结构化比对命中行，`--limit` 默认 20（格式、输出文件与过滤旗标见
+  结构化比对命中行（格式、输出文件与过滤旗标见
   [report analysis](cli-analysis.md)）。
 - `coverage`：只对指定的冻结 taxonomy reference set 计算 family/genus 覆盖率。
   默认 `--scope metadata` 审计当前 `organisms`；`--release VERSION` 改为沿

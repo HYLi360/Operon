@@ -27,9 +27,7 @@ operon qc --entity-type run --entity-id RUN_000001
 
 Modern FASTQ defaults to Phred+33 for Q20/Q30. Use `--phred-offset 64` only for confirmed legacy Phred+64 data. If the encoding is uncertain, use `--phred-offset auto`; ambiguous input is recorded as `ambiguous_assumed_phred33`. R1 and R2 `read_count` values are stored under their own `input_identity`, and the paired check writes `paired_read_count_match`.
 
-`ingest` and `operon verify` perform full SHA-256 verification. If size, device, inode, mtime, and ctime are unchanged, later `operon qc` runs reuse that verification result. Use `operon qc --rehash` for a full-byte audit. `operon verify` always performs full content verification.
-
-Annotation GFF3 also verifies and reads associated assembly/protein files. When an assembly FASTA first participates in coordinate checks, Operon streams it and builds an index under `qc/cache/fasta_lengths/`. The index is keyed by assembly `file_id + sha256 + size_bytes`, can be deleted safely, and is rebuilt if damaged. `--rehash` revalidates all actual inputs; when the assembly SHA-256 is unchanged, the verified length index can still be reused.
+`ingest` and `operon verify` perform full SHA-256 verification, and later `operon qc` runs reuse that result while the file's stat fingerprint is unchanged; the assembly `seqid -> length` index is cached under `qc/cache/fasta_lengths/` for the same content identity, and annotation QC applies the same identity check to the assembly/protein files it reads. Use `operon qc --rehash` for a full-byte audit (`operon verify` always performs full content verification). Both caches are deletable, rebuildable derived data; see the [QC pipeline](../architecture/qc-and-rules.md#qc-pipeline) for the guarantee.
 
 ## Archive assemblies and annotations
 
@@ -65,16 +63,7 @@ assembly	ASM_000001	FIL_000001	busco	complete_percent	96.4	percent	busco	5.8.2	e
 assembly	ASM_000001	FIL_000001	quast	contig_n50	2845913	bp	quast	5.2.0	default
 ```
 
-Required columns:
-
-```text
-entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version, parameter_set
-```
-
-Optional columns:
-
-- `file_id`: must exist in the manifest and belong to the entity in the row.
-- `file_sha256`: when present, must match the manifest checksum for the file.
+The required and optional columns, and the manifest checks on `file_id` and `file_sha256`, are specified in [import-qc](../reference/cli-files-qc.md#import-qc); `metric_unit` defaults to empty and `evaluated_at` to the import time.
 
 Import the file:
 

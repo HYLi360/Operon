@@ -167,7 +167,9 @@ operon analyze --analysis busco_lineage \
 重复传值或仍有未解析占位符时，命令在启动外部程序前失败。
 
 带运行时参数的 recipe 不使用跨指纹“输出收养”：只有完全相同的参数指纹才能命中
-缓存。这样不会把某个 lineage 的现有输出当成另一个 lineage 的等价结果。
+缓存。这样不会把某个 lineage 的现有输出当成另一个 lineage 的等价结果。若 recipe
+声明了参数但本次一个都没解析出值——既没有 `required`、没有 `default`，命令行也没有
+传 `--param`——则仍然适用收养。
 
 `arguments` 是参数数组，不是 shell 命令字符串。每个 YAML list item 对应一个 argv：
 
@@ -243,23 +245,19 @@ ${<parameter>}
 ```yaml
 commands:
   - arguments:
-      - rpsblast
-      - -query
+      - build-index
+      - --input
       - ${input}
-      - -db
-      - ${database}
-      - -out
-      - ${work_dir}/hits.asn
-      - -outfmt
-      - "11"
+      - --index
+      - ${work_dir}/index.bin
   - arguments:
-      - rpsbproc
-      - -i
-      - ${work_dir}/hits.asn
-      - -o
+      - search
+      - --index
+      - ${work_dir}/index.bin
+      - --output
       - ${output}
-    version_args: [-version]
-    version_pattern: 'rpsbproc:\s*([^\s]+)'
+    version_args: [--version]
+    version_pattern: 'search\s+([^\s]+)'
 ```
 
 - `commands` 与单命令形式的 `arguments` 在同一个 recipe 上互斥。
@@ -286,7 +284,7 @@ commands:
   缓存指纹，因此升级任何一步的程序（例如 `rpsbproc`）都会使精确缓存失效——即使 recipe
   文本与主工具版本没有变化；验证输出收养仍然适用，与主工具升级时完全相同。
 
-完整的 `rpsblast` + `rpsbproc` recipe 见 [结果解析器与示例](recipe-parsers-examples.md)。
+随附的 `rpsblast` + `rpsbproc` 命令链 recipe（`rpsblast_cdd`）就是 [结果解析器与示例](recipe-parsers-examples.md) 10.5 中的完整示例。
 
 recipe `commands` 系统存在的目的并非取代 Snakemake/Nextflow，而是将经常共同使用的工具捆绑在一起，
 减轻重复劳动，并避免在这种情况下使用“大块头”的 Snakemake/Nextflow。我们有意为 `commands`
@@ -357,7 +355,11 @@ database_mode: mutable_cache
 
 ## 结果解析与比对列
 
-`result_parser` 决定成功的输出如何进入 SQLite：`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、`rpsbproc_tabular` 或 `busco_json`。各 parser 的语义与完整示例见 [结果解析器与示例](recipe-parsers-examples.md)；本节定义字段契约。
+`result_parser` 指定把成功输出写入 SQLite 的 parser；允许的取值以及每个 parser 读取
+什么、回写什么见 [结果解析器与示例](recipe-parsers-examples.md)。本节定义字段契约。
+所有产出命中的 parser 都会把汇总指标 `query_count`、`query_with_hit_count`、
+`hit_count` 与 `best_evalue` 写入 `analysis_results`，并以 `analysis:<recipe>` 同步到
+`qc_results`；`busco_json` 则写入 BUSCO 完整率指标。
 
 ### 表格列字段
 
@@ -390,7 +392,7 @@ database_mode: mutable_cache
 
 ### `hmmer_tblout`
 
-`hmmer_tblout` 只读取 HMMER `--tblout` 输出，无需列声明：每个 query–profile 对的 full-sequence E-value 与 score，外加常规的 EAV hits。tblout 不含比对坐标，因此该 parser 不会写 `analysis_alignments` 行——新 recipe 建议改用 `--domtblout`。命中方向的归一化与 `hmmer_domtblout` 完全一致，见下文"HMMER 命中方向与 `hmmer_mode`"。
+`hmmer_tblout` 只读取 HMMER `--tblout` 输出，无需列声明：每个 query–profile 对的 full-sequence E-value 与 score，外加常规的 EAV hits。tblout 不含比对坐标，因此不会写 `analysis_alignments` 行。命中方向的归一化与 `hmmer_domtblout` 完全一致，见下文"HMMER 命中方向与 `hmmer_mode`"。完整示例与解析细节见 [结果解析器与示例](recipe-parsers-examples.md) 10.2。
 
 ### HMMER 命中方向与 `hmmer_mode`
 
@@ -404,11 +406,11 @@ database_mode: mutable_cache
 
 ### `hmmer_domtblout`
 
-`hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明。方向归一化（见上文）之后，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`——在 hmmsearch 与 hmmscan 两种方向下它们都是序列坐标（HMM 与 envelope 坐标进入 `extra_json`；domtblout 不含 subject/profile 坐标，`subject_start`/`subject_end` 保持 NULL）。它同时写 EAV hits 与全量结构化比对行。
+`hmmer_domtblout` 解析 HMMER `--domtblout` 的 per-domain 行，无需列声明。方向归一化（见上文）之后，单 domain 的 i-Evalue 与 domain score 成为 `evalue`/`bitscore`，比对坐标进入 `query_start`/`query_end`——在 hmmsearch 与 hmmscan 两种方向下它们都是序列坐标。HMM 与 envelope 坐标写入具名 `extra_json` 键 `hmm_from`、`hmm_to`、`env_from`、`env_to`；`subject_start`/`subject_end` 因 domtblout 不含 subject/profile 坐标而保持 NULL。该 parser 同时写 EAV hits 与全量结构化比对行。完整示例与解析细节见 [结果解析器与示例](recipe-parsers-examples.md) 10.3。
 
 ### `rpsbproc_tabular`
 
-`rpsbproc_tabular` 解析 NCBI `rpsbproc` 产出的表格报告（`DATA`/`SESSION`/`QUERY`/`DOMAINS` 结构），无需列声明。每条 domain 行有 12 列（session、query id、hit type、PSSM id、from、to、e-value、bitscore、accession、short name、incomplete、superfamily PSSM id）。比对行的 `query_id` 取 QUERY 的 definition line，`subject_id` 取 accession；`from`/`to` 成为 `query_start`/`query_end`，e-value 与 bitscore 按数值解析，其余字段（`hit_type`、`pssm_id`、`short_name`、`incomplete`、`superfamily_pssm`、`session`、`rps_query_id`）保存在 `extra_json` 中。EAV hits 照常按 `max_hits_per_query` 截断，`analysis_alignments` 保留全部 domain 行；没有任何 domain 的 query 不产生行。它是把 `rpsblast -outfmt 11` 接入 `rpsbproc` 的 `commands` 命令链的目标 parser（见上文"命令链"一节）。
+`rpsbproc_tabular` 解析 NCBI `rpsbproc` 产出的表格报告（`DATA`/`SESSION`/`QUERY`/`DOMAINS` 结构），无需列声明：比对行的 `query_id` 取 QUERY 的 definition line，`subject_id` 取 accession，`from`/`to` 成为 `query_start`/`query_end`。EAV hits 照常按 `max_hits_per_query` 截断，`analysis_alignments` 保留全部 domain 行；没有任何 domain 的 query 不产生行。它是把 `rpsblast -outfmt 11` 接入 `rpsbproc` 的 `commands` 命令链的目标 parser（见上文"命令链"一节）。12 列布局、`extra_json` 字段名以及块/键规则连同随附 recipe 一并记录在 [结果解析器与示例](recipe-parsers-examples.md) 10.5。
 
 ## 缓存身份
 
@@ -423,23 +425,33 @@ analysis name
 + threads
 + tool version（`commands` 命令链：第一个命令的版本，
   加上后续每一步探测到的版本）
-+ parser/output 相关 recipe 设置
++ parser 与输出设置（`result_parser`、`max_hits_per_query`、
+  `input_kind`、`output_kind`、`output_name`、`output_suffix`、`result_glob`，
+  以及任何显式设置的比对列映射键、`hmmer_mode` 或 `environment_policy`）
 + database identity
 ```
 
 命中数据库记录后，`operon` 还会检查输出 artifact 仍然存在，并重新计算文件或目录
 哈希与已记录值比较。输出被删除或修改时，旧作业会标记为 `superseded` 并重新执行。
 
+该指纹**并不**覆盖所有 parser/output 字段：`result_columns`、`hit_metric_columns`、
+`numeric_columns`、`query_column` 与 `subject_column` 都不在其中。因此只改动这五个字段
+之一不会改变指纹：已有的 `completed` 作业会被当作缓存命中，`operon` 既不会重跑程序，
+也不会重新解析已保存的输出，新列契约只对真正重新执行的作业生效。需要强制重跑时使用
+`--force`。
+
 精确身份未命中时的第二级续跑（输出验证收养）：如果同一 `(analysis, file_id)` 存在
 一条旧的 `completed` 作业，其输入内容哈希与当前一致，且其记录的输出 artifact 仍在
 磁盘上、逐字节哈希与记录相同，`operon` 不会重算，而是把该输出收养进当前指纹——
 以当前参数指纹/数据库身份插入一条指向同一输出的新 `completed` 行（关联原
-`workflow_run_id`），在 `changes` 审计表记录收养原因，并把该文件标记为 `adopted`。
-这覆盖了软件升级导致指纹公式变化、recipe 改名等场景。输出被修改或输入内容变化时
-不收养，照常重算。收养只针对有验证过的输出的完成结果；`--force` 语义不变，始终
+`workflow_run_id`），并在 `changes` 审计表中针对这条新的 `analysis_job` 行记录收养
+原因。被收养运行的结果记录带有 `"status": "adopted"`；收养不会修改 manifest 的
+`files.status`。这覆盖了软件升级导致指纹公式变化、recipe 改名等场景。输出被修改或
+输入内容变化时不收养，照常重算。收养只针对有验证过的输出的完成结果；`--force` 语义不变，始终
 重算。dry-run 输出中 status 列为 `cached`/`adoptable`/`planned`，分别表示命中
 完成缓存、会走收养路径、将实际执行；`--force` 下原本命中的缓存也显示为 `planned`。
-声明了运行时参数的 recipe 禁用第二级收养，只允许精确缓存命中。
+一旦 recipe 解析出至少一个运行时参数，第二级收养即被禁用，只有精确缓存命中才能复用
+结果。
 
 `--force` 只表示忽略一个本来有效的 completed cache。它会保留历史作业记录、将旧记录
 标为 `superseded`，删除精确的旧输出目标，然后创建新作业。它不能修复错误参数、错误
@@ -477,7 +489,7 @@ CPU 亲和性和运行时线程变量被排除——线程数已经参与参数�
 
 - `local` 与直连 `ssh` 在执行计算命令前探测环境，因此比对双方总是可用；
 - `slurm` 与远端 Slurm 没有作业前探针，无法在复用前比对；`strict` 降级为
-  `warn`，并在 run details 中记录 `environment_policy_degraded: strict→warn`；
+  `warn`，并在 run details 中记录 `environment_policy_degraded: strict->warn`；
 - 任一侧环境文档缺少子指纹（数据库 schema {{ db_schema }} 之前捕获的记录）时，
   比对记为 `environment_compare: unavailable`：`warn` 照常复用，`strict` 同样
   降级为 `warn`，旧文档永远不会引发误重算。

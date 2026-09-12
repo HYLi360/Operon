@@ -33,12 +33,4 @@ Expected demo outcomes:
 - `ANN_000003` fails with `CDS_NOT_MULTIPLE_OF_3` and `BROKEN_GFF3_PARENTS`.
 - Other entities pass.
 
-Verify the release checksums:
-
-```bash
-cd ./demo-project/releases/2026.08.demo
-# Linux
-sha256sum -c checksums.sha256
-# macOS
-shasum -a 256 -c checksums.sha256
-```
+The release directory for this demo is `./demo-project/releases/2026.08.demo`; verify it as described in [Create a release](first-project.md#create-a-release).

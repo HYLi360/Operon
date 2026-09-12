@@ -9,16 +9,9 @@ operon init ./my-genome-project --project-id PRJ_MY_001 --name "My first genome 
 cd ./my-genome-project
 ```
 
-The command creates:
+The command creates `project.yaml`, the `config/` directory (schemas, QC/coverage profiles, and `tools.yaml`), the working directories `raw/`, `standardized/`, `qc/`, `analysis/`, `reports/`, `logs/`, `releases/`, and `taxonomy/`, plus the legacy-layout `metadata/` compatibility note.
 
-```text
-project.yaml         Project configuration
-config/              Schemas, QC/coverage profiles, and tools.yaml
-metadata/            Legacy-layout compatibility note
-raw/ standardized/ qc/ analysis/ reports/ logs/ releases/ taxonomy/
-```
-
-`operon init` also creates an empty `operon.sqlite` immediately, together with the directory tree.
+`operon init` also creates an empty `operon.sqlite` immediately, together with the directory tree. The [project directory structure](../architecture/overview.md#project-directory-structure) lists every entry.
 
 > The global `--project` option must appear before the subcommand. It can be omitted inside the project root. Outside the project, use `operon --project /path/to/my-genome-project <subcommand>`.
 
@@ -30,9 +23,7 @@ For collaborator deliveries, local pipelines, and other non-NCBI datasets, start
 operon import dataset
 ```
 
-The wizard collects source, organism, sample, sequencing, assembly, annotation, and file information. Existing organisms can be selected by scientific name. The source section distinguishes INSDC from non-INSDC sources and records database/repository, provider, record URL, citation, and license. Citation and license are mandatory for non-INSDC data.
-
-Optional fields can be skipped, but the summary page continues to display warnings. Selecting `Edit source`, `Edit files`, or another section returns directly to the summary after editing. SQLite and the file archive are modified only after `Execute import` is selected and remaining warnings are confirmed.
+The wizard collects source, organism, sample, sequencing, assembly, annotation, and file information; its INSDC/non-INSDC source rules and the mandatory citation/license fields for non-INSDC data are described in [import](../reference/cli-project-metadata.md#import).
 
 ## Import an NCBI Datasets package
 
@@ -140,7 +131,7 @@ operon ingest \
 Example output:
 
 ```text
-registered FIL_000001 -> raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz (sha256 7b5a0aa0...)
+registered FIL_000001 -> raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz (sha256 7b5a0aa0c1d2e3f4...)
 ```
 
 The command recognizes `.fna.gz` as gzipped FASTA, calculates SHA-256, copies the file atomically to `raw/assemblies/ASM_000001/`, verifies the archived copy, records it in the `files` manifest, and updates `assemblies.fasta_file_id`.
@@ -195,14 +186,7 @@ The export creates `qc/aggregate/qc_results.tsv` and `qc_results.wide.tsv`.
 
 ## Import external QC metrics
 
-Prepare an external TSV with these required columns:
-
-```text
-entity_type, entity_id, qc_stage, metric_name, metric_value,
-tool, tool_version, parameter_set
-```
-
-Optional columns are `file_id` and `file_sha256`; when present, they are checked against the manifest. Import the file:
+The required and optional columns, and the `qc-measure` JSON payload form, are specified in [import-qc](../reference/cli-files-qc.md#import-qc). Import the file:
 
 ```bash
 operon import-qc --file busco_results.tsv
@@ -210,7 +194,7 @@ operon import-qc --file busco_results.tsv
 
 ## Run BLAST, HMMER, or BUSCO
 
-External programs are configured in `config/tools.yaml`. The default template includes `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, and `busco_autolineage`; edit the launch method and database paths for the local environment.
+External programs are configured in `config/tools.yaml`. The default template contains six recipes — `blastn_nt`, `blastp_nr`, `hmmsearch_pfam`, `busco_autolineage`, `busco_lineage`, and the `rpsblast_cdd` command chain (`operon tools-check` lists them all); edit the launch method and database paths for the local environment.
 
 ```yaml
 tools:
@@ -253,7 +237,16 @@ operon report analysis --analysis blastn_nt
 operon report analysis --analysis blastn_nt --hits
 ```
 
-BUSCO uses directory output and reads `short_summary*.json` directly:
+Run HMMER against the annotation protein files:
+
+```bash
+operon analyze --analysis hmmsearch_pfam
+operon report analysis --analysis hmmsearch_pfam
+```
+
+The default `hmmsearch_pfam` recipe uses `--tblout` (the `hmmer_tblout` parser), whose output carries no alignment coordinates, so `--hits` has no structured hit rows to show; switch to `--domtblout` with the `hmmer_domtblout` parser when structured per-domain hits are needed (see [Result parsers and examples](../reference/recipe-parsers-examples.md)).
+
+BUSCO uses directory output and reads `short_summary.specific.*.json` directly:
 
 ```bash
 operon analyze --analysis busco_autolineage --entity-id ANN_000001 --threads 24 --dry-run
@@ -262,6 +255,15 @@ operon report analysis --analysis busco_autolineage --entity-id ANN_000001
 ```
 
 Each successful run records the tool, version, full command, input hash, database identity, and output hash. Identical input, parameters, tool version, and database identity hit the cache; `--force` reruns explicitly.
+
+For a study covering all green plants, keep auto-lineage as the uniform QC source and use the built-in empirical profile to select thresholds by the actual lineage:
+
+```bash
+operon evaluate --profile annotation_busco_viridiplantae_odb12_v1 \
+  --entity-type annotation
+```
+
+That profile reads `analysis:busco_autolineage` explicitly, so a later fixed-lineage re-check does not silently change the decision. Threshold sources, `value_by`, and result-coexistence semantics are in [QC Profiles](../guides/qc-profiles.md) and the [Recipe field reference](../reference/recipe-fields.md).
 
 ## Evaluate rules
 
@@ -273,9 +275,9 @@ operon report decisions
 Example decisions:
 
 ```text
-entity_type  entity_id   profile                 decision  reasons
-assembly     ASM_000001  assembly_production_v1  PASS      -
-assembly     ASM_000002  assembly_production_v1  FAIL      LOW_CONTIGUITY
+entity_type  entity_id   profile                 version  decision  curated  reasons          evaluated_at
+assembly     ASM_000001  assembly_production_v1  1        PASS                            2026-08-16T09:12:00+00:00
+assembly     ASM_000002  assembly_production_v1  1        FAIL               LOW_CONTIGUITY  2026-08-16T09:12:00+00:00
 ```
 
 Changing a profile and rerunning `evaluate` appends a new decision rather than overwriting the old one. `report decisions` displays the latest decision by default. QC profiles use `kind: qc`; taxonomy coverage profiles use `kind: taxonomy_coverage`.
@@ -318,7 +320,7 @@ WHERE f.file_role='protein_fasta'
 operon release --version 2026.08 --profile assembly_production_v1
 ```
 
-The default `copy` mode creates a release containing `manifest.tsv`, `exclusions.tsv`, `qc_summary.tsv`, `profile_history.tsv`, `data_sources.tsv`, `source_links.tsv`, `provenance.json`, and `checksums.sha256`.
+The default `copy` mode creates a release containing `manifest.tsv`, `decisions.tsv`, `exclusions.tsv`, `profile_history.tsv`, `qc_summary.tsv`, `software_versions.tsv`, `provenance.json`, `checksums.sha256`, `README.md`, metadata table snapshots such as `organisms.tsv` and `assemblies.tsv`, and the released member files under `data/`. The [release section of the architecture page](../architecture/release-lifecycle.md#release) lists the complete set.
 
 Verify it:
 

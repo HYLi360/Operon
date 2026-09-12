@@ -85,3 +85,5 @@ operon set-state --entity-type TYPE --entity-id ID --state STATE \
 | `0` | Success |
 | `1` | Command completed but checks did not pass, or a runtime failure occurred (e.g. coverage below a YAML threshold, verify/QC/external command failure) |
 | `2` | `operon` domain error (configuration error, validation failure, entity not found, conflict, etc.) |
+
+Some pre-flight checks raise plain Python exceptions rather than a domain error and therefore exit 1: `set-state --state <UNKNOWN>` raises a bare `ValueError` for an unknown state (`workflow.py`), and `release`/`export` refuse an existing destination with `FileExistsError`. Treat exit 1 as "the command refused or failed" and read the printed message for the reason.

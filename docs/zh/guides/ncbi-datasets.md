@@ -41,7 +41,7 @@ operon ncbi-datasets --input /data/ncbi_dataset.zip
 | `sequence_report.jsonl` / assembly report | `assembly_report` → assembly |
 
 原始 ZIP 以 SHA-256 命名保存在 `raw/metadata/ncbi_datasets/`；生物文件通过
-正常 `ingest` 进入 raw 和 `files.tsv`。重复导入相同包会复用相同内部 ID 与 file ID。
+正常 `ingest` 进入 raw 与 `files` 清单。重复导入相同包会复用相同内部 ID 与 file ID。
 
 如果只需要元数据：
 

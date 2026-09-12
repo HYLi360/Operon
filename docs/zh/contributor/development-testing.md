@@ -1,9 +1,10 @@
 # 开发与测试
 
-## 开发与测试
+## 安装与测试执行
+
+仓库检出后按[安装](../getting-started/installation.md)的说明以 `dev` extra 安装（包含 pytest、Cython 与 Sphinx），然后：
 
 ```bash
-python -m pip install -e '.[dev]'
 python -m pytest
 
 # 也可按类目执行
@@ -12,7 +13,6 @@ python -m pytest tests/integration
 python -m pytest tests/regression tests/compatibility
 
 # 严格构建 Sphinx 文档
-python -m pip install -e '.[docs]'
 sphinx-build -W --keep-going -b html docs docs/_build/html
 ```
 
@@ -35,6 +35,25 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 如果您是Codex/ChatGPT，请在沙箱外执行TUI测试相关代码。
 
 该内容也已同步至 AGENTS.md。
+
+## 覆盖率门禁
+
+`python -m pytest` 始终测量覆盖率（`pyproject.toml` 中配置的 `--cov=operon --cov-branch`），
+并在报告的总覆盖率低于 `fail_under` 阈值时失败。报告的总覆盖率是合并值
+`(覆盖行数 + 覆盖分支数) / (有效行数 + 有效分支数)`，因此只增加行而不覆盖其分支同样会拉低该值。
+此外，分支覆盖率必须保持在全部有效分支的 90% 及以上。
+
+查看缺口：
+
+```bash
+python -m pytest --cov-report=term-missing          # 逐文件列出缺失行与未覆盖分支
+python -m pytest tests/unit                          # 只跑本次改动涉及的类目
+```
+
+任何受支持环境都无法执行的行——仅特定平台的分支、已安装发行版中无法触发的依赖导入回退，
+以及按构造不可达的防御分支——在行尾带 `# pragma: no cover` 注释（该模式已包含在
+`pyproject.toml` 的 `exclude_also` 中）。该 pragma 不能替代测试：凡是通过公开入口可达的代码
+都必须写测试覆盖，而不是排除。
 
 ## 文档同步
 

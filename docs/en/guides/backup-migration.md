@@ -2,24 +2,19 @@
 
 ## Back up and migrate a project
 
-Use `backup` to create a consistent SQLite snapshot. Do not copy database files directly while the database may be active. The `--output` directory must be outside the project root and must not exist yet; `backup create` refuses otherwise:
+Use `backup` to create a consistent SQLite snapshot; do not copy database files directly while the database may be active. The destination must lie outside the project root and must not already exist. Choose a scope:
 
 ```bash
-# Configuration, SQLite, audit records, and workflow logs
 operon backup create --output /backups/my-project-control --scope control
-
-# Adds QC, analysis, reports, taxonomy, and releases
 operon backup create --output /backups/my-project-results --scope results
-
-# Adds raw, standardized files, local placeholders, and all project-managed data
 operon backup create --output /backups/my-project-full --scope full
 
 operon backup verify --input /backups/my-project-full
 ```
 
-Note the scope boundaries: `results` excludes `raw/` and `standardized/` (the bytes you usually cannot regenerate), so it is not a restorable substitute for `full`; only `full` can restore data files.
+The three scopes and their exact directory sets are defined in the [backup reference](../reference/cli-taxonomy-lifecycle-admin.md#backup). `results` excludes `raw/` and `standardized/` (the bytes you usually cannot regenerate), so only `full` can restore data files.
 
-`backup verify` validates an exact snapshot. In addition to checking size and SHA-256 for files listed in the manifest, it rejects extra files in the backup directory. Keep notes, temporary files, and recovery records outside the backup directory.
+`backup verify` validates an exact snapshot and rejects extra files in the backup directory: keep notes, temporary files, and recovery records outside it.
 
 New backups use manifest format 2; format 1 backups remain verifiable. Symbolic links are recorded and verified by their target text, including broken links and directory links, without following their targets. Absolute links inside the standardized view that point into the project are rebased to relative paths within the backup, so a full backup can be moved independently. Links inside archived directory artifacts retain their exact text to preserve artifact identity. External link targets are not backed up; restoring such a link does not restore its external referent.
 
@@ -27,14 +22,7 @@ With `REMOTE_ONLY` files, a local backup must include the SQLite database contai
 
 `report metadata` is not a backup. It exports metadata/manifest TSV files for browsing and exchange, but does not include complete QC, decisions, changes, workflows, remote locations, or migration state.
 
-Create releases regularly and verify them in the release directory:
-
-```bash
-# Linux
-sha256sum -c checksums.sha256
-# macOS
-shasum -a 256 -c checksums.sha256
-```
+Create releases regularly and verify them in the release directory as shown in [Create a release](../getting-started/first-project.md#create-a-release).
 
 Backup policy can be based on reconstruction cost:
 

@@ -4,7 +4,7 @@
 
 ## 设计目标
 
-`operon` 是一个小型、可验证、可追溯的基因组数据管理系统。它遵循以下原则：
+[项目概述](../overview.md)说明 `operon` 的能力与适用边界；架构建立于以下原则：
 
 1. 结构化元数据是唯一事实来源。
 2. 原始数据不可修改，衍生数据可以重建。
@@ -84,11 +84,11 @@
 | `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
 | `operon/backup.py` | SQLite 一致备份、control/results/full scope、checksum manifest 校验 |
 | `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
-| `../operon/qc/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
-| `../operon/qc/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
-| `../operon/qc/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |
-| `../operon/qc/alignment.py` | 纯 Python 多序列比对 QC 参考实现；Cython 后端必须逐字节复现其结果 |
-| `../operon/qc/_alignment.pyx` | `operon alignment-qc` 的 Cython 生产后端；结果与纯 Python 参考实现逐字节一致 |
+| `operon/qc/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
+| `operon/qc/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
+| `operon/qc/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |
+| `operon/qc/alignment.py` | 纯 Python 多序列比对 QC 参考实现；Cython 后端必须逐字节复现其结果 |
+| `operon/qc/_alignment.pyx` | `operon alignment-qc` 的 Cython 生产后端；结果与纯 Python 参考实现逐字节一致 |
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
 | `operon/taxonomy.py` | 归档/导入不可变 NCBI Taxonomy，按 coverage profile 编译冻结分母及 provenance |
 | `operon/coverage.py` | 校验 reference set，对 metadata 或 release 冻结范围计算 family/genus 覆盖率与缺失清单 |
@@ -100,6 +100,23 @@
 | `operon/release.py` | 生成不可变 release 目录与校验和 |
 | `operon/reports.py` | QC 长表/宽表导出、metadata 派生快照、状态与判定报表 |
 | `operon/demo.py` | 生成确定性的合成演示项目 |
+| `operon/__main__.py` | `python -m operon` 入口，委托给 `operon.cli.main` |
+| `operon/errors.py` | `OperonError` 异常层级（validation/conflict/checksum/remote/configuration），CLI 将其映射为退出码 2 |
+| `operon/utils.py` | 共享工具：`now_iso` 时间戳、原子文件/目录替换、SHA-256 辅助与表格渲染 |
+| `operon/profiles.py` | 加载并校验规则引擎与 taxonomy coverage 共用的版本化 YAML profile |
+| `operon/metadata_files.py` | 已退役的实时 metadata TSV 目录的兼容提示；SQLite 是唯一可写元数据源 |
+| `operon/qc/measure.py` | 与项目无关的 `operon qc-measure` 测量路径，其 JSON 载荷可由 `operon import-qc` 导回 |
+| `operon/classify.py` | `sequence_classification` profile：依据已存比对命中为每条序列打标并写入 `sequence_labels` |
+| `operon/sequence_tools.py` | `extract-domains` / `select-sequences`：按已存比对区间物化 FASTA 子集 |
+| `operon/fanout.py` | 数据驱动 fan-out：把已登记的序列文件拆成 `analysis/derived/` 下的按单元 FASTA 并写 `file_lineage` 边 |
+| `operon/lineage.py` | 把外部工作流产物 adopt 进清单（`analysis/adopted/`）并登记谱系边 |
+| `operon/export.py` | 按筛选条件生成 release 式选择性导出（含 manifest、checksum 与 provenance） |
+| `operon/environment.py` | 执行环境文档：捕获时脱敏、子指纹与缓存复用策略比较 |
+| `operon/environment_capture.py` | 计算端、与 Python 无关的环境探针与可移植 Conda 还原 |
+| `operon/timetree.py` | `operon timetree` 命令组：不可变 TimeTree 快照、经审阅的 MCMCTree 标定编译与查询命令 |
+| `operon/adapters/timetree.py` | TimeTree REST 客户端，把精确查询的原始响应缓存到 `adapters_cache/timetree/` |
+| `operon/ncbi_reconcile.py` | 面向开发期 NCBI adapter 异常的受审计 `operon ncbi-reconcile` 修复计划 |
+| `operon/tui/` | 可选的 Textual 终端 UI：只读数据访问（`data.py`）、短生命周期写操作（`actions.py`），以及实体、文件、运行、判定、配置、发布、覆盖率与导入向导各界面 |
 
 ## 项目目录结构
 

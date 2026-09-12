@@ -18,12 +18,12 @@ Guarantees of `ingest`:
 The `remotes:` section of `project.yaml` can configure one or more SFTP remote mirrors (`operon/remotes.py`), synchronizing manifest files to a remote without breaking the invariants of this section:
 
 - Plain files and directory artifacts are all verified by `sha256 + size_bytes`; when the server lacks `sha256sum`, SHA-256 is computed by streaming over SFTP, never degrading to size-only comparison; directories use exactly the same deterministic tree hash as locally (including empty directories and symlink targets);
-- The remote maintains an `operon-manifest.json` v2 manifest (project_id + relative_path → file_id/sha256/size/kind/synced_at). Manifest updates require the server to support the OpenSSH POSIX rename extension and are published via "unique temporary file + atomic replacement"; one push batch publishes the manifest exactly once, and read-modify-write is serialized through the remote atomic directory `.operon-manifest.lock`, so concurrent pushes from multiple control ends cannot lose entries;
+- The remote maintains an `operon-manifest.json` v2 manifest (project_id + relative_path → file_id/sha256/size/kind/synced_at) whose updates are published atomically and serialized between concurrent control ends;
 - All relative paths are root-constrained on both sides; absolute paths, `..`, and path escapes are rejected. The remote manifest's `project_id` and every entry identity must match the local SQLite;
 - Every transfer reuses `workflow_runs` for provenance (step `push:<name>` / `pull:<name>`); successful locations are also cached in `file_locations`;
-- push/pull/evict use per-item result semantics: a failed item records `error` and the rest of the batch continues; the CLI returns non-zero if any error exists;
-- After `pull` restores a locally missing file, `files.status` returns to `CHECKSUM_VERIFIED`, and this change is written to `changes` just like the status changes from `verify`/`evict`;
-- `ingest --source` also directly accepts `sftp://[user@]host[:port]/path` and `remote://<name>/<path>`; the latter must exist in the remote manifest and is identity-checked first, while the former is downloaded and assigned a fresh identity by ingest, then follows exactly the same archiving flow as a local file.
+- After `pull` restores a locally missing file, `files.status` returns to `CHECKSUM_VERIFIED`, and this change is written to `changes` just like the status changes from `verify`/`evict`.
+
+Manifest publication and locking, batch semantics and per-item exit codes, and `sftp://`/`remote://` ingest are command-level details; see [Remote storage commands](../reference/cli-remote.md) and [File and QC Commands](../reference/cli-files-qc.md#ingest).
 
 Paramiko is a core runtime dependency but remains lazily imported, so local-only commands do not initialize the SSH stack.
 

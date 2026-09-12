@@ -13,13 +13,15 @@ organisms (ORG_)
                             └── protein FASTA
 ```
 
-External accessions live in a separate `accessions` table and are never primary keys:
+External accessions live in a separate `accessions` table and are never the primary key of an entity:
 
 ```text
-internal_type   internal_id    namespace        accession         version
-assembly        ASM_000001     NCBI_Assembly    GCA_000000001     1
-sample          SMP_000001     NCBI_BioSample   SAMN0000001       1
+internal_type   internal_id    namespace        accession         version   is_primary
+assembly        ASM_000001     NCBI_Assembly    GCA_000000001     1         1
+sample          SMP_000001     NCBI_BioSample   SAMN0000001       1         1
 ```
+
+The table's own primary key is `(namespace, accession)`, so one accession maps to at most one internal entity; `is_primary` marks the primary accession when several accessions point at the same entity.
 
 ## files: the file manifest
 
@@ -71,26 +73,29 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 
 ## Other system tables
 
+Most entries below are `CREATE TABLE` definitions; `current_entity_lifecycle` and `effective_retired_entities` are `CREATE VIEW` definitions and are marked as views.
+
 | Table | Purpose |
 |---|---|
 | `entity_state` | Entity-level state machine, including the database schema marker row |
+| `id_counters` | Per-entity-type ID allocation counters (`entity_type` primary key, `next_number`) backing the stable `ORG_`/`SMP_`/`RUN_`/`ASM_`/`ANN_`/`FIL_` identifiers; IDs are reserved from the counter under a write lock, so gaps after failed inserts are expected |
 | `workflow_runs` | Structured run records (mirroring `logs/workflow.jsonl`), including executor, scheduler job ID, execution details, and resource-usage columns (`duration_seconds`, `max_rss_mb`, `avg_rss_mb`, `cpu_seconds`; NULL when collection is unavailable, never affecting the run verdict) |
-| `execution_environments` | Content-addressed execution-environment documents (hostname, OS/kernel, Python/operon versions, relevant environment variables, docker probe); referenced by `workflow_runs` and `analysis_jobs` through `environment_id` |
-| `file_lineage` | Lineage edges from a derived file to its input files (`derived_file_id`, `input_file_id`, optional `workflow_run_id`, `created_at`), written by `operon adopt` and `operon fanout`; `UNIQUE(derived_file_id, input_file_id)` makes repeated adopts idempotent |
-| `data_sources` | External databases/repositories, providers, record URLs, citations, licenses, and normalized content identity |
+| `execution_environments` | Content-addressed execution-environment documents (hostname, OS/kernel, Python/operon versions, relevant environment variables, docker probe); `workflow_runs.environment_id` and `analysis_jobs.environment_id` point at it, but neither column declares a foreign key, so the link is application-level |
+| `file_lineage` | Lineage edges from a derived file to its input files (`derived_file_id`, `input_file_id`, optional `workflow_run_id`, `created_at`), written by `operon adopt` and `operon fanout`; `derived_file_id` declares a foreign key to `files(file_id)`, `input_file_id` declares none; `UNIQUE(derived_file_id, input_file_id)` makes repeated adopts idempotent |
+| `data_sources` | External databases/repositories, providers, record URLs, citations, licenses, and normalized content identity; `source_type` is restricted to `insdc`/`non_insdc`, and a non-INSDC row must carry both a citation and a license name (CHECK constraint) |
 | `source_links` | Many-to-many associations between sources and organism/sample/run/assembly/annotation/file, plus import provenance |
 | `schema_migrations` | Stable IDs, script identities, and application times of applied database migrations |
-| `adapter_run_items` | Accession/item-level state, attempts, errors, and result write-sets of resumable adapters |
+| `adapter_run_items` | Accession/item-level state, attempts, errors, and result write-sets of resumable adapters; `status` is restricted to `pending`, `downloading`, `completed`, `skipped`, `failed`, `interrupted` |
 | `ncbi_assembly_records` | Mapping of GCA/GCF source records to stable `ASM_` IDs, canonical flags, and source-file pointers |
 | `ncbi_annotation_records` | Annotation identities normalized from source accession/provider/version/date |
 | `entity_supersessions` | Logical replacement relationships without deleting old rows, plus repair provenance |
-| `entity_lifecycle_events` | Append-only `RETIRE`/`RESTORE` history of entities: reason, evidence, actor, workflow, and reverse-event pointers |
-| `current_entity_lifecycle` | Latest direct lifecycle event per entity; expresses only that entity itself, not inherited ancestor state |
-| `effective_retired_entities` | Currently effective retired set; propagates along organism → sample → run/assembly → annotation and keeps the root retirement event identity |
+| `entity_lifecycle_events` | `RETIRE`/`RESTORE` history of entities: reason, evidence, actor, workflow, and reverse-event pointers; `object_type` is restricted to `organism`, `sample`, `run`, `assembly`, `annotation` and `action` to `RETIRE`/`RESTORE`. The history is append-only by convention: the schema declares no trigger, so direct SQL writes are not blocked |
+| `current_entity_lifecycle` (view) | Latest direct lifecycle event per entity; expresses only that entity itself, not inherited ancestor state |
+| `effective_retired_entities` (view) | Currently effective retired set; propagates along organism → sample → run/assembly → annotation and keeps the root retirement event identity |
 | `file_locations` | URI, identity copy, availability status, and last verification time of each `file_id` on each remote mirror; rebuildable from remote manifests |
 | `local_file_verifications` | Stat fingerprint of the last full local SHA-256 pass; a rebuildable QC acceleration cache only — it does not change manifest file identity |
 | `releases` / `release_members` | Release metadata and member file lists |
-| `analysis_jobs` | External analysis jobs: command, version, parameter fingerprint, input/database fingerprints, output checksums, cache state; `recipe_snapshot_id` points back to the recipe snapshot that produced the job |
+| `analysis_jobs` | External analysis jobs: command, version, parameter fingerprint, input/database fingerprints, output checksums, cache state; the completed-job cache is the partial unique index `idx_analysis_jobs_completed_cache` on `(analysis_name, file_id, parameter_sha256, input_sha256, database_identity)` `WHERE status='completed'`, so superseded or failed rows never satisfy a cache lookup; `recipe_snapshot_id` points back to the recipe snapshot that produced the job |
 | `recipe_snapshots` | Content-addressed recipe snapshots (canonicalized JSON of the verbatim recipe plus its referenced tool spec, with its SHA-256), deduplicated by `UNIQUE(recipe_name, recipe_version, recipe_sha256)`; recorded by `analyze` |
 | `analysis_results` / `analysis_hits` | Analysis summary metrics and top-hits long tables synced into the database |
 | `sequences` | One row per FASTA record (`file_id`, `file_sha256`, `entity_type`, `entity_id`, `seqid`, `length`; `UNIQUE(file_id, seqid)`), populated by built-in FASTA QC (annotation QC also syncs its assembly's sequences) and by `import-qc` of a `qc-measure` payload; powers seqid reverse lookup in `show` and read-only SQL |
@@ -102,12 +107,17 @@ A rule's threshold can be given as a scalar `value` or selected through `value_b
 | `coverage_reports` / `coverage_report_metrics` | Coverage report history per immutable input identity, with family/genus metrics |
 | `changes` | Audit log of manual modifications |
 
+## Metadata schema layer
+
+The tables above are loaded through a versioned project metadata schema: `default_schemas()` (`operon/schema.py`) is written to `config/schemas.yaml` at project initialization, and `Schema` loads that document and takes its `schema_version` as the metadata schema marker. The built-in contract version is `METADATA_SCHEMA_VERSION` (`operon/schema.py`); the current version is {{ metadata_schema }}.
+
+- **Table contracts.** `default_schemas()` declares one entry per table (`organisms`, `samples`, `runs`, `assemblies`, `annotations`, `accessions`, `files`) with its TSV `file`, `primary_key`, optional `unique` constraints, and a per-field contract: `type`, `required`, `pattern`, `allowed`, and `min`/`max`.
+- **Internal ID patterns.** Internal IDs match `^ORG_\d{6}$`, `^SMP_\d{6}$`, `^RUN_\d{6}$`, `^ASM_\d{6}$`, `^ANN_\d{6}$`, and `^FIL_\d{6}$`; taxonomy snapshots use the `TAX_` prefix, and `files.entity_id` accepts `(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}`. IDs come from `id_counters`, never from an external accession.
+- **Controlled vocabularies.** A field with an `allowed` list rejects every other value, for example `taxonomy_source` (`NCBI`/`GTDB`/`other`), `sex`, `library_strategy`, `library_source`, `library_layout`, `platform`, `assembly_level`, `reference_status`, `source_database`, `accessions.internal_type`, and `files.entity_type`/`file_role`/`format`/`compression`/`status`.
+- **Missing values.** The raw tokens `""` (empty), `na`, `n/a`, `null`, and `none` are normalized to NULL after stripping and lowercasing; a required field given one of them is a validation error, and a token explicitly listed in `allowed` is kept (for example `compression: none`).
+
+`Schema.validate_and_normalize()` rejects unknown tables and fields, type mismatches, out-of-range numbers, and values outside a vocabulary before any row is written.
+
 ## Entity retirement and restoration: isolate first, decide on physical removal later
 
-`retire` is a control-plane state change, not a file operation. It appends a direct `RETIRE` event to `entity_lifecycle_events` and an audit row to `changes`; it does not delete database rows, move files, modify checksums, revoke existing QC/analysis/workflow records, or rewrite already-created releases. Retiring a parent entity effectively retires its ownership descendants in `effective_retired_entities`: an organism covers its samples, runs, assemblies, and annotations; a sample covers its own runs, assemblies, and annotations; an assembly covers its annotations.
-
-`restore` only reverses the target's own most recent direct `RETIRE`, appending a `RESTORE` that points back to the original event/audit row; history is never deleted. A child entity that inherited retirement from an ancestor cannot be restored individually — the root causing the isolation must be restored first. Conversely, if a child has its own direct retirement, it stays retired even when the parent is restored. This keeps the inverse operation strictly paired with the original one and never erases an independent human decision.
-
-Active data consumers exclude effectively retired entities by default: descendant counts in `show`, status/report, batch QC, rule evaluation, external analysis candidates, metadata coverage, NCBI re-import reuse, and new releases. Use the corresponding `--include-retired` when explicitly querying history; `retired` lists current direct and inherited states. Backups, verification, remote residency, read-only SQL, existing releases, and audit history retain the complete archival view.
-
-The current architecture has no `purge`. A retirement plan lists descendants, files, and QC/decision/analysis/workflow/source/remote/release references, with `physical_changes` explicitly zero. If physical removal is added in the future, it must take this auditable state and reference graph as a precondition, with separately defined retention periods, release/remote reference protection, a recoverable window, and irreversible confirmation.
+`retire` writes `entity_lifecycle_events` rows and `changes` audit rows; `effective_retired_entities` resolves inherited retirement, and `retired` / `show --include-retired` expose it. The event pairing rules, the list of consumers that hide retired entities, and the no-`purge` policy are specified in [Releases, Lifecycle, and Correctness Guarantees](../architecture/release-lifecycle.md#entity-retirement-and-restoration).

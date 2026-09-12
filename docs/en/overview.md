@@ -24,14 +24,4 @@ Implicit semantics, edge cases, and known issues that are not covered by the tas
 
 ## Recommended workflow
 
-```text
-metadata import/add
-  -> ingest
-  -> verify
-  -> standardize
-  -> qc / analyze
-  -> evaluate / curate
-  -> release
-```
-
-See the [Daily Workflow](getting-started/daily-workflow.md) for the operational sequence.
+The operational sequence is maintained in the [Daily Workflow](getting-started/daily-workflow.md).
