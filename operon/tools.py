@@ -123,9 +123,8 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
         "hmmsearch": {
             "description": "HMMER profile search against a protein FASTA",
             "executable": "hmmsearch",
-            "run_method": "conda run --no-capture-output -n hmmer",
             "version_args": ["-h"],
-            "version_pattern": r"hmmsearch\s*::\s*HMMER\s+([^\s]+)",
+            "version_pattern": r"HMMER\s+([^\s]+)",
             "recipes": {
                 "hmmsearch_pfam": {
                     "description": "Annotation proteins against Pfam-A.hmm",
