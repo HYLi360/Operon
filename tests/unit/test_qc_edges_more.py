@@ -117,7 +117,7 @@ def test_fasta_cache_roundtrip_write_failure_and_cached_statuses(tmp_path, monke
     project = SimpleNamespace(root=tmp_path, qc_root=tmp_path / "qc")
     fasta = tmp_path / "assembly.fa"
     fasta.write_text(">a\nA\n", encoding="utf-8")
-    monkeypatch.setattr(qc, "fasta_lengths", lambda _path: {"a": 1})
+    monkeypatch.setattr(qc, "fasta_lengths", lambda _path: {"a": 1})  # noqa: F821
     monkeypatch.setattr(qc, "_write_fasta_length_cache", lambda *_a: (_ for _ in ()).throw(OSError("disk")))
     lengths, info = qc._cached_fasta_lengths(project, record, fasta, {})
     assert lengths == {"a": 1} and info["status"] == "write_failed" and "error" in info
@@ -156,7 +156,7 @@ def test_pairing_metric_all_early_returns_cache_and_mismatch(tmp_path, monkeypat
     metric = qc._pairing_metric(DB(sibling), project, record, 1, read_count_cache=cache)
     assert metric["metric_numeric"] == 0
     cache.clear()
-    monkeypatch.setattr(qc, "fastq_record_count", lambda _path: 1)
+    monkeypatch.setattr(qc, "fastq_record_count", lambda _path: 1)  # noqa: F821
     metric = qc._pairing_metric(DB(sibling), project, record, 1, read_count_cache=cache)
     assert metric["metric_numeric"] == 1 and cache[("R2", "b")] == 1
 

@@ -12,8 +12,8 @@ import pytest
 
 from operon.qc import (
     AlignmentQCResult,
-    alignment_qc,
-    compute_alignment_qc,
+    alignment_qc,  # noqa: F821
+    compute_alignment_qc,  # noqa: F821
     write_alignment_qc,
 )
 from operon.cli import main

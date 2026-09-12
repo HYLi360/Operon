@@ -187,6 +187,11 @@ asks.
   exists only for pre-1.0 databases and is scheduled for removal at the 1.0
   release; check it before touching `operon/database.py` migrations or the
   NCBI adapter's schema-upgrade path.
+- The `operon.qc` module uses CFFI (specifically, Cython), so static analysis
+  tools, such as `flake8`, will report "undefined reference" errors (F821).
+  Using `# noqa: F821` behind the line **ONLY** when importing `operon.qc`
+  and an F821 error is likely to occur. Globally ignoring F821 is **STRICKLY
+  PROHIBITED**.
 
 ## Documentation sync
 

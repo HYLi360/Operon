@@ -13,7 +13,7 @@ import random
 import pytest
 
 from operon.errors import QCError
-from operon.qc import _alignment as cy_alignment
+from operon.qc import _alignment as cy_alignment  # noqa: F821
 from operon.qc import alignment as py_alignment
 from operon.qc.alignment import write_alignment_qc
 

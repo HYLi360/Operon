@@ -15,7 +15,7 @@ import pytest
 from operon.errors import QCError
 from operon.qc import parsers as py_parsers
 
-from operon.qc import _parsers as cy_parsers
+from operon.qc import _parsers as cy_parsers  # noqa: F821
 
 FASTA_TEXT = (
     ">ctg1 circular\nACGTNacgtn--RY\nNNN\n"

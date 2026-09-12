@@ -15,15 +15,15 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from operon.qc._parsers import (
-    fasta_lengths,
-    fasta_stats,
-    fastq_record_count,
-    fastq_stats,
-    gff3_stats,
-    protein_stats,
+from operon.qc._parsers import (  # noqa: F821
+    fasta_lengths,  # noqa: F821
+    fasta_stats,  # noqa: F821
+    fastq_record_count,  # noqa: F821
+    fastq_stats,  # noqa: F821
+    gff3_stats,  # noqa: F821
+    protein_stats,  # noqa: F821
 )
-from operon.qc._alignment import alignment_qc, compute_alignment_qc
+from operon.qc._alignment import alignment_qc, compute_alignment_qc  # noqa: F821
 from operon.qc.alignment import (
     AlignmentQCResult,
     render_summary_json,

@@ -7,7 +7,7 @@ import gzip
 import pytest
 
 from operon.errors import QCError
-from operon.qc import _parsers as cy_parsers
+from operon.qc import _parsers as cy_parsers  # noqa: F821
 from operon.qc import parsers as py_parsers
 
 

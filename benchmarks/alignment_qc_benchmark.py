@@ -17,7 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from operon.qc import _alignment as cy_alignment
+from operon.qc import _alignment as cy_alignment  # noqa: F821
 from operon.qc import alignment as py_alignment
 
 SEED = 20260911

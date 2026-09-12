@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from operon.errors import QCError
-from operon.qc._parsers import iter_fasta
+from operon.qc._parsers import iter_fasta  # noqa: F821
 from operon.utils import atomic_write_text
 
 GAP_CHARACTERS = frozenset("-.")

@@ -31,7 +31,7 @@ from operon.files import (
     ingest_file,
     verify_local_file_identity,
 )
-from operon.qc._parsers import iter_fasta
+from operon.qc._parsers import iter_fasta  # noqa: F821
 from operon.schema import read_tsv
 from operon.sequence_tools import _format_fasta
 from operon.utils import now_iso, path_size_bytes, sha256_path
