@@ -11,8 +11,10 @@ from textual.app import ComposeResult
 from textual.await_complete import AwaitComplete
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.geometry import Offset
 from textual.screen import ModalScreen
+from textual.widget import MountError
 from textual.widgets import Button, DataTable, Label, Static
 
 ENTITY_TYPE_OPTIONS = [
@@ -169,10 +171,18 @@ class Panel(VerticalScroll):
             pass
 
     def _apply(self, payload: Any) -> None:
-        if isinstance(payload, BaseException):
-            self.show_error(payload)
-        else:
-            self.render_data(payload)
+        # The result can arrive while the panel is being torn down (the user
+        # quit during the initial load) or before its children finished
+        # mounting.  There is nowhere to render it then, and Textual reports
+        # that as MountError/NoMatches; dropping the result is correct, while
+        # letting it escape would fail the whole app from a worker thread.
+        try:
+            if isinstance(payload, BaseException):
+                self.show_error(payload)
+            else:
+                self.render_data(payload)
+        except (MountError, NoMatches):
+            return
         if not self.initial_load_complete:
             self.initial_load_failed = isinstance(payload, BaseException)
             self.initial_load_complete = True

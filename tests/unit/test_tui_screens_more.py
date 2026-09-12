@@ -22,6 +22,8 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
+from textual.css.query import NoMatches
+from textual.widget import MountError
 from textual.widgets import (
     Button,
     Checkbox,
@@ -42,7 +44,7 @@ from operon.demo import init_demo
 from operon.tui import data
 from operon.tui.app import HelpScreen, OperonApp
 from operon.tui.screens import files_ops as files_ops_module
-from operon.tui.screens.common import ErrorDialog, WriteModal, human_size
+from operon.tui.screens.common import ErrorDialog, Panel, WriteModal, human_size
 from operon.tui.screens.coverage import CoverageModal, CoveragePanel
 from operon.tui.screens.decisions import CurateModal, DecisionsPanel, EvaluateModal
 from operon.tui.screens.entities import (
@@ -1603,3 +1605,59 @@ def test_lake_art_hide_image_survives_terminal_loss(monkeypatch) -> None:
             assert art._uploaded is False
 
     asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Panel worker guard: a result arriving during teardown must not fail the app
+# --------------------------------------------------------------------------- #
+
+class _StubPanel(Panel):
+    """Minimal panel whose render raises on demand."""
+
+    def __init__(self, failure=None):
+        super().__init__()
+        self.failure = failure
+        self.rendered: list = []
+        self.errors: list = []
+
+    def render_data(self, payload):  # noqa: D102 - test stub
+        if self.failure is not None:
+            raise self.failure
+        self.rendered.append(payload)
+
+    def show_error(self, exc):  # noqa: D102 - test stub
+        self.errors.append(exc)
+
+    def _fetch(self):  # noqa: D102 - test stub
+        return {}
+
+
+@pytest.mark.parametrize("failure", [MountError("widget tree is gone"), NoMatches("#profiles-list")])
+def test_panel_drops_a_result_whose_widgets_are_gone(failure):
+    """Quitting during the initial load used to fail the app from the worker.
+
+    The panel's children can be unmounted (or never mounted) when a background
+    load delivers its payload; Textual reports that as MountError/NoMatches and
+    the result simply has nowhere to go.
+    """
+    panel = _StubPanel(failure)
+    panel._apply({"profiles": []})
+    assert panel.rendered == []
+    assert panel.initial_load_complete is False
+
+
+def test_panel_still_renders_and_records_a_normal_result():
+    panel = _StubPanel()
+    panel._apply({"profiles": [1]})
+    assert panel.rendered == [{"profiles": [1]}]
+    assert panel.initial_load_complete is True
+    assert panel.initial_load_failed is False
+
+
+def test_panel_surfaces_a_failed_load_inside_the_panel():
+    panel = _StubPanel()
+    failure = RuntimeError("database is locked")
+    panel._apply(failure)
+    assert panel.errors == [failure]
+    assert panel.initial_load_complete is True
+    assert panel.initial_load_failed is True

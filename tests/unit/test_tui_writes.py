@@ -12,6 +12,7 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
+from textual.css.query import NoMatches
 from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tree
 
 from operon.config import Project
@@ -788,12 +789,29 @@ def test_verify_modal_end_to_end(project: Project) -> None:
             assert file_id in _static_text(modal.query_one("#modal-command", Static))
             await _click(pilot, "#confirm")
 
-            # The failure is reported in the error dialog, not as a success toast.
-            await _wait_until(
-                lambda: isinstance(app.screen, ErrorDialog), "verification failure dialog")
-            assert "1 of 1 file(s) failed verification" in _static_text(
-                app.screen.query_one("#modal-title", Label))
-            body = _static_text(app.screen.query_one("#error-dialog-body", Static))
+            # The failure is reported in the error dialog, not as a success
+            # toast. The dialog becomes the current screen before its children
+            # are mounted, so wait for the body itself rather than for the
+            # screen type alone (the two are far apart on a loaded runner).
+            def dialog_texts() -> tuple[str, str] | None:
+                screen = app.screen
+                if not isinstance(screen, ErrorDialog):
+                    return None
+                try:
+                    return (
+                        _static_text(screen.query_one("#modal-title", Label)),
+                        _static_text(screen.query_one("#error-dialog-body", Static)),
+                    )
+                except NoMatches:
+                    return None
+
+            def dialog_ready() -> bool:
+                texts = dialog_texts()
+                return texts is not None and f"{file_id}: CHECKSUM_FAILED" in texts[1]
+
+            await _wait_until(dialog_ready, "verification failure dialog")
+            title, body = dialog_texts() or ("", "")
+            assert "1 of 1 file(s) failed verification" in title
             assert f"{file_id}: CHECKSUM_FAILED" in body
             await pilot.press("escape")
             await _wait_until(
