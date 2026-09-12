@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import tarfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -27,19 +29,49 @@ def _load_pyproject() -> dict:
         return tomllib.load(fh)
 
 
+def _sdist_build_lock() -> contextlib.AbstractContextManager[None]:
+    """Serialise sdist builds across processes.
+
+    ``setuptools`` stages the archive inside the shared source tree, so two
+    concurrent builds of the same checkout (for example the cross-version
+    matrix in ``scripts/run-test-matrix.sh``) delete each other's staging
+    files. The lock is machine-wide because the resource is the checkout.
+    """
+    import tempfile
+
+    try:
+        import fcntl
+    except ImportError:  # non-POSIX platforms: nothing to serialise
+        return contextlib.nullcontext()
+
+    @contextlib.contextmanager
+    def locked() -> Iterator[None]:
+        lock_path = Path(tempfile.gettempdir()) / "operon-sdist-build.lock"
+        with lock_path.open("w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    return locked()
+
+
 def _build_sdist(output: Path) -> Path:
     from setuptools import build_meta
 
     output.mkdir(parents=True, exist_ok=True)
     previous_cwd = Path.cwd()
-    try:
-        os.chdir(ROOT)
-        filename = build_meta.build_sdist(os.fspath(output))
-    finally:
-        os.chdir(previous_cwd)
+    with _sdist_build_lock():
+        try:
+            os.chdir(ROOT)
+            filename = build_meta.build_sdist(os.fspath(output))
+        finally:
+            os.chdir(previous_cwd)
     return output / filename
 
 
+@pytest.mark.filterwarnings("ignore:pkg_resources is deprecated:DeprecationWarning")
 def test_sdist_contains_complete_project_source(tmp_path):
     pyproject = _load_pyproject()
     name = re.sub(r"[-_.]+", "-", pyproject["project"]["name"]).lower()

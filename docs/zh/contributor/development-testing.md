@@ -55,8 +55,8 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
    `pathlib`/`resource` 行为上都不同。凡是用 `sys.platform`/`os.name` 分支或调用系统工具的代码，
    都应带一个能在 Linux 上复现对端平台条件的测试（例如不含 GNU `timeout` 的空 `PATH`），而不是
    依赖 macOS 任务去发现。
-6. **CI 为昂贵部分把关。** `gate` 任务（单解释器、四 worker 跑单元测试 + 严格文档构建）通过后才会
-   启动十任务矩阵，因此有问题的 push 会在约两分钟内被拒绝；矩阵每个任务同样使用四 worker。
+6. **CI 并行执行矩阵。** 严格文档构建是独立的小任务，十任务矩阵（每任务两个 worker，避免四核 runner
+   过载）立即开始；若想要比矩阵更快的结论，请用上面的本地验证阶梯。
 
 ## 对 Codex/ChatGPT 的特别提醒
 

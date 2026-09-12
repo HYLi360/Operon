@@ -289,10 +289,13 @@ def _path_without_timeout(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_capture_local_completes_without_the_timeout_utility(tmp_path, monkeypatch):
-    """Regression: a host without ``timeout`` used to report `unavailable`."""
+    """Regression: a host without ``timeout`` used to report `unavailable`.
+
+    macOS has no GNU ``timeout`` at all, so the precondition is not asserted:
+    the shimmed PATH reproduces that condition on any platform.
+    """
     import shutil
 
-    assert shutil.which("timeout"), "expected the GNU timeout on this platform"
     _path_without_timeout(tmp_path, monkeypatch)
     assert shutil.which("timeout") is None
 

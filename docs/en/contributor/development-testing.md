@@ -53,10 +53,10 @@ once per change.
    should carry a test that reproduces the other platform's condition on Linux — for
    example an empty `PATH` without GNU `timeout` — rather than depending on the macOS job
    to notice.
-6. **CI gates the expensive part.** The `gate` job (unit tests plus the strict
-   documentation build on one interpreter, run with four workers) must pass before the
-   ten-job matrix starts, so a broken push is rejected in about two minutes; the matrix
-   itself also runs four workers per job.
+6. **CI runs the matrix in parallel.** The strict documentation build is its own small
+   job, and the ten-job matrix (two workers per job, so a four-core runner is not
+   oversubscribed) starts immediately; use the local ladder above when you want a faster
+   verdict than the matrix can give.
 
 ## Special Note For Codex/ChatGPT
 
