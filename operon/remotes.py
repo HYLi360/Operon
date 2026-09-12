@@ -33,7 +33,7 @@ from urllib.parse import unquote, urlparse
 
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ConfigError, ConflictError, RemoteError, ValidationError
+from operon.errors import ConfigError, ConflictError, RemoteError, RemoteUnavailableError, ValidationError
 from operon.utils import (
     SHA256_RE,
     atomic_write_text,
@@ -235,10 +235,21 @@ def local_artifact_path(project: Project, relative_path: str) -> Path:
 
 def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
                   sftp: Any = None) -> str:
-    """Return an exact remote file SHA-256, falling back to streamed SFTP."""
-    _, stdout, _ = client.exec_command(f"sha256sum -- {shlex.quote(remote_path)}", timeout=timeout)
-    output = stdout.read().decode("utf-8", "replace")
-    if stdout.channel.recv_exit_status() == 0:
+    """Return an exact remote file SHA-256, falling back to streamed SFTP.
+
+    A dropped exec channel falls through to the SFTP path; if neither path can
+    read the bytes the failure is a transport error, never a content verdict.
+    """
+    output = ""
+    status: int | None = None
+    try:
+        _, stdout, _ = client.exec_command(f"sha256sum -- {shlex.quote(remote_path)}", timeout=timeout)
+        output = stdout.read().decode("utf-8", "replace")
+        status = stdout.channel.recv_exit_status()
+    except Exception:
+        # The connection may still serve the SFTP fallback below.
+        status = None
+    if status == 0:
         token = output.split()[0] if output.split() else ""
         if SHA256_RE.match(token):
             return token.lower()
@@ -247,7 +258,7 @@ def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
             sftp = client.open_sftp()
             owns_sftp = True
         except Exception as exc:
-            raise RemoteError(f"cannot hash remote file {remote_path}: {exc}") from exc
+            raise RemoteUnavailableError(f"cannot hash remote file {remote_path}: {exc}") from exc
     else:
         owns_sftp = False
     digest = hashlib.sha256()
@@ -259,7 +270,9 @@ def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
                     break
                 digest.update(chunk)
     except Exception as exc:
-        raise RemoteError(f"cannot stream remote file for SHA-256 {remote_path}: {exc}") from exc
+        raise RemoteUnavailableError(
+            f"cannot stream remote file for SHA-256 {remote_path}: {exc}"
+        ) from exc
     finally:
         if owns_sftp:
             sftp.close()
@@ -283,7 +296,7 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
         try:
             children = sorted(sftp.listdir_attr(remote_dir), key=lambda item: item.filename)
         except Exception as exc:
-            raise RemoteError(f"cannot list remote directory {remote_dir}: {exc}") from exc
+            raise RemoteUnavailableError(f"cannot list remote directory {remote_dir}: {exc}") from exc
         for child in children:
             relative = posixpath.join(relative_dir, child.filename) if relative_dir else child.filename
             remote_child = posixpath.join(remote_dir, child.filename)
@@ -412,19 +425,39 @@ class SFTPStore:
         return joined
 
     def exists(self, rel: str) -> bool:
+        """Whether the remote path exists.
+
+        Only a server-reported "no such file" means absent. Any other failure
+        (closed socket, dropped connection, permission or timeout) is a
+        transport error and is raised: treating it as absence would let a
+        network hiccup masquerade as a lost artifact.
+        """
+        remote = self.remote_path(rel)
         try:
-            self.sftp.stat(self.remote_path(rel))
+            self.sftp.stat(remote)
             return True
-        except IOError:
-            return False
+        except Exception as exc:
+            if _sftp_not_found(exc):
+                return False
+            raise RemoteUnavailableError(
+                f"remote {self.spec.name!r}: cannot determine whether {rel} exists: {exc}"
+            ) from exc
 
     def matches(self, rel: str, sha256: str, size_bytes: int) -> bool:
-        """Whether the remote object has exactly the expected content."""
+        """Whether the remote object has exactly the expected content.
+
+        Returns ``False`` only when the remote positively reports the path as
+        absent; transport failures raise instead of reporting a divergence.
+        """
+        remote = self.remote_path(rel)
         try:
-            remote = self.remote_path(rel)
             stat = _sftp_lstat(self.sftp, remote)
-        except IOError:
-            return False
+        except Exception as exc:
+            if _sftp_not_found(exc):
+                return False
+            raise RemoteUnavailableError(
+                f"remote {self.spec.name!r}: cannot stat {rel}: {exc}"
+            ) from exc
         if stat_module.S_ISDIR(stat.st_mode):
             digest, actual_size = _remote_directory_identity(self.sftp, remote)
         elif stat_module.S_ISREG(stat.st_mode):
@@ -493,7 +526,7 @@ class SFTPStore:
         except IOError as exc:
             if _sftp_not_found(exc):
                 return {"version": 2, "files": {}}
-            raise RemoteError(
+            raise RemoteUnavailableError(
                 f"remote {self.spec.name!r}: cannot read {REMOTE_MANIFEST_NAME}: {exc}"
             ) from exc
         except json.JSONDecodeError as exc:
@@ -959,6 +992,12 @@ def evict_local(db: Database, project: Project, name: str,
     The logical path remains in ``files`` and a small pointer is written under
     ``.operon/placeholders``. The pointer is informational; SQLite remains the
     source of truth and the remote identity is stored in ``file_locations``.
+
+    The database records ``REMOTE_ONLY`` *before* the bytes are removed, so an
+    interrupt can only leave bytes on disk behind a remote-only record (which a
+    re-run finishes), never missing bytes behind a local-only status. A
+    transport failure aborts the run: the connection state decides nothing
+    about the artifacts, and re-running after it recovers resumes the work.
     """
     from operon.files import clear_local_file_verification
 
@@ -976,27 +1015,14 @@ def evict_local(db: Database, project: Project, name: str,
                     project, name, record, db=db, store=store, manifest=doc,
                 )
                 local = local_artifact_path(project, rel)
-                if local.exists():
-                    if (
-                            path_size_bytes(local) != int(record["size_bytes"])
-                            or sha256_path(local).lower() != str(record["sha256"]).lower()
-                    ):
-                        raise ConflictError(f"local artifact does not match manifest; refusing to evict: {rel}")
-                    _ensure_remote_only_schema(project)
-                    _write_placeholder(project, name, record)
-                    try:
-                        if local.is_dir() and not local.is_symlink():
-                            shutil.rmtree(local)
-                        else:
-                            local.unlink()
-                    except BaseException:
-                        placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
-                        raise
-                    result["status"] = "evicted"
-                else:
-                    result["status"] = "skipped"
-                    _ensure_remote_only_schema(project)
-                    _write_placeholder(project, name, record)
+                local_present = local.exists()
+                if local_present and (
+                        path_size_bytes(local) != int(record["size_bytes"])
+                        or sha256_path(local).lower() != str(record["sha256"]).lower()
+                ):
+                    raise ConflictError(f"local artifact does not match manifest; refusing to evict: {rel}")
+                _ensure_remote_only_schema(project)
+                _write_placeholder(project, name, record)
                 _record_remote_location(db, name, record, rel)
                 clear_local_file_verification(db, record["file_id"])
                 db.set_file_status(
@@ -1005,6 +1031,34 @@ def evict_local(db: Database, project: Project, name: str,
                     actor="operon evict",
                     evidence=f"remote://{name}/{rel}",
                 )
+                if local_present:
+                    try:
+                        if local.is_dir() and not local.is_symlink():
+                            shutil.rmtree(local)
+                        else:
+                            local.unlink()
+                    except BaseException:
+                        # Keep the manifest truthful: the bytes are still here,
+                        # so the file is not remote-only yet.
+                        placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
+                        db.set_file_status(
+                            record["file_id"], str(record["status"]),
+                            reason="eviction failed; local bytes retained",
+                            actor="operon evict",
+                        )
+                        raise
+                    result["status"] = "evicted"
+                else:
+                    result["status"] = "skipped"
+            except RemoteUnavailableError as exc:
+                result.update(
+                    status="error",
+                    error=(f"{type(exc).__name__}: {exc} — evict aborted; re-run once the remote "
+                           f"is reachable, already-processed files are skipped"),
+                )
+                results.append(result)
+                _sync_log(db, project, f"evict:{name}", record, "error", result["error"])
+                break
             except Exception as exc:
                 result.update(status="error", error=f"{type(exc).__name__}: {exc}")
                 results.append(result)

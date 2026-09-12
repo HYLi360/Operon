@@ -170,6 +170,8 @@
 - **manifest 发布失败会留下未索引的远端文件。** 逐文件上传成功但最终 manifest 写入失败时，远端对象留在服务器上未被索引，本地批次报告错误；下一次 push 会发现相同字节并记为 `indexed`（`remotes.py`）。
 - **没有 `project_id` 的远端 manifest 会被静默认领。** 把 remote 指向空目录或无主目录会在无确认的情况下接管它（`remotes.py`）。
 - **不带 `--file-id` 的 `pull` 要求条目在本地存在。** 它遍历远端 manifest，对本地数据库中不存在的任何条目抛 `ConflictError`；远端是既有 manifest 的镜像，不是向空项目独立恢复的备份（`remotes.py`）。
+- **传输故障绝不等于内容判定。** 只有服务端明确返回“文件不存在”才算缺失；连接中断、socket 关闭或会话失效会抛出 `RemoteUnavailableError`，而不是报告“与清单不一致”，因此不会有任何 `file_locations` 行被翻成 `MISSING`，也不会删除任何字节。`evict` 遇到此类错误立即中止本次运行，并在下次调用时续跑（已处理的文件被跳过）；`verify` 保持原状态并报 `REMOTE_UNVERIFIED`（`remotes.py`、`files.py`）。
+- **`evict` 先提交记录、后删除字节。** 先写入 `REMOTE_ONLY`，因此中断只会留下“字节仍可恢复、记录已是 remote-only”的状态；若删除失败，状态会回退并撤销指针（`remotes.py`）。
 - **evict 只核查一个指定远端。** `evict` 依据单一 remote 置 `REMOTE_ONLY`；其他已配置 remote 可能没有该文件，而 `verify` 接受任意一个已验证远端即视为足够（`remotes.py`、`files.py`）。
 - **`sftp://` ingest 没有完整性锚点。** 既无期望哈希也无主机密钥固定选项；正确性依赖 ingest 时对接收字节的哈希（`remotes.py`）。
 - **目录产物每次检查都流式遍历整棵树。** 对目录的 `matches()` 会通过 SFTP 走遍每个文件，因此 push/pull/evict 目录产物的开销为 O(树大小)（`remotes.py`）。
@@ -249,7 +251,7 @@
 
 ## 备份与导入向导
 
-- **打开数据库失败会泄漏连接。** `Database.__init__` 中 DDL 或迁移抛错时（例如 `operon.sqlite` 损坏），连接永远不会关闭：命令以退出码 1 结束后连接只能等垃圾回收，并在终结时发出 `ResourceWarning: unclosed database`（`database.py`）。
+- **打开数据库失败会关闭连接。** `Database.__init__` 中 DDL 或迁移抛错时（例如 `operon.sqlite` 损坏），连接会在异常离开构造函数之前关闭，只读打开路径同理——失败的打开既不会泄漏句柄，也不会残留文件锁（`database.py`）。
 - **`backup create` 通过 SQLite backup API 快照。** 默认 `--scope` 为 `control`，而每个范围——包括 `control`——都会内嵌一份完整的 SQLite 快照，快照用 backup API 取得，因此即使其他连接正在写入也保持一致，且不复制 WAL 文件（`backup.py`、`cli.py`）。
 - **`results` 范围不能恢复数据。** 它在 control 之上增加 QC/analysis/reports/taxonomy/releases，但排除 `raw/` 与 `standardized/`；只有 `full` 包含数据字节，且目标目录必须在项目根之外且不存在（见[备份与迁移指南](../guides/backup-migration.md)）（`backup.py`）。
 - **备份对跳过内容保持沉默。** 缺失的范围目录被无提示跳过，因此备份可以在遗漏 `releases/` 的情况下成功；只有文件与符号链接会被登记和校验（空目录不可见），`verify` 从不打开 SQLite 快照，而缺少 `size_bytes`/`sha256` 的 manifest 条目会以裸 `KeyError` traceback 逃逸（`backup.py`）。

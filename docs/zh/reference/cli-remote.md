@@ -56,9 +56,16 @@ operon evict --remote NAME [--file-id FIL_...]...
 - 删除前再次核对本地身份、远端清单身份和远端实际 SHA-256/目录树哈希；任一步不一致
   都拒绝删除。
 - 成功后 `files.status` 为 `REMOTE_ONLY`，位置写入 `file_locations`，状态变化写入
-  `changes`，并在 `.operon/placeholders/<file_id>.json` 写人类可读的小型指针。
+  `changes`，并在 `.operon/placeholders/<file_id>.json` 写人类可读的小型指针。数据库记录
+  先于字节删除提交：中断只可能留下“记录已 REMOTE_ONLY、字节仍在磁盘”的状态（下次运行
+  会补完），绝不会出现“字节已删除、状态仍是本地”的假丢失；若删除本身失败，状态会回退并
+  撤销指针。
 - 单个条目校验或删除失败后继续处理批内其他条目；只要存在 `error`，命令最终返回
   退出码 1。
+- 传输故障与数据不一致必须区分对待：连接中断、socket 关闭或会话失效会让本次运行立即
+  中止（不删除任何字节、不改动任何 `file_locations` 行），因为远端不可达不能说明产物
+  是否存在。待远端恢复后重跑同一命令即可续跑——已处理的文件会被跳过，剩余文件继续
+  驱逐。
 - `standardize` 和 `release` 前需先 `pull`；配置 `execution.ssh.storage_remote` 后，
   `analyze --backend ssh` 可直接使用远端输入。
 

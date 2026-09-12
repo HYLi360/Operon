@@ -43,8 +43,9 @@ operon evict --remote NAME [--file-id FIL_...]...
 
 - Explicitly deletes the local archived bytes; without `--file-id`, processes all manifest files.
 - Before deletion it re-checks the local identity, the remote manifest identity, and the remote actual SHA-256 / directory-tree hash; any mismatch at any step refuses the deletion.
-- On success `files.status` becomes `REMOTE_ONLY`, the location is recorded in `file_locations`, the status change in `changes`, and a small human-readable pointer is written to `.operon/placeholders/<file_id>.json`.
-- A failed verification or deletion does not stop the rest of the batch; if any item is `error`, the command exits with code 1.
+- On success `files.status` becomes `REMOTE_ONLY`, the location is recorded in `file_locations`, the status change in `changes`, and a small human-readable pointer is written to `.operon/placeholders/<file_id>.json`. The record is committed *before* the bytes are removed, so an interrupted run can leave bytes on disk behind a `REMOTE_ONLY` record (finished by the next run) but never missing bytes behind a local-only status; if the removal itself fails, the status is reverted and the pointer withdrawn.
+- A per-file verification or deletion failure does not stop the rest of the batch; if any item is `error`, the command exits with code 1.
+- A transport failure is different from a data mismatch: a dropped connection, closed socket or expired session aborts the run (nothing is deleted and no `file_locations` row is touched), because an unreachable remote says nothing about the artifacts. Re-run the same command once the remote is reachable — already-processed files are skipped and the remaining ones are evicted.
 - `standardize` and `release` require a prior `pull`; with `execution.ssh.storage_remote` configured, `analyze --backend ssh` can use remote inputs directly.
 
 ## locations

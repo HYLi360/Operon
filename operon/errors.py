@@ -35,3 +35,12 @@ class ExternalToolError(OperonError):
 
 class RemoteError(OperonError):
     """A remote execution or storage operation failed."""
+
+
+class RemoteUnavailableError(RemoteError):
+    """The remote could not be reached, so nothing can be concluded about its artifacts.
+
+    Callers must treat this as "unknown", never as "missing": a dropped
+    connection, a closed socket or an expired session says nothing about
+    whether an artifact still exists on the remote.
+    """
