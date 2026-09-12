@@ -821,12 +821,19 @@ def _directory_fingerprint(path: Path) -> str:
     each cache lookup would dominate the analysis cost.
     """
     entries: list[str] = []
-    for file_path in sorted(p for p in path.rglob("*") if p.is_file()):
+    # ``is_file()`` may itself raise for an unreadable entry (Python <= 3.13
+    # propagates the OSError from ``stat``), so the entry test and the stat
+    # share one guard: an unreadable member must degrade into a stable marker
+    # instead of aborting the whole fingerprint on some interpreters.
+    for file_path in sorted(path.rglob("*")):
         try:
+            if not file_path.is_file():
+                continue
             stat = file_path.stat()
-            entries.append(f"{file_path.relative_to(path)}:{stat.st_size}:{stat.st_mtime_ns}")
         except OSError:
             entries.append(f"{file_path.relative_to(path)}:unreadable")
+            continue
+        entries.append(f"{file_path.relative_to(path)}:{stat.st_size}:{stat.st_mtime_ns}")
     return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
 
 

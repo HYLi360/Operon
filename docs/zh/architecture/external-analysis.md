@@ -85,7 +85,7 @@ Conda 快照保存包名、版本、build、subdir、依赖、安装包 URL 和�
 
 独立的 `system_fingerprint` 和 `hardware_fingerprint` 分别覆盖 OS/内核/架构、发行版及 glibc，以及 CPU 型号/特性、总内存和可获取的 NVIDIA GPU 型号/驱动/计算能力。主机名、PATH、prefix、CPU 亲和性和运行设置不进入这两个指纹；选定的 locale、时区、线程/设备环境变量及 CPU 亲和性作为上下文保留。探测主要面向 Linux；CPU/GPU 信息缺失时明确标记不可用（GPU 不存在与探测失败尚不区分），不收集动态指标、GPU UUID 或设备序列号。硬件指纹描述已观测字段，字段不可用时不能据此保证硬件等价。
 
-探测采用尽力而为策略，总时限 30 秒（NVIDIA 查询为 5 秒），依赖 POSIX shell、`base64` 和常见系统工具。缺少 `timeout` 时标记不可用，避免无期限阻塞。`capture_status` 区分 complete、partial、failed、unavailable 和 unsupported_launcher。旧文档仍可读取，可能没有这些字段。保留旧的控制端探测作为后备，其 Python 版本不能解释为目标解释器版本。
+探测采用尽力而为策略，总时限 30 秒（NVIDIA 查询为 5 秒），依赖 POSIX shell、`base64` 和常见系统工具。宿主提供 GNU `timeout` 时用它限时；否则（macOS 没有 `timeout`）由 POSIX 看门狗施加同样的 30 秒上限，因此缺少该工具的宿主仍会完成探测，而不是标记 `unavailable`。`/proc` 等仅 Linux 可用的数据源只会让对应字段保持 unavailable。`capture_status` 区分 complete、partial、failed、unavailable 和 unsupported_launcher。旧文档仍可读取，可能没有这些字段。保留旧的控制端探测作为后备，其 Python 版本不能解释为目标解释器版本。
 
 环境指纹同时驱动 recipe 级的复用策略：可选字段 `environment_policy` 取值为 `ignore`、`warn`（默认）或 `strict`，其他取值在配置校验时报错。该字段仅在显式设置时进入参数指纹——与 `hmmer_mode` 和比对列映射键同一机制——因此设置或变更它只会让完成缓存精确失效一次。以非 `ignore` 策略命中完成缓存时，`operon` 会比对"环境相关性指纹"：由文档中的 `system_fingerprint`、`hardware_fingerprint` 与 `conda.package_fingerprint` 复合而成。hostname、路径、CPU 亲和性和运行时线程变量刻意排除在外——线程数已经参与参数指纹，而亲和性是瞬时调度状态。指纹一致时照常复用缓存；不一致时，`warn` 复用缓存结果、同时在 run details 中记录警告并打印，`strict` 则把命中视为未命中并重算。没有作业前探针的后端（`slurm` 与远端 Slurm）无法在复用前比对，因此 `strict` 降级为 `warn`，并在 run details 中记录该降级。任一侧环境文档缺少子指纹（数据库 schema {{ db_schema }} 之前捕获的记录）时，比对记为 `unavailable`：`warn` 照常复用，`strict` 同样降级为 `warn`，旧的 provenance 永远不会引发误重算。
 

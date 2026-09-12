@@ -5,6 +5,7 @@ import json
 import platform
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from operon.cli import main
 from operon.config import Project
 from operon.database import Database
 from operon.environment import environment_summary, parse_probe_output
-from operon.environment_capture import capture_local, export_conda, probe_command
+from operon.environment_capture import bounded_shell, capture_local, export_conda, probe_command
 from operon.errors import ValidationError
 from operon.execution import SlurmConfig, render_slurm_script
 from operon.workflow import run_external_command
@@ -167,15 +168,21 @@ def test_each_chain_step_links_its_environment(tmp_path, fake_conda):
                                    (step["environment_id"],)).fetchone()
 
 
-def test_missing_timeout_does_not_start_unbounded_probe(tmp_path, monkeypatch):
+def test_missing_timeout_still_captures_a_bounded_probe(tmp_path, monkeypatch):
+    """A host without GNU timeout (macOS) captures instead of giving up.
+
+    The previous contract declared such hosts `unavailable`; the POSIX watcher
+    in ``bounded_shell`` now enforces the same bound, so the probe runs and the
+    capture is complete even with a minimal PATH.
+    """
     import shutil
     tools_dir = tmp_path / "tools"
     tools_dir.mkdir()
     (tools_dir / "sh").symlink_to(shutil.which("sh"))
     monkeypatch.setenv("PATH", str(tools_dir))
     env = capture_local(["true"])
-    assert env["capture_status"] == "unavailable"
-    assert "timeout" in env["reason"]
+    assert env["capture_status"] == "complete"
+    assert env["capture_schema"] == 1
 
 
 def test_failed_launcher_probe_does_not_fail_payload(tmp_path, fake_conda):
@@ -253,3 +260,64 @@ def test_environments_list_includes_summary_column(tmp_path, capsys):
     assert "summary" in out
     assert environment_id in out
     assert "conda (1 packages)" in out
+
+
+# --------------------------------------------------------------------------- #
+# Hosts without GNU timeout (macOS): the probe must still be captured
+# --------------------------------------------------------------------------- #
+
+PROBE_TOOLS = (
+    "sh", "hostname", "uname", "cat", "awk", "sort", "getconf", "sed", "base64",
+    "tr", "dirname", "basename", "sleep", "kill", "true", "false",
+)
+
+
+def _path_without_timeout(tmp_path: Path, monkeypatch) -> None:
+    """Install a PATH that resolves the usual tools but no ``timeout`` binary.
+
+    macOS ships no GNU ``timeout``; this reproduces that condition on Linux.
+    """
+    shim = tmp_path / "no-timeout-bin"
+    shim.mkdir()
+    for name in PROBE_TOOLS:
+        for directory in ("/bin", "/usr/bin"):
+            candidate = Path(directory) / name
+            if candidate.exists():
+                (shim / name).symlink_to(candidate)
+                break
+    monkeypatch.setenv("PATH", str(shim))
+
+
+def test_capture_local_completes_without_the_timeout_utility(tmp_path, monkeypatch):
+    """Regression: a host without ``timeout`` used to report `unavailable`."""
+    import shutil
+
+    assert shutil.which("timeout"), "expected the GNU timeout on this platform"
+    _path_without_timeout(tmp_path, monkeypatch)
+    assert shutil.which("timeout") is None
+
+    env = capture_local(["true"])
+    assert env["capture_status"] == "complete"
+    assert env["capture_scope"] == "tool_launch_context"
+    assert env["capture_schema"] == 1
+
+
+@pytest.mark.parametrize("hide_timeout", [False, True])
+def test_bounded_shell_propagates_the_wrapped_exit_status(tmp_path, monkeypatch, hide_timeout):
+    if hide_timeout:
+        _path_without_timeout(tmp_path, monkeypatch)
+    proc = subprocess.run(["sh", "-c", bounded_shell(["sh", "-c", "exit 3"])],
+                          capture_output=True, text=True, timeout=20)
+    assert proc.returncode == 3
+
+
+@pytest.mark.parametrize("hide_timeout", [False, True])
+def test_bounded_shell_kills_a_hanging_command(tmp_path, monkeypatch, hide_timeout):
+    if hide_timeout:
+        _path_without_timeout(tmp_path, monkeypatch)
+    started = time.monotonic()
+    proc = subprocess.run(["sh", "-c", bounded_shell(["sleep", "30"], limit_seconds=1)],
+                          capture_output=True, text=True, timeout=20)
+    elapsed = time.monotonic() - started
+    assert proc.returncode != 0
+    assert elapsed < 15, f"the {1}s bound was not enforced (took {elapsed:.1f}s)"

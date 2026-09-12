@@ -1172,7 +1172,9 @@ def test_classify_sequences_without_labels_prints_no_table(project_db, monkeypat
 def test_verify_local_file_identity_survives_unreadable_path(project_db, tmp_path, monkeypatch):
     _project, db = project_db
 
-    class _Unreadable(Path):
+    # Subclass the concrete Path class: on Python 3.10/3.11 ``Path.__new__``
+    # needs the subclass to carry the platform ``_flavour``.
+    class _Unreadable(type(Path())):
         def exists(self, **_kwargs):
             raise OSError("permission denied")
 
@@ -1630,7 +1632,7 @@ def test_fasta_length_cache_tolerates_blank_lines_and_directory_paths(project_db
 
     # Corrupt content whose deletion fails is still discarded, and the failure
     # to remove it never escapes.
-    class _UndeletableCache(Path):
+    class _UndeletableCache(type(Path())):
         def unlink(self, missing_ok=False):
             raise OSError("read-only filesystem")
 

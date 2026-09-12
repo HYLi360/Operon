@@ -101,15 +101,34 @@ def probe_command(argv: list[str]) -> list[str] | None:
     return [*prefix, "sh", "-c", "\n".join(CAPTURE_LINES)]
 
 
+def bounded_shell(command: list[str], limit_seconds: int = 30) -> str:
+    """Wrap ``command`` so it cannot run longer than ``limit_seconds``.
+
+    GNU ``timeout`` is used when the host provides it; elsewhere (for example
+    macOS, which ships no ``timeout``) a POSIX watcher enforces the same bound.
+    A bound that cannot be enforced is what previously made the whole capture
+    unavailable on those hosts.
+    """
+    quoted = shlex.join(command)
+    return (
+        "if command -v timeout >/dev/null 2>&1; then timeout "
+        + str(int(limit_seconds)) + " " + quoted + "; else "
+        + quoted + " & operon_probe_pid=$!; "
+        + "( sleep " + str(int(limit_seconds)) + " && kill -TERM \"$operon_probe_pid\" 2>/dev/null ) "
+        + ">/dev/null 2>&1 & operon_guard_pid=$!; "
+        "wait \"$operon_probe_pid\"; operon_probe_status=$?; "
+        "kill -TERM \"$operon_guard_pid\" 2>/dev/null; "
+        "exit \"$operon_probe_status\"; fi"
+    )
+
+
 def probe_shell(argv: list[str]) -> str:
     command = probe_command(argv)
     if command is None:
         command = ["sh", "-c", "\n".join(CAPTURE_LINES) + "\nprintf 'capture_unsupported=1\\n'"]
-    # Bound the complete probe, including activation hooks. Without timeout,
-    # report unavailable rather than risking a stuck scheduler job.
-    return ("if command -v timeout >/dev/null 2>&1; then timeout 30 "
-            + shlex.join(command)
-            + "; else printf 'capture_schema=1\\ncapture_unavailable=1\\n'; fi")
+    # Bound the complete probe, including activation hooks, so a stuck launcher
+    # cannot hang a scheduler job.
+    return bounded_shell(command)
 
 
 def capture_local(argv: list[str], cwd: str | Path | None = None) -> dict[str, Any]:
