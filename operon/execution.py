@@ -40,6 +40,7 @@ except ImportError:  # non-Unix platforms have no getrusage
 
 from operon.config import Project
 from operon.environment import PROBE_SHELL_LINES, local_environment, parse_probe_output
+from operon.environment_capture import capture_local, probe_shell
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
 from operon.utils import iter_directory_entries, sha256_file, sha256_path
 
@@ -178,9 +179,14 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
     if probe_path:
         # Capture the compute-side environment before the payload runs;
         # probe failures must never affect the job itself.
+        # Raw package metadata can contain private-channel credentials. Restrict
+        # the transient probe file without changing the payload's umask.
+        lines.append("(")
+        lines.append("umask 077")
         lines.append("{")
-        lines.extend(f"  {probe_line}" for probe_line in PROBE_SHELL_LINES)
+        lines.append(probe_shell(shlex.split(command_line)))
         lines.append(f"}} > {shlex.quote(probe_path)} 2>/dev/null || true")
+        lines.append(")")
     lines.append("if [ $rc -eq 0 ]; then")
     lines.append(f"  {command_line}")
     lines.append("  rc=$?")
@@ -301,6 +307,7 @@ class LocalExecutor:
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
             expected_outputs: Iterable[Any] = ()) -> ExecResult:
         command = [str(a) for a in argv]
+        environment = capture_local(command, cwd)
         samples_mb: list[float] = []
         stop = threading.Event()
         cpu_before = _child_cpu_seconds()
@@ -333,7 +340,8 @@ class LocalExecutor:
         cpu_after = _child_cpu_seconds()
         if cpu_before is not None and cpu_after is not None:
             resources["cpu_seconds"] = round(max(0.0, cpu_after - cpu_before), 3)
-        return ExecResult(exit_code=process.returncode, details={"backend": "local"},
+        return ExecResult(exit_code=process.returncode,
+                          details={"backend": "local", "environment": environment},
                           resources=resources)
 
 
@@ -773,11 +781,19 @@ class SSHExecutor:
                     timeout=timeout, threads=threads, run_id=run_id,
                 )
             else:
-                result = self._run_direct(
-                    client, [str(a) for a in argv], cwd=cwd,
-                    stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                    timeout=timeout, run_id=run_id,
-                )
+                command = [str(a) for a in argv]
+                remote_probe = f"/tmp/operon-env-{uuid.uuid4().hex}"
+                try:
+                    result = self._run_direct(
+                        client, command, cwd=cwd,
+                        stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
+                        timeout=timeout, run_id=run_id, probe_path=remote_probe,
+                    )
+                finally:
+                    environment = _read_remote_probe_environment(sftp, remote_probe)
+                result.details["environment"] = environment or {
+                    "capture_schema": 1, "capture_status": "failed",
+                }
             if result.exit_code == 0:
                 self._pull_outputs(client, sftp, expected_outputs)
             return result
@@ -897,11 +913,15 @@ class SSHExecutor:
 
     def _run_direct(self, client: Any, argv: list[str], *, cwd: str | Path | None,
                     stdout_path: Path, stderr_path: Path,
-                    timeout: float | None, run_id: str | None) -> ExecResult:
+                    timeout: float | None, run_id: str | None,
+                    probe_path: str | None = None) -> ExecResult:
         command = shlex.join(self._rewrite(a) for a in argv)
+        if probe_path:
+            probe = probe_shell([self._rewrite(a) for a in argv])
+            command = f"(umask 077; {{ {probe}; }} > {shlex.quote(probe_path)} 2>/dev/null) || true; {command}"
         remote_cwd = self._rewrite(cwd) if cwd else self.remote_root
         if remote_cwd:
-            command = f"cd {shlex.quote(remote_cwd)} && {command}"
+            command = f"cd {shlex.quote(remote_cwd)} && {{ {command}; }}"
         label = re.sub(r"[^A-Za-z0-9_.-]", "_", run_id or uuid.uuid4().hex)
         pidfile = f"/tmp/operon-{label}-{uuid.uuid4().hex}.pid"
         statsfile = f"{pidfile}.stats"

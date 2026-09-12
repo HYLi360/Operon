@@ -197,6 +197,7 @@ class RunDetailScreen(Screen):
             ("scheduler_job_id", record.get("scheduler_job_id")),
             ("exit_code", record.get("exit_code")),
             ("environment_id", record.get("environment_id")),
+            ("environment", record.get("environment_summary")),
         ])
         section("Artifacts and logs", [
             ("input_sha256", record.get("input_sha256")),

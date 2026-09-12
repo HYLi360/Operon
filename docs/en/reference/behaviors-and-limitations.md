@@ -175,6 +175,10 @@ covered by the current implementation and regression tests:
 ## Environment and shutdown
 
 - **Local and remote environment documents differ by construction.** Local captures include the Python and `operon` versions; remote probes cannot report them, so the same machine can produce different `environment_id`s for local vs SSH execution (`environment.py`).
+- **Environment documents are redacted at capture time, before storage.** The hostname is replaced by `sha256:` plus the first 16 hex characters of its SHA-256 (comparable across captures, not readable), and the `$HOME` prefix of path-like values (`PATH`, `CONDA_PREFIX`, `VIRTUAL_ENV`, and the conda prefix) is replaced by `~`. Remote probes transfer the raw values — the probe file itself is written with umask 077 — and redaction happens in the controlling Python process before the document is stored (`environment.py`, `environment_capture.py`).
+- **The probe's `home` key is transient.** Remote probes emit a `home=$HOME` line that is used only for the redaction replacement and then deleted; it never enters the stored document or any fingerprint (`environment_capture.py`).
+- **Redaction precedes fingerprinting.** `environment_id` and the sub-fingerprints are computed from the redacted document, so identical configurations captured on different hosts deduplicate to the same environment record (`environment.py`).
+- **Pre-redaction environment documents are never migrated.** Records written before redaction was introduced keep their readable hostname and home paths: documents are content-addressed and immutable, so new captures simply produce new `environment_id`s alongside the old ones (`environment.py`).
 - **A second signal skips cleanup.** The first SIGINT/SIGTERM triggers graceful shutdown (exit code 130); a second signal during cleanup calls `os._exit(128+signum)` immediately. `graceful_shutdown` is a no-op outside the main thread (`shutdown.py`).
 
 ## CLI conventions

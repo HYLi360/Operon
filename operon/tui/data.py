@@ -576,12 +576,30 @@ def list_workflow_runs(
 
 
 def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
-    """Return one workflow run with ``execution_details`` JSON decoded."""
+    """Return one workflow run with ``execution_details`` JSON decoded.
+
+    When the run references an execution environment, its rendered summary
+    is attached as ``environment_summary`` (None when missing or corrupt).
+    """
     from operon.workflow import get_run
     with _open(project) as db:
         record = get_run(db, run_id)
-    if record is None:
-        return None
+        if record is None:
+            return None
+        summary = None
+        environment_id = record.get("environment_id")
+        if environment_id:
+            row = db.conn.execute(
+                "SELECT document FROM execution_environments WHERE environment_id=?",
+                (environment_id,),
+            ).fetchone()
+            if row is not None:
+                try:
+                    from operon.environment import environment_summary
+                    summary = environment_summary(json.loads(row["document"])) or None
+                except json.JSONDecodeError:
+                    pass
+    record["environment_summary"] = summary
     details = record.get("execution_details")
     if isinstance(details, str) and details:
         try:

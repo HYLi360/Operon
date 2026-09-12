@@ -173,6 +173,10 @@
 ## 环境与关机
 
 - **本地与远端环境文档天然不同。** 本地采集包含 Python 与 `operon` 版本；远端探测无法报告它们，因此同一机器在 local 与 SSH 执行下可能得到不同的 `environment_id`（`environment.py`）。
+- **环境文档在捕获时、入库前完成脱敏。** hostname 被替换为 `sha256:` 加其 SHA-256 的前 16 位 hex（跨捕获可比较，但不可读）；`PATH`、`CONDA_PREFIX`、`VIRTUAL_ENV` 及 conda prefix 等类路径值的 `$HOME` 前缀替换为 `~`。远端探测传输原文——探针文件本身以 umask 077 写入——脱敏在入库前由控制端 Python 进程完成（`environment.py`、`environment_capture.py`）。
+- **探针的 `home` 键是瞬态的。** 远端探测输出一行 `home=$HOME`，仅用于脱敏替换，随后被删除；它既不进入入库文档，也不进入任何指纹（`environment_capture.py`）。
+- **脱敏先于指纹计算。** `environment_id` 与各子指纹由脱敏后的文档计算，因此同配置在不同主机上的捕获会去重到同一条环境记录（`environment.py`）。
+- **脱敏之前的旧环境文档不迁移。** 引入脱敏之前写入的记录保留可读的 hostname 与 home 路径：文档按内容寻址、不可变，新捕获只是产生新的 `environment_id`，与旧记录并存（`environment.py`）。
 - **第二次信号跳过清理。** 第一次 SIGINT/SIGTERM 触发优雅关机（退出码 130）；清理期间的第二次信号直接 `os._exit(128+signum)`。`graceful_shutdown` 在主线程之外是 no-op（`shutdown.py`）。
 
 ## CLI 约定

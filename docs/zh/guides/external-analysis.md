@@ -399,3 +399,34 @@ operon adopt --from-manifest adopt_manifest.json
   状态和工作流记录，并删除新建制品，保留既有文件。目标被冲突内容占用时，应先显式处理
   冲突再重试。完成状态的 JSONL 记录仅在提交后写出。
 - role 由工作流自由命名；谱系边写入 `file_lineage` 表，可用 `operon query` 审计。
+
+## 重建已捕获的 Conda 环境
+
+通过显式的 `conda run`、`mamba run` 或 `micromamba run` 启动器执行分析。
+在 `operon workflow show RUN_ID --format json` 中找到 `environment_id`，
+或列出已存储快照，然后检查捕获状态和限制：
+
+```bash
+operon environments list
+operon environments show ENVIRONMENT_ID
+operon environments export ENVIRONMENT_ID > explicit.txt
+micromamba create -p ./restored-env --file explicit.txt
+# 也可使用：conda create -p ./restored-env --file explicit.txt
+```
+
+在兼容的相同 OS/架构上使用新的 prefix。已有安装包缓存可支持离线重建
+（`micromamba create --offline ...`）；长期重建需要保留安装包或保持 channel 可访问，
+导出不打包安装包文件。私有 URL 中的凭据会被移除。
+
+环境文档在入库前已完成脱敏：hostname 只保留截断的 SHA-256 令牌，路径值中的 home 目录
+前缀被折叠为 `~`。因此发布或导出的项目，其环境记录中不含可读的 hostname 和用户 home
+路径，这些文档可以随 release 一起分发而无需额外清理。引入脱敏之前捕获的记录不会被改写，
+可能仍保留原始值。
+
+通过 `operon run-external` 在恢复环境中运行相同的小型输入和参数，比较存储的
+`conda.package_fingerprint`、`system_fingerprint`、`hardware_fingerprint`，
+以及实际输出校验和（或明确选择的数值容差）。独立的包指纹排除安装 prefix；包清单一致
+并不能证明手动修改的已安装文件或 pip 包也已恢复。
+
+环境捕获不改变既有缓存复用或自动沿用策略。测试实际重算时使用 `analyze --force`；
+`run-external` 也会直接执行命令。旧运行缺少指纹并不意味着环境相同。

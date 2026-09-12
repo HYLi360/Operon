@@ -187,3 +187,27 @@ The `timetree` group queries the TimeTree REST API for divergence-time evidence 
 - Responses are cached inside the project at `adapters_cache/timetree/<sha256(url)>.json`, keeping the request URL, fetch time, and verbatim body so replayed queries stay auditable. TimeTree's terms forbid mirroring or redistributing the database, so only the exact queries made are cached, and requests stay serial with a pause between them. Each query records a `timetree:<subcommand>` step in `workflow_runs`.
 - `calibrations` builds a calibration prior table for MCMCTree: one whole-set MRCA row by default, or one row per pair with `--pairs`. Columns are `node_label`, `taxa`, `taxon_ids`, `age_median`, `ci_low`, `ci_high`, `study_count`, `source`, `queried_at`, `cache_file`. `--out` additionally writes the TSV; archive it into the project with `operon adopt` when it should be versioned.
 - `fetch` and `calibrate` are project-independent and work on explicit file paths: `fetch` downloads the summary and per-study evidence for selected NCBI taxon pairs into a new immutable snapshot directory (raw responses plus a checksummed manifest, never overwriting a prior run); `calibrate` compiles reviewed soft bounds from such a snapshot onto a rooted, strictly bifurcating species tree (every constraint needs `approved=yes` and a rationale; summary confidence intervals are evidence, never fossil bounds).
+
+## environments
+
+```bash
+operon environments list
+operon environments show ENVIRONMENT_ID
+operon environments export ENVIRONMENT_ID [--format {explicit,yaml}]
+```
+
+These commands open the database read-only. `list` prints IDs, capture times,
+and a one-line rendered summary per record (distribution, CPU, memory, GPU,
+conda environment name and package count, and `capture_status`; fields missing
+from the document are omitted); `show` prints the stored JSON including
+system/hardware/package fingerprints and capture limitations. `export` prints a reconstruction specification to stdout,
+without reading or changing the current environment. An unknown ID or incomplete
+Conda inventory is an error. Older environment records can be shown but cannot
+be exported if they lack a complete package inventory.
+
+The default `explicit` format pins archive URLs and SHA-256 (or MD5 when SHA-256
+is unavailable); it covers only Conda-managed package artifacts on a compatible
+platform. YAML contains name/version/build constraints and channels, omits the
+original prefix, and requires dependency solving. Pip/local modifications and
+activation scripts are outside both exports. See the
+[reconstruction workflow](../guides/external-analysis.md#reconstruct-a-captured-conda-environment).

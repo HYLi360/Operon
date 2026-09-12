@@ -497,6 +497,15 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="print the planned units and write nothing (no run row either)")
 
+    p = sub.add_parser("environments", help="inspect captured environments and export Conda specifications")
+    environments_sub = p.add_subparsers(dest="environments_command", required=True)
+    environments_sub.add_parser("list", help="list captured environment IDs")
+    ep = environments_sub.add_parser("show", help="print a captured environment as JSON")
+    ep.add_argument("environment_id")
+    ep = environments_sub.add_parser("export", help="print a Conda reconstruction specification")
+    ep.add_argument("environment_id")
+    ep.add_argument("--format", choices=["explicit", "yaml"], default="explicit")
+
     p = sub.add_parser("recipes",
                        help="list configured analysis recipes and inspect recorded recipe snapshots")
     recipes_sub = p.add_subparsers(dest="recipes_command", required=True)
@@ -694,6 +703,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
         args.command == "query"
+        or args.command == "environments"
         or args.command == "workflow"
         or args.command == "show"
         or args.command == "retired"
@@ -774,6 +784,22 @@ def _print_workflow_section(title: str, fields: list[tuple[str, Any]]) -> None:
     print(title)
     for label, value in fields:
         _print_workflow_field(label, value)
+
+
+def _environment_summary_text(db: Database, environment_id: str) -> str | None:
+    """Render the stored environment document; missing/corrupt rows yield None."""
+    from operon.environment import environment_summary
+    row = db.conn.execute(
+        "SELECT document FROM execution_environments WHERE environment_id=?",
+        (environment_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        summary = environment_summary(json.loads(row["document"]))
+    except json.JSONDecodeError:
+        return None
+    return summary or None
 
 
 def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
@@ -857,6 +883,7 @@ def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
             ("cpu_seconds", record.get("cpu_seconds")),
         ])
         print()
+        environment_id = record.get("environment_id")
         _print_workflow_section("Execution", [
             ("command", record.get("command")),
             ("tool", record.get("tool")),
@@ -865,7 +892,9 @@ def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
             ("executor", record.get("executor")),
             ("scheduler_job_id", record.get("scheduler_job_id")),
             ("exit_code", record.get("exit_code")),
-            ("environment_id", record.get("environment_id")),
+            ("environment_id", environment_id),
+            ("environment", _environment_summary_text(db, environment_id)
+             if environment_id else None),
         ])
         print()
         _print_workflow_section("Artifacts and logs", [
@@ -1957,6 +1986,38 @@ def _print_snapshot_document(document: str) -> None:
     print(yaml.safe_dump(parsed, sort_keys=False, allow_unicode=True).rstrip("\n"))
 
 
+def _cmd_environments(args: argparse.Namespace, db: Database) -> int:
+    from operon.environment import environment_summary
+    from operon.environment_capture import export_conda
+    if args.environments_command == "list":
+        rows = db.conn.execute(
+            "SELECT environment_id, document, created_at FROM execution_environments "
+            "ORDER BY created_at, environment_id"
+        ).fetchall()
+
+        def _summary(row: Any) -> str:
+            try:
+                return environment_summary(json.loads(row["document"])) or "-"
+            except json.JSONDecodeError:
+                return "-"
+
+        print(format_table(
+            ["environment_id", "created_at", "summary"],
+            ([row["environment_id"], row["created_at"], _summary(row)] for row in rows),
+        ))
+        return 0
+    row = db.conn.execute("SELECT document FROM execution_environments WHERE environment_id=?",
+                          (args.environment_id,)).fetchone()
+    if row is None:
+        raise ValidationError(f"unknown environment: {args.environment_id}")
+    document = json.loads(row["document"])
+    if args.environments_command == "show":
+        print(json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2))
+    else:
+        print(export_conda(document, args.format), end="")
+    return 0
+
+
 def _cmd_recipes(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.tools import list_analyses
     if args.recipes_command == "list":
@@ -2527,6 +2588,7 @@ def main(argv: list[str] | None = None) -> int:
                 "adopt": lambda: _cmd_adopt(args, project, db),
                 "fanout": lambda: _cmd_fanout(args, project, db),
                 "recipes": lambda: _cmd_recipes(args, project, db),
+                "environments": lambda: _cmd_environments(args, db),
                 "profiles": lambda: _cmd_profiles(args, project, db),
                 "run-pipeline": lambda: _cmd_run_pipeline(args, project, db),
                 "taxonomy": lambda: _cmd_taxonomy(args, project, db),

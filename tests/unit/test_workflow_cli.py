@@ -189,6 +189,47 @@ def test_workflow_show_text_json_and_missing(workflow_project, capsys):
     assert "workflow run does not exist" in capsys.readouterr().err
 
 
+def test_workflow_show_environment_summary(workflow_project, capsys):
+    root = str(workflow_project.root)
+    db = Database(workflow_project.db_path)
+    try:
+        document = {
+            "system": {"os": "Linux", "distribution": {"pretty_name": "Ubuntu 22.04"}},
+            "hardware": {"memory_total": "1024 kB"},
+            "capture_status": "complete",
+        }
+        with db.transaction():
+            environment_id = db.record_environment(document)
+            db.conn.execute(
+                "UPDATE workflow_runs SET environment_id=? WHERE run_id='WF_FAILED'",
+                (environment_id,),
+            )
+    finally:
+        db.close()
+
+    assert main(["--project", root, "workflow", "show", "WF_FAILED"]) == 0
+    output = capsys.readouterr().out
+    assert environment_id in output
+    assert "Ubuntu 22.04; 1024 kB" in output
+
+    # Unknown or corrupt environment rows keep the id line and never fail.
+    db = Database(workflow_project.db_path)
+    try:
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE workflow_runs SET environment_id='missing' WHERE run_id='WF_FAILED'")
+    finally:
+        db.close()
+    assert main(["--project", root, "workflow", "show", "WF_FAILED"]) == 0
+    output = capsys.readouterr().out
+    assert "missing" in output
+    assert "Ubuntu" not in output
+
+    # Runs without an environment keep rendering.
+    assert main(["--project", root, "workflow", "show", "WF_RELEASE"]) == 0
+    assert "Execution" in capsys.readouterr().out
+
+
 def test_workflow_time_validation_and_rendering_edges(workflow_project, capsys):
     assert cli._workflow_time("2026-09-02T00:00:00Z").endswith("+00:00")
     assert cli._workflow_time("2026-09-02").endswith(

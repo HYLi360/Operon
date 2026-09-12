@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 import signal
@@ -37,6 +38,10 @@ from operon.execution import (
 from operon.shutdown import ShutdownRequested
 from operon.tools import ToolSpec, detect_tool_version_record
 from operon.workflow import run_external_command
+
+
+def _hashed_hostname(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
 class _FakeChannel:
@@ -313,15 +318,14 @@ class TestExecutionConfig(PytestAssertions):
         self.assertFalse("PROBE" in script or "hostname" in script)
 
     def test_render_slurm_script_with_probe(self):
-        from operon.environment import PROBE_SHELL_LINES
+        from operon.environment_capture import probe_shell
         script = render_slurm_script(
             job_name="j", command_line="echo hi", cwd="/work dir",
             stdout_path="/o", stderr_path="/e", exitcode_path="/x",
             threads=None, slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
             probe_path="/p/logs/WF_1.env",
         )
-        for probe_line in PROBE_SHELL_LINES:
-            self.assertIn(probe_line, script)
+        self.assertIn(probe_shell(["echo", "hi"]), script)
         self.assertIn("} > /p/logs/WF_1.env 2>/dev/null || true", script)
         # The probe block sits after `cd` and before the payload command.
         self.assertTrue(script.index("cd '/work dir'") < script.index("hostname"))
@@ -330,7 +334,7 @@ class TestExecutionConfig(PytestAssertions):
     def test_local_executor_probe_environment(self):
         env = LocalExecutor().probe_environment()
         self.assertIsNotNone(env)
-        self.assertEqual(env["hostname"], socket.gethostname())
+        self.assertEqual(env["hostname"], _hashed_hostname(socket.gethostname()))
         self.assertIn("os", env)
         self.assertIn("python_version", env)
 
@@ -348,7 +352,7 @@ class TestExecutionConfig(PytestAssertions):
         self.assertIsNotNone(env_row)
         import json as _json
         document = _json.loads(env_row["document"])
-        self.assertEqual(document["hostname"], socket.gethostname())
+        self.assertEqual(document["hostname"], _hashed_hostname(socket.gethostname()))
         # A second run in the same environment reuses the row.
         second = run_external_command(self.db, self.project, ["true"], step="test:environment2")
         self.assertEqual(second["environment_id"], record["environment_id"])
@@ -810,7 +814,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
         self.assertEqual([seconds for seconds in sleep_calls if seconds >= 1], [7.25, 1, 1])
         self.assertEqual(exitcode_checks, 3)
-        self.assertEqual(result.details["environment"]["hostname"], socket.gethostname())
+        self.assertEqual(result.details["environment"]["hostname"], _hashed_hostname(socket.gethostname()))
         # The uploaded batch script must live in and reference the mirror.
         script = remote_root / "logs" / "WF_TEST_1.sbatch"
         self.assertTrue(script.exists())
@@ -860,6 +864,8 @@ class TestShutdownCleanup(PytestAssertions):
         return False
 
     def test_local_interrupt_kills_whole_process_group(self, monkeypatch):
+        # This test interrupts the payload, not the preceding environment probe.
+        monkeypatch.setattr("operon.execution.capture_local", lambda *args: {})
         pidfile = self.root / "grandchild.pid"
         out_log = self.root / "logs" / "int.stdout.log"
         err_log = self.root / "logs" / "int.stderr.log"

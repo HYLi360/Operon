@@ -253,6 +253,29 @@ def test_workflow_run_detail(demo_project: Project) -> None:
     assert data.workflow_run_detail(demo_project, "WF_does_not_exist") is None
 
 
+def test_workflow_run_detail_environment_summary(tmp_path: Path) -> None:
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / "env-detail-project")
+    db = Database(project.db_path)
+    try:
+        with db.transaction():
+            environment_id = db.record_environment(
+                {"system": {"os": "Linux"}, "capture_status": "partial"})
+        run = log_run(db, project, {"step": "demo", "status": "completed",
+                                    "environment_id": environment_id})
+        stale = log_run(db, project, {"step": "demo", "status": "completed",
+                                      "environment_id": "missing"})
+    finally:
+        db.close()
+
+    detail = data.workflow_run_detail(project, run["run_id"])
+    assert detail["environment_summary"] == "Linux; capture: partial"
+    detail = data.workflow_run_detail(project, stale["run_id"])
+    assert detail["environment_summary"] is None
+
+
 def test_entity_tree_on_lifecycle_less_database(tmp_path: Path) -> None:
     """Databases predating schema 2.7 have no retirement view; nothing is retired."""
     import sqlite3
@@ -646,6 +669,12 @@ def test_detail_text_builders(demo_project: Project) -> None:
     text = detail_screen._detail_text(record).plain
     assert "boom" in text
     assert "plain text details" in text
+
+    record_with_env = dict(record, environment_id="env_x",
+                           environment_summary="Ubuntu 22.04; 1024 kB")
+    text = detail_screen._detail_text(record_with_env).plain
+    assert "env_x" in text
+    assert "Ubuntu 22.04; 1024 kB" in text
 
     home = HomePanel(demo_project)
     home.summary = None

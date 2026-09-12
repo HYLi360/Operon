@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
 import signal
 import subprocess
 from pathlib import Path
@@ -13,6 +14,10 @@ import pytest
 from operon import execution
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
 from tests.unit.test_execution import FakeSFTP, FakeSSHClient
+
+
+def _hashed_hostname(value: str) -> str:
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
 
 
 def project(tmp_path: Path, execution_config=None):
@@ -159,7 +164,7 @@ def test_slurm_executor_requires_commands_timeout_and_interrupt(tmp_path, monkey
     result = executor.run(["x"], cwd=None, stdout_path=out, stderr_path=err, timeout=1, run_id="r")
     assert result.exit_code is None and result.scheduler_job_id == "42"
     assert result.details["backend"] == "slurm"
-    assert result.details["environment"]["hostname"] == "compute-01"
+    assert result.details["environment"]["hostname"] == _hashed_hostname("compute-01")
     assert not (tmp_path / "r.env").exists()
 
     monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
@@ -421,7 +426,7 @@ def test_remote_slurm_submission_queue_and_exitcode_failures(tmp_path, monkeypat
     assert result.details["backend"] == "ssh"
     assert result.details["scheduler"] == "slurm"
     assert result.details["cancellation_requested"] is True
-    assert result.details["environment"]["hostname"] == "compute-01"
+    assert result.details["environment"]["hostname"] == _hashed_hostname("compute-01")
     assert not (remote_root / "logs" / "d.env").exists()
 
     times = iter([0, 2, 2])

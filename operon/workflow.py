@@ -511,6 +511,10 @@ def run_external_command(
                 "stdout_file": str(step_stdout),
                 "stderr_file": str(step_stderr),
             })
+            if result.details.get("environment"):
+                environment = result.details["environment"]
+                with db.transaction():
+                    step_record["environment_id"] = db.record_environment(environment)
             step_records.append(step_record)
             stdout_file, stderr_file = step_stdout, step_stderr
             if result.exit_code != 0 or result.error:

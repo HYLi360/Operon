@@ -311,3 +311,42 @@ operon adopt --from-manifest adopt_manifest.json
 - Each item requires `path`, `entity_type`, `entity_id`, `role`, and `derived_from` (at least one already-registered file_id); relative paths resolve from the project root.
 - Artifacts are materialized under `analysis/adopted/<entity_id>/`; same entity and role with identical bytes is reused idempotently, different bytes raise `ConflictError`. The whole batch is preflighted, then registered in one transaction. A failure before commit rolls back metadata, lineage, state and workflow rows and removes newly created artifacts; existing files are preserved. Resolve conflicting occupied targets explicitly before retrying. Completed JSONL records are written only after commit.
 - Roles are freely named by the workflow; lineage edges are written to the `file_lineage` table and can be audited with `operon query`.
+
+## Reconstruct a captured Conda environment
+
+Run the analysis using an explicit `conda run`, `mamba run` or `micromamba run`
+launcher. Find its `environment_id` in `operon workflow show RUN_ID --format json`
+or list stored snapshots, then inspect the capture status and limitations:
+
+```bash
+operon environments list
+operon environments show ENVIRONMENT_ID
+operon environments export ENVIRONMENT_ID > explicit.txt
+micromamba create -p ./restored-env --file explicit.txt
+# Alternatively: conda create -p ./restored-env --file explicit.txt
+```
+
+Use a new prefix on the same compatible OS/architecture. Available package caches
+can support offline reconstruction (`micromamba create --offline ...`); long-term
+reconstruction requires retaining package archives or accessible channels. The
+export does not bundle those archives. Private URLs have credentials removed.
+
+Environment documents are redacted before they are stored: the hostname is kept
+only as a truncated SHA-256 token and home-directory prefixes in path values are
+collapsed to `~`. A published or exported project therefore carries no readable
+hostname and no user home paths in its environment records, and these documents
+can be shared with a release without extra scrubbing. Records captured before
+redaction was introduced are not rewritten and may still contain the original
+values.
+
+Run the same small input and arguments through the restored environment using
+`operon run-external`, then compare the stored `conda.package_fingerprint`,
+`system_fingerprint` and `hardware_fingerprint`, as well as the actual output
+checksums (or an explicitly chosen numeric tolerance). The independent package
+fingerprint excludes the installation prefix. A matching package inventory does
+not prove that manually edited installed files or pip packages have been restored.
+
+Environment capture does not change existing cache reuse or automatic adoption.
+Use `analyze --force` when testing an actual recomputation; `run-external` also
+executes the command directly. Missing fingerprints in older runs do not imply
+an environment match.

@@ -68,6 +68,10 @@ operon workflow show WF_ID [--format {text,json}] [--follow]
 长命令和错误信息会随当前终端宽度换行，hash 与路径保持可复制。`--format json` 返回全部
 `workflow_runs` 列，不做终端缩短，并还原合法的 `execution_details` JSON。
 
+运行记录了 `environment_id` 时，执行信息段会在该 ID 之后追加一行渲染摘要，内容来自捕获的
+环境文档（发行版、CPU、内存、GPU、conda 环境名与包数、`capture_status`；文档中缺失的字段
+省略）。引用的文档查不到时只显示 ID。TUI 的 workflow run 详情镜像同一行摘要。
+
 run ID 不存在时属于校验错误，退出码为 2。
 
 ### 实时跟随运行

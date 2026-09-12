@@ -78,6 +78,13 @@ commands and errors wrap to the current terminal width; hashes and paths stay
 copyable. `--format json` returns every `workflow_runs` column without terminal
 shortening and decodes valid `execution_details` JSON.
 
+When the run recorded an `environment_id`, the execution section follows it with
+a one-line rendered summary of the captured environment document (distribution,
+CPU, memory, GPU, conda environment name and package count, and
+`capture_status`; fields missing from the document are omitted). If the
+referenced document cannot be found, only the ID is shown. The TUI workflow-run
+detail mirrors the same summary line.
+
 A missing run ID is a validation error and exits with code 2.
 
 ### Following a live run

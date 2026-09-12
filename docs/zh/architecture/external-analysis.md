@@ -77,21 +77,17 @@ hits 照常按 `max_hits_per_query` 截断。每个探测到的步骤版本都�
 工具版本探测在非 `local` 后端时也经同一后端执行。单个 recipe 可用 `slurm:`
 mapping 覆盖 `execution.slurm` 的同名字段（如给 BUSCO 单独调内存/时间）。
 
-执行环境捕获（schema 2.8，`environment.py`）：三个后端都会在每次运行时探测执行环境，
-规范化 JSON 文档写入 `execution_environments` 表；其主键 `environment_id` 是该规范化
-JSON 的 SHA-256（内容寻址，同内容自动去重），`workflow_runs` 与 `analysis_jobs` 通过
-各自的 `environment_id` 列引用。
+执行环境捕获（`environment.py`、`environment_capture.py`）将规范化 JSON 存入 `execution_environments`，通过 `environment_id` 寻址。工作流和分析任务引用该文档；命令链的每一步也记录各自的环境 ID。扩展 JSON 文档使用 `capture_schema: 1`，无需数据库迁移。文档在捕获时、入库前完成脱敏：hostname 替换为 `sha256:` 加其 SHA-256 的前 16 位 hex；`PATH`、`CONDA_PREFIX`、`VIRTUAL_ENV` 及 conda prefix 等类路径值的 `$HOME` 前缀替换为 `~`。远端探测传输原文（探针文件以 umask 077 写入），由控制端 Python 进程在入库前脱敏；瞬态的 `home` 探针键仅用于替换，随后被丢弃，既不进入入库文档也不进入任何指纹。`environment_id` 与各子指纹由脱敏后的文档计算，因此同配置在不同主机上的捕获去重到同一条记录。引入脱敏之前写入的文档按内容寻址、不可变，不做迁移；新捕获产生新的环境 ID。
 
-- `local`：直接收集 hostname、OS/kernel/架构、Python 与 `operon` 版本，
-  以及 `PATH`、`CONDA_PREFIX`、`CONDA_DEFAULT_ENV`、`VIRTUAL_ENV`、
-  `SINGULARITY_NAME`、`APPTAINER_NAME`、`container` 等环境变量和 docker 探测结果；
-- `slurm`：在 sbatch 脚本中嵌入探针，作业内把结果写入 `<run_id>.env` 后读回——
-  探到的是计算节点环境，而非提交节点；
-- `ssh`：直连模式通过 paramiko 在远端执行探针；远端 Slurm 模式嵌入并读回同一份
-  作业内探针，因此记录计算节点而不是 SSH 登录节点。
+local、Slurm 和 SSH 后端在执行计算命令前探测。Slurm 在计算节点执行 `setup_commands` 后探测；直接 SSH 在计算命令 shell 的工作目录内探测。识别到 `conda`、`mamba` 或 `micromamba run` 时，通过相同启动器及目标名称/prefix 执行探测。读取 `conda-meta/*.json` 不要求目标环境安装 Python 或包管理器。直接运行的程序继承执行器环境。已知的不透明 shell/容器启动器及不支持的包管理器选项标记为 `unsupported_launcher`，并设置 `capture_scope: executor_only`，不会把外层 Conda 环境宣称为工具环境；不解析任意自定义包装程序内部行为。
 
-探针失败只把该次运行的 `environment_id` 留为 NULL，不报错也不影响运行；2.8 之前的
-历史行同样为 NULL。
+Conda 快照保存包名、版本、build、subdir、依赖、安装包 URL 和可用的 SHA-256/MD5。完整清单包含 `@EXPLICIT` 重建规范，优先使用 SHA-256，缺少时使用 MD5。包指纹排除安装 prefix 和主机名。URL 中的用户凭据、`/t/` 令牌和查询参数会被移除，因此私有 channel 可能需要在重建时另外提供凭据。通过 `INSTALLER` 元数据检测到的 pip 发行包名单独记录；Conda 规范不恢复 pip 包、editable 安装、手动修改的文件或自定义激活脚本。包清单描述原始安装包，并不验证已安装文件内容。空清单、损坏记录、中断捕获或缺少可解析安装包身份的清单不能导出为完整重建规范。
+
+独立的 `system_fingerprint` 和 `hardware_fingerprint` 分别覆盖 OS/内核/架构、发行版及 glibc，以及 CPU 型号/特性、总内存和可获取的 NVIDIA GPU 型号/驱动/计算能力。主机名、PATH、prefix、CPU 亲和性和运行设置不进入这两个指纹；选定的 locale、时区、线程/设备环境变量及 CPU 亲和性作为上下文保留。探测主要面向 Linux；CPU/GPU 信息缺失时明确标记不可用（GPU 不存在与探测失败尚不区分），不收集动态指标、GPU UUID 或设备序列号。硬件指纹描述已观测字段，字段不可用时不能据此保证硬件等价。
+
+探测采用尽力而为策略，总时限 30 秒（NVIDIA 查询为 5 秒），依赖 POSIX shell、`base64` 和常见系统工具。缺少 `timeout` 时标记不可用，避免无期限阻塞。`capture_status` 区分 complete、partial、failed、unavailable 和 unsupported_launcher。旧文档仍可读取，可能没有这些字段。保留旧的控制端探测作为后备，其 Python 版本不能解释为目标解释器版本。
+
+**待讨论事项：** 环境指纹当前仅用于溯源。环境变化是否应使精确缓存失效，以及何时允许沿用经过校验的历史输出，仍待讨论；本次不改变这两种复用策略。
 
 Recipe 版本与快照（schema 2.9）：<!-- version-pin -->recipe 新增可选 `version:` 字段（正整数，缺省 1，
 非法值在配置校验时报错）。`analyze` 处理每个候选文件时把当前 recipe 连同其引用的

@@ -299,3 +299,20 @@ operon timetree calibrate --snapshot DIR --tree FILE --taxa TSV --constraints TS
   的摘要与逐研究证据下载为一个新的不可变快照目录（原始响应加带校验的清单，绝不覆盖
   已有运行）；`calibrate` 把此类快照中经审阅的软界标定编译到一棵有根、严格二分的物种树
   上（每条约束都要求 `approved=yes` 与理由；摘要置信区间是证据，绝不能当作化石界标）。
+
+## environments
+
+```bash
+operon environments list
+operon environments show ENVIRONMENT_ID
+operon environments export ENVIRONMENT_ID [--format {explicit,yaml}]
+```
+
+这些命令以只读方式打开数据库。`list` 输出 ID、捕获时间，以及每条记录的一行渲染摘要
+（发行版、CPU、内存、GPU、conda 环境名与包数、`capture_status`；文档中缺失的字段省略）；
+`show` 输出存储的 JSON，包括系统/硬件/包指纹及捕获限制。`export` 向标准输出打印重建规范，不读取或修改当前环境。
+未知 ID 或不完整 Conda 清单会报错。旧环境记录可以查看，但缺少完整包清单时不能导出。
+
+默认的 `explicit` 格式锁定安装包 URL 和 SHA-256（缺失时回退 MD5），仅覆盖兼容平台上的
+Conda 管理安装包。YAML 包含包名/版本/build 约束及 channel，不含原始 prefix，需要重新求解依赖。
+pip/本地修改和激活脚本不在两种导出的恢复范围内。参阅[外部分析指南](../guides/external-analysis.md)中的重建流程。
