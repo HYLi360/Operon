@@ -79,15 +79,15 @@ python_classes = ["Test*"]
 addopts = [
     "--cov=operon",
     "--cov-branch",
-    "--cov-report=xml",
+    "--cov-report=xml:cobertura.xml",
     "--junitxml=junit.xml",
-    "-o",
-    "junit_family=legacy",
     "--strict-config",
     "--strict-markers",
     "-ra",
     "-n",
     "auto",
+    "-o",
+    "junit_family=legacy",
 ]
 markers = [
     "unit: isolated domain tests",

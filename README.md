@@ -1,6 +1,11 @@
-# Operon
+# Operon the Database System
 
 [![test status](https://github.com/HYLi360/Operon/actions/workflows/test.yml/badge.svg)](https://github.com/HYLi360/Operon/actions/workflows/test.yml)
+[![RtD badge](https://img.shields.io/badge/Read-the_Document-blue?style=flat)](https://operonproject.readthedocs.io/)
+![PyPI Version](https://img.shields.io/pypi/v/OperonDBS?link=https%3A%2F%2Fpypi.org%2Fproject%2FOperonDBS%2F)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/t/HYLi360/Operon?logo=github)
+[![Codacy Code quality Badge](https://app.codacy.com/project/badge/Grade/47d652651ff645ff86fa0646768a08b3)](https://app.codacy.com/gh/HYLi360/Operon/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Codacy Coverage Badge](https://app.codacy.com/project/badge/Coverage/47d652651ff645ff86fa0646768a08b3)](https://app.codacy.com/gh/HYLi360/Operon/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)
 
 A Python-based, **file-based database** designed for large-scale genomic data, used for archiving, quality control, analysis, and deterministic automation.
 
