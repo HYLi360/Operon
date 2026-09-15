@@ -251,9 +251,13 @@ operon classify-sequences --profile NAME
 - 目标文件是匹配 profile 的 `applies_to.entity_type` + `applies_to.file_role` 的
   manifest 文件；被取代（superseded）与有效退役的实体会被排除。对每个文件，
   `sequences` 表中登记的每个 seqid 都会与 `analysis_alignments` 中该文件各来源
-  analysis 最新一个 `completed` 作业的命中进行比对判定。
+  analysis 最新一个 `completed` 作业的命中进行比对判定。同一 analysis+file 组合
+  下存在其他 completed 作业时它们会被忽略，计数非零时会以 `ignored_completed_jobs`
+  在输出与 run 的 `execution_details` 中呈现；不在 `sequences` 注册表中的文件被
+  跳过，且跳过计数会显式打印。
 - 规则按顺序求值，首条命中生效；没有被任何规则（也没有 `default`）命中的序列
-  保持无标签。每个标签把判定依据（规则序号、来源、job/alignment id、观测值）记入
+  保持无标签。缺失字段在任何形态下都不满足条件——包括 `not:` 取反形态和
+  `any:` 组内。每个标签把判定依据（规则序号、来源、job/alignment id、观测值）记入
   `details_json`。
 - 幂等且带审计：以相同 profile 内容与相同输入重跑不做任何修改，也不追加
   `changes` 行；profile 变更后会改写受影响的标签、逐条审计（对象类型

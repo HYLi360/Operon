@@ -492,6 +492,7 @@ def test_classify_sequences_cli_prints_label_counts(project_db, monkeypatch, cap
         "sequences": 5, "unlabeled": 2, "files": 1, "profile": "demo",
         "label_counts": {"ribosomal": 3}, "labels_written": 3, "labels_removed": 0,
         "run_id": "WF_CLASSIFY",
+        "ignored_completed_jobs": 0, "files_without_sequences": 0,
     })
     assert cli._cmd_classify_sequences(
         SimpleNamespace(profile="demo"), project, db) == 0
@@ -1157,6 +1158,7 @@ def test_classify_sequences_without_labels_prints_no_table(project_db, monkeypat
     monkeypatch.setattr("operon.classify.classify_sequences", lambda *_a, **_k: {
         "sequences": 2, "unlabeled": 2, "files": 1, "profile": "demo",
         "label_counts": {}, "labels_written": 0, "labels_removed": 0, "run_id": "WF_EMPTY",
+        "ignored_completed_jobs": 0, "files_without_sequences": 0,
     })
     assert cli._cmd_classify_sequences(SimpleNamespace(profile="demo"), project, db) == 0
     out = capsys.readouterr().out

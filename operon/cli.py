@@ -1737,6 +1737,13 @@ def _cmd_classify_sequences(args: argparse.Namespace, project: Project, db: Data
         ))
     print(f"labels written: {result['labels_written']}, "
           f"removed: {result['labels_removed']} (run {result['run_id']})")
+    if result["ignored_completed_jobs"]:
+        print(f"warning: ignored {result['ignored_completed_jobs']} older completed "
+              f"analysis job(s); only the latest completed job per analysis and file "
+              f"contributes hits", file=sys.stderr)
+    if result["files_without_sequences"]:
+        print(f"warning: skipped {result['files_without_sequences']} target file(s) "
+              f"with no registered sequences", file=sys.stderr)
     return 0
 
 

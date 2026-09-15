@@ -76,8 +76,8 @@ class TestConditions(PytestAssertions):
         self.assertFalse(_condition_holds({"subject_id": "cd00001"}, group))
         negated = {"not": {"field": "short_name", "operator": "==", "value": "bhlh-myc_n"}}
         self.assertFalse(_condition_holds({"short_name": "bhlh-myc_n"}, negated))
-        self.assertTrue(_condition_holds({"subject_id": "cl00081"}, negated))
-        # A missing field never satisfies any condition, including exists/not_in/!=.
+        self.assertTrue(_condition_holds({"short_name": "bhlh_2"}, negated))
+        # A missing field never satisfies a condition, including exists/not_in/!=.
         for condition in (
                 {"field": "incomplete", "operator": "exists"},
                 {"field": "incomplete", "operator": "not_in", "values": ["NC"]},
@@ -85,6 +85,38 @@ class TestConditions(PytestAssertions):
                 {"field": "incomplete", "operator": "==", "value": "NC"},
         ):
             self.assertFalse(_condition_holds(context, condition))
+
+    def test_not_with_missing_field_does_not_hold(self):
+        negated = {"not": {"field": "short_name", "operator": "==", "value": "bhlh-myc_n"}}
+        # Missing field: the negation cannot be satisfied either.
+        self.assertFalse(_condition_holds({"subject_id": "cl00081"}, negated))
+        self.assertFalse(_condition_holds({}, negated))
+        # Present and non-matching: the negation holds.
+        self.assertTrue(_condition_holds({"short_name": "bhlh_1"}, negated))
+        # Present and matching: the negation fails.
+        self.assertFalse(_condition_holds({"short_name": "bhlh-myc_n"}, negated))
+        # Nested in `any`: a missing-field `not` counts as False for the group.
+        group = {"any": [
+            negated,
+            {"field": "subject_id", "operator": "==", "value": "cl00081"},
+        ]}
+        self.assertTrue(_condition_holds({"subject_id": "cl00081"}, group))
+        self.assertFalse(_condition_holds({"subject_id": "cd00001"}, group))
+        # An `any` group whose members all reference missing fields is False.
+        self.assertFalse(_condition_holds({}, {"any": [
+            {"field": "short_name", "operator": "exists"},
+            {"not": {"field": "incomplete", "operator": "!=", "value": "NC"}},
+        ]}))
+
+    def test_between_requires_numeric_operands(self):
+        with self.assertRaisesRegex(ValidationError, "between"):
+            _condition_holds(
+                {"span": "abc"}, {"field": "span", "operator": "between", "min": 1, "max": 10})
+        with self.assertRaisesRegex(ValidationError, "between"):
+            _condition_holds(
+                {"span": 5}, {"field": "span", "operator": "between", "min": "x", "max": 10})
+        self.assertTrue(_condition_holds(
+            {"span": "5"}, {"field": "span", "operator": "between", "min": 1, "max": 10}))
 
     def test_row_context_span_seqid_and_extras(self):
         row = {

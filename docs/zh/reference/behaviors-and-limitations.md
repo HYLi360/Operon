@@ -28,6 +28,8 @@
 | K8 | ingest（`move`） | `move` 先复制并校验归档、登记 manifest，最后才删除源文件；复制、校验或事务失败时源文件仍可恢复。 |
 | K9 | 工具函数 | 空表只渲染一次表头和分隔线，不再生成重复的数据行。 |
 | K10 | 导入向导 | annotation 提示默认值与草稿当前是否已有 annotation 一致（已有时才默认“是”）。 |
+| K11 | 分类 | 缺失字段在任何形态下都不满足条件——包括 `not:` 取反形态和作为 `any:` 组的析取项；`between` 遇到非数值操作数时抛出带字段与值上下文的校验错误，而不是裸 `ValueError`。 |
+| K12 | 分类 | `classify-sequences` 不再隐瞒被忽略的内容：被取代（非最新）的 completed 作业会计入 `ignored_completed_jobs` 并给出警告，因不在 `sequences` 注册表而被跳过的文件也会显式计数。 |
 
 ## 身份、归档与文件系统
 
@@ -135,8 +137,8 @@
 - **序列抽取按字节原样复制。** 子序列保留 gap 与简并码，`--min-length` 在加侧翼之前过滤，顺序与命名按字典序（`seq10` 排在 `seq2` 之前），`--all-regions` 的 header 使用加侧翼后的坐标；`--regions-tsv` 中非正的起点会被拒绝，而来自数据库的坐标会被截到 1（`sequence_tools.py`）。
 - **空结果与重复抽取都是静默的。** 空结果是 0 字节 FASTA 且退出码 0，原因只写在可选 manifest 中；既有输出被静默覆盖且从不登记；非空 `sequences` 注册表会替换由 FASTA 推导的 seqid 全集（但 FASTA 仍会被解析以取序列体）；重复 seqid 保留第一条记录（`sequence_tools.py`）。
 - **分类标签按 profile 名称索引，并在任何指标变化时重新审计。** `sequence_labels` 以 `(file_id, seqid, profile_name)` 唯一，因此 profile 版本升级会就地覆盖标签；`details_json` 嵌入观测到的 hit，因此指标变化会让每个标签重新审计，即使标签本身未变；删除只针对当前范围内的文件，因此范围外的陈旧标签会残留（`classify.py`、`database.py`）。
-- **已知问题：`not:` 会匹配缺失字段。** 字段缺失时取反条件被满足，这与模块 docstring 中“缺失字段永不满足条件”的规则矛盾；`between` 还绕过数值守卫并抛裸 `ValueError`，而 `in`/`not_in` 比较 `str(value)`（`classify.py`）。
-- **分类会静默忽略它看不到的内容。** 每个 (analysis, file) 只有 `job_id` 最大的那个已完成作业参与，不在 `sequences` 注册表中的文件被跳过且只被计数（`classify.py`）。
+- **分类中缺失字段在任何形态下都不满足条件。** 无论用什么 operator（包括 `!=`、`not_in` 与 `exists`）判定都为 False；对缺失字段条件的 `not:` 取反仍然是 False，`any:` 组中缺失字段的析取项视为不满足；`between` 要求数值操作数，否则抛出带字段与值上下文的校验错误，而 `in`/`not_in` 比较 `str(value)`（`classify.py`）。
+- **分类只读取每个 analysis+file 最新的 completed 作业，但会明说。** 同一组合下更早的 completed 作业按 supersede 纪律被忽略，但计数非零时会在输出与 run details 中以 `ignored_completed_jobs` 呈现；不在 `sequences` 注册表中的文件被跳过，且跳过计数会显式打印（`classify.py`）。
 - **`fanout --dry-run` 跳过真正的预检，且 unit 字节取决于 TSV 行序。** dry-run 在校验和验证与冲突/占用预检之前返回，因此会打印真实运行会拒绝的 unit；重排 assignment TSV 会改变 unit 字节并触发 `ConflictError`；unit 角色 `<prefix>:<unit>` 会把 `:` 带进归档文件名，下游 `file_role_prefix` 选择是字面字符串前缀，因此 `sub` 也会捕获 `sub2:*`（`fanout.py`、`tools.py`）。
 - **`fanout` 在 Ctrl+C 时会留下 `running` 的 run 行。** 已创建的目标会被删除，但 `finish_run` 被跳过，run 行停留在 `running`；零 unit 与无法解析或有歧义的 seqid 都是硬错误。`--source-file` FASTA 的 SHA-256 与注册表新鲜度会被验证，但 assignment 表本身不做校验和验证（`fanout.py`）。
 

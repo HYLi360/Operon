@@ -19,7 +19,7 @@ AND-ed.  Fields resolve against the alignment
 columns, the derived ``span``
 (``query_end - query_start + 1``) and ``seqid`` (query id up to the first
 whitespace), then against keys of the row's ``extra_json``.  A missing field
-never satisfies a condition.
+never satisfies a condition, not even under a ``not:`` negation.
 """
 
 from __future__ import annotations
@@ -104,17 +104,25 @@ def _like_match(pattern: str, value: str) -> bool:
     return re.fullmatch(regex, value, flags=re.IGNORECASE | re.DOTALL) is not None
 
 
-def _condition_holds(context: dict[str, Any], condition: dict[str, Any]) -> bool:
+def _condition_state(context: dict[str, Any], condition: dict[str, Any]) -> bool | None:
+    """Three-valued evaluation: ``None`` when a referenced field is missing."""
     if "any" in condition:
         return any(_condition_holds(context, sub) for sub in condition["any"])
     if "not" in condition:
-        return not _condition_holds(context, condition["not"])
+        inner = _condition_state(context, condition["not"])
+        return None if inner is None else not inner
     value = context.get(str(condition["field"]))
     if value is None:
-        return False
+        return None
     operator = condition.get("operator")
     if operator == "between":
-        return float(condition["min"]) <= float(value) <= float(condition["max"])
+        try:
+            return float(condition["min"]) <= float(value) <= float(condition["max"])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                f"operator 'between' requires numeric operands; got field value "
+                f"{value!r} with min={condition['min']!r} and max={condition['max']!r}"
+            ) from exc
     if operator == "in":
         return str(value) in {str(v) for v in condition.get("values", [])}
     if operator == "not_in":
@@ -124,6 +132,12 @@ def _condition_holds(context: dict[str, Any], condition: dict[str, Any]) -> bool
     if operator == "like":
         return _like_match(str(condition["value"]), str(value))
     return _compare(value, operator, condition.get("value"))
+
+
+def _condition_holds(context: dict[str, Any], condition: dict[str, Any]) -> bool:
+    """Boolean view of a condition: a missing field never satisfies one."""
+    state = _condition_state(context, condition)
+    return state if state is not None else False
 
 
 def _validate_condition(condition: Any, where: str) -> None:
@@ -290,19 +304,22 @@ def _best_sort_key(best_by: list[dict[str, Any]]):
     return key
 
 
-def _source_hits(db: Database, file_id: str, source: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def _source_hits(
+        db: Database, file_id: str, source: dict[str, Any],
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
     """Filtered, best-first alignment contexts per seqid for one source/file.
 
     Only the latest completed job for the source's analysis on this file
-    contributes rows.
+    contributes rows; the second return value counts the older completed
+    jobs that were ignored.
     """
     job = db.conn.execute(
-        "SELECT MAX(job_id) AS job_id FROM analysis_jobs "
+        "SELECT MAX(job_id) AS job_id, COUNT(*) AS completed_jobs FROM analysis_jobs "
         "WHERE analysis_name=? AND file_id=? AND status='completed'",
         (source["analysis"], file_id),
     ).fetchone()
     if job is None or job["job_id"] is None:
-        return {}
+        return {}, 0
     rows = db.conn.execute(
         "SELECT a.alignment_id, a.job_id, a.analysis_name, a.query_id, a.subject_id, "
         "a.hit_rank, a.query_start, a.query_end, a.subject_start, a.subject_end, "
@@ -321,7 +338,7 @@ def _source_hits(db: Database, file_id: str, source: dict[str, Any]) -> dict[str
     sort_key = _best_sort_key(source["best_by"])
     for contexts in hits.values():
         contexts.sort(key=sort_key)
-    return hits
+    return hits, job["completed_jobs"] - 1
 
 
 def _target_files(db: Database, entity_type: str, file_role: str) -> list[dict[str, Any]]:
@@ -402,6 +419,7 @@ def classify_sequences(
         assignments: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
         sequences_total = 0
         files_without_sequences = 0
+        ignored_completed_jobs = 0
         for file_row in files:
             seqids = [
                 str(row["seqid"]) for row in db.conn.execute(
@@ -413,10 +431,11 @@ def classify_sequences(
                 files_without_sequences += 1
                 continue
             sequences_total += len(seqids)
-            source_hits = {
-                name: _source_hits(db, file_row["file_id"], source)
-                for name, source in spec["sources"].items()
-            }
+            source_hits = {}
+            for name, source in spec["sources"].items():
+                hits, ignored = _source_hits(db, file_row["file_id"], source)
+                source_hits[name] = hits
+                ignored_completed_jobs += ignored
             for seqid in seqids:
                 decision = _decide(spec["rules"], source_hits, seqid)
                 if decision is not None:
@@ -495,6 +514,7 @@ def classify_sequences(
         "profile_sha256": profile_sha256,
         "files": len(files),
         "files_without_sequences": files_without_sequences,
+        "ignored_completed_jobs": ignored_completed_jobs,
         "sequences": sequences_total,
         "label_counts": dict(sorted(label_counts.items())),
         "unlabeled": sequences_total - len(assignments),
@@ -510,6 +530,8 @@ def classify_sequences(
         "profile": profile_name,
         "profile_sha256": profile_sha256,
         "files": len(files),
+        "files_without_sequences": files_without_sequences,
+        "ignored_completed_jobs": ignored_completed_jobs,
         "sequences": sequences_total,
         "label_counts": dict(sorted(label_counts.items())),
         "unlabeled": execution_details["unlabeled"],

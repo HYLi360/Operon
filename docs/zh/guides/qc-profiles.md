@@ -223,7 +223,9 @@ rules:
   有效退役的实体会被排除。
 - `sources` 声明规则可引用的命名命中来源。每个来源包含：
   - `analysis`：命中来自哪个 analysis 的 `analysis_alignments` 行；只有每个目标
-    文件最新一个 `completed` 作业的行参与判定。
+    文件最新一个 `completed` 作业的行参与判定。同一 analysis+file 组合下的其他
+    completed 作业会被忽略，计数非零时以 `ignored_completed_jobs` 在运行输出与
+    details 中呈现。
   - `filter`：哪些行算命中（条件列表，按 AND 组合；空列表表示所有行都算）。
   - `best_by`：有序的 best-hit 排序；每个 seqid 幸存的第一行就是规则所见的最佳
     命中。每项是一个 `field` 加 `direction: asc|desc`（默认 `asc`），或一个把
@@ -243,9 +245,11 @@ rules:
   `evalue`、`bitscore`、`percent_identity`……），再解析到派生字段 `span`
   （`query_end - query_start + 1`）与 `seqid`（query id 取第一个空白前的部分），
   最后解析到命中行 `extra_json` 的键——`hit_type`、`incomplete`、`short_name`、
-  `i_evalue` 等 parser 特有字段。字段缺失时，无论用什么 operator（包括 `!=`、
-  `not_in` 与 `exists`）判定都为 False，因此只有把条件包进 `not: {...}` 才会成立
-  ——对这个 False 取反即为 True。
+  `i_evalue` 等 parser 特有字段。缺失字段在任何形态下都不满足条件：无论用什么
+  operator（包括 `!=`、`not_in` 与 `exists`）判定都为 False，对缺失字段条件的
+  `not: {...}` 取反仍然是 False，`any: [...]` 中缺失字段的析取项也视为不满足。
+  `between` 要求数值操作数，否则抛出带字段与值上下文的校验错误；`in`/`not_in`
+  按字符串比较取值。
 
 以相同 profile 内容与相同输入重跑是空操作；修改 profile 后会重新判定受影响的
 序列，并在 `changes` 中逐条审计每次标签变更。

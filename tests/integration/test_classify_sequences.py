@@ -196,6 +196,51 @@ class TestClassifySequencesCLI(PytestAssertions):
             "ORDER BY started_at")
         self.assertEqual([row["status"] for row in runs], ["completed", "completed"])
 
+    def test_ignored_completed_jobs_are_reported(self, capsys):
+        self._add_hits("rpsbproc_cdd", [
+            {"query_id": "b1", "subject_id": "cd00001",
+             "query_start": 1, "query_end": 55, "evalue": 1e-9, "bitscore": 10.0,
+             "extra_json": json.dumps({
+                 "hit_type": "Motif", "incomplete": "-", "short_name": "bhlh_1"})},
+        ])
+        latest = self._add_hits("rpsbproc_cdd", [
+            {"query_id": "b1", "subject_id": "cl00081",
+             "query_start": 1, "query_end": 45, "evalue": 1e-9, "bitscore": 80.0,
+             "extra_json": json.dumps({
+                 "hit_type": "Specific", "incomplete": "-", "short_name": "bhlh_1"})},
+        ])
+        self.assertEqual(main([
+            "--project", str(self.root), "classify-sequences", "--profile", "bhlh"]), 0)
+        # Only the latest completed job contributes hits: b1 is A, not C.
+        self.assertEqual(self._labels()["b1"], "A")
+        details = json.loads(self.db.query(
+            "SELECT details_json FROM sequence_labels WHERE seqid='b1'")[0]["details_json"])
+        self.assertEqual(details["job_id"], latest)
+        captured = capsys.readouterr()
+        self.assertIn("warning: ignored 1 older completed analysis job(s)", captured.err)
+        run = self.db.query(
+            "SELECT execution_details FROM workflow_runs WHERE step='classify-sequences'")[0]
+        self.assertEqual(json.loads(run["execution_details"])["ignored_completed_jobs"], 1)
+
+    def test_files_without_sequences_are_reported(self, capsys):
+        self.db.insert_row("annotations", {
+            "annotation_id": "ANN_000002", "assembly_id": "ASM_000001",
+            "annotation_source": "test", "annotation_version": 1})
+        self.db.insert_row("files", {
+            "file_id": "FILE_EMPTY", "entity_type": "annotation",
+            "entity_id": "ANN_000002", "file_role": "protein_fasta", "format": "fasta",
+            "compression": "none", "relative_path": "data/empty.faa",
+            "size_bytes": 1, "sha256": "def456", "status": "ACTIVE"})
+        self.assertEqual(main([
+            "--project", str(self.root), "classify-sequences", "--profile", "bhlh"]), 0)
+        captured = capsys.readouterr()
+        self.assertIn("warning: skipped 1 target file(s) with no registered sequences",
+                      captured.err)
+        run = self.db.query(
+            "SELECT execution_details FROM workflow_runs WHERE step='classify-sequences'")[0]
+        details = json.loads(run["execution_details"])
+        self.assertEqual(details["files_without_sequences"], 1)
+
     def test_unknown_profile_fails(self):
         self.assertEqual(main([
             "--project", str(self.root), "classify-sequences", "--profile", "missing"]), 2)
