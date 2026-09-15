@@ -5,7 +5,9 @@
 # Usage:
 #   scripts/run-test-matrix.sh                  # full suite, all versions, parallel
 #   scripts/run-test-matrix.sh tests/unit -x    # extra pytest args are forwarded
-#   MATRIX_JOBS=2 scripts/run-test-matrix.sh    # pytest-xdist workers per version
+#   MATRIX_JOBS=4 scripts/run-test-matrix.sh    # pytest-xdist workers per version
+#
+# MATRIX_JOBS=2 by default.
 #
 # Each version runs in its own process; logs land in .matrix/logs/<version>.log
 # and the exit status in .matrix/logs/<version>.status, so the whole matrix
@@ -16,7 +18,7 @@ cd "$(dirname "$0")/.."   # repository root
 ROOT=$PWD
 LOGS=$ROOT/.matrix/logs
 mkdir -p "$LOGS"
-JOBS=${MATRIX_JOBS:-4}
+JOBS=${MATRIX_JOBS:-2}
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(tests)
 

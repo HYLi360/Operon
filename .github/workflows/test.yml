@@ -45,7 +45,7 @@ jobs:
           cache-dependency-path: pyproject.toml
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[test]'
-      - run: python -m pytest -n 2 --dist loadfile
+      - run: python -m pytest -n auto --dist loadfile
       - if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
         with:

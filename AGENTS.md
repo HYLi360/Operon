@@ -164,6 +164,12 @@ considering work done. CI (`.github/workflows/test.yml`) runs pytest on
 Python 3.10–3.15 and the strict Sphinx build. Releases are published
 exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
+> Running `python -m pytest` directly takes approx 30 seconds
+> (auto: 24 workers). running the local test matrix takes 2m 30s
+> (6 jobs × 4 workers), or 4~5min (6 jobs × 2 workers in default).
+> 
+> Measured on Intel Core i7-13700HX (16c24t).
+
 Do not commit or perform other git mutations unless the user explicitly
 asks.
 
@@ -235,6 +241,9 @@ Sphinx-rendered); update the list above when bumping.
 
 ## Special Note For Codex/ChatGPT
 
-Due to specific limitations of the sandbox environment, executing certain TUI test code may cause the system to freeze; this often occurs on Codex/ChatGPT. The specific reason is that when this test code runs in the sandbox, it may results a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
+Due to specific limitations of the sandbox environment, executing certain TUI
+test code may cause the system to freeze; this often occurs on Codex/ChatGPT.
+The specific reason is that when this test code runs in the sandbox, it may
+result a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
 
 If you are Codex/ChatGPT, please execute TUI-related test code OUTSIDE the sandbox.
