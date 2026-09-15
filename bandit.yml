@@ -1,4 +1,9 @@
-exclude_dirs: ['.venv', 'build', 'HPC', '.matrix']
+# Local environments and generated output; keep tests in the security scan.
+exclude_dirs: ['.venv', 'build', 'dist', 'HPC', '.matrix', 'docs/_build']
 
+# B101 only: pytest assertions are intentional. Bandit uses fnmatch (where
+# '*' also matches directory separators), not recursive glob semantics.
+# Cover bare relative paths, './tests/...' and absolute checkout paths.
+# Do not put B101 in the top-level skips: production assertions stay checked.
 assert_used:
-  skips: ['./tests/**/*.py', './tests/*.py']
+  skips: ['tests/*.py', '*/tests/*.py']
