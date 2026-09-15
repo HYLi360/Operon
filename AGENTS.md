@@ -170,8 +170,17 @@ exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 > 
 > Measured on Intel Core i7-13700HX (16c24t).
 
-Do not commit or perform other git mutations unless the user explicitly
-asks.
+## Git
+
+If the user requests or grants permission, do `git commit` after modify.
+Avoid including overly large changes in a single commit. For commit messages,
+follow the pattern used in the last five commits; otherwise, the Conventional
+Commits guidelines.
+
+**DO NOT** push any commit or tag unless the user **explicitly** requests that.
+
+If times out, assume the user is not present and that a GPG signature
+is required. Add `-c commit.gpgsign=false` behind `git` may help.
 
 ## Conventions
 
