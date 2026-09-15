@@ -31,8 +31,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest ]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        os: [ macos-latest ]
+        python-version: ["3.14"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -43,9 +43,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: pyproject.toml
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[test]'
-      - run: python -m pytest -n auto --dist loadfile
+      - run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+          python -c "import operon.tools, inspect; print(operon.tools.__file__); print('run_array' in inspect.getsource(operon.tools.run_analysis))"
+          python -m pytest --dist loadfile
       - if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
         with:

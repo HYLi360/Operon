@@ -764,7 +764,7 @@ class TestAnalysisArrayRemote(PytestAssertions):
         executor._pull_outputs = flaky_pull
         results = run_analysis(self.project, self.db, "fake_nt", backend="ssh")
 
-        self.assertEqual([r["status"] for r in results], ["error", "completed"])
+        self.assertEqual([r["status"] for r in results], ["error", "completed"])  # TODO(Incompatible with Darwin): left = ['completed', 'completed'], right = ['error', 'completed']
         self.assertIn("mid-pull", results[0]["error"])
         self.assertEqual([j["status"] for j in self._jobs()], ["failed", "completed"])
         restored_targets = {entry[1][0][0] for entry in self._ops(executor, "restore")}
