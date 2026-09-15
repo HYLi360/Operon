@@ -1,2 +1,4 @@
+exclude_dirs: ['.venv', 'build', 'HPC', '.matrix']
+
 assert_used:
-  skips: ['tests/**/*.py']
+  skips: ['./tests/**/*.py', './tests/*.py']
