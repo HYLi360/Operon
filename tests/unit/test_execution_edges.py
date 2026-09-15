@@ -13,6 +13,7 @@ import pytest
 
 from operon import execution
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
+from operon.shutdown import ShutdownRequested
 from tests.unit.test_execution import FakeSFTP, FakeSSHClient
 
 
@@ -571,3 +572,210 @@ def test_remote_slurm_exitcode_falls_back_to_sacct(
         assert result.error is None
     else:
         assert expected_error in result.error
+
+
+def _array_executor(tmp_path, monkeypatch):
+    logs = tmp_path / "logs"
+    logs.mkdir(exist_ok=True)
+    executor = execution.SlurmExecutor(project(tmp_path),
+                                       execution.SlurmConfig(poll_interval=0.01))
+    monkeypatch.setattr(execution.shutil, "which", lambda name: name)
+    return executor, logs
+
+
+def _array_tasks(logs, count=2):
+    return [
+        {"run_id": f"r{i}", "command": f"echo {i}",
+         "stdout_path": logs / f"r{i}.stdout.log", "stderr_path": logs / f"r{i}.stderr.log"}
+        for i in range(1, count + 1)
+    ]
+
+
+def test_slurm_run_array_requires_sbatch_and_squeue(tmp_path, monkeypatch):
+    executor = execution.SlurmExecutor(project(tmp_path), execution.SlurmConfig())
+    monkeypatch.setattr(execution.shutil, "which", lambda _name: None)
+    with pytest.raises(ExternalToolError, match="requires 'sbatch'"):
+        executor.run_array(_array_tasks(tmp_path), cwd=tmp_path)
+    monkeypatch.setattr(execution.shutil, "which",
+                        lambda name: "sbatch" if name == "sbatch" else None)
+    with pytest.raises(ExternalToolError, match="requires 'squeue'"):
+        executor.run_array(_array_tasks(tmp_path), cwd=tmp_path)
+
+
+def test_slurm_run_array_task_validation(tmp_path, monkeypatch):
+    executor, logs = _array_executor(tmp_path, monkeypatch)
+    valid = _array_tasks(logs)
+    with pytest.raises(ValidationError, match="at least one task"):
+        executor.run_array([], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="missing run_id"):
+        executor.run_array([{**valid[0], "run_id": ""}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="missing command"):
+        executor.run_array([{**valid[0], "command": "  "}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="single line"):
+        executor.run_array([{**valid[0], "command": "echo a\necho b"}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="duplicate"):
+        executor.run_array([valid[0], {**valid[1], "run_id": "r1"}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="tabs or newlines"):
+        executor.run_array([{**valid[0], "run_id": "r\t1"}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="missing stdout_path"):
+        executor.run_array(
+            [{k: v for k, v in valid[0].items() if k != "stdout_path"}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="cwd differs"):
+        executor.run_array([{**valid[0], "cwd": tmp_path / "elsewhere"}], cwd=tmp_path)
+    with pytest.raises(ValidationError, match="threads differ"):
+        executor.run_array([{**valid[0], "threads": 8}], cwd=tmp_path, threads=4)
+    with pytest.raises(ValidationError, match="batch id"):
+        executor.run_array(valid, cwd=tmp_path, batch_id="bad/id")
+    with pytest.raises(ValidationError, match="array_concurrency"):
+        executor.run_array(valid, cwd=tmp_path, array_concurrency=0)
+
+
+def test_slurm_run_array_timeout_cancels_and_keeps_finished_tasks(tmp_path, monkeypatch):
+    executor, logs = _array_executor(tmp_path, monkeypatch)
+
+    def fake_submit(_sbatch, _script):
+        # Task 1 finished (exit code + probe document) before the timeout.
+        (logs / "r1.exitcode").write_text("0", encoding="utf-8")
+        (logs / "r1.env").write_text("hostname=compute-01\nos=Linux\n", encoding="utf-8")
+        return "4242"
+
+    cancelled = []
+    monkeypatch.setattr(execution, "_submit_slurm_job", fake_submit)
+    monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: False)
+    monkeypatch.setattr(execution, "_scancel_slurm_job", cancelled.append)
+    times = iter([0, 2, 2])
+    monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
+    results = executor.run_array(_array_tasks(logs), cwd=tmp_path, timeout=1, batch_id="bt")
+    assert cancelled == ["4242"]
+    assert [r.scheduler_job_id for r in results] == ["4242_1", "4242_2"]
+    assert results[0].exit_code == 0
+    assert results[0].details["environment"]["hostname"] == _hashed_hostname("compute-01")
+    assert results[1].exit_code is None
+    assert "timeout after 1s" in results[1].error
+    assert results[1].details["array_job_id"] == "4242"
+
+
+def test_slurm_run_array_interrupt_cancels_and_raises(tmp_path, monkeypatch):
+    executor, logs = _array_executor(tmp_path, monkeypatch)
+    monkeypatch.setattr(execution, "_submit_slurm_job", lambda *_a: "4242")
+    monkeypatch.setattr(execution, "_squeue_job_gone",
+                        lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
+    cancelled = []
+    monkeypatch.setattr(execution, "_scancel_slurm_job", cancelled.append)
+    with pytest.raises(KeyboardInterrupt):
+        executor.run_array(_array_tasks(logs), cwd=tmp_path)
+    assert cancelled == ["4242"]
+
+
+def test_slurm_run_array_sacct_fallback_folds_signals_per_task(tmp_path, monkeypatch):
+    # No task wrote an exit-code file (e.g. OOM-killed); the per-task sacct
+    # fallback decides, and "0:9" must surface as 137 on every task.
+    executor, logs = _array_executor(tmp_path, monkeypatch)
+    monkeypatch.setattr(execution, "_submit_slurm_job", lambda *_a: "4242")
+    monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: True)
+    monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
+    sacct_jobs = []
+
+    def fake_run(args, **_kwargs):
+        if args[0] == "sacct":
+            sacct_jobs.append(args[args.index("-j") + 1])
+        return SimpleNamespace(stdout="0:9|||||\n")
+
+    monkeypatch.setattr(execution.subprocess, "run", fake_run)
+    results = executor.run_array(_array_tasks(logs), cwd=tmp_path)
+    assert sacct_jobs == ["4242_1", "4242_2"]
+    assert [r.exit_code for r in results] == [137, 137]
+    assert all(r.details["slurm_exit_signal"] == 9 for r in results)
+
+
+def _remote_array_executor(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    remote_root = tmp_path / "remote"
+    (root / "logs").mkdir(parents=True)
+    (remote_root / "logs").mkdir(parents=True)
+    client = FakeSSHClient()
+    ssh = execution.SSHExecutor(
+        project(root), {"host": "host", "remote_root": str(remote_root), "scheduler": "slurm"},
+        execution.SlurmConfig(poll_interval=0.01),
+        client_factory=lambda _self: client,
+    )
+    monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
+    return ssh, root, remote_root, client
+
+
+def test_ssh_direct_executor_has_no_run_array(tmp_path):
+    # Duck-typing capability detection: only remote Slurm offers run_array.
+    ssh = execution.SSHExecutor(project(tmp_path), {"host": "host"}, execution.SlurmConfig())
+    assert getattr(ssh, "run_array", None) is None
+    remote_slurm = execution.SSHExecutor(
+        project(tmp_path), {"host": "host", "scheduler": "slurm"}, execution.SlurmConfig())
+    assert getattr(remote_slurm, "run_array", None) is not None
+    assert getattr(execution.LocalExecutor(), "run_array", None) is None
+
+
+def test_remote_slurm_run_array_rejects_unsplittable_command(tmp_path, monkeypatch):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+    tasks = [{"run_id": "r1", "command": "echo 'unclosed",
+              "stdout_path": root / "logs" / "r1.out", "stderr_path": root / "logs" / "r1.err"}]
+    with pytest.raises(ValidationError, match="shlex-quoted"):
+        ssh.run_array(tasks, cwd=root)
+
+
+def test_remote_slurm_run_array_interrupt_cancels_and_pulls_exitcodes(tmp_path, monkeypatch):
+    ssh, root, remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_exec(_client, command, **_kwargs):
+        calls.append(command)
+        if command.startswith("sbatch"):
+            # Task 1 finished remotely before the interrupt.
+            (remote_root / "logs" / "r1.exitcode").write_text("0\n", encoding="utf-8")
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 0, "4242"
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+
+    def interrupting_sleep(_seconds):
+        raise ShutdownRequested(signal.SIGINT)
+
+    monkeypatch.setattr(execution.time, "sleep", interrupting_sleep)
+    with pytest.raises(ShutdownRequested):
+        ssh.run_array(_array_tasks(root / "logs"), cwd=root, batch_id="RB")
+    assert any(command.startswith("scancel") for command in calls)
+    # The finished task's exit-code file was pulled back so the caller can
+    # apply the same which-exitcode-files-exist bookkeeping as locally.
+    assert (root / "logs" / "r1.exitcode").read_text().strip() == "0"
+    assert not (root / "logs" / "r2.exitcode").exists()
+
+
+def test_remote_slurm_run_array_timeout_cancels_and_reports_partial(tmp_path, monkeypatch):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_exec(_client, command, **_kwargs):
+        calls.append(command)
+        if command.startswith("sbatch"):
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 0, "4242"
+        if command.startswith("scancel"):
+            return 0, ""
+        if command.startswith("cat ") and "r1.exitcode" in command:
+            return 0, "0\n"
+        if command.startswith("cat "):
+            return 1, ""
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    times = iter([0, 2, 2])
+    monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
+    results = ssh.run_array(_array_tasks(root / "logs"), cwd=root, timeout=1, batch_id="RB")
+    assert any(command.startswith("scancel") for command in calls)
+    assert [r.scheduler_job_id for r in results] == ["4242_1", "4242_2"]
+    assert results[0].exit_code == 0
+    assert results[1].exit_code is None
+    assert "timeout after 1s" in results[1].error
+    assert results[1].details["cancellation_requested"] is True
+    assert results[1].details["array_job_id"] == "4242"

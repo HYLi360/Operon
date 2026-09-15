@@ -150,17 +150,17 @@ def rewrite_remote_path(value: str, local_root: Path, remote_root: str) -> str:
     raise ValidationError(f"mapped SSH path escapes remote_root {root!r}: {value}")
 
 
-def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
-                        stdout_path: str, stderr_path: str, exitcode_path: str,
-                        threads: int | None, slurm: SlurmConfig,
-                        probe_path: str | None = None) -> str:
-    """Render a self-contained sbatch script (pure, unit-testable)."""
+def _slurm_script_preamble(*, job_name: str, stdout_path: str, stderr_path: str,
+                           threads: int | None, slurm: SlurmConfig,
+                           extra_directives: Iterable[str] = ()) -> list[str]:
+    """Shared SBATCH header and setup block for single and array scripts."""
     lines = [
         "#!/bin/bash",
         f"#SBATCH --job-name={job_name}",
         f"#SBATCH --output={stdout_path}",
         f"#SBATCH --error={stderr_path}",
         f"#SBATCH --cpus-per-task={max(1, int(threads or 1))}",
+        *extra_directives,
     ]
     if slurm.time_limit:
         lines.append(f"#SBATCH --time={slurm.time_limit}")
@@ -174,6 +174,18 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
     lines.extend(slurm.setup_commands)
     if slurm.setup_commands:
         lines.append("")
+    return lines
+
+
+def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
+                        stdout_path: str, stderr_path: str, exitcode_path: str,
+                        threads: int | None, slurm: SlurmConfig,
+                        probe_path: str | None = None) -> str:
+    """Render a self-contained sbatch script (pure, unit-testable)."""
+    lines = _slurm_script_preamble(
+        job_name=job_name, stdout_path=stdout_path, stderr_path=stderr_path,
+        threads=threads, slurm=slurm,
+    )
     lines.append(f"cd {shlex.quote(cwd)}")
     lines.append("rc=$?")
     if probe_path:
@@ -194,6 +206,164 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
     lines.append(f"echo $rc > {shlex.quote(exitcode_path)}")
     lines.append("exit $rc")
     return "\n".join(lines) + "\n"
+
+
+def render_slurm_array_script(*, job_name: str, manifest_path: str, cwd: str,
+                              stdout_path: str, stderr_path: str,
+                              threads: int | None, slurm: SlurmConfig,
+                              task_count: int, concurrency: int | None = None) -> str:
+    """Render a self-contained sbatch array script (pure, unit-testable).
+
+    The payload is dispatched from the manifest: array task N executes line N
+    of the tab-separated manifest (``index, run_id, stdout, stderr, exitcode,
+    probe, command`` — the command is the last field and is stored verbatim,
+    so it may contain any character except a newline).  Each task probes the
+    compute-side environment into its own probe file (the probe shell lives in
+    ``<probe>.sh`` next to it) and writes its own exit-code file.  Slurm's
+    own ``--output``/``--error`` capture only wrapper noise; the payload's
+    streams are redirected to the per-task files from the manifest.
+    """
+    array_spec = f"1-{task_count}"
+    if concurrency is not None:
+        array_spec += f"%{int(concurrency)}"
+    lines = _slurm_script_preamble(
+        job_name=job_name, stdout_path=stdout_path, stderr_path=stderr_path,
+        threads=threads, slurm=slurm,
+        extra_directives=[f"#SBATCH --array={array_spec}"],
+    )
+    lines.append(f'line="$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {shlex.quote(manifest_path)})"')
+    lines.append('if [ -z "$line" ]; then')
+    lines.append(f'  echo "operon array task ${{SLURM_ARRAY_TASK_ID}}: '
+                 f'no manifest line in {manifest_path}" >&2')
+    lines.append("  exit 1")
+    lines.append("fi")
+    lines.append("IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
+                 'task_exitcode task_probe task_command <<< "$line"')
+    lines.append(f"cd {shlex.quote(cwd)}")
+    lines.append("rc=$?")
+    lines.append("(")
+    lines.append("umask 077")
+    lines.append("{")
+    lines.append('sh "${task_probe}.sh"')
+    lines.append('} > "$task_probe" 2>/dev/null || true')
+    lines.append(")")
+    lines.append("if [ $rc -eq 0 ]; then")
+    lines.append('  eval "$task_command" > "$task_stdout" 2> "$task_stderr"')
+    lines.append("  rc=$?")
+    lines.append("fi")
+    lines.append('echo "$rc" > "$task_exitcode"')
+    lines.append("exit $rc")
+    return "\n".join(lines) + "\n"
+
+
+@dataclass
+class _ArrayTask:
+    """One validated array member with its derived per-task log paths."""
+
+    index: int
+    run_id: str
+    command: str
+    stdout_path: Path
+    stderr_path: Path
+    exitcode_path: Path
+    probe_path: Path
+
+    @property
+    def probe_script_path(self) -> Path:
+        return Path(str(self.probe_path) + ".sh")
+
+
+_ARRAY_BATCH_ID_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _prepare_array_tasks(tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None,
+                         threads: int | None,
+                         default_cwd: str) -> tuple[list[_ArrayTask], str, int | None]:
+    """Validate task dicts and derive per-task paths; uniform cwd/threads win.
+
+    Tasks may carry their own ``cwd``/``threads`` copies, but every task in
+    one array must agree with the batch-level values (a job array has a
+    single working directory guard and one ``--cpus-per-task``).
+    """
+    effective_cwd = str(cwd) if cwd else None
+    effective_threads = threads
+    prepared: list[_ArrayTask] = []
+    seen_run_ids: set[str] = set()
+    for index, task in enumerate(tasks, start=1):
+        run_id = str(task.get("run_id") or "").strip()
+        command = str(task.get("command") or "")
+        if not run_id:
+            raise ValidationError(f"array task {index} is missing run_id")
+        if not command.strip():
+            raise ValidationError(f"array task {run_id!r} is missing command")
+        if "\n" in command or "\r" in command:
+            raise ValidationError(f"array task {run_id!r} command must be a single line")
+        if run_id in seen_run_ids:
+            raise ValidationError(f"duplicate array task run_id {run_id!r}")
+        seen_run_ids.add(run_id)
+        task_cwd = task.get("cwd")
+        if effective_cwd is None and task_cwd:
+            effective_cwd = str(task_cwd)
+        if task_cwd and effective_cwd and Path(str(task_cwd)) != Path(effective_cwd):
+            raise ValidationError(f"array task {run_id!r} cwd differs from the batch cwd")
+        task_threads = task.get("threads")
+        if effective_threads is None and task_threads is not None:
+            effective_threads = int(task_threads)
+        if (task_threads is not None and effective_threads is not None
+                and int(task_threads) != int(effective_threads)):
+            raise ValidationError(f"array task {run_id!r} threads differ from the batch threads")
+        try:
+            stdout_path = Path(task["stdout_path"])
+            stderr_path = Path(task["stderr_path"])
+        except (KeyError, TypeError) as exc:
+            missing = exc.args[0] if isinstance(exc, KeyError) else "stdout_path/stderr_path"
+            raise ValidationError(f"array task {run_id!r} is missing {missing}") from exc
+        for value in (run_id, str(stdout_path), str(stderr_path)):
+            if "\t" in value or "\n" in value:
+                raise ValidationError(
+                    f"array task {run_id!r} paths and run_id must not contain tabs or newlines"
+                )
+        logs = stdout_path.parent
+        prepared.append(_ArrayTask(
+            index=index, run_id=run_id, command=command,
+            stdout_path=stdout_path, stderr_path=stderr_path,
+            exitcode_path=logs / f"{run_id}.exitcode",
+            probe_path=logs / f"{run_id}.env",
+        ))
+    if not prepared:
+        raise ValidationError("run_array requires at least one task")
+    return prepared, effective_cwd or default_cwd, effective_threads
+
+
+def _validate_array_batch(batch_id: str, array_concurrency: int | None) -> None:
+    if not _ARRAY_BATCH_ID_RE.fullmatch(batch_id):
+        raise ValidationError(f"invalid array batch id {batch_id!r}")
+    if array_concurrency is not None and int(array_concurrency) < 1:
+        raise ValidationError("array_concurrency must be a positive integer")
+
+
+def render_array_manifest(tasks: Iterable[_ArrayTask]) -> str:
+    """Render the tab-separated array dispatch manifest (pure, unit-testable).
+
+    Line N is array task N; the command is the last field so it survives any
+    character except a newline (validated in ``_prepare_array_tasks``).
+    """
+    lines = []
+    for task in tasks:
+        lines.append("\t".join((
+            str(task.index), task.run_id, str(task.stdout_path), str(task.stderr_path),
+            str(task.exitcode_path), str(task.probe_path), task.command,
+        )))
+    return "\n".join(lines) + "\n"
+
+
+def _array_probe_shell(command: str) -> str:
+    """Probe shell for one array task's command; unsplittable commands degrade."""
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        argv = []
+    return probe_shell(argv)
 
 
 def _terminate_process_group(process: subprocess.Popen, grace: float = 3.0) -> None:
@@ -607,6 +777,108 @@ class SlurmExecutor:
             result.details["environment"] = environment
         return result
 
+    def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
+                  threads: int | None = None, timeout: float | None = None,
+                  batch_id: str | None = None,
+                  array_concurrency: int | None = None) -> list[ExecResult]:
+        """Submit all tasks as one Slurm job array and block until it drains.
+
+        Each task is a dict with ``run_id``, ``command`` (a rendered single
+        shell line), ``stdout_path``/``stderr_path`` and optionally ``cwd`` /
+        ``threads`` copies that must agree across the batch.  Returns one
+        ExecResult per task, in task order, with ``scheduler_job_id`` set to
+        ``<array_id>_<task_index>``.
+
+        Interrupt contract: on KeyboardInterrupt the whole array is cancelled
+        once and the exception propagates; the caller distinguishes finished
+        tasks by which per-task exit-code files (``<run_id>.exitcode`` next
+        to each task's stdout log) exist.  On timeout the array is cancelled
+        and per-task results are still returned: tasks that left an exit-code
+        file keep their exit code, the rest get ``exit_code=None`` with a
+        timeout error.
+        """
+        sbatch = shutil.which("sbatch")
+        if not sbatch:
+            raise ExternalToolError("slurm backend requires 'sbatch' in PATH")
+        squeue = shutil.which("squeue")
+        if not squeue:
+            raise ExternalToolError("slurm backend requires 'squeue' in PATH")
+        batch_id = batch_id or f"array_{uuid.uuid4().hex[:12]}"
+        _validate_array_batch(batch_id, array_concurrency)
+        prepared, effective_cwd, effective_threads = _prepare_array_tasks(
+            tasks, cwd=cwd, threads=threads, default_cwd=str(self.project.root),
+        )
+        logs = prepared[0].stdout_path.parent
+        manifest_path = logs / f"{batch_id}.array-manifest.tsv"
+        script_path = logs / f"{batch_id}.sbatch"
+        details = {"backend": "slurm", "script": str(script_path),
+                   "manifest": str(manifest_path)}
+        for task in prepared:
+            task.probe_script_path.write_text(
+                _array_probe_shell(task.command) + "\n", encoding="utf-8")
+            task.exitcode_path.unlink(missing_ok=True)
+            task.probe_path.unlink(missing_ok=True)
+        manifest_path.write_text(render_array_manifest(prepared), encoding="utf-8")
+        script = render_slurm_array_script(
+            job_name=f"operon_{batch_id}", manifest_path=str(manifest_path),
+            cwd=effective_cwd,
+            stdout_path=str(logs / f"{batch_id}.%A_%a.out"),
+            stderr_path=str(logs / f"{batch_id}.%A_%a.err"),
+            threads=effective_threads, slurm=self.slurm,
+            task_count=len(prepared), concurrency=array_concurrency,
+        )
+        script_path.write_text(script, encoding="utf-8")
+        job_id = _submit_slurm_job(sbatch, script_path)
+        deadline = time.monotonic() + timeout if timeout else None
+        try:
+            while True:
+                if _squeue_job_gone(squeue, job_id):
+                    break
+                if deadline is not None and time.monotonic() > deadline:
+                    _scancel_slurm_job(job_id)
+                    return self._array_timeout_results(prepared, job_id, timeout, details)
+                time.sleep(max(0.1, self.slurm.poll_interval))
+        except KeyboardInterrupt:
+            # Shutdown must not abandon queued/running cluster tasks.
+            _scancel_slurm_job(job_id)
+            raise
+        results = []
+        for task in prepared:
+            task_job_id = f"{job_id}_{task.index}"
+            result = _read_slurm_accounting(task.exitcode_path, task_job_id)
+            result.scheduler_job_id = task_job_id
+            result.details = {"array_job_id": job_id, **details, **result.details}
+            environment = _read_probe_environment(task.probe_path)
+            if environment:
+                result.details["environment"] = environment
+            results.append(result)
+        return results
+
+    def _array_timeout_results(self, prepared: list[_ArrayTask], job_id: str,
+                               timeout: float | None,
+                               details: dict[str, Any]) -> list[ExecResult]:
+        """Per-task results after a cancelled array: finished tasks keep theirs."""
+        results = []
+        for task in prepared:
+            task_job_id = f"{job_id}_{task.index}"
+            result: ExecResult | None = None
+            try:
+                result = ExecResult(exit_code=int(task.exitcode_path.read_text().strip()))
+            except (OSError, ValueError):
+                pass
+            if result is None:
+                result = ExecResult(
+                    exit_code=None,
+                    error=f"timeout after {timeout}s waiting for slurm job array {job_id}",
+                )
+            result.scheduler_job_id = task_job_id
+            result.details = {"array_job_id": job_id, **details, **result.details}
+            environment = _read_probe_environment(task.probe_path)
+            if environment:
+                result.details["environment"] = environment
+            results.append(result)
+        return results
+
 
 def _read_probe_environment(probe_path: Path) -> dict[str, Any] | None:
     """Read and parse a job-side environment probe file; best-effort."""
@@ -665,6 +937,11 @@ class SSHExecutor:
             raise ValidationError(
                 f"execution.ssh.scheduler must be 'none' or 'slurm', got {self.scheduler!r}"
             )
+        if self.scheduler != "slurm":
+            # Only the remote-Slurm path supports job arrays; keep duck-typing
+            # capability detection (`getattr(executor, "run_array", None)`)
+            # false for direct SSH execution.
+            self.run_array = None
         self.connect_timeout = float(cfg.get("connect_timeout", 30) or 30)
         self.storage_remote = str(cfg.get("storage_remote", "") or "").strip()
         self.known_hosts = str(cfg.get("known_hosts", "") or "").strip()
@@ -1107,6 +1384,20 @@ class SSHExecutor:
 
     # -- remote slurm ------------------------------------------------------
 
+    def _sftp_write_file(self, sftp: Any, remote: str, content: str) -> None:
+        """Write a remote text file atomically (temporary name + rename)."""
+        from operon.remotes import _remove_remote_tree, sftp_makedirs
+        sftp_makedirs(sftp, posixpath.dirname(remote))
+        _remove_remote_tree(sftp, remote)
+        tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
+        try:
+            with sftp.open(tmp, "w") as handle:
+                handle.write(content)
+            sftp.rename(tmp, remote)
+        except BaseException:
+            _remove_remote_tree(sftp, tmp)
+            raise
+
     def _run_via_slurm(self, client: Any, sftp: Any, argv: list[str], *,
                        cwd: str | Path | None, stdout_path: Path, stderr_path: Path,
                        timeout: float | None, threads: int | None,
@@ -1130,15 +1421,7 @@ class SSHExecutor:
         sftp_makedirs(sftp, remote_dir)
         _remove_remote_tree(sftp, remote_exitcode)
         _remove_remote_tree(sftp, remote_probe)
-        _remove_remote_tree(sftp, remote_script)
-        script_tmp = f"{remote_script}.operon-tmp-{uuid.uuid4().hex}"
-        try:
-            with sftp.open(script_tmp, "w") as handle:
-                handle.write(script)
-            sftp.rename(script_tmp, remote_script)
-        except BaseException:
-            _remove_remote_tree(sftp, script_tmp)
-            raise
+        self._sftp_write_file(sftp, remote_script, script)
         rc, out = self._remote_exec(client, f"sbatch --parsable {shlex.quote(remote_script)}")
         if rc != 0:
             raise RemoteError(f"remote sbatch submission failed: {out.strip()}")
@@ -1186,6 +1469,19 @@ class SSHExecutor:
         environment = _read_remote_probe_environment(sftp, remote_probe)
         if environment:
             details["environment"] = environment
+        result = self._read_remote_slurm_accounting(
+            client, remote_exitcode=remote_exitcode, job_id=job_id)
+        result.details = {**details, **result.details}
+        return result
+
+    def _read_remote_slurm_accounting(self, client: Any, *, remote_exitcode: str,
+                                      job_id: str) -> ExecResult:
+        """Resolve a finished remote job's exit code and its sacct accounting.
+
+        The job-side exit-code file remains the primary exit code source;
+        sacct supplies the fallback exit code and the resource metrics, and
+        accounting failures degrade to empty resources and never fail the run.
+        """
         exit_code: int | None = None
         for _ in range(_SLURM_EXIT_CODE_RETRIES):
             rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
@@ -1210,12 +1506,182 @@ class SSHExecutor:
         if exit_code is None:
             exit_code = accounting.get("exit_code")
         if exit_code is not None:
-            result = ExecResult(exit_code=exit_code, scheduler_job_id=job_id, details=details)
+            result = ExecResult(exit_code=exit_code, scheduler_job_id=job_id)
             _apply_slurm_accounting(result, accounting)
             return result
-        return ExecResult(exit_code=None,
-                          error=f"remote slurm job {job_id} finished but its exit code is unavailable",
-                          scheduler_job_id=job_id, details=details)
+        return ExecResult(
+            exit_code=None,
+            error=f"remote slurm job {job_id} finished but its exit code is unavailable",
+            scheduler_job_id=job_id,
+        )
+
+    def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
+                  threads: int | None = None, timeout: float | None = None,
+                  batch_id: str | None = None,
+                  array_concurrency: int | None = None) -> list[ExecResult]:
+        """Submit all tasks as one job array on the remote Slurm cluster.
+
+        Task dicts follow the same contract as ``SlurmExecutor.run_array``;
+        commands must be shlex-quoted command lines (as produced by
+        ``shlex.join``) so path arguments can be rewritten into the remote
+        mirror — anything needing top-level shell operators must be wrapped
+        in ``bash -c``.  Inputs/outputs are not staged or backed up here;
+        that stays with the caller.  The interrupt/timeout contract matches
+        the local backend, with one addition: before an interrupt propagates,
+        any per-task exit-code files that already exist remotely are pulled
+        back, so the caller can apply the same which-exitcode-files-exist
+        bookkeeping against local paths.
+        """
+        client = self._connect()
+        sftp = client.open_sftp()
+        try:
+            return self._run_array_via_slurm(
+                client, sftp, tasks, cwd=cwd, threads=threads, timeout=timeout,
+                batch_id=batch_id, array_concurrency=array_concurrency,
+            )
+        finally:
+            sftp.close()
+
+    def _rewrite_array_task(self, task: _ArrayTask) -> _ArrayTask:
+        """Map one task's paths and command arguments into the remote mirror."""
+        try:
+            argv = shlex.split(task.command)
+        except ValueError as exc:
+            raise ValidationError(
+                f"array task {task.run_id!r} command must be a shlex-quoted command "
+                "line for remote path rewriting"
+            ) from exc
+        stdout = self._rewrite(task.stdout_path)
+        remote_dir = posixpath.dirname(stdout)
+        return _ArrayTask(
+            index=task.index, run_id=task.run_id,
+            command=shlex.join(self._rewrite(a) for a in argv),
+            stdout_path=Path(stdout), stderr_path=Path(self._rewrite(task.stderr_path)),
+            exitcode_path=Path(posixpath.join(remote_dir, f"{task.run_id}.exitcode")),
+            probe_path=Path(posixpath.join(remote_dir, f"{task.run_id}.env")),
+        )
+
+    def _run_array_via_slurm(self, client: Any, sftp: Any, tasks: Iterable[dict[str, Any]],
+                             *, cwd: str | Path | None, threads: int | None,
+                             timeout: float | None, batch_id: str | None,
+                             array_concurrency: int | None) -> list[ExecResult]:
+        from operon.remotes import _remove_remote_tree, sftp_makedirs
+        batch_id = batch_id or f"array_{uuid.uuid4().hex[:12]}"
+        _validate_array_batch(batch_id, array_concurrency)
+        prepared, effective_cwd, effective_threads = _prepare_array_tasks(
+            tasks, cwd=cwd, threads=threads, default_cwd=str(self.project.root),
+        )
+        remote_tasks = [self._rewrite_array_task(task) for task in prepared]
+        remote_dir = posixpath.dirname(str(remote_tasks[0].stdout_path))
+        remote_manifest = posixpath.join(remote_dir, f"{batch_id}.array-manifest.tsv")
+        remote_script = posixpath.join(remote_dir, f"{batch_id}.sbatch")
+        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
+                   "script": remote_script, "manifest": remote_manifest}
+        for task in remote_tasks:
+            sftp_makedirs(sftp, posixpath.dirname(str(task.stdout_path)))
+            _remove_remote_tree(sftp, str(task.exitcode_path))
+            _remove_remote_tree(sftp, str(task.probe_path))
+            self._sftp_write_file(sftp, str(task.probe_script_path),
+                                  _array_probe_shell(task.command) + "\n")
+        self._sftp_write_file(sftp, remote_manifest, render_array_manifest(remote_tasks))
+        script = render_slurm_array_script(
+            job_name=f"operon_{batch_id}", manifest_path=remote_manifest,
+            cwd=self._rewrite(effective_cwd),
+            stdout_path=posixpath.join(remote_dir, f"{batch_id}.%A_%a.out"),
+            stderr_path=posixpath.join(remote_dir, f"{batch_id}.%A_%a.err"),
+            threads=effective_threads, slurm=self.slurm,
+            task_count=len(remote_tasks), concurrency=array_concurrency,
+        )
+        self._sftp_write_file(sftp, remote_script, script)
+        rc, out = self._remote_exec(client, f"sbatch --parsable {shlex.quote(remote_script)}")
+        if rc != 0:
+            raise RemoteError(f"remote sbatch submission failed: {out.strip()}")
+        try:
+            job_id = _parse_sbatch_job_id(out)
+        except ExternalToolError as exc:
+            raise RemoteError(str(exc)) from exc
+        deadline = time.monotonic() + timeout if timeout else None
+        try:
+            while True:
+                rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
+                if rc != 0:
+                    if "Invalid job id" in out:
+                        break
+                    raise RemoteError(f"remote squeue failed for job {job_id}: {out.strip()}")
+                if not out.strip():
+                    break
+                if deadline is not None and time.monotonic() > deadline:
+                    cancelled, cancellation_error = self._cancel_remote_slurm_job(client, job_id)
+                    details["cancellation_requested"] = cancelled
+                    if cancellation_error:
+                        details["cancellation_error"] = cancellation_error
+                    return self._remote_array_timeout_results(
+                        client, sftp, prepared, remote_tasks, job_id, timeout, details)
+                time.sleep(max(0.1, self.slurm.poll_interval))
+        except KeyboardInterrupt:
+            # Shutdown must not abandon the queued/running remote array tasks.
+            self._cancel_remote_slurm_job(client, job_id)
+            for local_task, remote_task in zip(prepared, remote_tasks):
+                try:
+                    self._sftp_get_if_exists(sftp, str(remote_task.exitcode_path),
+                                             local_task.exitcode_path)
+                except Exception:
+                    pass
+            raise
+        results = []
+        for local_task, remote_task in zip(prepared, remote_tasks):
+            task_job_id = f"{job_id}_{remote_task.index}"
+            self._sftp_get_if_exists(sftp, str(remote_task.stdout_path),
+                                     local_task.stdout_path)
+            self._sftp_get_if_exists(sftp, str(remote_task.stderr_path),
+                                     local_task.stderr_path)
+            task_details = {"array_job_id": job_id, **details}
+            environment = _read_remote_probe_environment(sftp, str(remote_task.probe_path))
+            if environment:
+                task_details["environment"] = environment
+            result = self._read_remote_slurm_accounting(
+                client, remote_exitcode=str(remote_task.exitcode_path), job_id=task_job_id)
+            result.details = {**task_details, **result.details}
+            results.append(result)
+        return results
+
+    def _remote_array_timeout_results(self, client: Any, sftp: Any,
+                                      local_tasks: list[_ArrayTask],
+                                      remote_tasks: list[_ArrayTask], job_id: str,
+                                      timeout: float | None,
+                                      details: dict[str, Any]) -> list[ExecResult]:
+        """Per-task results after a cancelled remote array; finished tasks keep theirs."""
+        results = []
+        for local_task, remote_task in zip(local_tasks, remote_tasks):
+            task_job_id = f"{job_id}_{remote_task.index}"
+            self._sftp_get_if_exists(sftp, str(remote_task.stdout_path),
+                                     local_task.stdout_path)
+            self._sftp_get_if_exists(sftp, str(remote_task.stderr_path),
+                                     local_task.stderr_path)
+            exit_code: int | None = None
+            try:
+                rc, out = self._remote_exec(
+                    client, f"cat {shlex.quote(str(remote_task.exitcode_path))}")
+                if rc == 0:
+                    exit_code = int(out.strip())
+            except Exception:
+                exit_code = None
+            if exit_code is not None:
+                result = ExecResult(exit_code=exit_code)
+            else:
+                result = ExecResult(
+                    exit_code=None,
+                    error=f"timeout after {timeout}s waiting for remote slurm "
+                          f"job array {job_id}",
+                )
+            result.scheduler_job_id = task_job_id
+            task_details = {"array_job_id": job_id, **details}
+            environment = _read_remote_probe_environment(sftp, str(remote_task.probe_path))
+            if environment:
+                task_details["environment"] = environment
+            result.details = {**task_details, **result.details}
+            results.append(result)
+        return results
 
     def _cancel_remote_slurm_job(self, client: Any, job_id: str) -> tuple[bool, str]:
         """Request cancellation and report whether Slurm accepted the command."""

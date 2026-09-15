@@ -12,9 +12,11 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from tests.helpers import PytestAssertions
 
+from operon import execution
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -32,6 +34,8 @@ from operon.execution import (
     _parse_sbatch_job_id,
     _parse_slurm_time_seconds,
     get_executor,
+    render_array_manifest,
+    render_slurm_array_script,
     render_slurm_script,
     rewrite_remote_path,
 )
@@ -318,6 +322,80 @@ class TestExecutionConfig(PytestAssertions):
         self.assertTrue(script.index("cd '/work dir'") < script.index("hostname"))
         self.assertTrue(script.index("hostname") < script.index("echo hi"))
 
+    def test_render_slurm_array_script(self):
+        slurm = SlurmConfig(partition="long", time_limit="12:00:00", mem_gb=16,
+                            extra_sbatch=["--gres=gpu:1"], setup_commands=["module load blast/2.15"])
+        script = render_slurm_array_script(
+            job_name="operon_batch1", manifest_path="/p/logs/batch1.array-manifest.tsv",
+            cwd="/work dir", stdout_path="/p/logs/batch1.%A_%a.out",
+            stderr_path="/p/logs/batch1.%A_%a.err", threads=8, slurm=slurm,
+            task_count=3, concurrency=2,
+        )
+        self.assertIn("#SBATCH --job-name=operon_batch1", script)
+        self.assertIn("#SBATCH --output=/p/logs/batch1.%A_%a.out", script)
+        self.assertIn("#SBATCH --error=/p/logs/batch1.%A_%a.err", script)
+        self.assertIn("#SBATCH --cpus-per-task=8", script)
+        self.assertIn("#SBATCH --array=1-3%2", script)
+        self.assertIn("#SBATCH --time=12:00:00", script)
+        self.assertIn("#SBATCH --partition=long", script)
+        self.assertIn("#SBATCH --mem=16G", script)
+        self.assertIn("#SBATCH --gres=gpu:1", script)
+        self.assertIn("module load blast/2.15", script)
+        # The array directive sits with the other SBATCH header lines.
+        self.assertTrue(script.index("--cpus-per-task") < script.index("--array=1-3%2"))
+        self.assertTrue(script.index("--array=1-3%2") < script.index("--time=12:00:00"))
+        # Manifest dispatch: task N runs manifest line N; the command is the
+        # last tab-separated field and is eval'd verbatim into per-task logs.
+        self.assertIn('line="$(sed -n "${SLURM_ARRAY_TASK_ID}p" /p/logs/batch1.array-manifest.tsv)"',
+                      script)
+        self.assertIn("IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
+                      'task_exitcode task_probe task_command <<< "$line"', script)
+        self.assertIn("cd '/work dir'", script)
+        # The per-task probe runs from the sibling "<probe>.sh" script and
+        # lands in the per-task probe path, never affecting the payload.
+        self.assertIn('sh "${task_probe}.sh"', script)
+        self.assertIn('} > "$task_probe" 2>/dev/null || true', script)
+        self.assertIn('eval "$task_command" > "$task_stdout" 2> "$task_stderr"', script)
+        self.assertIn('echo "$rc" > "$task_exitcode"', script)
+        self.assertTrue(script.endswith("exit $rc\n"))
+
+    def test_render_slurm_array_script_minimal(self):
+        script = render_slurm_array_script(
+            job_name="j", manifest_path="/m", cwd="/p",
+            stdout_path="/o", stderr_path="/e", threads=None,
+            slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
+            task_count=2,
+        )
+        self.assertIn("#SBATCH --array=1-2", script)
+        self.assertFalse("%" in script.split("--array=")[1].splitlines()[0])
+        self.assertIn("#SBATCH --cpus-per-task=1", script)
+        self.assertFalse("--time=" in script)
+        self.assertFalse("--partition=" in script)
+        self.assertFalse("--mem=" in script)
+
+    def test_render_array_manifest(self):
+        tasks, _, _ = execution._prepare_array_tasks(
+            [
+                {"run_id": "WF_1", "command": "echo 'a b' > /p/o1",
+                 "stdout_path": Path("/p/logs/WF_1.out"), "stderr_path": Path("/p/logs/WF_1.err")},
+                {"run_id": "WF_2", "command": "printf 'x\ty'",
+                 "stdout_path": Path("/p/logs/WF_2.out"), "stderr_path": Path("/p/logs/WF_2.err")},
+            ],
+            cwd=None, threads=None, default_cwd="/p",
+        )
+        text = render_array_manifest(tasks)
+        lines = text.splitlines()
+        self.assertEqual(len(lines), 2)
+        fields = lines[0].split("\t")
+        self.assertEqual(fields[:6], [
+            "1", "WF_1", "/p/logs/WF_1.out", "/p/logs/WF_1.err",
+            "/p/logs/WF_1.exitcode", "/p/logs/WF_1.env",
+        ])
+        # The command is the last field, stored verbatim (tabs and all).
+        self.assertEqual(lines[0].split("\t", 6)[6], "echo 'a b' > /p/o1")
+        self.assertEqual(lines[1].split("\t", 6)[6], "printf 'x\ty'")
+        self.assertTrue(text.endswith("\n"))
+
     def test_local_executor_probe_environment(self):
         env = LocalExecutor().probe_environment()
         self.assertIsNotNone(env)
@@ -486,6 +564,90 @@ class TestExecutionConfig(PytestAssertions):
         second = detect_tool_version_record(tool, {}, executor=VersionExecutor("two", "2.0"))[0]
         self.assertEqual(first, "1.0")
         self.assertEqual(second, "2.0")
+
+
+class TestSlurmArrayExecutor(PytestAssertions):
+    """SlurmExecutor.run_array: one job array for a batch of tasks."""
+
+    def setup_method(self):
+        super().setup_method()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.logs = self.root / "logs"
+        self.logs.mkdir()
+        self.executor = SlurmExecutor(
+            SimpleNamespace(root=self.root), SlurmConfig(poll_interval=0.01))
+
+    def _tasks(self, count: int) -> list[dict]:
+        return [
+            {
+                "run_id": f"WF_A{i}", "command": f"echo task-{i}",
+                "stdout_path": self.logs / f"WF_A{i}.stdout.log",
+                "stderr_path": self.logs / f"WF_A{i}.stderr.log",
+                "cwd": self.root, "threads": 4,
+            }
+            for i in range(1, count + 1)
+        ]
+
+    def test_run_array_submission_manifest_and_per_task_results(self, monkeypatch):
+        submitted = {}
+
+        def fake_submit(_sbatch, script_path):
+            submitted["script"] = Path(script_path).read_text(encoding="utf-8")
+            # Two finished tasks, one with a probe document.
+            (self.logs / "WF_A1.exitcode").write_text("0", encoding="utf-8")
+            (self.logs / "WF_A2.exitcode").write_text("3", encoding="utf-8")
+            (self.logs / "WF_A1.env").write_text("hostname=compute-01\nos=Linux\n",
+                                                 encoding="utf-8")
+            return "4242"
+
+        sacct_jobs: list[str] = []
+
+        def fake_run(args, **_kwargs):
+            if args[0] == "sacct":
+                sacct_jobs.append(args[args.index("-j") + 1])
+            return SimpleNamespace(stdout="0:0|256M|200M|00:01:00|00:00:30|\n")
+
+        monkeypatch.setattr(execution.shutil, "which", lambda name: name)
+        monkeypatch.setattr(execution, "_submit_slurm_job", fake_submit)
+        monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: True)
+        monkeypatch.setattr(execution.subprocess, "run", fake_run)
+        results = self.executor.run_array(
+            self._tasks(2), cwd=self.root, threads=4,
+            batch_id="batchX", array_concurrency=5,
+        )
+        self.assertEqual([r.exit_code for r in results], [0, 3])
+        self.assertEqual([r.scheduler_job_id for r in results], ["4242_1", "4242_2"])
+        # sacct is queried per array task with the <array_id>_<index> job id.
+        self.assertEqual(sacct_jobs, ["4242_1", "4242_2"])
+        for result in results:
+            self.assertEqual(result.details["backend"], "slurm")
+            self.assertEqual(result.details["array_job_id"], "4242")
+            self.assertEqual(result.resources["max_rss_mb"], 256.0)
+            self.assertEqual(result.resources["cpu_seconds"], 30.0)
+        # The probe document attaches per task; a missing probe file degrades.
+        self.assertEqual(results[0].details["environment"]["hostname"],
+                         _hashed_hostname("compute-01"))
+        self.assertFalse("environment" in results[1].details)
+        self.assertFalse((self.logs / "WF_A1.env").exists())
+        manifest = (self.logs / "batchX.array-manifest.tsv").read_text(encoding="utf-8")
+        lines = manifest.splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(
+            lines[0].split("\t"),
+            ["1", "WF_A1", str(self.logs / "WF_A1.stdout.log"),
+             str(self.logs / "WF_A1.stderr.log"), str(self.logs / "WF_A1.exitcode"),
+             str(self.logs / "WF_A1.env"), "echo task-1"],
+        )
+        script = submitted["script"]
+        self.assertIn("#SBATCH --array=1-2%5", script)
+        self.assertIn("batchX.array-manifest.tsv", script)
+        self.assertIn("${SLURM_ARRAY_TASK_ID}", script)
+        self.assertTrue((self.logs / "batchX.sbatch").exists())
+        # Per-task probe shells were written next to the probe paths.
+        self.assertTrue((self.logs / "WF_A1.env.sh").exists())
+        self.assertTrue((self.logs / "WF_A2.env.sh").exists())
 
 
 class TestSSHExecutorWithFakeClient(PytestAssertions):
@@ -909,6 +1071,81 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertIn(str(remote_root / "analysis" / "slurm-out.txt"), script.read_text())
         self.assertIn(str(remote_root / "logs" / "WF_TEST_1.env"), script.read_text())
         self.assertFalse((remote_root / "logs" / "WF_TEST_1.env").exists())
+
+    def test_remote_slurm_array_flow(self, monkeypatch):
+        remote_root = self.root / "remote-slurm-array"
+        remote_root.mkdir()
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), scheduler="slurm", client=client)
+        monkeypatch.setattr("operon.execution.time.sleep", lambda _s: None)
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("sbatch "):
+                script_path = shlex.split(command)[-1]
+                text = Path(script_path).read_text(encoding="utf-8")
+                out = err = None
+                count = 0
+                for line in text.splitlines():
+                    if line.startswith("#SBATCH --output="):
+                        out = line.split("=", 1)[1]
+                    elif line.startswith("#SBATCH --error="):
+                        err = line.split("=", 1)[1]
+                    elif line.startswith("#SBATCH --array=1-"):
+                        count = int(line.split("=", 1)[1].split("-", 1)[1].split("%", 1)[0])
+                # Run each array task the way Slurm would: same script, one
+                # SLURM_ARRAY_TASK_ID per task, wrapper output to %A_%a files.
+                for index in range(1, count + 1):
+                    env = dict(os.environ, SLURM_ARRAY_TASK_ID=str(index))
+                    with open(out.replace("%A", "4242").replace("%a", str(index)), "wb") as o, \
+                            open(err.replace("%A", "4242").replace("%a", str(index)), "wb") as e:
+                        subprocess.run(["bash", script_path], stdout=o, stderr=e, env=env)
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            elif command.startswith("squeue "):
+                proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            else:
+                proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+        tasks = [
+            {
+                "run_id": f"WF_RA{i}", "command": f"echo hello-{i}",
+                "stdout_path": self.root / "logs" / f"WF_RA{i}.stdout.log",
+                "stderr_path": self.root / "logs" / f"WF_RA{i}.stderr.log",
+                "cwd": self.root, "threads": 2,
+            }
+            for i in (1, 2)
+        ]
+        results = executor.run_array(tasks, cwd=self.root, batch_id="RB1")
+        self.assertEqual([r.exit_code for r in results], [0, 0])
+        self.assertEqual([r.scheduler_job_id for r in results], ["4242_1", "4242_2"])
+        # Per-task payload output was redirected remotely and pulled back.
+        self.assertEqual(
+            (self.root / "logs" / "WF_RA1.stdout.log").read_text().strip(), "hello-1")
+        self.assertEqual(
+            (self.root / "logs" / "WF_RA2.stdout.log").read_text().strip(), "hello-2")
+        for result in results:
+            self.assertEqual(result.details["backend"], "ssh")
+            self.assertEqual(result.details["scheduler"], "slurm")
+            self.assertEqual(result.details["array_job_id"], "4242")
+            # The per-task probe ran on the "compute" side and was consumed.
+            self.assertEqual(result.details["environment"]["hostname"],
+                             _hashed_hostname(socket.gethostname()))
+        self.assertFalse((remote_root / "logs" / "WF_RA1.env").exists())
+        # The manifest and script live in the mirror and carry remote paths.
+        manifest = (remote_root / "logs" / "RB1.array-manifest.tsv").read_text(encoding="utf-8")
+        self.assertIn(str(remote_root / "logs" / "WF_RA1.stdout.log"), manifest)
+        self.assertFalse(
+            str(self.root / "logs" / "WF_RA1.stdout.log")
+            in manifest.replace(str(remote_root), ""))
+        script = (remote_root / "logs" / "RB1.sbatch").read_text(encoding="utf-8")
+        self.assertIn("#SBATCH --array=1-2", script)
+        self.assertIn(f"cd {remote_root}", script)
+        self.assertTrue(any(c.startswith("sbatch ") for c in client.commands))
+        self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
+        self.assertFalse(any(c.startswith("scancel ") for c in client.commands))
 
 
 FAKE_SBATCH_OK = """\
