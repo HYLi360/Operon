@@ -73,7 +73,7 @@ Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, `analyze`:
 - Stops the batch and exits with code 130. Rerunning the same command resumes unfinished files because `interrupted` rows do not match the cache.
 - A second signal during cleanup exits immediately with code `128 + signum`.
 
-If a process is killed by SIGKILL or another uncatchable mechanism, a residual `RUNNING` row is cleaned to `interrupted` on the next `analyze` startup.
+If a process is killed by SIGKILL or another uncatchable mechanism, a residual `RUNNING` row of the same analysis is cleaned to `interrupted` on the next `analyze` startup.
 
 Before each candidate file is processed, the current recipe together with its referenced tool spec is snapshotted into `recipe_snapshots` (content-addressed, deduplicated), and `analysis_jobs.recipe_snapshot_id` points back to that snapshot; cache hits record a snapshot of the current configuration as well, and jobs adopted during resume inherit the original job's snapshot id. See the `recipes` command below and the [external analysis execution model](../architecture/external-analysis.md).
 

@@ -116,7 +116,7 @@ operon analyze --analysis busco_lineage \
   继续（`interrupted` 行不参与缓存命中）；
 - 清理期间再次发送信号会立即强制退出（退出码 128+signum）。
 
-若进程被 SIGKILL 等无法捕获的方式杀死，残留的 `RUNNING` 行会在下一次 `analyze`
+若进程被 SIGKILL 等无法捕获的方式杀死，残留的同一 analysis 的 `RUNNING` 行会在下一次 `analyze`
 启动时被清扫为 `interrupted`。
 
 每个待处理文件在实际执行前都会把当前 recipe 及其引用的 tool spec 快照记录到

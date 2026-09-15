@@ -35,6 +35,7 @@
 | K15 | recipe | `file_role_prefix` 按 `:` 边界匹配：`sub` 选中精确的 `sub` 与所有 `sub:*`，不再误捕 `sub2:*`。 |
 | K16 | 执行后端 | 被信号杀死的 Slurm 作业不再被记为成功：`sacct` 回退会把 `exit:signal` 中非零的信号分量合成 shell 风格退出码（OOM 终止的 `0:9` 变为 137），并在 run 的 details 中以 `slurm_exit_signal` 记录该信号；退出码/记账重试也从 5 次 × 1 秒提高到 10 次 × 2 秒（`_SLURM_EXIT_CODE_RETRIES`/`_SLURM_EXIT_CODE_RETRY_SECONDS`）。 |
 | K17 | 执行后端 | SSH 后端不再在运行前删除远端输出：既有远端输出先重命名为 `<path>.operon-prev-<uuid>` 备份，运行成功且新输出校验通过后删除备份，失败或中断时尽力把备份恢复原位——失败运行不会再毁掉此前的远端输出。 |
+| K18 | 外部分析 | 陈旧 `RUNNING` 清扫现在按当前 analysis 限定范围：非 dry 的 `analyze` 只把本 analysis 的 `RUNNING` 行标为 `interrupted`，并发运行的其他 analysis 的活作业不再被波及（`tools.py`，`_sweep_stale_running_jobs`）。 |
 
 ## 身份、归档与文件系统
 
@@ -130,7 +131,7 @@
 - **`analyze` 不向任何后端传超时。** 因此挂起的工具在本地和 SSH 上都会无限运行，Slurm 后端只受默认 `--time=24:00:00` 限制（`tools.py`、`execution.py`）。
 - **已知问题：失败的运行会保留部分输出。** 只有中断才会删除已算出的产物；其他任何失败（包括结果解析错误）都会把截断的 TSV 或写了一半的输出目录留在磁盘上，看起来就像结果（`tools.py`）。
 - **`analyze` 可能改写 manifest。** 配置了 SSH `storage_remote` 时，本地字节缺失而远端副本校验通过的文件会被静默改标为 `REMOTE_ONLY` 并留下审计行，因此一次分析会改动文件状态（`tools.py`）。
-- **已知问题：陈旧 `RUNNING` 清扫没有属主过滤。** 每次非 dry 的 `analyze` 都会把所有 `RUNNING` 分析作业标为 `interrupted`，因此两个并发分析可能互相打断对方正在运行的作业（`tools.py`）。
+- **陈旧 `RUNNING` 清扫按当前 analysis 限定范围。** 非 dry 的 `analyze` 只把本 analysis 遗留的 `RUNNING` 行标为 `interrupted`；并发跑同一 recipe 的两个进程仍可能互相清扫对方的活作业（`tools.py`）。
 - **结果汇总基于被截断的 hit 集。** `hit_count`、`best_evalue` 与由此得出的“top hit”只用 `max_hits_per_query` 之内保留的 hits，`hit_rank` 是该行在结果文件中的位置而非得分排序，因此汇总可能偏少并给出错误顺序（`tools.py`）。
 - **recipe 笔误要么静默降级，要么抛出裸错误。** 不在 `result_columns` 中的指标列会被无提示丢弃，而 query/subject 列不在 `result_columns` 中会抛出普通 `ValueError`（退出码 1，而非校验错误）（`tools.py`）。
 - **HMMER 解析的默认行为不对称。** 没有 `# <program> ::` 头时按 hmmscan 列映射处理，且 tblout 解析器会静默丢弃不足 6 个字段的行，而 rpsbproc 解析器会报错（`tools.py`）。

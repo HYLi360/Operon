@@ -132,7 +132,7 @@ warning，不阻断运行）；`--input PATH`（可重复）声明输入文件�
 作业；`ssh` 直连后端复用超时路径的远端进程组 TERM/KILL。当前 `analysis_jobs` 行被置为
 `interrupted`（不参与完成缓存命中），半成品输出默认删除（`--keep-partial` 保留），批次
 随即以退出码 130 终止；清理期间第二次信号立即强制退出。被 SIGKILL 杀死的进程留下的
-`RUNNING` 行会在下一次 `analyze` 启动时清扫为 `interrupted`，保证续跑语义始终成立。
+`RUNNING` 行会在下一次 `analyze` 启动时清扫为 `interrupted`（仅限同一 analysis 的行），保证续跑语义始终成立。
 
 日常使用见 [How-to 操作手册](../guides/index.md)；字段、占位符、artifact、数据库身份、缓存和
 parser 的完整契约见 [Recipe 配置参考](../reference/recipe-overview.md)。

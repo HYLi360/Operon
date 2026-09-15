@@ -1212,18 +1212,21 @@ def _find_verified_adoptee(db: Database, project: Project, analysis_name: str,
     return adoptee, output
 
 
-def _sweep_stale_running_jobs(db: Database) -> int:
-    """Mark jobs left RUNNING by a killed process as interrupted.
+def _sweep_stale_running_jobs(db: Database, analysis_name: str) -> int:
+    """Mark this analysis's jobs left RUNNING by a killed process as interrupted.
 
     Resume only ever reuses ``completed`` rows, so this is bookkeeping
     hygiene for the crash-only case (e.g. SIGKILL) where the graceful
-    shutdown path never got a chance to finalize the row.
+    shutdown path never got a chance to finalize the row. The sweep is
+    scoped to ``analysis_name`` so a concurrent run of a different
+    analysis keeps its live rows untouched.
     """
     with db.transaction() as conn:
         cursor = conn.execute(
             "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? "
-            "WHERE status='RUNNING'",
-            (now_iso(), "swept at startup: previous run terminated abnormally"),
+            "WHERE status='RUNNING' AND analysis_name=?",
+            (now_iso(), "swept at startup: previous run terminated abnormally",
+             analysis_name),
         )
         return cursor.rowcount
 
@@ -1270,7 +1273,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
     try:
         with graceful_shutdown():
             if not dry_run:
-                _sweep_stale_running_jobs(db)
+                _sweep_stale_running_jobs(db, analysis_name)
             total = len(files)
             for index, file_record in enumerate(files, start=1):
                 if progress_callback is not None:

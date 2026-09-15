@@ -155,6 +155,31 @@ class TestAnalysisShutdown(PytestAssertions):
         jobs = self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")
         self.assertEqual([j["status"] for j in jobs], ["interrupted", "completed"])
 
+    def test_sweep_leaves_other_analyses_running_rows_untouched(self):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        file_row = self._add_assembly()
+        insert = (
+            "INSERT INTO analysis_jobs (analysis_name, entity_type, entity_id, file_id, tool, "
+            "tool_version, parameter_set, parameter_sha256, input_sha256, database_identity, "
+            "status, started_at) VALUES (?, 'assembly', 'ASM_000001', ?, 'fakeblast', "
+            "'9.8.7', '{}', 'deadbeef', 'cafebabe', 'test', 'RUNNING', '2026-01-01T00:00:00Z')"
+        )
+        # A stale row for this analysis plus a live row owned by another
+        # analysis running concurrently.
+        self.db.conn.execute(insert, ("fake_nt", file_row["file_id"]))
+        self.db.conn.execute(insert, ("other_nt", file_row["file_id"]))
+        self.db.conn.commit()
+
+        rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"])
+        self.assertEqual(rc, 0)
+        jobs = self.db.query(
+            "SELECT analysis_name, status FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual(
+            [(j["analysis_name"], j["status"]) for j in jobs],
+            [("fake_nt", "interrupted"), ("other_nt", "RUNNING"), ("fake_nt", "completed")],
+        )
+
     def test_failed_tool_marks_job_failed_and_records_error(self):
         script = self.root / "fakeblast.py"
         script.write_text(textwrap.dedent("""
