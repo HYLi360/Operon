@@ -15,6 +15,7 @@ from tests.helpers import PytestAssertions
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
+from operon.fanout import fanout_units
 from operon.files import ingest_file
 
 
@@ -97,6 +98,36 @@ class TestFanoutAnalyze(PytestAssertions):
         }
         self.project.tools_config_path.write_text(
             yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+
+    def test_dry_run_preflight_matches_real_run(self):
+        kwargs = {
+            "assignments_file_id": self.assignments["file_id"],
+            "source_file_ids": [self.source["file_id"]],
+            "entity_type": "annotation",
+            "entity_id": "ANN_000001",
+            "role_prefix": "subfamily_alignment",
+        }
+        dry = fanout_units(self.db, self.project, dry_run=True, **kwargs)
+        self.assertTrue(dry["dry_run"])
+        self.assertEqual([unit["status"] for unit in dry["units"]],
+                         ["would_create", "would_create"])
+        # The dry run opens no run row and registers no files.
+        self.assertEqual(
+            self.db.query("SELECT * FROM workflow_runs WHERE step='fanout'"), [])
+        self.assertEqual(self.db.query(
+            "SELECT * FROM files WHERE file_role LIKE 'subfamily_alignment:%'"), [])
+
+        real = fanout_units(self.db, self.project, **kwargs)
+        self.assertEqual(
+            [(unit["unit"], unit["role"], unit["sequences"]) for unit in dry["units"]],
+            [(unit["unit"], unit["role"], unit["sequences"]) for unit in real["units"]])
+
+        # Once materialized, the same dry run plans only reuses.
+        again = fanout_units(self.db, self.project, dry_run=True, **kwargs)
+        self.assertEqual([unit["status"] for unit in again["units"]],
+                         ["would_reuse", "would_reuse"])
+        self.assertEqual(len(self.db.query(
+            "SELECT * FROM workflow_runs WHERE step='fanout'")), 1)
 
     def test_fanout_then_analyze_selects_exactly_the_unit_files(self):
         self.assertEqual(main([

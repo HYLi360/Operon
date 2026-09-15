@@ -66,7 +66,7 @@ Roles are freely named by your workflow. Every product is materialized under `an
 Subfamily assignment is the point where the pipeline's shape becomes data-dependent: only after the external assign-subfamilies step reads the adopted framework tree is the number of subfamilies known. Do not hand-write one adopt manifest entry per subfamily. Have the external step emit a clean two-column assignment TSV (`unit`, `seqid` — project-specific filtering such as dropping unresolved sequences happens there), adopt that TSV as shown in step 3, then admit the units with `operon fanout`:
 
 ```bash
-# Inspect the plan first: no files, no run row.
+# Inspect the plan first: full preflight runs, but no files and no run row.
 operon fanout --assignments-file FIL_000022 \
   --source-file FIL_000012 \
   --entity-type organism --entity-id ORG_000001 \

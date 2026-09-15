@@ -76,11 +76,11 @@ def parse_assignments(
     """Group an assignment TSV into ordered units of seqids.
 
     Returns ``(units, duplicate_rows)`` where each unit is
-    ``{"unit": name, "seqids": [...]}`` in row order.  Exact duplicate
-    (unit, seqid) rows are dropped and counted; row order within a unit is
-    preserved so the rendered FASTA is deterministic.  Seqids are normalized
-    with the same convention as ``sequence_tools``: the first
-    whitespace-delimited token.
+    ``{"unit": name, "seqids": [...]}`` in first-appearance order.  Exact
+    duplicate (unit, seqid) rows are dropped and counted; seqids within a
+    unit are sorted lexicographically so the rendered FASTA bytes are
+    independent of TSV row order.  Seqids are normalized with the same
+    convention as ``sequence_tools``: the first whitespace-delimited token.
     """
     rows = read_tsv(path, required_header=[unit_column, seqid_column])
     units: dict[str, dict[str, Any]] = {}
@@ -101,7 +101,7 @@ def parse_assignments(
             continue
         entry["_seen"].add(seqid)
         entry["seqids"].append(seqid)
-    result = [{"unit": u["unit"], "seqids": u["seqids"]} for u in units.values()]
+    result = [{"unit": u["unit"], "seqids": sorted(u["seqids"])} for u in units.values()]
     if not result:
         raise ValidationError(f"{path}: no assignment rows; nothing to fan out")
     return result, duplicate_rows
@@ -210,11 +210,14 @@ def fanout_units(
 ) -> dict[str, Any]:
     """Materialize and register one FASTA per assignment unit, idempotently.
 
-    All validation (assignment parsing, seqid resolution, role and content
-    conflict checks) happens before any write.  Registration, lineage edges
-    and run bookkeeping commit in one transaction; on failure only newly
-    created archive targets are removed.  ``dry_run`` returns the planned
-    units and writes nothing — no files, no run row.
+    All validation (assignment parsing, seqid resolution, source checksum
+    verification, role and content conflict checks) happens before any write.
+    Registration, lineage edges and run bookkeeping commit in one
+    transaction; on failure only newly created archive targets are removed.
+    ``dry_run`` runs the same full preflight (conflicts raise
+    ``ConflictError`` there too) and returns the planned units with a
+    ``would_create``/``would_reuse`` status, writing nothing — no files, no
+    run row.
     """
     if not source_file_ids:
         raise ValidationError("fanout requires at least one --source-file FILE_ID")
@@ -240,16 +243,6 @@ def fanout_units(
         canonical_filename(entity_id, unit["role"], "fasta", "none")
         unit["target"] = archive_target(
             project, entity_type, entity_id, unit["role"], "fasta", "none", derived_root)
-
-    if dry_run:
-        return {
-            "dry_run": True,
-            "units": [
-                {"unit": u["unit"], "role": u["role"], "sequences": len(u["seqids"])}
-                for u in units
-            ],
-            "duplicate_rows": duplicate_rows,
-        }
 
     bodies = _load_source_bodies(
         db, source_records, {seqid for u in units for seqid in u["seqids"]})
@@ -288,6 +281,17 @@ def fanout_units(
                 raise ConflictError(
                     f"fanout target is occupied by different content: {unit['target']}"
                 )
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "units": [
+                {"unit": u["unit"], "role": u["role"], "sequences": len(u["seqids"]),
+                 "status": "would_reuse" if u["reused"] else "would_create"}
+                for u in units
+            ],
+            "duplicate_rows": duplicate_rows,
+        }
 
     run = start_run(db, {
         "step": "fanout",
@@ -352,6 +356,9 @@ def fanout_units(
         if isinstance(exc, Exception):
             finish_run(db, project, run["run_id"], status="failed", exit_code=1,
                        error=str(exc))
+        else:
+            finish_run(db, project, run["run_id"], status="interrupted", exit_code=130,
+                       error=type(exc).__name__)
         raise
     flush_run_log(project, jsonl_buffer)
 

@@ -10,7 +10,7 @@ import pytest
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import ConflictError, EntityNotFoundError, ValidationError
+from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
 from operon.fanout import fanout_units, parse_assignments
 from operon.files import ingest_file
 from operon.lifecycle import apply_lifecycle_event
@@ -76,12 +76,13 @@ def test_parse_assignments_columns_duplicates_and_order(tmp_path):
     path = tmp_path / "a.tsv"
     path.write_text(
         "unit\tseqid\textra\n"
-        "SF02\tp3\tx\nSF01\tp1 desc\tx\nSF01\tp2\tx\nSF02\tp4\tx\n"
+        "SF02\tp3\tx\nSF01\tp2\tx\nSF01\tp1 desc\tx\nSF02\tp4\tx\n"
         "SF01\tp1\tx\nSF02\tp3\tx\n",
         encoding="utf-8")
     units, duplicates = parse_assignments(path)
     assert duplicates == 2
-    # Units appear in first-appearance order; row order within a unit holds.
+    # Units appear in first-appearance order; seqids within a unit are
+    # sorted, independent of TSV row order.
     assert units == [
         {"unit": "SF02", "seqids": ["p3", "p4"]},
         {"unit": "SF01", "seqids": ["p1", "p2"]},
@@ -207,12 +208,92 @@ def test_fanout_dry_run_writes_nothing(project_db, tmp_path):
     result = _fanout(db, project, assignments, source, dry_run=True)
     assert result["dry_run"] is True
     assert result["units"] == [
-        {"unit": "SF01", "role": "subfamily_alignment:SF01", "sequences": 1},
-        {"unit": "SF02", "role": "subfamily_alignment:SF02", "sequences": 2},
+        {"unit": "SF01", "role": "subfamily_alignment:SF01", "sequences": 1,
+         "status": "would_create"},
+        {"unit": "SF02", "role": "subfamily_alignment:SF02", "sequences": 2,
+         "status": "would_create"},
     ]
     assert list(db.conn.iterdump()) == before
     derived = project.analysis_root / "derived"
     assert not derived.exists() or not list(derived.rglob("*"))
+
+    # After a real run, the dry run reports every unit as would_reuse and
+    # still writes nothing.
+    _fanout(db, project, assignments, source)
+    before = list(db.conn.iterdump())
+    rerun = _fanout(db, project, assignments, source, dry_run=True)
+    assert [unit["status"] for unit in rerun["units"]] == ["would_reuse", "would_reuse"]
+    assert list(db.conn.iterdump()) == before
+
+
+def test_fanout_dry_run_runs_real_preflight(project_db, tmp_path):
+    project, db, source = project_db
+    # A registered file with the same entity+role but different bytes makes
+    # the dry run raise the same ConflictError a real run would.
+    other = tmp_path / "other.faa"
+    other.write_text(">zzz\nTTTT\n", encoding="utf-8")
+    ingest_file(db, project, other, "annotation", "ANN_000001", "subfamily_alignment:SF09")
+    assignments = _register_assignments(db, project, tmp_path, "unit\tseqid\nSF09\tp3\n")
+    before = list(db.conn.iterdump())
+    with pytest.raises(ConflictError, match="SF09"):
+        _fanout(db, project, assignments, source, dry_run=True)
+    assert list(db.conn.iterdump()) == before
+
+    # Tampered source bytes fail manifest verification in the dry run too.
+    assignments_ok = _register_assignments(
+        db, project, tmp_path, "unit\tseqid\nSF01\tp1\n", name="assign_ok.tsv",
+        role="subfamily_assignments_v2")
+    (project.root / source["relative_path"]).write_text(">p1\nMMMM\n", encoding="utf-8")
+    with pytest.raises(ChecksumError, match="manifest verification"):
+        _fanout(db, project, assignments_ok, source, dry_run=True)
+    assert db.conn.execute(
+        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='fanout'").fetchone()["n"] == 0
+
+
+def test_fanout_unit_bytes_independent_of_row_order(project_db, tmp_path):
+    project, db, source = project_db
+    first = _register_assignments(
+        db, project, tmp_path, "unit\tseqid\nSF01\tp2\nSF01\tp1\nSF02\tp3\n")
+    reordered = _register_assignments(
+        db, project, tmp_path, "unit\tseqid\nSF02\tp3\nSF01\tp1\nSF01\tp2\n",
+        name="assign2.tsv", role="subfamily_assignments_v2")
+    run1 = _fanout(db, project, first, source)
+    run2 = _fanout(db, project, reordered, source)
+    assert run2["created"] == 0 and run2["reused"] == 2
+    assert {u["unit"]: u["sha256"] for u in run2["units"]} == {
+        u["unit"]: u["sha256"] for u in run1["units"]}
+
+
+def test_fanout_keyboard_interrupt_marks_run_interrupted(project_db, tmp_path, monkeypatch):
+    project, db, source = project_db
+    assignments = _register_assignments(
+        db, project, tmp_path, "unit\tseqid\nSF01\tp1\nSF02\tp2\n")
+    real_ingest = ingest_file
+    calls = []
+
+    def interrupting_ingest(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_ingest(*args, **kwargs)
+
+    monkeypatch.setattr("operon.fanout.ingest_file", interrupting_ingest)
+    with pytest.raises(KeyboardInterrupt):
+        _fanout(db, project, assignments, source)
+    runs = [dict(row) for row in db.conn.execute(
+        "SELECT * FROM workflow_runs WHERE step='fanout'").fetchall()]
+    assert len(runs) == 1
+    assert runs[0]["status"] == "interrupted"
+    assert runs[0]["exit_code"] == 130
+    assert runs[0]["error"] == "KeyboardInterrupt"
+    # The unit file created before the interrupt was removed again.
+    derived = project.analysis_root / "derived"
+    leftover = list(derived.rglob("*.fasta")) if derived.exists() else []
+    assert leftover == []
+    # The interrupted run committed no file rows.
+    assert db.conn.execute(
+        "SELECT COUNT(*) AS n FROM files WHERE file_role LIKE 'subfamily_alignment:%'"
+    ).fetchone()["n"] == 0
 
 
 def test_fanout_entity_and_manifest_validation(project_db, tmp_path):
@@ -260,6 +341,28 @@ def test_fanout_prefix_candidates(project_db, tmp_path):
     assert candidate_files(db, recipe, entity_id="ANN_999999") == []
 
 
+def test_candidate_files_prefix_matches_only_colon_boundary(project_db, tmp_path):
+    project, db, _source = project_db
+    for role, name in (("sub:x", "a.faa"), ("sub2:x", "b.faa"), ("sub", "c.faa")):
+        path = tmp_path / name
+        path.write_text(">s\nM\n", encoding="utf-8")
+        ingest_file(db, project, path, "annotation", "ANN_000001", role)
+
+    def prefix_recipe(prefix: str) -> Recipe:
+        return Recipe(
+            name="boundary", tool_name="tool", description="", entity_type="annotation",
+            file_role="", file_role_prefix=prefix, fmt="fasta",
+            input_kind="file", database="", database_version="",
+            output_subdir="boundary", output_kind="file", output_name_template="",
+            output_suffix=".tsv", arguments=[], parameters={}, result_parser="none",
+            max_hits_per_query=5, raw={},
+        )
+
+    for prefix in ("sub", "sub:"):
+        roles = sorted(row["file_role"] for row in candidate_files(db, prefix_recipe(prefix)))
+        assert roles == ["sub", "sub:x"]
+
+
 def test_fanout_cli(project_db, tmp_path, capsys):
     project, db, source = project_db
     assignments = _register_assignments(
@@ -273,6 +376,7 @@ def test_fanout_cli(project_db, tmp_path, capsys):
     ]) == 0
     out = capsys.readouterr().out
     assert "subfamily_alignment:SF01" in out and "dry-run" in out
+    assert "would_create" in out
     assert db.conn.execute(
         "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='fanout'").fetchone()["n"] == 0
 

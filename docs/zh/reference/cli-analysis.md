@@ -50,7 +50,7 @@ operon analyze --analysis NAME   [--param NAME=VALUE ...]   [--entity-type TYPE]
 按 recipe 自动完成：
 
 1. 从 files manifest 中选取匹配 `entity_type + file_role + format` 的文件或目录输入
-   （recipe 也可以改用 `file_role_prefix` 对 `file_role` 做纯字符前缀匹配，见
+   （recipe 也可以改用 `file_role_prefix` 对 `file_role` 做 `:` 边界前缀匹配，见
    [Recipe 字段参考](recipe-fields.md)）；
 2. 按 `input_kind` 重新校验文件 SHA-256 或目录内容树哈希；
 3. 探测并记录外部程序版本；

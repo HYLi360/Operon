@@ -39,7 +39,7 @@ operon analyze --analysis NAME \
 
 For each run, the recipe:
 
-1. Selects files or directory inputs from the `files` manifest using `entity_type + file_role + format` (a recipe may instead declare `file_role_prefix` for a plain prefix match on `file_role`; see [Recipe field reference](recipe-fields.md)).
+1. Selects files or directory inputs from the `files` manifest using `entity_type + file_role + format` (a recipe may instead declare `file_role_prefix` for a `:`-boundary prefix match on `file_role`; see [Recipe field reference](recipe-fields.md)).
 2. Rechecks file SHA-256 or directory tree hash according to `input_kind`.
 3. Detects and records the external tool version.
 4. Validates `--param NAME=VALUE` against the recipe `parameters` declarations and renders arguments. In addition to `${input}`, `${output}`, `${database}`, and `${threads}`, placeholders include `${input_parent}`, `${input_name}`, `${input_stem}`, `${output_parent}`, `${output_name}`, `${output_stem}`, `${file_id}`, `${file_role}`, `${entity_type}`, `${entity_id}`, and declared `${<parameter>}` values. Runtime parameters enter output naming and the cache fingerprint.

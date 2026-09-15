@@ -66,7 +66,7 @@ role 由工作流自由命名。每个产物实体化到 `analysis/adopted/<enti
 亚族划分是整条流程中形状由数据决定的环节：只有外部 assign-subfamilies 步骤读完已收养的框架树之后，亚族数量才知道。不要逐亚族手写 adopt 清单条目。让外部步骤产出干净的两列指派 TSV（`unit`、`seqid`——诸如丢弃未解析序列这类项目专属的过滤在那里完成），按第三步收养该 TSV，然后用 `operon fanout` 准入这些单元：
 
 ```bash
-# 先看计划：不写文件，也不写运行记录。
+# 先看计划：执行完整预检，但不写文件，也不写运行记录。
 operon fanout --assignments-file FIL_000022 \
   --source-file FIL_000012 \
   --entity-type organism --entity-id ORG_000001 \

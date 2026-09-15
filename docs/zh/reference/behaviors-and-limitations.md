@@ -30,6 +30,9 @@
 | K10 | 导入向导 | annotation 提示默认值与草稿当前是否已有 annotation 一致（已有时才默认“是”）。 |
 | K11 | 分类 | 缺失字段在任何形态下都不满足条件——包括 `not:` 取反形态和作为 `any:` 组的析取项；`between` 遇到非数值操作数时抛出带字段与值上下文的校验错误，而不是裸 `ValueError`。 |
 | K12 | 分类 | `classify-sequences` 不再隐瞒被忽略的内容：被取代（非最新）的 completed 作业会计入 `ignored_completed_jobs` 并给出警告，因不在 `sequences` 注册表而被跳过的文件也会显式计数。 |
+| K13 | fan-out | `fanout --dry-run` 现在执行完整预检——源校验和与注册表新鲜度、单元 identity 计算、冲突/占用检查——并与真实运行一样抛 `ConflictError`，同时仍不写任何文件、不开 run 行；每个计划单元标注 `would_create`/`would_reuse`。单元 seqid 也会在生成 FASTA 前规范化为排序序，因此重排指派 TSV 不再改变单元字节。 |
+| K14 | fan-out | 中断（Ctrl+C）现在会把 fan-out 的 workflow run 落为 `interrupted`（退出码 130），不再留下 `running` 行；本次运行创建的目标仍会被删除。 |
+| K15 | recipe | `file_role_prefix` 按 `:` 边界匹配：`sub` 选中精确的 `sub` 与所有 `sub:*`，不再误捕 `sub2:*`。 |
 
 ## 身份、归档与文件系统
 
@@ -139,8 +142,8 @@
 - **分类标签按 profile 名称索引，并在任何指标变化时重新审计。** `sequence_labels` 以 `(file_id, seqid, profile_name)` 唯一，因此 profile 版本升级会就地覆盖标签；`details_json` 嵌入观测到的 hit，因此指标变化会让每个标签重新审计，即使标签本身未变；删除只针对当前范围内的文件，因此范围外的陈旧标签会残留（`classify.py`、`database.py`）。
 - **分类中缺失字段在任何形态下都不满足条件。** 无论用什么 operator（包括 `!=`、`not_in` 与 `exists`）判定都为 False；对缺失字段条件的 `not:` 取反仍然是 False，`any:` 组中缺失字段的析取项视为不满足；`between` 要求数值操作数，否则抛出带字段与值上下文的校验错误，而 `in`/`not_in` 比较 `str(value)`（`classify.py`）。
 - **分类只读取每个 analysis+file 最新的 completed 作业，但会明说。** 同一组合下更早的 completed 作业按 supersede 纪律被忽略，但计数非零时会在输出与 run details 中以 `ignored_completed_jobs` 呈现；不在 `sequences` 注册表中的文件被跳过，且跳过计数会显式打印（`classify.py`）。
-- **`fanout --dry-run` 跳过真正的预检，且 unit 字节取决于 TSV 行序。** dry-run 在校验和验证与冲突/占用预检之前返回，因此会打印真实运行会拒绝的 unit；重排 assignment TSV 会改变 unit 字节并触发 `ConflictError`；unit 角色 `<prefix>:<unit>` 会把 `:` 带进归档文件名，下游 `file_role_prefix` 选择是字面字符串前缀，因此 `sub` 也会捕获 `sub2:*`（`fanout.py`、`tools.py`）。
-- **`fanout` 在 Ctrl+C 时会留下 `running` 的 run 行。** 已创建的目标会被删除，但 `finish_run` 被跳过，run 行停留在 `running`；零 unit 与无法解析或有歧义的 seqid 都是硬错误。`--source-file` FASTA 的 SHA-256 与注册表新鲜度会被验证，但 assignment 表本身不做校验和验证（`fanout.py`）。
+- **`fanout --dry-run` 执行真正的预检，且 unit 字节与 TSV 行序无关。** dry-run 会校验每个源的 SHA-256 与注册表新鲜度、计算单元 identity、执行冲突/占用检查——冲突与真实运行一样抛 `ConflictError`——但仍不写文件、不开 run 行；每个计划单元标注 `would_create`/`would_reuse`。单元内的 seqid 在生成 FASTA 前规范化为排序序（词法序，`seq10` 排在 `seq2` 之前——与 `sequence_tools` 一致的确定性约定），因此重排指派 TSV 行不再改变单元字节。unit 角色 `<prefix>:<unit>` 会把 `:` 带进归档文件名；下游 `file_role_prefix` 选择按 `:` 边界匹配，`sub` 选中精确的 `sub` 与所有 `sub:*`，不捕 `sub2:*`（`fanout.py`、`tools.py`）。
+- **`fanout` 会把中断记为 `interrupted` 的 run。** Ctrl+C 会删除已创建的目标并把 `workflow_runs` 行落为 `interrupted`（退出码 130），不再停留在 `running`。零 unit 与无法解析或有歧义的 seqid 仍是硬错误。`--source-file` FASTA 的 SHA-256 与注册表新鲜度会被验证（dry-run 同样执行），但指派表本身不做校验和验证（`fanout.py`）。
 
 ### TimeTree
 

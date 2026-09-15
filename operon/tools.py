@@ -424,8 +424,8 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             if file_role_prefix and any(char in file_role_prefix for char in "%*?"):
                 raise ValidationError(
                     f"analysis {analysis_name!r}: file_role_prefix {file_role_prefix!r} "
-                    "must not contain wildcard characters (% * ?); matching is a "
-                    "plain character prefix, not a pattern"
+                    "must not contain wildcard characters (% * ?); matching is an "
+                    "exact role or a prefix at a ':' boundary, not a pattern"
                 )
             input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
             output_kind = str(raw.get("output_kind", "file")).strip()
@@ -775,10 +775,12 @@ def detect_tool_version(tool: ToolSpec, config: dict[str, Any], timeout: float =
 def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None,
                     entity_id: str | None = None) -> list[dict[str, Any]]:
     if recipe.file_role_prefix:
+        prefix = recipe.file_role_prefix.rstrip(":")
         sql = (
-            "SELECT * FROM files WHERE substr(file_role, 1, ?)=? AND format=? AND NOT EXISTS ("
+            "SELECT * FROM files WHERE (file_role=? OR substr(file_role, 1, ?)=?||':') "
+            "AND format=? AND NOT EXISTS ("
         )
-        params: list[Any] = [len(recipe.file_role_prefix), recipe.file_role_prefix, recipe.fmt]
+        params: list[Any] = [prefix, len(prefix) + 1, prefix, recipe.fmt]
     else:
         sql = (
             "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("

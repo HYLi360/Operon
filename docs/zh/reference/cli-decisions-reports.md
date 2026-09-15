@@ -135,20 +135,25 @@ FASTA，并注册为一等 manifest 文件。这是动态扇出的"准入"一半
 - 锚定实体（`--entity-type`/`--entity-id`）必须已存在且处于活动状态。每个单元以
   role `<role_prefix>:<unit>`（如 `subfamily_alignment:SF07`）注册到
   `analysis/derived/<entity_id>/` 下——operon 内部的派生物与 `analysis/adopted/`
-  下的外部收养 artifact 分开存放。
+  下的外部收养 artifact 分开存放。单元内的 seqid 在写出 FASTA 前规范化为排序序
+  （词法序，`seq10` 排在 `seq2` 之前），因此指派 TSV 的行序永远不会改变单元字节。
 - 注册走与 `adopt` 相同的 ingest 路径并继承其不变量：相同字节幂等复用既有
   `FIL_`（状态显示为 `reused`），同实体同 role 不同字节抛 `ConflictError`。
   `file_lineage` 谱系边从每个单元文件指回每个源文件和指派文件。
 - 所有校验先于任何写入完成；注册、谱系边与运行簿记在单一事务中提交，失败时仅
-  删除本次运行新建的归档目标。每次运行写入一行 `workflow_runs`（step 为
+  删除本次运行新建的归档目标。中断（Ctrl+C）同样删除已创建的目标，并把 run 行
+  落为 `interrupted`（退出码 130）。每次运行写入一行 `workflow_runs`（step 为
   `fanout`，`execution_details` 含单元清单与计数）；`--parent-run-id` 可关联
   注册指派文件的那次 adopt 运行。
-- `--dry-run` 只打印计划的单元（unit、序列数、role），不写任何东西——不写文件
-  也不写运行记录。
+- `--dry-run` 执行完整预检——源校验和与注册表新鲜度、单元 identity 计算、
+  冲突/占用检查，并与真实运行一样抛 `ConflictError`——随后打印计划的单元
+  （unit、序列数、role），每个单元标注 `would_create`/`would_reuse`；仍不写
+  任何东西——不写文件也不写运行记录。
 
-recipe 声明相同的 `file_role_prefix` 前缀即可一次选中全部单元文件，`operon
-analyze --analysis NAME` 随之对每个单元跑一个作业；见
-[Recipe 字段参考](recipe-fields.md)。
+recipe 声明相同的 `file_role_prefix` 前缀即可一次选中全部单元文件——前缀按 `:` 边界
+匹配，`subfamily_alignment` 选中该精确 role 与所有 `subfamily_alignment:*`，不捕
+`subfamily_alignment2:*`——`operon analyze --analysis NAME` 随之对每个单元跑一个
+作业；见 [Recipe 字段参考](recipe-fields.md)。
 
 ## run-pipeline
 

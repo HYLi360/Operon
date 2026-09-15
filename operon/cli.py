@@ -1968,10 +1968,14 @@ def _cmd_fanout(args: argparse.Namespace, project: Project, db: Database) -> int
         command=shlex.join(command_parts),
     )
     if result["dry_run"]:
-        print(format_table(["unit", "sequences", "role"], (
-            [unit["unit"], unit["sequences"], unit["role"]] for unit in result["units"]
+        print(format_table(["unit", "sequences", "role", "status"], (
+            [unit["unit"], unit["sequences"], unit["role"], unit["status"]]
+            for unit in result["units"]
         )))
-        print(f"dry-run: {len(result['units'])} planned unit(s); nothing was written")
+        created = sum(1 for unit in result["units"] if unit["status"] == "would_create")
+        print(f"dry-run: {len(result['units'])} planned unit(s) "
+              f"({created} would_create, {len(result['units']) - created} would_reuse); "
+              "nothing was written")
         return 0
     print(format_table(["unit", "sequences", "role", "file_id", "status"], (
         [unit["unit"], unit["sequences"], unit["role"], unit["file_id"], unit["status"]]
