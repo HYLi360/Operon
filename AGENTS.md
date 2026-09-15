@@ -152,7 +152,7 @@ python -m pytest tests/unit         # by category: unit / integration /
 
 python -m pytest --lf -q --no-cov   # iterate: last failures, no coverage
 python -m pytest -n 4 --dist loadfile   # parallel full suite (xdist, in the dev/test extras)
-scripts/run-test-matrix.sh          # whole suite on 3.10-3.14 concurrently
+scripts/run-test-matrix.sh          # whole suite on 3.10-3.15 concurrently
 
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
@@ -160,12 +160,13 @@ sphinx-build -W --keep-going -b html docs docs/_build/html  # strict docs build
 ```
 
 Run the relevant test category after any change; run the full suite before
-considering work done. CI (`.github/workflows/test.yml`) runs pytest on
-Python 3.10–3.15 and the strict Sphinx build. Releases are published
-exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
+considering work done.
+
+CI (`.github/workflows/test.yml`) runs pytest on Python 3.10–3.15 and the strict
+Sphinx build. Releases are published exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
 > Running `python -m pytest` directly takes approx 30 seconds
-> (auto: 24 workers). running the local test matrix takes 2m 30s
+> (auto: 24 workers). Running the local test matrix takes 2m 30s
 > (6 jobs × 4 workers), or 4~5min (6 jobs × 2 workers in default).
 > 
 > Measured on Intel Core i7-13700HX (16c24t).

@@ -2,7 +2,8 @@
 
 ## Setup and test runs
 
-Install the repository checkout with the `dev` extra as described in [Installation](../getting-started/installation.md#install-from-the-repository); it adds pytest, Cython, and Sphinx. Then:
+Install the repository checkout with the `dev` extra as described in [Installation](../getting-started/installation.md#install-from-the-repository); it adds pytest, Cython, and
+Sphinx. Then:
 
 ```bash
 python -m pytest
@@ -16,36 +17,41 @@ python -m pytest tests/regression tests/compatibility
 sphinx-build -W --keep-going -b html docs docs/_build/html
 ```
 
-The pytest suite is organized into four categories — `unit`, `integration`, `regression`, `compatibility` — covering: Python 3.10 syntax and runtime gates, schema validation and controlled vocabularies, metadata round-trips and transaction rollback, stable IDs, default copy isolation, query read-only constraints, file-aware QC identity, profile/decision history, gzip FASTA recognition, assembly/annotation QC, rule decisions, idempotent ingest and conflict protection, checksum-tamper detection, the demo end-to-end pipeline and release verification, the NCBI Datasets adapter, wrapped BLAST/HMMER/BUSCO execution, directory artifacts, JSON summaries, conda run prefix parsing, cache hits/forced re-runs, result write-back, and input-tamper rejection.
-The taxonomy coverage integration tests additionally cover taxonomy source-package identity conflicts, profile type/content conflicts, exclusion rules, secondary TaxIDs, denominator/report idempotence, and that active metadata modifications do not affect the release-frozen scope.
+The pytest suite is organized into four categories — `unit`, `integration`, `regression`, `compatibility` — covering:
+Python 3.10 syntax and runtime gates, schema validation and controlled vocabularies, metadata round-trips and
+transaction rollback, stable IDs, default copy isolation, query read-only constraints, file-aware QC identity,
+profile/decision history, gzip FASTA recognition, assembly/annotation QC, rule decisions, idempotent ingest and conflict
+protection, checksum-tamper detection, the demo end-to-end pipeline and release verification, the NCBI Datasets adapter,
+wrapped BLAST/HMMER/BUSCO execution, directory artifacts, JSON summaries, conda run prefix parsing, cache hits/forced
+re-runs, result write-back, and input-tamper rejection.
+The taxonomy coverage integration tests additionally cover taxonomy source-package identity conflicts, profile
+type/content conflicts, exclusion rules, secondary TaxIDs, denominator/report idempotence, and that active metadata
+modifications do not affect the release-frozen scope.
 
 ## Fast local verification
 
-The full suite takes about seven minutes serially; the loop below aims to run it at most
-once per change.
+The full suite takes about seven minutes serially; the loop below aims to run it at most once per change.
 
 1. **Re-run only what failed.** `python -m pytest --lf -q --no-cov` replays pytest's
    last-failed cache before anything else.
 2. **Stop at the first failure** while iterating: `python -m pytest tests/unit -x -q --no-cov`,
    with the file or test you actually touched rather than a whole category.
-3. **Parallelize.** `python -m pytest -n 4 --dist loadfile` (pytest-xdist) runs the suite in
-   about a quarter of the time — roughly 7 minutes to under 2 on a 24-core workstation — and
-   `--dist loadfile` keeps each test file on one worker, which the Textual UI tests need.
-   It ships with the `test` and `dev` extras (`python -m pip install -e '.[dev]'`). Coverage is the expensive part:
-   iterate with `--no-cov` and measure once, at the end.
-4. **Cross-version matrix in one pass.** `scripts/setup-test-matrix.sh` creates uv-managed
-   CPython 3.10-3.13 interpreters plus one venv per version inside `.matrix/` (3.14 comes
-   from the project `.venv`), and `scripts/run-test-matrix.sh` runs all five concurrently:
+3. **Parallel execution.** On a 24-core workstation, running `python -m pytest -n 24 --dist loadfile` 
+   (with `pytest-xdist`) can reduce the execution time to 30–40 seconds. `--dist loadfile` ensures that each test file
+   is assigned to only one worker, which is required for Textual UI testing.
+   Coverages are the most resource-intensive: use `--no-cov` during iterations and run the test only once at the end.
+4. **Cross-version matrix in one pass.** `scripts/setup-test-matrix.sh` creates uv-managed CPython 3.10-3.15
+   interpreters plus one venv per version inside `.matrix/`. `scripts/run-test-matrix.sh` runs all six concurrently:
 
    ```bash
    scripts/setup-test-matrix.sh                      # once per machine
-   scripts/run-test-matrix.sh                        # whole suite, five versions, ~3 minutes
+   scripts/run-test-matrix.sh                        # whole suite, six versions, 2~3 minutes
    scripts/run-test-matrix.sh tests/unit -x          # extra pytest arguments are forwarded
-   MATRIX_JOBS=8 scripts/run-test-matrix.sh          # workers per version
+   MATRIX_JOBS=4 scripts/run-test-matrix.sh          # workers per version
    ```
 
    Each version logs to `.matrix/logs/<version>.log`, so a failure there can be re-run
-   directly with that interpreter. The scripts work on Linux and macOS; `.matrix/` is
+   directly with that interpreter. The scripts work on Linux and macOS. `.matrix/` is
    git-ignored.
 5. **Platform-specific code cannot be verified by one matrix job alone.** Linux and macOS
    differ in the system utilities the environment probe calls and in `pathlib`/`resource`
@@ -53,14 +59,12 @@ once per change.
    should carry a test that reproduces the other platform's condition on Linux — for
    example an empty `PATH` without GNU `timeout` — rather than depending on the macOS job
    to notice.
-6. **CI runs the matrix in parallel.** The strict documentation build is its own small
-   job, and the ten-job matrix (two workers per job, so a four-core runner is not
-   oversubscribed) starts immediately; use the local ladder above when you want a faster
-   verdict than the matrix can give.
 
 ## Special Note For Codex/ChatGPT
 
-Due to specific limitations of the sandbox environment, executing certain TUI test code may cause the system to freeze; this often occurs on Codex/ChatGPT. The specific reason is that when this test code runs in the sandbox, it may results a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
+Due to specific limitations of the sandbox environment, executing certain TUI test code may cause the system to freeze;
+this often occurs on Codex/ChatGPT. The specific reason is that when this test code runs in the sandbox, it may result 
+a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
 
 If you are Codex/ChatGPT, please execute TUI-related test code OUTSIDE the sandbox.
 
@@ -68,7 +72,10 @@ This information has also been updated in AGENTS.md.
 
 ## Coverage gate
 
-`python -m pytest` always measures coverage (`--cov=operon --cov-branch`, configured in `pyproject.toml`) and fails when the reported total drops below the `fail_under` threshold. The reported total is the combined figure `(covered lines + covered branches) / (valid lines + valid branches)`, so a change that adds only lines without their branches lowers it. Branch coverage must additionally stay at or above 90 % of all valid branches.
+`python -m pytest` always measures coverage (`--cov=operon --cov-branch`, configured in `pyproject.toml`) and fails when
+the reported total drops below the `fail_under` threshold. The reported total is the combined figure
+`(covered lines + covered branches) / (valid lines + valid branches)`, so a change that adds only lines without their
+branches lowers it. Branch coverage must additionally stay at or above 95% of all valid branches.
 
 Read the gaps with:
 
