@@ -85,8 +85,6 @@ addopts = [
     "--strict-config",
     "--strict-markers",
     "-ra",
-    "-n",
-    "auto",
 ]
 markers = [
     "unit: isolated domain tests",

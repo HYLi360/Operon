@@ -47,7 +47,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[test]'
           python -c "import operon.tools, inspect; print(operon.tools.__file__); print('run_array' in inspect.getsource(operon.tools.run_analysis))"
-          python -m pytest --dist loadfile
+          python -m pytest
       - if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
         with:
