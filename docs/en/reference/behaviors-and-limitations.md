@@ -36,6 +36,7 @@ covered by the current implementation and regression tests:
 | K13 | Fan-out | `fanout --dry-run` now performs the full preflight — source checksum and registry freshness, unit identity computation, and conflict/occupancy checks — and raises `ConflictError` exactly as a real run would, while still writing no files and opening no run row; each planned unit is annotated `would_create`/`would_reuse`. Unit seqids are also canonicalized into sorted order before the FASTA is generated, so reordering the assignment TSV no longer changes unit bytes. |
 | K14 | Fan-out | An interrupt (Ctrl+C) now finishes the fan-out workflow run as `interrupted` with exit code 130 instead of leaving the row `running`; targets created by the run are still removed. |
 | K15 | Recipes | `file_role_prefix` matches at a `:` boundary: `sub` selects the exact role `sub` and every `sub:*`, and no longer captures `sub2:*`. |
+| K16 | Execution backends | A signal-killed Slurm job is no longer recorded as success: the `sacct` fallback folds a nonzero signal component of `exit:signal` into a shell-style exit code (an OOM kill's `0:9` becomes 137) and records the signal as `slurm_exit_signal` in the run details, and the exit-code/accounting retries are raised from 5 attempts × 1 s to 10 × 2 s (`_SLURM_EXIT_CODE_RETRIES`/`_SLURM_EXIT_CODE_RETRY_SECONDS`). |
 
 ## Identity, archiving, and the filesystem
 
@@ -167,7 +168,6 @@ covered by the current implementation and regression tests:
 - **Resource sampling watches only the direct child.** With the default `conda run`/`mamba run` launcher, `max_rss_mb`/`avg_rss_mb` describe the launcher process rather than the tool it starts (`execution.py`).
 - **A failed environment capture is stored as the run's environment.** The placeholder `{"capture_schema": 1, "capture_status": "failed"}` document becomes the job's environment, and a later `strict` comparison sees `unavailable` and degrades to `warn` (`execution.py`, `workflow.py`).
 - **Slurm cancellation failures are silent locally.** The local Slurm backend ignores `scancel` failures on timeout and on interrupt, while the remote-Slurm path records `cancellation_error` and warns; a mid-poll `squeue`/SSH control failure aborts without any `scancel`, so a running job can be orphaned (`execution.py`).
-- **Known issue: an OOM-killed Slurm job can be recorded as success.** Exit-code and accounting retries are fixed at 5 attempts × 1 s, and the `sacct` fallback keeps only the first component of `exit:signal`, so an OOM kill reported as `0:9` becomes exit code 0 (`execution.py`).
 - **Slurm defaults are permissive.** `--time=24:00:00`, no partition and no memory unless configured, and a 15-second `poll_interval` whose effective minimum is 0.1 s (`execution.py`).
 - **`setup_commands` run before the job changes directory.** They execute ahead of the payload's `cd`, so relative paths in them behave differently from the payload's (`execution.py`).
 - **Known issue: the SSH backend deletes remote outputs before every run and pulls only on success.** A failed run destroys the previous remote output, and `--keep-partial` cannot help because nothing is pulled back (`execution.py`).

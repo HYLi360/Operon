@@ -25,6 +25,7 @@ from operon.execution import (
     SSHExecutor,
     SlurmConfig,
     SlurmExecutor,
+    _SLURM_EXIT_CODE_RETRY_SECONDS,
     _parse_remote_stats,
     _parse_sacct_accounting,
     _parse_sacct_memory_mb,
@@ -795,7 +796,10 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(output.read_text(), "via-slurm")
         self.assertTrue(any(c.startswith("sbatch ") for c in client.commands))
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
-        self.assertEqual([seconds for seconds in sleep_calls if seconds >= 1], [7.25, 1, 1])
+        self.assertEqual(
+            [seconds for seconds in sleep_calls if seconds >= 1],
+            [7.25, _SLURM_EXIT_CODE_RETRY_SECONDS, _SLURM_EXIT_CODE_RETRY_SECONDS],
+        )
         self.assertEqual(exitcode_checks, 3)
         self.assertEqual(result.details["environment"]["hostname"], _hashed_hostname(socket.gethostname()))
         # The uploaded batch script must live in and reference the mirror.
@@ -1050,6 +1054,23 @@ class TestResourceParsing(PytestAssertions):
         self.assertEqual(accounting["exit_code"], 1)
         self.assertFalse("max_rss_mb" in accounting)
         self.assertEqual(accounting["elapsed_seconds"], 5.0)
+
+    def test_parse_sacct_accounting_folds_signal_kills_into_exit_code(self):
+        # An OOM kill reports "0:9" (exit:signal); it must not read as success.
+        accounting = _parse_sacct_accounting("0:9|||00:00:05|00:00:01|\n")
+        self.assertEqual(accounting["exit_code"], 137)
+        self.assertEqual(accounting["exit_signal"], 9)
+        # A zero signal component keeps the plain exit code, recorded or not.
+        clean = _parse_sacct_accounting("0:0|||00:00:05|00:00:01|\n")
+        self.assertEqual(clean["exit_code"], 0)
+        self.assertFalse("exit_signal" in clean)
+        failed = _parse_sacct_accounting("1:0|||00:00:05|00:00:01|\n")
+        self.assertEqual(failed["exit_code"], 1)
+        self.assertFalse("exit_signal" in failed)
+        # A non-zero exit component wins over the signal, which is still kept.
+        both = _parse_sacct_accounting("2:15|||00:00:05|00:00:01|\n")
+        self.assertEqual(both["exit_code"], 2)
+        self.assertEqual(both["exit_signal"], 15)
 
     def test_parse_remote_stats(self):
         parsed = _parse_remote_stats("20480 30720 3\n")

@@ -426,8 +426,10 @@ def _parse_sacct_accounting(text: str) -> dict[str, Any]:
 
     The main job row comes first, followed by its step rows (.batch, .extern,
     ...).  The exit code is the first parseable "N:M" token (identical on
-    every row), memory metrics take the maximum across all rows, and elapsed
-    / total CPU come from the main job row only.
+    every row): a nonzero signal component M with a zero exit component N is
+    folded into ``128 + M`` and recorded as ``exit_signal``, so a signalled
+    job is never read as a success.  Memory metrics take the maximum across
+    all rows, and elapsed / total CPU come from the main job row only.
     """
     accounting: dict[str, Any] = {}
     max_rss: float | None = None
@@ -444,9 +446,16 @@ def _parse_sacct_accounting(text: str) -> dict[str, Any]:
         exit_token, max_rss_raw, ave_rss_raw, elapsed_raw, total_cpu_raw = fields[:5]
         if "exit_code" not in accounting and ":" in exit_token:
             try:
-                accounting["exit_code"] = int(exit_token.split(":")[0])
+                code, term_signal = (int(part) for part in exit_token.split(":", 1))
             except ValueError:
                 pass
+            else:
+                # sacct reports "exit:signal"; a signal kill with a zero exit
+                # component (e.g. an OOM kill's 0:9) is a failure, so fold it
+                # into a shell-style 128+signal exit code.
+                accounting["exit_code"] = 128 + term_signal if term_signal and code == 0 else code
+                if term_signal:
+                    accounting["exit_signal"] = term_signal
         rss = _parse_sacct_memory_mb(max_rss_raw)
         if rss is not None:
             max_rss = rss if max_rss is None else max(max_rss, rss)
@@ -475,9 +484,19 @@ def _apply_slurm_accounting(result: ExecResult, accounting: dict[str, Any]) -> N
             result.resources[key] = accounting[key]
     if "elapsed_seconds" in accounting:
         result.details["slurm_elapsed_seconds"] = accounting["elapsed_seconds"]
+    if "exit_signal" in accounting:
+        result.details["slurm_exit_signal"] = accounting["exit_signal"]
 
 
-def _read_slurm_accounting(exitcode_path: Path, job_id: str, retries: int = 5) -> ExecResult:
+# Slurm accounting for a killed job can take several seconds to settle, so
+# the exit-code-file retries must comfortably outlast that lag before the
+# sacct fallback is consulted.
+_SLURM_EXIT_CODE_RETRIES = 10
+_SLURM_EXIT_CODE_RETRY_SECONDS = 2.0
+
+
+def _read_slurm_accounting(exitcode_path: Path, job_id: str,
+                           retries: int = _SLURM_EXIT_CODE_RETRIES) -> ExecResult:
     """Resolve a finished job's exit code and collect its sacct accounting.
 
     The exit-code file written by the batch script remains the primary exit
@@ -491,7 +510,7 @@ def _read_slurm_accounting(exitcode_path: Path, job_id: str, retries: int = 5) -
             result = ExecResult(exit_code=int(exitcode_path.read_text().strip()))
             break
         except (OSError, ValueError):
-            time.sleep(1)  # wait for shared-filesystem metadata to settle
+            time.sleep(_SLURM_EXIT_CODE_RETRY_SECONDS)  # wait for shared-filesystem metadata to settle
     sacct = shutil.which("sacct")
     if sacct:
         try:
@@ -582,7 +601,7 @@ class SlurmExecutor:
             raise
         result = _read_slurm_accounting(exitcode_path, job_id)
         result.scheduler_job_id = job_id
-        result.details = details
+        result.details = {**details, **result.details}
         environment = _read_probe_environment(probe_path)
         if environment:
             result.details["environment"] = environment
@@ -1122,7 +1141,7 @@ class SSHExecutor:
         if environment:
             details["environment"] = environment
         exit_code: int | None = None
-        for _ in range(5):
+        for _ in range(_SLURM_EXIT_CODE_RETRIES):
             rc, out = self._remote_exec(client, f"cat {shlex.quote(remote_exitcode)}")
             if rc == 0:
                 try:
@@ -1130,7 +1149,7 @@ class SSHExecutor:
                     break
                 except ValueError:
                     pass
-            time.sleep(1)
+            time.sleep(_SLURM_EXIT_CODE_RETRY_SECONDS)
         # sacct supplies the fallback exit code and the resource metrics;
         # accounting failures degrade to empty resources and never fail the
         # run itself.

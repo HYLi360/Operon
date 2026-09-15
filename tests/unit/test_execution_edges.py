@@ -151,6 +151,46 @@ def test_slurm_exit_code_file_sacct_and_unavailable(monkeypatch, tmp_path):
     assert result.exit_code is None and "unavailable" in result.error
 
 
+def test_slurm_sacct_oom_kill_is_not_reported_as_success(monkeypatch, tmp_path):
+    # An OOM-killed job never writes its exit-code file, so the sacct fallback
+    # decides; its "0:9" (exit:signal) must surface as a failure.
+    path = tmp_path / "exit"
+    monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
+    monkeypatch.setattr(execution.shutil, "which", lambda name: "sacct" if name == "sacct" else None)
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_k: SimpleNamespace(stdout="0:9|||||\n"))
+    result = execution._read_slurm_accounting(path, "1", retries=1)
+    assert result.exit_code == 137
+    assert result.details["slurm_exit_signal"] == 9
+
+
+def test_slurm_exit_code_retries_outlast_slow_accounting(monkeypatch, tmp_path):
+    attempts = 0
+
+    class SlowExitCode:
+        def __init__(self, succeed_after):
+            self.succeed_after = succeed_after
+
+        def read_text(self):
+            nonlocal attempts
+            attempts += 1
+            if attempts < self.succeed_after:
+                raise OSError("stale shared-filesystem metadata")
+            return "0"
+
+    monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
+    monkeypatch.setattr(execution.shutil, "which", lambda _name: None)
+    # The file becoming visible on the very last attempt still succeeds.
+    late = SlowExitCode(execution._SLURM_EXIT_CODE_RETRIES)
+    assert execution._read_slurm_accounting(late, "1").exit_code == 0
+    assert attempts == execution._SLURM_EXIT_CODE_RETRIES
+    # One attempt past the budget exhausts the retries and reports unavailable.
+    attempts = 0
+    never = SlowExitCode(execution._SLURM_EXIT_CODE_RETRIES + 1)
+    result = execution._read_slurm_accounting(never, "1")
+    assert result.exit_code is None and "unavailable" in result.error
+    assert attempts == execution._SLURM_EXIT_CODE_RETRIES
+
+
 def test_slurm_executor_requires_commands_timeout_and_interrupt(tmp_path, monkeypatch):
     executor = execution.SlurmExecutor(project(tmp_path), execution.SlurmConfig(poll_interval=0.01))
     out, err = tmp_path / "o", tmp_path / "e"
@@ -474,15 +514,16 @@ def _remote_slurm_executor(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("sacct_stdout", "expected_exit_code", "expected_error"),
+    ("sacct_stdout", "expected_exit_code", "expected_signal", "expected_error"),
     [
-        ("bad\n4:0|||||\n", 4, None),
-        ("bad:x|||||\n", None, "exit code is unavailable"),
+        ("bad\n4:0|||||\n", 4, None, None),
+        ("0:9|||||\n", 137, 9, None),
+        ("bad:x|||||\n", None, None, "exit code is unavailable"),
     ],
-    ids=["sacct-reports-exit-code", "sacct-unavailable"],
+    ids=["sacct-reports-exit-code", "oom-kill-becomes-137", "sacct-unavailable"],
 )
 def test_remote_slurm_exitcode_falls_back_to_sacct(
-    tmp_path, monkeypatch, sacct_stdout, expected_exit_code, expected_error,
+    tmp_path, monkeypatch, sacct_stdout, expected_exit_code, expected_signal, expected_error,
 ):
     ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
 
@@ -503,6 +544,7 @@ def test_remote_slurm_exitcode_falls_back_to_sacct(
                                 timeout=None, threads=None, run_id="sacct")
     assert result.exit_code == expected_exit_code
     assert result.scheduler_job_id == "42"
+    assert result.details.get("slurm_exit_signal") == expected_signal
     if expected_error is None:
         assert result.error is None
     else:

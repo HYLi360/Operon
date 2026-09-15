@@ -265,6 +265,10 @@ def test_sacct_accounting_skips_blank_lines_and_applies_resources():
     assert untouched.resources == {}
     assert untouched.details == {}
 
+    signalled = execution.ExecResult(exit_code=137)
+    execution._apply_slurm_accounting(signalled, {"exit_code": 137, "exit_signal": 9})
+    assert signalled.details == {"slurm_exit_signal": 9}
+
 
 def test_read_slurm_accounting_uses_sacct_metrics_and_survives_sacct_failure(
         tmp_path, monkeypatch):
