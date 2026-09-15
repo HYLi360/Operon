@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Local cross-version test matrix (Linux + uv-managed CPython 3.10-3.14).
+
+# Local cross-version test matrix (Linux + uv-managed CPython 3.10-3.15).
 #
 # Usage:
 #   scripts/run-test-matrix.sh                  # full suite, all versions, parallel
@@ -9,6 +10,7 @@
 # Each version runs in its own process; logs land in .matrix/logs/<version>.log
 # and the exit status in .matrix/logs/<version>.status, so the whole matrix
 # finishes in about the time of one parallel run instead of five serial ones.
+
 set -u
 cd "$(dirname "$0")/.."   # repository root
 ROOT=$PWD
@@ -19,7 +21,7 @@ TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(tests)
 
 pids=(); versions=()
-for version in 3.10 3.11 3.12 3.13 3.14; do
+for version in 3.10 3.11 3.12 3.13 3.14 3.15; do
   case "$version" in
     3.14) python=$ROOT/.venv/bin/python ;;
     *)    python=$ROOT/.matrix/venv${version/./}/bin/python ;;

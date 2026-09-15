@@ -161,7 +161,7 @@ sphinx-build -W --keep-going -b html docs docs/_build/html  # strict docs build
 
 Run the relevant test category after any change; run the full suite before
 considering work done. CI (`.github/workflows/test.yml`) runs pytest on
-Python 3.10–3.14 and the strict Sphinx build. Releases are published
+Python 3.10–3.15 and the strict Sphinx build. Releases are published
 exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
 Do not commit or perform other git mutations unless the user explicitly
