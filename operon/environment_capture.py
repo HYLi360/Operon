@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -131,8 +133,47 @@ def probe_shell(argv: list[str]) -> str:
     return bounded_shell(command)
 
 
+_LOCAL_CAPTURE_TTL_SECONDS = 300
+_local_capture_cache: dict[tuple[tuple[str, ...] | None, str], tuple[float, dict[str, Any]]] = {}
+
+
+def _local_capture_key(argv: list[str], cwd: str | Path | None) -> tuple[tuple[str, ...] | None, str]:
+    """Cache identity of a local capture: the launcher and working directory.
+
+    Commands that differ only in the payload share a launcher, so a batch pays
+    for one probe; different launchers (for example different Conda
+    environments) are different environments and are cached separately.  An
+    opaque launcher (``probe_command`` returns None) is its own bucket.
+    """
+    probe = probe_command(argv)
+    launcher = tuple(probe[:-3]) if probe is not None else None
+    working = (os.path.normpath(os.path.abspath(os.fspath(cwd)))
+               if cwd is not None else os.path.normpath(os.getcwd()))
+    return (launcher, working)
+
+
+def _clear_local_capture_cache() -> None:
+    """Test hook: drop every memoized local capture."""
+    _local_capture_cache.clear()
+
+
 def capture_local(argv: list[str], cwd: str | Path | None = None) -> dict[str, Any]:
+    """Probe the local side, memoized per (launcher, cwd) with a TTL.
+
+    The redacted final document is reused for ``_LOCAL_CAPTURE_TTL_SECONDS``
+    and then re-probed.  A TTL rather than a process-lifetime cache is
+    deliberate: permanent process-level caches are a registered hazard for
+    long-lived processes such as the TUI.  Failed captures
+    (``capture_status: failed``) are never cached, so one transient glitch
+    cannot poison a batch.  Each call returns a shallow copy so caller edits
+    cannot pollute the cache.
+    """
     from operon.environment import parse_probe_output
+    key = _local_capture_key(argv, cwd)
+    now = time.monotonic()
+    cached = _local_capture_cache.get(key)
+    if cached is not None and now - cached[0] < _LOCAL_CAPTURE_TTL_SECONDS:
+        return dict(cached[1])
     try:
         proc = subprocess.run(["sh", "-c", probe_shell(argv)], cwd=cwd,
                               capture_output=True, text=True, timeout=35)
@@ -140,10 +181,12 @@ def capture_local(argv: list[str], cwd: str | Path | None = None) -> dict[str, A
         if proc.returncode or not document:
             return {"capture_schema": 1, "capture_status": "failed",
                     "reason": "probe failed or timed out", "probe_exit_code": proc.returncode}
-        return document
     except (OSError, subprocess.TimeoutExpired):
         return {"capture_schema": 1, "capture_status": "failed",
                 "reason": "probe unavailable or timed out"}
+    if document.get("capture_status") != "failed":
+        _local_capture_cache[key] = (now, document)
+    return dict(document)
 
 
 def _safe_url(value: str) -> str:

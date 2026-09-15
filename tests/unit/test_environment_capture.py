@@ -15,10 +15,20 @@ from operon.cli import main
 from operon.config import Project
 from operon.database import Database
 from operon.environment import environment_summary, parse_probe_output
-from operon.environment_capture import bounded_shell, capture_local, export_conda, probe_command
+import operon.environment_capture as environment_capture
+from operon.environment_capture import (
+    _clear_local_capture_cache, bounded_shell, capture_local, export_conda, probe_command,
+)
 from operon.errors import ValidationError
 from operon.execution import SlurmConfig, render_slurm_script
 from operon.workflow import run_external_command
+
+
+@pytest.fixture(autouse=True)
+def _fresh_capture_cache():
+    _clear_local_capture_cache()
+    yield
+    _clear_local_capture_cache()
 
 
 def package(**overrides):
@@ -154,6 +164,68 @@ def test_probe_failure_and_opaque_shell_are_explicit(tmp_path, monkeypatch):
         raise subprocess.TimeoutExpired("probe", 35)
     monkeypatch.setattr(subprocess, "run", fail)
     assert capture_local(["true"])["capture_status"] == "failed"
+
+
+# --------------------------------------------------------------------------- #
+# In-process capture memoization
+# --------------------------------------------------------------------------- #
+
+PROBE_OUTPUT = "capture_schema=1\nos=Linux\nos_release=6.1\nmachine=x86_64\nconda_present=0\ncapture_complete=1\n"
+
+
+def _counting_probe(monkeypatch, stdout=PROBE_OUTPUT, returncode=0):
+    calls = []
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, returncode, stdout, "")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    return calls
+
+
+def test_capture_local_memoizes_per_launcher_and_cwd(tmp_path, monkeypatch):
+    calls = _counting_probe(monkeypatch)
+    first = capture_local(["conda", "run", "-n", "env", "blastp"], tmp_path)
+    second = capture_local(["conda", "run", "-n", "env", "makeblastdb"], tmp_path)
+    assert len(calls) == 1
+    assert first == second
+    capture_local(["conda", "run", "-n", "other-env", "blastp"], tmp_path)
+    assert len(calls) == 2
+    capture_local(["conda", "run", "-n", "env", "blastp"], tmp_path / "sub")
+    assert len(calls) == 3
+    capture_local(["sh", "-c", "true"], tmp_path)
+    capture_local(["true"], tmp_path)
+    assert len(calls) == 5
+
+
+def test_capture_local_cache_expires_after_ttl(monkeypatch):
+    calls = _counting_probe(monkeypatch)
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+    capture_local(["true"])
+    clock["now"] += environment_capture._LOCAL_CAPTURE_TTL_SECONDS - 1
+    capture_local(["true"])
+    assert len(calls) == 1
+    clock["now"] += 2
+    capture_local(["true"])
+    assert len(calls) == 2
+
+
+def test_failed_capture_is_not_cached(monkeypatch):
+    calls = _counting_probe(monkeypatch, stdout="", returncode=1)
+    assert capture_local(["true"])["capture_status"] == "failed"
+    assert capture_local(["true"])["capture_status"] == "failed"
+    assert len(calls) == 2
+
+
+def test_cached_document_is_isolated_from_caller_edits(monkeypatch):
+    calls = _counting_probe(monkeypatch)
+    first = capture_local(["true"])
+    first["capture_status"] = "corrupted"
+    first["injected"] = True
+    second = capture_local(["true"])
+    assert len(calls) == 1
+    assert second["capture_status"] == "complete"
+    assert "injected" not in second
 
 
 def test_each_chain_step_links_its_environment(tmp_path, fake_conda):

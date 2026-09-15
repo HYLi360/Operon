@@ -162,7 +162,7 @@
 - **SSH 超时可能留下仍在运行的远端进程。** 载荷在 `setsid --wait` 与远端 `/tmp` pidfile 下运行；超时时进程组先收 SIGTERM 再 SIGKILL，但 pidfile 缺失时错误只能提示“远端进程可能仍在运行”（`execution.py`）。
 - **输出回拉是不对称的。** 远端输出不存在时被跳过（由期望输出检查报告），但本地已有内容不同的输出会抛 `ConflictError`（`execution.py`）。
 - **路径改写跟随解析后的路径。** 远程执行会改写解析目标位于项目根内的参数，即使字面参数并不在根内；而字面上在根内、解析后却指向根外的路径会抛 `ValidationError`（`execution.py`）。
-- **每条本地命令都先跑一次环境探测。** `LocalExecutor.run` 总是在载荷之前执行一次 shell 探测，超时上限 30 秒，因此哪怕只跑一个文件也要付出这份开销（`execution.py`、`environment_capture.py`）。
+- **本地环境探测在进程内记忆化 300 秒。** `LocalExecutor.run` 仍在载荷之前探测，但 `capture_local` 会对共享同一启动器和工作目录的重复命令复用脱敏后的文档，因此一个批次只付一次探测开销；不同的启动器（例如另一个 Conda 环境）或不同的 `cwd` 分别缓存。条目在 `_LOCAL_CAPTURE_TTL_SECONDS`（300 秒）后过期并重新探测——这是 TTL 而非上文版本/数据库身份所用的进程生命周期缓存，长期运行的 TUI 会话不会因此陈旧——且失败的捕获从不缓存，一次抖动不会污染整个批次（`execution.py`、`environment_capture.py`）。
 - **资源采样只观察直接子进程。** 使用默认的 `conda run`/`mamba run` 启动器时，`max_rss_mb`/`avg_rss_mb` 描述的是启动器进程，而不是它启动的工具（`execution.py`）。
 - **失败的环境采集仍会作为该 run 的环境入库。** 占位文档 `{"capture_schema": 1, "capture_status": "failed"}` 会成为作业的环境，随后的 `strict` 比较看到 `unavailable` 并降级为 `warn`（`execution.py`、`workflow.py`）。
 - **本地 Slurm 的取消失败是静默的。** 本地 Slurm 后端在超时和中断时忽略 `scancel` 失败，而远端 Slurm 路径会记录 `cancellation_error` 并给出警告；轮询中途的 `squeue`/SSH 控制失败会直接中止而不调用 `scancel`，因此正在运行的作业可能被遗留（`execution.py`）。

@@ -80,7 +80,7 @@ mapping 覆盖 `execution.slurm` 的同名字段（如给 BUSCO 单独调内存/
 
 执行环境捕获（`environment.py`、`environment_capture.py`）将规范化 JSON 存入 `execution_environments`，通过 `environment_id` 寻址。工作流和分析任务引用该文档；命令链的每一步也记录各自的环境 ID。扩展 JSON 文档使用 `capture_schema: 1`，无需数据库迁移。文档在捕获时、入库前完成脱敏：hostname 替换为 `sha256:` 加其 SHA-256 的前 16 位 hex；`PATH`、`CONDA_PREFIX`、`VIRTUAL_ENV` 及 conda prefix 等类路径值的 `$HOME` 前缀替换为 `~`。远端探测传输原文（探针文件以 umask 077 写入），由控制端 Python 进程在入库前脱敏；瞬态的 `home` 探针键仅用于替换，随后被丢弃，既不进入入库文档也不进入任何指纹。`environment_id` 与各子指纹由脱敏后的文档计算，因此同配置在不同主机上的捕获去重到同一条记录。引入脱敏之前写入的文档按内容寻址、不可变，不做迁移；新捕获产生新的环境 ID。
 
-local、Slurm 和 SSH 后端在执行计算命令前探测。Slurm 在计算节点执行 `setup_commands` 后探测；直接 SSH 在计算命令 shell 的工作目录内探测。识别到 `conda`、`mamba` 或 `micromamba run` 时，通过相同启动器及目标名称/prefix 执行探测。读取 `conda-meta/*.json` 不要求目标环境安装 Python 或包管理器。直接运行的程序继承执行器环境。已知的不透明 shell/容器启动器及不支持的包管理器选项标记为 `unsupported_launcher`，并设置 `capture_scope: executor_only`，不会把外层 Conda 环境宣称为工具环境；不解析任意自定义包装程序内部行为。
+local、Slurm 和 SSH 后端在执行计算命令前探测。本地探测按（启动器、工作目录）在进程内记忆化 300 秒（`_LOCAL_CAPTURE_TTL_SECONDS`），因此经同一启动器的一批命令只付一次探测开销；失败的捕获不缓存。Slurm 在计算节点执行 `setup_commands` 后探测；直接 SSH 在计算命令 shell 的工作目录内探测。识别到 `conda`、`mamba` 或 `micromamba run` 时，通过相同启动器及目标名称/prefix 执行探测。读取 `conda-meta/*.json` 不要求目标环境安装 Python 或包管理器。直接运行的程序继承执行器环境。已知的不透明 shell/容器启动器及不支持的包管理器选项标记为 `unsupported_launcher`，并设置 `capture_scope: executor_only`，不会把外层 Conda 环境宣称为工具环境；不解析任意自定义包装程序内部行为。
 
 Conda 快照保存包名、版本、build、subdir、依赖、安装包 URL 和可用的 SHA-256/MD5。完整清单包含 `@EXPLICIT` 重建规范，优先使用 SHA-256，缺少时使用 MD5。包指纹排除安装 prefix 和主机名。URL 中的用户凭据、`/t/` 令牌和查询参数会被移除，因此私有 channel 可能需要在重建时另外提供凭据。通过 `INSTALLER` 元数据检测到的 pip 发行包名单独记录；Conda 规范不恢复 pip 包、editable 安装、手动修改的文件或自定义激活脚本。包清单描述原始安装包，并不验证已安装文件内容。空清单、损坏记录、中断捕获或缺少可解析安装包身份的清单不能导出为完整重建规范。
 
