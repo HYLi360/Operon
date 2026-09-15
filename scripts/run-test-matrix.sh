@@ -34,7 +34,7 @@ for version in 3.10 3.11 3.12 3.13 3.14 3.15; do
   fi
   echo "start $version -> $LOGS/$version.log"
   (
-    "$python" -m pytest -q --no-cov -p no:cacheprovider -n "$JOBS" --dist loadfile \
+    "$python" -m pytest -q --no-cov -p no:cacheprovider -n "$JOBS" \
       "${TARGETS[@]}" >"$LOGS/$version.log" 2>&1
     echo $? >"$LOGS/$version.status"
   ) &

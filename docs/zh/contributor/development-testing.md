@@ -27,6 +27,9 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 排除规则、secondary TaxID、分母/报告幂等，以及活动 metadata 修改不影响 release
 冻结口径。
 
+该项目使用 `pytest-xdist` 进行并行测试。避免在测试之间共享状态，
+以防止出现意外或随机的测试结果。
+
 ## 快速本地验证
 
 全量测试串行执行约需七分钟；下面这套流程的目标是每次改动最多只跑一次全量。

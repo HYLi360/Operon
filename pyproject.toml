@@ -88,8 +88,6 @@ addopts = [
     "-ra",
     "-n",
     "auto",
-    "--dist",
-    "loadfile",
 ]
 markers = [
     "unit: isolated domain tests",

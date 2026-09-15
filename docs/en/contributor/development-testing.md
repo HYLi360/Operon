@@ -28,6 +28,9 @@ The taxonomy coverage integration tests additionally cover taxonomy source-packa
 type/content conflicts, exclusion rules, secondary TaxIDs, denominator/report idempotence, and that active metadata
 modifications do not affect the release-frozen scope.
 
+The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests to prevent unexpected or random
+test results.
+
 ## Fast local verification
 
 The full suite takes about seven minutes serially; the loop below aims to run it at most once per change.

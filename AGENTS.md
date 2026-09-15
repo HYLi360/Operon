@@ -165,8 +165,11 @@ considering work done.
 CI (`.github/workflows/test.yml`) runs pytest on Python 3.10–3.15 and the strict
 Sphinx build. Releases are published exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
 
-> Running `python -m pytest` directly takes approx 30 seconds
-> (auto: 24 workers). Running the local test matrix takes 2m 30s
+The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests
+to prevent unexpected or random test results.
+
+> Running `python -m pytest` directly takes approx 35 seconds
+> (auto: 24 workers). Running the local test matrix takes 3 minutes
 > (6 jobs × 4 workers), or 4~5min (6 jobs × 2 workers in default).
 > 
 > Measured on Intel Core i7-13700HX (16c24t).
