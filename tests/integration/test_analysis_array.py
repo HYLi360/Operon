@@ -705,7 +705,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
         self._write_tool_config(self.root / "fakeblast.py")
         rows = [self._add_assembly(n) for n in (1, 2)]
         executor = self._executor(monkeypatch)
-        executor.fail_staging_for = {str(self.root / rows[0]["relative_path"])}
+        # stage_inputs are built from the resolved project.root (config.py
+        # resolves it); on macOS self.root keeps the /var symlink spelling.
+        executor.fail_staging_for = {str(self.project.root / rows[0]["relative_path"])}
 
         results = run_analysis(self.project, self.db, "fake_nt", backend="ssh")
 
