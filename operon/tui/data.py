@@ -425,6 +425,18 @@ def get_profile_document(project: Project, name: str) -> dict[str, Any]:
     return load_profile(project.profiles_dir, name, expected_kind="qc")
 
 
+def config_version_floor(project: Project, kind: str, name: str, version: int = 0) -> int:
+    """Highest known version, including snapshots of deleted/replaced files."""
+    table, column, name_column = {
+        "profile": ("qc_profiles", "profile_version", "profile_name"),
+        "recipe": ("recipe_snapshots", "recipe_version", "recipe_name"),
+    }[kind]
+    with _open(project) as db:
+        row = _row(db, f"SELECT MAX({column}) AS version FROM {table} WHERE {name_column}=?",
+                   (name,))
+    return max(version, int(row["version"] or 0))
+
+
 def profile_history(project: Project, name: str) -> list[dict[str, Any]]:
     """Return the recorded snapshot history of one profile (CLI ``profiles history``)."""
     with _open(project) as db:
@@ -851,13 +863,24 @@ def read_coverage_report(project: Project, report_id: str) -> dict[str, Any]:
             continue
         with open(table_path, newline="", encoding="utf-8") as handle:
             reader = csv.reader(handle, delimiter="\t")
-            rows = list(reader)
-        columns = rows[0] if rows else []
-        body = rows[1:]
+            columns = next(reader, [])
+            if reader.line_num and not columns:
+                raise ValidationError(f"{table_path.name}: line 1: missing TSV header")
+            body = []
+            total = 0
+            for row in reader:
+                if len(row) != len(columns):
+                    raise ValidationError(
+                        f"{table_path.name}: line {reader.line_num}: expected "
+                        f"{len(columns)} fields, found {len(row)}"
+                    )
+                total += 1
+                if total <= COVERAGE_REPORT_LIMIT:
+                    body.append(row)
         tables[name] = {
             "columns": columns,
-            "rows": body[:COVERAGE_REPORT_LIMIT],
-            "truncated": len(body) > COVERAGE_REPORT_LIMIT,
-            "total": len(body),
+            "rows": body,
+            "truncated": total > COVERAGE_REPORT_LIMIT,
+            "total": total,
         }
     return {"report_id": report_id, "path": str(path), "provenance": provenance, "tables": tables}

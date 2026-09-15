@@ -90,14 +90,22 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | `x` | Entities | 退休（或对已退休实体恢复）选中实体。对话框先加载只读的影响计划（受影响的实体/文件/引用及物理变更——逻辑退休恒为零），当计划报告无变更时禁用确认按钮；RETIRE 必须选择 reason code。 | `operon retire\|restore <id> --reason … [--reason-code …] --apply --yes` |
 | `i` | Files | 将文件（本地路径或 `sftp://`/`remote://` URL）归档到 `raw/`，表单根据选中行预填。format/compression 留空时自动检测。校验和冲突（同一实体+角色的字节不同）以红色内联显示，绝不覆盖。 | `operon ingest --source … --entity-type … --entity-id … --role …` |
 | `v` | Files | 校验选中文件，或在"verify all N files?"确认后校验全部文件。失败项（`MISSING`、`CHECKSUM_FAILED` 等）会在错误对话框中列出。 | `operon verify [--file-id …]` |
-| `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …]` |
+| `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | 全局 | 打开数据集导入向导（也可通过 Home 按钮；在 Files 界面 `i` 仍为归档 ingest）。 | `operon import dataset` |
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
-| — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
+| — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
 
 以上所有操作都会追加与 CLI 相同的 `changes` 审计行和 `workflow_runs` 溯源
 记录，因此在报告与导出中，通过 TUI 执行的操作与命令行操作无法区分。
+
+### QC 参数
+
+Files 界面的 QC 对话框支持正整数 FASTQ 采样数（默认 1,000,000 条 reads）、
+Phred offset `33`（默认）、`64` 或 `auto`，以及 **Recompute input SHA-256**
+（`--rehash`）。自动识别存在歧义时按 33 处理，与 CLI 一致。非法采样数会在
+worker 启动前被拒绝。等价命令随参数更新；Confirm 固定本次参数，并在运行
+期间锁定控件。执行失败后控件恢复可编辑，可修正参数并重试。
 
 ## 数据集导入向导
 
@@ -110,6 +118,12 @@ annotation 选择器列出现有的未退休实体以供复用，选择 "Create 
 新的内部 ID（`db.next_id`）。Sequencing 与 Annotation 为可选小节（复选框）；
 注释文件角色（GFF3/CDS/protein）和 reads 角色（R1/R2/single）仅在启用相应
 小节时显示。
+
+初始化和页面加载期间导航暂不可用。初始化失败时显示内联错误，可点击
+**Retry initialization** 重试。进入实体页面时会刷新选择列表；若草稿引用的
+ID 已不在列表中，选择器保持未选择并显示错误，必须明确改选实体或选择新建。
+禁用 Sequencing 或 Annotation 并点击 Next 会丢弃该小节的草稿；再次进入时，
+输入和选择均被清空，重新启用不会恢复旧内容。
 
 最后的 **Summary** 页面渲染由 questionary 向导自身的 `_summary`/`_warnings`
 辅助函数产生的计划与警告，提供非线性的 "Edit <section>" 跳转，并且仅在显式
@@ -130,13 +144,17 @@ profile 时也会触发）运行只读的核心查询 `release_files_for`/
 `operon.release.create_release` 构建；版本重复或存在未评估/过期实体时内联
 报错。
 
-**Export 标签页。** 过滤表单（实体类型、实体 id、文件角色、格式、状态、
+**Export 标签页。** 过滤表单（实体类型、实体 id、文件 id、文件角色、格式、状态、
 判定 + profile——判定过滤缺少 profile 时内联报错，与 CLI 一致）、链接方式
 （copy/hardlink/symlink）、`include_qc` 复选框以及输出目录。**Preview**
 在不写入任何内容的情况下统计匹配文件数量与总字节数（使用与导出本身相同的
 `_select_files` 选择逻辑）。**Run export** 显示等价 CLI 命令并要求确认，然后
 通过 `operon.export.export_files` 物化导出；输出目录已存在且非空时，在打开
 对话框之前即被拒绝。
+
+实体 ID 和文件 ID 均可输入逗号分隔的列表；空白和空项会被忽略。仅提供文件
+ID 即可构成有效筛选条件，并按 CLI 的规则与其他过滤条件组合。Preview 与
+实际导出使用相同的 ID，确认对话框为每个文件 ID 显示一个 `--file-id` 参数。
 
 ## Coverage 界面
 
@@ -152,6 +170,10 @@ release 选择器）——并显示等价的 `operon report coverage` 命令以�
 summary、targets、missing、observations、excluded——渲染为标签页表格
 （使用标准库解析；过大的表格截断至 500 行）。
 
+解析时检查每行的字段数是否与表头一致，包括显示上限以外的行。空白表头或格式错误会
+显示带文件名和行号的内联错误，不会导致查看器崩溃。修复文件后重新选择报告
+即可加载；该校验不会修改报告文件。
+
 ## Config 界面
 
 Config 界面以结构化表单编辑两个带版本的配置文件，表单值由后端重新组合为
@@ -160,14 +182,21 @@ Config 界面以结构化表单编辑两个带版本的配置文件，表单值�
 细节等）会**逐字保留**，以暗淡的只读提示显示，绝不被悄悄丢弃。
 
 **保存即新版本。** 每次保存都写入*新版本*：`version` 字段递增
-（旧版本 + 1；新 profile/recipe 为 `1`），并记录一条内容寻址快照——使用的
+（取当前文件、该名称的已记录快照以及编辑器曾加载的既有文件中的最高版本 + 1；
+没有已知历史的新名称为 `1`），
+并记录一条内容寻址快照——使用的
 规范化文档与 CLI 记录的完全一致，因此 TUI 保存与随后对相同内容执行的
-`operon evaluate` / `operon analyze` 映射到同一快照行。保存未修改的内容是
+`operon evaluate` / `operon analyze` 映射到同一快照行。保存与当前既有文件相同的内容是
 空操作：版本不递增，也不记录快照。每次保存都在对话框中确认，并显示其效果
 （"writes `config/profiles/<name>.yaml` as version N + records snapshot"）；
 校验错误以内联方式显示且不改动文件（失败的写入会回滚到原文件字节）。
 配置通过原子替换发布。回滚范围也包含数据库打开、快照插入或提交失败及可处理的中断：
 恢复既有文件的原始字节（包括换行符），或删除本次新建的配置文件。
+
+删除或重命名配置文件不会清除其已记录的版本历史：重建原名称时会接着历史
+最高版本递增。尚无快照的文件，其已读取版本也会由编辑器保留。
+若文件被外部替换为旧版本，下次内容变更也按此规则确定新版本。
+确认对话框使用相同的版本计算方式。
 
 **历史与恢复。** History 对话框列出已记录的快照（快照 id、版本、sha256
 前缀、记录时间、使用计数），与 `operon profiles history` /
@@ -189,9 +218,11 @@ metric、operator（覆盖规则引擎全部操作符的 Select）、value、cod
 （Select，留空 = `*`）、file role、format、database、database version、输出
 子目录与后缀输入框，`arguments` 为每行一个参数的文本框（`${input}` 等占位符
 保持可见），运行时 `parameters` 为 `name=default` 行（其余 spec 键保留），
-result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`busco_json`），
+result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、
+`rpsbproc_tabular`、`busco_json`），
 `result_columns` / `hit_metric_columns` 为逗号分隔输入框，以及
-`max_hits_per_query`。
+`max_hits_per_query`。清空此可选限制会在保存时移除该键，并恢复核心默认值
+（5），并非不限制命中数量。原本没有该键时，继续留空仍为空操作。
 
 > **注意（tools.yaml 格式）：** 从 TUI 保存 recipe 会以规范化的 YAML 格式重写
 > `config/tools.yaml`，并丢弃手写注释。内容不会丢失：每个保存的版本都逐字

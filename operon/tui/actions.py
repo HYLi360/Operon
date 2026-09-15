@@ -223,6 +223,10 @@ def run_qc(
         entity_id: str | None = None,
         file_id: str | None = None,
         progress: Callable[[int, int, dict[str, Any]], None] | None = None,
+        *,
+        sample_size: int = 1000000,
+        phred_offset: int | str = 33,
+        rehash: bool = False,
 ) -> list[dict[str, Any]]:
     """Run built-in QC like ``operon qc``.
 
@@ -232,10 +236,15 @@ def run_qc(
     """
     from operon.qc import qc_all
 
+    if sample_size <= 0:
+        raise ValidationError("sample size must be a positive integer")
+    if str(phred_offset) not in {"33", "64", "auto"}:
+        raise ValidationError("phred offset must be 33, 64 or auto")
     with _open_writable(project) as db:
         return qc_all(
             db, project, entity_type=entity_type, entity_id=entity_id,
             file_id=file_id, progress_callback=progress,
+            sample_size=sample_size, phred_offset=phred_offset, force_checksum=rehash,
         )
 
 
@@ -336,7 +345,8 @@ def _saved_config(path: Path, text: str, previous_text: str | None,
         raise
 
 
-def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[str, Any]:
+def save_profile(project: Project, name: str, document: dict[str, Any], *,
+                 known_version: int = 0) -> dict[str, Any]:
     """Validate and save a ``kind: qc`` profile as a new version.
 
     The composed document is validated, written to
@@ -347,8 +357,12 @@ def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[
     ``operon evaluate`` records.  On any failure the previous file content
     is restored.  Saving unchanged content is a no-op: the version is not
     bumped and no snapshot is recorded.
+
+    ``known_version`` preserves the editor's last observed file version if
+    the file disappears before its first snapshot is recorded.
     """
     from operon.profiles import load_profile
+    from operon.tui.data import config_version_floor
     from operon.utils import now_iso
 
     _validate_config_name("profile", name)
@@ -375,9 +389,10 @@ def save_profile(project: Project, name: str, document: dict[str, Any]) -> dict[
                 "name": name, "version": old_version, "sha256": None,
                 "snapshot_id": None, "unchanged": True,
             }
-        document["version"] = old_version + 1
-    else:
-        document["version"] = 1
+    document["version"] = config_version_floor(
+        project, "profile", name,
+        max(known_version, int(existing.get("version", 1)) if existing else 0),
+    ) + 1
     for section in ("required", "warnings"):
         for rule in document.get(section, []) or []:
             if isinstance(rule, dict):
@@ -408,6 +423,8 @@ def save_recipe(
         tool_name: str,
         recipe_name: str,
         recipe_doc: dict[str, Any],
+        *,
+        known_version: int = 0,
 ) -> dict[str, Any]:
     """Validate and save one recipe inside ``config/tools.yaml`` as a new version.
 
@@ -423,8 +440,12 @@ def save_recipe(
     NOTE: saving from the TUI normalizes tools.yaml formatting and drops
     hand-written comments; every saved version is preserved verbatim in
     ``recipe_snapshots`` (see ``operon recipes history/show``).
+
+    ``known_version`` is the editor's version floor; current file and
+    snapshot versions are checked again at save time.
     """
     from operon.tools import get_recipe, get_tool, load_tools_config
+    from operon.tui.data import config_version_floor
 
     _validate_config_name("recipe", recipe_name)
     if not isinstance(recipe_doc, dict):
@@ -455,9 +476,10 @@ def save_recipe(
                 "name": recipe_name, "tool": tool_name, "version": old_version,
                 "snapshot_id": None, "unchanged": True,
             }
-        document["version"] = old_version + 1
-    else:
-        document["version"] = 1
+    document["version"] = config_version_floor(
+        project, "recipe", recipe_name,
+        max(known_version, int(existing.get("version", 1)) if existing else 0),
+    ) + 1
     recipes[recipe_name] = document
 
     text = (

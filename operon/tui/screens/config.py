@@ -55,7 +55,9 @@ from operon.tui.screens.common import (
 
 ENTITY_TYPE_NAMES = list(actions.ENTITY_TYPE_NAMES)
 OPERATOR_OPTIONS = [(operator, operator) for operator in actions.PROFILE_OPERATORS]
-RESULT_PARSERS = ("none", "blast_tabular", "hmmer_tblout", "busco_json")
+RESULT_PARSERS = (
+    "none", "blast_tabular", "hmmer_tblout", "hmmer_domtblout", "rpsbproc_tabular", "busco_json",
+)
 
 PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
@@ -318,7 +320,8 @@ class ProfileSaveModal(WriteModal):
 
     def confirm(self) -> None:
         self.run_action(
-            lambda: actions.save_profile(self.project, self.profile_name, self.document)
+            lambda: actions.save_profile(self.project, self.profile_name, self.document,
+                                         known_version=self.new_version - 1)
         )
 
     def on_action_success(self, payload: Any) -> None:
@@ -367,6 +370,7 @@ class RecipeSaveModal(WriteModal):
         self.run_action(
             lambda: actions.save_recipe(
                 self.project, self.tool_name, self.recipe_name, self.document,
+                known_version=self.new_version - 1,
             )
         )
 
@@ -392,6 +396,7 @@ class ConfigPanel(Panel):
         self.recipes: list[dict[str, Any]] = []
         self.current_profile: str | None = None
         self.profile_doc: dict[str, Any] | None = None
+        self._known_versions: dict[tuple[str, str], int] = {}
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
         self.recipe_doc: dict[str, Any] | None = None
@@ -465,7 +470,8 @@ class ConfigPanel(Panel):
                                     id="recipe-result-columns")
                         yield Input(placeholder="hit_metric_columns (comma separated)",
                                     id="recipe-hit-metric-columns")
-                        yield Input(placeholder="max_hits_per_query", id="recipe-max-hits")
+                        yield Input(placeholder="max_hits_per_query (blank restores default: 5)",
+                                    id="recipe-max-hits")
                         yield Static("", id="recipe-extras-note")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save recipe", id="recipe-save",
@@ -562,7 +568,14 @@ class ConfigPanel(Panel):
             return
         self.current_profile = name
         self.profile_doc = document
+        self._remember_version("profile", name, document)
         self._render_profile_form(name, document)
+
+    def _remember_version(self, kind: str, name: str, document: dict[str, Any]) -> None:
+        key = (kind, name)
+        self._known_versions[key] = max(
+            self._known_versions.get(key, 0), int(document.get("version", 1)),
+        )
 
     def _compose_profile_document(self) -> dict[str, Any]:
         original = self.profile_doc or {}
@@ -592,9 +605,11 @@ class ConfigPanel(Panel):
 
     def _profile_file_version(self, name: str) -> int | None:
         try:
-            return int(data.get_profile_document(self.project, name).get("version", 1))
+            version = int(data.get_profile_document(self.project, name).get("version", 1))
         except ValidationError:
-            return None
+            version = 0
+        version = max(version, self._known_versions.get(("profile", name), 0))
+        return data.config_version_floor(self.project, "profile", name, version) or None
 
     # -- recipe editor ------------------------------------------------------
 
@@ -665,6 +680,7 @@ class ConfigPanel(Panel):
         self.current_recipe = name
         self.recipe_tool = info["tool"]
         self.recipe_doc = info["document"]
+        self._remember_version("recipe", name, info["document"])
         self._render_recipe_form(name, info["document"])
 
     def _compose_recipe_document(self) -> dict[str, Any]:
@@ -711,8 +727,6 @@ class ConfigPanel(Panel):
                 max_hits = int(max_hits_text)
             except ValueError:
                 max_hits = max_hits_text  # save_recipe round-trip rejects with a clear error
-        elif "max_hits_per_query" in original:
-            max_hits = original["max_hits_per_query"]
 
         new_values: dict[str, Any] = {}
         for key, widget_id in (("description", "#recipe-description"),
@@ -752,9 +766,11 @@ class ConfigPanel(Panel):
 
     def _recipe_file_version(self, name: str) -> int | None:
         try:
-            return int(data.get_recipe_document(self.project, name)["document"].get("version", 1))
+            version = int(data.get_recipe_document(self.project, name)["document"].get("version", 1))
         except ValidationError:
-            return None
+            version = 0
+        version = max(version, self._known_versions.get(("recipe", name), 0))
+        return data.config_version_floor(self.project, "recipe", name, version) or None
 
     def _on_recipe_saved(self, payload: Any) -> None:
         if not payload:
@@ -948,4 +964,3 @@ class ConfigPanel(Panel):
             ),
             lambda document: restore(document) if document else None,
         )
-

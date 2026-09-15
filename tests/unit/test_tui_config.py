@@ -1191,7 +1191,7 @@ def test_config_screen_recipe_unmodeled_keys_and_parameters_roundtrip(project: P
             await _open_tools_tab(panel, pilot)
             assert panel.query_one("#recipes-table", DataTable).row_count == 7
 
-            # A result parser the form does not offer stays selected.
+            # The default rpsbproc parser is directly supported by the form.
             panel._load_recipe("rpsblast_cdd")
             await pilot.pause()
             assert panel.query_one("#recipe-result-parser", Select).value == "rpsbproc_tabular"
@@ -1270,7 +1270,7 @@ def test_config_screen_recipe_unchanged_max_hits_and_cancel(project: Project) ->
             assert not isinstance(app.screen, RecipeSaveModal)
             assert data.recipe_history(project, "blastn_nt") == []
 
-            # Clearing max_hits keeps the file's value: the save is a no-op.
+            # Clearing max_hits removes the optional limit and records a new version.
             panel.query_one("#recipe-max-hits", Input).value = ""
             await _click(pilot, "#recipe-save")
             await pilot.pause()
@@ -1281,7 +1281,7 @@ def test_config_screen_recipe_unchanged_max_hits_and_cancel(project: Project) ->
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, RecipeSaveModal)
-            assert any("blastn_nt: unchanged — version 1 kept" in message
+            assert any("saved blastn_nt version 2" in message
                        for _, message in _notifications(app))
 
             # A recipe without max_hits_per_query also saves as a no-op.
@@ -1299,9 +1299,10 @@ def test_config_screen_recipe_unchanged_max_hits_and_cancel(project: Project) ->
                        for _, message in _notifications(app))
 
     _run(scenario())
-    assert get_recipe(project, "blastn_nt").version == 1
-    assert get_recipe(project, "blastn_nt").max_hits_per_query == 5
-    assert data.recipe_history(project, "blastn_nt") == []
+    assert get_recipe(project, "blastn_nt").version == 2
+    assert get_recipe(project, "blastn_nt").max_hits_per_query == 5  # core default
+    assert "max_hits_per_query" not in get_recipe(project, "blastn_nt").raw
+    assert [row["version"] for row in data.recipe_history(project, "blastn_nt")] == [2]
     assert data.recipe_history(project, "busco_autolineage") == []
 
 
@@ -1406,6 +1407,70 @@ def test_config_screen_recipe_history_view_and_restore(project: Project) -> None
 # --- vanished files and load failures ---------------------------------------
 
 
+@pytest.mark.parametrize("kind", ["profile", "recipe"])
+@pytest.mark.parametrize("replacement", ["missing", "older"])
+def test_save_config_uses_snapshot_version_floor(project: Project, kind: str, replacement: str) -> None:
+    """File deletion or an external rollback must not reuse historical versions."""
+    if kind == "profile":
+        name = "assembly_production_v1"
+        original = data.get_profile_document(project, name)
+        path = project.profiles_dir / f"{name}.yaml"
+        save = lambda doc: actions.save_profile(project, name, doc)
+    else:
+        name = "blastn_nt"
+        loaded = data.get_recipe_document(project, name)
+        original = loaded["document"]
+        path = project.tools_config_path
+        save = lambda doc: actions.save_recipe(project, loaded["tool"], name, doc)
+    edited = dict(original, description="first edit")
+    assert save(edited)["version"] == 2
+    edited["description"] = "second edit"
+    assert save(edited)["version"] == 3
+    if kind == "profile":
+        if replacement == "missing":
+            path.unlink()
+        else:
+            path.write_text(yaml.safe_dump(original), encoding="utf-8")
+    else:
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        recipes = config["tools"][loaded["tool"]]["recipes"]
+        if replacement == "missing":
+            del recipes[name]
+        else:
+            recipes[name] = original
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    assert save(edited)["version"] == 4
+    assert save(edited)["unchanged"] is True
+    history = data.profile_history if kind == "profile" else data.recipe_history
+    assert [row["version"] for row in history(project, name)][-3:] == [2, 3, 4]
+
+
+@pytest.mark.parametrize("parser", ["hmmer_domtblout", "rpsbproc_tabular"])
+def test_config_screen_additional_parsers_save_and_reload(project: Project, parser: str) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            panel.query_one("#recipe-result-parser", Select).value = parser
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+            panel._load_recipe("blastn_nt")
+            assert panel.query_one("#recipe-result-parser", Select).value == parser
+
+    _run(scenario())
+    recipe = get_recipe(project, "blastn_nt")
+    assert recipe.raw["result_parser"] == parser
+    assert recipe.version == 2
+
+
 def test_config_screen_profile_deleted_under_the_ui(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -1427,12 +1492,12 @@ def test_config_screen_profile_deleted_under_the_ui(project: Project) -> None:
             assert panel.current_profile == "assembly_production_v1"  # unchanged: load failed
             assert any("not found" in message for _, message in _notifications(app))
 
-            # Saving recreates it from the editor content as version 1 again.
+            # Saving recreates it above the recorded version, even with unchanged content.
             await _click(pilot, "#profile-save")
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, ProfileSaveModal)
-            assert "version 1" in _static_text(modal.query_one("#modal-command", Static))
+            assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
@@ -1442,10 +1507,24 @@ def test_config_screen_profile_deleted_under_the_ui(project: Project) -> None:
     _run(scenario())
     assert load_profile(
         project.profiles_dir, "assembly_production_v1", expected_kind="qc"
-    )["version"] == 1
+    )["version"] == 2
 
 
-def test_config_screen_recipe_deleted_under_the_ui(project: Project) -> None:
+@pytest.mark.parametrize("record_history", [False, True])
+def test_config_screen_recipe_deleted_under_the_ui(project: Project, record_history: bool) -> None:
+    from operon.tools import get_tool
+
+    recipe = get_recipe(project, "busco_autolineage")
+    if record_history:
+        db = Database(project.db_path)
+        try:
+            with db.transaction():
+                db.record_recipe(recipe.name, recipe.version, {
+                    "recipe": recipe.raw, "tool": get_tool(project, recipe.tool_name).raw,
+                })
+        finally:
+            db.close()
+
     async def scenario() -> None:
         app = OperonApp(project)
         async with app.run_test(size=(160, 50)) as pilot:
@@ -1473,7 +1552,7 @@ def test_config_screen_recipe_deleted_under_the_ui(project: Project) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, RecipeSaveModal)
-            assert "version 1" in _static_text(modal.query_one("#modal-command", Static))
+            assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
@@ -1482,7 +1561,7 @@ def test_config_screen_recipe_deleted_under_the_ui(project: Project) -> None:
 
     _run(scenario())
     recipe = get_recipe(project, "busco_autolineage")
-    assert recipe.version == 1
+    assert recipe.version == 2
     assert recipe.raw["database_mode"] == "mutable_cache"
 
 

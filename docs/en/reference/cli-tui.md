@@ -105,15 +105,25 @@ you type, and records exactly what that command would record.
 | `x` | Entities | Retire (or restore, for a retired entity) the selected entity. The dialog first loads the read-only impact plan (affected entities/files/references, physical changes — always zero for logical retirement) and blocks Confirm when the plan reports no change; a reason code is required for RETIRE. | `operon retire\|restore <id> --reason … [--reason-code …] --apply --yes` |
 | `i` | Files | Ingest a file (local path or `sftp://`/`remote://` URL) into `raw/`, prefilled from the selected row. Format/compression auto-detect when left blank. A checksum conflict (same entity+role, different bytes) is shown inline in red and never overwrites. | `operon ingest --source … --entity-type … --entity-id … --role …` |
 | `v` | Files | Verify the selected file, or all files after a "verify all N files?" confirm. Failures (`MISSING`, `CHECKSUM_FAILED`, …) are listed in an error dialog. | `operon verify [--file-id …]` |
-| `q` | Files | Run built-in QC for the selected file or all files, with a live progress bar ("k/n · current file_id"). The completion notification mirrors the CLI text ("QC complete: ok/total file(s) passed built-in stages"); failures are listed in an error dialog. Cancel stops the batch cooperatively *between* files — results for files already processed are kept. | `operon qc [--file-id …]` |
+| `q` | Files | Run built-in QC for the selected file or all files, with a live progress bar ("k/n · current file_id"). The completion notification mirrors the CLI text ("QC complete: ok/total file(s) passed built-in stages"); failures are listed in an error dialog. Cancel stops the batch cooperatively *between* files — results for files already processed are kept. | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | global | Open the import dataset wizard (also via the Home button; on the Files screen `i` stays ingest). | `operon import dataset` |
 | — | Publish | Create an immutable release after a members/exclusions preview; a duplicate version is rejected inline. | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
-| — | Publish | Materialize a selective export after a count/bytes preview; a non-empty output directory is rejected inline. | `operon export --output … [--entity-type … --entity-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
+| — | Publish | Materialize a selective export after a count/bytes preview; a non-empty output directory is rejected inline. | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | Generate a taxonomy coverage report; a result below the profile thresholds is a warning notification (FAIL), never a crash. | `operon report coverage --reference-set … [--release …]` |
 
 All of these append the same `changes` audit rows and `workflow_runs`
 provenance records as the CLI, so operations performed in the TUI are
 indistinguishable from command-line ones in reports and exports.
+
+### QC options
+
+The Files screen's QC dialog accepts a positive FASTQ sample size (default
+1,000,000 reads), Phred offset `33` (default), `64` or `auto`, and **Recompute
+input SHA-256** (`--rehash`). Automatic Phred detection assumes 33 when
+ambiguous, just like the CLI. Invalid sample sizes are rejected before the
+worker starts. The command preview updates with these options; Confirm
+captures them and locks the controls until the run ends. After a failure,
+the controls are enabled again so the inputs can be corrected and retried.
 
 ## Import dataset wizard
 
@@ -128,6 +138,14 @@ entities for reuse, or "Create a new …" allocates a fresh internal ID
 (`db.next_id`). Sequencing and Annotation are optional sections (checkbox);
 the annotation file roles (GFF3/CDS/protein) and read roles (R1/R2/single)
 only appear when the corresponding section is enabled.
+
+Navigation waits for initialization and page loading. If initialization fails,
+the error stays inline and **Retry initialization** retries it. Picklists are
+refreshed when their page opens; a draft ID no longer available in the list
+is left unselected with an error, so you must explicitly select another
+entity or choose to create one. Disabling Sequencing or Annotation and
+pressing Next discards that section's draft; revisiting it clears its
+inputs and selections before you enable it again.
 
 The final **Summary** page renders the exact plan and warnings produced by
 the questionary wizard's own `_summary`/`_warnings` helpers, offers
@@ -153,7 +171,7 @@ with the equivalent CLI command, then builds the release in a background
 worker through `operon.release.create_release`; a duplicate version and an
 unevaluated/stale entity set are reported inline.
 
-**Export tab.** Filter form (entity type, entity id, file role, format,
+**Export tab.** Filter form (entity type, entity id, file id, file role, format,
 state, decision + profile — a decision filter without a profile is rejected
 inline, mirroring the CLI), link kind (copy/hardlink/symlink), an
 `include_qc` checkbox, and the output directory. **Preview** counts the
@@ -162,6 +180,12 @@ same `_select_files` selection as the export itself). **Run export**
 confirms with the equivalent CLI command and materializes the export through
 `operon.export.export_files`; an output directory that exists and is not
 empty is rejected before the dialog opens.
+
+Entity IDs and file IDs accept comma-separated lists; whitespace and empty
+entries are ignored. File IDs alone are a valid selection criterion and are
+combined with other filters using the CLI's selection rules. The same IDs
+are passed to Preview and execution, and the confirmation shows one
+`--file-id` argument per ID.
 
 ## Coverage screen
 
@@ -181,6 +205,11 @@ Selecting a row renders the report's TSVs — summary, targets, missing,
 observations, excluded — as tabbed tables (parsed with the standard
 library; large tables are capped at 500 rows).
 
+Every TSV row is checked against the header width, including rows beyond
+the display limit. A blank header or malformed row produces an inline error with the filename
+and line number instead of crashing the viewer. After repairing the file,
+select the report again to load it. This validation does not modify reports.
+
 ## Config screen
 
 The Config screen edits the two versioned configuration files with structured
@@ -191,11 +220,13 @@ file. Keys the forms do not model (`value_by`, `source`, `unknown`,
 shown as dim read-only notes, never silently dropped.
 
 **Save-as-version semantics.** Every save writes a *new version*: the
-`version` field is bumped (`old + 1`; `1` for a new profile/recipe) and a
+`version` field becomes one greater than the highest version in the current
+file, recorded snapshots, or an existing file previously loaded by the editor
+for that name (`1` for a name with no known history), and a
 content-addressed snapshot is recorded — with exactly the same canonical
 document the CLI records, so a TUI save and a later `operon evaluate` /
 `operon analyze` of identical content map to the same snapshot row. Saving
-unchanged content is a no-op: the version is not bumped and no snapshot is
+content unchanged from an existing file is a no-op: the version is not bumped and no snapshot is
 recorded. Every save is confirmed in a dialog that shows the effect
 ("writes `config/profiles/<name>.yaml` as version N + records snapshot"),
 and validation errors are shown inline without touching the file (a failed
@@ -203,6 +234,12 @@ write is rolled back to the previous file bytes). Configuration publication
 uses atomic file replacement. Rollback also covers database opening, snapshot
 insertion/commit, and handled interruptions: existing bytes (including line
 endings) are restored, or a newly created configuration file is removed.
+
+Deleting or renaming a configuration file does not erase its recorded version
+history: recreating its original name continues above that history. The
+editor also remembers versions read from files that have no snapshots yet. A file
+externally replaced with an older version also uses this version floor on
+the next content change. The confirmation dialog uses the same calculation.
 
 **History and restore.** The History dialog lists the recorded snapshots
 (snapshot id, version, sha256 prefix, recording time, usage count) like
@@ -230,9 +267,12 @@ role, format); selecting a recipe opens its editor: description, entity type
 subdirectory and suffix inputs, `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as
 `name=default` lines (other spec keys are preserved), the result parser
-Select (`none`, `blast_tabular`, `hmmer_tblout`, `busco_json`),
+Select (`none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`,
+`rpsbproc_tabular`, `busco_json`),
 `result_columns` / `hit_metric_columns` as comma-separated inputs, and
-`max_hits_per_query`.
+`max_hits_per_query`. Clearing this optional limit removes the key on save
+and restores the core default (5); it does not mean unlimited hits. Leaving
+an already absent limit blank remains a no-op.
 
 > **Note (tools.yaml formatting):** saving a recipe from the TUI rewrites
 > `config/tools.yaml` with normalized YAML formatting and drops hand-written

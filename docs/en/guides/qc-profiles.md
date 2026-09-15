@@ -40,7 +40,10 @@ TUI Config screen (`operon tui`, key `6`, QC Profiles tab): a structured form
 (description, `applies_to` checkboxes, rule rows) that validates the composed
 document, bumps the `version`, writes the file, and records the same
 content-addressed snapshot `operon evaluate` records — with snapshot history
-and restore-as-new-version built in.
+and restore-as-new-version built in. When a file has been deleted or replaced
+with an older version, the next changed save continues above the highest
+recorded version for that name. See [the TUI reference](../reference/cli-tui.md)
+for the confirmation and recovery behavior.
 
 Run the profile:
 

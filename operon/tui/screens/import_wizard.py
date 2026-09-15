@@ -87,6 +87,9 @@ class ImportWizardScreen(DismissOnce, Screen):
         self.page_index = 0
         self._return_to_summary = False
         self._executing = False
+        self._ready = False
+        self._loading = False
+        self._choice_values: dict[str, set[str]] = {}
 
     # -- layout -----------------------------------------------------------
 
@@ -118,7 +121,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                     with VerticalScroll(id="page-organism"):
                         yield Static("[2] Organism", classes="wizard-heading")
                         yield Select([("Create a new organism", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-organism-choice", allow_blank=False)
+                                     value=CREATE_NEW, id="iw-organism-choice", allow_blank=True)
                         with VerticalScroll(id="iw-organism-form"):
                             yield Input(placeholder="scientific name (required)", id="iw-organism-name")
                             yield Input(placeholder="taxonomy ID (optional)", id="iw-organism-taxon-id")
@@ -131,7 +134,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                     with VerticalScroll(id="page-sample"):
                         yield Static("[3] Sample", classes="wizard-heading")
                         yield Select([("Create a new sample", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-sample-choice", allow_blank=False)
+                                     value=CREATE_NEW, id="iw-sample-choice", allow_blank=True)
                         with VerticalScroll(id="iw-sample-form"):
                             yield Input(placeholder="BioSample accession (optional)",
                                         id="iw-sample-biosample")
@@ -157,7 +160,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                     with VerticalScroll(id="page-assembly"):
                         yield Static("[5] Assembly", classes="wizard-heading")
                         yield Select([("Create a new assembly", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-assembly-choice", allow_blank=False)
+                                     value=CREATE_NEW, id="iw-assembly-choice", allow_blank=True)
                         with VerticalScroll(id="iw-assembly-form"):
                             yield Input(placeholder="assembly accession (optional)",
                                         id="iw-assembly-accession")
@@ -175,7 +178,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                         yield Checkbox("Record an annotation release", id="iw-annotation-enabled")
                         with VerticalScroll(id="iw-annotation-form"):
                             yield Select([("Create a new annotation", CREATE_NEW)],
-                                         value=CREATE_NEW, id="iw-annotation-choice", allow_blank=False)
+                                         value=CREATE_NEW, id="iw-annotation-choice", allow_blank=True)
                             yield Input(placeholder="annotation pipeline or source (optional)",
                                         id="iw-annotation-source")
                             yield Input(value="1", placeholder="annotation version",
@@ -207,6 +210,7 @@ class ImportWizardScreen(DismissOnce, Screen):
         self.query_one("#wizard-execute", Button).display = False
         self.query_one("#wizard-edit-bar", Horizontal).display = False
         self.query_one("#wizard-back", Button).disabled = True
+        self._set_loading(True)
         self._startup()
 
     # -- startup / page loading --------------------------------------------
@@ -227,12 +231,23 @@ class ImportWizardScreen(DismissOnce, Screen):
                 pass
 
     def _startup_done(self, payload: Any) -> None:
+        self._set_loading(False)
         if isinstance(payload, BaseException):
+            self.query_one("#wizard-next", Button).label = "Retry initialization"
             self.show_error(payload)
             return
+        self._ready = True
+        self.query_one("#wizard-next", Button).label = "Next"
         self.reserved_ids = payload["ids"]
         self.organisms = payload["organisms"]
         self._set_choice_options("#iw-organism-choice", self._organism_options())
+
+    def _set_loading(self, loading: bool) -> None:
+        self._loading = loading
+        for button in self.query("#wizard-bar Button, #wizard-edit-bar Button"):
+            if button.id != "wizard-cancel":
+                button.disabled = loading
+        self.query_one("#wizard-back", Button).disabled = loading or self.page_index == 0
 
     def _organism_options(self) -> list[tuple[str, str]]:
         names: dict[str, int] = {}
@@ -249,12 +264,23 @@ class ImportWizardScreen(DismissOnce, Screen):
     def _set_choice_options(self, widget_id: str, options: list[tuple[str, str]],
                             value: str = CREATE_NEW) -> None:
         select = self.query_one(widget_id, Select)
+        self._choice_values[widget_id] = {option[1] for option in options}
         select.set_options(options)
         select.value = value
 
+    def _restore_choice(self, widget_id: str, value: str) -> None:
+        select = self.query_one(widget_id, Select)
+        if value in self._choice_values[widget_id]:
+            select.value = value
+        else:
+            select.value = Select.NULL
+            self.show_error(f"{value} is no longer available. Select an existing entity or create a new one.")
+
     def _goto(self, index: int) -> None:
-        self.page_index = index
+        if not self._ready or self._loading:
+            return
         self.clear_error()
+        self._set_loading(True)
         self._load_page(PAGES[index])
 
     @work(thread=True)
@@ -262,7 +288,9 @@ class ImportWizardScreen(DismissOnce, Screen):
         """Fetch the picklist/summary a page needs, off the UI thread."""
         try:
             payload: Any = {}
-            if page == "sample":
+            if page == "organism":
+                payload["organisms"] = data.list_organisms_for_picker(self.project)
+            elif page == "sample":
                 organism_id = (self.draft.get("organism") or {}).get("id", "")
                 payload["samples"] = data.list_samples_for_picker(self.project, organism_id)
             elif page == "assembly":
@@ -283,10 +311,15 @@ class ImportWizardScreen(DismissOnce, Screen):
                 pass
 
     def _show_page(self, page: str, payload: Any) -> None:
+        self._set_loading(False)
         if isinstance(payload, BaseException):
             self.show_error(payload)
             return
-        if page == "sample":
+        self.page_index = PAGES.index(page)
+        if page == "organism":
+            self.organisms = payload["organisms"]
+            self._set_choice_options("#iw-organism-choice", self._organism_options())
+        elif page == "sample":
             self._set_choice_options(
                 "#iw-sample-choice",
                 [("Create a new sample", CREATE_NEW)] + [
@@ -361,7 +394,7 @@ class ImportWizardScreen(DismissOnce, Screen):
         elif page == "organism" and draft.get("organism"):
             organism = draft["organism"]
             if organism.get("action") == "reuse":
-                self.query_one("#iw-organism-choice", Select).value = organism["id"]
+                self._restore_choice("#iw-organism-choice", organism["id"])
             else:
                 row = organism.get("row", {})
                 self.query_one("#iw-organism-choice", Select).value = CREATE_NEW
@@ -373,7 +406,7 @@ class ImportWizardScreen(DismissOnce, Screen):
         elif page == "sample" and draft.get("sample"):
             sample = draft["sample"]
             if sample.get("action") == "reuse":
-                self.query_one("#iw-sample-choice", Select).value = sample["id"]
+                self._restore_choice("#iw-sample-choice", sample["id"])
             else:
                 row = sample.get("row", {})
                 self.query_one("#iw-sample-choice", Select).value = CREATE_NEW
@@ -383,17 +416,21 @@ class ImportWizardScreen(DismissOnce, Screen):
         elif page == "sequencing":
             run = draft.get("run")
             self.query_one("#iw-run-enabled", Checkbox).value = bool(run)
-            if run:
-                row = run.get("row", {})
-                for key, widget_id in (
-                        ("run_accession", "iw-run-accession"),
-                        ("experiment_accession", "iw-run-experiment"),
-                        ("instrument_model", "iw-run-instrument")):
-                    self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
+            row = (run or {}).get("row", {})
+            for key, widget_id in (
+                    ("run_accession", "iw-run-accession"),
+                    ("experiment_accession", "iw-run-experiment"),
+                    ("instrument_model", "iw-run-instrument")):
+                self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
+            for key, widget_id in (
+                    ("library_strategy", "iw-run-strategy"),
+                    ("library_source", "iw-run-source"),
+                    ("library_layout", "iw-run-layout"), ("platform", "iw-run-platform")):
+                self.query_one(f"#{widget_id}", Select).value = row.get(key) or Select.NULL
         elif page == "assembly" and draft.get("assembly"):
             assembly = draft["assembly"]
             if assembly.get("action") == "reuse":
-                self.query_one("#iw-assembly-choice", Select).value = assembly["id"]
+                self._restore_choice("#iw-assembly-choice", assembly["id"])
             else:
                 row = assembly.get("row", {})
                 self.query_one("#iw-assembly-choice", Select).value = CREATE_NEW
@@ -408,7 +445,7 @@ class ImportWizardScreen(DismissOnce, Screen):
             self.query_one("#iw-annotation-enabled", Checkbox).value = bool(annotation)
             if annotation:
                 if annotation.get("action") == "reuse":
-                    self.query_one("#iw-annotation-choice", Select).value = annotation["id"]
+                    self._restore_choice("#iw-annotation-choice", annotation["id"])
                 else:
                     row = annotation.get("row", {})
                     self.query_one("#iw-annotation-choice", Select).value = CREATE_NEW
@@ -417,6 +454,10 @@ class ImportWizardScreen(DismissOnce, Screen):
                             ("annotation_version", "iw-annotation-version"),
                             ("annotation_date", "iw-annotation-date")):
                         self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
+            else:
+                self.query_one("#iw-annotation-choice", Select).value = CREATE_NEW
+                for widget_id in ("iw-annotation-source", "iw-annotation-version", "iw-annotation-date"):
+                    self.query_one(f"#{widget_id}", Input).value = ""
         elif page == "files":
             current = {item["role"]: item["path"] for item in draft.get("files", [])}
             for _label, role, _entity_type, widget_id in FILE_ENTRIES:
@@ -426,6 +467,12 @@ class ImportWizardScreen(DismissOnce, Screen):
 
     def _collect(self, page: str) -> str | None:
         """Validate the current page and merge it into the draft; error or None."""
+        if not self._ready:
+            return "Initialization has not completed. Retry initialization first."
+        if page in {"organism", "sample", "assembly", "annotation"}:
+            required = page != "annotation" or self.query_one("#iw-annotation-enabled", Checkbox).value
+            if required and not _select_value(self, f"iw-{page}-choice"):
+                return "Select an existing entity or create a new one."
         if page == "source":
             source = {
                 "source_type": _select_value(self, "iw-source-type"),
@@ -548,6 +595,8 @@ class ImportWizardScreen(DismissOnce, Screen):
         button_id = event.button.id or ""
         if button_id == "wizard-cancel":
             self.action_cancel()
+        elif self._loading or self._executing:
+            return
         elif button_id == "wizard-back":
             self._return_to_summary = False
             if self.page_index > 0:
@@ -561,6 +610,13 @@ class ImportWizardScreen(DismissOnce, Screen):
             self._goto(SECTIONS.index(button_id[len("wizard-edit-"):]))
 
     def _advance(self) -> None:
+        if self._loading:
+            return
+        if not self._ready:
+            self.clear_error()
+            self._set_loading(True)
+            self._startup()
+            return
         error = self._collect(PAGES[self.page_index])
         if error:
             self.show_error(error)
@@ -578,7 +634,7 @@ class ImportWizardScreen(DismissOnce, Screen):
     # -- execution -------------------------------------------------------------
 
     def _execute_import(self) -> None:
-        if self._executing:
+        if self._executing or not self._ready or self._loading:
             return
         self._executing = True
         self.clear_error()

@@ -1128,13 +1128,13 @@ def test_qc_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> Non
     released = threading.Event()
     cancelled_payloads: list[Any] = []
 
-    def blocking_run_qc(project_arg, *, file_id=None, progress=None):
+    def blocking_run_qc(project_arg, *, file_id=None, progress=None, **options):
         if not released.wait(10):
             raise AssertionError("test never released the QC stub")
         progress(1, 2, {"ok": True, "file_id": "FIL_000001"})
         return []
 
-    def failing_run_qc(project_arg, *, file_id=None, progress=None):
+    def failing_run_qc(project_arg, *, file_id=None, progress=None, **options):
         raise RuntimeError("qc exploded")
 
     async def scenario() -> None:

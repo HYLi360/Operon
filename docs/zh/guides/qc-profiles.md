@@ -39,7 +39,8 @@ warnings:
 （`operon tui`，按键 `6`，QC Profiles 标签页）：结构化表单（description、
 `applies_to` 复选框、规则行）会校验组合后的文档、递增 `version`、写回文件，
 并记录与 `operon evaluate` 相同的内容寻址快照——内置快照历史与"恢复为新版本"
-功能。
+功能。文件被删除或替换为旧版本后，下次内容变更保存会接着该名称已记录的最高
+版本递增。确认与恢复流程见 [TUI 参考](../reference/cli-tui.md)。
 
 运行：
 

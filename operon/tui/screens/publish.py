@@ -119,6 +119,8 @@ class ExportModal(WriteModal):
                 parts += [flag, shlex.quote(str(filters[key]))]
         for entity_id in filters.get("entity_ids") or []:
             parts += ["--entity-id", shlex.quote(entity_id)]
+        for file_id in filters.get("file_ids") or []:
+            parts += ["--file-id", shlex.quote(file_id)]
         if filters.get("link_kind") not in (None, "copy"):
             parts += ["--link", str(filters["link_kind"])]
         if not filters.get("include_qc", True):
@@ -181,6 +183,8 @@ class PublishPanel(Panel):
                                          allow_blank=True)
                             yield Input(placeholder="entity id (comma-separated)",
                                         id="export-entity-id")
+                            yield Input(placeholder="file id (comma-separated)",
+                                        id="export-file-id")
                             yield Input(placeholder="file role", id="export-file-role")
                             yield Input(placeholder="format", id="export-format")
                             yield Input(placeholder="entity state", id="export-state")
@@ -328,6 +332,9 @@ class PublishPanel(Panel):
         return {
             "entity_type": _select_text(self.query_one("#export-entity-type", Select)) or None,
             "entity_ids": entity_ids,
+            "file_ids": [item.strip() for item in
+                         self.query_one("#export-file-id", Input).value.split(",")
+                         if item.strip()],
             "file_role": self.query_one("#export-file-role", Input).value.strip() or None,
             "fmt": self.query_one("#export-format", Input).value.strip() or None,
             "state": self.query_one("#export-state", Input).value.strip() or None,
@@ -341,7 +348,7 @@ class PublishPanel(Panel):
         self.query_one("#export-error", Static).update(Text(str(message), style="red"))
 
     def _validate_export_filters(self, filters: dict[str, Any]) -> str | None:
-        if not any([filters["entity_type"], filters["entity_ids"], filters["file_role"],
+        if not any([filters["entity_type"], filters["entity_ids"], filters.get("file_ids"), filters["file_role"],
                     filters["fmt"], filters["state"], filters["decision"]]):
             return "export requires at least one selection criterion"
         if filters["decision"] and not filters["profile"]:
@@ -365,6 +372,7 @@ class PublishPanel(Panel):
                 self.project,
                 entity_type=filters["entity_type"],
                 entity_ids=filters["entity_ids"],
+                file_ids=filters.get("file_ids", []),
                 file_role=filters["file_role"],
                 fmt=filters["fmt"],
                 state=filters["state"],

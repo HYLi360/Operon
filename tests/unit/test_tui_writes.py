@@ -905,3 +905,79 @@ def test_evaluate_modal_selected_entity_scope(project: Project) -> None:
             assert _query(project, "SELECT COUNT(*) AS n FROM decisions")[0]["n"] == before + 1
 
     _run(scenario())
+
+
+@pytest.mark.parametrize("phred", ["33", "64", "auto"])
+def test_qc_options_match_cli_metrics_and_provenance(project: Project, tmp_path: Path, phred: str) -> None:
+    import json
+    from operon.cli import main
+
+    source = tmp_path / "reads.fastq"
+    source.write_text("@r1\nACGT\n+\nIIII\n@r2\nAAAA\n+\nHHHH\n@r3\nGGGG\n+\nIIII\n")
+    record = actions.ingest(project, str(source), "run", "RUN_000001", "option_test", fmt="fastq")
+    cli_root = tmp_path / "cli-project"
+    shutil.copytree(project.root, cli_root)
+    cli_project = Project.find(cli_root)
+    result = actions.run_qc(project, file_id=record["file_id"], sample_size=2,
+                            phred_offset=phred, rehash=True)
+    assert result[0]["ok"]
+    assert main(["--project", str(cli_root), "qc", "--file-id", record["file_id"],
+                 "--sample-size", "2", "--phred-offset", phred, "--rehash"]) == 0
+    sql = ("SELECT metric_name, metric_value, metric_numeric, parameter_set FROM qc_results "
+           "WHERE file_id=? ORDER BY metric_name")
+    metrics = _query(project, sql, (record["file_id"],))
+    assert metrics == _query(cli_project, sql, (record["file_id"],))
+    assert any(f":sample_2:phred_{phred}" in row["parameter_set"] for row in metrics)
+    run = _query(project, "SELECT execution_details FROM workflow_runs WHERE step='qc' "
+                 "ORDER BY rowid DESC LIMIT 1")[0]
+    details = json.loads(run["execution_details"])
+    assert details["integrity"]["rehash_requested"] is True
+
+
+@pytest.mark.parametrize("options", [{"sample_size": 0}, {"sample_size": -1}, {"phred_offset": "42"}])
+def test_qc_invalid_options_do_not_write(project: Project, options: dict) -> None:
+    before = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs")
+    with pytest.raises(ValidationError):
+        actions.run_qc(project, **options)
+    assert _query(project, "SELECT COUNT(*) AS n FROM workflow_runs") == before
+
+
+def test_qc_modal_options_validation_and_worker_values(project: Project, monkeypatch) -> None:
+    from textual.widgets import Checkbox
+    captured = []
+
+    def run(project_, *, file_id, progress, **options):
+        captured.append((file_id, options))
+        progress(1, 1, {"file_id": file_id, "ok": True})
+        return [{"file_id": file_id, "ok": True}]
+
+    monkeypatch.setattr(actions, "run_qc", run)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _settled(app)
+            modal = QcModal(project, "FIL_000001", 1)
+            app.push_screen(modal)
+            await pilot.pause()
+            assert modal.command_text() == "operon qc --file-id FIL_000001"
+            for invalid in ("", "abc", "0", "-1", "1.5"):
+                modal.query_one("#qc-sample-size", Input).value = invalid
+                modal.confirm()
+                assert "positive integer" in _static_text(modal.query_one("#modal-error", Static))
+                assert not modal.running
+            assert captured == []
+            modal.query_one("#qc-sample-size", Input).value = "2"
+            modal.query_one("#qc-phred-offset", Select).value = "64"
+            modal.query_one("#qc-rehash", Checkbox).value = True
+            await pilot.pause()
+            assert "--sample-size 2 --phred-offset 64 --rehash" in _static_text(
+                modal.query_one("#modal-command", Static))
+            # The fixed footer remains reachable in a small terminal.
+            assert await pilot.click("#confirm")
+            await pilot.pause()
+            await _settled(app)
+            assert not isinstance(app.screen, QcModal)
+
+    _run(scenario())
+    assert captured == [("FIL_000001", {"sample_size": 2, "phred_offset": "64", "rehash": True})]

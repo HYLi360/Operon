@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 import shutil
 from pathlib import Path
@@ -13,19 +14,20 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
-from textual.widgets import Button, ContentSwitcher, DataTable, Input, Select, Static, TabbedContent
+from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Input, Select, Static, TabbedContent
 
 from operon import taxonomy
 from operon.cli import main
 from operon.config import Project, load_project
 from operon.database import Database
 from operon.demo import init_demo
+from operon.errors import ValidationError
 from operon.export import _select_files
 from operon.release import release_exclusions_for, release_files_for
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
 from operon.tui.screens.coverage import CoverageModal, CoveragePanel
-from operon.tui.screens.import_wizard import ImportWizardScreen
+from operon.tui.screens.import_wizard import CREATE_NEW, PAGES, ImportWizardScreen
 from operon.tui.screens.publish import CreateReleaseModal, ExportModal, PublishPanel
 
 
@@ -733,5 +735,198 @@ def test_coverage_screen_empty_project(tmp_path: Path) -> None:
             assert generate.disabled
             assert "no reference sets" in _static_text(
                 panel.query_one("#coverage-error", Static))
+
+    _run(scenario())
+
+
+@pytest.mark.parametrize("row", ["family\t1\tunexpected", "family", ""])
+def test_coverage_malformed_row_is_inline_and_recoverable(coverage_project: Project, row: str) -> None:
+    result = actions.run_coverage(coverage_project, "cov@cov.1")
+    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    original = path.read_bytes()
+    path.write_text("rank\tnumerator\n" + row + "\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="coverage_summary.tsv: line 2: expected 2 fields"):
+        data.read_coverage_report(coverage_project, result["report_id"])
+
+    async def scenario() -> None:
+        app = OperonApp(coverage_project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("coverage")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(CoveragePanel)
+            panel._load_report(result["report_id"])
+            await _settled(app)
+            assert "line 2" in _static_text(panel.query_one("#coverage-report-headline", Static))
+            path.write_bytes(original)
+            panel._load_report(result["report_id"])
+            await _settled(app)
+            assert "error:" not in _static_text(panel.query_one("#coverage-report-headline", Static))
+            assert panel.query_one("#coverage-table-coverage_summary", DataTable).row_count == 2
+
+    _run(scenario())
+
+
+def test_coverage_validates_rows_beyond_display_limit(coverage_project: Project, monkeypatch) -> None:
+    result = actions.run_coverage(coverage_project, "cov@cov.1")
+    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    monkeypatch.setattr(data, "COVERAGE_REPORT_LIMIT", 1)
+    path.write_text("rank\tnumerator\nfamily\t1\ngenus\t2\n", encoding="utf-8")
+    table = data.read_coverage_report(coverage_project, result["report_id"])["tables"]["coverage_summary"]
+    assert table == {"columns": ["rank", "numerator"], "rows": [["family", "1"]],
+                     "truncated": True, "total": 2}
+    with path.open("a") as handle:
+        handle.write("species\t3\textra\n")
+    with pytest.raises(ValidationError, match="line 4"):
+        data.read_coverage_report(coverage_project, result["report_id"])
+
+
+@pytest.mark.parametrize("blank_lines", [1, 501])
+def test_coverage_blank_header_rejected(coverage_project: Project, blank_lines: int) -> None:
+    result = actions.run_coverage(coverage_project, "cov@cov.1")
+    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    path.write_text("\n" * blank_lines, encoding="utf-8")
+    with pytest.raises(ValidationError, match="line 1: missing TSV header"):
+        data.read_coverage_report(coverage_project, result["report_id"])
+
+
+def test_export_file_ids_preview_command_and_manifest(project: Project, tmp_path: Path) -> None:
+    ids = [row["file_id"] for row in data.list_files(project)[:2]]
+    output = tmp_path / "selected files"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("publish")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(PublishPanel)
+            panel.query_one("#publish-tabs", TabbedContent).active = "tab-export"
+            await pilot.pause()
+            panel.query_one("#export-file-id", Input).value = ", " + ", ".join(ids) + ", "
+            panel.query_one("#export-output", Input).value = str(output)
+            await _button_click(pilot, app, "#export-preview-btn")
+            assert "2 file(s)" in _static_text(panel.query_one("#export-preview-summary", Static))
+            await _button_click(pilot, app, "#export-run")
+            modal = app.screen
+            assert isinstance(modal, ExportModal)
+            command = modal.command_text()
+            assert all(f"--file-id {file_id}" in command for file_id in ids)
+            await _button_click(pilot, app, "#confirm")
+            await _settled(app)
+            assert not isinstance(app.screen, ExportModal)
+
+    _run(scenario())
+    with (output / "manifest.tsv").open() as handle:
+        assert {row["file_id"] for row in csv.DictReader(handle, delimiter="\t")} == set(ids)
+    assert data.export_preview(project, file_ids=ids, entity_type="run")["count"] == sum(
+        row["entity_type"] == "run" for row in data.list_files(project)[:2]
+    )
+
+
+@pytest.mark.parametrize("page,identifier", [
+    ("organism", "ORG_000001"), ("sample", "SMP_000001"),
+    ("assembly", "ASM_000001"), ("annotation", "ANN_000001"),
+])
+def test_wizard_retired_draft_choice_requires_reselection(project: Project, page: str, identifier: str) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            wizard = ImportWizardScreen(project)
+            app.push_screen(wizard)
+            await pilot.pause()
+            await _settled(app)
+            wizard.draft = {
+                "organism": {"action": "reuse", "id": "ORG_000001"},
+                "sample": {"action": "reuse", "id": "SMP_000001"},
+                "assembly": {"action": "reuse", "id": "ASM_000001"},
+                "annotation": {"action": "reuse", "id": "ANN_000001"},
+            }
+            actions.lifecycle_apply(project, identifier, "RETIRE", reason="test retirement",
+                                    actor="test", reason_code="other")
+            wizard._goto(PAGES.index(page))
+            await _settled(app)
+            assert wizard.query_one("#wizard-pages", ContentSwitcher).current == f"page-{page}"
+            assert "no longer available" in _static_text(wizard.query_one("#wizard-error", Static))
+            assert wizard.query_one(f"#iw-{page}-choice", Select).value is Select.NULL
+            assert "Select an existing entity" in wizard._collect(page)
+            assert wizard.draft[page]["id"] == identifier  # no silent substitution
+            wizard.query_one(f"#iw-{page}-choice", Select).value = CREATE_NEW
+            if page == "organism":
+                wizard.query_one("#iw-organism-name", Input).value = "Replacement species"
+            assert wizard._collect(page) is None
+            assert wizard.draft[page]["action"] == "create"
+
+    _run(scenario())
+
+
+def test_wizard_startup_failure_can_retry_without_navigation(project: Project, monkeypatch) -> None:
+    reserve = actions.reserve_entity_ids
+
+    def fail(project):
+        raise RuntimeError("reservation unavailable")
+
+    monkeypatch.setattr(actions, "reserve_entity_ids", fail)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            wizard = ImportWizardScreen(project)
+            app.push_screen(wizard)
+            await pilot.pause()
+            await _settled(app)
+            assert "reservation unavailable" in _static_text(wizard.query_one("#wizard-error", Static))
+            assert "Retry" in str(wizard.query_one("#wizard-next", Button).label)
+            wizard._goto(1)
+            wizard._execute_import()
+            assert wizard.page_index == 0 and not wizard._executing
+            assert "Initialization" in wizard._collect("organism")
+            monkeypatch.setattr(actions, "reserve_entity_ids", reserve)
+            wizard._advance()
+            wizard._advance()  # a queued second click must not start another reservation
+            await _settled(app)
+            assert wizard._ready and wizard.reserved_ids["organism"]
+            assert _static_text(wizard.query_one("#wizard-error", Static)) == ""
+            wizard._goto(1)
+            await _settled(app)
+            wizard.query_one("#iw-organism-name", Input).value = "Recovered species"
+            assert wizard._collect("organism") is None
+
+    _run(scenario())
+
+
+def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            wizard = ImportWizardScreen(project)
+            app.push_screen(wizard)
+            await pilot.pause()
+            await _settled(app)
+            wizard.draft["sample"] = {"action": "reuse", "id": "SMP_000001"}
+            wizard.draft["assembly"] = {"action": "reuse", "id": "ASM_000001"}
+            for page, enabled, fields in [
+                ("sequencing", "iw-run-enabled", ["iw-run-accession", "iw-run-experiment", "iw-run-instrument"]),
+                ("annotation", "iw-annotation-enabled", ["iw-annotation-source", "iw-annotation-version", "iw-annotation-date"]),
+            ]:
+                wizard._goto(PAGES.index(page))
+                await _settled(app)
+                for field in fields:
+                    wizard.query_one(f"#{field}", Input).value = "stale"
+                if page == "sequencing":
+                    wizard.query_one("#iw-run-platform", Select).value = "ILLUMINA"
+                wizard.query_one(f"#{enabled}", Checkbox).value = False
+                assert wizard._collect(page) is None
+                wizard._goto(PAGES.index(page))
+                await _settled(app)
+                wizard.query_one(f"#{enabled}", Checkbox).value = True
+                assert all(wizard.query_one(f"#{field}", Input).value == "" for field in fields)
+                if page == "sequencing":
+                    assert wizard.query_one("#iw-run-platform", Select).value is Select.NULL
 
     _run(scenario())

@@ -145,6 +145,7 @@ class QcModal(WriteModal):
         self.done = 0
         self.running = False
         self._worker: Any = None
+        self._qc_options: dict[str, Any] = {}
 
     def compose_form(self) -> Iterable[Any]:
         if self.file_id:
@@ -152,6 +153,12 @@ class QcModal(WriteModal):
         else:
             scope = f"Run built-in QC stages for all {self.total} files?"
         yield Static(scope, id="qc-scope", classes="modal-info")
+        yield Static("FASTQ sample size (reads)", classes="modal-label")
+        yield Input(value="1000000", id="qc-sample-size")
+        yield Static("FASTQ Phred offset (auto assumes 33 when ambiguous)", classes="modal-label")
+        yield Select([("33", "33"), ("64", "64"), ("auto", "auto")],
+                     value="33", allow_blank=False, id="qc-phred-offset")
+        yield Checkbox("Recompute input SHA-256 (--rehash)", id="qc-rehash")
         yield ProgressBar(total=max(self.total, 1), id="qc-progress")
         yield Static("", id="qc-status", classes="modal-info")
 
@@ -160,18 +167,56 @@ class QcModal(WriteModal):
         self.query_one("#qc-progress", ProgressBar).display = False
 
     def command_text(self) -> str:
+        parts = ["operon", "qc"]
         if self.file_id:
-            return f"operon qc --file-id {self.file_id}"
-        return "operon qc"
+            parts += ["--file-id", shlex.quote(self.file_id)]
+        sample = self.query_one("#qc-sample-size", Input).value.strip()
+        if sample != "1000000":
+            parts += ["--sample-size", shlex.quote(sample or "…")]
+        phred = str(self.query_one("#qc-phred-offset", Select).value)
+        if phred != "33":
+            parts += ["--phred-offset", phred]
+        if self.query_one("#qc-rehash", Checkbox).value:
+            parts.append("--rehash")
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "qc-sample-size":
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "qc-phred-offset":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "qc-rehash":
+            self.refresh_command()
 
     def confirm(self) -> None:
         if self.running:
             return
+        try:
+            sample_size = int(self.query_one("#qc-sample-size", Input).value.strip())
+            if sample_size <= 0:
+                raise ValueError
+        except ValueError:
+            self.show_error("sample size must be a positive integer")
+            return
+        self._qc_options = {
+            "sample_size": sample_size,
+            "phred_offset": str(self.query_one("#qc-phred-offset", Select).value),
+            "rehash": self.query_one("#qc-rehash", Checkbox).value,
+        }
         self.running = True
+        self._set_options_disabled(True)
         self.set_confirm_enabled(False)
         self.clear_error()
         self.query_one("#qc-progress", ProgressBar).display = True
         self._worker = self._run_qc()
+
+    def _set_options_disabled(self, disabled: bool) -> None:
+        for selector in ("#qc-sample-size", "#qc-phred-offset", "#qc-rehash"):
+            self.query_one(selector).disabled = disabled
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
@@ -202,7 +247,9 @@ class QcModal(WriteModal):
                 pass
 
         try:
-            payload: Any = actions.run_qc(self.project, file_id=self.file_id, progress=progress)
+            payload: Any = actions.run_qc(
+                self.project, file_id=self.file_id, progress=progress, **self._qc_options,
+            )
         except Exception as exc:  # noqa: BLE001 - routed to _qc_done
             payload = exc
         if self.app.is_running:
@@ -228,6 +275,7 @@ class QcModal(WriteModal):
             self.dismiss({"cancelled": True, "done": self.done, "total": self.total})
             return
         if isinstance(payload, BaseException):
+            self._set_options_disabled(False)
             self.set_confirm_enabled(True)
             self.show_error(payload)
             return
