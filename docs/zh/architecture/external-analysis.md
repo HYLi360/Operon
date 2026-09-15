@@ -62,9 +62,10 @@ hits 照常按 `max_hits_per_query` 截断。每个探测到的步骤版本都�
   （HPC 头节点/云虚拟机）上执行；`execution.ssh.scheduler: slurm` 时改为在远端
   走 sbatch/squeue。支持 `remote_root` 路径映射（空表示共享文件系统）；输入
   文件经 SFTP 上传（内容一致跳过，严格 SHA-256/目录树哈希；不同内容拒绝覆盖）；
-  若配置 `storage_remote`，REMOTE_ONLY 输入在远端原位消费。运行前清除精确计算出的
-  远端旧输出，expected outputs 经临时文件拉回并与远端内容再次比对；已有本地输出
-  只有内容完全相同时才接受。`storage_remote` 与显式 `remote_root` 必须指向同一 root；
+  若配置 `storage_remote`，REMOTE_ONLY 输入在远端原位消费。运行前既有的远端输出
+  先重命名为 `<path>.operon-prev-<uuid>` 备份而非删除：运行成功且新输出校验通过后
+  删除备份，失败或中断时尽力把备份恢复原位。expected outputs 经临时文件拉回并与
+  远端内容再次比对；已有本地输出只有内容完全相同时才接受。`storage_remote` 与显式 `remote_root` 必须指向同一 root；
   一个分析批次以一个惰性 SSH client 完成版本探测、远端输入验证、数据库预检和所有
   命令，结束时统一关闭。直连命令以 util-linux `setsid --wait` 在独立进程组中运行
   （保证退出码可靠回传），超时时根据受限 PID 文件向远端进程组发送 TERM/KILL，

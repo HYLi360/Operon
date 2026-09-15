@@ -703,7 +703,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 stage_inputs=[outside],
             )
 
-    def test_stale_remote_output_is_removed_before_execution(self):
+    def test_stale_remote_output_is_backed_up_and_dropped_on_success(self):
         remote_root = self.root / "remote-stale"
         stale = remote_root / "analysis" / "out.txt"
         stale.parent.mkdir(parents=True)
@@ -718,8 +718,109 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
             expected_outputs=[local_output],
         )
         self.assertEqual(result.exit_code, 0)
+        # The previous output was backed up, never produced anew, and the
+        # backup was dropped once the run succeeded.
         self.assertFalse(stale.exists())
         self.assertFalse(local_output.exists())
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    def test_failed_run_restores_previous_remote_output(self):
+        remote_root = self.root / "remote-restore"
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        staged = self.root / "inputs" / "new.txt"
+        staged.parent.mkdir()
+        staged.write_text("partial", encoding="utf-8")
+        local_output = self.root / "analysis" / "out.txt"
+        # Path argv elements are rewritten into the remote mirror, so the
+        # failing payload really overwrites the remote output first.
+        result = executor.run(
+            ["bash", "-c", 'cp "$1" "$2"; exit 3', "bash", str(staged), str(local_output)],
+            cwd=self.root,
+            stdout_path=self.root / "logs" / "fail.stdout.log",
+            stderr_path=self.root / "logs" / "fail.stderr.log",
+            stage_inputs=[staged], expected_outputs=[local_output],
+        )
+        self.assertEqual(result.exit_code, 3)
+        # The partial new output is replaced by the restored previous one.
+        self.assertEqual(previous.read_text(), "old result")
+        self.assertFalse(local_output.exists())
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    def test_successful_run_replaces_previous_remote_output(self):
+        remote_root = self.root / "remote-replace"
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        staged = self.root / "inputs" / "new.txt"
+        staged.parent.mkdir()
+        staged.write_text("new-result", encoding="utf-8")
+        local_output = self.root / "analysis" / "out.txt"
+        result = executor.run(
+            ["cp", str(staged), str(local_output)], cwd=self.root,
+            stdout_path=self.root / "logs" / "ok.stdout.log",
+            stderr_path=self.root / "logs" / "ok.stderr.log",
+            stage_inputs=[staged], expected_outputs=[local_output],
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(local_output.read_text().strip(), "new-result")
+        self.assertEqual(previous.read_text().strip(), "new-result")
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    def test_interrupted_run_restores_previous_remote_output(self, monkeypatch):
+        remote_root = self.root / "remote-interrupt"
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        hanging = _HangingChannel()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("setsid "):
+                stream = _HangingStream(hanging)
+                return None, stream, stream
+            proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+
+        def interrupting_sleep(_seconds):
+            raise ShutdownRequested(signal.SIGINT)
+
+        monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        with self.assertRaises(ShutdownRequested):
+            executor.run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "int.stdout.log",
+                stderr_path=self.root / "logs" / "int.stderr.log",
+                expected_outputs=[self.root / "analysis" / "out.txt"],
+            )
+        self.assertEqual(previous.read_text(), "old result")
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    def test_failed_run_without_previous_output_makes_no_backup(self):
+        remote_root = self.root / "remote-noop"
+        remote_root.mkdir()
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        local_output = self.root / "analysis" / "out.txt"
+        result = executor.run(
+            ["false"], cwd=self.root,
+            stdout_path=self.root / "logs" / "noop.stdout.log",
+            stderr_path=self.root / "logs" / "noop.stderr.log",
+            expected_outputs=[local_output],
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertFalse(local_output.exists())
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
 
     def test_remote_database_contract_requires_reference_and_creates_mutable_cache(self):
         remote_root = self.root / "remote-database"

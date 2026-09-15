@@ -34,6 +34,7 @@
 | K14 | fan-out | 中断（Ctrl+C）现在会把 fan-out 的 workflow run 落为 `interrupted`（退出码 130），不再留下 `running` 行；本次运行创建的目标仍会被删除。 |
 | K15 | recipe | `file_role_prefix` 按 `:` 边界匹配：`sub` 选中精确的 `sub` 与所有 `sub:*`，不再误捕 `sub2:*`。 |
 | K16 | 执行后端 | 被信号杀死的 Slurm 作业不再被记为成功：`sacct` 回退会把 `exit:signal` 中非零的信号分量合成 shell 风格退出码（OOM 终止的 `0:9` 变为 137），并在 run 的 details 中以 `slurm_exit_signal` 记录该信号；退出码/记账重试也从 5 次 × 1 秒提高到 10 次 × 2 秒（`_SLURM_EXIT_CODE_RETRIES`/`_SLURM_EXIT_CODE_RETRY_SECONDS`）。 |
+| K17 | 执行后端 | SSH 后端不再在运行前删除远端输出：既有远端输出先重命名为 `<path>.operon-prev-<uuid>` 备份，运行成功且新输出校验通过后删除备份，失败或中断时尽力把备份恢复原位——失败运行不会再毁掉此前的远端输出。 |
 
 ## 身份、归档与文件系统
 
@@ -167,7 +168,7 @@
 - **本地 Slurm 的取消失败是静默的。** 本地 Slurm 后端在超时和中断时忽略 `scancel` 失败，而远端 Slurm 路径会记录 `cancellation_error` 并给出警告；轮询中途的 `squeue`/SSH 控制失败会直接中止而不调用 `scancel`，因此正在运行的作业可能被遗留（`execution.py`）。
 - **Slurm 默认值很宽松。** `--time=24:00:00`，未配置时没有 partition 也没有内存限制，`poll_interval` 为 15 秒（有效下限 0.1 秒）（`execution.py`）。
 - **`setup_commands` 在作业切换目录之前执行。** 它们先于载荷的 `cd` 运行，因此其中的相对路径行为与载荷不同（`execution.py`）。
-- **已知问题：SSH 后端在每次运行前删除远端输出，且只在成功时回拉。** 失败的运行会破坏此前的远端输出，而 `--keep-partial` 也无济于事，因为回拉根本不会发生（`execution.py`）。
+- **SSH 后端用重命名备份保护既有远端输出。** 运行前，`remote_root` 下已存在的远端输出被重命名为 `<path>.operon-prev-<uuid>`；运行成功且新输出拉回校验通过后删除备份，失败或中断时尽力把备份恢复原位（先移除任何半成品新远端输出）。回拉仍只在成功时发生，因此 `--keep-partial` 依旧只决定失败或中断后哪些本地产物被保留——远端备份的恢复与它无关（`execution.py`）。
 
 ## 远程镜像
 

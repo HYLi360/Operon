@@ -792,29 +792,37 @@ class SSHExecutor:
         sftp = client.open_sftp()
         try:
             self._stage_inputs(client, sftp, stage_inputs)
-            self._reset_outputs(sftp, expected_outputs)
-            if self.scheduler == "slurm":
-                result = self._run_via_slurm(
-                    client, sftp, [str(a) for a in argv], cwd=cwd,
-                    stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                    timeout=timeout, threads=threads, run_id=run_id,
-                )
-            else:
-                command = [str(a) for a in argv]
-                remote_probe = f"/tmp/operon-env-{uuid.uuid4().hex}"
-                try:
-                    result = self._run_direct(
-                        client, command, cwd=cwd,
+            backups = self._reset_outputs(sftp, expected_outputs)
+            try:
+                if self.scheduler == "slurm":
+                    result = self._run_via_slurm(
+                        client, sftp, [str(a) for a in argv], cwd=cwd,
                         stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                        timeout=timeout, run_id=run_id, probe_path=remote_probe,
+                        timeout=timeout, threads=threads, run_id=run_id,
                     )
-                finally:
-                    environment = _read_remote_probe_environment(sftp, remote_probe)
-                result.details["environment"] = environment or {
-                    "capture_schema": 1, "capture_status": "failed",
-                }
+                else:
+                    command = [str(a) for a in argv]
+                    remote_probe = f"/tmp/operon-env-{uuid.uuid4().hex}"
+                    try:
+                        result = self._run_direct(
+                            client, command, cwd=cwd,
+                            stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
+                            timeout=timeout, run_id=run_id, probe_path=remote_probe,
+                        )
+                    finally:
+                        environment = _read_remote_probe_environment(sftp, remote_probe)
+                    result.details["environment"] = environment or {
+                        "capture_schema": 1, "capture_status": "failed",
+                    }
+                if result.exit_code == 0:
+                    self._pull_outputs(client, sftp, expected_outputs)
+            except BaseException:
+                self._restore_output_backups(sftp, backups)
+                raise
             if result.exit_code == 0:
-                self._pull_outputs(client, sftp, expected_outputs)
+                self._drop_output_backups(sftp, backups)
+            else:
+                self._restore_output_backups(sftp, backups)
             return result
         finally:
             sftp.close()
@@ -859,22 +867,60 @@ class SSHExecutor:
                 _remove_remote_tree(sftp, tmp)
                 raise
 
-    def _reset_outputs(self, sftp: Any, expected_outputs: Iterable[Any]) -> None:
-        from operon.remotes import _remove_remote_tree, sftp_makedirs
-        for item in expected_outputs:
-            local = Path(item).resolve(strict=False)
-            if self.remote_root and not local.is_relative_to(self.project.root.resolve()):
-                raise ValidationError(
-                    f"SSH expected output must stay under the project root: {local}"
-                )
-            remote = self._rewrite(local)
-            if self.remote_root:
-                root = posixpath.normpath(self.remote_root)
-                normalized = posixpath.normpath(remote)
-                if not normalized.startswith(root.rstrip("/") + "/"):
-                    raise ValidationError(f"SSH output escapes remote_root: {remote}")
-                _remove_remote_tree(sftp, normalized)
-            sftp_makedirs(sftp, posixpath.dirname(remote))
+    def _reset_outputs(self, sftp: Any, expected_outputs: Iterable[Any]) -> list[tuple[str, str]]:
+        """Back up existing remote outputs instead of deleting them.
+
+        Returns ``(remote, backup)`` pairs; the caller drops the backups once
+        the new outputs are pulled and verified, or restores them after a
+        failure or interrupt.
+        """
+        from operon.remotes import _sftp_not_found, sftp_makedirs
+        backups: list[tuple[str, str]] = []
+        try:
+            for item in expected_outputs:
+                local = Path(item).resolve(strict=False)
+                if self.remote_root and not local.is_relative_to(self.project.root.resolve()):
+                    raise ValidationError(
+                        f"SSH expected output must stay under the project root: {local}"
+                    )
+                remote = self._rewrite(local)
+                if self.remote_root:
+                    root = posixpath.normpath(self.remote_root)
+                    normalized = posixpath.normpath(remote)
+                    if not normalized.startswith(root.rstrip("/") + "/"):
+                        raise ValidationError(f"SSH output escapes remote_root: {remote}")
+                    backup = f"{normalized}.operon-prev-{uuid.uuid4().hex}"
+                    try:
+                        sftp.rename(normalized, backup)
+                    except IOError as exc:
+                        if not _sftp_not_found(exc):
+                            raise
+                    else:
+                        backups.append((normalized, backup))
+                sftp_makedirs(sftp, posixpath.dirname(remote))
+        except Exception:
+            self._restore_output_backups(sftp, backups)
+            raise
+        return backups
+
+    def _drop_output_backups(self, sftp: Any, backups: list[tuple[str, str]]) -> None:
+        """Remove previous-output backups; the new outputs are already verified."""
+        from operon.remotes import _remove_remote_tree
+        for _, backup in backups:
+            try:
+                _remove_remote_tree(sftp, backup)
+            except Exception:
+                pass
+
+    def _restore_output_backups(self, sftp: Any, backups: list[tuple[str, str]]) -> None:
+        """Best-effort restore of previous remote outputs after a failed run."""
+        from operon.remotes import _remove_remote_tree
+        for remote, backup in reversed(backups):
+            try:
+                _remove_remote_tree(sftp, remote)
+                sftp.rename(backup, remote)
+            except Exception:
+                pass
 
     def _stage_directory(self, client: Any, sftp: Any, local: Path, remote: str) -> None:
         """Stage an immutable directory artifact with a strict tree identity."""

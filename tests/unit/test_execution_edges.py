@@ -427,6 +427,28 @@ def test_reset_and_pull_outputs_for_files_directories_and_conflicts(tmp_path, mo
     assert not (root / "bad.txt").exists()
 
 
+def test_reset_outputs_restores_backups_when_validation_fails(tmp_path):
+    root = tmp_path / "project"
+    remote_root = tmp_path / "remote"
+    (root / "analysis").mkdir(parents=True)
+    (remote_root / "analysis").mkdir(parents=True)
+    previous = remote_root / "analysis" / "out.txt"
+    previous.write_text("old result", encoding="utf-8")
+    client = FakeSSHClient()
+    ssh = execution.SSHExecutor(
+        project(root), {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(), client_factory=lambda _self: client,
+    )
+    with pytest.raises(ValidationError, match="under the project root"):
+        ssh._reset_outputs(
+            client.sftp, [root / "analysis" / "out.txt", tmp_path / "outside"],
+        )
+    # The first output was already backed up when the second failed
+    # validation; the backup must be restored in place.
+    assert previous.read_text() == "old result"
+    assert list(remote_root.rglob("*.operon-prev-*")) == []
+
+
 def test_remote_slurm_submission_queue_and_exitcode_failures(tmp_path, monkeypatch):
     root = tmp_path / "project"
     remote_root = tmp_path / "remote"
