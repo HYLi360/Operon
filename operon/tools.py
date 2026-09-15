@@ -30,6 +30,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -1275,6 +1276,21 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
             if not dry_run:
                 _sweep_stale_running_jobs(db, analysis_name)
             total = len(files)
+            slurm_config = getattr(executor, "slurm", None)
+            array_requested = (
+                not dry_run
+                and slurm_config is not None
+                and bool(getattr(slurm_config, "array", False))
+                and getattr(executor, "run_array", None) is not None
+            )
+            if array_requested:
+                return _run_analysis_two_phase(
+                    project, db, recipe, tool, config, files, executor,
+                    force=force, threads=threads, keep_partial=keep_partial,
+                    runtime_parameters=resolved_parameters,
+                    array_concurrency=slurm_config.array_concurrency,
+                    progress_callback=progress_callback,
+                )
             for index, file_record in enumerate(files, start=1):
                 if progress_callback is not None:
                     progress_callback(index, total, file_record["file_id"], "start")
@@ -1290,15 +1306,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                     # stop the batch here and let the CLI report exit 130.
                     raise
                 except Exception as exc:
-                    result = {
-                        "file_id": file_record["file_id"],
-                        "entity_type": file_record["entity_type"],
-                        "entity_id": file_record["entity_id"],
-                        "analysis": recipe.name,
-                        "cached": False,
-                        "status": "error",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
+                    result = _analysis_error_result(file_record, recipe, exc)
                 results.append(result)
                 if progress_callback is not None:
                     progress_callback(index, total, file_record["file_id"],
@@ -1308,6 +1316,330 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
         if close is not None:
             close()
     return results
+
+
+@dataclass
+class _AnalysisExecution:
+    """One file planned for real execution: the RUNNING row already exists.
+
+    Produced by ``plan_analysis_for_file``; executed either immediately
+    (sequential per-file path) or as one task of a job array.  Array
+    participation never enters the cache fingerprint, so a cached result is
+    reusable regardless of how it was produced.
+    """
+
+    file_record: dict[str, Any]
+    job_id: int
+    run_id: str
+    argv_steps: list[list[str]]
+    commands: list[list[str]] | None
+    command_details: list[dict[str, Any]] | None
+    command_display: str
+    version: str
+    threads: int
+    output_path: Path
+    output_rel: str
+    work_dir: Path | None
+    stage_inputs: tuple[Any, ...]
+    env_decision: dict[str, Any] | None
+    runtime_parameters: dict[str, str] | None
+    stdout_path: Path
+    stderr_path: Path
+    started: str
+    backups: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                            config: dict[str, Any], files: list[dict[str, Any]], executor: Any,
+                            *, force: bool, threads: int, keep_partial: bool,
+                            runtime_parameters: dict[str, str] | None,
+                            array_concurrency: int | None,
+                            progress_callback: Callable[[int, int, str, str], None] | None,
+                            ) -> list[dict[str, Any]]:
+    """Array-enabled analyze: plan per file, submit once, collect per task.
+
+    Phase 1 applies the exact per-file decisions of the sequential path
+    (input verification, cache reuse, adopt, force, version probing) and only
+    collects the files that need real computation.  Phase 2 submits them as
+    one job array; phase 3 replays the sequential post-run bookkeeping per
+    task, so every file keeps its own independent analysis_jobs and
+    workflow_runs rows (scheduler_job_id is the per-task
+    ``<array_id>_<task_index>``).
+    """
+    total = len(files)
+    results: list[dict[str, Any] | None] = [None] * total
+    pending: list[tuple[int, _AnalysisExecution]] = []
+    for index, file_record in enumerate(files, start=1):
+        if progress_callback is not None:
+            progress_callback(index, total, file_record["file_id"], "start")
+        try:
+            plan = plan_analysis_for_file(
+                project, db, recipe, tool, config, file_record,
+                dry_run=False, force=force, threads=threads, executor=executor,
+                runtime_parameters=runtime_parameters,
+            )
+        except ShutdownRequested:
+            raise
+        except Exception as exc:
+            results[index - 1] = _analysis_error_result(file_record, recipe, exc)
+            if progress_callback is not None:
+                progress_callback(index, total, file_record["file_id"], "error")
+            continue
+        if isinstance(plan, _AnalysisExecution):
+            pending.append((index, plan))
+        else:
+            results[index - 1] = plan
+            if progress_callback is not None:
+                progress_callback(index, total, file_record["file_id"],
+                                  str(plan.get("status", "done")))
+    # A job array dispatches one shell line per task; multi-step command
+    # chains keep the sequential per-file path.  Below two array-eligible
+    # tasks the array buys nothing, so they fall back to per-file submission
+    # as well.
+    array_plans = [(i, p) for i, p in pending if len(p.argv_steps) == 1]
+    sequential = pending
+    if len(array_plans) >= 2:
+        _execute_analysis_array(
+            project, db, recipe, tool, executor, array_plans, results,
+            threads=threads, array_concurrency=array_concurrency,
+            keep_partial=keep_partial, progress_callback=progress_callback, total=total,
+        )
+        sequential = [(i, p) for i, p in pending if len(p.argv_steps) != 1]
+    for index, plan in sequential:
+        try:
+            run_record = _execute_analysis_plan(project, db, recipe, tool, executor, plan)
+            outcome = _finalize_analysis_execution(project, db, recipe, tool, plan,
+                                                   run_record, keep_partial=keep_partial)
+        except ShutdownRequested as exc:
+            _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            raise
+        except Exception as exc:
+            _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            outcome = _analysis_error_result(plan.file_record, recipe, exc)
+        results[index - 1] = outcome
+        if progress_callback is not None:
+            progress_callback(index, total, plan.file_record["file_id"],
+                              str(outcome.get("status", "done")))
+    return [result for result in results if result is not None]
+
+
+def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                            executor: Any, indexed_plans: list[tuple[int, _AnalysisExecution]],
+                            results: list[dict[str, Any] | None],
+                            *, threads: int, array_concurrency: int | None,
+                            keep_partial: bool,
+                            progress_callback: Callable[[int, int, str, str], None] | None,
+                            total: int) -> None:
+    """Submit planned files as one job array and collect each task's result.
+
+    ``run_array`` performs neither the input staging nor the remote output
+    backup that ``SSHExecutor.run`` does, so both are applied here per task:
+    inputs are staged and existing remote outputs are moved aside before
+    submission; a completed task's output is pulled and its backup dropped, a
+    failed/interrupted task's backup is restored — the same guarantee the
+    per-file path gives.  (The local Slurm backend needs neither:
+    ``SlurmExecutor.run`` itself performs no staging or backup — outputs live
+    on the shared filesystem and a previous local output was already removed
+    during planning.)
+    """
+    from operon.workflow import record_execution_result
+    logs = project.logs_root
+    logs.mkdir(parents=True, exist_ok=True)
+    ssh_remote = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
+    client = None
+    sftp = None
+    finalized: set[int] = set()
+    started = now_iso()
+    started_monotonic = time.monotonic()
+    batch: list[tuple[int, _AnalysisExecution]] = []
+    try:
+        if ssh_remote:
+            client = executor._connect()
+            sftp = client.open_sftp()
+            for index, plan in indexed_plans:
+                try:
+                    executor._stage_inputs(client, sftp, plan.stage_inputs)
+                    plan.backups = executor._reset_outputs(sftp, [plan.output_path])
+                except Exception as exc:
+                    _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+                    finalized.add(plan.job_id)
+                    results[index - 1] = _analysis_error_result(plan.file_record, recipe, exc)
+                    if progress_callback is not None:
+                        progress_callback(index, total, plan.file_record["file_id"], "error")
+                else:
+                    batch.append((index, plan))
+        else:
+            batch = list(indexed_plans)
+        if not batch:
+            return
+        tasks = [
+            {
+                "run_id": plan.run_id,
+                "command": shlex.join(plan.argv_steps[0]),
+                "stdout_path": plan.stdout_path,
+                "stderr_path": plan.stderr_path,
+            }
+            for _, plan in batch
+        ]
+        try:
+            exec_results = executor.run_array(
+                tasks, cwd=project.root, threads=threads,
+                array_concurrency=array_concurrency,
+            )
+        except KeyboardInterrupt as exc:
+            _finalize_interrupted_array(
+                project, db, recipe, tool, executor, batch, results, finalized,
+                sftp=sftp, client=client, keep_partial=keep_partial, started=started,
+            )
+            raise
+        if len(exec_results) != len(batch):
+            raise ExternalToolError(
+                f"run_array returned {len(exec_results)} results for {len(batch)} tasks"
+            )
+        duration = round(time.monotonic() - started_monotonic, 3)
+        for (index, plan), result in zip(batch, exec_results):
+            try:
+                if sftp is not None and plan.backups:
+                    if result.exit_code == 0 and not result.error:
+                        executor._pull_outputs(client, sftp, [plan.output_path])
+                        executor._drop_output_backups(sftp, plan.backups)
+                    else:
+                        executor._restore_output_backups(sftp, plan.backups)
+                    plan.backups = []
+                run_record = record_execution_result(
+                    db, project, result,
+                    run_id=plan.run_id, argv=plan.argv_steps[0],
+                    step=f"analysis:{recipe.name}",
+                    entity_type=plan.file_record["entity_type"],
+                    entity_id=plan.file_record["entity_id"],
+                    parameter_set=f"{recipe.name}:{plan.version}",
+                    expected_outputs=[plan.output_path],
+                    cwd=project.root,
+                    tool=tool.name, tool_version=plan.version, threads=threads,
+                    executor_name=executor.describe(),
+                    started_at=started, duration_seconds=duration,
+                    stdout_file=plan.stdout_path, stderr_file=plan.stderr_path,
+                    extra_details=_env_policy_extra_details(plan),
+                )
+                if run_record["status"] != "completed":
+                    raise RuntimeError(
+                        f"analysis:{recipe.name} failed: "
+                        f"{run_record.get('error') or 'unknown error'}"
+                    )
+                outcome = _finalize_analysis_execution(
+                    project, db, recipe, tool, plan, run_record, keep_partial=keep_partial)
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                if sftp is not None and plan.backups:
+                    executor._restore_output_backups(sftp, plan.backups)
+                    plan.backups = []
+                _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+                outcome = _analysis_error_result(plan.file_record, recipe, exc)
+            finalized.add(plan.job_id)
+            results[index - 1] = outcome
+            if progress_callback is not None:
+                progress_callback(index, total, plan.file_record["file_id"],
+                                  str(outcome.get("status", "done")))
+    except KeyboardInterrupt as exc:
+        # A shutdown during staging or collection: every plan that was never
+        # finalized is the in-flight file of the sequential path.
+        for _, plan in indexed_plans:
+            if plan.job_id in finalized:
+                continue
+            if sftp is not None and plan.backups:
+                executor._restore_output_backups(sftp, plan.backups)
+                plan.backups = []
+            _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+        raise
+    except Exception as exc:
+        # Whole-batch failure (connect, staging setup, submission): every
+        # planned file fails with the same error, as sequential submission
+        # would produce per file.
+        for index, plan in indexed_plans:
+            if plan.job_id in finalized:
+                continue
+            if sftp is not None and plan.backups:
+                executor._restore_output_backups(sftp, plan.backups)
+                plan.backups = []
+            _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            results[index - 1] = _analysis_error_result(plan.file_record, recipe, exc)
+            if progress_callback is not None:
+                progress_callback(index, total, plan.file_record["file_id"], "error")
+    finally:
+        if sftp is not None:
+            sftp.close()
+
+
+def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                                executor: Any,
+                                batch: list[tuple[int, _AnalysisExecution]],
+                                results: list[dict[str, Any] | None],
+                                finalized: set[int],
+                                *, sftp: Any, client: Any, keep_partial: bool,
+                                started: str) -> None:
+    """Bookkeep a cancelled array: finished tasks complete, the rest interrupt.
+
+    The executor cancels the whole array on interrupt and re-raises; which
+    tasks finished is visible from the per-task ``<run_id>.exitcode`` files
+    (the remote backend pulls them before propagating).  A task with an exit
+    code is finalized exactly like a sequential per-file run — completed or
+    failed, with its own workflow_runs row; a task without one is the
+    in-flight file of the sequential interrupt path (marked interrupted by
+    the caller, partial output removed, no workflow_runs row).
+    """
+    from operon.execution import ExecResult
+    from operon.workflow import record_execution_result
+    for index, plan in batch:
+        exitcode_path = plan.stdout_path.parent / f"{plan.run_id}.exitcode"
+        try:
+            exit_code = int(exitcode_path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            continue
+        try:
+            result = ExecResult(
+                exit_code=exit_code,
+                error=None if exit_code == 0 else f"exit code {exit_code}",
+            )
+            if sftp is not None and plan.backups:
+                if exit_code == 0:
+                    executor._pull_outputs(client, sftp, [plan.output_path])
+                    executor._drop_output_backups(sftp, plan.backups)
+                else:
+                    executor._restore_output_backups(sftp, plan.backups)
+                plan.backups = []
+            run_record = record_execution_result(
+                db, project, result,
+                run_id=plan.run_id, argv=plan.argv_steps[0],
+                step=f"analysis:{recipe.name}",
+                entity_type=plan.file_record["entity_type"],
+                entity_id=plan.file_record["entity_id"],
+                parameter_set=f"{recipe.name}:{plan.version}",
+                expected_outputs=[plan.output_path],
+                cwd=project.root,
+                tool=tool.name, tool_version=plan.version, threads=plan.threads,
+                executor_name=executor.describe(),
+                started_at=started,
+                stdout_file=plan.stdout_path, stderr_file=plan.stderr_path,
+                extra_details=_env_policy_extra_details(plan),
+            )
+            if run_record["status"] != "completed":
+                raise RuntimeError(
+                    f"analysis:{recipe.name} failed: "
+                    f"{run_record.get('error') or 'unknown error'}"
+                )
+            outcome = _finalize_analysis_execution(
+                project, db, recipe, tool, plan, run_record, keep_partial=keep_partial)
+        except Exception as finalize_exc:
+            # A task whose exit code exists but whose result cannot be
+            # finalized (lost output, parse error) is failed, not completed.
+            if sftp is not None and plan.backups:
+                executor._restore_output_backups(sftp, plan.backups)
+                plan.backups = []
+            _fail_analysis_execution(project, db, plan, finalize_exc, keep_partial=keep_partial)
+            outcome = _analysis_error_result(plan.file_record, recipe, finalize_exc)
+        finalized.add(plan.job_id)
+        results[index - 1] = outcome
 
 
 def _require_artifact_kind(path: Path, kind: str, label: str) -> None:
@@ -1384,6 +1716,38 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             close = getattr(owned_executor, "close", None)
             if close is not None:
                 close()
+    plan = plan_analysis_for_file(
+        project, db, recipe, tool, config, file_record,
+        dry_run=dry_run, force=force, threads=threads, executor=executor,
+        runtime_parameters=runtime_parameters,
+    )
+    if not isinstance(plan, _AnalysisExecution):
+        return plan
+    try:
+        run_record = _execute_analysis_plan(project, db, recipe, tool, executor, plan)
+        return _finalize_analysis_execution(project, db, recipe, tool, plan, run_record,
+                                            keep_partial=keep_partial)
+    except ShutdownRequested as exc:
+        _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+        raise
+    except Exception as exc:
+        _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+        raise
+
+
+def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                           config: dict[str, Any], file_record: dict[str, Any],
+                           dry_run: bool = False, force: bool = False,
+                           threads: int = 4, executor: Any = None,
+                           runtime_parameters: dict[str, str] | None = None,
+                           ) -> dict[str, Any] | "_AnalysisExecution":
+    """Apply every per-file decision short of execution.
+
+    Returns a plain result dict for dry-run/cache-hit/adopted files, or an
+    ``_AnalysisExecution`` once the RUNNING analysis_jobs row exists.  The
+    sequential path (``run_analysis_for_file``) executes the plan immediately;
+    the array path collects plans across files and submits them in one batch.
+    """
     remote_only = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
     input_rel = file_record["relative_path"]
     input_path = project.root / input_rel
@@ -1695,89 +2059,144 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         job_id = int(cursor.lastrowid)
     job["job_id"] = job_id
 
-    try:
-        from operon.workflow import run_external_command
-        if work_dir is not None:
-            # Drop stale intermediates from an earlier failed/interrupted run.
-            _remove_output_artifact(project, work_dir)
-            work_dir.mkdir(parents=True, exist_ok=True)
-            prepare = getattr(executor, "prepare_database", None)
-            if executor.name == "ssh" and getattr(executor, "remote_root", "") and prepare is not None:
-                prepare(work_dir, mutable_cache=True)
-        run_record = run_external_command(
-            db, project, step_commands[0] if step_commands else command,
-            step=f"analysis:{recipe.name}",
-            entity_type=file_record["entity_type"],
-            entity_id=file_record["entity_id"],
-            parameter_set=f"{recipe.name}:{version}",
-            expected_outputs=[output_path],
-            cwd=project.root,
-            tool=tool.name,
-            tool_version=version,
-            backend=backend,
-            threads=threads,
-            stage_inputs=[input_path] if executor.name == "ssh" and not input_is_remote else (),
-            executor=executor,
-            commands=step_commands,
-            command_details=step_provenance,
-            extra_details=(
-                {"environment_policy_check": env_decision["details"]}
-                if env_decision is not None and not env_decision["reuse"]
-                and env_decision["details"]
-                else None
-            ),
+    from operon.workflow import new_run_id
+    run_id = new_run_id()
+    logs = project.logs_root
+    return _AnalysisExecution(
+        file_record=file_record,
+        job_id=job_id,
+        run_id=run_id,
+        argv_steps=[[str(a) for a in step] for step in (step_commands or [command])],
+        commands=step_commands,
+        command_details=step_provenance,
+        command_display=command_display,
+        version=version,
+        threads=threads,
+        output_path=output_path,
+        output_rel=output_rel,
+        work_dir=work_dir,
+        stage_inputs=(input_path,) if executor.name == "ssh" and not input_is_remote else (),
+        env_decision=env_decision,
+        runtime_parameters=runtime_parameters,
+        stdout_path=logs / f"{run_id}.stdout.log",
+        stderr_path=logs / f"{run_id}.stderr.log",
+        started=started,
+    )
+
+
+def _env_policy_extra_details(plan: "_AnalysisExecution") -> dict[str, Any] | None:
+    env_decision = plan.env_decision
+    if env_decision is not None and not env_decision["reuse"] and env_decision["details"]:
+        return {"environment_policy_check": env_decision["details"]}
+    return None
+
+
+def _execute_analysis_plan(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                           executor: Any, plan: "_AnalysisExecution") -> dict[str, Any]:
+    """Execute one planned analysis file through the per-file executor path."""
+    from operon.workflow import run_external_command
+    if plan.work_dir is not None:
+        # Drop stale intermediates from an earlier failed/interrupted run.
+        _remove_output_artifact(project, plan.work_dir)
+        plan.work_dir.mkdir(parents=True, exist_ok=True)
+        prepare = getattr(executor, "prepare_database", None)
+        if executor.name == "ssh" and getattr(executor, "remote_root", "") and prepare is not None:
+            prepare(plan.work_dir, mutable_cache=True)
+    return run_external_command(
+        db, project, plan.argv_steps[0],
+        step=f"analysis:{recipe.name}",
+        entity_type=plan.file_record["entity_type"],
+        entity_id=plan.file_record["entity_id"],
+        parameter_set=f"{recipe.name}:{plan.version}",
+        expected_outputs=[plan.output_path],
+        cwd=project.root,
+        tool=tool.name,
+        tool_version=plan.version,
+        threads=plan.threads,
+        stage_inputs=plan.stage_inputs,
+        executor=executor,
+        run_id=plan.run_id,
+        commands=plan.commands,
+        command_details=plan.command_details,
+        extra_details=_env_policy_extra_details(plan),
+    )
+
+
+def _finalize_analysis_execution(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
+                                 plan: "_AnalysisExecution", run_record: dict[str, Any],
+                                 keep_partial: bool = False) -> dict[str, Any]:
+    """Post-run success path: validate the output, parse results, complete the job."""
+    file_record = plan.file_record
+    _require_artifact_kind(plan.output_path, recipe.output_kind, f"{recipe.name} output")
+    output_sha = sha256_path(plan.output_path)
+    hit_count, query_count, query_with_hit_count, metric_count, alignment_count = (
+        parse_and_store_results(
+            db, project, recipe, tool, plan.version, file_record, plan.job_id,
+            plan.output_path, output_sha,
+            runtime_parameters=plan.runtime_parameters,
         )
-        _require_artifact_kind(output_path, recipe.output_kind, f"{recipe.name} output")
-        output_sha = sha256_path(output_path)
-        hit_count, query_count, query_with_hit_count, metric_count, alignment_count = (
-            parse_and_store_results(
-                db, project, recipe, tool, version, file_record, job_id, output_path, output_sha,
-                runtime_parameters=runtime_parameters,
-            )
+    )
+    if plan.work_dir is not None and not keep_partial:
+        _remove_output_artifact(project, plan.work_dir)
+    finished = now_iso()
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE analysis_jobs SET status='completed', output_relative_path=?, output_sha256=?, "
+            "stdout_file=?, stderr_file=?, finished_at=?, workflow_run_id=?, environment_id=? "
+            "WHERE job_id=?",
+            (plan.output_rel, output_sha, run_record.get("stdout_file"), run_record.get("stderr_file"),
+             finished, run_record.get("run_id"), run_record.get("environment_id"), plan.job_id),
         )
-        if work_dir is not None and not keep_partial:
-            _remove_output_artifact(project, work_dir)
-        finished = now_iso()
-        with db.transaction() as conn:
-            conn.execute(
-                "UPDATE analysis_jobs SET status='completed', output_relative_path=?, output_sha256=?, "
-                "stdout_file=?, stderr_file=?, finished_at=?, workflow_run_id=?, environment_id=? "
-                "WHERE job_id=?",
-                (output_rel, output_sha, run_record.get("stdout_file"), run_record.get("stderr_file"),
-                 finished, run_record.get("run_id"), run_record.get("environment_id"), job_id),
-            )
-        return {
-            "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
-            "entity_id": file_record["entity_id"], "analysis": recipe.name,
-            "cached": False, "job_id": job_id, "tool_version": version,
-            "command": command_display, "output": output_rel, "status": "completed",
-            "hit_count": hit_count, "query_count": query_count,
-            "query_with_hit_count": query_with_hit_count,
-            "metric_count": metric_count, "alignment_count": alignment_count,
-        }
-    except ShutdownRequested as exc:
-        # Graceful shutdown: finalize the job row, drop the partial output
-        # (unless --keep-partial), then abort the batch.  Partial stdout/
-        # stderr logs are kept for diagnosis.
-        with db.transaction() as conn:
-            conn.execute(
-                "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? WHERE job_id=?",
-                (now_iso(), f"interrupted by signal {exc.signum}", job_id),
-            )
-        if not keep_partial:
-            _remove_output_artifact(project, output_path)
-            if work_dir is not None:
-                _remove_output_artifact(project, work_dir)
-        raise
-    except Exception as exc:
-        with db.transaction() as conn:
-            conn.execute(
-                "UPDATE analysis_jobs SET status='failed', finished_at=?, error=? WHERE job_id=?",
-                (now_iso(), f"{type(exc).__name__}: {exc}", job_id),
-            )
-        if work_dir is not None and not keep_partial:
-            _remove_output_artifact(project, work_dir)
-        raise
+    return {
+        "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
+        "entity_id": file_record["entity_id"], "analysis": recipe.name,
+        "cached": False, "job_id": plan.job_id, "tool_version": plan.version,
+        "command": plan.command_display, "output": plan.output_rel, "status": "completed",
+        "hit_count": hit_count, "query_count": query_count,
+        "query_with_hit_count": query_with_hit_count,
+        "metric_count": metric_count, "alignment_count": alignment_count,
+    }
+
+
+def _interrupt_analysis_execution(project: Project, db: Database, plan: "_AnalysisExecution",
+                                  exc: BaseException, keep_partial: bool = False) -> None:
+    """Graceful shutdown: finalize the job row, drop the partial output (unless
+    --keep-partial).  Partial stdout/stderr logs are kept for diagnosis."""
+    signum = getattr(exc, "signum", None)
+    error = f"interrupted by signal {signum}" if signum is not None else "interrupted"
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? WHERE job_id=?",
+            (now_iso(), error, plan.job_id),
+        )
+    if not keep_partial:
+        _remove_output_artifact(project, plan.output_path)
+        if plan.work_dir is not None:
+            _remove_output_artifact(project, plan.work_dir)
+
+
+def _fail_analysis_execution(project: Project, db: Database, plan: "_AnalysisExecution",
+                             exc: BaseException, keep_partial: bool = False) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE analysis_jobs SET status='failed', finished_at=?, error=? WHERE job_id=?",
+            (now_iso(), f"{type(exc).__name__}: {exc}", plan.job_id),
+        )
+    if plan.work_dir is not None and not keep_partial:
+        _remove_output_artifact(project, plan.work_dir)
+
+
+def _analysis_error_result(file_record: dict[str, Any], recipe: Recipe,
+                           exc: BaseException) -> dict[str, Any]:
+    return {
+        "file_id": file_record["file_id"],
+        "entity_type": file_record["entity_type"],
+        "entity_id": file_record["entity_id"],
+        "analysis": recipe.name,
+        "cached": False,
+        "status": "error",
+        "error": f"{type(exc).__name__}: {exc}",
+    }
 
 
 def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool: ToolSpec,

@@ -447,3 +447,22 @@ Overridable fields match `execution.slurm`:
 | `poll_interval` | `15` | `squeue` polling interval (seconds); honored fully by both local and remote Slurm (only clamped to a 0.1-second floor) |
 
 Unlisted fields inherit from `execution.slurm`. The thread count always comes from `--threads` (mapped to `--cpus-per-task`) and is not recipe-overridable.
+
+### Slurm array submission
+
+A recipe's `slurm:` block also accepts two keys that control job-array submission:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `array` | `false` | When `true`, files of one `analyze` batch that miss the cache are submitted as a single Slurm job array instead of one job per file |
+| `array_concurrency` | empty | Positive integer; maps to Slurm's `%N` array throttle (`--array=1-M%N`), limiting how many array tasks run concurrently |
+
+Both are validated when the configuration is loaded: a non-boolean `array` and an `array_concurrency` that is not a positive integer are configuration errors.
+
+Array submission is only a submission strategy, and it applies only when all of the following hold; otherwise the per-file submission path is used unchanged:
+
+1. The recipe opts in with `array: true`;
+2. The selected executor supports job arrays — the local Slurm backend always does, and the SSH backend does only with `execution.ssh.scheduler: slurm` (direct SSH and the local backend do not);
+3. At least two files in the batch actually need computation (cache hits and adopted outputs never enter the array).
+
+Whether a batch ran as one array job or as per-file jobs never enters the parameter fingerprint or cache identity, so a recipe shares the same completed cache with array submission on or off. Each file still gets its own `workflow_runs` row, with the per-task scheduler job ID recorded as `<array_id>_<task_index>`. See [External Analysis Commands](cli-analysis.md#analyze) for the runtime behavior and the [external analysis execution model](../architecture/external-analysis.md) for the design contract.

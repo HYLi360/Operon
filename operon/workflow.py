@@ -590,3 +590,98 @@ def run_external_command(
     if record.get("status") != "completed":
         raise RuntimeError(f"{step} failed: {record.get('error') or 'unknown error'}")
     return record
+
+
+def record_execution_result(
+        db: Database,
+        project: Project,
+        result: Any,
+        *,
+        run_id: str,
+        argv: Iterable[Any],
+        step: str,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        parameter_set: str | None = None,
+        expected_outputs: Iterable[str | Path] | None = None,
+        cwd: str | Path | None = None,
+        tool: str | None = None,
+        tool_version: str | None = None,
+        threads: int | None = None,
+        executor_name: str | None = None,
+        started_at: str | None = None,
+        duration_seconds: float | None = None,
+        stdout_file: str | Path | None = None,
+        stderr_file: str | Path | None = None,
+        extra_details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a command result produced by a batch backend (``run_array``).
+
+    Bookkeeping twin of :func:`run_external_command` for array tasks: the
+    execution already happened inside one job array, so this applies the same
+    exit-code and expected-output interpretation and stores the same
+    ``workflow_runs`` row shape (including the per-task ``scheduler_job_id``)
+    without re-running anything.  Unlike :func:`run_external_command` it does
+    not raise on failure — the caller finalizes its own per-file job rows
+    from the returned record, one row per array task.
+    """
+    if entity_type and entity_id:
+        db.require_not_retired(entity_type, entity_id)
+    base = Path(cwd) if cwd else project.root
+    resolved_outputs: list[Path] = []
+    for output in expected_outputs or []:
+        path = Path(output)
+        if not path.is_absolute():
+            path = base / path
+        resolved_outputs.append(path)
+    record: dict[str, Any] = {
+        "run_id": run_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "step": step,
+        "command": shlex.join(str(a) for a in argv),
+        "parameter_set": parameter_set,
+        "started_at": started_at or now_iso(),
+        "tool": tool,
+        "tool_version": tool_version,
+        "threads": threads,
+        "executor": executor_name,
+        "exit_code": result.exit_code,
+        "status": "completed" if result.exit_code == 0 else "failed",
+        "scheduler_job_id": result.scheduler_job_id,
+    }
+    resources = getattr(result, "resources", None)
+    if not isinstance(resources, dict):
+        resources = {}
+    record["max_rss_mb"] = resources.get("max_rss_mb")
+    record["avg_rss_mb"] = resources.get("avg_rss_mb")
+    record["cpu_seconds"] = resources.get("cpu_seconds")
+    details = dict(result.details)
+    if extra_details:
+        details.update(extra_details)
+    record["execution_details"] = json.dumps(details, ensure_ascii=False, sort_keys=True)
+    # Slurm backends probe the compute side inside the job; prefer that document.
+    environment = result.details.get("environment")
+    if result.exit_code != 0:
+        record["error"] = result.error or f"exit code {result.exit_code}"
+        record["status"] = "failed"
+    elif result.error:
+        record["status"] = "failed"
+        record["error"] = result.error
+    else:
+        for path in resolved_outputs:
+            if not path_is_nonempty(path):
+                record["status"] = "failed"
+                record["error"] = f"expected output missing or empty: {path}"
+                break
+    record.update(
+        finished_at=now_iso(),
+        stdout_file=str(stdout_file) if stdout_file is not None else None,
+        stderr_file=str(stderr_file) if stderr_file is not None else None,
+    )
+    if environment:
+        with db.transaction():
+            record["environment_id"] = db.record_environment(environment)
+    record["duration_seconds"] = duration_seconds
+    log_run(db, project, record)
+    return record

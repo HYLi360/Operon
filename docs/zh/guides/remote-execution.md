@@ -70,6 +70,10 @@ operon run-external --step quast --backend ssh \
 - 标准 `OperonDBS` 安装已包含 SSH/SFTP 功能所需的 paramiko。
 - `execution.ssh.scheduler: slurm` 时改为在远端主机走 sbatch/squeue 提交与轮询；
   否则直接在远端执行，并把 stdout/stderr 流式回传到本地日志文件。
+- Slurm array 提交（recipe 的 `slurm.array: true`）在远端调度器为 Slurm 时经 SSH
+  后端同样可用：array manifest 与 sbatch 脚本经 SFTP 暂存到远端，以远端 `sbatch`
+  提交整个 array，再逐 task 拉回 stdout/stderr、退出码与 `sacct` 记账。SSH 直连
+  （`scheduler: none`）不支持 array，自动回落为逐文件提交。
 - 远端 Slurm 在作业内捕获执行环境，因此 provenance 记录计算节点而不是 SSH 登录节点；
   探针失败不影响作业结果。
 - 常见的“先 SSH 登录节点，再进入计算节点”不需要第二次交互式 SSH：把登录节点配置
@@ -113,7 +117,9 @@ operon run-external --step quast --backend ssh \
 ## Recipe 级 Slurm 覆盖
 
 单个 recipe 可用 `slurm:` mapping 覆盖 `execution.slurm` 的同名字段，例如给
-BUSCO 单独调整内存与时间（完整字段见 [Recipe 配置参考](../reference/recipe-overview.md)）：
+BUSCO 单独调整内存与时间（完整字段见 [Recipe 配置参考](../reference/recipe-overview.md)），
+也包括 `array` / `array_concurrency` 这两个 job array 键——它们对本地 Slurm 与
+SSH 远端 Slurm 同样生效：
 
 ```yaml
 recipes:

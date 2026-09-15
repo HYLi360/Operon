@@ -134,5 +134,43 @@ warning，不阻断运行）；`--input PATH`（可重复）声明输入文件�
 随即以退出码 130 终止；清理期间第二次信号立即强制退出。被 SIGKILL 杀死的进程留下的
 `RUNNING` 行会在下一次 `analyze` 启动时清扫为 `interrupted`（仅限同一 analysis 的行），保证续跑语义始终成立。
 
+## Slurm array 提交
+
+在 HPC 集群上，把同一 recipe 的 N 个文件作为 N 个独立调度作业提交，要为逻辑上的同一
+批次付出 N 倍的排队与记账开销。当 recipe 显式开启（`slurm.array: true`）、所选
+executor 支持 array 提交、且一次 `analyze` 批次中至少有两个文件未命中缓存时，
+`analyze` 改为把它们作为单个 Slurm job array 提交——一次 `sbatch`、一个 `squeue`
+轮询循环——每个文件占一个 array task。`local` 后端与 SSH 直连（`scheduler: none`）
+不实现 array 提交，因此任一条件不满足都会回落到不变的逐文件提交路径；对 SSH
+executor 而言，该能力仅在 `scheduler: slurm` 时存在（否则其 `run_array` 属性为
+`None`）。
+
+机制与逐文件路径一致。`run_array` 先写出一份 tab 分隔的 manifest
+（`logs/<batch_id>.array-manifest.tsv`），每个 task 一行——序号、run_id、
+stdout/stderr/exitcode/probe 路径，渲染后的命令行作为最后一个字段——再渲染一份
+array 脚本（`render_slurm_array_script`），通过 `sed -n "${SLURM_ARRAY_TASK_ID}p"`
+把第 N 行派发给 array task N。SBATCH 头、`setup_commands`、`cd` 守卫、逐 task 的
+环境探针与自写退出码文件均与单作业脚本共用；`slurm.array_concurrency: N` 成为
+`--array=1-M%N` 上的 `%N` 节流。每个 task 保留自己的 `logs/<run_id>.*` 文件，因此
+逐文件的 provenance 粒度不变：每个文件仍有自己独立的 `workflow_runs` 行，
+`scheduler_job_id` 记为 `<array_id>_<task_index>`，array id 以 `array_job_id` 留在
+run details 中。记账按 task 查询（`sacct -j <array_id>_<index>`），因此 sacct 的信号
+折叠语义（OOM 终止的 `0:9` 变为 137）逐 task 生效，与单作业完全一致。经 SSH
+executor 与远端 Slurm 调度器时，同一流程在远端运行：manifest、探针脚本与 array 脚本
+经 SFTP 暂存，`sbatch`/`squeue` 在远端主机执行，逐 task 的日志、退出码与 sacct 记账
+再拉回本地。
+
+是否参与 array 只是一种提交策略，而非环境或参数差异，因此从不进入参数指纹或缓存
+身份：同一 recipe 在 array 开关两种状态下共享同一份完成缓存，缓存命中两种方式下完全
+一致。候选顺序是确定的，且 manifest 携带每个 task 渲染后的命令行，因此 task 与文件的
+映射可审计，不受 resume/`--limit` 错位影响。
+
+中断簿记契约：收到 KeyboardInterrupt 时整个 array 以一次 `scancel` 取消，随后异常
+继续传播；调用方按哪些 per-task `<run_id>.exitcode` 文件已存在来区分已完成的 task
+（远端路径在重新抛出前先把已存在的退出码文件拉回本地，因此同一检查可针对本地路径
+进行）。没有退出码文件的 task 标记为 `interrupted`——它们永远不会污染完成缓存——
+其半成品输出按通常的逐文件语义删除（`--keep-partial` 保留），因此重跑同一命令恰好
+从未完成的文件继续。
+
 日常使用见 [How-to 操作手册](../guides/index.md)；字段、占位符、artifact、数据库身份、缓存和
 parser 的完整契约见 [Recipe 配置参考](../reference/recipe-overview.md)。

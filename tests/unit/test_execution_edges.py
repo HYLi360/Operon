@@ -49,6 +49,30 @@ def test_slurm_config_merging_and_validation(tmp_path):
             execution.load_slurm_config(project(tmp_path, {"slurm": raw}))
 
 
+def test_slurm_config_array_options(tmp_path):
+    # Defaults: array submission is off, no throttle.
+    cfg = execution.load_slurm_config(project(tmp_path))
+    assert cfg.array is False and cfg.array_concurrency is None
+    # Project-level keys and per-recipe overrides merge like any other key.
+    p = project(tmp_path, {"slurm": {"array": True, "array_concurrency": 4}})
+    cfg = execution.load_slurm_config(p)
+    assert cfg.array is True and cfg.array_concurrency == 4
+    cfg = execution.load_slurm_config(p, {"array": False, "array_concurrency": 2})
+    assert cfg.array is False and cfg.array_concurrency == 2
+    # Empty/unset override values inherit, consistent with the other keys.
+    cfg = execution.load_slurm_config(p, {"array_concurrency": ""})
+    assert cfg.array_concurrency == 4
+    for bad in (0, -3, "4", 1.5, True):
+        with pytest.raises(ValidationError, match="array_concurrency"):
+            execution.load_slurm_config(project(tmp_path, {"slurm": {"array_concurrency": bad}}))
+    # Array participation is a scheduling strategy, not an environment
+    # difference: it must not change the executor cache identity.
+    plain = execution.SlurmExecutor(project(tmp_path), execution.SlurmConfig())
+    batched = execution.SlurmExecutor(
+        project(tmp_path), execution.SlurmConfig(array=True, array_concurrency=8))
+    assert plain.cache_identity() == batched.cache_identity()
+
+
 def test_process_group_termination_fallback_and_kill(monkeypatch):
     class Proc:
         pid = 10

@@ -91,6 +91,15 @@ recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（�
 若 SSH 配置了 `storage_remote`，本地缺失但状态为 `REMOTE_ONLY` 的候选输入会先严格
 验证远端清单和实际内容，再在远端原位使用。
 
+Slurm array 提交：当 recipe 的 `slurm:` 块设置 `array: true`、所选 executor 支持
+job array（本地 Slurm 后端，或 `scheduler: slurm` 的 SSH 后端）、且批次中至少有两个
+文件未命中缓存时，这些文件以单个 Slurm job array 提交，而非逐文件各提交一个作业；
+`array_concurrency: N` 限制同时运行的 array task 数量（Slurm `%N`）。其余情形一律
+沿用不变的逐文件提交路径。每个文件仍有自己独立的 `workflow_runs` 行，per-task
+scheduler job ID 记为 `<array_id>_<task_index>`。缓存行为不变：是否参与 array 从不
+进入参数指纹或缓存身份，因此缓存命中与输出收养在 array 开关两种状态下完全一致。见
+[Recipe 字段参考](recipe-fields.md) 的"Slurm array 提交"。
+
 `--dry-run` 只列出计划不执行：表格的 status 列为 `cached`（命中完成缓存）、
 `adoptable`（将收养已验证的旧输出）或 `planned`（将实际执行），output 列为
 计划输出路径，tool_version 为探测到的版本。
@@ -109,7 +118,9 @@ operon analyze --analysis busco_lineage \
 
 - 当前步骤的作业进程被完整终止：本地后端按进程组（含孙进程）先 SIGTERM 后
   SIGKILL；`slurm` 后端对排队/运行中的作业执行 `scancel`；`ssh` 后端终止远端
-  `setsid` 进程组或对远端 Slurm 作业执行 `scancel`；
+  `setsid` 进程组或对远端 Slurm 作业执行 `scancel`。array 提交生效时，整个 array
+  以一次 `scancel` 取消；已写出各自 `<run_id>.exitcode` 文件的 task 视为已完成，
+  其余 task 标记为 `interrupted`。
 - 当前文件的 `analysis_jobs` 行被置为 `interrupted`（不会污染完成缓存），其半成品
   输出被删除（stdout/stderr 日志保留用于排查；加 `--keep-partial` 可保留半成品输出）；
 - 批次不再处理后续文件，进程以退出码 130 退出；重跑同一命令即可从未完成的文件

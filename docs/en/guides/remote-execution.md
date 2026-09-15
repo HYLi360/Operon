@@ -65,6 +65,7 @@ Prerequisites and behavior:
   escape checks. The SSH compute-side requirements below are unchanged.
 - Paramiko is included in the standard `OperonDBS` installation.
 - With `execution.ssh.scheduler: slurm`, commands are submitted and polled on the remote host with sbatch/squeue. Otherwise commands run directly on the host and stream stdout/stderr back to local log files.
+- Slurm array submission (recipe `slurm.array: true`) works identically through the SSH backend when the remote scheduler is Slurm: the array manifest and sbatch script are staged over SFTP, the array is submitted with a remote `sbatch`, and per-task stdout/stderr, exit codes, and `sacct` accounting are pulled back per task. Direct SSH (`scheduler: none`) has no array support and falls back to per-file submission.
 - Remote Slurm captures the execution environment inside the job, so provenance records the compute node rather than the SSH login node. Probe failure does not affect the job result.
 - For a typical login-node-to-compute-node setup, configure the login node as `host` and set `scheduler: slurm`. Operon runs `sbatch` on the login node, and Slurm dispatches work. The login and compute nodes must see the same `remote_root`. A second SSH hop to a compute node is not currently supported.
 - A non-empty absolute POSIX `remote_root` rewrites validated project path prefixes in argv/cwd. Path escapes through `..` or symlinks are rejected. An empty value means the local and remote filesystems are shared.
@@ -91,6 +92,6 @@ recipes:
       time: "72:00:00"
 ```
 
-See [Recipe Field Reference](../reference/recipe-fields.md#slurm-resource-overrides) for the complete field list.
+See [Recipe Field Reference](../reference/recipe-fields.md#slurm-resource-overrides) for the complete field list, including the `array` / `array_concurrency` job-array keys, which apply equally to local Slurm and to remote Slurm over SSH.
 
 > The automated tests for Slurm and SSH use simulated sbatch/squeue and in-memory SSH/SFTP implementations. The SSH/SFTP, remote-only analysis, and remote Slurm paths were also smoke-tested on 2026-09-04 against a Linux OpenSSH login node, a shared GPFS filesystem, and a Slurm compute node. Each deployment should still run a short local smoke task to validate its host keys, filesystem visibility, partitions, submission, cancellation, polling, and output retrieval.

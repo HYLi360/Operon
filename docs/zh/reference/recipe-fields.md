@@ -530,3 +530,29 @@ tools:
 
 未列出的字段继承 `execution.slurm`。线程数始终来自 `--threads`（映射为
 `--cpus-per-task`），不在 recipe 覆盖范围内。
+
+### Slurm array 提交
+
+recipe 的 `slurm:` 块还接受两个控制 job array 提交的键：
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `array` | `false` | 为 `true` 时，一次 `analyze` 批次中未命中缓存的文件以单个 Slurm job array 提交，而非逐文件各提交一个作业 |
+| `array_concurrency` | 空 | 正整数；映射为 Slurm array 的 `%N` 节流（`--array=1-M%N`），限制同时运行的 array task 数量 |
+
+两个键都在配置加载时校验：`array` 不是布尔值、或 `array_concurrency` 不是正整数时
+报配置错误。
+
+array 只是一种提交策略，且只有以下条件全部满足时才生效；否则沿用不变的逐文件提交
+路径：
+
+1. recipe 以 `array: true` 显式开启；
+2. 所选 executor 支持 job array——本地 Slurm 后端始终支持，SSH 后端仅在
+   `execution.ssh.scheduler: slurm` 时支持（SSH 直连与 local 后端不支持）；
+3. 批次中至少有两个文件确实需要计算（缓存命中与收养的输出不会进入 array）。
+
+一个批次以单个 array 作业还是逐文件作业运行，从不进入参数指纹或缓存身份，因此同一
+recipe 在 array 开关两种状态下共享同一份完成缓存。每个文件仍有自己独立的
+`workflow_runs` 行，其 per-task scheduler job ID 记为 `<array_id>_<task_index>`。
+运行时行为见 [外部分析命令](cli-analysis.md#analyze)，设计契约见
+[外部分析执行模型](../architecture/external-analysis.md)。

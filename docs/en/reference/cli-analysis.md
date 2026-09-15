@@ -55,6 +55,8 @@ Outside `--dry-run`, `analyze` prints one progress line per file as processing a
 
 `--backend` overrides `project.yaml`'s `execution.backend` and can be `local` (default), `slurm`, or `ssh`. Tool-version detection also uses the selected backend. See [Remote Execution with Slurm and SSH](../guides/remote-execution.md). With SSH `storage_remote`, a locally missing candidate input in `REMOTE_ONLY` state is first validated against the remote manifest and actual content, then used in place remotely.
 
+Slurm array submission: when the recipe's `slurm:` block sets `array: true`, the selected executor supports job arrays (the local Slurm backend, or the SSH backend with `scheduler: slurm`), and at least two files in the batch miss the cache, those files are submitted as a single Slurm job array instead of one job per file; `array_concurrency: N` throttles how many array tasks run concurrently (Slurm `%N`). In every other case the per-file submission path is used unchanged. Each file still gets its own `workflow_runs` row, with the per-task scheduler job ID recorded as `<array_id>_<task_index>`. Cache behavior is unchanged: array participation never enters the parameter fingerprint or cache identity, so cache hits and output adoption work identically with array submission on or off. See "Slurm array submission" in the [Recipe field reference](recipe-fields.md).
+
 `--dry-run` lists the plan without execution. Status values are `cached` (completed cache hit), `adoptable` (verified old output will be adopted), or `planned` (execution will run). The output column contains planned output paths, and `tool_version` contains the detected version.
 
 `--param` can set only parameters declared by the recipe. Missing required parameters, unknown parameters, repeated values, or values failing `pattern`/`choices` are configuration errors. Default `busco_lineage` usage:
@@ -68,7 +70,7 @@ operon analyze --analysis busco_lineage \
 
 Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, `analyze`:
 
-- Terminates the current job completely. The local backend sends SIGTERM and then SIGKILL to the process group, including grandchildren. The Slurm backend runs `scancel`. The SSH backend terminates the remote `setsid` process group or cancels the remote Slurm job.
+- Terminates the current job completely. The local backend sends SIGTERM and then SIGKILL to the process group, including grandchildren. The Slurm backend runs `scancel`. The SSH backend terminates the remote `setsid` process group or cancels the remote Slurm job. When array submission is in effect, the whole array is cancelled with a single `scancel`; tasks that already wrote their per-task `<run_id>.exitcode` file count as completed, and the remaining tasks are marked `interrupted`.
 - Marks the current `analysis_jobs` row `interrupted` so it cannot pollute the completed cache. Partial output is removed, while stdout/stderr logs remain for debugging. `--keep-partial` preserves partial output.
 - Stops the batch and exits with code 130. Rerunning the same command resumes unfinished files because `interrupted` rows do not match the cache.
 - A second signal during cleanup exits immediately with code `128 + signum`.

@@ -128,6 +128,7 @@
 - **`analyze --limit N` 取按 `file_id` 排序的前 N 个文件**——这是批量控制，不是公平性保证（`tools.py`）。
 - **被中断的外部命令不会留下 run 行。** `run-external`/`analyze` 在结束时写入 `workflow_runs` 行；运行中途的 `KeyboardInterrupt`/`ShutdownRequested` 只留下 stdout/stderr 日志和（分析场景）一行 `interrupted` 的 `analysis_jobs`（`workflow.py`）。
 - **`--threads` 参与缓存指纹。** 解析后的线程数（默认 4）会被哈希进参数指纹，因此即使工具输出完全相同，改动线程数也会让每个文件重跑（`tools.py`）。
+- **是否参与 array 对缓存不可见。** 一个批次以单个 Slurm job array 还是逐文件作业提交，从不进入参数指纹或缓存身份，因此两种提交形式共享同一份完成缓存（`tools.py`）。
 - **`analyze` 不向任何后端传超时。** 因此挂起的工具在本地和 SSH 上都会无限运行，Slurm 后端只受默认 `--time=24:00:00` 限制（`tools.py`、`execution.py`）。
 - **已知问题：失败的运行会保留部分输出。** 只有中断才会删除已算出的产物；其他任何失败（包括结果解析错误）都会把截断的 TSV 或写了一半的输出目录留在磁盘上，看起来就像结果（`tools.py`）。
 - **`analyze` 可能改写 manifest。** 配置了 SSH `storage_remote` 时，本地字节缺失而远端副本校验通过的文件会被静默改标为 `REMOTE_ONLY` 并留下审计行，因此一次分析会改动文件状态（`tools.py`）。
@@ -170,6 +171,7 @@
 - **Slurm 默认值很宽松。** `--time=24:00:00`，未配置时没有 partition 也没有内存限制，`poll_interval` 为 15 秒（有效下限 0.1 秒）（`execution.py`）。
 - **`setup_commands` 在作业切换目录之前执行。** 它们先于载荷的 `cd` 运行，因此其中的相对路径行为与载荷不同（`execution.py`）。
 - **SSH 后端用重命名备份保护既有远端输出。** 运行前，`remote_root` 下已存在的远端输出被重命名为 `<path>.operon-prev-<uuid>`；运行成功且新输出拉回校验通过后删除备份，失败或中断时尽力把备份恢复原位（先移除任何半成品新远端输出）。回拉仍只在成功时发生，因此 `--keep-partial` 依旧只决定失败或中断后哪些本地产物被保留——远端备份的恢复与它无关（`execution.py`）。
+- **Slurm array 提交是 opt-in 且仅限 Slurm。** recipe 的 `slurm.array: true` 只在 executor 支持时才把未命中缓存的文件作为单个 job array 提交——本地 Slurm 后端始终支持，SSH 后端仅在 `scheduler: slurm` 时支持（SSH 直连的 `run_array` 为 `None`）——且至少有两个文件需要计算；其余情形一律回落为逐文件提交。记账按 task 进行（`sacct -j <array_id>_<index>`，因此 `0:9`→137 的信号折叠逐 task 生效），中断时整个 array 以一次 `scancel` 取消：已写出各自 `<run_id>.exitcode` 文件的 task 视为已完成，其余标记为 `interrupted`，下次运行重跑（`execution.py`、`tools.py`）。
 
 ## 远程镜像
 

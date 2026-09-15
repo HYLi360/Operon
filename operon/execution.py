@@ -67,6 +67,12 @@ class SlurmConfig:
     extra_sbatch: list[str] = field(default_factory=list)
     setup_commands: list[str] = field(default_factory=list)
     poll_interval: float = 15.0
+    # Array submission is a scheduling strategy, not an environment
+    # difference: both flags stay out of repr() so executor cache_identity
+    # (and with it every cached analysis result) is shared between array and
+    # per-file submission of the same recipe.
+    array: bool = field(default=False, repr=False)
+    array_concurrency: int | None = field(default=None, repr=False)
 
 
 def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None) -> SlurmConfig:
@@ -76,6 +82,12 @@ def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None)
     for key, value in (overrides or {}).items():
         if value is not None and value != "":
             raw[key] = value
+    array_concurrency = raw.get("array_concurrency")
+    if array_concurrency is None or array_concurrency == "":
+        array_concurrency = None
+    elif (isinstance(array_concurrency, bool) or not isinstance(array_concurrency, int)
+          or array_concurrency < 1):
+        raise ValidationError("execution.slurm array_concurrency must be a positive integer")
     config = SlurmConfig(
         partition=str(raw.get("partition", "") or ""),
         time_limit=str(raw.get("time", "") or ""),
@@ -83,6 +95,8 @@ def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None)
         extra_sbatch=[str(x) for x in raw.get("extra_sbatch", []) or []],
         setup_commands=[str(x) for x in raw.get("setup_commands", []) or []],
         poll_interval=float(raw.get("poll_interval", 15) or 15),
+        array=bool(raw.get("array", False)),
+        array_concurrency=array_concurrency,
     )
     if config.mem_gb < 0 or config.poll_interval <= 0:
         raise ValidationError("execution.slurm mem_gb must be >= 0 and poll_interval must be > 0")
