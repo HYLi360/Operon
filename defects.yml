@@ -135,12 +135,13 @@ defects:
   affected: all releases; triggered by `export --link symlink` into an existing empty destination directory that later fails
   severity: high
   component: export
-  status: open
+  status: fixed
   reproduction: With `--link symlink` and an existing empty destination, the export workspace is the caller's directory itself, and the failure path deletes every child of that directory.
-  disposition: null
+  disposition: 'export_files no longer uses an existing empty destination as the workspace: every export stages in a hidden sibling directory, an existing empty destination is removed with rmdir (failing safe if it gained content) immediately before the atomic rename, and the failure path only ever removes the staging tree, never the caller''s directory children.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_export.py::test_failed_symlink_export_never_touches_the_callers_directory
 - id: ODR-0009
   title: Idempotent re-ingest demotes STANDARDIZED to CHECKSUM_VERIFIED without audit
   reported: '2026-09-16'

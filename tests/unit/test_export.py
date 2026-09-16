@@ -254,3 +254,31 @@ def test_export_run_row_follows_publication(project_db, tmp_path, monkeypatch):
     assert str(out) in runs[0]["command"]
     assert "operon-export-" not in runs[0]["command"]
     assert runs[0]["output_sha256"] == summary["manifest_sha256"]
+
+
+@pytest.mark.bug("ODR-0008")
+def test_failed_symlink_export_never_touches_the_callers_directory(project_db, tmp_path, monkeypatch):
+    project, db, files = project_db
+    out = tmp_path / "export"
+    out.mkdir()
+    canary = out / "canary.txt"
+
+    def failing_symlink(_src, _dst):
+        # Lands after the emptiness check: with the caller's directory as the
+        # workspace, the failure cleanup used to delete every child of it.
+        canary.write_text("do not delete", encoding="utf-8")
+        raise OSError("injected symlink failure")
+
+    monkeypatch.setattr(export_module.os, "symlink", failing_symlink)
+    with pytest.raises(OSError, match="injected symlink failure"):
+        export_files(db, project, output_dir=out,
+                     file_ids=[files["genome1"]["file_id"]], link_kind="symlink")
+    assert canary.read_text(encoding="utf-8") == "do not delete"
+    assert list(tmp_path.glob(".export.operon-export-*")) == []
+
+    monkeypatch.undo()
+    canary.unlink()
+    export_files(db, project, output_dir=out,
+                 file_ids=[files["genome1"]["file_id"]], link_kind="symlink")
+    # A pre-existing empty destination is replaced wholesale by the staging tree.
+    assert (out / "manifest.tsv").is_file()

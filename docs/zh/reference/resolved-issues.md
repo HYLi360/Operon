@@ -20,6 +20,7 @@
 | ODR-0005 | Release | 发布预检不再在 `config/profiles/<profile>.yaml` 缺失时提前返回：`release` 与基于 decision 的 `export` 会预先加载并校验指定的 QC profile，拼写错误会以校验错误失败，而不是发布零成员 release 或空导出包。 |
 | ODR-0006 | Release | 最终重命名与 `releases` 插入之间的崩溃不再卡死该版本：重试会通过孤儿目录的 `provenance.json` 识别并移除它，然后重新构建 release；占据该路径的其他内容仍抛 `FileExistsError`。 |
 | ODR-0007 | Export | export 的 `workflow_runs` 行现在只在 workspace 重命名为最终目标之后提交，命令记录的也是最终目标路径；记录失败会移除已发布的目录，因此不会再报告目标不存在的“已完成导出”。 |
+| ODR-0008 | Export | export 不再把已存在的空目标目录当作工作区：所有导出都在隐藏的兄弟目录中 staging，通过 `rmdir` + 原子重命名发布（目标混入内容时安全失败），失败路径只删除 staging 目录树——调用方目录的子项不再会被删除。 |
 
 ## K 系列（历史）
 

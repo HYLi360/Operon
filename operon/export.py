@@ -151,14 +151,11 @@ def export_files(
     if requested.exists():
         if not requested.is_dir() or any(requested.iterdir()):
             raise FileExistsError(f"export output directory is not empty: {requested}")
-        workspace = requested
-        temporary = False
     else:
         requested.parent.mkdir(parents=True, exist_ok=True)
-        workspace = Path(tempfile.mkdtemp(
-            prefix=f".{requested.name}.operon-export-", dir=str(requested.parent),
-        ))
-        temporary = True
+    workspace = Path(tempfile.mkdtemp(
+        prefix=f".{requested.name}.operon-export-", dir=str(requested.parent),
+    ))
     published = False
     try:
         summary = _export_files_in_workspace(
@@ -168,8 +165,12 @@ def export_files(
             file_role=file_role, fmt=fmt, state=state, decision=decision,
             profile=profile, link_kind=link_kind, include_qc=include_qc,
         )
-        if temporary:
-            os.replace(workspace, requested)
+        # Publish only after every artifact is complete. An existing empty
+        # destination is removed first; rmdir fails safe if it gained content
+        # in the meantime, and the caller's directory is never the workspace.
+        if requested.exists():
+            requested.rmdir()
+        os.replace(workspace, requested)
         published = True
         # The run row is recorded only once the destination really exists.
         selection = summary.pop("selection")
@@ -189,18 +190,11 @@ def export_files(
         summary["output_dir"] = str(requested)
         return summary
     except BaseException:
-        if published and temporary:
+        if published:
             # The run row never committed, so the published tree must not
             # survive as an unrecorded publication.
             shutil.rmtree(requested, ignore_errors=True)
-        if temporary:
-            shutil.rmtree(workspace, ignore_errors=True)
-        else:
-            for child in list(workspace.iterdir()):
-                if child.is_dir() and not child.is_symlink():
-                    shutil.rmtree(child, ignore_errors=True)
-                else:
-                    child.unlink(missing_ok=True)
+        shutil.rmtree(workspace, ignore_errors=True)
         raise
 
 

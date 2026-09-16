@@ -178,7 +178,7 @@
 - **release 与 export 的输出继承 staging 权限。** staging 目录以 0700 创建（原子单文件复制为 0600）后被重命名到位，因此已发布目录可能对其他用户不可读，而附属 TSV 仍是 umask 默认值（`release.py`、`export.py`、`utils.py`）。
 - **选择错误的行为不对称。** 未知 `--file-id` 在 `export` 中静默选出零个文件，而 `push`/`pull`/`evict` 对同样输入会报错；同时给出 `--profile` 而不给 `--decision` 没有任何效果；export 的 `manifest.tsv` 缺少 release manifest 携带的 `compression` 列（`export.py`、`remotes.py`）。
 - **export 的 run 行在发布之后才记录。** `workflow_runs` 行只在 workspace 重命名为最终目标之后写入，命令中记录的也是最终路径；若记录失败，已发布的目录会被移除，因此数据库既不会声称一个不存在的导出，也不会发布一个未记录的导出（`export.py`）。
-- **已知问题：symlink 模式会写入已存在的空目录。** 此时工作区就是调用方自己的目录，而失败路径会删除它的所有子项（`export.py`）。
+- **已存在的空 export 目标会被整体替换。** export 始终在隐藏的兄弟 workspace 中 staging——调用方的目录永远不会充当工作区——发布时先用 `rmdir` 移除已存在的空目标（若期间混入内容则安全失败）再重命名；失败路径只会删除 staging 目录树（`export.py`）。
 - **选出零个文件的 export 仍算成功。** 退出码 0，得到只有表头的 `manifest.tsv`（11 列）与 0 字节的 `checksums.sha256`，后者会被 `sha256sum -c` 以“没有可解析的校验行”拒绝（`export.py`、`schema.py`）。
 - **export 符号链接存储完全解析后的目标。** `--link symlink` 指向 `source.resolve()`；移动项目会断链，不过经链接的校验仍然通过（`export.py`）。
 - **release/export 失败可恢复。** 两个命令都先 staging 并在失败时清理，不会主动发布不完整目标；操作系统级崩溃仍可能留下隐藏 staging 目录，需要后续清理。
