@@ -18,6 +18,7 @@
 | ODR-0003 | 表格导入 | `apply_table_import()` 在执行边界重新校验表名是否属于 `IMPORTABLE_TABLES`，并引用所有标识符；被篡改的 preview 会抛出 `ValidationError` 并回滚。 |
 | ODR-0004 | 远程镜像 | 上传校验现在在 `put` 内部的暂存名上、最终重命名之前完成；被截断或损坏的上传随暂存字节一并删除，绝不会占据最终远端路径，后续 push 会重新上传而不是把该位置标为 `CORRUPT`。 |
 | ODR-0005 | Release | 发布预检不再在 `config/profiles/<profile>.yaml` 缺失时提前返回：`release` 与基于 decision 的 `export` 会预先加载并校验指定的 QC profile，拼写错误会以校验错误失败，而不是发布零成员 release 或空导出包。 |
+| ODR-0006 | Release | 最终重命名与 `releases` 插入之间的崩溃不再卡死该版本：重试会通过孤儿目录的 `provenance.json` 识别并移除它，然后重新构建 release；占据该路径的其他内容仍抛 `FileExistsError`。 |
 
 ## K 系列（历史）
 

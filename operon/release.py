@@ -181,7 +181,12 @@ def create_release(db: Database, project: Project, version: str, profile: str,
     """Create a release through a recoverable staging directory."""
     final_root = project.releases_root / version
     if final_root.exists():
-        raise FileExistsError(f"release {version} already exists: {final_root}")
+        row = db.conn.execute(
+            "SELECT 1 FROM releases WHERE version=?", (version,),
+        ).fetchone()
+        if row is not None:
+            raise FileExistsError(f"release {version} already exists: {final_root}")
+        _remove_interrupted_release_tree(final_root, version)
     project.releases_root.mkdir(parents=True, exist_ok=True)
     staging_root = Path(tempfile.mkdtemp(
         prefix=f".{version}.operon-release-", dir=str(project.releases_root),
@@ -195,6 +200,29 @@ def create_release(db: Database, project: Project, version: str, profile: str,
         if staging_root.exists():
             shutil.rmtree(staging_root, ignore_errors=True)
         raise
+
+
+def _remove_interrupted_release_tree(final_root: Path, version: str) -> None:
+    """Remove a published tree whose ``releases`` row never committed.
+
+    Only a crash between the atomic rename and the database commit can leave
+    such an orphan. The tree must carry a ``provenance.json`` naming this
+    release version; anything else is operator data and is left alone.
+    """
+    provenance: Any = None
+    if final_root.is_dir():
+        try:
+            provenance = json.loads(
+                (final_root / "provenance.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            provenance = None
+    if not isinstance(provenance, dict) or provenance.get("release_version") != version:
+        raise FileExistsError(
+            f"release path exists without a releases row and is not an "
+            f"interrupted publication of {version!r}: {final_root}"
+        )
+    shutil.rmtree(final_root)
 
 
 def _create_release_in_workspace(

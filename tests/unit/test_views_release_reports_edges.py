@@ -199,6 +199,37 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
     assert (Path(result["path"]) / "data" / "organism" / "ORG_000001" / "file").read_text() == "y"
 
 
+@pytest.mark.bug("ODR-0006")
+def test_release_recovers_an_interrupted_publication_on_retry(project_db):
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    _write_empty_scope_profile(project)
+    # Simulate the crash window: a published tree whose releases row never
+    # committed must be removed by the retry, not block it with FileExistsError.
+    orphan = project.releases_root / "v-orphan"
+    orphan.mkdir(parents=True)
+    (orphan / "provenance.json").write_text(
+        json.dumps({"schema": "operon-2.0", "release_version": "v-orphan"}),
+        encoding="utf-8",
+    )
+    (orphan / "manifest.tsv").write_text("stale\n", encoding="utf-8")
+    result = release.create_release(db, project, "v-orphan", "p")
+    assert Path(result["path"]).is_dir()
+    assert (Path(result["path"]) / "manifest.tsv").read_text(encoding="utf-8") != "stale\n"
+    assert db.conn.execute(
+        "SELECT 1 FROM releases WHERE version='v-orphan'").fetchone() is not None
+
+    # A tree that is not an interrupted publication of this version is
+    # operator data and stays put.
+    foreign = project.releases_root / "v-foreign"
+    foreign.mkdir(parents=True)
+    (foreign / "provenance.json").write_text(
+        json.dumps({"release_version": "someone-else"}), encoding="utf-8")
+    with pytest.raises(FileExistsError, match="not an interrupted publication"):
+        release.create_release(db, project, "v-foreign", "p")
+    assert (foreign / "provenance.json").exists()
+
+
 def test_release_rolls_back_published_tree_when_state_commit_fails(project_db, monkeypatch):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})

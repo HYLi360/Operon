@@ -107,12 +107,13 @@ defects:
   affected: all releases; triggered by a crash between the final staging rename and the releases insert
   severity: medium
   component: release
-  status: open
+  status: fixed
   reproduction: A crash between the final rename of the staged release tree and the `releases` database insert leaves a release directory with no row; the retry then fails with FileExistsError until the tree is removed by hand.
-  disposition: null
+  disposition: 'create_release now recovers the crash window: when the final path exists without a releases row, the orphan tree is removed — but only when its provenance.json names that release version — and the release is rebuilt. Any other occupant of the path still raises FileExistsError.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_views_release_reports_edges.py::test_release_recovers_an_interrupted_publication_on_retry
 - id: ODR-0007
   title: Export run row can claim a publication that never happened
   reported: '2026-09-16'

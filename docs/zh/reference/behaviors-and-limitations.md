@@ -174,7 +174,7 @@
 - **未知的 release profile 会被拒绝。** `release` 与 `export --decision ... --profile ...` 都会在任何输出落地之前加载并校验指定的 QC profile，因此拼写错误会抛出校验错误，而不是发布零成员 release 或空包（`release.py`、`export.py`）。
 - **预检与 QC 快照都只覆盖一部分。** 预检只覆盖有 manifest 文件的实体类型，且只覆盖 `_ENTITY_TABLES` 中的五种，其他实体类型跳过过期评估检查；`qc_summary.tsv` 既不按 profile 过滤也不被哈希（`release.py`）。
 - **已知问题：hardlink 回退在 provenance 中不可见。** `os.link` 被拒绝后会静默回退为普通复制，而 `provenance.json` 仍记录 `hardlink`（release）或 `link_kind: hardlink`（export），目录则始终复制（`release.py`、`export.py`）。
-- **已知问题：已发布目录与数据库行不是原子的。** 在最终重命名与 `releases` 插入之间崩溃会留下没有对应行的 release 目录，重试随后以 `FileExistsError` 失败，直到手工删除该目录（`release.py`）。
+- **中断的 release 发布会在重试时自动恢复。** 原子重命名与数据库提交之间的崩溃会留下一个没有 `releases` 行的已发布目录；下一次对同一版本的 `release` 会移除这个孤儿目录——仅当其 `provenance.json` 标明该版本——并重新构建，而占据该路径的其他任何内容仍抛 `FileExistsError`（`release.py`）。
 - **release 与 export 的输出继承 staging 权限。** staging 目录以 0700 创建（原子单文件复制为 0600）后被重命名到位，因此已发布目录可能对其他用户不可读，而附属 TSV 仍是 umask 默认值（`release.py`、`export.py`、`utils.py`）。
 - **选择错误的行为不对称。** 未知 `--file-id` 在 `export` 中静默选出零个文件，而 `push`/`pull`/`evict` 对同样输入会报错；同时给出 `--profile` 而不给 `--decision` 没有任何效果；export 的 `manifest.tsv` 缺少 release manifest 携带的 `compression` 列（`export.py`、`remotes.py`）。
 - **已知问题：export 的 run 行可能声称一次并未发生的发布。** `workflow_runs` 行在最终重命名之前提交，其命令嵌入的是 staging 路径，因此数据库与 JSONL 可能报告一次目标目录并不存在的“已完成导出”（`export.py`）。
