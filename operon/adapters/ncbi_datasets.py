@@ -46,6 +46,7 @@ from operon.schema import (
     Schema,
     default_schemas,
 )
+from operon.sql import quote_identifier
 from operon.utils import atomic_copy, atomic_write_text, now_iso, sha256_file
 from operon.workflow import finish_run, new_run_id, start_run
 
@@ -1912,11 +1913,14 @@ def _apply_plan(
                 continue
             columns = schema.columns(table)
             keys = db._primary_keys(table)
-            assignments = ", ".join(f"{col}=excluded.{col}" for col in columns if col not in keys)
+            assignments = ", ".join(
+                f"{quote_identifier(col)}=excluded.{quote_identifier(col)}"
+                for col in columns if col not in keys
+            )
             sql = (
-                f"INSERT INTO {table} ({', '.join(columns)}) "
+                f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
                 f"VALUES ({', '.join('?' for _ in columns)}) "
-                f"ON CONFLICT({','.join(keys)}) DO UPDATE SET {assignments}"
+                f"ON CONFLICT({','.join(quote_identifier(key) for key in keys)}) DO UPDATE SET {assignments}"
             )
             keys = db._primary_keys(table)
             for row in rows:
