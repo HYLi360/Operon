@@ -82,7 +82,7 @@ defects:
   status: fixed
   reproduction: '`SFTPRemoteStore.put()` publishes uploaded bytes directly to the final remote path before `push` verifies them. A truncated upload stays at the final path with no manifest entry; the next `push` of the same file takes the different-bytes path, marks the location CORRUPT and refuses to overwrite until an operator removes the remote object by hand.'
   disposition: '`SFTPStore.put()` now verifies the expected sha256/size on the staging name before the final rename, and `push` passes the manifest identity down; a failed verification removes the staged bytes, so the final remote path is never occupied by unverified content and the next push retries the upload.'
-  fix_commit: null
+  fix_commit: 71e88bcc2d214064ae6a84e988b8da535a417a09
   fixed_in: null
   regression_tests:
   - tests/unit/test_remote_taxonomy_more.py::test_push_reports_an_upload_that_lands_wrong_bytes
@@ -96,7 +96,7 @@ defects:
   status: fixed
   reproduction: The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
   disposition: 'The preflight no longer returns early when the profile file is missing: `load_profile` raises ValidationError for an unknown profile, and decision-based export validates the named QC profile before staging any output. A typo now fails loudly instead of publishing a zero-member release or an empty bundle.'
-  fix_commit: null
+  fix_commit: bd7de18c7bc82653e5880586f234e861b4d477ac
   fixed_in: null
   regression_tests:
   - tests/unit/test_views_release_reports_edges.py::test_release_and_export_reject_an_unknown_profile
@@ -110,7 +110,7 @@ defects:
   status: fixed
   reproduction: A crash between the final rename of the staged release tree and the `releases` database insert leaves a release directory with no row; the retry then fails with FileExistsError until the tree is removed by hand.
   disposition: 'create_release now recovers the crash window: when the final path exists without a releases row, the orphan tree is removed — but only when its provenance.json names that release version — and the release is rebuilt. Any other occupant of the path still raises FileExistsError.'
-  fix_commit: null
+  fix_commit: d63e494bac3a8efbc639a3f03187c9c662fc2d13
   fixed_in: null
   regression_tests:
   - tests/unit/test_views_release_reports_edges.py::test_release_recovers_an_interrupted_publication_on_retry
@@ -124,7 +124,7 @@ defects:
   status: fixed
   reproduction: The export `workflow_runs` row is committed before the final rename and its command embeds the staging path, so the database and the JSONL log can report a completed export whose destination does not exist.
   disposition: export_files now records the workflow run only after the workspace has been renamed to the final destination, and the recorded command names that destination instead of the staging path; if recording fails, the published tree is removed, so the database can neither claim a publication that never happened nor leave a publication it never recorded.
-  fix_commit: null
+  fix_commit: 395664cf3207719e09c85e6062bce58e24a83815
   fixed_in: null
   regression_tests:
   - tests/unit/test_export.py::test_export_run_row_follows_publication
@@ -138,7 +138,7 @@ defects:
   status: fixed
   reproduction: With `--link symlink` and an existing empty destination, the export workspace is the caller's directory itself, and the failure path deletes every child of that directory.
   disposition: 'export_files no longer uses an existing empty destination as the workspace: every export stages in a hidden sibling directory, an existing empty destination is removed with rmdir (failing safe if it gained content) immediately before the atomic rename, and the failure path only ever removes the staging tree, never the caller''s directory children.'
-  fix_commit: null
+  fix_commit: e8c03a85aa9f8bebc59f50e572c5935d4b9468a5
   fixed_in: null
   regression_tests:
   - tests/unit/test_export.py::test_failed_symlink_export_never_touches_the_callers_directory
@@ -152,7 +152,7 @@ defects:
   status: fixed
   reproduction: Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so a standardized file silently loses that status; `set_file_status` itself is a no-op that writes nothing when the status is unchanged.
   disposition: 'The idempotent re-ingest path no longer rewrites files.status unconditionally: a STANDARDIZED file keeps its status, and any other transition goes through the audited set_file_status (a no-op when unchanged), so re-verifying identical bytes never silently demotes a standardized file.'
-  fix_commit: null
+  fix_commit: ebdc356e5b3cad979bfb8af54b20de84d16aea24
   fixed_in: null
   regression_tests:
   - tests/unit/test_files_edges.py::test_reingest_preserves_standardized_status_and_audits_transitions
@@ -166,7 +166,7 @@ defects:
   status: fixed
   reproduction: '`standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity state with no transition check and no `changes` row.'
   disposition: 'standardize_file now routes both writes through the audited paths: set_file_status for files.status and set_state for the entity transition, so illegal transitions (RELEASED/ACCEPTED -> STANDARDIZED) are rejected with ConflictError and every change lands in the changes table. The idempotent path repairs a CHECKSUM_VERIFIED crash window without touching entities that already moved on, and TRANSITIONS gained a CHECKSUM_FAILED -> STANDARDIZED recovery edge for re-verified bytes. The CHECKSUM_FAILED alarm write on a checksum mismatch was left as-is.'
-  fix_commit: null
+  fix_commit: 34fa5f0082af63b1d27524caead21877bb808a67
   fixed_in: null
   regression_tests:
   - tests/unit/test_files_edges.py::test_standardize_goes_through_the_audited_state_machine
@@ -180,7 +180,7 @@ defects:
   status: fixed
   reproduction: QC drives its state writes through the forced bulk path and offers no --force or prior-state warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED; `evaluate` does the same for an entity without a curated_decision, while a curated decision is protected.
   disposition: 'Batch QC and automatic re-evaluation now write entity states through workflow.set_state_guarded: entities in ACCEPTED/REVIEW/REJECTED/RELEASED keep their lifecycle state while fresh QC evidence and decision rows are still recorded; only an explicit curate or forced set-state moves them. The guarded aggregate reports the preserved state as entity_qc_state.'
-  fix_commit: null
+  fix_commit: 325dff26717a54b4f08a35684174e9814e130367
   fixed_in: null
   regression_tests:
   - tests/unit/test_qc_and_rules.py::TestQCAndRules::test_rerun_qc_and_evaluate_do_not_demote_decided_entities
@@ -194,7 +194,7 @@ defects:
   status: fixed
   reproduction: 'Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second busy timeout cannot absorb, surfacing as exit 1.'
   disposition: _ensure_current_schema_objects now drops and recreates the derived views inside a single immediate transaction acquired through Database.transaction(), so a concurrent writable opener waits on the writer lock instead of landing between DROP and CREATE. Plain execute calls replace executescript, which would implicitly commit and break the atomic window.
-  fix_commit: null
+  fix_commit: c33a149fd46f03a8035f25420c069d78e4db512a
   fixed_in: null
   regression_tests:
   - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild
