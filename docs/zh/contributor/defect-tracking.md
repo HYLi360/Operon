@@ -37,7 +37,11 @@ scripts/defects.sh add --title "..." --severity medium --component tools \
     --reproduction "..."
 ```
 
-`add` 会分配下一个编号并追加一条 `status: open` 记录。
+这个 shell 脚本是 `scripts/defects.py` 的轻量启动器；项目虚拟环境存在时会优先使用它。
+`list` 在较宽的终端中显示表格，在窄终端中切换为逐条紧凑布局；`show` 会把记录中的长字段按段落折行。
+颜色只在交互式终端中启用，也可通过 `NO_COLOR` 禁用。
+
+`add` 会分配下一个编号并追加一条 `status: open` 记录，同时保持现有注册表模式和 YAML 存储格式不变。
 
 ## 规则
 

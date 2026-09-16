@@ -44,7 +44,14 @@ scripts/defects.sh add --title "..." --severity medium --component tools \
     --reproduction "..."
 ```
 
-`add` allocates the next id and appends a `status: open` record.
+The shell script is a small launcher for `scripts/defects.py`; it selects the
+project virtual environment when available. `list` uses a table on wide
+terminals and a compact per-record layout on narrow terminals. `show` formats
+long record fields as wrapped sections. Colors are enabled only for an
+interactive terminal and can be disabled with `NO_COLOR`.
+
+`add` allocates the next id and appends a `status: open` record. It keeps the
+existing registry schema and YAML storage format unchanged.
 
 ## Rules
 
