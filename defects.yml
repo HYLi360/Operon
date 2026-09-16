@@ -163,12 +163,13 @@ defects:
   affected: all releases; triggered by standardizing a RELEASED or ACCEPTED entity, or by standardize_all selecting on files.status alone
   severity: medium
   component: files
-  status: open
+  status: fixed
   reproduction: '`standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity state with no transition check and no `changes` row.'
-  disposition: null
+  disposition: 'standardize_file now routes both writes through the audited paths: set_file_status for files.status and set_state for the entity transition, so illegal transitions (RELEASED/ACCEPTED -> STANDARDIZED) are rejected with ConflictError and every change lands in the changes table. The idempotent path repairs a CHECKSUM_VERIFIED crash window without touching entities that already moved on, and TRANSITIONS gained a CHECKSUM_FAILED -> STANDARDIZED recovery edge for re-verified bytes. The CHECKSUM_FAILED alarm write on a checksum mismatch was left as-is.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_files_edges.py::test_standardize_goes_through_the_audited_state_machine
 - id: ODR-0011
   title: Re-running qc or evaluate demotes ACCEPTED/RELEASED entities
   reported: '2026-09-16'

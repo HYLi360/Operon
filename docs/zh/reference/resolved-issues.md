@@ -22,6 +22,7 @@
 | ODR-0007 | Export | export 的 `workflow_runs` 行现在只在 workspace 重命名为最终目标之后提交，命令记录的也是最终目标路径；记录失败会移除已发布的目录，因此不会再报告目标不存在的“已完成导出”。 |
 | ODR-0008 | Export | export 不再把已存在的空目标目录当作工作区：所有导出都在隐藏的兄弟目录中 staging，通过 `rmdir` + 原子重命名发布（目标混入内容时安全失败），失败路径只删除 staging 目录树——调用方目录的子项不再会被删除。 |
 | ODR-0009 | Ingest | 幂等重 ingest 不再无条件改写 `files.status`：`STANDARDIZED` 文件保持其状态，真实的状态迁移改走 `set_file_status` 并写入 `changes` 审计行。 |
+| ODR-0010 | Standardize | `standardize` 不再直接写入 `STANDARDIZED`：文件状态走 `set_file_status`、实体迁移走 `set_state`，二者都记入 `changes`；非法迁移（例如对已 `RELEASED` 的实体重新标准化）会被拒绝，且 `CHECKSUM_FAILED` 新增了指向 `STANDARDIZED` 的合法恢复边，供重新校验通过的字节使用。 |
 
 ## K 系列（历史）
 

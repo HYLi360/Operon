@@ -19,6 +19,7 @@ from typing import Any
 from operon.config import Project, project_rel
 from operon.database import Database
 from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
+from operon.workflow import set_state
 from operon.utils import (
     atomic_copy,
     atomic_copytree,
@@ -709,8 +710,19 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
     if target.exists() or target.is_symlink():
         if sha256_path(target) != record["sha256"]:
             raise ConflictError(f"{target} exists with different content; refusing to overwrite")
-        db.conn.execute("UPDATE files SET status='STANDARDIZED' WHERE file_id=?", (file_id,))
-        db.conn.commit()
+        db.set_file_status(
+            file_id, "STANDARDIZED",
+            reason="standardized target already present and verified",
+            actor="operon standardize",
+        )
+        if db.get_entity_state(record["entity_type"], record["entity_id"]) == "CHECKSUM_VERIFIED":
+            # Repair the crash window between target creation and the state
+            # commit; entities that already moved on are left alone.
+            set_state(
+                db, record["entity_type"], record["entity_id"], "STANDARDIZED",
+                f"file {file_id} already staged in standardized/",
+                actor="operon standardize",
+            )
         return {"file_id": file_id, "target": str(target), "action": "skipped"}
 
     created_target = False
@@ -744,13 +756,20 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         created_target = True
         if sha256_path(target) != record["sha256"]:
             raise ChecksumError(f"{file_id}: standardized target checksum mismatch")
-        # File status and entity state are committed together.  If either
-        # database write fails, the newly published target is removed below so
-        # a retry starts from the same filesystem state.
+        # File status and entity state are committed together, both through
+        # the audited paths, and the entity transition is checked by the state
+        # machine.  If either database write fails, the newly published target
+        # is removed below so a retry starts from the same filesystem state.
         with db.transaction():
-            db.conn.execute("UPDATE files SET status='STANDARDIZED' WHERE file_id=?", (file_id,))
-            db.set_entity_state(record["entity_type"], record["entity_id"], "STANDARDIZED",
-                                f"file {file_id} staged in standardized/")
+            db.set_file_status(
+                file_id, "STANDARDIZED",
+                reason=f"staged in standardized/ ({link_kind})",
+                actor="operon standardize",
+            )
+            set_state(
+                db, record["entity_type"], record["entity_id"], "STANDARDIZED",
+                f"file {file_id} staged in standardized/", actor="operon standardize",
+            )
         return {"file_id": file_id, "target": str(target), "action": link_kind}
     except BaseException:
         if temporary_link is not None and (temporary_link.exists() or temporary_link.is_symlink()):

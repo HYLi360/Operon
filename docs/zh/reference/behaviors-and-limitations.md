@@ -27,7 +27,7 @@
 - **目录身份不含时间戳与所有权。** `sha256_directory` 覆盖相对路径、空目录、文件字节、大小和符号链接目标；目录内出现 FIFO/socket 会让该目录树的 ingest/verify 以 `OSError` 失败（`utils.py`）。
 - **中断的复制会留下隐藏的临时条目。** `atomic_copytree` 在目标旁的 `.target.XXXX` 临时目录中工作，`atomic_copy`/`atomic_write_text` 会留下同级的 `.<name>.XXXX` 临时文件；只有进程内异常才会清理它们，因此 SIGKILL 或断电会将其遗留，需手动清理（`utils.py`）。
 - **幂等重 ingest 不会降级已标准化的文件。** 重新 ingest 相同字节会重新校验归档：`STANDARDIZED` 文件保持原状态不变，其他状态迁移走带审计的 `set_file_status` 路径（状态未变时不写任何内容），只有 `downloaded_at`/`source_url` 会被补充（`files.py`）。
-- **已知问题：`standardize` 绕过状态机与审计日志。** 它直接写入实体状态 `STANDARDIZED`，因此对 `RELEASED` 或 `ACCEPTED` 实体执行标准化——或运行仅按 `files.status` 选取文件的 `standardize_all`——会在没有迁移校验、也没有 `changes` 行的情况下改变实体状态（`files.py`、`database.py`）。
+- **`standardize` 走带审计的状态机。** 文件状态（`set_file_status`）与实体迁移（`set_state`）都会记录进 `changes`；为 `RELEASED`/`ACCEPTED` 实体 staging 新的标准化目标会被作为非法迁移拒绝（先用 `set-state --force` 做带审计的人工纠正），而幂等路径会修复 `CHECKSUM_VERIFIED` 的崩溃窗口、且不惊动已经继续推进的实体。重新校验通过的字节允许从 `CHECKSUM_FAILED` 直接前进到 `STANDARDIZED`（`files.py`、`workflow.py`）。
 - **`standardize` 每次运行都重新哈希。** 源与目标的哈希每次重算，stat 指纹缓存只写不读，因此重复执行该命令要付出一次全量字节扫描，与 `qc` 不同（`files.py`）。
 
 ## 数据库、事务与并发

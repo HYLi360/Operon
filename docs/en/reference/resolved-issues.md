@@ -30,6 +30,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0007 | Export | The export `workflow_runs` row is now committed only after the workspace has been renamed to the final destination, with the command naming that destination; a recording failure removes the published tree, so a completed export whose destination does not exist can no longer be reported. |
 | ODR-0008 | Export | Exports no longer use an existing empty destination as the workspace: every export stages in a hidden sibling directory, publishes by `rmdir` + atomic rename (failing safe if the destination gained content), and a failure only ever removes the staging tree — the caller's directory children are never deleted. |
 | ODR-0009 | Ingest | An idempotent re-ingest no longer rewrites `files.status` unconditionally: a `STANDARDIZED` file keeps its status, and any real transition goes through `set_file_status` with its `changes` audit row. |
+| ODR-0010 | Standardize | `standardize` no longer writes `STANDARDIZED` directly: the file status goes through `set_file_status` and the entity transition through `set_state`, both audited in `changes`; illegal transitions (for example re-standardizing a `RELEASED` entity) are rejected, and `CHECKSUM_FAILED` gained a legal recovery edge to `STANDARDIZED` for re-verified bytes. |
 
 ## K series (historical)
 

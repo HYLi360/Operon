@@ -254,6 +254,49 @@ def test_reingest_preserves_standardized_status_and_audits_transitions(project_d
     assert last["actor"] == "operon ingest"
 
 
+@pytest.mark.bug("ODR-0010")
+def test_standardize_goes_through_the_audited_state_machine(project_db, tmp_path):
+    from operon.workflow import set_state
+
+    project, db = project_db
+    source = tmp_path / "genome.fa"
+    source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
+    record = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    target = (project.standardized_root / "assemblies" / "ASM_000001"
+              / Path(record["relative_path"]).name)
+
+    # The main path audits both the file status and the entity transition.
+    files.standardize_file(db, project, record["file_id"])
+    file_audit = db.conn.execute(
+        "SELECT old_value, new_value FROM changes WHERE object_type='files' AND object_id=?",
+        (record["file_id"],),
+    ).fetchall()
+    assert [(row["old_value"], row["new_value"]) for row in file_audit] == [
+        ("CHECKSUM_VERIFIED", "STANDARDIZED")
+    ]
+    state_audit = db.conn.execute(
+        "SELECT old_value, new_value, actor FROM changes "
+        "WHERE object_type='entity_state' AND object_id='assembly:ASM_000001'",
+    ).fetchall()
+    assert [(row["old_value"], row["new_value"]) for row in state_audit] == [
+        ("CHECKSUM_VERIFIED", "STANDARDIZED")
+    ]
+    assert state_audit[-1]["actor"] == "operon standardize"
+
+    # An entity that already moved on is protected by the state machine, and
+    # the rejected attempt neither recreates the target nor touches the rows.
+    set_state(db, "assembly", "ASM_000001", "RELEASED", "test release",
+              force=True, actor="tester")
+    target.unlink()
+    with pytest.raises(ConflictError, match="illegal transition RELEASED -> STANDARDIZED"):
+        files.standardize_file(db, project, record["file_id"])
+    assert not target.exists()
+    assert db.conn.execute(
+        "SELECT status FROM files WHERE file_id=?", (record["file_id"],),
+    ).fetchone()["status"] == "STANDARDIZED"
+    assert db.get_entity_state("assembly", "ASM_000001") == "RELEASED"
+
+
 def test_standardize_missing_remote_tampered_links_and_idempotency(project_db, tmp_path, monkeypatch):
     project, db = project_db
     with pytest.raises(EntityNotFoundError):
@@ -465,15 +508,21 @@ def test_verify_files_does_not_demote_standardized(project_db, tmp_path):
     row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
     files.standardize_file(db, project, row["file_id"])
 
+    def file_audit_rows():
+        return db.query(
+            "SELECT * FROM changes WHERE object_type='files' AND object_id=?",
+            (row["file_id"],)
+        )
+
+    # Standardization itself is audited; verify below must not add churn.
+    audit_before = file_audit_rows()
     (result,) = files.verify_files(db, project, [row["file_id"]])
     assert result["status"] == "CHECKSUM_VERIFIED"
     stored = db.conn.execute(
         "SELECT status FROM files WHERE file_id=?", (row["file_id"],)
     ).fetchone()
     assert stored["status"] == "STANDARDIZED"
-    assert db.query(
-        "SELECT * FROM changes WHERE object_type='files' AND object_id=?", (row["file_id"],)
-    ) == []
+    assert file_audit_rows() == audit_before
 
 
 def test_stale_cached_checksum_falls_back_to_full_hash(project_db, tmp_path):
