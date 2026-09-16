@@ -21,6 +21,7 @@ from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
 from operon.entity_view import _organism_for
+from operon.profiles import load_profile
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path
 from operon.workflow import log_run
@@ -207,6 +208,10 @@ def _export_files_in_workspace(
     """
     if link_kind not in LINK_KINDS:
         raise ValidationError(f"unsupported export link kind {link_kind!r}")
+    if decision and profile:
+        # A decision selection names a QC profile; an unknown profile must
+        # fail loudly instead of silently exporting an empty bundle.
+        load_profile(project.profiles_dir, profile, expected_kind="qc")
     entity_ids = list(entity_ids)
     file_ids = list(file_ids)
     selection = {

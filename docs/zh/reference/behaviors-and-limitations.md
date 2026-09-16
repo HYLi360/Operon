@@ -171,7 +171,7 @@
 
 - **哈希覆盖范围比文件名暗示的要小。** `checksums.sha256` 只覆盖数据文件；`provenance.json` 对元数据 TSV 只携带一个 `metadata_sha256`，`manifest.tsv` 只被哈希进数据库汇总与 `releases` 行，而 `qc_summary.tsv`、`decisions.tsv`、`profile_history.tsv`、`exclusions.tsv`、`software_versions.tsv` 与 `README.md` 的哈希不在任何地方（`release.py`）。
 - **发布预检要求所有活动范围内实体都有 decision。** 缺少 decision 或评估后元数据发生变化时，在发布任何产物前拒绝 release，因此这些实体不会静默消失；排除表由该 profile 的当前 decision 构建，因此对该 profile 没有 decision 的已退役实体既不出现在 `manifest.tsv`，也不出现在 `exclusions.tsv`（`release.py`）。
-- **已知问题：profile 文件缺失时发布预检被静默禁用。** 当 `config/profiles/<profile>.yaml` 不存在时检查直接返回，因此 `operon release --profile <typo>` 会以退出码 0 发布零成员 release，`operon export --decision PASS --profile <typo>` 会写出空包（`release.py`）。
+- **未知的 release profile 会被拒绝。** `release` 与 `export --decision ... --profile ...` 都会在任何输出落地之前加载并校验指定的 QC profile，因此拼写错误会抛出校验错误，而不是发布零成员 release 或空包（`release.py`、`export.py`）。
 - **预检与 QC 快照都只覆盖一部分。** 预检只覆盖有 manifest 文件的实体类型，且只覆盖 `_ENTITY_TABLES` 中的五种，其他实体类型跳过过期评估检查；`qc_summary.tsv` 既不按 profile 过滤也不被哈希（`release.py`）。
 - **已知问题：hardlink 回退在 provenance 中不可见。** `os.link` 被拒绝后会静默回退为普通复制，而 `provenance.json` 仍记录 `hardlink`（release）或 `link_kind: hardlink`（export），目录则始终复制（`release.py`、`export.py`）。
 - **已知问题：已发布目录与数据库行不是原子的。** 在最终重命名与 `releases` 插入之间崩溃会留下没有对应行的 release 目录，重试随后以 `FileExistsError` 失败，直到手工删除该目录（`release.py`）。

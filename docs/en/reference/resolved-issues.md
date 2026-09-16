@@ -25,6 +25,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0002 | Database API | `insert_row()`/`upsert_rows()` and the read helpers `table_columns()`/`export_rows()`/`export_active_rows()` validate and quote every dynamic identifier; values remain parameter-bound, and keyword column names still work. |
 | ODR-0003 | Table import | `apply_table_import()` revalidates the table against `IMPORTABLE_TABLES` and quotes all identifiers at the execution boundary; a tampered preview raises `ValidationError` and rolls back. |
 | ODR-0004 | Remote mirrors | Upload verification now happens at the staging name inside `put`, before the final rename; a truncated or corrupted upload is removed with the staging bytes and never occupies the final remote path, so a later push retries instead of marking the location `CORRUPT`. |
+| ODR-0005 | Release | The release preflight no longer returns early when `config/profiles/<profile>.yaml` is missing: `release` and decision-based `export` load and validate the named QC profile up front, so a typo fails with a validation error instead of publishing a zero-member release or an empty export bundle. |
 
 ## K series (historical)
 

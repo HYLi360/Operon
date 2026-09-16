@@ -29,6 +29,14 @@ def project_db(tmp_path: Path):
         db.close()
 
 
+def _write_empty_scope_profile(project, name: str = "p") -> None:
+    (project.profiles_dir / f"{name}.yaml").write_text(
+        yaml.safe_dump({"kind": "qc", "version": 1, "applies_to": [],
+                        "required": [], "warnings": []}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def _insert_graph(db):
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
@@ -93,6 +101,7 @@ def test_release_validates_link_kind_existing_and_missing_members(project_db, mo
     with pytest.raises(FileExistsError):
         release.create_release(db, project, "existing", "p")
 
+    _write_empty_scope_profile(project)
     monkeypatch.setattr(release, "release_files_for", lambda *_a: [_member("raw/missing", "a" * 64)])
     with pytest.raises(FileNotFoundError, match="release member missing"):
         release.create_release(db, project, "missing", "p")
@@ -121,6 +130,24 @@ def test_release_rejects_unevaluated_entities_before_creating_output(project_db)
     assert not (project.releases_root / "blocked").exists()
 
 
+@pytest.mark.bug("ODR-0005")
+def test_release_and_export_reject_an_unknown_profile(project_db, tmp_path):
+    project, db = project_db
+    _insert_graph(db)
+    source = project.root / "assembly.fa"
+    source.write_text(">ctg1\nACGT\n", encoding="utf-8")
+    ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    with pytest.raises(ValidationError, match="profile 'typo' not found"):
+        release.create_release(db, project, "zero-member", "typo")
+    assert not (project.releases_root / "zero-member").exists()
+
+    from operon.export import export_files
+    with pytest.raises(ValidationError, match="profile 'typo' not found"):
+        export_files(db, project, output_dir=tmp_path / "out",
+                     decision="PASS", profile="typo")
+    assert not (tmp_path / "out").exists()
+
+
 def test_release_rejects_metadata_changed_after_evaluation(project_db):
     project, db = project_db
     _insert_graph(db)
@@ -146,6 +173,7 @@ def test_release_rejects_metadata_changed_after_evaluation(project_db):
 def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monkeypatch):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    _write_empty_scope_profile(project)
     bad = project.root / "raw" / "bad"
     bad.parent.mkdir(exist_ok=True)
     bad.write_text("x", encoding="utf-8")
@@ -174,6 +202,7 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
 def test_release_rolls_back_published_tree_when_state_commit_fails(project_db, monkeypatch):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    _write_empty_scope_profile(project)
     source = project.root / "raw" / "file"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("y", encoding="utf-8")

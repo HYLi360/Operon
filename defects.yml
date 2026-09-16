@@ -93,12 +93,13 @@ defects:
   affected: all releases; triggered by a --profile value that names no config/profiles/<profile>.yaml file (for example a typo)
   severity: high
   component: release
-  status: open
+  status: fixed
   reproduction: The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
-  disposition: null
+  disposition: 'The preflight no longer returns early when the profile file is missing: `load_profile` raises ValidationError for an unknown profile, and decision-based export validates the named QC profile before staging any output. A typo now fails loudly instead of publishing a zero-member release or an empty bundle.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_views_release_reports_edges.py::test_release_and_export_reject_an_unknown_profile
 - id: ODR-0006
   title: Published release tree and releases row are not atomic
   reported: '2026-09-16'

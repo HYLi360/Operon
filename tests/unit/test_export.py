@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from operon.cli import main
 from operon.config import load_project
@@ -115,6 +116,11 @@ def test_export_filters_by_entity_type_and_role(project_db, tmp_path):
 
 def test_export_filters_by_decision_and_profile(project_db, tmp_path):
     project, db, _files = project_db
+    (project.profiles_dir / "p1.yaml").write_text(
+        yaml.safe_dump({"kind": "qc", "version": 1, "applies_to": ["assembly"],
+                        "required": [], "warnings": []}, sort_keys=False),
+        encoding="utf-8",
+    )
     for entity_id, decision in (("ASM_000001", "PASS"), ("ASM_000002", "FAIL")):
         db.conn.execute(
             "INSERT INTO decisions(entity_type, entity_id, profile, decision, reason_codes, "

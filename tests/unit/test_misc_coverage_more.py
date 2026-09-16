@@ -752,6 +752,7 @@ def test_release_preflight_summarizes_more_than_ten_problem_entities(project_db,
 def test_release_hardlinks_a_directory_member(project_db, tmp_path, monkeypatch):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
+    _write_qc_profile(project, "p", [])
     tree = project.root / "raw" / "tree"
     tree.mkdir(parents=True)
     (tree / "x.txt").write_text("x", encoding="utf-8")

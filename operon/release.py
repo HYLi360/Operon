@@ -101,10 +101,9 @@ def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
 def _assert_release_entities_evaluated(db: Database, project: Project, profile: str) -> None:
     """Reject a release scope containing entities with no current decision."""
     # ``release_files_for`` remains usable by low-level callers that provide a
-    # synthetic member list (for example migration tooling). The normal CLI
-    # path always validates the profile before reaching this helper.
-    if not (project.profiles_dir / f"{profile}.yaml").exists():
-        return
+    # synthetic member list (for example migration tooling); this helper is
+    # the release preflight, so an unknown profile must fail loudly instead of
+    # silently publishing a zero-member release.
     document = load_profile(project.profiles_dir, profile, expected_kind="qc")
     applies_to = sorted(set(document.get("applies_to", ["assembly", "annotation", "run"])))
     if not applies_to:
