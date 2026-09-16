@@ -1922,7 +1922,6 @@ def _apply_plan(
                 f"VALUES ({', '.join('?' for _ in columns)}) "
                 f"ON CONFLICT({','.join(quote_identifier(key) for key in keys)}) DO UPDATE SET {assignments}"  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
             )
-            keys = db._primary_keys(table)
             for row in rows:
                 where = " AND ".join(f"{key}=?" for key in keys)
                 existing = conn.execute(
