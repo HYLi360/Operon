@@ -38,7 +38,7 @@
 - **`operon query` 拒绝的不只是写入。** SQL authorizer 拒绝 DML/DDL/ATTACH/SAVEPOINT，且仅放行只读 PRAGMA 白名单，因此并非表写入的副作用语句同样失败：`PRAGMA journal_mode` 报 *not authorized*，`VACUUM` 报 *authorization denied*（见 [query](cli-decisions-reports.md#query)）（`database.py`）。
 - **把状态设置为当前值只是“半个”no-op。** 审计行只在状态真正变化时写入，但 `entity_state` 行会被无条件改写：等值调用仍会覆盖 `message`（`None` 会清空原文本）与 `updated_at`，只是不写 `changes` 行。`set_state_bulk` 强制接受每一次迁移（绕过迁移表），但审计行为同样只在状态变化时写入（`workflow.py`、`database.py`）。
 - **重跑 `qc` 或 `evaluate` 不会降级已有决定的实体。** 批量 QC 与自动重评估都走受守卫的状态写入：处于 `ACCEPTED`/`REVIEW`/`REJECTED`/`RELEASED` 的实体保持其生命周期状态，同时新鲜的 QC 证据与 decision 行照常记录；只有显式的 `curate` 或 `set-state --force` 才能移动它（`workflow.py`、`qc/__init__.py`、`rules.py`）。
-- **已知问题：并发可写打开可能在重建视图时相撞。** 每次可写打开都会在无锁、无事务的情况下删除并重建 `current_decisions`、`effective_retired_entities` 与 `current_entity_lifecycle`，因此两个 `operon` 进程（或 CLI 与 TUI）可能以 `sqlite3.OperationalError: view current_decisions already exists` 中止——这是逻辑冲突，30 秒 busy timeout 无法吸收，最终以退出码 1 呈现（`database.py`）。
+- **可写打开在单个 immediate 事务内重建派生视图。** `current_decisions`、`effective_retired_entities` 与 `current_entity_lifecycle` 在写锁保护下删除并重建，因此并发的 `operon` 进程（或 CLI 与 TUI）会等待而不是在重建中途相撞（`database.py`）。
 - **每次可写打开都会重建 schema 对象。** 视图重建会改变 `PRAGMA schema_version`，即使没有任何数据变化也会在每次可写打开时写入 WAL；只读命令在此之前就返回（`database.py`）。
 - **来自更新 schema 的数据库会被静默接受。** 没有任何代码读取或比较存储的 `database/SCHEMA` 标记，`SCHEMA_VERSION` 只被写入和报告：旧二进制会打开该数据库，用自己的版本字符串重写标记并重建自己的视图（`database.py`、`cli.py`）。
 - **`project.yaml` 不做校验，`init` 也不是原子的。** 缺失或改名的键会抛出裸 `KeyError`（traceback，退出码 1）而非配置错误；`Project.init` 先写 `project.yaml`，因此后续失败会留下半初始化项目——`Project.find` 会接受它，而重试会拒绝重新初始化（`config.py`、`cli.py`）。

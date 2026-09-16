@@ -191,9 +191,10 @@ defects:
   affected: all releases; triggered by two operon processes (or the CLI and the TUI) opening the same database writable at the same time
   severity: low
   component: database
-  status: open
+  status: fixed
   reproduction: 'Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second busy timeout cannot absorb, surfacing as exit 1.'
-  disposition: null
+  disposition: _ensure_current_schema_objects now drops and recreates the derived views inside a single immediate transaction acquired through Database.transaction(), so a concurrent writable opener waits on the writer lock instead of landing between DROP and CREATE. Plain execute calls replace executescript, which would implicitly commit and break the atomic window.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild

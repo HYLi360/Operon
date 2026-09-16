@@ -56,6 +56,30 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
+@pytest.mark.bug("ODR-0012")
+def test_concurrent_writable_opens_do_not_collide_on_view_rebuild(db):
+    """Writable opens serialize their view rebuild on the writer lock."""
+    import threading
+
+    errors: list[BaseException] = []
+
+    def opener():
+        try:
+            for _ in range(3):
+                Database(db.path).close()
+        except BaseException as exc:  # noqa: BLE001 - collected and re-raised below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=opener) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    # Every rebuild left the derived views usable.
+    assert db.query("SELECT COUNT(*) FROM current_decisions")[0][0] == 0
+
+
 def test_next_id_reserves_numbers_across_connections(db):
     other = Database(db.path)
     try:

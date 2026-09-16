@@ -24,6 +24,7 @@
 | ODR-0009 | Ingest | 幂等重 ingest 不再无条件改写 `files.status`：`STANDARDIZED` 文件保持其状态，真实的状态迁移改走 `set_file_status` 并写入 `changes` 审计行。 |
 | ODR-0010 | Standardize | `standardize` 不再直接写入 `STANDARDIZED`：文件状态走 `set_file_status`、实体迁移走 `set_state`，二者都记入 `changes`；非法迁移（例如对已 `RELEASED` 的实体重新标准化）会被拒绝，且 `CHECKSUM_FAILED` 新增了指向 `STANDARDIZED` 的合法恢复边，供重新校验通过的字节使用。 |
 | ODR-0011 | QC / decisions | 重跑 `qc` 或 `evaluate` 不再把 `ACCEPTED`/`RELEASED`（或 `REVIEW`/`REJECTED`）实体降级：批量状态写入改走 `set_state_guarded`，新鲜的 QC 证据与 decision 行照常记录，但生命周期状态只能由显式的 `curate` 或强制 `set-state` 改变。 |
+| ODR-0012 | Database | 可写打开时的派生视图重建现在运行在单个 immediate 事务内（使用普通 `execute`，因为 `executescript` 会隐式提交），两个进程不会再在另一个连接的 DROP 与 CREATE 之间相撞而报 `view ... already exists`。 |
 
 ## K 系列（历史）
 

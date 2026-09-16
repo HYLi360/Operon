@@ -1084,23 +1084,29 @@ class Database:
         )
 
     def _ensure_current_schema_objects(self) -> None:
-        """Create current indexes and rebuild derived current-state views."""
-        self._conn.execute("DROP VIEW IF EXISTS current_decisions")
-        self._conn.execute("DROP VIEW IF EXISTS effective_retired_entities")
-        self._conn.execute("DROP VIEW IF EXISTS current_entity_lifecycle")
-        self._conn.executescript(
-            """
-            CREATE INDEX IF NOT EXISTS idx_qc_entity ON qc_results(entity_type, entity_id);
-            CREATE INDEX IF NOT EXISTS idx_qc_file ON qc_results(file_id, file_sha256);
-            CREATE INDEX IF NOT EXISTS idx_qc_metric ON qc_results(metric_name);
-            CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_type, entity_id);
-            CREATE INDEX IF NOT EXISTS idx_decisions_current ON decisions(entity_type, entity_id, profile, decision_id);
-            """
-        )
-        self._conn.execute(CURRENT_DECISIONS_VIEW)
-        self._conn.execute(CURRENT_ENTITY_LIFECYCLE_VIEW)
-        self._conn.execute(EFFECTIVE_RETIRED_ENTITIES_VIEW)
-        self._conn.commit()
+        """Create current indexes and rebuild derived current-state views.
+
+        The drop-and-recreate runs inside one immediate transaction, so a
+        concurrent writable opener waits on the writer lock instead of
+        landing between another connection's DROP and CREATE.  Plain
+        ``execute`` calls are used because ``executescript`` would implicitly
+        commit and break the atomic window.
+        """
+        with self.transaction():
+            for statement in (
+                "DROP VIEW IF EXISTS current_decisions",
+                "DROP VIEW IF EXISTS effective_retired_entities",
+                "DROP VIEW IF EXISTS current_entity_lifecycle",
+                "CREATE INDEX IF NOT EXISTS idx_qc_entity ON qc_results(entity_type, entity_id)",
+                "CREATE INDEX IF NOT EXISTS idx_qc_file ON qc_results(file_id, file_sha256)",
+                "CREATE INDEX IF NOT EXISTS idx_qc_metric ON qc_results(metric_name)",
+                "CREATE INDEX IF NOT EXISTS idx_decisions_entity ON decisions(entity_type, entity_id)",
+                "CREATE INDEX IF NOT EXISTS idx_decisions_current ON decisions(entity_type, entity_id, profile, decision_id)",
+            ):
+                self._conn.execute(statement)
+            self._conn.execute(CURRENT_DECISIONS_VIEW)
+            self._conn.execute(CURRENT_ENTITY_LIFECYCLE_VIEW)
+            self._conn.execute(EFFECTIVE_RETIRED_ENTITIES_VIEW)
 
     def close(self) -> None:
         self._conn.close()
