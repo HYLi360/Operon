@@ -8,6 +8,8 @@ from operon.config import load_project
 from operon.database import Database
 from operon.errors import ValidationError
 from operon.import_wizard import _commit
+from operon.schema import Schema
+from operon.table_import import apply_table_import, preview_table_import
 
 
 @pytest.fixture
@@ -71,3 +73,45 @@ def test_table_argument_is_not_sql(project_db, method):
         else:
             getattr(db, method)(table)
     assert db.query('SELECT * FROM organisms') == []
+
+
+def test_table_import_rejects_tampered_update_column(project_db, tmp_path):
+    project, db = project_db
+    db.insert_row('organisms', {'organism_id': 'ORG_000001', 'scientific_name': 'Original'})
+    source = tmp_path / 'import.csv'
+    source.write_text('organism_id,scientific_name\nORG_000001,Changed\n')
+    schema = Schema.from_file(project.schema_path)
+    preview = preview_table_import(db, schema, 'organisms', source)
+    malicious = 'scientific_name=upper(?) WHERE organism_id=? --'
+    preview['items'][0]['differences'] = [malicious]
+    preview['items'][0]['row'][malicious] = 'injected'
+    with pytest.raises(ValidationError, match='unsafe SQL identifier'):
+        apply_table_import(db, schema, preview, on_conflict='update')
+    assert db.query('SELECT scientific_name FROM organisms')[0][0] == 'Original'
+    assert db.query('SELECT * FROM changes') == []
+
+
+def test_table_import_rechecks_allowed_table(project_db):
+    project, db = project_db
+    with pytest.raises(ValidationError, match='not importable'):
+        apply_table_import(db, Schema.from_file(project.schema_path),
+                           {'table': 'changes', 'update': 0}, on_conflict='update')
+
+
+def test_custom_keyword_column_and_sql_like_values_round_trip(project_db, tmp_path):
+    project, db = project_db
+    schema = Schema.from_file(project.schema_path)
+    schema.tables['organisms']['fields']['select'] = {'type': 'string'}
+    db.ensure_metadata_columns(schema)
+    value = "O'Brien'); DROP TABLE organisms; --"
+    row = {'organism_id': 'ORG_000001', 'scientific_name': value, 'select': value}
+    db.insert_row('organisms', row)
+    row['scientific_name'] = 'Updated'
+    db.upsert_rows('organisms', list(row), [row])
+    for export in (db.export_rows, db.export_active_rows):
+        assert export('organisms', list(row)) == [row]
+    source = tmp_path / 'keyword.csv'
+    source.write_text('organism_id,select\nORG_000001,keyword update\n')
+    preview = preview_table_import(db, schema, 'organisms', source)
+    apply_table_import(db, schema, preview, on_conflict='update')
+    assert db.export_rows('organisms', ['select']) == [{'select': 'keyword update'}]

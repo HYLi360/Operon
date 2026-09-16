@@ -14,6 +14,7 @@ from xml.etree import ElementTree as ET
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
+from operon.sql import quote_identifier
 
 IMPORTABLE_TABLES = ["organisms", "samples", "runs", "assemblies", "annotations", "accessions"]
 NS_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -347,6 +348,8 @@ def apply_table_import(
     if preview["update"] and on_conflict == "error":
         raise ConflictError(f"{preview['update']} existing row(s) would be changed")
     table = preview["table"]
+    if table not in IMPORTABLE_TABLES:
+        raise ValidationError(f"table {table!r} is not importable; choose from {IMPORTABLE_TABLES}")
     columns = preview["columns"]
     keys = db._primary_keys(table)
     result = {"inserted": 0, "updated": 0, "unchanged": preview["unchanged"], "skipped": 0}
@@ -363,7 +366,8 @@ def apply_table_import(
                 continue
             if action == "insert":
                 conn.execute(
-                    f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
+                    f"VALUES ({', '.join('?' for _ in columns)})",
                     [row.get(column) for column in columns],
                 )
                 db.record_change(table, object_id, None, None, json.dumps(row, ensure_ascii=False, sort_keys=True),
@@ -371,9 +375,10 @@ def apply_table_import(
                 result["inserted"] += 1
             else:
                 update_columns = [column for column in item["differences"] if column not in keys]
-                assignments = ", ".join(f"{column}=?" for column in update_columns)
+                assignments = ", ".join(f"{quote_identifier(column)}=?" for column in update_columns)
                 conn.execute(
-                    f"UPDATE {table} SET {assignments} WHERE " + " AND ".join(f"{key}=?" for key in keys),
+                    f"UPDATE {quote_identifier(table)} SET {assignments} WHERE "
+                    + " AND ".join(f"{quote_identifier(key)}=?" for key in keys),
                     [row.get(column) for column in update_columns] + [row[key] for key in keys],
                 )
                 for column in item["differences"]:
