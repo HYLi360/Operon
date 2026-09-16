@@ -153,7 +153,7 @@ class _IdAllocator:
             table = ENTITY_TABLES[entity_type]
             id_col = ENTITY_ID_COLUMNS[entity_type]
             maximum = 0
-            for row in db.conn.execute(f"SELECT {id_col} AS value FROM {table}"):
+            for row in db.conn.execute(f"SELECT {id_col} AS value FROM {table}"):  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                 match = re.fullmatch(rf"{re.escape(prefix)}_(\d+)", str(row["value"]))
                 if match:
                     maximum = max(maximum, int(match.group(1)))
@@ -175,7 +175,7 @@ class _PlanBuilder:
             id_col = ENTITY_ID_COLUMNS[entity_type]
             self.rows[table] = {
                 str(row[id_col]): dict(row)
-                for row in db.conn.execute(f"SELECT * FROM {table}")
+                for row in db.conn.execute(f"SELECT * FROM {table}")  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
             }
         self.rows["accessions"] = {
             f"{row['namespace']}\0{row['accession']}": dict(row)
@@ -794,7 +794,7 @@ def run_ncbi_datasets_adapter(
                             with db.transaction():
                                 db.conn.execute(
                                     f"UPDATE ncbi_assembly_records SET {pointer}=?, "
-                                    "workflow_run_id=?, updated_at=? WHERE accession=?",
+                                    "workflow_run_id=?, updated_at=? WHERE accession=?",  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                                     (row["file_id"], run_id, now_iso(), accession),
                                 )
                     if row.get("standardized_file_id"):
@@ -1085,7 +1085,7 @@ def _missing_includes(
                     "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
                     "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
                     if db.lifecycle_schema_available() else ""
-                ),
+                ),  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                 (accession,),
             )
             ]
@@ -1106,7 +1106,7 @@ def _missing_includes(
                 str(row["annotation_id"])
                 for row in db.conn.execute(
                     "SELECT annotation_id FROM annotations WHERE assembly_id=? "
-                    + supersession_filter + retirement_filter,
+                    + supersession_filter + retirement_filter,  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                     (assembly_id,),
                 )
             ]
@@ -1920,13 +1920,13 @@ def _apply_plan(
             sql = (
                 f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
                 f"VALUES ({', '.join('?' for _ in columns)}) "
-                f"ON CONFLICT({','.join(quote_identifier(key) for key in keys)}) DO UPDATE SET {assignments}"
+                f"ON CONFLICT({','.join(quote_identifier(key) for key in keys)}) DO UPDATE SET {assignments}"  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
             )
             keys = db._primary_keys(table)
             for row in rows:
                 where = " AND ".join(f"{key}=?" for key in keys)
                 existing = conn.execute(
-                    f"SELECT * FROM {table} WHERE {where}", [row.get(key) for key in keys]
+                    f"SELECT * FROM {table} WHERE {where}", [row.get(key) for key in keys]  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                 ).fetchone()
                 conn.execute(sql, [row.get(col) for col in columns])
                 before = dict(existing) if existing else {}

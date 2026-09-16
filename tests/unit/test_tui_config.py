@@ -317,7 +317,7 @@ def test_config_snapshot_failure_restores_bytes_and_database(project, monkeypatc
     if path.exists():
         path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
     original = path.read_bytes() if path.exists() else None
-    before = _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]
+    before = _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"]  # nosec B608 # fixed fixture table names
     record = getattr(Database, method)
 
     def fail(db, *args, **kwargs):
@@ -332,7 +332,7 @@ def test_config_snapshot_failure_restores_bytes_and_database(project, monkeypatc
     with pytest.raises(expected):
         save()
     assert (path.read_bytes() if path.exists() else None) == original
-    assert _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"] == before
+    assert _query(project, f"SELECT COUNT(*) AS n FROM {table}")[0]["n"] == before  # nosec B608 # fixed fixture table names
 
 
 def test_profile_history_restore_then_save_creates_next_version(project: Project) -> None:

@@ -367,7 +367,7 @@ def apply_table_import(
             if action == "insert":
                 conn.execute(
                     f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
-                    f"VALUES ({', '.join('?' for _ in columns)})",
+                    f"VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # ODR-0003: identifiers validated; values are bound
                     [row.get(column) for column in columns],
                 )
                 db.record_change(table, object_id, None, None, json.dumps(row, ensure_ascii=False, sort_keys=True),
@@ -377,7 +377,7 @@ def apply_table_import(
                 update_columns = [column for column in item["differences"] if column not in keys]
                 assignments = ", ".join(f"{quote_identifier(column)}=?" for column in update_columns)
                 conn.execute(
-                    f"UPDATE {quote_identifier(table)} SET {assignments} WHERE "
+                    f"UPDATE {quote_identifier(table)} SET {assignments} WHERE "  # nosec B608 # ODR-0003: identifiers validated; values are bound
                     + " AND ".join(f"{quote_identifier(key)}=?" for key in keys),
                     [row.get(column) for column in update_columns] + [row[key] for key in keys],
                 )

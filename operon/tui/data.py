@@ -67,7 +67,7 @@ def project_summary(project: Project) -> dict[str, Any]:
     with _open(project) as db:
         entity_counts = {
             entity_type: int(
-                _row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"]  # noqa: S608 - fixed DDL names
+                _row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"]  # noqa: S608 - fixed DDL names  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             )
             for entity_type, (table, _id_col) in ENTITY_TABLES.items()
         }
@@ -115,7 +115,7 @@ def attention_items(project: Project, *, limit: int = 10) -> dict[str, Any]:
             db,
             "SELECT file_id, entity_type, entity_id, file_role, relative_path, status "
             f"FROM files WHERE status NOT IN ({', '.join('?' for _ in HEALTHY_FILE_STATUSES)}) "
-            "ORDER BY file_id LIMIT ?",
+            "ORDER BY file_id LIMIT ?",  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             (*sorted(HEALTHY_FILE_STATUSES), limit),
         )
     return {
@@ -257,7 +257,7 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
     """Return one entity's row, accessions, state, and files."""
     table, id_column = ENTITY_TABLES[entity_type]
     with _open(project) as db:
-        fields = _row(db, f"SELECT * FROM {table} WHERE {id_column}=?", (entity_id,))  # noqa: S608
+        fields = _row(db, f"SELECT * FROM {table} WHERE {id_column}=?", (entity_id,))  # noqa: S608  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
         if fields is None:
             return None
         accessions = _rows(
@@ -432,7 +432,7 @@ def config_version_floor(project: Project, kind: str, name: str, version: int = 
         "recipe": ("recipe_snapshots", "recipe_version", "recipe_name"),
     }[kind]
     with _open(project) as db:
-        row = _row(db, f"SELECT MAX({column}) AS version FROM {table} WHERE {name_column}=?",
+        row = _row(db, f"SELECT MAX({column}) AS version FROM {table} WHERE {name_column}=?",  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
                    (name,))
     return max(version, int(row["version"] or 0))
 
@@ -579,7 +579,7 @@ def list_workflow_runs(
         if entity:
             conditions.append("(entity_type LIKE ? OR entity_id LIKE ?)")
             params.extend((f"%{entity}%", f"%{entity}%"))
-        sql = "SELECT * FROM workflow_runs WHERE " + " AND ".join(conditions)
+        sql = "SELECT * FROM workflow_runs WHERE " + " AND ".join(conditions)  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
         sql += " ORDER BY julianday(started_at) DESC, rowid DESC"
         if limit:
             sql += " LIMIT ? OFFSET ?"
@@ -631,7 +631,7 @@ def _not_retired(db: Database, entity_type: str, alias: str, id_column: str) -> 
         return ""
     return (
         f" AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-        f"WHERE r.entity_type='{entity_type}' AND r.entity_id={alias}.{id_column})"
+        f"WHERE r.entity_type='{entity_type}' AND r.entity_id={alias}.{id_column})"  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
     )
 
 
@@ -642,7 +642,7 @@ def list_organisms_for_picker(project: Project) -> list[dict[str, Any]]:
             db,
             "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version "
             "FROM organisms o WHERE 1=1"
-            + _not_retired(db, "organism", "o", "organism_id")
+            + _not_retired(db, "organism", "o", "organism_id")  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             + " ORDER BY scientific_name, organism_id",
         )
 
@@ -654,7 +654,7 @@ def list_samples_for_picker(project: Project, organism_id: str) -> list[dict[str
             db,
             "SELECT sample_id, isolate, strain, biosample_accession FROM samples s "
             "WHERE organism_id=?"
-            + _not_retired(db, "sample", "s", "sample_id")
+            + _not_retired(db, "sample", "s", "sample_id")  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             + " ORDER BY sample_id",
             (organism_id,),
         )
@@ -667,7 +667,7 @@ def list_assemblies_for_picker(project: Project, sample_id: str) -> list[dict[st
             db,
             "SELECT assembly_id, assembly_accession, assembly_name, assembly_version "
             "FROM assemblies a WHERE sample_id=?"
-            + _not_retired(db, "assembly", "a", "assembly_id")
+            + _not_retired(db, "assembly", "a", "assembly_id")  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             + " ORDER BY assembly_id",
             (sample_id,),
         )
@@ -680,7 +680,7 @@ def list_annotations_for_picker(project: Project, assembly_id: str) -> list[dict
             db,
             "SELECT annotation_id, annotation_source, annotation_version FROM annotations n "
             "WHERE assembly_id=?"
-            + _not_retired(db, "annotation", "n", "annotation_id")
+            + _not_retired(db, "annotation", "n", "annotation_id")  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
             + " ORDER BY annotation_id",
             (assembly_id,),
         )

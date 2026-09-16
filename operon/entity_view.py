@@ -135,10 +135,10 @@ def entity_graph(
     if sample_ids:
         placeholders = ", ".join("?" for _ in sample_ids)
         runs = [dict(row) for row in db.conn.execute(
-            f"SELECT * FROM runs WHERE sample_id IN ({placeholders}) ORDER BY sample_id, run_id", sample_ids
+            f"SELECT * FROM runs WHERE sample_id IN ({placeholders}) ORDER BY sample_id, run_id", sample_ids  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         ).fetchall()]
         assemblies = [dict(row) for row in db.conn.execute(
-            f"SELECT * FROM assemblies WHERE sample_id IN ({placeholders}) ORDER BY sample_id, assembly_id", sample_ids
+            f"SELECT * FROM assemblies WHERE sample_id IN ({placeholders}) ORDER BY sample_id, assembly_id", sample_ids  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         ).fetchall()]
     else:
         runs, assemblies = [], []
@@ -146,7 +146,7 @@ def entity_graph(
     if assembly_ids:
         placeholders = ", ".join("?" for _ in assembly_ids)
         annotations = [dict(row) for row in db.conn.execute(
-            f"SELECT * FROM annotations WHERE assembly_id IN ({placeholders}) ORDER BY assembly_id, annotation_id",
+            f"SELECT * FROM annotations WHERE assembly_id IN ({placeholders}) ORDER BY assembly_id, annotation_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             assembly_ids,
         ).fetchall()]
     else:
@@ -214,7 +214,7 @@ def entity_graph(
         placeholders = ", ".join("?" for _ in candidate_ids)
         supersessions = [dict(row) for row in db.conn.execute(
             f"SELECT * FROM entity_supersessions WHERE object_id IN ({placeholders}) "
-            "ORDER BY object_type, object_id",
+            "ORDER BY object_type, object_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             candidate_ids,
         ).fetchall()]
     else:
@@ -256,7 +256,7 @@ def entity_graph(
         retirements = [dict(row) for row in db.conn.execute(
             f"SELECT * FROM effective_retired_entities "
             f"WHERE entity_id IN ({placeholders}) "
-            "ORDER BY entity_type, entity_id, event_id",
+            "ORDER BY entity_type, entity_id, event_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             retirement_ids,
         ).fetchall()]
     else:
@@ -299,12 +299,12 @@ def entity_graph(
     if entity_ids:
         placeholders = ", ".join("?" for _ in entity_ids)
         accessions = [dict(row) for row in db.conn.execute(
-            f"SELECT * FROM accessions WHERE internal_id IN ({placeholders}) ORDER BY internal_type, internal_id, namespace",
+            f"SELECT * FROM accessions WHERE internal_id IN ({placeholders}) ORDER BY internal_type, internal_id, namespace",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             entity_ids,
         ).fetchall()]
         files = [dict(row) for row in db.conn.execute(
             f"SELECT file_id, entity_type, entity_id, file_role, format, size_bytes, sha256, status, relative_path "
-            f"FROM files WHERE entity_id IN ({placeholders}) ORDER BY entity_type, entity_id, file_role",
+            f"FROM files WHERE entity_id IN ({placeholders}) ORDER BY entity_type, entity_id, file_role",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             entity_ids,
         ).fetchall()]
     else:
@@ -314,7 +314,7 @@ def entity_graph(
         placeholders = ", ".join("?" for _ in source_object_ids)
         source_links = [dict(row) for row in db.conn.execute(
             f"SELECT * FROM source_links WHERE object_id IN ({placeholders}) "
-            "ORDER BY source_id, object_type, object_id",
+            "ORDER BY source_id, object_type, object_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             source_object_ids,
         ).fetchall()]
     else:
@@ -323,7 +323,7 @@ def entity_graph(
     if source_ids:
         placeholders = ", ".join("?" for _ in source_ids)
         sources = [dict(row) for row in db.conn.execute(
-            f"SELECT * FROM data_sources WHERE source_id IN ({placeholders}) ORDER BY source_id",
+            f"SELECT * FROM data_sources WHERE source_id IN ({placeholders}) ORDER BY source_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             source_ids,
         ).fetchall()]
     else:

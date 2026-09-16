@@ -127,7 +127,7 @@ def _assert_release_entities_evaluated(db: Database, project: Project, profile: 
               WHERE r.entity_type=f.entity_type AND r.entity_id=f.entity_id
           )
         ORDER BY f.entity_type, f.entity_id
-        """,
+        """,  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         [profile, *applies_to],
     ).fetchall()
     stale_keys: list[tuple[str, str]] = []

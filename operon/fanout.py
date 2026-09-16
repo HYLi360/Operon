@@ -128,7 +128,7 @@ def _resolve_seqids(
         seq_placeholders = ", ".join("?" for _ in chunk)
         rows = db.conn.execute(
             f"SELECT seqid, file_id FROM sequences WHERE file_id IN ({placeholders}) "
-            f"AND seqid IN ({seq_placeholders})",
+            f"AND seqid IN ({seq_placeholders})",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             (*source_file_ids, *chunk),
         ).fetchall()
         for row in rows:

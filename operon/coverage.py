@@ -279,7 +279,7 @@ def _resolve_taxids(
         exact = {
             int(row["taxid"])
             for row in db.conn.execute(
-                f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({placeholders})",
+                f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({placeholders})",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
                 [snapshot_id, *batch],
             ).fetchall()
         }
@@ -287,7 +287,7 @@ def _resolve_taxids(
             int(row["alias_taxid"]): (row["current_taxid"], str(row["status"]))
             for row in db.conn.execute(
                 f"SELECT alias_taxid, current_taxid, status FROM taxonomy_aliases "
-                f"WHERE taxonomy_snapshot_id=? AND alias_taxid IN ({placeholders})",
+                f"WHERE taxonomy_snapshot_id=? AND alias_taxid IN ({placeholders})",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
                 [snapshot_id, *batch],
             ).fetchall()
         }
@@ -323,7 +323,7 @@ def _lineages(
             "WHERE p.taxonomy_snapshot_id=? AND p.taxid=a.parent_taxid "
             "AND a.parent_taxid IS NOT NULL "
             "AND a.parent_taxid<>a.taxid AND a.depth<100) "
-            "SELECT * FROM ancestry ORDER BY input_taxid, depth"
+            "SELECT * FROM ancestry ORDER BY input_taxid, depth"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         )
         for row in db.conn.execute(sql, [*batch, snapshot_id, snapshot_id]).fetchall():
             result[int(row["input_taxid"])].append(dict(row))

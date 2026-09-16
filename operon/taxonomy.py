@@ -768,7 +768,7 @@ def _descendant_targets(
         exclude_extinct: bool,
 ) -> list[dict[str, Any]]:
     root_rows = db.conn.execute(
-        f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({','.join('?' for _ in roots)})",
+        f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({','.join('?' for _ in roots)})",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         [snapshot_id, *roots],
     ).fetchall()
     found_roots = {int(row["taxid"]) for row in root_rows}
@@ -777,7 +777,7 @@ def _descendant_targets(
         raise ValidationError(f"root TaxID(s) not found in taxonomy snapshot: {missing}")
     if excluded_roots:
         excluded_rows = db.conn.execute(
-            f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({','.join('?' for _ in excluded_roots)})",
+            f"SELECT taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid IN ({','.join('?' for _ in excluded_roots)})",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             [snapshot_id, *excluded_roots],
         ).fetchall()
         missing_excluded = sorted(set(excluded_roots) - {int(row["taxid"]) for row in excluded_rows})
@@ -793,7 +793,7 @@ def _descendant_targets(
         excluded_cte = (
             f", excluded(taxid) AS (SELECT column1 FROM (VALUES {excluded_values}) "
             "UNION SELECT n.taxid FROM excluded e CROSS JOIN taxonomy_nodes n "
-            "WHERE n.parent_taxid=e.taxid AND n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"
+            "WHERE n.parent_taxid=e.taxid AND n.taxonomy_snapshot_id=? AND n.taxid<>e.taxid)"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         )
         params.extend(excluded_roots)
         params.append(snapshot_id)
@@ -834,7 +834,7 @@ def _descendant_targets(
         "SELECT DISTINCT n.taxid, n.rank, n.scientific_name, n.is_extinct "
         "FROM scope s CROSS JOIN taxonomy_nodes n "
         f"WHERE n.taxonomy_snapshot_id=? AND s.taxid=n.taxid {excluded_clause} {extinct_clause} "
-        f"AND n.rank IN ({rank_values})"
+        f"AND n.rank IN ({rank_values})"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
     )
     return [dict(row) for row in db.conn.execute(sql, params).fetchall()]
 

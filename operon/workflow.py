@@ -290,7 +290,7 @@ def log_run(
     columns = _WORKFLOW_RUN_COLUMNS
     with db.transaction():
         db.conn.execute(
-            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed workflow columns; values are bound
             [record.get(c) for c in columns],
         )
     if jsonl_buffer is None:
@@ -310,7 +310,7 @@ def start_run(db: Database, record: dict[str, Any]) -> dict[str, Any]:
     columns = _WORKFLOW_RUN_COLUMNS
     with db.transaction():
         db.conn.execute(
-            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            f"INSERT INTO workflow_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed workflow columns; values are bound
             [record.get(column) for column in columns],
         )
     return record

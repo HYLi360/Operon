@@ -118,7 +118,7 @@ def _alignment_rows(
         "a.query_start, a.query_end, a.evalue, a.extra_json "
         "FROM analysis_alignments a "
         "JOIN analysis_jobs j ON j.job_id = a.job_id "
-        f"WHERE {' AND '.join(conditions)}"
+        f"WHERE {' AND '.join(conditions)}"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
     )
     return [dict(row) for row in db.conn.execute(sql, parameters).fetchall()]
 

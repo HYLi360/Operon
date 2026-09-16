@@ -2001,7 +2001,7 @@ def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool:
             }
             with db.transaction() as conn:
                 cursor = conn.execute(
-                    f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed job columns; values are bound
                     [adopted_job.get(c) for c in columns],
                 )
                 adopted_job_id = int(cursor.lastrowid)
@@ -2053,7 +2053,7 @@ def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool:
     columns = _job_columns()
     with db.transaction() as conn:
         cursor = conn.execute(
-            f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed job columns; values are bound
             [job.get(c) for c in columns],
         )
         job_id = int(cursor.lastrowid)

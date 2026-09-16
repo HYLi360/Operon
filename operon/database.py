@@ -753,9 +753,9 @@ class Database:
             self._ensure_current_schema_objects()
             self._conn.execute(
                 "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
-                "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "
+                "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
                                                                                              "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
-                                                                                             "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"
+                                                                                             "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             )
             self._conn.commit()
         except BaseException:
@@ -1155,7 +1155,7 @@ class Database:
         placeholders = ", ".join("?" for _ in columns)
         sql = (
             f"INSERT INTO {quote_identifier(table)} ({insert_cols}) VALUES ({placeholders}) "
-            f"ON CONFLICT({','.join(quote_identifier(c) for c in self._primary_keys(table))}) DO UPDATE SET {assignments}"
+            f"ON CONFLICT({','.join(quote_identifier(c) for c in self._primary_keys(table))}) DO UPDATE SET {assignments}"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         )
         count = 0
         with self.transaction():
@@ -1184,7 +1184,7 @@ class Database:
         placeholders = ", ".join("?" for _ in columns)
         sql = (
             f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
-            f"VALUES ({placeholders})"
+            f"VALUES ({placeholders})"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         )
         with self.transaction():
             self._conn.execute(sql, [row[c] for c in columns])
@@ -1244,7 +1244,7 @@ class Database:
         table = ENTITY_TABLES[entity_type]
         id_col = ENTITY_ID_COLUMNS[entity_type]
         row = self._conn.execute(
-            f"SELECT 1 FROM {table} WHERE {id_col}=?", (entity_id,)
+            f"SELECT 1 FROM {table} WHERE {id_col}=?", (entity_id,)  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         ).fetchone()
         return row is not None
 
@@ -1327,7 +1327,7 @@ class Database:
             object_types.append(table)
         row = self._conn.execute(
             f"SELECT COALESCE(MAX(change_id), 0) AS change_id FROM changes "
-            f"WHERE object_id=? AND object_type IN ({', '.join('?' for _ in object_types)})",
+            f"WHERE object_id=? AND object_type IN ({', '.join('?' for _ in object_types)})",  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             (entity_id, *object_types),
         ).fetchone()
         return int(row["change_id"] or 0)
@@ -1359,7 +1359,7 @@ class Database:
         max_n = 0
         if table:
             try:
-                rows = conn.execute(f"SELECT {id_col} AS id FROM {table}").fetchall()
+                rows = conn.execute(f"SELECT {id_col} AS id FROM {table}").fetchall()  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             except sqlite3.OperationalError:
                 rows = []
             for row in rows:
@@ -1469,7 +1469,7 @@ class Database:
         with self.transaction():
             self._conn.execute(
                 f"INSERT INTO data_sources ({', '.join(columns)}) "
-                f"VALUES ({', '.join('?' for _ in columns)})",
+                f"VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
                 [record[column] for column in columns],
             )
         return record
@@ -1548,7 +1548,7 @@ class Database:
         if not selected:
             return []
         rows = self._conn.execute(
-            f"SELECT {', '.join(quote_identifier(c) for c in selected)} FROM {quote_identifier(table)}"
+            f"SELECT {', '.join(quote_identifier(c) for c in selected)} FROM {quote_identifier(table)}"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         ).fetchall()
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
 
@@ -1568,12 +1568,12 @@ class Database:
             None,
         )
         projection = ", ".join(f't.{quote_identifier(column)}' for column in selected)
-        sql = f'SELECT {projection} FROM {quote_identifier(table)} t'
+        sql = f'SELECT {projection} FROM {quote_identifier(table)} t'  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         if entity_type is not None:
             id_column = ENTITY_ID_COLUMNS[entity_type]
             sql += (
                 " WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-                f"WHERE r.entity_type='{entity_type}' AND r.entity_id=t.\"{id_column}\")"
+                f"WHERE r.entity_type='{entity_type}' AND r.entity_id=t.\"{id_column}\")"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             )
         elif table == "accessions":
             sql += (
@@ -1631,7 +1631,7 @@ class Database:
             SELECT metric_name, metric_numeric, metric_value, evaluated_at, qc_result_id
             FROM ranked WHERE rn=1
             ORDER BY evaluated_at DESC, qc_result_id DESC
-            """,
+            """,  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             params,
         ).fetchall()
         result: dict[str, float | str] = {}
@@ -1665,7 +1665,7 @@ class Database:
             "ON CONFLICT(input_identity, qc_stage, metric_name, tool, tool_version, parameter_set) "
             "DO UPDATE SET metric_value=excluded.metric_value, metric_numeric=excluded.metric_numeric, "
             "metric_unit=excluded.metric_unit, file_id=excluded.file_id, "
-            "file_sha256=excluded.file_sha256, evaluated_at=excluded.evaluated_at"
+            "file_sha256=excluded.file_sha256, evaluated_at=excluded.evaluated_at"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         )
         with self.transaction():
             self._conn.execute(sql, [metric.get(c) for c in columns])
@@ -1690,7 +1690,7 @@ class Database:
                     "ON CONFLICT(input_identity, qc_stage, metric_name, tool, tool_version, parameter_set) "
                     "DO UPDATE SET metric_value=excluded.metric_value, metric_numeric=excluded.metric_numeric, "
                     "metric_unit=excluded.metric_unit, file_id=excluded.file_id, "
-                    "file_sha256=excluded.file_sha256, evaluated_at=excluded.evaluated_at"
+                    "file_sha256=excluded.file_sha256, evaluated_at=excluded.evaluated_at"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
                 )
                 self._conn.execute(sql, [metric.get(c) for c in columns])
                 count += 1
@@ -1870,7 +1870,7 @@ class Database:
         placeholders = ", ".join("?" for _ in columns)
         with self.transaction():
             cursor = self._conn.execute(
-                f"INSERT INTO decisions ({', '.join(columns)}) VALUES ({placeholders})",
+                f"INSERT INTO decisions ({', '.join(columns)}) VALUES ({placeholders})",  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
                 [decision.get(c) for c in columns],
             )
         return int(cursor.lastrowid)

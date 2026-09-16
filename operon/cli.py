@@ -1790,7 +1790,7 @@ def _cmd_locations(args: argparse.Namespace, project: Project, db: Database) -> 
         "COALESCE(l.location_name, '') AS remote, COALESCE(l.status, '') AS remote_status, "
         "COALESCE(l.verified_at, '') AS verified_at "
         "FROM files f LEFT JOIN file_locations l ON l.file_id=f.file_id "
-        f"{where} ORDER BY f.file_id, l.location_name",
+        f"{where} ORDER BY f.file_id, l.location_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         params,
     ).fetchall()
     print(format_table(

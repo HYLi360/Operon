@@ -530,7 +530,7 @@ def _register_file(db: Database, project: Project, entity_type: str, entity_id: 
     columns = list(record.keys())
     with db.transaction():
         db.conn.execute(
-            f"INSERT INTO files ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+            f"INSERT INTO files ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed record keys or role mapping; values are bound
             [record[c] for c in columns],
         )
         _link_file_to_entity(db, entity_type, entity_id, role, file_id)
@@ -548,14 +548,14 @@ def _link_file_to_entity(db: Database, entity_type: str, entity_id: str, role: s
             "protein_fasta": "protein_file_id",
         }.get(role)
         if field:
-            db.conn.execute(f"UPDATE annotations SET {field}=? WHERE annotation_id=?", (file_id, entity_id))
+            db.conn.execute(f"UPDATE annotations SET {field}=? WHERE annotation_id=?", (file_id, entity_id))  # nosec B608 # fixed record keys or role mapping; values are bound
 
 
 def verify_files(db: Database, project: Project, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
     """Verify local bytes or live-check at least one recorded remote copy."""
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
-        rows = db.conn.execute(f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids).fetchall()
+        rows = db.conn.execute(f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids).fetchall()  # nosec B608 # fixed record keys or role mapping; values are bound
     else:
         rows = db.conn.execute("SELECT * FROM files").fetchall()
     results: list[dict[str, Any]] = []

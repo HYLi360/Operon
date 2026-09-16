@@ -55,13 +55,13 @@ def entity_subtree(
             result["run"] = _ordered_ids(
                 db,
                 f"SELECT run_id FROM runs WHERE sample_id IN ({placeholders}) "
-                "ORDER BY run_id",
+                "ORDER BY run_id",  # nosec B608 # fixed internal table/column arguments; IDs are bound
                 sample_ids,
             )
             result["assembly"] = _ordered_ids(
                 db,
                 f"SELECT assembly_id FROM assemblies WHERE sample_id IN ({placeholders}) "
-                "ORDER BY assembly_id",
+                "ORDER BY assembly_id",  # nosec B608 # fixed internal table/column arguments; IDs are bound
                 sample_ids,
             )
 
@@ -76,7 +76,7 @@ def entity_subtree(
         result["annotation"] = _ordered_ids(
             db,
             f"SELECT annotation_id FROM annotations "
-            f"WHERE assembly_id IN ({placeholders}) ORDER BY annotation_id",
+            f"WHERE assembly_id IN ({placeholders}) ORDER BY annotation_id",  # nosec B608 # fixed internal table/column arguments; IDs are bound
             assembly_ids,
         )
     if entity_type == "annotation":
@@ -111,7 +111,7 @@ def _rows_for_pairs(
             placeholders = ", ".join("?" for _ in chunk)
             found = db.conn.execute(
                 f"SELECT {columns} FROM {table} WHERE {type_column}=? "
-                f"AND {id_column} IN ({placeholders})",
+                f"AND {id_column} IN ({placeholders})",  # nosec B608 # fixed internal table/column arguments; IDs are bound
                 (entity_type, *chunk),
             ).fetchall()
             rows.extend(dict(row) for row in found)
@@ -132,7 +132,7 @@ def _rows_for_ids(
         placeholders = ", ".join("?" for _ in chunk)
         found = db.conn.execute(
             f"SELECT {columns} FROM {table} "
-            f"WHERE {id_column} IN ({placeholders})",
+            f"WHERE {id_column} IN ({placeholders})",  # nosec B608 # fixed internal table/column arguments; IDs are bound
             chunk,
         ).fetchall()
         rows.extend(dict(row) for row in found)

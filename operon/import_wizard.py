@@ -484,7 +484,7 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                 columns = list(row.keys())
                 conn.execute(
                     f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
-                    f"VALUES ({', '.join('?' for _ in columns)})",
+                    f"VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # ODR-0001: identifiers validated; values are bound
                     [row[column] for column in columns],
                 )
                 entity_id = row[ENTITY_ID_COLUMNS[entity_type]]

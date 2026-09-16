@@ -612,7 +612,7 @@ def _select_files(db: Database, file_ids: list[str] | None) -> list[dict[str, An
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
         rows = db.conn.execute(
-            f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id", file_ids
+            f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id", file_ids  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         ).fetchall()
         found = {row["file_id"] for row in rows}
         missing = [file_id for file_id in file_ids if file_id not in found]

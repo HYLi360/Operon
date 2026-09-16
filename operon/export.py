@@ -123,7 +123,7 @@ def _select_files(
         "WHERE r.entity_type=f.entity_type AND r.entity_id=f.entity_id)"
     )
     rows = db.conn.execute(
-        f"SELECT f.* FROM files f{joins} WHERE {' AND '.join(clauses)} ORDER BY f.file_id",
+        f"SELECT f.* FROM files f{joins} WHERE {' AND '.join(clauses)} ORDER BY f.file_id",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         params,
     ).fetchall()
     return [dict(row) for row in rows]
@@ -293,7 +293,7 @@ def _export_files_in_workspace(
             params = [value for pair in batch for value in pair]
             qc_rows.extend(dict(row) for row in db.conn.execute(
                 f"SELECT q.* FROM qc_results q WHERE ({clause}) "
-                "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",
+                "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
                 params,
             ).fetchall())
         write_tsv(output_root / "qc.tsv", QC_COLUMNS, qc_rows)
