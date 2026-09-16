@@ -4,6 +4,7 @@
 - [开发与测试](development-testing.md)
 - [PyPI 发布](pypi-release.md)
 - [文档构建与 Read the Docs 发布](documentation-deployment.md)
+- [缺陷跟踪](defect-tracking.md)
 
 ```{toctree}
 :hidden:
@@ -12,4 +13,5 @@ repository-guide
 development-testing
 pypi-release
 documentation-deployment
+defect-tracking
 ```

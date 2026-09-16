@@ -133,7 +133,9 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   (see `docs/*/operations/qc-performance.md`).
 - `scripts/` — local developer tooling; `setup-test-matrix.sh` and
   `run-test-matrix.sh` build and drive the uv-managed Python 3.10–3.14
-  matrix under .matrix/ (see `docs/*/contributor/development-testing.md`).
+  matrix under .matrix/ (see `docs/*/contributor/development-testing.md`);
+  `defects.sh` appends to and queries the defect registry (`defects.yml`,
+  see "Defect reports" below).
 
 ## Setup, test, and build
 
@@ -184,7 +186,9 @@ Commits guidelines.
 **DO NOT** push any commit or tag unless the user **explicitly** requests that.
 
 If times out, assume the user is not present and that a GPG signature
-is required. Add `-c commit.gpgsign=false` behind `git` may help.
+is required. Add `-c commit.gpgsign=false` behind `git` may help (However,
+re-signing will reset the commit hash, and corrupt the defects.yml. Please
+proceed with caution).
 
 ## Conventions
 
@@ -221,6 +225,22 @@ is required. Add `-c commit.gpgsign=false` behind `git` may help.
   Using `# noqa: F821` behind the line **ONLY** when importing `operon.qc`
   and an F821 error is likely to occur. Globally ignoring F821 is **STRICKLY
   PROHIBITED**.
+
+## Defect reports
+
+Confirmed defects are tracked in the machine-readable registry
+`defects.yml` at the repository root (plus any `defects/*.yml` shards;
+`scripts/defects.sh` appends and queries records). The full process is in
+`docs/*/contributor/defect-tracking.md`; the binding rules are:
+
+1. **Register first.** When an audit or investigation confirms a defect,
+   append its `ODR-XXXX` record to `defects.yml` before the fix lands.
+2. **One commit per defect.** The fix and its regression tests ride in the
+   same commit; fill in `fix_commit` when committing.
+3. **Close the test loop.** Regression tests for a defect carry
+   `@pytest.mark.bug("ODR-XXXX")`, and every `fixed`/`verified` record
+   lists at least one such test; `tests/unit/test_defect_registry.py`
+   validates the registry schema and both directions of this closure.
 
 ## Documentation sync
 

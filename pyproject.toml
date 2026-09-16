@@ -94,6 +94,7 @@ markers = [
     "integration: tests spanning multiple components",
     "regression: correctness regressions",
     "compatibility: supported Python and database compatibility contracts",
+    "bug(id): regression test covering a defect registry (defects.yml) entry",
 ]
 
 [tool.coverage.run]

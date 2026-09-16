@@ -1,0 +1,92 @@
+# Operon defect registry (schema 1).
+#
+# One record per confirmed defect, appended in ID order. Records are loaded
+# from this file plus any `defects/*.yml` shards (sorted by name), so this
+# file can be split when it grows. Use `scripts/defects.sh` to append or
+# query records; `tests/unit/test_defect_registry.py` validates the schema
+# and the regression-test closure in both directions.
+# See docs/en/contributor/defect-tracking.md for the process.
+schema: 1
+defects:
+- id: ODR-0001
+  title: Import wizard interpolated schema field names into INSERT columns
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: pre-fix releases; requires influence over config/schemas.yaml
+  severity: medium
+  component: import_wizard
+  status: fixed
+  reproduction: '`_normalized_new_rows()` accepts project schema field names and
+
+    `_commit()` formerly interpolated them directly into INSERT columns.
+
+    Replacing the last organisms field name with a
+
+    `VALUES (..., upper(?)) --` expression made the original code store
+
+    `injected` as `INJECTED`, demonstrating SQL expression injection.
+
+    Ordinary CSV cell values alone were not shown exploitable.'
+  disposition: 'The commit boundary now validates and quotes every identifier with
+
+    `operon.sql.quote_identifier()`; values still use SQLite parameter
+
+    binding. The commit stays atomic: the hostile draft raises
+
+    ValidationError and leaves no rows in organisms, data_sources or
+
+    changes, with the workflow run recorded failed.'
+  fix_commit: da6edd964091e9ae23d32c4cc29bef1244dc7517
+  fixed_in: null
+  regression_tests:
+  - tests/regression/test_sql_identifier_security.py::test_wizard_rejects_schema_column_injection_atomically
+- id: ODR-0002
+  title: Generic write APIs accepted unchecked table and column names
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: pre-fix releases; Python API boundary
+  severity: medium
+  component: database
+  status: fixed
+  reproduction: '`Database.insert_row()` and `Database.upsert_rows()` interpolated
+    the table and column names given by their Python caller. A column name such
+    as `scientific_name) VALUES (?, upper(?)) --` was reproduced to evaluate
+    `upper(?)` in a temporary database, and the table argument accepted a full
+    `VALUES (...) --` fragment. The CLI add path has additional schema checks;
+    this is a low-level API boundary defect, not evidence of an unconditional
+    remote exploit.'
+  disposition: 'Both methods, and the read helpers `table_columns()`, `export_rows()`
+    and `export_active_rows()`, now validate and quote every dynamic identifier
+    with `operon.sql.quote_identifier()` (same alphabet as metadata column creation,
+    so keyword names such as `select` still work). Values still use SQLite parameter
+    binding.'
+  fix_commit: ef429f5089d3808db9151fa582e35b5b5f146ab3
+  fixed_in: null
+  regression_tests:
+  - tests/regression/test_sql_identifier_security.py::test_column_cannot_replace_insert_values
+  - tests/regression/test_sql_identifier_security.py::test_table_argument_is_not_sql
+  - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
+- id: ODR-0003
+  title: Table-import apply trusted mutable preview columns and differences
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: pre-fix releases; requires influence over the Python preview object
+  severity: medium
+  component: table_import
+  status: fixed
+  reproduction: '`apply_table_import()` trusted the preview''s column list, table
+    name and per-row `differences`. Replacing a difference column with `scientific_name=upper(?)
+    WHERE organism_id=? --` made the original implementation evaluate `upper(?)`,
+    and the table name was not rechecked against the importable list. Normal
+    `preview_table_import()` checks external headers; the defect is the missing
+    revalidation at the execution boundary.'
+  disposition: '`apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES`
+    and validates/quotes every identifier through `operon.sql.quote_identifier()`;
+    a tampered preview raises ValidationError, the update is rolled back, and
+    no `changes` rows are written.'
+  fix_commit: 35a0f78b7a574301ee9b1fd70fc993bf5388ecaa
+  fixed_in: null
+  regression_tests:
+  - tests/regression/test_sql_identifier_security.py::test_table_import_rejects_tampered_update_column
+  - tests/regression/test_sql_identifier_security.py::test_table_import_rechecks_allowed_table
+  - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip

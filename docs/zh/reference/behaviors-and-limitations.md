@@ -2,7 +2,7 @@
 
 本页对应 `operon` {{ operon_version }}（数据库 schema {{ db_schema }}，元数据 schema {{ metadata_schema }}）。它记录代码中可观察到、但未在其他任务型或架构型页面中说明的行为：隐式语义、边界情形与已知问题。各项按当前实际行为如实描述，并标注实现模块以便核对。本页不是使用建议；受支持的工作流请参阅[指南](../guides/index.md)与[故障排查](../guides/troubleshooting.md)。
 
-已修复的历史问题列在前面；其余条目描述当前行为与已接受的限制。
+已修复的历史问题移至[已修复问题](resolved-issues.md)；其余条目描述当前行为与已接受的限制。
 
 当前条目按三类标注：
 
@@ -11,31 +11,6 @@
 - **已知问题**：缺陷或数据语义上的意外行为，此处如实记录而非隐而不报。尚未解决的问题会在条目中给出可行方案（如有）。
 
 以 **已知问题** 开头的条目属于第三类；其余条目属于有意为之但属隐式的语义或已接受的限制。
-
-## 已修复问题
-
-以下问题曾在本页记录，当前实现与回归测试已经覆盖：
-
-| # | 领域 | 修复结果 |
-|---|---|---|
-| K1 | 判定 | 重评估追加自动判定时沿用当前 `curated_*` 字段；CLI 会在写入前一次性预览所有受影响的人工判定实体，非交互运行必须给出 `--yes`。 |
-| K2 | QC 状态 | 每个文件都有聚合 QC 状态；实体取同层文件的最差值（`QC_FAILED` > `QC_RUNNING` > `QC_COMPLETE`），`operon qc` 列出每个文件状态。 |
-| K3 | 标准化 | 批量标准化只要任一文件失败就返回退出码 1。 |
-| K4 | release | release 在隐藏 staging 目录中构建，完成后原子发布；构建失败会清理 staging，数据库提交失败也会删除已发布目录。 |
-| K5 | release | release 成员、带审计的 `RELEASED` 状态迁移和 release 数据库行在同一事务中提交，部分状态不会残留。 |
-| K6 | export | export 在临时同级目录中构建，所有产物完成后才重命名；失败时清理临时树或恢复已有的空目标目录。 |
-| K7 | 表格导入 | 更新既有元数据会保留生命周期状态和审计历史；发布预检会把评估后的元数据变化视为过期，要求重新 QC/evaluate。 |
-| K8 | ingest（`move`） | `move` 先复制并校验归档、登记 manifest，最后才删除源文件；复制、校验或事务失败时源文件仍可恢复。 |
-| K9 | 工具函数 | 空表只渲染一次表头和分隔线，不再生成重复的数据行。 |
-| K10 | 导入向导 | annotation 提示默认值与草稿当前是否已有 annotation 一致（已有时才默认“是”）。 |
-| K11 | 分类 | 缺失字段在任何形态下都不满足条件——包括 `not:` 取反形态和作为 `any:` 组的析取项；`between` 遇到非数值操作数时抛出带字段与值上下文的校验错误，而不是裸 `ValueError`。 |
-| K12 | 分类 | `classify-sequences` 不再隐瞒被忽略的内容：被取代（非最新）的 completed 作业会计入 `ignored_completed_jobs` 并给出警告，因不在 `sequences` 注册表而被跳过的文件也会显式计数。 |
-| K13 | fan-out | `fanout --dry-run` 现在执行完整预检——源校验和与注册表新鲜度、单元 identity 计算、冲突/占用检查——并与真实运行一样抛 `ConflictError`，同时仍不写任何文件、不开 run 行；每个计划单元标注 `would_create`/`would_reuse`。单元 seqid 也会在生成 FASTA 前规范化为排序序，因此重排指派 TSV 不再改变单元字节。 |
-| K14 | fan-out | 中断（Ctrl+C）现在会把 fan-out 的 workflow run 落为 `interrupted`（退出码 130），不再留下 `running` 行；本次运行创建的目标仍会被删除。 |
-| K15 | recipe | `file_role_prefix` 按 `:` 边界匹配：`sub` 选中精确的 `sub` 与所有 `sub:*`，不再误捕 `sub2:*`。 |
-| K16 | 执行后端 | 被信号杀死的 Slurm 作业不再被记为成功：`sacct` 回退会把 `exit:signal` 中非零的信号分量合成 shell 风格退出码（OOM 终止的 `0:9` 变为 137），并在 run 的 details 中以 `slurm_exit_signal` 记录该信号；退出码/记账重试也从 5 次 × 1 秒提高到 10 次 × 2 秒（`_SLURM_EXIT_CODE_RETRIES`/`_SLURM_EXIT_CODE_RETRY_SECONDS`）。 |
-| K17 | 执行后端 | SSH 后端不再在运行前删除远端输出：既有远端输出先重命名为 `<path>.operon-prev-<uuid>` 备份，运行成功且新输出校验通过后删除备份，失败或中断时尽力把备份恢复原位——失败运行不会再毁掉此前的远端输出。 |
-| K18 | 外部分析 | 陈旧 `RUNNING` 清扫现在按当前 analysis 限定范围：非 dry 的 `analyze` 只把本 analysis 的 `RUNNING` 行标为 `interrupted`，并发运行的其他 analysis 的活作业不再被波及（`tools.py`，`_sweep_stale_running_jobs`）。 |
 
 ## 身份、归档与文件系统
 
