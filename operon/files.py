@@ -357,8 +357,17 @@ def ingest_file(
         _require_project_path(project, target)
         if target.exists() and sha256_path(target) == source_sha:
             with db.transaction():
+                if str(existing["status"]) != "STANDARDIZED":
+                    # Audited, and a no-op when already CHECKSUM_VERIFIED;
+                    # a standardized file keeps its status: re-verifying the
+                    # same raw bytes must not demote it.
+                    db.set_file_status(
+                        existing["file_id"], "CHECKSUM_VERIFIED",
+                        reason="re-ingested identical bytes; checksum re-verified",
+                        actor=actor or "operon ingest",
+                    )
                 db.conn.execute(
-                    "UPDATE files SET status='CHECKSUM_VERIFIED', downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
+                    "UPDATE files SET downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
                     (now_iso(), source_url, existing["file_id"]),
                 )
                 # Idempotency must also repair a missing denormalized entity

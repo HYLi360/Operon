@@ -214,6 +214,46 @@ def test_verification_cache_ignores_nonfiles_and_wrong_size(project_db, tmp_path
     ]
 
 
+@pytest.mark.bug("ODR-0009")
+def test_reingest_preserves_standardized_status_and_audits_transitions(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "genome.fa"
+    source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
+    record = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    files.standardize_file(db, project, record["file_id"])
+
+    def status_of(file_id):
+        return db.conn.execute(
+            "SELECT status FROM files WHERE file_id=?", (file_id,),
+        ).fetchone()["status"]
+
+    def file_audit_rows(file_id):
+        return db.conn.execute(
+            "SELECT * FROM changes WHERE object_type='files' AND object_id=? "
+            "ORDER BY change_id", (file_id,),
+        ).fetchall()
+
+    assert status_of(record["file_id"]) == "STANDARDIZED"
+    audit_before = len(file_audit_rows(record["file_id"]))
+    again = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    assert again["file_id"] == record["file_id"]
+    # Re-verifying identical bytes must not demote a standardized file,
+    # and a no-op must not write audit churn either.
+    assert status_of(record["file_id"]) == "STANDARDIZED"
+    assert len(file_audit_rows(record["file_id"])) == audit_before
+
+    # A real status transition is still applied, with its audit row.
+    other_source = tmp_path / "proteins.faa"
+    other_source.write_text(">p1\nMAAA\n", encoding="utf-8")
+    other = files.ingest_file(db, project, other_source, "assembly", "ASM_000001", "protein_fasta")
+    db.set_file_status(other["file_id"], "MISSING", reason="test setup", actor="tester")
+    files.ingest_file(db, project, other_source, "assembly", "ASM_000001", "protein_fasta")
+    assert status_of(other["file_id"]) == "CHECKSUM_VERIFIED"
+    last = file_audit_rows(other["file_id"])[-1]
+    assert (last["old_value"], last["new_value"]) == ("MISSING", "CHECKSUM_VERIFIED")
+    assert last["actor"] == "operon ingest"
+
+
 def test_standardize_missing_remote_tampered_links_and_idempotency(project_db, tmp_path, monkeypatch):
     project, db = project_db
     with pytest.raises(EntityNotFoundError):

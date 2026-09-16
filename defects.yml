@@ -149,12 +149,13 @@ defects:
   affected: all releases; triggered by re-ingesting identical bytes for a file that already carries STANDARDIZED status
   severity: medium
   component: files
-  status: open
+  status: fixed
   reproduction: Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so a standardized file silently loses that status; `set_file_status` itself is a no-op that writes nothing when the status is unchanged.
-  disposition: null
+  disposition: 'The idempotent re-ingest path no longer rewrites files.status unconditionally: a STANDARDIZED file keeps its status, and any other transition goes through the audited set_file_status (a no-op when unchanged), so re-verifying identical bytes never silently demotes a standardized file.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_files_edges.py::test_reingest_preserves_standardized_status_and_audits_transitions
 - id: ODR-0010
   title: standardize bypasses the entity state machine and the audit log
   reported: '2026-09-16'

@@ -26,7 +26,7 @@
 - **`operon` 命令作用于最近的上层项目。** `Project.find` 向上遍历父目录寻找 `project.yaml`，因此在子目录中执行的命令会静默作用于外层项目（`config.py`）。
 - **目录身份不含时间戳与所有权。** `sha256_directory` 覆盖相对路径、空目录、文件字节、大小和符号链接目标；目录内出现 FIFO/socket 会让该目录树的 ingest/verify 以 `OSError` 失败（`utils.py`）。
 - **中断的复制会留下隐藏的临时条目。** `atomic_copytree` 在目标旁的 `.target.XXXX` 临时目录中工作，`atomic_copy`/`atomic_write_text` 会留下同级的 `.<name>.XXXX` 临时文件；只有进程内异常才会清理它们，因此 SIGKILL 或断电会将其遗留，需手动清理（`utils.py`）。
-- **已知问题：幂等重 ingest 会把 `STANDARDIZED` 降回 `CHECKSUM_VERIFIED`。** 重新 ingest 相同字节会无条件改写 `files.status` 且不写 `changes` 行，因此已标准化的文件会静默失去该状态；`set_file_status` 本身在状态未变时不写任何内容（`files.py`、`database.py`）。
+- **幂等重 ingest 不会降级已标准化的文件。** 重新 ingest 相同字节会重新校验归档：`STANDARDIZED` 文件保持原状态不变，其他状态迁移走带审计的 `set_file_status` 路径（状态未变时不写任何内容），只有 `downloaded_at`/`source_url` 会被补充（`files.py`）。
 - **已知问题：`standardize` 绕过状态机与审计日志。** 它直接写入实体状态 `STANDARDIZED`，因此对 `RELEASED` 或 `ACCEPTED` 实体执行标准化——或运行仅按 `files.status` 选取文件的 `standardize_all`——会在没有迁移校验、也没有 `changes` 行的情况下改变实体状态（`files.py`、`database.py`）。
 - **`standardize` 每次运行都重新哈希。** 源与目标的哈希每次重算，stat 指纹缓存只写不读，因此重复执行该命令要付出一次全量字节扫描，与 `qc` 不同（`files.py`）。
 
