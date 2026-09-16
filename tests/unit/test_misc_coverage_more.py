@@ -606,7 +606,10 @@ def test_export_publish_failure_removes_every_staged_file(export_project, tmp_pa
     db.conn.commit()
     with pytest.raises(sqlite3.IntegrityError, match="injected export failure"):
         export_files(db, project, output_dir=out, entity_type="assembly")
-    assert list(out.iterdir()) == []
+    # The run row never committed, so the published tree is removed again and
+    # no staging leftovers remain.
+    assert not out.exists()
+    assert list(tmp_path.glob(".target.operon-export-*")) == []
 
 
 def test_export_workspace_publish_contract(export_project, tmp_path):
