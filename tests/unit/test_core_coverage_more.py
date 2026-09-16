@@ -446,6 +446,11 @@ def test_curate_cli_records_audited_override(project, capsys):
 def test_release_cli_creates_snapshot_and_copy_alias(project, monkeypatch, capsys):
     import operon.release as release_mod
 
+    (project.profiles_dir / "p.yaml").write_text(
+        yaml.safe_dump({"kind": "qc", "version": 1, "applies_to": [],
+                        "required": [], "warnings": []}, sort_keys=False),
+        encoding="utf-8",
+    )
     source = project.root / "raw" / "file"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("y", encoding="utf-8")
