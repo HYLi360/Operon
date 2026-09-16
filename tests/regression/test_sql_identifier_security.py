@@ -43,3 +43,31 @@ def test_wizard_rejects_schema_column_injection_atomically(project_db):
     assert db.query('SELECT * FROM data_sources') == []
     assert db.query('SELECT * FROM changes') == []
     assert db.query('SELECT status FROM workflow_runs')[0][0] == 'failed'
+
+
+@pytest.mark.parametrize('method', ['insert_row', 'upsert_rows'])
+def test_column_cannot_replace_insert_values(project_db, method):
+    _, db = project_db
+    row = {'organism_id': 'ORG_000001',
+           'scientific_name) VALUES (?, upper(?)) --': 'injected'}
+    with pytest.raises(ValidationError, match='unsafe SQL identifier'):
+        if method == 'insert_row':
+            db.insert_row('organisms', row)
+        else:
+            db.upsert_rows('organisms', list(row), [row])
+    assert db.query('SELECT * FROM organisms') == []
+
+
+@pytest.mark.parametrize('method', ['table_columns', 'export_rows', 'export_active_rows', 'insert_row', 'upsert_rows'])
+def test_table_argument_is_not_sql(project_db, method):
+    _, db = project_db
+    table = 'organisms (organism_id, scientific_name) VALUES (?, upper(?)) --'
+    row = {'organism_id': 'ORG_000001', 'scientific_name': 'injected'}
+    with pytest.raises(ValidationError, match='unsafe SQL identifier'):
+        if method == 'insert_row':
+            db.insert_row(table, row)
+        elif method == 'upsert_rows':
+            db.upsert_rows(table, list(row), [row])
+        else:
+            getattr(db, method)(table)
+    assert db.query('SELECT * FROM organisms') == []

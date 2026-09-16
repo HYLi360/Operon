@@ -18,6 +18,7 @@ from typing import Any, Iterable, Iterator
 
 from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
+from operon.sql import quote_identifier
 
 SCHEMA_VERSION = "2.11"
 
@@ -1140,19 +1141,21 @@ class Database:
     # Generic row helpers
     # ------------------------------------------------------------------
     def table_columns(self, table: str) -> list[str]:
-        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        rows = self._conn.execute(f"PRAGMA table_info({quote_identifier(table)})").fetchall()
         return [row["name"] for row in rows]
 
     def upsert_rows(self, table: str, columns: list[str], rows: Iterable[dict[str, Any]]) -> int:
         """Insert or update rows by primary key. Generated tables are replaceable."""
         columns = list(columns)
         assignments = ", ".join(
-            f"{c}=excluded.{c}" for c in columns if c != "pk" and c not in self._primary_keys(table))
-        insert_cols = ", ".join(columns)
+            f"{quote_identifier(c)}=excluded.{quote_identifier(c)}"
+            for c in columns if c != "pk" and c not in self._primary_keys(table)
+        )
+        insert_cols = ", ".join(quote_identifier(c) for c in columns)
         placeholders = ", ".join("?" for _ in columns)
         sql = (
-            f"INSERT INTO {table} ({insert_cols}) VALUES ({placeholders}) "
-            f"ON CONFLICT({','.join(self._primary_keys(table))}) DO UPDATE SET {assignments}"
+            f"INSERT INTO {quote_identifier(table)} ({insert_cols}) VALUES ({placeholders}) "
+            f"ON CONFLICT({','.join(quote_identifier(c) for c in self._primary_keys(table))}) DO UPDATE SET {assignments}"
         )
         count = 0
         with self.transaction():
@@ -1179,7 +1182,10 @@ class Database:
     def insert_row(self, table: str, row: dict[str, Any]) -> None:
         columns = list(row.keys())
         placeholders = ", ".join("?" for _ in columns)
-        sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+        sql = (
+            f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
+            f"VALUES ({placeholders})"
+        )
         with self.transaction():
             self._conn.execute(sql, [row[c] for c in columns])
 
@@ -1541,7 +1547,9 @@ class Database:
         selected = [c for c in cols if c in existing]
         if not selected:
             return []
-        rows = self._conn.execute(f"SELECT {', '.join(selected)} FROM {table}").fetchall()
+        rows = self._conn.execute(
+            f"SELECT {', '.join(quote_identifier(c) for c in selected)} FROM {quote_identifier(table)}"
+        ).fetchall()
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
 
     def export_active_rows(
@@ -1559,8 +1567,8 @@ class Database:
             (kind for kind, entity_table in ENTITY_TABLES.items() if entity_table == table),
             None,
         )
-        projection = ", ".join(f't."{column}"' for column in selected)
-        sql = f'SELECT {projection} FROM "{table}" t'
+        projection = ", ".join(f't.{quote_identifier(column)}' for column in selected)
+        sql = f'SELECT {projection} FROM {quote_identifier(table)} t'
         if entity_type is not None:
             id_column = ENTITY_ID_COLUMNS[entity_type]
             sql += (
