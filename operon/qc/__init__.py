@@ -49,7 +49,7 @@ from operon.database import Database
 from operon.errors import QCError
 from operon.files import verify_local_file_identity
 from operon.utils import now_iso
-from operon.workflow import log_run, set_state_bulk
+from operon.workflow import log_run, set_state_guarded
 
 FASTA_LENGTH_CACHE_FORMAT = "operon-fasta-lengths-v1"
 
@@ -185,7 +185,10 @@ def _recompute_entity_qc_state(db: Database, entity_type: str, entity_id: str) -
     else:
         state = "QC_COMPLETE"
     detail = "; ".join(f"{item['file_id']}={item['qc_state']}" for item in statuses) or "no files"
-    set_state_bulk(db, entity_type, entity_id, state, f"built-in QC aggregate: {detail}")
+    if not set_state_guarded(db, entity_type, entity_id, state, f"built-in QC aggregate: {detail}"):
+        # A decided entity keeps its lifecycle state; the fresh QC evidence is
+        # still recorded and any state change needs an explicit curate.
+        state = db.get_entity_state(entity_type, entity_id) or state
     return state, statuses
 
 
@@ -483,7 +486,7 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
     timings: dict[str, float] = {}
     related_inputs: list[dict[str, Any]] = []
     _timed_call(
-        timings, "state_qc_running", set_state_bulk,
+        timings, "state_qc_running", set_state_guarded,
         db, entity_type, entity_id, "QC_RUNNING", f"running built-in QC for {file_id}",
     )
 

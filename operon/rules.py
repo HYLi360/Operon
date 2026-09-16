@@ -16,7 +16,7 @@ from operon.database import Database
 from operon.errors import ValidationError
 from operon.profiles import load_profile
 from operon.utils import now_iso
-from operon.workflow import set_state_bulk
+from operon.workflow import set_state_bulk, set_state_guarded
 
 DECISION_STATES = {
     "PASS": "ACCEPTED",
@@ -271,12 +271,13 @@ def evaluate_entity(db: Database, project: Project, entity_type: str, entity_id:
             "curated_at": previous["curated_at"],
         })
     db.upsert_decision(row)
-    # A curator owns the entity lifecycle until an explicit ``curate`` call.
-    # Automatic re-evaluation may append evidence, but must not demote an
-    # ACCEPTED/REVIEW/REJECTED/RELEASED state based on its new result.
+    # A decided entity owns its lifecycle state until an explicit ``curate``
+    # or a forced ``set-state``.  Automatic re-evaluation may append evidence,
+    # but must not demote an ACCEPTED/REVIEW/REJECTED/RELEASED state based on
+    # its new result, whether or not a curator has acted on it.
     if previous is None or previous["curated_decision"] is None:
-        set_state_bulk(db, entity_type, entity_id, DECISION_STATES.get(decision, "QC_COMPLETE"),
-                       f"profile {profile_name}: {decision} ({', '.join(reasons) or 'no issues'})")
+        set_state_guarded(db, entity_type, entity_id, DECISION_STATES.get(decision, "QC_COMPLETE"),
+                          f"profile {profile_name}: {decision} ({', '.join(reasons) or 'no issues'})")
     row["details"] = details
     return row
 

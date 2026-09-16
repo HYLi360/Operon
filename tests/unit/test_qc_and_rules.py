@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tests.helpers import PytestAssertions
 
 from operon.cli import main
@@ -132,6 +134,41 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(records[-1]["checksum_verification_method"], "full_sha256")
         self.assertFalse(records[-2]["qc_timing"]["integrity"]["rehash_requested"])
         self.assertTrue(records[-1]["qc_timing"]["integrity"]["rehash_requested"])
+
+    @pytest.mark.bug("ODR-0011")
+    def test_rerun_qc_and_evaluate_do_not_demote_decided_entities(self):
+        from operon.workflow import set_state
+
+        self._add_organism_sample_assembly()
+        source = self.root / "asm.fa"
+        source.write_text(_fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8")
+        ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        self.assertTrue(qc_all(self.db, self.project, entity_type="assembly")[0]["ok"])
+        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
+        self.assertEqual(decision["decision"], "PASS")
+        self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "ACCEPTED")
+
+        # Re-running QC records fresh evidence but must not drag the decided
+        # entity back through QC states.
+        result = qc_all(self.db, self.project, entity_type="assembly")[0]
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["entity_qc_state"], "ACCEPTED")
+        self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "ACCEPTED")
+
+        # Automatic re-evaluation appends a new decision row but keeps the
+        # lifecycle state, even from the terminal RELEASED state.
+        set_state(self.db, "assembly", "ASM_000001", "RELEASED", "test release",
+                  force=True, actor="tester")
+        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
+        self.assertEqual(decision["decision"], "PASS")
+        self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "RELEASED")
+        self.assertEqual(
+            self.db.conn.execute(
+                "SELECT decision FROM current_decisions WHERE entity_type='assembly' "
+                "AND entity_id='ASM_000001' AND profile='assembly_production_v1'",
+            ).fetchone()["decision"],
+            "PASS",
+        )
 
     def test_changed_same_size_file_invalidates_qc_verification_cache(self):
         self._add_organism_sample_assembly()

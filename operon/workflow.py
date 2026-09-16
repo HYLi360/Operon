@@ -95,6 +95,26 @@ def set_state_bulk(db: Database, entity_type: str, entity_id: str, state: str,
     set_state(db, entity_type, entity_id, state, message, force=True, actor=actor)
 
 
+# States at or past a decision. Batch QC and automatic re-evaluation may
+# append fresh evidence, but must not move an entity out of these states;
+# only an explicit curated decision or a forced set-state does.
+DECISION_GUARDED_STATES = {"ACCEPTED", "REVIEW", "REJECTED", "RELEASED"}
+
+
+def set_state_guarded(db: Database, entity_type: str, entity_id: str, state: str,
+                      message: str | None = None, actor: str | None = None) -> bool:
+    """set_state_bulk, except decided entities keep their lifecycle state.
+
+    Returns False when the write was skipped because the entity is in a
+    decision-guarded state.
+    """
+    current = db.get_entity_state(entity_type, entity_id)
+    if current in DECISION_GUARDED_STATES and state != current:
+        return False
+    set_state_bulk(db, entity_type, entity_id, state, message, actor=actor)
+    return True
+
+
 def new_run_id() -> str:
     """Unique workflow run ID (time plus random suffix, safe across rapid runs)."""
     return f"WF_{now_iso().replace('-', '').replace(':', '').replace('T', '_')}_{uuid.uuid4().hex[:8]}"

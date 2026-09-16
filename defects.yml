@@ -177,12 +177,13 @@ defects:
   affected: all releases; triggered by re-running qc or evaluate on an entity in ACCEPTED or RELEASED state
   severity: medium
   component: qc
-  status: open
+  status: fixed
   reproduction: QC drives its state writes through the forced bulk path and offers no --force or prior-state warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED; `evaluate` does the same for an entity without a curated_decision, while a curated decision is protected.
-  disposition: null
+  disposition: 'Batch QC and automatic re-evaluation now write entity states through workflow.set_state_guarded: entities in ACCEPTED/REVIEW/REJECTED/RELEASED keep their lifecycle state while fresh QC evidence and decision rows are still recorded; only an explicit curate or forced set-state moves them. The guarded aggregate reports the preserved state as entity_qc_state.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_qc_and_rules.py::TestQCAndRules::test_rerun_qc_and_evaluate_do_not_demote_decided_entities
 - id: ODR-0012
   title: Concurrent writable opens collide while rebuilding views
   reported: '2026-09-16'

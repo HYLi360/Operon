@@ -23,6 +23,7 @@
 | ODR-0008 | Export | export 不再把已存在的空目标目录当作工作区：所有导出都在隐藏的兄弟目录中 staging，通过 `rmdir` + 原子重命名发布（目标混入内容时安全失败），失败路径只删除 staging 目录树——调用方目录的子项不再会被删除。 |
 | ODR-0009 | Ingest | 幂等重 ingest 不再无条件改写 `files.status`：`STANDARDIZED` 文件保持其状态，真实的状态迁移改走 `set_file_status` 并写入 `changes` 审计行。 |
 | ODR-0010 | Standardize | `standardize` 不再直接写入 `STANDARDIZED`：文件状态走 `set_file_status`、实体迁移走 `set_state`，二者都记入 `changes`；非法迁移（例如对已 `RELEASED` 的实体重新标准化）会被拒绝，且 `CHECKSUM_FAILED` 新增了指向 `STANDARDIZED` 的合法恢复边，供重新校验通过的字节使用。 |
+| ODR-0011 | QC / decisions | 重跑 `qc` 或 `evaluate` 不再把 `ACCEPTED`/`RELEASED`（或 `REVIEW`/`REJECTED`）实体降级：批量状态写入改走 `set_state_guarded`，新鲜的 QC 证据与 decision 行照常记录，但生命周期状态只能由显式的 `curate` 或强制 `set-state` 改变。 |
 
 ## K 系列（历史）
 
