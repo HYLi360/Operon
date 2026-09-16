@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from operon import export as export_module
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -226,3 +227,30 @@ def test_export_logs_workflow_run(project_db, tmp_path):
     assert details["selection"]["entity_type"] == "assembly"
     assert details["output_dir"] == str(out)
     assert details["file_count"] == 3
+
+
+@pytest.mark.bug("ODR-0007")
+def test_export_run_row_follows_publication(project_db, tmp_path, monkeypatch):
+    project, db, _files = project_db
+    out = tmp_path / "export"
+
+    def failing_replace(_src, _dst):
+        raise OSError("injected rename failure")
+
+    monkeypatch.setattr(export_module.os, "replace", failing_replace)
+    with pytest.raises(OSError, match="injected rename failure"):
+        export_files(db, project, output_dir=out, entity_type="assembly")
+    # No run row may claim a publication that never happened, and neither the
+    # destination nor the staging tree may survive.
+    assert db.query("SELECT * FROM workflow_runs WHERE step='export'") == []
+    assert not out.exists()
+    assert list(tmp_path.glob(".export.operon-export-*")) == []
+
+    monkeypatch.undo()
+    summary = export_files(db, project, output_dir=out, entity_type="assembly")
+    runs = db.query("SELECT * FROM workflow_runs WHERE step='export'")
+    assert len(runs) == 1
+    # The recorded command names the final destination, never the staging path.
+    assert str(out) in runs[0]["command"]
+    assert "operon-export-" not in runs[0]["command"]
+    assert runs[0]["output_sha256"] == summary["manifest_sha256"]

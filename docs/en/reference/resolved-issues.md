@@ -27,6 +27,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0004 | Remote mirrors | Upload verification now happens at the staging name inside `put`, before the final rename; a truncated or corrupted upload is removed with the staging bytes and never occupies the final remote path, so a later push retries instead of marking the location `CORRUPT`. |
 | ODR-0005 | Release | The release preflight no longer returns early when `config/profiles/<profile>.yaml` is missing: `release` and decision-based `export` load and validate the named QC profile up front, so a typo fails with a validation error instead of publishing a zero-member release or an empty export bundle. |
 | ODR-0006 | Release | A crash between the final rename and the `releases` insert no longer wedges the version: the retry recognizes the orphaned tree by its `provenance.json`, removes it, and rebuilds the release; any other occupant of the path still raises `FileExistsError`. |
+| ODR-0007 | Export | The export `workflow_runs` row is now committed only after the workspace has been renamed to the final destination, with the command naming that destination; a recording failure removes the published tree, so a completed export whose destination does not exist can no longer be reported. |
 
 ## K series (historical)
 

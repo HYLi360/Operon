@@ -159,6 +159,7 @@ def export_files(
             prefix=f".{requested.name}.operon-export-", dir=str(requested.parent),
         ))
         temporary = True
+    published = False
     try:
         summary = _export_files_in_workspace(
             db, project, output_dir=workspace,
@@ -169,9 +170,29 @@ def export_files(
         )
         if temporary:
             os.replace(workspace, requested)
+        published = True
+        # The run row is recorded only once the destination really exists.
+        selection = summary.pop("selection")
+        log_run(db, project, {
+            "entity_type": selection["entity_type"],
+            "step": "export",
+            "status": "completed",
+            "command": f"operon export --output {requested}",
+            "output_sha256": summary["manifest_sha256"],
+            "execution_details": json.dumps({
+                "selection": selection,
+                "output_dir": str(requested),
+                "link_kind": summary["link_kind"],
+                "file_count": summary["file_count"],
+            }, ensure_ascii=False, sort_keys=True),
+        })
         summary["output_dir"] = str(requested)
         return summary
     except BaseException:
+        if published and temporary:
+            # The run row never committed, so the published tree must not
+            # survive as an unrecorded publication.
+            shutil.rmtree(requested, ignore_errors=True)
         if temporary:
             shutil.rmtree(workspace, ignore_errors=True)
         else:
@@ -328,23 +349,13 @@ def _export_files_in_workspace(
         json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
     )
 
-    log_run(db, project, {
-        "entity_type": entity_type,
-        "step": "export",
-        "status": "completed",
-        "command": f"operon export --output {output_root}",
-        "output_sha256": manifest_sha256,
-        "execution_details": json.dumps({
-            "selection": selection,
-            "output_dir": str(output_label),
-            "link_kind": link_kind,
-            "file_count": len(manifest_rows),
-        }, ensure_ascii=False, sort_keys=True),
-    })
+    # The workflow run is logged by export_files() only after the workspace
+    # has been published to its final destination.
     return {
         "file_count": len(manifest_rows),
         "output_dir": str(output_label),
         "manifest_sha256": manifest_sha256,
         "link_kind": link_kind,
         "created_at": created_at,
+        "selection": selection,
     }

@@ -121,12 +121,13 @@ defects:
   affected: all releases; triggered by a failure after the workflow_runs commit but before the final rename
   severity: medium
   component: export
-  status: open
+  status: fixed
   reproduction: The export `workflow_runs` row is committed before the final rename and its command embeds the staging path, so the database and the JSONL log can report a completed export whose destination does not exist.
-  disposition: null
+  disposition: export_files now records the workflow run only after the workspace has been renamed to the final destination, and the recorded command names that destination instead of the staging path; if recording fails, the published tree is removed, so the database can neither claim a publication that never happened nor leave a publication it never recorded.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_export.py::test_export_run_row_follows_publication
 - id: ODR-0008
   title: Symlink export into an existing empty destination deletes its children on failure
   reported: '2026-09-16'

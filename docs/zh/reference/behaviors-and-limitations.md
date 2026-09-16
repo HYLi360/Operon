@@ -177,7 +177,7 @@
 - **中断的 release 发布会在重试时自动恢复。** 原子重命名与数据库提交之间的崩溃会留下一个没有 `releases` 行的已发布目录；下一次对同一版本的 `release` 会移除这个孤儿目录——仅当其 `provenance.json` 标明该版本——并重新构建，而占据该路径的其他任何内容仍抛 `FileExistsError`（`release.py`）。
 - **release 与 export 的输出继承 staging 权限。** staging 目录以 0700 创建（原子单文件复制为 0600）后被重命名到位，因此已发布目录可能对其他用户不可读，而附属 TSV 仍是 umask 默认值（`release.py`、`export.py`、`utils.py`）。
 - **选择错误的行为不对称。** 未知 `--file-id` 在 `export` 中静默选出零个文件，而 `push`/`pull`/`evict` 对同样输入会报错；同时给出 `--profile` 而不给 `--decision` 没有任何效果；export 的 `manifest.tsv` 缺少 release manifest 携带的 `compression` 列（`export.py`、`remotes.py`）。
-- **已知问题：export 的 run 行可能声称一次并未发生的发布。** `workflow_runs` 行在最终重命名之前提交，其命令嵌入的是 staging 路径，因此数据库与 JSONL 可能报告一次目标目录并不存在的“已完成导出”（`export.py`）。
+- **export 的 run 行在发布之后才记录。** `workflow_runs` 行只在 workspace 重命名为最终目标之后写入，命令中记录的也是最终路径；若记录失败，已发布的目录会被移除，因此数据库既不会声称一个不存在的导出，也不会发布一个未记录的导出（`export.py`）。
 - **已知问题：symlink 模式会写入已存在的空目录。** 此时工作区就是调用方自己的目录，而失败路径会删除它的所有子项（`export.py`）。
 - **选出零个文件的 export 仍算成功。** 退出码 0，得到只有表头的 `manifest.tsv`（11 列）与 0 字节的 `checksums.sha256`，后者会被 `sha256sum -c` 以“没有可解析的校验行”拒绝（`export.py`、`schema.py`）。
 - **export 符号链接存储完全解析后的目标。** `--link symlink` 指向 `source.resolve()`；移动项目会断链，不过经链接的校验仍然通过（`export.py`）。

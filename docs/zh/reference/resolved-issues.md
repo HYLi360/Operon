@@ -19,6 +19,7 @@
 | ODR-0004 | 远程镜像 | 上传校验现在在 `put` 内部的暂存名上、最终重命名之前完成；被截断或损坏的上传随暂存字节一并删除，绝不会占据最终远端路径，后续 push 会重新上传而不是把该位置标为 `CORRUPT`。 |
 | ODR-0005 | Release | 发布预检不再在 `config/profiles/<profile>.yaml` 缺失时提前返回：`release` 与基于 decision 的 `export` 会预先加载并校验指定的 QC profile，拼写错误会以校验错误失败，而不是发布零成员 release 或空导出包。 |
 | ODR-0006 | Release | 最终重命名与 `releases` 插入之间的崩溃不再卡死该版本：重试会通过孤儿目录的 `provenance.json` 识别并移除它，然后重新构建 release；占据该路径的其他内容仍抛 `FileExistsError`。 |
+| ODR-0007 | Export | export 的 `workflow_runs` 行现在只在 workspace 重命名为最终目标之后提交，命令记录的也是最终目标路径；记录失败会移除已发布的目录，因此不会再报告目标不存在的“已完成导出”。 |
 
 ## K 系列（历史）
 
