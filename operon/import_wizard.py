@@ -16,6 +16,7 @@ from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.files import canonical_filename, detect_compression, detect_format, ingest_file, raw_bucket
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
+from operon.sql import quote_identifier
 from operon.utils import now_iso, sha256_path
 from operon.workflow import flush_run_log, log_run, new_run_id
 
@@ -482,7 +483,8 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
             for entity_type, table, row in rows:
                 columns = list(row.keys())
                 conn.execute(
-                    f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
+                    f"VALUES ({', '.join('?' for _ in columns)})",
                     [row[column] for column in columns],
                 )
                 entity_id = row[ENTITY_ID_COLUMNS[entity_type]]
