@@ -319,6 +319,7 @@ def test_manifest_lock_is_released_when_the_owner_marker_cannot_be_written(remot
 # remotes: push/pull failure handling and audit rows
 # --------------------------------------------------------------------------
 
+@pytest.mark.bug("ODR-0004")
 def test_push_reports_an_upload_that_lands_wrong_bytes(remote_env, monkeypatch):
     env = remote_env
     client = FakeSSHClient()
@@ -328,10 +329,12 @@ def test_push_reports_an_upload_that_lands_wrong_bytes(remote_env, monkeypatch):
     results = push(env.db, env.project, "mirror")
     assert results[0]["status"] == "error"
     assert "upload verification failed" in results[0]["error"]
-    # The unverified upload is never claimed by the manifest or residency cache.
+    # The unverified upload is never published, claimed by the manifest, or
+    # recorded in the residency cache, and no staging name is left behind.
     rel = env.record["relative_path"]
     assert _store(env.project).read_manifest()["files"] == {}
-    assert (env.remote_dir / rel).read_bytes() == b""
+    assert not (env.remote_dir / rel).exists()
+    assert not list(env.remote_dir.glob("*.operon-tmp-*"))
     assert env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"] == 0
     run = env.db.conn.execute(
         "SELECT status, error FROM workflow_runs WHERE step='push:mirror'"

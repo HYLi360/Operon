@@ -16,6 +16,7 @@
 | ODR-0001 | 导入向导 | schema 字段名不再被直接拼入 INSERT 列：向导提交边界会校验并引用每个标识符（`operon.sql.quote_identifier()`），恶意 schema 会抛出 `ValidationError` 且整个提交回滚。 |
 | ODR-0002 | 数据库 API | `insert_row()`/`upsert_rows()` 及读取辅助 `table_columns()`/`export_rows()`/`export_active_rows()` 会校验并引用每个动态标识符；值仍走参数绑定，关键字列名照常可用。 |
 | ODR-0003 | 表格导入 | `apply_table_import()` 在执行边界重新校验表名是否属于 `IMPORTABLE_TABLES`，并引用所有标识符；被篡改的 preview 会抛出 `ValidationError` 并回滚。 |
+| ODR-0004 | 远程镜像 | 上传校验现在在 `put` 内部的暂存名上、最终重命名之前完成；被截断或损坏的上传随暂存字节一并删除，绝不会占据最终远端路径，后续 push 会重新上传而不是把该位置标为 `CORRUPT`。 |
 
 ## K 系列（历史）
 

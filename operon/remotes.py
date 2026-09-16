@@ -458,6 +458,10 @@ class SFTPStore:
             raise RemoteUnavailableError(
                 f"remote {self.spec.name!r}: cannot stat {rel}: {exc}"
             ) from exc
+        return self._remote_identity_matches(remote, stat, sha256, size_bytes)
+
+    def _remote_identity_matches(self, remote: str, stat: Any,
+                                 sha256: str, size_bytes: int) -> bool:
         if stat_module.S_ISDIR(stat.st_mode):
             digest, actual_size = _remote_directory_identity(self.sftp, remote)
         elif stat_module.S_ISREG(stat.st_mode):
@@ -467,7 +471,15 @@ class SFTPStore:
             return False
         return actual_size == int(size_bytes) and digest == str(sha256).lower()
 
-    def put(self, local: Path, rel: str) -> None:
+    def put(self, local: Path, rel: str, *, expect_sha256: str | None = None,
+            expect_size_bytes: int | None = None) -> None:
+        """Upload to a staging name, verify there, and only then publish.
+
+        When the expected identity is given, the staged bytes are verified
+        before the rename, so a truncated or corrupted upload never lands on
+        the final path: the staging name is removed and ``RemoteError`` is
+        raised instead.
+        """
         remote = self.remote_path(rel)
         sftp_makedirs(self.sftp, posixpath.dirname(remote))
         tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
@@ -488,6 +500,14 @@ class SFTPStore:
                         raise RemoteError(f"unsupported local directory entry: {path}")
             else:
                 self.sftp.put(str(local), tmp)
+            if expect_sha256 is not None and expect_size_bytes is not None:
+                stat = _sftp_lstat(self.sftp, tmp)
+                if not self._remote_identity_matches(tmp, stat, expect_sha256,
+                                                     expect_size_bytes):
+                    raise RemoteError(
+                        f"upload verification failed for {rel} "
+                        f"on remote {self.spec.name!r}"
+                    )
             _publish_remote(self.sftp, tmp, remote, overwrite=False)
         except BaseException:
             _remove_remote_tree(self.sftp, tmp)
@@ -765,11 +785,8 @@ def push(db: Database, project: Project, name: str,
                                 )
                             result["status"] = "indexed"
                         else:
-                            store.put(local, rel)
-                            if not store.matches(rel, sha, size):
-                                raise RemoteError(
-                                    f"upload verification failed for {rel} on remote {name!r}"
-                                )
+                            store.put(local, rel, expect_sha256=sha,
+                                      expect_size_bytes=size)
                             result["status"] = "uploaded"
                         entries[rel] = {
                             "file_id": record["file_id"], "relative_path": rel,

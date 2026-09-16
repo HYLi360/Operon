@@ -168,7 +168,7 @@ remaining bullets are intended-but-implicit semantics or accepted limitations.
 - **Remote hashing is bounded and then falls back to streaming.** `sha256sum` gets a hard-coded 600-second timeout, after which the file is streamed in 1 MiB chunks over SFTP (`remotes.py`).
 - **Replacing a remote manifest requires the server's POSIX rename.** Publishing an updated manifest uses the SFTP `posix_rename` extension; without it the second push can never publish (`remotes.py`).
 - **A no-op push does not adopt the remote.** The remote manifest is written only when an entry changes, so an all-skipped push leaves it without a `project_id`, and `pull` never writes the remote manifest, so the adoption of an unmanaged remote is not durable (`remotes.py`).
-- **Known issue: a failed upload verification poisons the remote path.** `put` publishes the uploaded bytes to the final path before `push` verifies them, so a truncated upload stays there with no manifest entry; the next push takes the "different bytes" path, marks the location `CORRUPT` and refuses to overwrite until an operator removes the object by hand (`remotes.py`).
+- **Uploads are verified at the staging name before publication.** `put` writes to a `<target>.operon-tmp-<uuid>` staging path, verifies the expected sha256 and size there when the caller supplies them, and only then renames into place; a failed verification removes the staging bytes, so a truncated upload never occupies the final path and the next push simply retries the upload (`remotes.py`).
 
 ## Releases and exports
 

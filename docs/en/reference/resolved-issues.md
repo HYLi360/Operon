@@ -24,6 +24,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0001 | Import wizard | Schema field names are no longer interpolated into INSERT columns: the wizard commit boundary validates and quotes every identifier (`operon.sql.quote_identifier()`), and a hostile schema raises `ValidationError` with the whole commit rolled back. |
 | ODR-0002 | Database API | `insert_row()`/`upsert_rows()` and the read helpers `table_columns()`/`export_rows()`/`export_active_rows()` validate and quote every dynamic identifier; values remain parameter-bound, and keyword column names still work. |
 | ODR-0003 | Table import | `apply_table_import()` revalidates the table against `IMPORTABLE_TABLES` and quotes all identifiers at the execution boundary; a tampered preview raises `ValidationError` and rolls back. |
+| ODR-0004 | Remote mirrors | Upload verification now happens at the staging name inside `put`, before the final rename; a truncated or corrupted upload is removed with the staging bytes and never occupies the final remote path, so a later push retries instead of marking the location `CORRUPT`. |
 
 ## K series (historical)
 

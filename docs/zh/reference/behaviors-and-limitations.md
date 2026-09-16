@@ -165,7 +165,7 @@
 - **远端哈希先有上限，随后回退为流式。** `sha256sum` 有硬编码的 600 秒超时，超时后改为按 1 MiB 分块通过 SFTP 流式读取（`remotes.py`）。
 - **替换远端 manifest 需要服务端支持 POSIX rename。** 发布更新后的 manifest 使用 SFTP 的 `posix_rename` 扩展；没有它，第二次 push 永远无法发布（`remotes.py`）。
 - **no-op 的 push 不会认领远端。** 只有在条目变化时才写远端 manifest，因此全部跳过的 push 会让它没有 `project_id`，而 `pull` 从不写远端 manifest，所以对无主远端的“认领”并不持久（`remotes.py`）。
-- **已知问题：上传校验失败会污染远端路径。** `put` 在 `push` 校验之前就把上传字节发布到最终路径，因此被截断的上传会留在那里且没有 manifest 条目；下一次 push 会走“字节不同”的分支，把该位置标为 `CORRUPT` 并拒绝覆盖，直到运维手工删除该对象（`remotes.py`）。
+- **上传在发布前于暂存名上完成校验。** `put` 先写入 `<目标>.operon-tmp-<uuid>` 暂存路径，当调用方给出期望身份时在暂存路径上校验 sha256 与大小，然后才重命名到位；校验失败会删除暂存字节，因此被截断的上传绝不会占据最终路径，下一次 push 只会重新上传（`remotes.py`）。
 
 ## release 与 export
 

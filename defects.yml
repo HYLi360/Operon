@@ -48,18 +48,8 @@ defects:
   severity: medium
   component: database
   status: fixed
-  reproduction: '`Database.insert_row()` and `Database.upsert_rows()` interpolated
-    the table and column names given by their Python caller. A column name such
-    as `scientific_name) VALUES (?, upper(?)) --` was reproduced to evaluate
-    `upper(?)` in a temporary database, and the table argument accepted a full
-    `VALUES (...) --` fragment. The CLI add path has additional schema checks;
-    this is a low-level API boundary defect, not evidence of an unconditional
-    remote exploit.'
-  disposition: 'Both methods, and the read helpers `table_columns()`, `export_rows()`
-    and `export_active_rows()`, now validate and quote every dynamic identifier
-    with `operon.sql.quote_identifier()` (same alphabet as metadata column creation,
-    so keyword names such as `select` still work). Values still use SQLite parameter
-    binding.'
+  reproduction: '`Database.insert_row()` and `Database.upsert_rows()` interpolated the table and column names given by their Python caller. A column name such as `scientific_name) VALUES (?, upper(?)) --` was reproduced to evaluate `upper(?)` in a temporary database, and the table argument accepted a full `VALUES (...) --` fragment. The CLI add path has additional schema checks; this is a low-level API boundary defect, not evidence of an unconditional remote exploit.'
+  disposition: Both methods, and the read helpers `table_columns()`, `export_rows()` and `export_active_rows()`, now validate and quote every dynamic identifier with `operon.sql.quote_identifier()` (same alphabet as metadata column creation, so keyword names such as `select` still work). Values still use SQLite parameter binding.
   fix_commit: ef429f5089d3808db9151fa582e35b5b5f146ab3
   fixed_in: null
   regression_tests:
@@ -74,19 +64,129 @@ defects:
   severity: medium
   component: table_import
   status: fixed
-  reproduction: '`apply_table_import()` trusted the preview''s column list, table
-    name and per-row `differences`. Replacing a difference column with `scientific_name=upper(?)
-    WHERE organism_id=? --` made the original implementation evaluate `upper(?)`,
-    and the table name was not rechecked against the importable list. Normal
-    `preview_table_import()` checks external headers; the defect is the missing
-    revalidation at the execution boundary.'
-  disposition: '`apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES`
-    and validates/quotes every identifier through `operon.sql.quote_identifier()`;
-    a tampered preview raises ValidationError, the update is rolled back, and
-    no `changes` rows are written.'
+  reproduction: '`apply_table_import()` trusted the preview''s column list, table name and per-row `differences`. Replacing a difference column with `scientific_name=upper(?) WHERE organism_id=? --` made the original implementation evaluate `upper(?)`, and the table name was not rechecked against the importable list. Normal `preview_table_import()` checks external headers; the defect is the missing revalidation at the execution boundary.'
+  disposition: '`apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES` and validates/quotes every identifier through `operon.sql.quote_identifier()`; a tampered preview raises ValidationError, the update is rolled back, and no `changes` rows are written.'
   fix_commit: 35a0f78b7a574301ee9b1fd70fc993bf5388ecaa
   fixed_in: null
   regression_tests:
   - tests/regression/test_sql_identifier_security.py::test_table_import_rejects_tampered_update_column
   - tests/regression/test_sql_identifier_security.py::test_table_import_rechecks_allowed_table
   - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
+- id: ODR-0004
+  title: Failed upload verification poisons the remote path
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by an upload whose bytes fail sha256 verification (truncated or corrupted transfer)
+  severity: high
+  component: remotes
+  status: fixed
+  reproduction: '`SFTPRemoteStore.put()` publishes uploaded bytes directly to the final remote path before `push` verifies them. A truncated upload stays at the final path with no manifest entry; the next `push` of the same file takes the different-bytes path, marks the location CORRUPT and refuses to overwrite until an operator removes the remote object by hand.'
+  disposition: '`SFTPStore.put()` now verifies the expected sha256/size on the staging name before the final rename, and `push` passes the manifest identity down; a failed verification removes the staged bytes, so the final remote path is never occupied by unverified content and the next push retries the upload.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_remote_taxonomy_more.py::test_push_reports_an_upload_that_lands_wrong_bytes
+- id: ODR-0005
+  title: Release preflight silently disabled when the profile file is missing
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by a --profile value that names no config/profiles/<profile>.yaml file (for example a typo)
+  severity: high
+  component: release
+  status: open
+  reproduction: The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0006
+  title: Published release tree and releases row are not atomic
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by a crash between the final staging rename and the releases insert
+  severity: medium
+  component: release
+  status: open
+  reproduction: A crash between the final rename of the staged release tree and the `releases` database insert leaves a release directory with no row; the retry then fails with FileExistsError until the tree is removed by hand.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0007
+  title: Export run row can claim a publication that never happened
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by a failure after the workflow_runs commit but before the final rename
+  severity: medium
+  component: export
+  status: open
+  reproduction: The export `workflow_runs` row is committed before the final rename and its command embeds the staging path, so the database and the JSONL log can report a completed export whose destination does not exist.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0008
+  title: Symlink export into an existing empty destination deletes its children on failure
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by `export --link symlink` into an existing empty destination directory that later fails
+  severity: high
+  component: export
+  status: open
+  reproduction: With `--link symlink` and an existing empty destination, the export workspace is the caller's directory itself, and the failure path deletes every child of that directory.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0009
+  title: Idempotent re-ingest demotes STANDARDIZED to CHECKSUM_VERIFIED without audit
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by re-ingesting identical bytes for a file that already carries STANDARDIZED status
+  severity: medium
+  component: files
+  status: open
+  reproduction: Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so a standardized file silently loses that status; `set_file_status` itself is a no-op that writes nothing when the status is unchanged.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0010
+  title: standardize bypasses the entity state machine and the audit log
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by standardizing a RELEASED or ACCEPTED entity, or by standardize_all selecting on files.status alone
+  severity: medium
+  component: files
+  status: open
+  reproduction: '`standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity state with no transition check and no `changes` row.'
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0011
+  title: Re-running qc or evaluate demotes ACCEPTED/RELEASED entities
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by re-running qc or evaluate on an entity in ACCEPTED or RELEASED state
+  severity: medium
+  component: qc
+  status: open
+  reproduction: QC drives its state writes through the forced bulk path and offers no --force or prior-state warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED; `evaluate` does the same for an entity without a curated_decision, while a curated decision is protected.
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0012
+  title: Concurrent writable opens collide while rebuilding views
+  reported: '2026-09-16'
+  introduced_in: null
+  affected: all releases; triggered by two operon processes (or the CLI and the TUI) opening the same database writable at the same time
+  severity: low
+  component: database
+  status: open
+  reproduction: 'Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second busy timeout cannot absorb, surfacing as exit 1.'
+  disposition: null
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []

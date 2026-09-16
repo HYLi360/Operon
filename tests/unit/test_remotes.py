@@ -250,12 +250,12 @@ class TestPushPull(PytestAssertions):
         put_calls = 0
         manifest_writes = 0
 
-        def fail_first_put(store, local_path, relative_path):
+        def fail_first_put(store, local_path, relative_path, **kwargs):
             nonlocal put_calls
             put_calls += 1
             if put_calls == 1:
                 raise RemoteError("injected upload failure")
-            return original_put(store, local_path, relative_path)
+            return original_put(store, local_path, relative_path, **kwargs)
 
         def count_manifest_write(store, manifest):
             nonlocal manifest_writes
