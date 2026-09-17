@@ -273,7 +273,7 @@ defects:
   status: fixed
   reproduction: operon.__version__ is resolved via importlib.metadata at import time; from the checkout root it resolves to the in-tree OperonDBS.egg-info, which setuptools rewrites in place during every build_sdist call (test_sdist_contains_complete_project_source). Under xdist, a worker whose first operon import lands inside a sibling worker's build window freezes a stale (site-packages) or missing ('0+unknown') version into the module, and test_pyproject_is_the_single_application_version_source then fails against pyproject.toml. Solo runs never race, so the failure is intermittent.
   disposition: The test now re-reads operon.__version__ via importlib.reload() while holding the same machine-wide _sdist_build_lock() the builds already take, so the assertion always observes a consistent metadata state.
-  fix_commit: null
+  fix_commit: 49b802d46b0548c02fcea62a828d06ac4fe9c756
   fixed_in: null
   regression_tests:
   - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
