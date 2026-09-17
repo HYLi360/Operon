@@ -936,3 +936,73 @@ def test_cli_calibrations_without_out_does_not_write_or_announce_a_file(project,
     assert "wrote" not in err
     assert "cite: " in err
     assert [url for url, _ in session.calls] == [f"{API}/mrca/id/3702+7227+9606/summaryjson"]
+
+
+# --- ODR-0014: no bare exceptions from snapshot loading / calibration inputs --
+
+@pytest.mark.bug("ODR-0014")
+def test_load_snapshot_missing_manifest_is_validation_error(tmp_path):
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    with pytest.raises(ValidationError, match="cannot read TimeTree snapshot manifest"):
+        timetree.load_snapshot(root)
+
+
+@pytest.mark.bug("ODR-0014")
+def test_load_snapshot_malformed_manifest_is_validation_error(tmp_path):
+    root = tmp_path / "snapshot"
+    root.mkdir()
+    (root / "snapshot.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValidationError, match="malformed TimeTree snapshot manifest"):
+        timetree.load_snapshot(root)
+
+
+@pytest.mark.bug("ODR-0014")
+def test_load_snapshot_incomplete_manifest_is_validation_error(tmp_path):
+    root = write_snapshot(tmp_path / "snapshot")
+    rewrite_manifest(root, lambda document: document.pop("records"))
+    with pytest.raises(ValidationError, match="incomplete TimeTree snapshot manifest"):
+        timetree.load_snapshot(root)
+
+    root = write_snapshot(tmp_path / "snapshot2")
+    rewrite_manifest(root, lambda document: document["records"][0].pop("taxon_a"))
+    with pytest.raises(ValidationError, match="incomplete TimeTree snapshot manifest"):
+        timetree.load_snapshot(root)
+
+
+@pytest.mark.bug("ODR-0014")
+def test_load_snapshot_missing_payload_is_validation_error(tmp_path):
+    root = write_snapshot(tmp_path / "snapshot")
+    (root / "raw/3702_9606.summaryjson.json").unlink()
+    with pytest.raises(ValidationError, match="unreadable TimeTree snapshot payload"):
+        timetree.load_snapshot(root)
+
+
+@pytest.mark.bug("ODR-0014")
+def test_calibrate_tree_rejects_non_numeric_taxon_ids(tmp_path, snapshot_dir):
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, taxa=[{"leaf": "A", "taxon_id": "not-a-number"},
+                        {"leaf": "B", "taxon_id": 9606},
+                        {"leaf": "C", "taxon_id": 7227}])
+    with pytest.raises(ValidationError, match="taxon_id values must be NCBI taxonomy integer IDs"):
+        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
+                                tmp_path / "out")
+
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[constraint(taxon_a="3702.5")])
+    with pytest.raises(ValidationError, match="constraint pairs require NCBI taxonomy integer IDs"):
+        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
+                                tmp_path / "out2")
+
+
+@pytest.mark.bug("ODR-0014")
+def test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error(tmp_path, snapshot_dir):
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
+    with pytest.raises(ValidationError, match="cannot read dating tree"):
+        timetree.calibrate_tree(snapshot_dir, tmp_path / "absent.nwk", taxa_file,
+                                constraints_file, tmp_path / "out")
+
+    tree_file.write_text("((A:1,B:1):1,C:1", encoding="utf-8")  # unbalanced newick
+    with pytest.raises(ValidationError, match="cannot read dating tree"):
+        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
+                                tmp_path / "out2")

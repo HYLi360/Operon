@@ -58,7 +58,7 @@ def pairs_from_tsv(path):
     for row in rows:
         try:
             a, b = int(row["taxon_a"]), int(row["taxon_b"])
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             raise ValidationError("TimeTree pairs require NCBI taxonomy integer IDs") from exc
         if min(a, b) <= 0 or a == b:
             raise ValidationError("TimeTree pairs require two different positive NCBI IDs")
@@ -143,17 +143,29 @@ def fetch_snapshot(pairs_file, output, *, timeout=30, retries=3, delay=1.0):
 
 def load_snapshot(path):
     root = Path(path).resolve()
-    document = json.loads((root / "snapshot.json").read_text())
-    if document.get("schema") != "operon-timetree-snapshot-1" or document.get("age_unit") != "Ma":
+    try:
+        document = json.loads((root / "snapshot.json").read_text())
+    except OSError as exc:
+        raise ValidationError(f"cannot read TimeTree snapshot manifest: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"malformed TimeTree snapshot manifest: {exc}") from exc
+    if not isinstance(document, dict) or document.get("schema") != "operon-timetree-snapshot-1" \
+            or document.get("age_unit") != "Ma":
         raise ValidationError("unsupported TimeTree snapshot schema or time unit")
     pairs = set()
-    for record in document["records"]:
-        for flag in ("summaryjson", "json"):
-            item = record["responses"][flag]
-            source = (root / item["path"]).resolve()
-            if not source.is_relative_to(root) or sha256_file(source) != item["sha256"]:
-                raise ValidationError("TimeTree snapshot checksum mismatch or path escape")
-        pairs.add(tuple(sorted((record["taxon_a"], record["taxon_b"]))))
+    try:
+        records = document["records"]
+        for record in records:
+            for flag in ("summaryjson", "json"):
+                item = record["responses"][flag]
+                source = (root / item["path"]).resolve()
+                if not source.is_relative_to(root) or sha256_file(source) != item["sha256"]:
+                    raise ValidationError("TimeTree snapshot checksum mismatch or path escape")
+            pairs.add(tuple(sorted((record["taxon_a"], record["taxon_b"]))))
+    except (KeyError, TypeError) as exc:
+        raise ValidationError(f"incomplete TimeTree snapshot manifest: missing {exc}") from exc
+    except OSError as exc:
+        raise ValidationError(f"unreadable TimeTree snapshot payload: {exc}") from exc
     return document, pairs
 
 
@@ -169,7 +181,10 @@ def calibrate_tree(snapshot, tree_file, taxa_file, constraints_file, output, *, 
 
     unit_ma = positive(unit_ma, "unit_ma")
     _, available = load_snapshot(snapshot)
-    tree = Phylo.read(tree_file, "newick")
+    try:
+        tree = Phylo.read(tree_file, "newick")
+    except Exception as exc:
+        raise ValidationError(f"cannot read dating tree {tree_file}: {exc}") from exc
     leaves = [leaf.name for leaf in tree.get_terminals()]
     if not leaves or len(set(leaves)) != len(leaves) or any(not name for name in leaves):
         raise ValidationError("dating tree must have unique nonempty leaf labels")
@@ -180,7 +195,10 @@ def calibrate_tree(snapshot, tree_file, taxa_file, constraints_file, output, *, 
     for row in taxa:
         if row["leaf"] in mapping:
             raise ValidationError("duplicate leaf in taxa table")
-        mapping[row["leaf"]] = int(row["taxon_id"])
+        try:
+            mapping[row["leaf"]] = int(row["taxon_id"])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("taxa table taxon_id values must be NCBI taxonomy integer IDs") from exc
     if set(mapping) != set(leaves) or len(set(mapping.values())) != len(mapping) or min(mapping.values()) <= 0:
         raise ValidationError("taxa table must map every tree leaf to one unique positive NCBI ID")
     reverse = {value: key for key, value in mapping.items()}
@@ -189,7 +207,10 @@ def calibrate_tree(snapshot, tree_file, taxa_file, constraints_file, output, *, 
     ])
     bounds = {}
     for row in rows:
-        pair = tuple(sorted((int(row["taxon_a"]), int(row["taxon_b"]))))
+        try:
+            pair = tuple(sorted((int(row["taxon_a"]), int(row["taxon_b"]))))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("constraint pairs require NCBI taxonomy integer IDs") from exc
         if pair not in available or any(taxon not in reverse for taxon in pair):
             raise ValidationError("constraint pair is absent from snapshot or target taxa")
         if row["approved"].lower() != "yes" or not row["rationale"].strip():
@@ -347,6 +368,8 @@ def _resolve_cli_taxa(args, client, *, minimum):
     resolved = [(str(taxon_id), int(taxon_id)) for taxon_id in args.taxon_id]
     for name in requested:
         candidates = client.resolve_taxon(name)
+        if not candidates:
+            raise ValidationError(f"TimeTree has no candidate for name {name!r}")
         if len(candidates) > 1:
             listing = "; ".join(
                 f"{item['scientific_name']} (id {item['taxon_id']}"

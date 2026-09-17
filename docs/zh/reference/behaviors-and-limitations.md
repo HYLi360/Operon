@@ -128,7 +128,6 @@
 - **TimeTree 查询缓存永久有效且不透明。** 缓存以 URL 为键且没有 TTL，`--refresh` 覆盖唯一一条记录，损坏的记录会成为永久硬失败且没有网络回退；`--retries`（1–10，默认 3）计的是总尝试次数，不处理 `Retry-After`，错误信息会把响应体截断到 500 字符，每次成功的真实请求之后都会固定休眠（`adapters/timetree.py`）。
 - **`timetree fetch` 使用固定的请求间隔。** 1.0 秒延迟是硬编码的，没有对应开关；快照发布拒绝覆盖，单个非法 pair 会中止整次运行；`load_snapshot` 会重新校验每个原始响应，却从不复查记录下来的 `pairs_sha256`；`calibrations --out` 非原子地覆盖目标文件；查询子命令需要项目，并且即使在缓存命中时也会写 `workflow_runs` 行（`timetree.py`）。
 - **校准汇总是启发式的。** 嵌套对象会被展平，第一条携带约六种 age 键别名的记录胜出；`timeline` 把任何响应体当 CSV 解析而不做格式检查；校准行会嵌入本地缓存的绝对路径与原始检索时间（`adapters/timetree.py`）。
-- **已知问题：TimeTree 输入以裸异常失败。** 约束的 `taxon_a`/`taxon_b` 用无保护的 `int()` 转换（退出码 1 且消息无上下文），而同类 pairs 表会抛 `ValidationError`（退出码 2）；缺少 `records` 键的快照会抛裸 `KeyError` traceback，原始响应文件被删除的快照会以 `OSError`（退出码 1）失败，而不是文档所述的校验错误（`timetree.py`）。
 
 ## 执行后端
 

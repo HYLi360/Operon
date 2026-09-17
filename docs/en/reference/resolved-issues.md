@@ -34,6 +34,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0011 | QC / decisions | Re-running `qc` or `evaluate` no longer demotes `ACCEPTED`/`RELEASED` (or `REVIEW`/`REJECTED`) entities: the batch state writes go through `set_state_guarded`, which still records fresh QC evidence and decision rows but leaves the lifecycle state to an explicit `curate` or forced `set-state`. |
 | ODR-0012 | Database | The derived-view rebuild on writable open now runs in a single immediate transaction (plain `execute`, because `executescript` would implicitly commit), so two processes can no longer collide between another connection's DROP and CREATE with `view ... already exists`. |
 | ODR-0013 | Files / QC | Directory artifacts are now verified with the same deterministic tree hash used at ingest: `verify_local_file_identity` branches on the manifest format, a file↔directory type flip reports missing, and the stat-fingerprint cache is bypassed for directories (a directory's own mtime changes on any member touch). Built-in QC's checksum stage and `fanout` source verification now pass for intact directory trees. |
+| ODR-0014 | TimeTree | Snapshot loading and calibration inputs now fail with `ValidationError` instead of bare exceptions: a missing/malformed/incomplete `snapshot.json`, an unreadable raw payload, non-numeric taxon IDs in the taxa/constraints tables, and an unreadable or malformed dating tree all report a contextual `error:` message (exit 2) rather than a traceback. |
 
 ## K series (historical)
 

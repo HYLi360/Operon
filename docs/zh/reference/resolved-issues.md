@@ -26,6 +26,7 @@
 | ODR-0011 | QC / decisions | 重跑 `qc` 或 `evaluate` 不再把 `ACCEPTED`/`RELEASED`（或 `REVIEW`/`REJECTED`）实体降级：批量状态写入改走 `set_state_guarded`，新鲜的 QC 证据与 decision 行照常记录，但生命周期状态只能由显式的 `curate` 或强制 `set-state` 改变。 |
 | ODR-0012 | Database | 可写打开时的派生视图重建现在运行在单个 immediate 事务内（使用普通 `execute`，因为 `executescript` 会隐式提交），两个进程不会再在另一个连接的 DROP 与 CREATE 之间相撞而报 `view ... already exists`。 |
 | ODR-0013 | Files / QC | 目录产物现在用与入库时相同的确定性树哈希校验：`verify_local_file_identity` 按 manifest 中的 format 分派，文件↔目录类型翻转按 missing 报告，stat 指纹缓存对目录旁路（目录自身的 mtime 在任何成员变动时都会改变）。内置 QC 的 checksum 阶段与 `fanout` 的来源校验现在能通过完好的目录树。 |
+| ODR-0014 | TimeTree | 快照加载与标定输入现在以 `ValidationError` 失败，不再抛裸异常：`snapshot.json` 缺失/畸形/结构不全、原始响应不可读、taxa/constraints 表中的非整数 taxon ID、以及不可读或畸形的进化树文件，都会给出有上下文的 `error:` 消息（退出码 2），而不是 traceback。 |
 
 ## K 系列（历史）
 

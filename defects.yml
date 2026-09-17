@@ -214,3 +214,22 @@ defects:
   - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
   - tests/unit/test_files_edges.py::test_directory_artifact_type_flip_reports_missing
   - tests/unit/test_files_edges.py::test_builtin_qc_passes_directory_checksum_stage
+- id: ODR-0014
+  title: TimeTree surfaces raw KeyError/OSError/ValueError instead of ValidationError
+  reported: '2026-09-17'
+  introduced_in: null
+  affected: 0.8.2 and earlier; timetree fetch/calibrate snapshot loading and calibration inputs
+  severity: low
+  component: timetree
+  status: fixed
+  reproduction: load_snapshot() on a snapshot directory without snapshot.json raised FileNotFoundError, on malformed JSON a JSONDecodeError, on a structurally incomplete manifest a bare KeyError, and on a missing raw payload a bare OSError from sha256_file. calibrate_tree() propagated ValueError from int() on non-numeric taxon_id/taxon_a/taxon_b cells and whatever exception Phylo.read raised for a missing or malformed tree file. All surfaced as tracebacks instead of an 'error:' message.
+  disposition: load_snapshot() wraps read/parse/structure/payload failures into ValidationError naming the cause; calibrate_tree() guards the integer conversions and wraps tree read/parse failures; _resolve_cli_taxa() additionally raises a named ValidationError should a resolve_taxon implementation ever return an empty candidate list instead of raising.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_manifest_is_validation_error
+  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_malformed_manifest_is_validation_error
+  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_incomplete_manifest_is_validation_error
+  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_payload_is_validation_error
+  - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_rejects_non_numeric_taxon_ids
+  - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error
