@@ -259,7 +259,7 @@ defects:
   status: fixed
   reproduction: '_VERSION_CACHE and _DATABASE_IDENTITY_CACHE are process-lifetime dicts. In a TUI session that stays open while the tool binary is upgraded in place or the reference database is replaced at the same path, subsequent analyses keep planning with the stale version string and stale database identity: cache identity does not reflect the new bytes (old results are reused against a different database) and provenance records the pre-upgrade version.'
   disposition: 'Both caches are now TTL-bound (300s, monotonic clock), mirroring the environment-capture probe cache: entries re-probe after expiry, so a batch still pays for one probe while a long-lived process notices in-place upgrades. Failed version probes were never cached and still are not.'
-  fix_commit: null
+  fix_commit: 93a05b5adc51e6dd09ef82f8ec9a0e9240a0ceb9
   fixed_in: null
   regression_tests:
   - tests/unit/test_tools_edges.py::test_version_and_database_identity_caches_expire_after_ttl
