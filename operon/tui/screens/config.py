@@ -457,6 +457,8 @@ class ConfigPanel(Panel):
                     yield DataTable(id="tools-table", cursor_type="row")
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
+                    with Horizontal(classes="config-buttons"):
+                        yield Button("Run analysis", id="recipe-run", disabled=True)
                     with VerticalScroll(id="recipe-editor"):  # pragma: no branch
                         yield Static("select a recipe", id="recipe-heading")
                         yield Static("Description", classes="modal-label")
@@ -743,6 +745,7 @@ class ConfigPanel(Panel):
         )
         self.query_one("#recipe-save", Button).disabled = False
         self.query_one("#recipe-history", Button).disabled = False
+        self.query_one("#recipe-run", Button).disabled = False
 
     def _load_recipe(self, name: str) -> None:
         try:
@@ -973,6 +976,8 @@ class ConfigPanel(Panel):
             self._start_recipe_save()
         elif button_id == "recipe-history":
             self._open_recipe_history()
+        elif button_id == "recipe-run":
+            self._open_run_analysis()
         elif button_id == "tools-check":
             self._start_tools_check()
 
@@ -1075,4 +1080,16 @@ class ConfigPanel(Panel):
                 to_editor=lambda document: dict(document.get("recipe", {})),
             ),
             lambda document: restore(document) if document else None,
+        )
+
+    # -- run analysis ---------------------------------------------------------
+
+    def _open_run_analysis(self) -> None:
+        if not self.current_recipe:
+            return
+        from operon.tui.screens.analyze import AnalyzeModal, analysis_finished
+
+        self.app.push_screen(
+            AnalyzeModal(self.project, recipe_name=self.current_recipe),
+            lambda payload: analysis_finished(self.app, payload),
         )

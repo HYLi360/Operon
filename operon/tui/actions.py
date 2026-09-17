@@ -13,7 +13,9 @@ preview, so it uses a read-only connection like :mod:`operon.tui.data`.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -247,6 +249,59 @@ def run_qc(
             file_id=file_id, progress_callback=progress,
             sample_size=sample_size, phred_offset=phred_offset, force_checksum=rehash,
         )
+
+
+class AnalysisCancelled(Exception):
+    """Raised between files when the analysis worker is cancelled."""
+
+
+def run_analysis(
+        project: Project,
+        analysis: str,
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        limit: int | None = None,
+        threads: int | None = None,
+        dry_run: bool = False,
+        force: bool = False,
+        keep_partial: bool = False,
+        parameters: dict[str, str] | None = None,
+        progress: Callable[[int, int, str, str], None] | None = None,
+) -> dict[str, Any]:
+    """Run one analysis recipe like ``operon analyze`` (local/default backend).
+
+    ``progress`` is forwarded as the core ``progress_callback``
+    ``(index, total, file_id, phase)``; raising from it aborts the batch
+    between files (results for files already processed are kept).  The core
+    prints directly (cache warnings, "no candidate files"); that output is
+    captured into the returned ``messages`` so it never corrupts the screen.
+    """
+    from operon.tools import run_analysis as _run_analysis
+
+    if limit is not None and int(limit) <= 0:
+        raise ValidationError("limit must be a positive integer")
+    if threads is not None and int(threads) <= 0:
+        raise ValidationError("threads must be a positive integer")
+    buffer = io.StringIO()
+    with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
+        results = _run_analysis(
+            project, db, analysis,
+            entity_type=entity_type, entity_id=entity_id,
+            limit=limit, threads=threads, dry_run=dry_run, force=force,
+            keep_partial=keep_partial, runtime_parameters=parameters,
+            progress_callback=progress,
+        )
+    errors = sum(1 for result in results if result.get("status") in {"error", "failed"})
+    return {
+        "analysis": analysis,
+        "results": results,
+        "messages": buffer.getvalue(),
+        "total": len(results),
+        "succeeded": len(results) - errors,
+        "errors": errors,
+        "dry_run": dry_run,
+    }
 
 
 # ---------------------------------------------------------------------------

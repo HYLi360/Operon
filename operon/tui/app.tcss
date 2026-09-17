@@ -212,6 +212,15 @@ HelpScreen {
     height: auto;
 }
 
+#analyze-parameters {
+    /* Same clipping hazard as the profile rule containers. */
+    height: auto;
+}
+
+#analyze-plan {
+    margin-top: 1;
+}
+
 .rule-inputs {
     height: auto;
 }

@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import DataTable, Input, Select, Static
+from textual.widgets import Button, DataTable, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import data
@@ -48,6 +48,7 @@ class RunsPanel(Panel):
                 yield Input(placeholder="entity contains", id="runs-entity")
                 yield Input(value="100", placeholder="limit", id="runs-limit",
                             type="integer", restrict=r"\d*")
+                yield Button("New analysis", id="runs-new-analysis")
             yield DataTable(id="runs-table", cursor_type="row")
 
     def on_mount(self) -> None:
@@ -112,6 +113,15 @@ class RunsPanel(Panel):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "runs-table" and event.row_key is not None:
             self.app.push_screen(RunDetailScreen(self.project, str(event.row_key.value)))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "runs-new-analysis":
+            from operon.tui.screens.analyze import AnalyzeModal, analysis_finished
+
+            self.app.push_screen(
+                AnalyzeModal(self.project),
+                lambda payload: analysis_finished(self.app, payload),
+            )
 
 
 class RunDetailScreen(Screen):
