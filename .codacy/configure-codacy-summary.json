@@ -1,0 +1,2612 @@
+{
+  "status": "completed_with_cloud_import_errors",
+  "summary": {
+    "enabledPatterns": {
+      "before": 1653,
+      "after": 2192
+    },
+    "enabledTools": {
+      "before": 9,
+      "after": 15
+    },
+    "issues": {
+      "before": 740,
+      "after": 1045
+    },
+    "analysisRuntime": {
+      "before": 585419,
+      "after": 52356
+    }
+  },
+  "baselineContext": {
+    "source": "Cloud configuration analyzed locally",
+    "cloudIssues": 630,
+    "cloudCommit": "fd2741085683b782f8f17593d2573e3fbc24a971",
+    "codingStandards": [
+      "Default coding standard"
+    ],
+    "cloudOnlyTools": [],
+    "toolAliases": {
+      "Opengrep": "Semgrep",
+      "Pylint": "PyLintPython3",
+      "ShellCheck": "shellcheck"
+    },
+    "runtimeComparable": false,
+    "runtimeNote": "Initial run includes first-time tool installation and a failed Trivy download; final run uses cached tools, four-way parallelism, and a 120-second timeout. Runtime change is not a tuning speedup.",
+    "patternCountNote": "Managed-pattern counts exclude effective rules controlled by native Ruff and Bandit configurations."
+  },
+  "toolChanges": [
+    {
+      "toolId": "PMD",
+      "action": "disabled",
+      "patternsAffected": 123,
+      "reason": "Replaced legacy PMD 6 with PMD7, using the auto-selected JavaScript rules for the repository frontend file."
+    },
+    {
+      "toolId": "jackson",
+      "action": "enabled",
+      "patternsAffected": 2,
+      "reason": "Stack discovery selected jackson; validation found 0 issues."
+    },
+    {
+      "toolId": "markdownlint",
+      "action": "enabled",
+      "patternsAffected": 42,
+      "reason": "Stack discovery selected markdownlint; validation found 11 issues."
+    },
+    {
+      "toolId": "Stylelint",
+      "action": "enabled",
+      "patternsAffected": 87,
+      "reason": "Stack discovery selected Stylelint; validation found 0 issues."
+    },
+    {
+      "toolId": "ESLint9",
+      "action": "enabled",
+      "patternsAffected": 169,
+      "reason": "Stack discovery selected ESLint9; validation found 6 issues."
+    },
+    {
+      "toolId": "Checkov",
+      "action": "enabled",
+      "patternsAffected": 75,
+      "reason": "Stack discovery selected Checkov; validation found 1 issues."
+    },
+    {
+      "toolId": "PMD7",
+      "action": "enabled",
+      "patternsAffected": 8,
+      "reason": "Stack discovery selected PMD7; validation found 0 issues."
+    },
+    {
+      "toolId": "Agentlinter",
+      "action": "enabled",
+      "patternsAffected": 87,
+      "reason": "Stack discovery selected Agentlinter; validation found 1 issues."
+    }
+  ],
+  "patternChanges": [
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2003",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2006",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2016",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2028",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2086",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2092",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "shellcheck",
+      "patternId": "shellcheck_SC2148",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_ai.python.detect-openai.detect-openai",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_ai.typescript.detect-gemini.detect-gemini",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_bash.lang.security.ifs-tampering.ifs-tampering",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_codacy.generic.security.detect-invisible-unicode",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_codacy.javascript.security.hard-coded-password",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_codacy.python.openai.import-without-guardrails",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_codacy.python.openai.non-guardrails-client-usage",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_codacy.python.openai.non-guardrails-direct-call",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.gradle.security.build-gradle-password-hardcoded.build-gradle-password-hardcoded",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.adafruit-api-key.adafruit-api-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.contentful-delivery-api-token.contentful-delivery-api-token",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.discord-client-id.discord-client-id",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.flutterwave-public-key.flutterwave-public-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.generic-api-key.generic-api-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.gocardless-api-token.gocardless-api-token",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.jwt-base64.jwt-base64",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.lob-pub-api-key.lob-pub-api-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.mailgun-pub-key.mailgun-pub-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.mapbox-api-token.mapbox-api-token",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.sendbird-access-id.sendbird-access-id",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.slack-config-refresh-token.slack-config-refresh-token",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.gitleaks.twitter-bearer-token.twitter-bearer-token",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-aws-account-id.detected-aws-account-id",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-aws-appsync-graphql-key.detected-aws-appsync-graphql-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-bcrypt-hash.detected-bcrypt-hash",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-codeclimate.detected-codeclimate",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-google-oauth.detected-google-oauth-url",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-hockeyapp.detected-hockeyapp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-outlook-team.detected-outlook-team",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.secrets.security.detected-picatic-api-key.detected-picatic-api-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_generic.unicode.security.bidi.contains-bidirectional-characters",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.ajv.security.audit.ajv-allerrors-true.ajv-allerrors-true",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.audit.detect-replaceall-sanitization.detect-replaceall-sanitization",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript_buf_rule-buffer-noassert-read",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript_buf_rule-buffer-noassert-write",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript_buf_rule-detect-new-buffer",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.jose.security.audit.jose-exposed-data.jose-exposed-data",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.jsonwebtoken.security.audit.jwt-exposed-data.jwt-exposed-data",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.detect-non-literal-fs-filename.detect-non-literal-fs-filename",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.detect-redos.detect-redos",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.hardcoded-hmac-key.hardcoded-hmac-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.incomplete-sanitization.incomplete-sanitization",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.detect-buffer-noassert.detect-buffer-noassert",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.detect-disable-mustache-escape.detect-disable-mustache-escape",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.detect-no-csrf-before-method-override.detect-no-csrf-before-method-override",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.detect-pseudorandombytes.detect-pseudorandombytes",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.html-in-template-string.html-in-template-string",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.lang.security.insecure-object-assign.insecure-object-assign",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript_random_rule-pseudo-random-bytes",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.sax.security.audit.sax-xxe.sax-xxe",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript.serialize-javascript.security.audit.unsafe-serialize-javascript.unsafe-serialize-javascript",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_javascript_timing_rule-possible-timing-attacks",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_json.npm.security.package-dependencies-check.package-dependencies-check",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_problem-based-packs.insecure-transport.js-node.using-http-server.using-http-server",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.airflow.security.audit.formatted-string-bashoperator.formatted-string-bashoperator",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_bind-all-interfaces_rule-general-bindall-interfaces",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-cipher-modes",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto-cipher-blowfish",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto-encrypt-dsa-rsa",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto-encrypt-ec",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto-hazmat-cipher-blowfish",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto-hazmat-cipher-idea",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto.hazmat-hash-md5",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-crypto.hazmat-hash-sha1",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-hashlib-new-insecure-functions",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-hash-md4",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-hash-sha1",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_crypto_rule-import-pycrypto",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-os-path",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-os-popen2",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-start-process-partial-path",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-start-process-path",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-subprocess-call",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_exec_rule-subprocess-popen-shell-true",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 3,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_file-permissions_rule-general-bad-permission",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_flask_rule-app-debug",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_ftp_rule-ftplib",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.jwt.security.audit.jwt-exposed-data.jwt-python-exposed-data",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.conn_recv.multiprocessing-recv",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.dangerous-annotations-usage.dangerous-annotations-usage",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.dangerous-asyncio-exec-audit.dangerous-asyncio-exec-audit",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.hardcoded-password-default-argument.hardcoded-password-default-argument",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.httpsconnection-detected.httpsconnection-detected",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.ftplib.use-ftp-tls.use-ftp-tls",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.ssl.no-set-ciphers.no-set-ciphers",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-openerdirector-open-ftp.insecure-openerdirector-open-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-openerdirector-open.insecure-openerdirector-open",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-request-object-ftp.insecure-request-object-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-request-object.insecure-request-object",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopener-open-ftp.insecure-urlopener-open-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopener-open.insecure-urlopener-open",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopener-retrieve-ftp.insecure-urlopener-retrieve-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopener-retrieve.insecure-urlopener-retrieve",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopen-ftp.insecure-urlopen-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlopen.insecure-urlopen",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlretrieve-ftp.insecure-urlretrieve-ftp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.insecure-transport.urllib.insecure-urlretrieve.insecure-urlretrieve",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.logging.listeneval.listen-eval",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.mako-templates-detected.mako-templates-detected",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.marshal.marshal-usage",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.paramiko-implicit-trust-host-key.paramiko-implicit-trust-host-key",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.paramiko.paramiko-exec-command.paramiko-exec-command",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.system-wildcard-detected.system-wildcard-detected",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.audit.telnetlib.telnetlib",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.use-defusedcsv.use-defusedcsv",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 4,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.lang.security.use-defused-xmlrpc.use-defused-xmlrpc",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_random_rule-random",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 2,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.requests.best-practice.use-raise-for-status.use-raise-for-status",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.requests.best-practice.use-request-json-shortcut.python.requests.best-practice.use-request-json-shortcut",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.requests.best-practice.use-response-json-shortcut.python.requests.best-practice.use-response-json-shortcut",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.requests.best-practice.use-timeout.use-timeout",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_requests_rule-request-without-timeout",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python.requests.security.no-auth-over-http.no-auth-over-http",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_snmp_rule-insecure-snmp-version",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_snmp_rule-snmp-weak-cryptography",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_ssl_rule-ssl-no-version",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_telnet_rule-import-telnib",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_tmpdir_rule-hardcodedtmp",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 3,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_tmpdir_rule-mktemp-q",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_urlopen_rule-urllib-urlopen",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-celement",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-element",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 5,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-etree",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-expatbuilder",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-expatreader",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-minidom",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-pulldom",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_python_xml_rule-sax",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_crypto_rule-node-aes-ecb",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_crypto_rule-node-aes-noiv",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_database_rule-sequelize-weak-tls",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_dos_rule-layer7-object-dos",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_dos_rule-regex-dos",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-default",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-domain",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-httponly",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-maxage",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-path",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-samesite",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-cookie-session-no-secure",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-express-cors",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-generic-cors",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-header-xss-generic",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-header-xss-lusca",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_headers_rule-helmet-feature-disabled",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_jwt_rule-jwt-exposed-credentials",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_jwt_rule-jwt-exposed-data",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_jwt_rule-jwt-not-revoked",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_ssrf_rule-wkhtmltoimage-ssrf",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_xml_rule-node-entity-expansion",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_rules_lgpl_javascript_xss_rule-handlebars-noescape",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.docker-compose.security.no-new-privileges.no-new-privileges",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.docker-compose.security.seccomp-confinement-disabled.seccomp-confinement-disabled",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.docker-compose.security.selinux-separation-disabled.selinux-separation-disabled",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.docker-compose.security.writable-filesystem-service.writable-filesystem-service",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.github-actions.security.audit.unsafe-add-mask-workflow-command.unsafe-add-mask-workflow-command",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.github-actions.semgrep-configuration.semgrep-github-action-push-without-branches.semgrep-github-action-push-without-branches",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Semgrep",
+      "patternId": "Semgrep_yaml.openapi.security.api-key-in-query-parameter.api-key-in-query-parameter",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W0640",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 10,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W0718",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 62,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E0606",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 1,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E1101",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 10,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W1510",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 22,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E0611",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 17,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W0231",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 1,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W0632",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 2,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E1136",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 11,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E1137",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 2,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_E1135",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 2,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_W0223",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 1,
+      "parameters": []
+    },
+    {
+      "toolId": "PyLintPython3",
+      "patternId": "PyLintPython3_R0401",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 9,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_file-nloc-medium",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 4,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_nloc-medium",
+      "action": "enabled",
+      "reason": "105 functions exceed 60 NLOC; use 100 for mature parsers and workflows, preserving critical thresholds.",
+      "delta": 34,
+      "parameters": [
+        {
+          "id": "threshold",
+          "before": "60",
+          "after": "100"
+        }
+      ]
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_parameter-count-medium",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 47,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_nloc-critical",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 1,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_ccn-critical",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_ccn-medium",
+      "action": "enabled",
+      "reason": "93 functions exceed the default 15; retain medium visibility at 25 for explicit state machines and dispatchers, preserving critical thresholds.",
+      "delta": 32,
+      "parameters": [
+        {
+          "id": "threshold",
+          "before": null,
+          "after": "25"
+        }
+      ]
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_parameter-count-critical",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_file-nloc-critical",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 1,
+      "parameters": []
+    },
+    {
+      "toolId": "Prospector",
+      "patternId": "Prospector_profile-validator",
+      "action": "enabled",
+      "reason": "Expanded stack-matched coverage; retained all observed Critical/High/Security findings and the original remote security rules.",
+      "delta": 0,
+      "parameters": []
+    }
+  ],
+  "candidateToolDecisions": [
+    {
+      "toolId": "spectral",
+      "action": "disabled",
+      "reason": "No OpenAPI or AsyncAPI specifications exist; the YAML files are project and CI configuration.",
+      "patternsAffected": 92
+    }
+  ],
+  "tuningDecisions": [
+    {
+      "toolId": "Prospector",
+      "patternId": "Prospector_bandit",
+      "action": "disabled",
+      "reason": "Duplicate Bandit wrapper reports 4313 findings, including 4217 assertion reports. Standalone Bandit retains all concerns and honors bandit.yml test-only B101 handling.",
+      "broadIssues": 4313,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Prospector",
+      "patternId": "Prospector_pydocstyle",
+      "action": "disabled",
+      "reason": "368 minor documentation reports; broad Error+High share is 38.55%, so minor documentation noise is deferred.",
+      "broadIssues": 368,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Prospector",
+      "patternId": "Prospector_pycodestyle",
+      "action": "disabled",
+      "reason": "72 minor style reports; broad Error+High share is 38.55%, so minor style noise is deferred.",
+      "broadIssues": 72,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "markdownlint",
+      "patternId": "markdownlint_MD010",
+      "action": "updated",
+      "reason": "All 126 tab findings are intentional TSV examples in fenced code blocks; prose remains checked.",
+      "parameters": [
+        {
+          "id": "code_blocks",
+          "before": null,
+          "after": "false"
+        }
+      ],
+      "broadIssues": 126,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "markdownlint",
+      "patternId": "markdownlint_MD029",
+      "action": "disabled",
+      "reason": "Verified 8 findings are intentional list continuation after fenced commands in bilingual guides. Ordered style still reports them; arbitrary Markdown start numbers are valid.",
+      "broadIssues": 8,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Stylelint",
+      "patternId": "Stylelint_color-no-hex",
+      "action": "disabled",
+      "reason": "Both opaque colors in the repository stylesheet use hexadecimal notation; prohibiting the notation conflicts with the existing CSS convention.",
+      "broadIssues": 2,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Prospector",
+      "patternId": "Prospector_mccabe",
+      "action": "disabled",
+      "reason": "43 duplicate cyclomatic-complexity reports are covered by the dedicated Lizard analyzer, with explicit medium and critical thresholds.",
+      "broadIssues": 43,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_ccn-medium",
+      "action": "updated",
+      "reason": "93 functions exceed the default 15; retain medium visibility at 25 for explicit state machines and dispatchers, preserving critical thresholds.",
+      "parameters": [
+        {
+          "id": "threshold",
+          "before": null,
+          "after": "25"
+        }
+      ],
+      "broadIssues": 93,
+      "finalIssues": 32
+    },
+    {
+      "toolId": "Lizard",
+      "patternId": "Lizard_nloc-medium",
+      "action": "updated",
+      "reason": "105 functions exceed 60 NLOC; use 100 for mature parsers and workflows, preserving critical thresholds.",
+      "parameters": [
+        {
+          "id": "threshold",
+          "before": "60",
+          "after": "100"
+        }
+      ],
+      "broadIssues": 105,
+      "finalIssues": 34
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_clarity_escape-hatch-missing",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 14,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_clarity_undefined-term",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 15,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_completeness_has-identity",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_completeness_has-tools",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_completeness_has-user-context",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_consistency_outdated-cross-references",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 4,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_consistency_referenced-files-exist",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-context-window-awareness",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-file-based-notes",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-handoff-protocol",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-learning-loop",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-memory-strategy",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_memory_has-state-tracking",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_runtime_config-exists",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    },
+    {
+      "toolId": "Agentlinter",
+      "patternId": "Agentlinter_structure_modular-files",
+      "action": "disabled",
+      "reason": "Verified AGENTS.md is repository contributor guidance, not an OpenClaw runtime/persona. Directory cross-reference and README_ZH.md existence reports are false positives; security checks remain enabled.",
+      "broadIssues": 1,
+      "finalIssues": 0
+    }
+  ],
+  "configurationModeChanges": [
+    {
+      "toolId": "PyLintPython3",
+      "note": "Restored remote managed-pattern mode after auto-init incorrectly selected an unconfigured pyproject.toml. Preserved every observed broad-run High/Critical pattern."
+    }
+  ],
+  "securityCoverage": {
+    "baselineHighSecurityPatternsLost": 0,
+    "deduplication": [
+      "Disabled Prospector_bandit; standalone Bandit covers the same checks and honors bandit.yml, including test-only assertion handling."
+    ],
+    "newCoverage": [
+      "Semgrep_python_random_rule-random: 2 issues",
+      "Semgrep_python.lang.security.use-defusedcsv.use-defusedcsv: 4 issues",
+      "Semgrep_python_xml_rule-element: 5 issues",
+      "Semgrep_python_tmpdir_rule-hardcodedtmp: 3 issues",
+      "Semgrep_python_exec_rule-subprocess-popen-shell-true: 3 issues",
+      "Agentlinter_security_has-injection-defense: 1 issues"
+    ],
+    "noisyButKept": [
+      "Semgrep_python.lang.security.audit.formatted-sql-query.formatted-sql-query",
+      "Semgrep_python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+      "Semgrep_python_sql_rule-hardcoded-sql-expression",
+      "Semgrep_python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit",
+      "Bandit_B404",
+      "Bandit_B603",
+      "Bandit_B108"
+    ],
+    "note": "All remote Semgrep patterns were preserved, including rules without current findings. Broad-run security rules remain, except the duplicate Prospector wrapper and Spectral for absent API specifications. Trivy completed successfully using the official GHCR database mirror."
+  },
+  "keyImprovements": [
+    "Preserved existing security coverage and all baseline Critical/High patterns; added stack-specific checks.",
+    "Removed duplicate Prospector Bandit execution, including 4217 test assertion reports already governed by bandit.yml.",
+    "Allowed TSV tabs only inside Markdown code blocks, removing 126 false-positive reports while retaining prose checks.",
+    "Retained explicit Pylint high-severity checks and Lizard critical thresholds; tuned medium complexity thresholds to 25 CCN and 100 NLOC.",
+    "Preserved F821 checks and existing Cython annotations; no production source or test files were excluded."
+  ],
+  "localConfigTools": [
+    {
+      "toolId": "Ruff",
+      "configFile": "pyproject.toml",
+      "issueCount": 436,
+      "note": "Controlled by the native configuration mode, not the managed patterns array. Ruff points to pyproject.toml, which currently has no explicit Ruff section; Bandit uses bandit.yml."
+    },
+    {
+      "toolId": "Bandit",
+      "configFile": "bandit.yml",
+      "issueCount": 101,
+      "note": "Controlled by the native configuration mode, not the managed patterns array. Ruff points to pyproject.toml, which currently has no explicit Ruff section; Bandit uses bandit.yml."
+    }
+  ],
+  "validation": {
+    "tests": {
+      "passed": 1802,
+      "combinedCoveragePercent": 99.32
+    },
+    "docsVersionTestsPassed": 1,
+    "sphinxStrictBuild": "passed",
+    "securityGuardrail": "passed",
+    "tools": [
+      {
+        "toolId": "markdownlint",
+        "status": "success",
+        "issueCount": 11,
+        "filesAnalyzed": 114
+      },
+      {
+        "toolId": "shellcheck",
+        "status": "success",
+        "issueCount": 0,
+        "filesAnalyzed": 3
+      },
+      {
+        "toolId": "Ruff",
+        "status": "success",
+        "issueCount": 436,
+        "filesAnalyzed": 151
+      },
+      {
+        "toolId": "Trivy",
+        "status": "success",
+        "issueCount": 0,
+        "filesAnalyzed": 288
+      },
+      {
+        "toolId": "Semgrep",
+        "status": "success",
+        "issueCount": 175,
+        "filesAnalyzed": 288
+      },
+      {
+        "toolId": "Stylelint",
+        "status": "success",
+        "issueCount": 0,
+        "filesAnalyzed": 1
+      },
+      {
+        "toolId": "ESLint9",
+        "status": "success",
+        "issueCount": 6,
+        "filesAnalyzed": 1
+      },
+      {
+        "toolId": "Bandit",
+        "status": "success",
+        "issueCount": 101,
+        "filesAnalyzed": 151
+      },
+      {
+        "toolId": "PyLintPython3",
+        "status": "success",
+        "issueCount": 157,
+        "filesAnalyzed": 151
+      },
+      {
+        "toolId": "Checkov",
+        "status": "success",
+        "issueCount": 1,
+        "filesAnalyzed": 5
+      },
+      {
+        "toolId": "Lizard",
+        "status": "success",
+        "issueCount": 119,
+        "filesAnalyzed": 152
+      },
+      {
+        "toolId": "PMD7",
+        "status": "success",
+        "issueCount": 0,
+        "filesAnalyzed": 1
+      },
+      {
+        "toolId": "Agentlinter",
+        "status": "success",
+        "issueCount": 1,
+        "filesAnalyzed": 1
+      },
+      {
+        "toolId": "Prospector",
+        "status": "success",
+        "issueCount": 38,
+        "filesAnalyzed": 151
+      }
+    ],
+    "warnings": [
+      {
+        "toolId": "Bandit",
+        "kind": "ParseWarning",
+        "message": "Non-blocking nosec B608 warnings: suppressions did not match a failing check."
+      }
+    ],
+    "additionalWarnings": [
+      "Opengrep 1.30.0 is newer than the CLI preferred 1.26.0.",
+      "Jackson matched no repository JSON inputs during final validation and was skipped; it remains enabled for JSON configuration artifacts.",
+      "Pylint reported 155-157 findings across validation passes; cyclic-import reporting can vary with traversal order. Final metrics use the last complete pass.",
+      "Static analyzer results do not establish Cython backend parity; that remains covered by the test suite.",
+      "Spectral was removed from the broad candidate: YAML files are CI/project configuration, with no OpenAPI/AsyncAPI specifications.",
+      "Trivy default mirror failed and the first GHCR retry timed out; the final GHCR-backed scan completed successfully."
+    ]
+  },
+  "codacyYaml": null,
+  "importResults": {
+    "status": "completed_with_errors",
+    "toolsConfigured": 15,
+    "toolsEnabled": [
+      "ESLint9",
+      "Agentlinter",
+      "Stylelint",
+      "PMD7",
+      "Checkov",
+      "markdownlint"
+    ],
+    "toolsDisabled": [
+      "PMD"
+    ],
+    "errors": [
+      {
+        "toolId": "jackson",
+        "error": "Not Found (404)",
+        "detail": "Jackson Linter tool 4f94ee55-6b76-4765-8f38-9ebb3920762b not found in repository. Confirmed absent from post-import cloud tools; local configuration retained."
+      }
+    ],
+    "warnings": [
+      "CLI exited with code 0 despite reporting one per-tool import error; status reflects the actual partial import.",
+      "CLI emitted human-readable import output despite -o json; results were verified through a fresh remote configuration export.",
+      "15 successful tool operations comprise 14 enabled tools and disabling legacy PMD. Jackson is the only failed tool operation."
+    ],
+    "codingStandards": [
+      "Default coding standard"
+    ],
+    "forceUsed": false,
+    "configurationVerification": [
+      {
+        "toolId": "jackson",
+        "matches": false,
+        "reason": "Cloud tool unavailable (404)"
+      },
+      {
+        "toolId": "markdownlint",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "shellcheck",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Ruff",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Trivy",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Semgrep",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Stylelint",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "ESLint9",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Bandit",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "PyLintPython3",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Checkov",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Lizard",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "PMD7",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Agentlinter",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      },
+      {
+        "toolId": "Prospector",
+        "matches": true,
+        "missing": [],
+        "extra": [],
+        "parameterDifferences": [],
+        "modeMatches": true
+      }
+    ],
+    "effectiveEnabledTools": 14,
+    "effectiveManagedPatterns": 2190
+  },
+  "cloudVerification": {
+    "reanalysisCompleted": true,
+    "issuesBefore": 630,
+    "issuesAfter": 869,
+    "netChange": 239,
+    "durationMs": 160699,
+    "commit": "fd2741085683b782f8f17593d2573e3fbc24a971",
+    "startedAnalysis": "2026-09-17T16:45:19.245Z",
+    "endedAnalysis": "2026-09-17T16:47:59.944Z",
+    "branch": "master",
+    "patternsDisabled": [],
+    "cloudOnlyTools": [],
+    "cloudOnlyPatternChanges": [],
+    "noiseReview": {
+      "reviewedIssueSampleCount": 25,
+      "decision": "No additional cloud-side disabling: sampled complexity findings concern real source/test functions; security and High/Critical findings remain enabled. Existing high-count Ruff style rules use native configuration mode. Three additional Stylelint findings are low-volume cloud/local differences, not evidence for further suppression.",
+      "reviewedPatterns": [
+        "Lizard_parameter-count-medium",
+        "Lizard_nloc-medium",
+        "Lizard_ccn-medium",
+        "Stylelint_color-hex-length",
+        "Stylelint_color-function-notation",
+        "Stylelint_alpha-value-notation"
+      ],
+      "potentialFalsePositives": [
+        {
+          "name": "equalOrAboveThreshold",
+          "total": 0
+        },
+        {
+          "name": "belowThreshold",
+          "total": 869
+        }
+      ],
+      "remainingHighCountPatterns": [
+        {
+          "id": "Ruff_I001_unsorted-imports",
+          "title": "Enforce Sorted and Grouped Imports",
+          "total": 71
+        },
+        {
+          "id": "Semgrep_python_sql_rule-hardcoded-sql-expression",
+          "title": "Avoid Hardcoded SQL Expressions to Prevent SQL Injection",
+          "total": 60
+        },
+        {
+          "id": "Lizard_parameter-count-medium",
+          "title": "Limit Function Parameter Count (Medium)",
+          "total": 45
+        },
+        {
+          "id": "PyLintPython3_W0718",
+          "title": "Avoid Catching Broad Exception",
+          "total": 37
+        },
+        {
+          "id": "Semgrep_python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query",
+          "title": "Avoid SQL String Concatenation in SQLAlchemy Raw Queries",
+          "total": 37
+        },
+        {
+          "id": "Lizard_nloc-medium",
+          "title": "Limit Function Length (Medium)",
+          "total": 34
+        },
+        {
+          "id": "Lizard_ccn-medium",
+          "title": "Limit Function Cyclomatic Complexity (Medium)",
+          "total": 32
+        },
+        {
+          "id": "Ruff_RUF100_unused-noqa",
+          "title": "Remove Unused noqa Directives",
+          "total": 32
+        },
+        {
+          "id": "Prospector_pyflakes",
+          "title": "Detect Python Source Code Errors with Pyflakes",
+          "total": 32
+        },
+        {
+          "id": "Ruff_UP035_deprecated-import",
+          "title": "Avoid Deprecated Imports",
+          "total": 31
+        },
+        {
+          "id": "Ruff_SIM117_multiple-with-statements",
+          "title": "Avoid Unnecessary Nesting of Multiple Consecutive Context Managers",
+          "total": 28
+        },
+        {
+          "id": "Semgrep_python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit",
+          "title": "Audit Dangerous Subprocess Use",
+          "total": 24
+        },
+        {
+          "id": "Ruff_BLE001_blind-except",
+          "title": "Avoid Blind Except Clauses",
+          "total": 21
+        },
+        {
+          "id": "Ruff_F401_unused-import",
+          "title": "Avoid Unused Imports",
+          "total": 21
+        },
+        {
+          "id": "Ruff_UP024_os-error-alias",
+          "title": "Avoid Using Aliases of OSError",
+          "total": 21
+        },
+        {
+          "id": "Bandit_B603",
+          "title": "Check subprocess usage without shell=True",
+          "total": 18
+        }
+      ]
+    },
+    "issuesByCategory": {
+      "before": [
+        {
+          "name": "Comprehensibility",
+          "total": 7
+        },
+        {
+          "name": "BestPractice",
+          "total": 31
+        },
+        {
+          "name": "UnusedCode",
+          "total": 7
+        },
+        {
+          "name": "CodeStyle",
+          "total": 166
+        },
+        {
+          "name": "Compatibility",
+          "total": 31
+        },
+        {
+          "name": "Performance",
+          "total": 35
+        },
+        {
+          "name": "Security",
+          "total": 237
+        },
+        {
+          "name": "ErrorProne",
+          "total": 116
+        }
+      ],
+      "after": [
+        {
+          "name": "Comprehensibility",
+          "total": 7
+        },
+        {
+          "name": "BestPractice",
+          "total": 39
+        },
+        {
+          "name": "UnusedCode",
+          "total": 7
+        },
+        {
+          "name": "CodeStyle",
+          "total": 172
+        },
+        {
+          "name": "Compatibility",
+          "total": 31
+        },
+        {
+          "name": "Performance",
+          "total": 35
+        },
+        {
+          "name": "Security",
+          "total": 252
+        },
+        {
+          "name": "ErrorProne",
+          "total": 209
+        },
+        {
+          "name": "Complexity",
+          "total": 117
+        }
+      ]
+    },
+    "issuesBySeverity": {
+      "before": [
+        {
+          "name": "High",
+          "total": 130
+        },
+        {
+          "name": "Warning",
+          "total": 157
+        },
+        {
+          "name": "Error",
+          "total": 145
+        },
+        {
+          "name": "Info",
+          "total": 198
+        }
+      ],
+      "after": [
+        {
+          "name": "High",
+          "total": 237
+        },
+        {
+          "name": "Warning",
+          "total": 277
+        },
+        {
+          "name": "Error",
+          "total": 146
+        },
+        {
+          "name": "Info",
+          "total": 209
+        }
+      ]
+    },
+    "deltas": {
+      "byPattern": [
+        {
+          "key": "Lizard_parameter-count-medium",
+          "label": "Limit Function Parameter Count (Medium)",
+          "delta": 45
+        },
+        {
+          "key": "PyLintPython3_W0718",
+          "label": "Avoid Catching Broad Exception",
+          "delta": 37
+        },
+        {
+          "key": "Lizard_nloc-medium",
+          "label": "Limit Function Length (Medium)",
+          "delta": 34
+        },
+        {
+          "key": "Lizard_ccn-medium",
+          "label": "Limit Function Cyclomatic Complexity (Medium)",
+          "delta": 32
+        },
+        {
+          "key": "PyLintPython3_W1510",
+          "label": "Enforce explicit 'check' parameter in subprocess.run",
+          "delta": 17
+        },
+        {
+          "key": "PyLintPython3_E0611",
+          "label": "Avoid Importing Nonexistent Names from Modules",
+          "delta": 10
+        },
+        {
+          "key": "PyLintPython3_E1101",
+          "label": "Avoid Accessing Nonexistent Members",
+          "delta": 9
+        },
+        {
+          "key": "PyLintPython3_W0640",
+          "label": "Avoid Cell Variable Defined in Loop",
+          "delta": 7
+        },
+        {
+          "key": "PyLintPython3_E1136",
+          "label": "Avoid Subscription on Unsubscriptable Objects",
+          "delta": 5
+        },
+        {
+          "key": "Semgrep_python_xml_rule-element",
+          "label": "Avoid Using Python's Default xml.etree Package for XML Processing",
+          "delta": 5
+        },
+        {
+          "key": "markdownlint_MD033",
+          "label": "Disallow Inline HTML in Markdown",
+          "delta": 5
+        },
+        {
+          "key": "Lizard_file-nloc-medium",
+          "label": "Limit File Length (Medium)",
+          "delta": 5
+        },
+        {
+          "key": "Semgrep_python.lang.security.use-defusedcsv.use-defusedcsv",
+          "label": "Use defusedcsv Instead of csv for CSV Generation",
+          "delta": 4
+        },
+        {
+          "key": "Semgrep_python_tmpdir_rule-hardcodedtmp",
+          "label": "Avoid Creating Files in Shared System Temporary Directories Without Using tempfile.TemporaryFile",
+          "delta": 3
+        },
+        {
+          "key": "markdownlint_MD024",
+          "label": "Avoid Multiple Headings with the Same Content",
+          "delta": 3
+        },
+        {
+          "key": "PyLintPython3_E1137",
+          "label": "Avoid Unsupported Item Assignment",
+          "delta": 2
+        },
+        {
+          "key": "PyLintPython3_E1135",
+          "label": "Avoid Unsupported Membership Test",
+          "delta": 2
+        },
+        {
+          "key": "Semgrep_python_random_rule-random",
+          "label": "Avoid Using Weak Random Number Generators in Python",
+          "delta": 2
+        },
+        {
+          "key": "markdownlint_MD038",
+          "label": "Disallow Spaces Inside Code Span Elements",
+          "delta": 2
+        },
+        {
+          "key": "PyLintPython3_W0231",
+          "label": "Avoid Missing super().__init__() Call in Derived Class",
+          "delta": 1
+        },
+        {
+          "key": "Semgrep_python_exec_rule-subprocess-popen-shell-true",
+          "label": "Avoid subprocess calls with shell=True",
+          "delta": 1
+        },
+        {
+          "key": "PyLintPython3_E0606",
+          "label": "Avoid Using Variables Before Assignment",
+          "delta": 1
+        },
+        {
+          "key": "markdownlint_MD012",
+          "label": "Disallow Multiple Consecutive Blank Lines",
+          "delta": 1
+        },
+        {
+          "key": "Stylelint_alpha-value-notation",
+          "label": "Enforce Alpha-Value Notation",
+          "delta": 1
+        },
+        {
+          "key": "Stylelint_color-function-notation",
+          "label": "Enforce color-function notation style",
+          "delta": 1
+        },
+        {
+          "key": "Stylelint_color-hex-length",
+          "label": "Enforce Short or Long Notation for Hex Colors",
+          "delta": 1
+        },
+        {
+          "key": "Checkov_CKV2_GHA_1",
+          "label": "Ensure top-level permissions are not set to write-all",
+          "delta": 1
+        },
+        {
+          "key": "Lizard_nloc-critical",
+          "label": "Limit Function Length (Critical)",
+          "delta": 1
+        },
+        {
+          "key": "PyLintPython3_W0223",
+          "label": "Override Abstract Method",
+          "delta": 1
+        }
+      ],
+      "bySeverity": [
+        {
+          "key": "Error",
+          "label": "Critical",
+          "delta": 1,
+          "severity": "Error"
+        },
+        {
+          "key": "High",
+          "label": "High",
+          "delta": 107,
+          "severity": "High"
+        },
+        {
+          "key": "Warning",
+          "label": "Medium",
+          "delta": 120,
+          "severity": "Warning"
+        },
+        {
+          "key": "Info",
+          "label": "Minor",
+          "delta": 11,
+          "severity": "Info"
+        }
+      ],
+      "byCategory": [
+        {
+          "key": "Complexity",
+          "label": "Complexity",
+          "delta": 117
+        },
+        {
+          "key": "ErrorProne",
+          "label": "ErrorProne",
+          "delta": 93
+        },
+        {
+          "key": "Security",
+          "label": "Security",
+          "delta": 15
+        },
+        {
+          "key": "BestPractice",
+          "label": "BestPractice",
+          "delta": 8
+        },
+        {
+          "key": "CodeStyle",
+          "label": "CodeStyle",
+          "delta": 6
+        }
+      ]
+    },
+    "warnings": [
+      "Jackson Linter is unavailable in this cloud repository; it remains a local-only configured tool.",
+      "Cloud reanalysis covers the existing remote master commit, not uncommitted local documentation and configuration files.",
+      "869 cloud findings and 1045 local findings are separate measurements; tool versions, file visibility and configurations can differ."
+    ]
+  }
+}

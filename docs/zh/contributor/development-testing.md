@@ -30,6 +30,26 @@ taxonomy coverage 集成测试还覆盖 taxonomy 原包身份冲突、profile �
 该项目使用 `pytest-xdist` 进行并行测试。避免在测试之间共享状态，
 以防止出现意外或随机的测试结果。
 
+## 本地 Codacy 分析
+
+仓库的本地分析策略位于 `.codacy/codacy.config.json`。
+安装 Codacy Analysis CLI 后执行：
+
+```bash
+codacy-analysis analyze --install-dependencies --parallel-tools 4 --tool-timeout 120000 --output-format json --output /tmp/operon-codacy.json
+```
+
+同时检查 `issues` 和 `errors`：工具失败或超时不代表对应文件没有问题。
+Trivy 需要访问漏洞数据库；默认镜像不可用时，可通过
+`TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db:2` 选择官方 GHCR 镜像。
+Ruff 和 Bandit 保留项目配置模式，Pylint 使用显式托管规则。
+独立 Bandit 扫描遵循 `bandit.yml`，重复执行 Bandit 的 Prospector 包装检查被禁用。
+F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TSV 示例；
+中等级别复杂度阈值经过调整，严重级别阈值保持不变。
+
+`.codacy/configure-codacy-summary.json` 记录调优测量值和决策。
+提交本地 JSON 配置不会更新 Codacy Cloud；云端工具与规则变更需要显式导入配置。
+
 ## 快速本地验证
 
 全量测试串行执行约需七分钟；下面这套流程的目标是每次改动最多只跑一次全量。

@@ -31,6 +31,29 @@ modifications do not affect the release-frozen scope.
 The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests to prevent unexpected or random
 test results.
 
+## Local Codacy analysis
+
+The repository's local analysis policy is in `.codacy/codacy.config.json`.
+With the Codacy Analysis CLI installed, run:
+
+```bash
+codacy-analysis analyze --install-dependencies --parallel-tools 4 --tool-timeout 120000 --output-format json --output /tmp/operon-codacy.json
+```
+
+Review both `issues` and `errors`: a failed or timed-out tool does not establish
+that its files are clean. Trivy needs access to its vulnerability database;
+when its default mirror is unavailable, the official GHCR mirror can be selected
+with `TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db:2`.
+Ruff and Bandit retain their project configuration modes, while Pylint uses
+explicit managed patterns. The standalone Bandit scan honors `bandit.yml`;
+the duplicate Prospector Bandit wrapper is disabled. F821 remains enabled.
+Markdown tab checks allow fenced TSV examples, and medium complexity thresholds
+are tuned without weakening critical thresholds.
+
+`.codacy/configure-codacy-summary.json` records the tuning measurements and
+decisions. Committing the local JSON configuration does not update Codacy Cloud;
+cloud tool and pattern changes require an explicit configuration import.
+
 ## Fast local verification
 
 The full suite takes about seven minutes serially; the loop below aims to run it at most once per change.
