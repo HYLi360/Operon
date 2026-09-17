@@ -15,14 +15,21 @@ displayed equivalent command parses cleanly with the real CLI parser, and
 the kwargs the modal passes to its ``actions.*`` function match the parsed
 command exactly.
 
+Layer 4 — audit-trail equivalence: the same operation runs once through the
+CLI and once through the matching ``operon.tui.actions`` function on twin
+demo projects; the ``changes`` and ``workflow_runs`` tables (plus
+per-exemplar semantic side tables) must match after dropping volatile
+fields.
+
 Layers 1 and 2 are pure argparse introspection and run without Textual.
 Layer 3 and the modal-resolution check need the ``tui`` extra and skip
-without it.
+without it.  Layer 4 is Textual-free.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import shutil
 import sys
@@ -33,9 +40,11 @@ from pathlib import Path
 import pytest
 import yaml
 
+from operon.cli import main as cli_main
 from operon.config import Project
+from operon.database import Database
 from operon.demo import init_demo
-from operon.tui import parity
+from operon.tui import actions, parity
 from operon.tui.parity import (
     REGISTRY,
     STATUS_CLI_ONLY,
@@ -226,8 +235,6 @@ def spy_action(
     handed back to the modal unchanged, so pass a payload shaped like the
     real action's return value.
     """
-    from operon.tui import actions
-
     calls: list[tuple[tuple, dict]] = []
 
     def stub(*args, **kwargs):
@@ -503,3 +510,265 @@ def test_qc_modal_command_text_matches_action_kwargs(
     for (args, kwargs), want in zip(calls, expected, strict=True):
         assert callable(kwargs.pop("progress"))
         assert kwargs == want
+
+
+# ---------------------------------------------------------------------------
+# Layer 4: audit-trail equivalence (CLI vs TUI actions)
+# ---------------------------------------------------------------------------
+#
+# Twin demo projects: the same operation runs once through the CLI
+# (``operon.cli.main``) and once through the matching ``operon.tui.actions``
+# function, then the audit trail — ``changes`` and ``workflow_runs``, plus
+# per-exemplar semantic side tables — is compared as sorted row sets.
+# Textual is not involved; these tests run anywhere.
+#
+# Volatile columns dropped before comparison, and why:
+#   workflow_runs: run_id/parent_run_id/resumes_run_id (random time-derived
+#     ids), started_at/finished_at (wall clock), duration_seconds/
+#     cpu_seconds/max_rss_mb/avg_rss_mb (timings), execution_details
+#     (embeds qc stage timings; the qc exemplar compares it separately with
+#     the volatile subkeys stripped).
+#   changes: change_id/reverts_change_id (surrogate keys), changed_at
+#     (wall clock), workflow_run_id (FK to a random run id).
+#   files: downloaded_at (wall clock).
+#   decisions: decision_id/profile_snapshot_id (surrogate keys),
+#     evaluated_at/curated_at (wall clock).
+#   qc_profiles: profile_snapshot_id (surrogate key), recorded_at.
+#   entity_state: updated_at (wall clock).
+#   qc_results: qc_result_id (surrogate key), evaluated_at (wall clock).
+
+AUDIT_TABLES = ("changes", "workflow_runs")
+
+_AUDIT_DROP: dict[str, frozenset[str]] = {
+    "workflow_runs": frozenset(
+        {
+            "run_id",
+            "parent_run_id",
+            "resumes_run_id",
+            "started_at",
+            "finished_at",
+            "duration_seconds",
+            "cpu_seconds",
+            "max_rss_mb",
+            "avg_rss_mb",
+            "execution_details",
+        }
+    ),
+    "changes": frozenset(
+        {
+            "change_id",
+            "reverts_change_id",
+            "changed_at",
+            "workflow_run_id",
+        }
+    ),
+    "files": frozenset({"downloaded_at"}),
+    "decisions": frozenset(
+        {
+            "decision_id",
+            "profile_snapshot_id",
+            "evaluated_at",
+            "curated_at",
+        }
+    ),
+    "qc_profiles": frozenset({"profile_snapshot_id", "recorded_at"}),
+    "entity_state": frozenset({"updated_at"}),
+    "qc_results": frozenset({"qc_result_id", "evaluated_at"}),
+}
+
+
+def _twin_projects(tmp_path: Path, demo_template: Project) -> tuple[Project, Project]:
+    """Two identical copies of the demo project: one for the CLI, one for the TUI."""
+    cli_root = tmp_path / "cli-project"
+    tui_root = tmp_path / "tui-project"
+    shutil.copytree(demo_template.root, cli_root)
+    shutil.copytree(demo_template.root, tui_root)
+    return Project.find(cli_root), Project.find(tui_root)
+
+
+def _table_rows(project: Project, table: str) -> list[tuple]:
+    """Rows of one audit/side table as sorted tuples, volatile columns dropped."""
+    drop = _AUDIT_DROP.get(table, frozenset())
+    db = Database(project.db_path, read_only=True)
+    try:
+        rows = [dict(row) for row in db.query(f"SELECT * FROM {table}")]
+    finally:
+        db.close()
+    columns = [column for column in rows[0] if column not in drop] if rows else []
+    return sorted(tuple(row[column] for column in columns) for row in rows)
+
+
+def _assert_audit_equal(
+    cli_project: Project,
+    tui_project: Project,
+    *side_tables: str,
+) -> None:
+    for table in (*AUDIT_TABLES, *side_tables):
+        cli_rows = _table_rows(cli_project, table)
+        tui_rows = _table_rows(tui_project, table)
+        assert cli_rows == tui_rows, (
+            f"audit divergence in {table}: "
+            f"CLI-only {sorted(set(cli_rows) - set(tui_rows))}, "
+            f"TUI-only {sorted(set(tui_rows) - set(cli_rows))}"
+        )
+
+
+def _normalized_execution_details(project: Project) -> list[str]:
+    """workflow_runs.execution_details JSON, with embedded timings stripped.
+
+    Dropped subkeys: ``stages_seconds`` (per-stage wall-clock timings) and
+    ``integrity.verification_cached_at`` (wall-clock cache timestamp).
+    Everything else — parser backend, input descriptor, related inputs,
+    integrity flags — is semantic and compared.
+    """
+    db = Database(project.db_path, read_only=True)
+    try:
+        rows = db.query(
+            "SELECT execution_details FROM workflow_runs "
+            "WHERE execution_details IS NOT NULL"
+        )
+        documents = [json.loads(row["execution_details"]) for row in rows]
+    finally:
+        db.close()
+    for document in documents:
+        document.pop("stages_seconds", None)
+        integrity = document.get("integrity")
+        if isinstance(integrity, dict):
+            integrity.pop("verification_cached_at", None)
+    return sorted(json.dumps(document, sort_keys=True) for document in documents)
+
+
+def test_audit_parity_ingest(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    # One shared source path: workflow_runs.command embeds it verbatim.
+    source = tmp_path / "incoming.fasta"
+    source.write_text(">ctgX\nACGTACGTACGT\n", encoding="utf-8")
+
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "ingest",
+            "--source",
+            str(source),
+            "--entity-type",
+            "assembly",
+            "--entity-id",
+            "ASM_000001",
+            "--role",
+            "parity_fasta",
+        ]
+    )
+    capsys.readouterr()
+    assert rc == 0
+    row = actions.ingest(
+        tui_project,
+        str(source),
+        "assembly",
+        "ASM_000001",
+        "parity_fasta",
+    )
+    assert row["file_id"]  # same content-addressed id expected on both sides
+
+    _assert_audit_equal(cli_project, tui_project, "files")
+
+
+def test_audit_parity_evaluate(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    # The CLI asks before re-evaluating curated entities; --yes is the
+    # non-interactive form of the TUI modal's Confirm step.
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "evaluate",
+            "--entity-type",
+            "assembly",
+            "--yes",
+        ]
+    )
+    capsys.readouterr()
+    assert rc == 0
+    results = actions.evaluate(tui_project, entity_type="assembly")
+    assert len(results) == 3
+
+    _assert_audit_equal(
+        cli_project, tui_project, "decisions", "qc_profiles", "entity_state"
+    )
+
+
+def test_audit_parity_curate(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "curate",
+            "--entity-type",
+            "assembly",
+            "--entity-id",
+            "ASM_000002",
+            "--profile",
+            "assembly_production_v1",
+            "--decision",
+            "REVIEW",
+            "--reviewer",
+            "tester",
+            "--reason",
+            "audit parity",
+            "--evidence",
+            "ticket-1",
+        ]
+    )
+    capsys.readouterr()
+    assert rc == 0
+    actions.curate(
+        tui_project,
+        "assembly",
+        "ASM_000002",
+        "assembly_production_v1",
+        "REVIEW",
+        "tester",
+        "audit parity",
+        evidence="ticket-1",
+    )
+
+    _assert_audit_equal(cli_project, tui_project, "decisions", "entity_state")
+
+
+def test_audit_parity_qc_single_file(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "qc",
+            "--file-id",
+            "FIL_000001",
+        ]
+    )
+    capsys.readouterr()
+    assert rc == 0
+    results = actions.run_qc(tui_project, file_id="FIL_000001")
+    assert len(results) == 1 and results[0]["ok"] is True
+
+    _assert_audit_equal(cli_project, tui_project, "qc_results", "entity_state")
+    assert _normalized_execution_details(cli_project) == (
+        _normalized_execution_details(tui_project)
+    )
