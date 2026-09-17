@@ -68,7 +68,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。按 `i` 键打开导入向导（见下文）。 |
 | Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。 |
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录及其 `file_locations` 驻留列表。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q` 分别进行归档、校验与 QC（见下文）。 |
-| Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询，支持状态/step/entity/数量上限过滤。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。 |
+| Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询，支持状态/step/entity/数量上限过滤。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。*New analysis* 按钮打开分析对话框（见下文）。 |
 | Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles** 与 **Tools & Recipes**。详见下文。 |
 | Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
@@ -95,6 +95,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
+| — | Config / Tasks | 对匹配的清单文件运行分析 recipe（Config 屏选中 recipe 后的 *Run analysis*，或 Tasks 屏 *New analysis* 内选择 recipe）。运行时参数按 recipe 声明的 spec 渲染并与 CLI 完全相同的校验；支持 entity-type/entity-id/limit/threads 过滤、dry-run（在对话框内显示只读计划）、force 与 keep-partial，带实时进度条与文件边界上的协作取消。逐文件失败在错误对话框中列出；运行结束后跳转到 Tasks 屏。 | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--dry-run] [--force] [--keep-partial]` |
 
 以上所有操作都会追加与 CLI 相同的 `changes` 审计行和 `workflow_runs` 溯源
 记录，因此在报告与导出中，通过 TUI 执行的操作与命令行操作无法区分。
@@ -178,7 +179,7 @@ summary、targets、missing、observations、excluded——渲染为标签页表
 
 Config 界面以结构化表单编辑两个带版本的配置文件，表单值由后端重新组合为
 合法 YAML——没有自由文本编辑器，因此保存绝不可能产生语法非法的文件。
-表单未建模的键（`value_by`、`source`、`unknown`、`result_glob`、参数 spec
+表单未建模的键（`value_by`、`source`、`unknown`、参数 spec
 细节等）会**逐字保留**，以暗淡的只读提示显示，绝不被悄悄丢弃。
 
 **保存即新版本。** 每次保存都写入*新版本*：`version` 字段递增
@@ -215,14 +216,22 @@ metric、operator（覆盖规则引擎全部操作符的 Select）、value、cod
 实时更新（检测到的版本为绿色，`MISSING` 为红色），结束时给出汇总通知；单个
 工具损坏不会影响整批。下方是 recipe 表（名称、版本、工具、实体类型、文件
 角色、格式）；选中某个 recipe 打开其编辑器：description、entity type
-（Select，留空 = `*`）、file role、format、database、database version、输出
+（Select，留空 = `*`）、file role 或 file role prefix（二者互斥——同时设置
+会被内联拒绝）、format、输入/输出产物类型（Select：file/directory，留空 =
+键不存在）、database、database version、environment policy（Select：
+`ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
 子目录与后缀输入框，`arguments` 为每行一个参数的文本框（`${input}` 等占位符
 保持可见），运行时 `parameters` 为 `name=default` 行（其余 spec 键保留），
 result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、
-`rpsbproc_tabular`、`busco_json`），
-`result_columns` / `hit_metric_columns` 为逗号分隔输入框，以及
+`rpsbproc_tabular`、`busco_json`）、`result_glob`、HMMER 模式 Select
+（`hmmsearch`/`hmmscan`，留空 = 键不存在），
+`result_columns` / `hit_metric_columns` / `numeric_columns` 为逗号分隔输入框，
+解析器列映射输入框（`query_column`、`subject_column`、`qstart_column`、
+`qend_column`、`sstart_column`、`send_column`、`evalue_column`、
+`bitscore_column`、`pident_column`），以及
 `max_hits_per_query`。清空此可选限制会在保存时移除该键，并恢复核心默认值
-（5），并非不限制命中数量。原本没有该键时，继续留空仍为空操作。
+（5），并非不限制命中数量。原本没有该键时，继续留空仍为空操作。选中 recipe
+后，*Run analysis* 按钮打开预填该 recipe 的分析对话框（见下文）。
 
 > **注意（tools.yaml 格式）：** 从 TUI 保存 recipe 会以规范化的 YAML 格式重写
 > `config/tools.yaml`，并丢弃手写注释。内容不会丢失：每个保存的版本都逐字

@@ -83,7 +83,7 @@ The left sidebar (or the number keys) switches between eight screens:
 | Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). Press `i` to open the import wizard (see below). |
 | Entities | `2` | Hierarchy tree (organisms → samples → runs and assemblies → annotations) with the current state of each entity. Selecting a node shows its metadata fields, accessions, state, files, and the latest built-in QC and external-analysis (e.g. BUSCO/QUAST) metrics. Logically retired entities are shown by default, dimmed and struck-through; press `t` to hide them. Press `x` for the lifecycle dialog (see below). |
 | Files | `3` | Filterable manifest table (substring filter plus status selector). Moving the cursor shows the full file record and its `file_locations` residency list. Statuses are color-coded: verified green, `REMOTE_ONLY` blue, `MISSING`/`CHECKSUM_FAILED` red. Press `i`/`v`/`q` for ingest, verify, and QC (see below). |
-| Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`, with status/step/entity/limit filters. The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. |
+| Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`, with status/step/entity/limit filters. The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. The *New analysis* button opens the analysis dialog (see below). |
 | Decisions | `5` | Current decisions from the `current_decisions` view (effective decision = curated override when present, marked `✎curated`), with profile/decision/text filters. Press `e` to evaluate, `c` to curate the selected row (see below). |
 | Config | `6` | Structured, control-based editors for the project's configuration files (no free-text YAML editing): **QC Profiles** and **Tools & Recipes**. See below. |
 | Publish | `7` | Immutable release builder and selective export builder (two tabs), each with a read-only preview before anything is written. See below. |
@@ -110,6 +110,7 @@ you type, and records exactly what that command would record.
 | — | Publish | Create an immutable release after a members/exclusions preview; a duplicate version is rejected inline. | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | Materialize a selective export after a count/bytes preview; a non-empty output directory is rejected inline. | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | Generate a taxonomy coverage report; a result below the profile thresholds is a warning notification (FAIL), never a crash. | `operon report coverage --reference-set … [--release …]` |
+| — | Config / Tasks | Run an analysis recipe over matching manifest files (*Run analysis* on the selected recipe, or *New analysis* with a recipe picker). Runtime parameters are rendered from the recipe's declared spec and validated exactly like the CLI; entity-type/entity-id/limit/threads filters, dry-run (a read-only plan shown inside the dialog), force, and keep-partial are supported, with a live progress bar and cooperative cancellation between files. Per-file failures are listed in an error dialog; a finished run lands on the Tasks screen. | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--dry-run] [--force] [--keep-partial]` |
 
 All of these append the same `changes` audit rows and `workflow_runs`
 provenance records as the CLI, so operations performed in the TUI are
@@ -216,7 +217,7 @@ The Config screen edits the two versioned configuration files with structured
 forms whose values are re-composed into valid YAML by the backend — there is
 no free-text editor, so a save can never produce a syntactically invalid
 file. Keys the forms do not model (`value_by`, `source`, `unknown`,
-`result_glob`, parameter spec details, …) are **preserved verbatim** and
+parameter spec details, …) are **preserved verbatim** and
 shown as dim read-only notes, never silently dropped.
 
 **Save-as-version semantics.** Every save writes a *new version*: the
@@ -263,16 +264,26 @@ background worker with per-row live updates (detected version in green,
 `MISSING` in red) and a summary notification; one broken tool never breaks
 the batch. Below, a recipes table (name, version, tool, entity type, file
 role, format); selecting a recipe opens its editor: description, entity type
-(Select, blank = `*`), file role, format, database, database version, output
+(Select, blank = `*`), file role or file role prefix (mutually exclusive —
+setting both is rejected inline), format, input/output artifact kind
+(Selects over file/directory, blank = key absent), database, database
+version, environment policy (Select over `ignore`/`warn`/`strict`, blank =
+the core default `warn`), output
 subdirectory and suffix inputs, `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as
 `name=default` lines (other spec keys are preserved), the result parser
 Select (`none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`,
-`rpsbproc_tabular`, `busco_json`),
-`result_columns` / `hit_metric_columns` as comma-separated inputs, and
+`rpsbproc_tabular`, `busco_json`), `result_glob`, the HMMER mode Select
+(`hmmsearch`/`hmmscan`, blank = key absent),
+`result_columns` / `hit_metric_columns` / `numeric_columns` as
+comma-separated inputs, the parser column-mapping inputs (`query_column`,
+`subject_column`, `qstart_column`, `qend_column`, `sstart_column`,
+`send_column`, `evalue_column`, `bitscore_column`, `pident_column`), and
 `max_hits_per_query`. Clearing this optional limit removes the key on save
 and restores the core default (5); it does not mean unlimited hits. Leaving
-an already absent limit blank remains a no-op.
+an already absent limit blank remains a no-op. With a recipe selected, the
+*Run analysis* button opens the analysis dialog prefilled with that recipe
+(see below).
 
 > **Note (tools.yaml formatting):** saving a recipe from the TUI rewrites
 > `config/tools.yaml` with normalized YAML formatting and drops hand-written

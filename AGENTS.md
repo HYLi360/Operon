@@ -83,9 +83,12 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     Confirm → background worker → notify + reload or inline error. Phase 3
     actions in the same module: `import_dataset` (commits wizard drafts
     through the shared single-transaction `import_wizard._commit`),
-    `reserve_entity_ids`, `create_release`, `export`, and `run_coverage`
+    `reserve_entity_ids`, `create_release`, `export`, `run_coverage`
     (a below-threshold coverage report returns `exit_code=1` in the result
-    dict — a warning, not an exception). The
+    dict — a warning, not an exception), and `run_analysis` (backs the
+    AnalyzeModal launched from the Config screen's Run analysis button or the
+    Tasks screen's New analysis button; local/default backend only, with
+    progress and between-files cancellation). The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
     `config/profiles/*.yaml` (kind `qc`) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text

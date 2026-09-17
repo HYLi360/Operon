@@ -122,6 +122,7 @@
 - **分类只读取每个 analysis+file 最新的 completed 作业，但会明说。** 同一组合下更早的 completed 作业按 supersede 纪律被忽略，但计数非零时会在输出与 run details 中以 `ignored_completed_jobs` 呈现；不在 `sequences` 注册表中的文件被跳过，且跳过计数会显式打印（`classify.py`）。
 - **`fanout --dry-run` 执行真正的预检，且 unit 字节与 TSV 行序无关。** dry-run 会校验每个源的 SHA-256 与注册表新鲜度、计算单元 identity、执行冲突/占用检查——冲突与真实运行一样抛 `ConflictError`——但仍不写文件、不开 run 行；每个计划单元标注 `would_create`/`would_reuse`。单元内的 seqid 在生成 FASTA 前规范化为排序序（词法序，`seq10` 排在 `seq2` 之前——与 `sequence_tools` 一致的确定性约定），因此重排指派 TSV 行不再改变单元字节。unit 角色 `<prefix>:<unit>` 会把 `:` 带进归档文件名；下游 `file_role_prefix` 选择按 `:` 边界匹配，`sub` 选中精确的 `sub` 与所有 `sub:*`，不捕 `sub2:*`（`fanout.py`、`tools.py`）。
 - **`fanout` 会把中断记为 `interrupted` 的 run。** Ctrl+C 会删除已创建的目标并把 `workflow_runs` 行落为 `interrupted`（退出码 130），不再停留在 `running`。零 unit 与无法解析或有歧义的 seqid 仍是硬错误。`--source-file` FASTA 的 SHA-256 与注册表新鲜度会被验证（dry-run 同样执行），但指派表本身不做校验和验证（`fanout.py`）。
+- **TUI 仅以本地/项目默认后端发起分析，取消在文件边界生效。** TUI 的分析对话框不提供 Slurm/SSH 启动（这些请用 CLI）；其 Cancel 按钮/Escape 在进度回调中抛出取消异常，因此进行中的文件会跑完，批量在下一个文件边界停止。中断收尾（`interrupted` 作业行、部分产物删除、下次运行时清扫陈旧 RUNNING 行）与 CLI 完全一致，因为二者调用同一个核心（`tui/actions.py`、`tools.py`）。
 
 ### TimeTree
 
