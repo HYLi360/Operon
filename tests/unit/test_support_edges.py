@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import pytest
-import yaml
 
 from operon import backup, profiles, reports, utils
 from operon.cli import main

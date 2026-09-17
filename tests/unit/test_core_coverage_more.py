@@ -29,7 +29,6 @@ from operon.errors import QCError, ValidationError
 from operon.files import ingest_file, standardize_file, verify_local_file_identity
 from operon.workflow import run_external_command
 
-
 # --------------------------------------------------------------------------- #
 # fixtures and helpers
 # --------------------------------------------------------------------------- #
@@ -408,7 +407,7 @@ def test_curate_cli_records_audited_override(project, capsys):
         "--reason", "manual inspection", "--evidence", "report.tsv",
     ]) == 0
     assert (
-        f"recorded curated decision pass for organism ORG_000001"
+        "recorded curated decision pass for organism ORG_000001"
         in capsys.readouterr().out
     )
 
@@ -1089,7 +1088,7 @@ def test_effective_decision_prefers_curated_value(project_db):
 
 
 def test_pull_and_evict_cli_print_per_status_summaries(project, monkeypatch, capsys):
-    import operon.remotes as remotes
+    from operon import remotes
 
     seen: list = []
     monkeypatch.setattr(remotes, "pull", lambda _db, _p, remote, file_ids=None: (
@@ -1126,7 +1125,7 @@ def test_confirm_curated_evaluation_truncates_long_previews(monkeypatch, capsys)
     captured_stdout = sys.stdout
     monkeypatch.setattr(cli.sys, "stdin", _TTY(True))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(True, sink=captured_stdout))
-    targets = [(f"assembly", f"ASM_{index:06d}") for index in range(1, 8)]
+    targets = [("assembly", f"ASM_{index:06d}") for index in range(1, 8)]
     assert cli._confirm_curated_evaluation(targets, False) is True
     assert len(prompts) == 1
     assert prompts[0].startswith("Re-evaluate 7 curated entity/entities")

@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from operon import import_wizard as wizard
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon import import_wizard as wizard
 
 
 @pytest.fixture

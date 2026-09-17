@@ -10,7 +10,12 @@ import pytest
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
+from operon.errors import (
+    ChecksumError,
+    ConflictError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from operon.fanout import fanout_units, parse_assignments
 from operon.files import ingest_file
 from operon.lifecycle import apply_lifecycle_event

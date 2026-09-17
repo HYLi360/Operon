@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_FILES = sorted((ROOT / "operon").rglob("*.py"))
 BUILD_SOURCE_FILES = [ROOT / "setup.py"]

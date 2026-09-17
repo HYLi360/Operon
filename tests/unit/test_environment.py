@@ -12,8 +12,6 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from tests.helpers import PytestAssertions
-
 from operon import __version__
 from operon.database import Database
 from operon.environment import (
@@ -24,6 +22,7 @@ from operon.environment import (
     parse_probe_output,
     relevance_fingerprint,
 )
+from tests.helpers import PytestAssertions
 
 
 def _hashed_hostname(value: str) -> str:

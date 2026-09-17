@@ -276,7 +276,7 @@ def test_ssh_connection_close_prepare_database_and_termination(tmp_path, monkeyp
 
         def stat(self, path):
             if "missing" in path:
-                raise IOError()
+                raise OSError()
             return SimpleNamespace(st_size=1)
 
         def close(self):
@@ -326,7 +326,7 @@ def test_sftp_get_if_exists_and_cleanup(tmp_path):
     class SFTP:
         def stat(self, path):
             if path == "missing":
-                raise IOError()
+                raise OSError()
             return SimpleNamespace()
 
         def get(self, remote, local):

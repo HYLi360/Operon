@@ -12,18 +12,23 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-from operon.qc._parsers import (  # noqa: F821
-    fasta_lengths,  # noqa: F821
-    fasta_stats,  # noqa: F821
-    fastq_record_count,  # noqa: F821
-    fastq_stats,  # noqa: F821
-    gff3_stats,  # noqa: F821
-    protein_stats,  # noqa: F821
+from operon.config import Project, project_rel
+from operon.database import Database
+from operon.errors import QCError
+from operon.files import verify_local_file_identity
+from operon.qc._alignment import alignment_qc, compute_alignment_qc
+from operon.qc._parsers import (
+    fasta_lengths,
+    fasta_stats,
+    fastq_record_count,
+    fastq_stats,
+    gff3_stats,
+    protein_stats,
 )
-from operon.qc._alignment import alignment_qc, compute_alignment_qc  # noqa: F821
 from operon.qc.alignment import (
     AlignmentQCResult,
     render_summary_json,
@@ -43,11 +48,6 @@ from operon.qc.measure import (
     coerce_metric_value,
     measure_file,
 )
-
-from operon.config import Project, project_rel
-from operon.database import Database
-from operon.errors import QCError
-from operon.files import verify_local_file_identity
 from operon.utils import now_iso
 from operon.workflow import log_run, set_state_guarded
 

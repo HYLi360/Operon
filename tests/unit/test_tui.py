@@ -11,7 +11,15 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
-from textual.widgets import ContentSwitcher, DataTable, Input, Label, Select, Static, Tree
+from textual.widgets import (
+    ContentSwitcher,
+    DataTable,
+    Input,
+    Label,
+    Select,
+    Static,
+    Tree,
+)
 
 from operon.cli import main
 from operon.config import Project
@@ -601,6 +609,7 @@ def test_files_screen_and_filters(demo_project: Project) -> None:
 @pytest.mark.parametrize("rank", ["subsp.", "ssp.", "var.", "subvar.", "f.", "subf."])
 def test_scientific_name_rank_style(rank: str) -> None:
     from rich.console import Console
+
     from operon.tui.screens.common import styled_scientific_name
 
     name = f"Syntheticus alpha\t{rank}  beta"
@@ -620,6 +629,7 @@ def test_scientific_name_rank_style(rank: str) -> None:
 ])
 def test_scientific_name_preserves_other_text(name: str) -> None:
     from rich.console import Console
+
     from operon.tui.screens.common import styled_scientific_name
 
     text = styled_scientific_name(name)
@@ -630,6 +640,7 @@ def test_scientific_name_preserves_other_text(name: str) -> None:
 def test_organism_names_render_italic(demo_project: Project) -> None:
     """Latin scientific names are italicized in the tree and the detail panel."""
     from rich.console import Console
+
     from operon.tui.screens.entities import _node_label
 
     name = "Syntheticus alpha subsp. beta var. gamma"
@@ -963,6 +974,7 @@ def test_tui_without_project_returns_2(tmp_path: Path, capsys) -> None:
 def test_splash_waits_for_first_paint_and_initial_reads(demo_project, monkeypatch, release_at):
     """Both fast and slow reads must pass the time and data readiness gates."""
     import threading
+
     import operon.tui.app as app_module
     from operon import __version__
     from operon.tui.splash import SplashScreen
@@ -1046,6 +1058,7 @@ def test_plain_q_does_not_quit(demo_project):
 def test_splash_resources_and_small_terminal(monkeypatch):
     import struct
     from importlib.resources import files
+
     from operon.tui import splash
 
     png = files("operon.tui").joinpath("assets/splash.png").read_bytes()

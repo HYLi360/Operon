@@ -11,9 +11,10 @@ import os
 import re
 import tarfile
 import zipfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import Any, TextIO
 
 import yaml
 

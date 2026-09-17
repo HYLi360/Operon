@@ -29,9 +29,10 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 try:
     import resource
@@ -1066,7 +1067,7 @@ class SSHExecutor:
             else:
                 try:
                     sftp.stat(remote)
-                except IOError as exc:
+                except OSError as exc:
                     raise RemoteError(
                         f"remote reference database is not provisioned at {remote}"
                     ) from exc
@@ -1140,7 +1141,7 @@ class SSHExecutor:
                 continue
             try:
                 sftp.stat(remote)
-            except IOError:
+            except OSError:
                 pass
             else:
                 raise ConflictError(
@@ -1183,7 +1184,7 @@ class SSHExecutor:
                     backup = f"{normalized}.operon-prev-{uuid.uuid4().hex}"
                     try:
                         sftp.rename(normalized, backup)
-                    except IOError as exc:
+                    except OSError as exc:
                         if not _sftp_not_found(exc):
                             raise
                     else:
@@ -1216,12 +1217,15 @@ class SSHExecutor:
     def _stage_directory(self, client: Any, sftp: Any, local: Path, remote: str) -> None:
         """Stage an immutable directory artifact with a strict tree identity."""
         from operon.remotes import (
-            _publish_remote, _remote_directory_identity, _remove_remote_tree, sftp_makedirs,
+            _publish_remote,
+            _remote_directory_identity,
+            _remove_remote_tree,
+            sftp_makedirs,
         )
         digest = sha256_path(local).lower()
         try:
             stat = sftp.stat(remote)
-        except IOError:
+        except OSError:
             stat = None
         if stat is not None:
             actual, _ = _remote_directory_identity(sftp, remote)
@@ -1258,7 +1262,7 @@ class SSHExecutor:
         from operon.remotes import remote_sha256
         try:
             stat = sftp.stat(remote)
-        except IOError:
+        except OSError:
             return False
         if int(stat.st_size) != local.stat().st_size:
             return False
@@ -1720,7 +1724,7 @@ class SSHExecutor:
     def _sftp_get_if_exists(self, sftp: Any, remote: str, local: Path) -> bool:
         try:
             sftp.stat(remote)
-        except IOError:
+        except OSError:
             return False
         local.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent)
@@ -1743,7 +1747,7 @@ class SSHExecutor:
             remote = self._rewrite(local)
             try:
                 stat = sftp.stat(remote)
-            except IOError:
+            except OSError:
                 continue  # the caller's expected-output check reports it
             if local.exists():
                 if stat_module.S_ISDIR(stat.st_mode) and local.is_dir():

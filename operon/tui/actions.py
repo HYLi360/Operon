@@ -17,9 +17,10 @@ import hashlib
 import json
 import os
 import shutil
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 import yaml
 
@@ -492,11 +493,10 @@ def save_recipe(
         load_tools_config(project)
         recipe = get_recipe(project, recipe_name)
         tool = get_tool(project, tool_name)
-        with _open_writable(project) as db:
-            with db.transaction():
-                snapshot_id = db.record_recipe(
-                    recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
-                )
+        with _open_writable(project) as db, db.transaction():
+            snapshot_id = db.record_recipe(
+                recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
+            )
     return {
         "name": recipe.name, "tool": tool_name, "version": recipe.version,
         "snapshot_id": snapshot_id, "unchanged": False,

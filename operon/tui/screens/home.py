@@ -117,7 +117,7 @@ class HomePanel(Panel):
             text.append(f"  {row['entity_type']} {row['entity_id']}  ({row.get('profile', '-')})\n")
         for row in attention.get("files") or []:
             items += 1
-            text.append(f"  ", style=None)
+            text.append("  ", style=None)
             text.append(Text(str(row["status"]), style="red"))
             text.append(f"  file {row['file_id']}  {row.get('relative_path', '-')}\n")
         if not items:

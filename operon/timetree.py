@@ -5,7 +5,6 @@ only the normal ingest/adopt interfaces register their products in a project.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os

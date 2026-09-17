@@ -1,23 +1,27 @@
 """Environment scope, reconstruction, fingerprint and degradation contracts."""
 import base64
-from contextlib import closing
 import json
 import platform
 import shlex
 import subprocess
 import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 import yaml
 
+from operon import environment_capture
 from operon.cli import main
 from operon.config import Project
 from operon.database import Database
 from operon.environment import environment_summary, parse_probe_output
-import operon.environment_capture as environment_capture
 from operon.environment_capture import (
-    _clear_local_capture_cache, bounded_shell, capture_local, export_conda, probe_command,
+    _clear_local_capture_cache,
+    bounded_shell,
+    capture_local,
+    export_conda,
+    probe_command,
 )
 from operon.errors import ValidationError
 from operon.execution import SlurmConfig, render_slurm_script
@@ -284,8 +288,8 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
 
 
 def test_direct_ssh_captures_target_and_removes_raw_probe(tmp_path, fake_conda):
-    from tests.unit.test_execution import FakeSSHClient
     from operon.execution import SSHExecutor
+    from tests.unit.test_execution import FakeSSHClient
     project = Project.init(tmp_path / "project")
     client = FakeSSHClient()
     executor = SSHExecutor(project, {"host": "fake.example.org", "scheduler": "none"},
@@ -324,9 +328,8 @@ def test_environment_summary_from_captured_document():
 
 def test_environments_list_includes_summary_column(tmp_path, capsys):
     project = Project.init(tmp_path / "project")
-    with closing(Database(project.db_path)) as db:
-        with db.transaction():
-            environment_id = db.record_environment(document())
+    with closing(Database(project.db_path)) as db, db.transaction():
+        environment_id = db.record_environment(document())
     assert main(["--project", str(project.root), "environments", "list"]) == 0
     out = capsys.readouterr().out
     assert "summary" in out

@@ -7,8 +7,6 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 import yaml
 
 from operon.cli import main
@@ -19,6 +17,7 @@ from operon.qc import qc_all, qc_file
 from operon.release import create_release
 from operon.rules import curate_decision, evaluate_entity
 from operon.schema import Schema
+from tests.helpers import PytestAssertions
 
 
 def _fasta(length: int = 2500) -> str:

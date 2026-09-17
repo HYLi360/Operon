@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
 
@@ -254,7 +255,7 @@ class Schema:
         self.tables: dict[str, dict[str, Any]] = document["tables"]
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "Schema":
+    def from_file(cls, path: str | Path) -> Schema:
         path = Path(path)
         if not path.exists():
             raise ValidationError(f"schema file not found: {path}")

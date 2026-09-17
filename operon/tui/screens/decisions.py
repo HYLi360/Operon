@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 import os
 import shlex
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from rich.text import Text
-from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical

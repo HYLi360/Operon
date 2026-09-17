@@ -7,9 +7,10 @@ import json
 import os
 import shutil
 import tempfile
-from decimal import Decimal, ROUND_HALF_UP
+from collections.abc import Iterable
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from operon import __version__
 from operon.config import Project, project_rel

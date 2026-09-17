@@ -17,7 +17,8 @@ preserved verbatim and shown as dim read-only notes, never silently dropped.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import yaml
 from rich.text import Text
@@ -84,12 +85,12 @@ class RuleRow(Vertical):
     """
 
     class RemoveRequested(Message):
-        def __init__(self, row: "RuleRow") -> None:
+        def __init__(self, row: RuleRow) -> None:
             super().__init__()
             self.row = row
 
         @property
-        def control(self) -> "RuleRow":
+        def control(self) -> RuleRow:
             return self.row
 
     def __init__(self, rule: dict[str, Any]) -> None:

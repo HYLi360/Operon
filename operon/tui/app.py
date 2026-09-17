@@ -19,7 +19,15 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import ModalScreen, Screen
-from textual.widgets import ContentSwitcher, Footer, Header, Label, ListItem, ListView, Static
+from textual.widgets import (
+    ContentSwitcher,
+    Footer,
+    Header,
+    Label,
+    ListItem,
+    ListView,
+    Static,
+)
 
 from operon.config import Project
 from operon.tui.screens.common import DismissOnce, Panel

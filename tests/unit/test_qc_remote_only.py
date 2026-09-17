@@ -5,13 +5,12 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
 from operon.qc import qc_all
+from tests.helpers import PytestAssertions
 
 
 class TestQCRemoteOnly(PytestAssertions):

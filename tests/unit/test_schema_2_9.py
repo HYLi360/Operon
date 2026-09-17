@@ -7,9 +7,8 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 from operon.database import Database
+from tests.helpers import PytestAssertions
 
 
 class TestSchema29(PytestAssertions):

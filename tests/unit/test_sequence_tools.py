@@ -6,15 +6,12 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
 from operon.utils import sha256_file
+from tests.helpers import PytestAssertions
 
 
 class _SequenceToolProject(PytestAssertions):

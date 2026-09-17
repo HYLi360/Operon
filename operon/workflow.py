@@ -13,8 +13,9 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any, Callable, Iterable, TextIO
+from typing import Any, TextIO
 
 from operon import __version__
 from operon.config import Project
@@ -579,7 +580,7 @@ def run_external_command(
                     record["status"] = "failed"
                     record["error"] = f"expected output missing or empty: {path}"
                     break
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         record.update(status="failed", error=f"timeout after {timeout}s", exit_code=None)
     except OSError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)

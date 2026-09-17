@@ -8,7 +8,8 @@ RESTORE reverses only the target's latest direct retirement.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from operon.database import Database
 from operon.entity_view import resolve_identifier

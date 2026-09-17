@@ -7,8 +7,6 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-from tests.helpers import PytestAssertions
-
 from operon import __version__, cli
 from operon.cli import main
 from operon.config import load_project
@@ -17,6 +15,7 @@ from operon.errors import ChecksumError, QCError, ValidationError
 from operon.files import ingest_file
 from operon.qc import file_qc_status, measure_file, qc_file
 from operon.utils import sha256_file
+from tests.helpers import PytestAssertions
 
 FASTA = ">ctg1\n" + "ACGT" * 50 + "\n>ctg2\n" + "GGGG" * 25 + "\n"
 FASTQ_R1 = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"

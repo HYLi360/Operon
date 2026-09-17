@@ -25,7 +25,7 @@ from operon.files import ingest_file, verify_files
 from operon.remotes import SFTPStore, evict_local, get_remote, push, remote_sha256
 from operon.utils import path_size_bytes, sha256_path
 
-from .test_execution import FakeSSHClient, FakeSFTP
+from .test_execution import FakeSFTP, FakeSSHClient
 
 
 @pytest.fixture

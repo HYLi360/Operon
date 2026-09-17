@@ -11,7 +11,12 @@ from operon import files
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
+from operon.errors import (
+    ChecksumError,
+    ConflictError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from operon.remotes import placeholder_path
 from operon.utils import sha256_path
 

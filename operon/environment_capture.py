@@ -80,9 +80,7 @@ def probe_command(argv: list[str]) -> list[str] | None:
                 if index + 1 >= len(argv):
                     return None
                 index += 2
-            elif token in {"--no-capture-output", "--live-stream", "--no-rc", "--no-env"}:
-                index += 1
-            elif any(token.startswith(option + "=") for option in (
+            elif token in {"--no-capture-output", "--live-stream", "--no-rc", "--no-env"} or any(token.startswith(option + "=") for option in (
                 "--name", "--prefix", "--cwd", "--root-prefix",
             )):
                 index += 1

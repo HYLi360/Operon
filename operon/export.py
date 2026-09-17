@@ -13,14 +13,15 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ValidationError
 from operon.entity_view import _organism_for
+from operon.errors import ValidationError
 from operon.profiles import load_profile
 from operon.schema import write_tsv
 from operon.utils import atomic_copy, atomic_copytree, now_iso, sha256_file, sha256_path

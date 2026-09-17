@@ -27,7 +27,7 @@ from operon.adapters.timetree import TimeTreeClient
 from operon.cli import main
 from operon.config import load_project, project_rel
 from operon.database import Database
-from operon.errors import ConflictError, ConfigError, RemoteError, ValidationError
+from operon.errors import ConfigError, ConflictError, RemoteError, ValidationError
 from operon.files import ingest_file
 from operon.remotes import (
     REMOTE_MANIFEST_LOCK_NAME,
@@ -44,11 +44,12 @@ from operon.remotes import (
 from tests.unit.test_execution import FakeSFTP, FakeSSHClient
 from tests.unit.test_timetree import (
     BASE as TIMETREE_BASE,
+)
+from tests.unit.test_timetree import (
     SUMMARY_3702_9606,
     make_client,
     make_session,
 )
-
 
 # --------------------------------------------------------------------------
 # shared fixtures
@@ -126,20 +127,20 @@ class _UnreadableMemberSFTP(FakeSFTP):
 
     def open(self, path: str, mode: str = "r"):
         if str(path).endswith("member.bin"):
-            raise IOError("transfer interrupted")
+            raise OSError("transfer interrupted")
         return super().open(path, mode)
 
 
 class _DeniedManifestSFTP(FakeSFTP):
     def open(self, path: str, mode: str = "r"):
         if Path(path).name == REMOTE_MANIFEST_NAME:
-            raise IOError("permission denied")
+            raise OSError("permission denied")
         return super().open(path, mode)
 
 
 class _DeniedLstatSFTP(FakeSFTP):
     def lstat(self, path: str):
-        raise IOError("permission denied")
+        raise OSError("permission denied")
 
 
 class _OwnerWriteFailsSFTP(FakeSFTP):
@@ -147,7 +148,7 @@ class _OwnerWriteFailsSFTP(FakeSFTP):
 
     def open(self, path: str, mode: str = "r"):
         if Path(path).name == "owner.json":
-            raise IOError("no space left on device")
+            raise OSError("no space left on device")
         return super().open(path, mode)
 
 

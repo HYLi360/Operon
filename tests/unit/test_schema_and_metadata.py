@@ -7,11 +7,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.database import Database
 from operon.table_import import read_table_file
+from tests.helpers import PytestAssertions
 
 
 class TestSchemaAndMetadata(PytestAssertions):

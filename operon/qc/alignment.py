@@ -25,12 +25,13 @@ import csv
 import io
 import json
 from collections import Counter
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 from operon.errors import QCError
-from operon.qc._parsers import iter_fasta  # noqa: F821
+from operon.qc._parsers import iter_fasta
 from operon.utils import atomic_write_text
 
 GAP_CHARACTERS = frozenset("-.")

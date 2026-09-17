@@ -21,7 +21,13 @@ from typing import Any
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.files import archive_target, detect_compression, detect_format, find_existing_file, ingest_file
+from operon.files import (
+    archive_target,
+    detect_compression,
+    detect_format,
+    find_existing_file,
+    ingest_file,
+)
 from operon.schema import read_tsv
 from operon.utils import now_iso, path_size_bytes, sha256_path
 from operon.workflow import flush_run_log, log_run

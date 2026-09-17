@@ -10,8 +10,9 @@ CLI writers in WAL mode are never blocked by the TUI.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 from operon.config import Project
 from operon.database import Database
@@ -67,7 +68,7 @@ def project_summary(project: Project) -> dict[str, Any]:
     with _open(project) as db:
         entity_counts = {
             entity_type: int(
-                _row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"]  # noqa: S608 - fixed DDL names  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
+                _row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"]
             )
             for entity_type, (table, _id_col) in ENTITY_TABLES.items()
         }
@@ -257,7 +258,7 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
     """Return one entity's row, accessions, state, and files."""
     table, id_column = ENTITY_TABLES[entity_type]
     with _open(project) as db:
-        fields = _row(db, f"SELECT * FROM {table} WHERE {id_column}=?", (entity_id,))  # noqa: S608  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
+        fields = _row(db, f"SELECT * FROM {table} WHERE {id_column}=?", (entity_id,))  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
         if fields is None:
             return None
         accessions = _rows(

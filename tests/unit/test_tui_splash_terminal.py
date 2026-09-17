@@ -8,7 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from operon.tui.splash_terminal import (
-    kitty_delete, kitty_place, kitty_upload, splash_mode, text_brand,
+    kitty_delete,
+    kitty_place,
+    kitty_upload,
+    splash_mode,
+    text_brand,
 )
 
 
@@ -66,6 +70,7 @@ def test_kitty_png_roundtrip_and_chunk_limit():
 def test_kitty_widget_lifecycle(monkeypatch):
     """Exercise transfer, resize, suspend/resume, and deletion via a fake wire."""
     from textual.app import App
+
     from operon.tui.splash import LakeArt, SplashScreen
 
     monkeypatch.setenv("OPERON_SPLASH", "kitty")
@@ -123,6 +128,7 @@ def test_kitty_widget_lifecycle(monkeypatch):
 
 def test_kitty_output_failure_preserves_usable_text(monkeypatch):
     from textual.app import App
+
     from operon.tui.splash import LakeArt, SplashScreen
     monkeypatch.setenv("OPERON_SPLASH", "kitty")
 
@@ -149,6 +155,7 @@ def test_kitty_output_failure_preserves_usable_text(monkeypatch):
 
 def test_text_screen_restores_palette(monkeypatch):
     from textual.app import App
+
     from operon.tui.splash import SplashScreen
     monkeypatch.setenv("OPERON_SPLASH", "text")
 

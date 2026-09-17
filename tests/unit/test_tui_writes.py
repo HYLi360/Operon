@@ -910,6 +910,7 @@ def test_evaluate_modal_selected_entity_scope(project: Project) -> None:
 @pytest.mark.parametrize("phred", ["33", "64", "auto"])
 def test_qc_options_match_cli_metrics_and_provenance(project: Project, tmp_path: Path, phred: str) -> None:
     import json
+
     from operon.cli import main
 
     source = tmp_path / "reads.fastq"

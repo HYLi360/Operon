@@ -33,7 +33,13 @@ from urllib.parse import unquote, urlparse
 
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ConfigError, ConflictError, RemoteError, RemoteUnavailableError, ValidationError
+from operon.errors import (
+    ConfigError,
+    ConflictError,
+    RemoteError,
+    RemoteUnavailableError,
+    ValidationError,
+)
 from operon.utils import (
     SHA256_RE,
     atomic_write_text,
@@ -200,7 +206,7 @@ def sftp_makedirs(sftp: Any, remote_dir: str) -> None:
         try:
             sftp.stat(path)
             break
-        except IOError:
+        except OSError:
             missing.append(path)
             path = posixpath.dirname(path)
     for directory in reversed(missing):
@@ -344,7 +350,7 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
 def _remove_remote_tree(sftp: Any, remote: str) -> None:
     try:
         mode = _sftp_lstat(sftp, remote).st_mode
-    except IOError as exc:
+    except OSError as exc:
         if _sftp_not_found(exc):
             return
         raise
@@ -383,11 +389,11 @@ class SFTPStore:
         self._sftp: Any = None
         self._owns_client = client is None
 
-    def __enter__(self) -> "SFTPStore":
+    def __enter__(self) -> SFTPStore:
         _ = self.sftp
         return self
 
-    def __exit__(self, *exc_info: Any) -> None:
+    def __exit__(self, *exc_info: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -543,7 +549,7 @@ class SFTPStore:
         try:
             with self.sftp.open(self.remote_path(REMOTE_MANIFEST_NAME), "rb") as handle:
                 doc = json.loads(handle.read().decode("utf-8"))
-        except IOError as exc:
+        except OSError as exc:
             if _sftp_not_found(exc):
                 return {"version": 2, "files": {}}
             raise RemoteUnavailableError(
@@ -594,10 +600,10 @@ class SFTPStore:
             try:
                 self.sftp.mkdir(lock_path)
                 break
-            except IOError as exc:
+            except OSError as exc:
                 try:
                     self.sftp.stat(lock_path)
-                except IOError:
+                except OSError:
                     raise RemoteError(
                         f"remote {self.spec.name!r}: cannot create manifest lock {lock_path}: {exc}"
                     ) from exc
@@ -618,11 +624,11 @@ class SFTPStore:
         finally:
             try:
                 self.sftp.remove(owner_path)
-            except IOError:
+            except OSError:
                 pass
             try:
                 self.sftp.rmdir(lock_path)
-            except IOError as exc:
+            except OSError as exc:
                 raise RemoteError(
                     f"remote {self.spec.name!r}: failed to release manifest lock {lock_path}: {exc}"
                 ) from exc

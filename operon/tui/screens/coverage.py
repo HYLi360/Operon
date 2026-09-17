@@ -10,7 +10,8 @@ summary/targets/missing/observations/excluded TSVs as tables.
 from __future__ import annotations
 
 import shlex
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from rich.text import Text
 from textual import work

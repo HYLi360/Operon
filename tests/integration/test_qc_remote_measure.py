@@ -6,8 +6,6 @@ import json
 import tempfile
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -15,6 +13,7 @@ from operon.files import ingest_file
 from operon.qc import file_qc_status
 from operon.rules import evaluate_entity
 from operon.utils import sha256_file
+from tests.helpers import PytestAssertions
 
 
 class TestRemoteMeasurePipeline(PytestAssertions):

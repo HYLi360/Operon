@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import stat
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -162,7 +161,7 @@ def test_sftp_makedirs_and_not_found_helpers(tmp_path):
 
         def stat(self, path):
             if path not in self.existing:
-                raise IOError("no such file")
+                raise OSError("no such file")
 
         def mkdir(self, path):
             self.existing.add(path)
@@ -174,8 +173,8 @@ def test_sftp_makedirs_and_not_found_helpers(tmp_path):
     remotes.sftp_makedirs(sftp, "/a/b")
     assert sftp.created == ["/a", "/a/b"]
     assert remotes._sftp_not_found(FileNotFoundError(2, "missing"))
-    assert remotes._sftp_not_found(IOError("No such file"))
-    assert not remotes._sftp_not_found(IOError("denied"))
+    assert remotes._sftp_not_found(OSError("No such file"))
+    assert not remotes._sftp_not_found(OSError("denied"))
 
 
 def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
@@ -201,7 +200,7 @@ def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
 
         def open(self, *_a):
             if self.fail:
-                raise IOError("bad")
+                raise OSError("bad")
             return open(tmp_path / "remote", "rb")
 
         def close(self):
@@ -218,7 +217,7 @@ def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
 
         def open_sftp(self):
             if self.sftp is None:
-                raise IOError("no sftp")
+                raise OSError("no sftp")
             return self.sftp
 
     sftp = SFTP()
@@ -264,7 +263,7 @@ def test_remote_directory_identity_remove_and_publish(tmp_path):
     class BadPosix:
         @staticmethod
         def posix_rename(*_a):
-            raise IOError("bad")
+            raise OSError("bad")
 
     with pytest.raises(RemoteError, match="cannot atomically replace"):
         remotes._publish_remote(BadPosix(), "a", "b", overwrite=True)
@@ -337,7 +336,7 @@ def test_store_get_and_directory_identity_reject_special_entries(tmp_path):
     class CannotList:
         @staticmethod
         def listdir_attr(_path):
-            raise IOError("denied")
+            raise OSError("denied")
 
     with pytest.raises(RemoteError, match="cannot list remote directory"):
         remotes._remote_directory_identity(CannotList(), "/x")
@@ -379,12 +378,12 @@ def test_manifest_lock_happy_timeout_create_and_release_failures(tmp_path, monke
     class CannotCreate(FakeSFTP):
         def mkdir(self, path):
             if path.endswith(remotes.REMOTE_MANIFEST_LOCK_NAME):
-                raise IOError("permission denied")
+                raise OSError("permission denied")
             super().mkdir(path)
 
         def stat(self, path):
             if path.endswith(remotes.REMOTE_MANIFEST_LOCK_NAME):
-                raise IOError("permission denied")
+                raise OSError("permission denied")
             return super().stat(path)
 
     store._sftp = CannotCreate()
@@ -395,7 +394,7 @@ def test_manifest_lock_happy_timeout_create_and_release_failures(tmp_path, monke
     class CannotRelease(FakeSFTP):
         def rmdir(self, path):
             if path.endswith(remotes.REMOTE_MANIFEST_LOCK_NAME):
-                raise IOError("permission denied")
+                raise OSError("permission denied")
             super().rmdir(path)
 
     store._sftp = CannotRelease()

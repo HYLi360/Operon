@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import io
+import json
 import tarfile
 import tempfile
 from pathlib import Path

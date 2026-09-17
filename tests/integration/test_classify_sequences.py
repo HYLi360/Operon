@@ -14,12 +14,11 @@ from pathlib import Path
 
 import yaml
 
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
+from tests.helpers import PytestAssertions
 
 BHLH_PROFILE = {
     "kind": "sequence_classification",

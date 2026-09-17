@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from operon import lineage
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -14,7 +15,6 @@ from operon.errors import ConflictError, ValidationError
 from operon.files import ingest_file
 from operon.lineage import adopt_files, load_adopt_manifest
 from operon.tools import Recipe, candidate_files
-from operon import lineage
 
 
 @pytest.fixture

@@ -13,8 +13,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.helpers import PytestAssertions
-
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -23,6 +21,7 @@ from operon.execution import ExecResult, SlurmConfig, SlurmExecutor
 from operon.files import ingest_file
 from operon.shutdown import ShutdownRequested
 from operon.tools import run_analysis
+from tests.helpers import PytestAssertions
 
 
 class _FakeSFTPChannel:

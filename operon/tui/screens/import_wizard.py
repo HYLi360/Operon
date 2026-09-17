@@ -24,7 +24,10 @@ from textual.screen import Screen
 from textual.widgets import Button, Checkbox, ContentSwitcher, Input, Select, Static
 
 from operon.config import Project
-from operon.import_wizard import _source_validation_errors, _synchronize_new_entity_links
+from operon.import_wizard import (
+    _source_validation_errors,
+    _synchronize_new_entity_links,
+)
 from operon.tui import actions, data
 from operon.tui.screens.common import DismissOnce
 

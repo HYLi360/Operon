@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import json
 import random
-import tempfile
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
-from operon.qc import (
-    AlignmentQCResult,
-    alignment_qc,  # noqa: F821
-    compute_alignment_qc,  # noqa: F821
-    write_alignment_qc,
-)
 from operon.cli import main
 from operon.errors import QCError
+from operon.qc import (
+    AlignmentQCResult,
+    alignment_qc,
+    compute_alignment_qc,
+    write_alignment_qc,
+)
 
 pytestmark = pytest.mark.unit
 

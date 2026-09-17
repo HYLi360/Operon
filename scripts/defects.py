@@ -9,11 +9,11 @@ import os
 import shutil
 import sys
 import textwrap
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence, TextIO
+from typing import TextIO
 
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SEVERITIES = ("low", "medium", "high", "critical")
@@ -221,7 +221,7 @@ def render_list(records: Sequence[dict], width: int, *, color: bool = False) -> 
         if len(component) > component_width:
             component = component[: component_width - 1] + "~"
         first = (
-            f"{str(record.get('id', '?')):<{id_width}}  "
+            f"{record.get('id', '?')!s:<{id_width}}  "
             f"{_colored_cell(record.get('status'), status_width, color)}  "
             f"{_colored_cell(record.get('severity'), severity_width, color)}  "
             f"{component:<{component_width}}  {title_lines[0]}"

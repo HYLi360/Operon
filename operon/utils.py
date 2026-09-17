@@ -9,9 +9,10 @@ import os
 import re
 import shutil
 import tempfile
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 GZIP_MAGIC = b"\x1f\x8b"
@@ -260,5 +261,5 @@ def median(values: list[float]) -> float:
     return (ordered[n // 2 - 1] + ordered[n // 2]) / 2.0
 
 
-def pct(numerator: int | float, denominator: int | float) -> float:
+def pct(numerator: float, denominator: float) -> float:
     return (float(numerator) / float(denominator) * 100.0) if denominator else 0.0

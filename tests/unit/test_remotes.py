@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import tempfile
 import base64
 import hashlib
 import json
 import sys
+import tempfile
 import textwrap
-from types import SimpleNamespace
 from pathlib import Path
-
-from tests.helpers import PytestAssertions
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,6 +29,7 @@ from operon.remotes import (
     verify_remote_record,
 )
 from operon.tools import run_analysis
+from tests.helpers import PytestAssertions
 
 from .test_execution import FakeSSHClient
 
@@ -281,7 +280,7 @@ class TestPushPull(PytestAssertions):
         with self._store() as store:
             def partial_put(local, remote):
                 Path(remote).write_bytes(b"partial")
-                raise IOError("injected transfer interruption")
+                raise OSError("injected transfer interruption")
 
             store.sftp.put = partial_put
             with self.assertRaisesRegex(IOError, "transfer interruption"):

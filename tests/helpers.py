@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractContextManager
-from typing import Any, Callable, Type
+from typing import Any
 
 import pytest
 
@@ -72,9 +73,9 @@ class PytestAssertions:
         assert round(abs(left - right), places) == 0, message
 
     @staticmethod
-    def assertRaises(exception: Type[BaseException]) -> AbstractContextManager[Any]:
+    def assertRaises(exception: type[BaseException]) -> AbstractContextManager[Any]:
         return pytest.raises(exception)
 
     @staticmethod
-    def assertRaisesRegex(exception: Type[BaseException], pattern: str) -> AbstractContextManager[Any]:
+    def assertRaisesRegex(exception: type[BaseException], pattern: str) -> AbstractContextManager[Any]:
         return pytest.raises(exception, match=pattern)

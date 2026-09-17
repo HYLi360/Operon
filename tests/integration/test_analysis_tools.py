@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-import os
+import json
 import sys
 import tempfile
 import textwrap
-import json
 from pathlib import Path
-
-from tests.helpers import PytestAssertions
 
 import pytest
 import yaml
 
+from operon import tools as tools_module
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
-from operon import tools as tools_module
 from operon.tools import get_recipe, get_tool, parse_and_store_results
+from tests.helpers import PytestAssertions
 
 
 class TestAnalysisTools(PytestAssertions):
@@ -35,7 +33,7 @@ class TestAnalysisTools(PytestAssertions):
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent(f"""
+        script.write_text(textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -54,7 +52,7 @@ class TestAnalysisTools(PytestAssertions):
 
     def _write_fake_hmmsearch(self) -> Path:
         script = self.root / "fakehmm.py"
-        script.write_text(textwrap.dedent(f"""
+        script.write_text(textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-h' in args:
@@ -713,6 +711,7 @@ class TestAnalysisTools(PytestAssertions):
 
     def _changed_environment_document(self, job):
         import pytest
+
         from operon.environment import relevance_fingerprint
         row = self.db.conn.execute(
             "SELECT document FROM execution_environments WHERE environment_id=?",

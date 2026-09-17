@@ -31,9 +31,10 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml
 
@@ -1508,7 +1509,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                 tasks, cwd=project.root, threads=threads,
                 array_concurrency=array_concurrency,
             )
-        except KeyboardInterrupt as exc:
+        except KeyboardInterrupt:
             _finalize_interrupted_array(
                 project, db, recipe, tool, executor, batch, results, finalized,
                 sftp=sftp, client=client, keep_partial=keep_partial, started=started,
@@ -1765,7 +1766,7 @@ def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool:
                            dry_run: bool = False, force: bool = False,
                            threads: int = 4, executor: Any = None,
                            runtime_parameters: dict[str, str] | None = None,
-                           ) -> dict[str, Any] | "_AnalysisExecution":
+                           ) -> dict[str, Any] | _AnalysisExecution:
     """Apply every per-file decision short of execution.
 
     Returns a plain result dict for dry-run/cache-hit/adopted files, or an
@@ -2109,7 +2110,7 @@ def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool:
     )
 
 
-def _env_policy_extra_details(plan: "_AnalysisExecution") -> dict[str, Any] | None:
+def _env_policy_extra_details(plan: _AnalysisExecution) -> dict[str, Any] | None:
     env_decision = plan.env_decision
     if env_decision is not None and not env_decision["reuse"] and env_decision["details"]:
         return {"environment_policy_check": env_decision["details"]}
@@ -2117,7 +2118,7 @@ def _env_policy_extra_details(plan: "_AnalysisExecution") -> dict[str, Any] | No
 
 
 def _execute_analysis_plan(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                           executor: Any, plan: "_AnalysisExecution") -> dict[str, Any]:
+                           executor: Any, plan: _AnalysisExecution) -> dict[str, Any]:
     """Execute one planned analysis file through the per-file executor path."""
     from operon.workflow import run_external_command
     if plan.work_dir is not None:
@@ -2148,7 +2149,7 @@ def _execute_analysis_plan(project: Project, db: Database, recipe: Recipe, tool:
 
 
 def _finalize_analysis_execution(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                                 plan: "_AnalysisExecution", run_record: dict[str, Any],
+                                 plan: _AnalysisExecution, run_record: dict[str, Any],
                                  keep_partial: bool = False) -> dict[str, Any]:
     """Post-run success path: validate the output, parse results, complete the job."""
     file_record = plan.file_record
@@ -2183,7 +2184,7 @@ def _finalize_analysis_execution(project: Project, db: Database, recipe: Recipe,
     }
 
 
-def _interrupt_analysis_execution(project: Project, db: Database, plan: "_AnalysisExecution",
+def _interrupt_analysis_execution(project: Project, db: Database, plan: _AnalysisExecution,
                                   exc: BaseException, keep_partial: bool = False) -> None:
     """Graceful shutdown: finalize the job row, drop the partial output (unless
     --keep-partial).  Partial stdout/stderr logs are kept for diagnosis."""
@@ -2200,7 +2201,7 @@ def _interrupt_analysis_execution(project: Project, db: Database, plan: "_Analys
             _remove_output_artifact(project, plan.work_dir)
 
 
-def _fail_analysis_execution(project: Project, db: Database, plan: "_AnalysisExecution",
+def _fail_analysis_execution(project: Project, db: Database, plan: _AnalysisExecution,
                              exc: BaseException, keep_partial: bool = False) -> None:
     with db.transaction() as conn:
         conn.execute(

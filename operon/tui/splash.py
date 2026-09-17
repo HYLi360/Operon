@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-from importlib.resources import files
 import os
 import secrets
 import sys
 import zlib
+from functools import lru_cache
+from importlib.resources import files
 
 from rich.style import Style
 from rich.text import Text
@@ -19,7 +19,11 @@ from textual.widgets import Static
 
 from operon import __version__
 from operon.tui.splash_terminal import (
-    kitty_delete, kitty_place, kitty_upload, splash_mode, text_brand,
+    kitty_delete,
+    kitty_place,
+    kitty_upload,
+    splash_mode,
+    text_brand,
 )
 
 

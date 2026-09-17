@@ -18,8 +18,12 @@ from typing import Any
 
 from operon.config import Project, project_rel
 from operon.database import Database
-from operon.errors import ChecksumError, ConflictError, EntityNotFoundError, ValidationError
-from operon.workflow import set_state
+from operon.errors import (
+    ChecksumError,
+    ConflictError,
+    EntityNotFoundError,
+    ValidationError,
+)
 from operon.utils import (
     atomic_copy,
     atomic_copytree,
@@ -28,6 +32,7 @@ from operon.utils import (
     path_size_bytes,
     sha256_path,
 )
+from operon.workflow import set_state
 
 ROLE_FORMATS = {
     "genome_fasta": "fasta",

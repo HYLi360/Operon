@@ -24,8 +24,9 @@ import sys
 import tempfile
 import threading
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 import pytest
 import requests
@@ -330,10 +331,10 @@ def test_package_without_reports_falls_back_to_entrez(project_db, monkeypatch):
         def __init__(self, value: Any):
             self.value = value
 
-        def __enter__(self) -> "Handle":
+        def __enter__(self) -> Handle:
             return self
 
-        def __exit__(self, *_args: Any) -> None:
+        def __exit__(self, *_args: object) -> None:
             return None
 
     entrez = type("Entrez", (), {})
@@ -1278,10 +1279,10 @@ def _install_fake_aiohttp(monkeypatch, outcomes: list[Any]) -> Any:
         def __init__(self, **_kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> "Session":
+        async def __aenter__(self) -> Session:
             return self
 
-        async def __aexit__(self, *_args: Any) -> None:
+        async def __aexit__(self, *_args: object) -> None:
             return None
 
         async def get(self, *_args: Any, **_kwargs: Any) -> Any:

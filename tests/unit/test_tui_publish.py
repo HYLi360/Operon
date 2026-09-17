@@ -14,7 +14,16 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
-from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Input, Select, Static, TabbedContent
+from textual.widgets import (
+    Button,
+    Checkbox,
+    ContentSwitcher,
+    DataTable,
+    Input,
+    Select,
+    Static,
+    TabbedContent,
+)
 
 from operon import taxonomy
 from operon.cli import main

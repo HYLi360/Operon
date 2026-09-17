@@ -23,10 +23,15 @@ from operon.entity_view import entity_graph, sequence_hits
 from operon.errors import EntityNotFoundError, OperonError, ValidationError
 from operon.files import ingest_file, standardize_all, standardize_file, verify_files
 from operon.release import create_release
-from operon.reports import export_metadata_report, export_qc_tsv, print_decisions, print_qc_table
+from operon.reports import (
+    export_metadata_report,
+    export_qc_tsv,
+    print_decisions,
+    print_qc_table,
+)
 from operon.rules import (
-    curated_evaluation_targets,
     curate_decision,
+    curated_evaluation_targets,
     evaluate_all,
     evaluate_entity,
 )
@@ -1025,9 +1030,7 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
 def _check_fks_for_row(db: Database, entity_type: str, row: dict[str, Any], require_target: bool) -> None:
     if entity_type == "sample" and row.get("organism_id"):
         db.require_active_entity("organism", row["organism_id"])
-    elif entity_type == "run" and row.get("sample_id"):
-        db.require_active_entity("sample", row["sample_id"])
-    elif entity_type == "assembly" and row.get("sample_id"):
+    elif entity_type == "run" and row.get("sample_id") or entity_type == "assembly" and row.get("sample_id"):
         db.require_active_entity("sample", row["sample_id"])
     elif entity_type == "annotation" and row.get("assembly_id"):
         db.require_active_entity("assembly", row["assembly_id"])
@@ -1058,7 +1061,10 @@ def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database)
 
 
 def _cmd_ncbi_datasets(args: argparse.Namespace, project: Project, db: Database) -> int:
-    from operon.adapters.ncbi_datasets import DEFAULT_INCLUDES, run_ncbi_datasets_adapter
+    from operon.adapters.ncbi_datasets import (
+        DEFAULT_INCLUDES,
+        run_ncbi_datasets_adapter,
+    )
     from operon.shutdown import graceful_shutdown
 
     with graceful_shutdown():
@@ -1088,7 +1094,10 @@ def _cmd_ncbi_datasets(args: argparse.Namespace, project: Project, db: Database)
 
 
 def _cmd_ncbi_reconcile(args: argparse.Namespace, project: Project, db: Database) -> int:
-    from operon.ncbi_reconcile import apply_ncbi_reconciliation, plan_ncbi_reconciliation
+    from operon.ncbi_reconcile import (
+        apply_ncbi_reconciliation,
+        plan_ncbi_reconciliation,
+    )
     result = (
         apply_ncbi_reconciliation(db, project, actor=args.actor)
         if args.apply else plan_ncbi_reconciliation(db)
@@ -1236,7 +1245,7 @@ def _cmd_qc_measure(args: argparse.Namespace) -> int:
 
 def _cmd_alignment_qc(args: argparse.Namespace) -> int:
     from operon.qc import (
-        alignment_qc,  # noqa: F821
+        alignment_qc,
         render_summary_json,
         write_alignment_qc,
     )
@@ -1439,6 +1448,7 @@ def _now_for_cli() -> str:
 
 def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) -> int:
     import shlex
+
     from operon.workflow import run_external_command
     argv = shlex.split(args.command_line)
     if not argv:

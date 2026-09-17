@@ -24,10 +24,11 @@ import stat
 import tempfile
 import time
 import zipfile
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 from urllib.parse import quote
 
 import yaml
@@ -2664,7 +2665,7 @@ def _date_only(value: Any) -> str | None:
 
 def _lat_lon(value: Any) -> tuple[float | None, float | None]:
     text = str(value or "").strip()
-    match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*([NS])?\s+([+-]?\d+(?:\.\d+)?)\s*([EW])?", text, re.I)
+    match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*([NS])?\s+([+-]?\d+(?:\.\d+)?)\s*([EW])?", text, re.IGNORECASE)
     if not match:
         return None, None
     lat = float(match.group(1))

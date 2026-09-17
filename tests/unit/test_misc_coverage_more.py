@@ -23,9 +23,18 @@ import pytest
 import yaml
 
 import operon
-import operon.shutdown as shutdown
-from operon import backup, coverage, entity_view, environment, lineage, release
-from operon import sequence_tools, taxonomy, utils
+from operon import (
+    backup,
+    coverage,
+    entity_view,
+    environment,
+    lineage,
+    release,
+    sequence_tools,
+    shutdown,
+    taxonomy,
+    utils,
+)
 from operon.classify import _extra_fields, _row_context, validate_classification_profile
 from operon.cli import main
 from operon.config import load_project
@@ -43,8 +52,11 @@ from operon.lineage import (
     normalize_adopt_item,
 )
 from operon.schema import Schema
-from operon.table_import import apply_table_import, preview_table_import, read_table_file
-from operon.workflow import set_state
+from operon.table_import import (
+    apply_table_import,
+    preview_table_import,
+    read_table_file,
+)
 from operon.utils import (
     atomic_copy,
     atomic_copytree,
@@ -54,6 +66,7 @@ from operon.utils import (
     sha256_file,
     sha256_path,
 )
+from operon.workflow import set_state
 
 
 @pytest.fixture
@@ -866,7 +879,7 @@ def test_release_scope_coverage_uses_a_relative_release_path(project_db, tmp_pat
     assert summary["accepted_file_count"] == 1
     # Releases can be recorded with a project-relative path.
     db.conn.execute("UPDATE releases SET path=? WHERE version='v1'",
-                    (f"releases/v1",))
+                    ("releases/v1",))
     db.conn.commit()
     reference = db.query(
         "SELECT reference_set_id FROM taxonomy_reference_sets")[0]["reference_set_id"]

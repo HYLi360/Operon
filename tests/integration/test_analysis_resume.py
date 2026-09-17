@@ -9,8 +9,6 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from tests.helpers import PytestAssertions
-
 import yaml
 
 from operon.cli import main
@@ -18,6 +16,7 @@ from operon.config import load_project
 from operon.database import Database
 from operon.files import ingest_file
 from operon.tools import database_identity, get_recipe, run_analysis
+from tests.helpers import PytestAssertions
 
 
 class TestAnalysisResume(PytestAssertions):

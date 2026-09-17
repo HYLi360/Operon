@@ -17,8 +17,9 @@ import hashlib
 import io
 import json
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 from urllib.parse import quote
 
 from operon.errors import ValidationError
@@ -136,10 +137,10 @@ class TimeTreeClient:
             self._session.close()
             self._session = None
 
-    def __enter__(self) -> "TimeTreeClient":
+    def __enter__(self) -> TimeTreeClient:
         return self
 
-    def __exit__(self, *exc_info: Any) -> None:
+    def __exit__(self, *exc_info: object) -> None:
         self.close()
 
     @property

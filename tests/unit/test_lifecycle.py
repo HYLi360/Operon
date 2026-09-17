@@ -17,7 +17,10 @@ from operon.entity_view import entity_graph
 from operon.errors import ValidationError
 from operon.files import ingest_file
 from operon.lifecycle import (
-    apply_lifecycle_event, entity_subtree, lifecycle_plan, list_retired_entities,
+    apply_lifecycle_event,
+    entity_subtree,
+    lifecycle_plan,
+    list_retired_entities,
 )
 from operon.release import release_exclusions_for, release_files_for
 from operon.tools import Recipe, candidate_files

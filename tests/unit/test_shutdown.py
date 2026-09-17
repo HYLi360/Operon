@@ -8,23 +8,21 @@ import threading
 
 import pytest
 
-import operon.shutdown as shutdown
+from operon import shutdown
 from operon.shutdown import ShutdownRequested, graceful_shutdown
 
 
 def test_sigterm_raises_shutdown_requested():
-    with pytest.raises(ShutdownRequested) as caught:
-        with graceful_shutdown():
-            os.kill(os.getpid(), signal.SIGTERM)
+    with pytest.raises(ShutdownRequested) as caught, graceful_shutdown():
+        os.kill(os.getpid(), signal.SIGTERM)
     assert caught.value.signum == signal.SIGTERM
 
 
 def test_sigint_raises_shutdown_requested_as_keyboard_interrupt():
     # ShutdownRequested subclasses KeyboardInterrupt, so generic
     # `except KeyboardInterrupt` cleanup paths also catch signal shutdowns.
-    with pytest.raises(KeyboardInterrupt):
-        with graceful_shutdown():
-            os.kill(os.getpid(), signal.SIGINT)
+    with pytest.raises(KeyboardInterrupt), graceful_shutdown():
+        os.kill(os.getpid(), signal.SIGINT)
 
 
 def test_handlers_are_restored_after_context():

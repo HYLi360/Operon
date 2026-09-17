@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import shlex
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from rich.text import Text
 from textual import work

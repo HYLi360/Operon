@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import shlex
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from textual import work
-from textual.app import ComposeResult
 from textual.widgets import Button, Checkbox, Input, ProgressBar, Select, Static
 
 from operon.config import Project

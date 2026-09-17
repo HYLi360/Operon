@@ -36,23 +36,20 @@ def write_fasta(path: Path, sequences: list[tuple[str, str]]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for seqid, sequence in sequences:
             handle.write(f">{seqid}\n")
-            for i in range(0, len(sequence), 60):
-                handle.write(sequence[i:i + 60] + "\n")
+            handle.writelines(sequence[i:i + 60] + "\n" for i in range(0, len(sequence), 60))
 
 
 def write_gff(path: Path, lines: list[list[str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("##gff-version 3\n")
-        for fields in lines:
-            handle.write("\t".join(str(v) for v in fields) + "\n")
+        handle.writelines("\t".join(str(v) for v in fields) + "\n" for fields in lines)
 
 
 def write_fastq(path: Path, records: list[tuple[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
-        for header, sequence in records:
-            handle.write(f"@{header}\n{sequence}\n+\n{'I' * len(sequence)}\n")
+        handle.writelines(f"@{header}\n{sequence}\n+\n{'I' * len(sequence)}\n" for header, sequence in records)
 
 
 def _metadata_rows() -> dict[str, list[dict[str, Any]]]:
@@ -161,7 +158,7 @@ def init_demo(path: str | Path, project_id: str = "PRJ_DEMO_001") -> Project:
         write_gff(source_dir / "ANN_000003.annotation.gff3", gff3)
 
         protein1 = [(f"protein{i}", _random_protein(rng, 200) + "*") for i in range(1, 7)]
-        protein3 = [(f"protein_bad1", _random_protein(rng, 200) + "*")]
+        protein3 = [("protein_bad1", _random_protein(rng, 200) + "*")]
         write_fasta(source_dir / "ANN_000001.protein.faa", protein1)
         write_fasta(source_dir / "ANN_000003.protein.faa", protein3)
 

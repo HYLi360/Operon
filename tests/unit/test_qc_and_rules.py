@@ -10,17 +10,16 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.helpers import PytestAssertions
-
+import operon.files as files_module
+from operon import qc
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-import operon.files as files_module
 from operon.files import ingest_file
-import operon.qc as qc
 from operon.qc import qc_all
 from operon.rules import evaluate_entity
 from operon.utils import now_iso
+from tests.helpers import PytestAssertions
 
 
 def _fasta_text(seqs):

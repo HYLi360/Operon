@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
-from operon.qc._parsers import iter_fasta  # noqa: F821
+from operon.qc._parsers import iter_fasta
 from operon.schema import read_tsv
 from operon.utils import atomic_write_text, sha256_file
 from operon.workflow import log_run

@@ -173,7 +173,7 @@ class Project:
             directory.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def init(cls, root: str | Path, project_id: str = "PRJ_000001", name: str = "") -> "Project":
+    def init(cls, root: str | Path, project_id: str = "PRJ_000001", name: str = "") -> Project:
         root = Path(root).resolve()
         config_path = root / "project.yaml"
         if config_path.exists():
@@ -211,7 +211,7 @@ class Project:
         return project
 
     @classmethod
-    def find(cls, start: str | Path = ".") -> "Project":
+    def find(cls, start: str | Path = ".") -> Project:
         current = Path(start).resolve()
         if current.is_file():
             current = current.parent

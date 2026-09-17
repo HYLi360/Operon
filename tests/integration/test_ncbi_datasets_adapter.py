@@ -11,23 +11,21 @@ import time
 import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
-
-from tests.helpers import PytestAssertions
 from unittest.mock import patch
 
 import requests
 import yaml
 
 from operon.adapters.ncbi_datasets import (
-    _DownloadCancelled,
     _accession_from_path,
     _download_batch_aiohttp,
-    _zip_package_diagnostic,
-    download_ncbi_datasets_parallel,
+    _DownloadCancelled,
     _read_report_file,
     _require_disk_space,
     _safe_extract_zip,
+    _zip_package_diagnostic,
     download_ncbi_dataset,
+    download_ncbi_datasets_parallel,
     run_ncbi_datasets_adapter,
 )
 from operon.cli import main
@@ -37,6 +35,7 @@ from operon.errors import ValidationError
 from operon.files import canonical_filename, ingest_file
 from operon.ncbi_reconcile import apply_ncbi_reconciliation, plan_ncbi_reconciliation
 from operon.utils import now_iso, sha256_file
+from tests.helpers import PytestAssertions
 
 
 def _report(accession: str = "GCF_000001405.40") -> dict:
@@ -532,21 +531,19 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             if consumed[0] >= 2:
                 raise KeyboardInterrupt  # simulated Ctrl-C mid-batch
 
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch(
-                "operon.adapters.ncbi_datasets._download_batch_aiohttp",
-                side_effect=fake_batch_download,
-            ):
-                with self.assertRaises(KeyboardInterrupt):
-                    download_ncbi_datasets_parallel(
-                        [[f"GCF_{number:09d}.1"] for number in range(1, 51)],
-                        Path(tmp),
-                        max_workers=2,
-                        max_retries=0,
-                        retry_backoff=0.0,
-                        on_complete=consume,
-                        on_error=lambda batch, error: None,
-                    )
+        with tempfile.TemporaryDirectory() as tmp, patch(
+            "operon.adapters.ncbi_datasets._download_batch_aiohttp",
+            side_effect=fake_batch_download,
+        ), self.assertRaises(KeyboardInterrupt):
+            download_ncbi_datasets_parallel(
+                [[f"GCF_{number:09d}.1"] for number in range(1, 51)],
+                Path(tmp),
+                max_workers=2,
+                max_retries=0,
+                retry_backoff=0.0,
+                on_complete=consume,
+                on_error=lambda batch, error: None,
+            )
         # The download thread must be gone: a producer blocked on the full
         # completion queue used to deadlock the consumer's thread join and
         # hang interpreter shutdown ("Exception ignored while joining a
@@ -1084,11 +1081,10 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 with patch(
                     "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
                     side_effect=KeyboardInterrupt,
-                ):
-                    with self.assertRaises(KeyboardInterrupt):
-                        run_ncbi_datasets_adapter(
-                            db, project, accessions=["GCF_000001405.40"],
-                        )
+                ), self.assertRaises(KeyboardInterrupt):
+                    run_ncbi_datasets_adapter(
+                        db, project, accessions=["GCF_000001405.40"],
+                    )
                 rows = db.query(
                     "SELECT run_id, status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
                 )
@@ -1168,11 +1164,10 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             ), patch(
                 "operon.adapters.ncbi_datasets._ingest_dataset_asset",
                 side_effect=RuntimeError("ingest boom"),
-            ):
-                with self.assertRaises(RuntimeError):
-                    run_ncbi_datasets_adapter(
-                        db, project, accessions=["GCF_000001405.40"], includes=["genome"],
-                    )
+            ), self.assertRaises(RuntimeError):
+                run_ncbi_datasets_adapter(
+                    db, project, accessions=["GCF_000001405.40"], includes=["genome"],
+                )
         except Exception:
             db.close()
             raise
@@ -1236,12 +1231,11 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 with patch(
                     "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
                     side_effect=fake_parallel,
-                ):
-                    with self.assertRaises(ValidationError) as caught:
-                        run_ncbi_datasets_adapter(
-                            db, project, accessions=[good, bad],
-                            includes=["genome"], batch_size=1,
-                        )
+                ), self.assertRaises(ValidationError) as caught:
+                    run_ncbi_datasets_adapter(
+                        db, project, accessions=[good, bad],
+                        includes=["genome"], batch_size=1,
+                    )
                 message = str(caught.value)
                 self.assertIn("1 NCBI download batch(es) failed", message)
                 self.assertIn(bad, message)

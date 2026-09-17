@@ -14,20 +14,18 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from tests.helpers import PytestAssertions
-
 from operon import execution
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import RemoteError, ValidationError
 from operon.execution import (
+    _SLURM_EXIT_CODE_RETRY_SECONDS,
     ExecResult,
     LocalExecutor,
-    SSHExecutor,
     SlurmConfig,
     SlurmExecutor,
-    _SLURM_EXIT_CODE_RETRY_SECONDS,
+    SSHExecutor,
     _parse_remote_stats,
     _parse_sacct_accounting,
     _parse_sacct_memory_mb,
@@ -42,6 +40,7 @@ from operon.execution import (
 from operon.shutdown import ShutdownRequested
 from operon.tools import ToolSpec, detect_tool_version_record
 from operon.workflow import run_external_command
+from tests.helpers import PytestAssertions
 
 
 def _hashed_hostname(value: str) -> str:
@@ -100,7 +99,7 @@ class FakeSSHClient:
         self.commands: list[str] = []
         self.close_calls = 0
 
-    def open_sftp(self) -> "FakeSFTP":
+    def open_sftp(self) -> FakeSFTP:
         return self.sftp
 
     def exec_command(self, command: str, timeout: float | None = None):
@@ -136,13 +135,13 @@ class FakeSFTP:
     def stat(self, path: str) -> _FakeStat:
         p = Path(path)
         if not p.exists():
-            raise IOError(f"no such file: {path}")
+            raise OSError(f"no such file: {path}")
         return _FakeStat(p)
 
     def lstat(self, path: str) -> _FakeStat:
         p = Path(path)
         if not p.exists() and not p.is_symlink():
-            raise IOError(f"no such file: {path}")
+            raise OSError(f"no such file: {path}")
         obj = object.__new__(_FakeStat)
         st = p.lstat()
         obj.st_size = st.st_size
@@ -151,17 +150,17 @@ class FakeSFTP:
 
     def put(self, local: str, remote: str) -> None:
         if not Path(remote).parent.is_dir():
-            raise IOError(f"no such directory: {Path(remote).parent}")
+            raise OSError(f"no such directory: {Path(remote).parent}")
         Path(remote).write_bytes(Path(local).read_bytes())
 
     def get(self, remote: str, local: str) -> None:
         if not Path(local).parent.is_dir():
-            raise IOError(f"no such local directory: {Path(local).parent}")
+            raise OSError(f"no such local directory: {Path(local).parent}")
         Path(local).write_bytes(Path(remote).read_bytes())
 
     def rename(self, src: str, dst: str) -> None:
         if Path(dst).exists() or Path(dst).is_symlink():
-            raise IOError(f"destination exists: {dst}")
+            raise OSError(f"destination exists: {dst}")
         Path(src).rename(dst)
 
     def posix_rename(self, src: str, dst: str) -> None:
@@ -186,7 +185,7 @@ class FakeSFTP:
 
     def open(self, path: str, mode: str = "r"):
         if not Path(path).parent.is_dir():
-            raise IOError(f"no such directory: {Path(path).parent}")
+            raise OSError(f"no such directory: {Path(path).parent}")
         return open(path, mode)
 
     def listdir_attr(self, path: str):
@@ -1323,9 +1322,7 @@ class TestSSHShutdownCleanup(PytestAssertions):
 
         def fake_exec(command, timeout=None):
             client.commands.append(command)
-            if command.startswith("sbatch "):
-                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
-            elif command.startswith("squeue "):
+            if command.startswith("sbatch ") or command.startswith("squeue "):
                 proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
             else:
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")

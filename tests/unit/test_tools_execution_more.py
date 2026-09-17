@@ -47,7 +47,6 @@ from tests.unit.test_execution import (
 )
 from tests.unit.test_tools_edges import _FakeExecutor, recipe, tool_spec
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------

@@ -13,9 +13,10 @@ import asyncio
 import json
 import shutil
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
@@ -1620,15 +1621,15 @@ class _StubPanel(Panel):
         self.rendered: list = []
         self.errors: list = []
 
-    def render_data(self, payload):  # noqa: D102 - test stub
+    def render_data(self, payload):
         if self.failure is not None:
             raise self.failure
         self.rendered.append(payload)
 
-    def show_error(self, exc):  # noqa: D102 - test stub
+    def show_error(self, exc):
         self.errors.append(exc)
 
-    def _fetch(self):  # noqa: D102 - test stub
+    def _fetch(self):
         return {}
 
 

@@ -8,10 +8,11 @@ tests can compare both backends exactly.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterator
 from math import ceil
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Iterator
+from typing import Any
 from urllib.parse import unquote
 
 from operon.errors import QCError

@@ -6,15 +6,22 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import questionary
 
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.files import canonical_filename, detect_compression, detect_format, ingest_file, raw_bucket
+from operon.files import (
+    canonical_filename,
+    detect_compression,
+    detect_format,
+    ingest_file,
+    raw_bucket,
+)
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
 from operon.sql import quote_identifier
 from operon.utils import now_iso, sha256_path

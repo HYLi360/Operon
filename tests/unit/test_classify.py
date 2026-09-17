@@ -8,8 +8,6 @@ from pathlib import Path
 
 import yaml
 
-from tests.helpers import PytestAssertions
-
 from operon.classify import (
     _best_sort_key,
     _compare,
@@ -22,6 +20,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ValidationError
+from tests.helpers import PytestAssertions
 
 
 class TestConditions(PytestAssertions):
