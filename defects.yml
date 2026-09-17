@@ -208,7 +208,7 @@ defects:
   status: fixed
   reproduction: 'Ingest or adopt a directory artifact (format=directory), then run built-in ''operon qc'' or ''operon fanout'' on it. verify_local_file_identity() required path.is_file(), so a directory always reported exists=False / sha256_match=False: the QC checksum_verified stage could never pass and fanout refused the source, a permanent false alarm for intact directory trees. (Batch ''operon verify'' was unaffected: verify_files() hashes via sha256_path(), which already handles directory trees.)'
   disposition: 'verify_local_file_identity() now branches on the manifest format: directory records are verified with the same deterministic tree hash used at ingest (sha256_path + path_size_bytes), a file<->directory type flip reports missing, and the stat-fingerprint cache is bypassed for directories because directory mtimes change on any member touch and would spuriously invalidate the cache.'
-  fix_commit: null
+  fix_commit: a74213fa3555a193d6a39ef35465fbb5d12a558b
   fixed_in: null
   regression_tests:
   - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
@@ -224,7 +224,7 @@ defects:
   status: fixed
   reproduction: load_snapshot() on a snapshot directory without snapshot.json raised FileNotFoundError, on malformed JSON a JSONDecodeError, on a structurally incomplete manifest a bare KeyError, and on a missing raw payload a bare OSError from sha256_file. calibrate_tree() propagated ValueError from int() on non-numeric taxon_id/taxon_a/taxon_b cells and whatever exception Phylo.read raised for a missing or malformed tree file. All surfaced as tracebacks instead of an 'error:' message.
   disposition: load_snapshot() wraps read/parse/structure/payload failures into ValidationError naming the cause; calibrate_tree() guards the integer conversions and wraps tree read/parse failures; _resolve_cli_taxa() additionally raises a named ValidationError should a resolve_taxon implementation ever return an empty candidate list instead of raising.
-  fix_commit: null
+  fix_commit: fcf4f3487ed90febfa9711db244d539b505be24e
   fixed_in: null
   regression_tests:
   - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_manifest_is_validation_error
@@ -243,7 +243,7 @@ defects:
   status: fixed
   reproduction: _cleanup_in_progress was cleared only when the graceful_shutdown() context manager unwound. After an interrupt's cleanup finished (subprocess/array terminated, analysis_jobs finalized, partial outputs removed) but before the context exited (batch-loop unwinding, exit-130 reporting), any further signal took the second-during-cleanup branch and called os._exit(128+signum), killing a process that had nothing left to clean up and cutting off its normal finalization.
   disposition: 'Added shutdown.cleanup_completed(), invoked by every interrupt-cleanup site in tools.py once its bookkeeping is finalized; it re-arms graceful handling so a later signal raises a fresh ShutdownRequested (exit 130) instead of force-exiting. The force-exit escape hatch remains exactly where it is needed: a second signal while cleanup is genuinely still running.'
-  fix_commit: null
+  fix_commit: b3de56e136aac6077c64baea2431268075ee7637
   fixed_in: null
   regression_tests:
   - tests/unit/test_shutdown.py::test_signal_after_completed_cleanup_raises_gracefully
