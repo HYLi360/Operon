@@ -2,7 +2,7 @@
 
 ## 安装与测试执行
 
-仓库检出后按[安装](../getting-started/installation.md)的说明以 `dev` extra 安装（包含 pytest、Cython 与 Sphinx），然后：
+仓库检出后按[安装](../getting-started/installation.md)的说明以 `dev` extra 安装（包含 pytest、Cython 与 Sphinx）。editable 安装的 `operon.__version__` 取自安装时生成的元数据，因此每次在 `pyproject.toml` 中 bump 版本后都要重新执行 `pip install -e '.[dev]'`——否则在检出目录之外运行时 CLI/TUI 会显示旧版本号。然后：
 
 ```bash
 python -m pytest

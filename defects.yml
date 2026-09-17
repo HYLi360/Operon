@@ -263,3 +263,17 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tools_edges.py::test_version_and_database_identity_caches_expire_after_ttl
+- id: ODR-0017
+  title: Version-source test races a concurrent sdist build rewriting OperonDBS.egg-info
+  reported: '2026-09-17'
+  introduced_in: null
+  affected: 0.8.2 and earlier; test suite under pytest-xdist (intermittent)
+  severity: low
+  component: tests
+  status: fixed
+  reproduction: operon.__version__ is resolved via importlib.metadata at import time; from the checkout root it resolves to the in-tree OperonDBS.egg-info, which setuptools rewrites in place during every build_sdist call (test_sdist_contains_complete_project_source). Under xdist, a worker whose first operon import lands inside a sibling worker's build window freezes a stale (site-packages) or missing ('0+unknown') version into the module, and test_pyproject_is_the_single_application_version_source then fails against pyproject.toml. Solo runs never race, so the failure is intermittent.
+  disposition: The test now re-reads operon.__version__ via importlib.reload() while holding the same machine-wide _sdist_build_lock() the builds already take, so the assertion always observes a consistent metadata state.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source

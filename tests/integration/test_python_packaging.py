@@ -161,9 +161,19 @@ def test_pyproject_dependency_contract(section, required, marker, forbidden, onl
         assert conditional and all(marker in requirement for requirement in conditional), requirements
 
 
+@pytest.mark.bug("ODR-0017")
 def test_pyproject_is_the_single_application_version_source():
     pyproject = _load_pyproject()
-    assert pyproject["project"]["version"] == operon.__version__
+    # operon.__version__ is read from installed metadata at import time; from
+    # this checkout it resolves to the in-tree OperonDBS.egg-info, which a
+    # sibling xdist worker's sdist build rewrites in place.  Reload under the
+    # machine-wide build lock so the assertion never observes a half-rewritten
+    # (or site-packages-shadowed) metadata lookup frozen at import time.
+    import importlib
+
+    with _sdist_build_lock():
+        importlib.reload(operon)
+        assert pyproject["project"]["version"] == operon.__version__
     assert 'version = "' not in (ROOT / "operon" / "__init__.py").read_text(
         encoding="utf-8"
     )

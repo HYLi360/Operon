@@ -3,7 +3,7 @@
 ## Setup and test runs
 
 Install the repository checkout with the `dev` extra as described in [Installation](../getting-started/installation.md#install-from-the-repository); it adds pytest, Cython, and
-Sphinx. Then:
+Sphinx. An editable install resolves `operon.__version__` from install-time metadata, so after every version bump in `pyproject.toml` re-run `pip install -e '.[dev]'` — otherwise the CLI/TUI keep displaying the previous version outside the checkout directory. Then:
 
 ```bash
 python -m pytest

@@ -29,6 +29,7 @@
 | ODR-0014 | TimeTree | 快照加载与标定输入现在以 `ValidationError` 失败，不再抛裸异常：`snapshot.json` 缺失/畸形/结构不全、原始响应不可读、taxa/constraints 表中的非整数 taxon ID、以及不可读或畸形的进化树文件，都会给出有上下文的 `error:` 消息（退出码 2），而不是 traceback。 |
 | ODR-0015 | Shutdown | 各中断清理点现在会在记录收尾完成后调用 `shutdown.cleanup_completed()`，重新启用优雅处理：清理完成之后才到达的信号（批量回退、exit-130 报告阶段）会抛出新的 `ShutdownRequested`，而不是强制退出一个已无清理事项的进程。`os._exit(128+signum)` 逃生舱仍保留给清理确实仍在进行时到达的第二次信号。 |
 | ODR-0016 | Analysis tools | 工具版本与数据库身份缓存现在带 300 秒 TTL，不再是进程生命周期缓存：一个批次仍只付一次探测开销，但长期运行的进程（TUI）会在过期后重新探测，因此就地升级的工具或在原路径替换的参考数据库会被察觉，而不是继续按陈旧身份规划。 |
+| ODR-0017 | Tests | 版本单一来源测试不再与并发的 sdist 构建竞争：它在持有机器级 sdist 构建锁的同时通过 `importlib.reload()` 重读 `operon.__version__`，因此在兄弟 worker 就地重写 `OperonDBS.egg-info` 期间导入 `operon` 的 xdist worker 不会把陈旧或缺失的版本冻结进断言。 |
 
 ## K 系列（历史）
 
