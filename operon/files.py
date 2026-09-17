@@ -137,13 +137,20 @@ def clear_local_file_verification(db: Database, file_id: str) -> None:
 
 def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path, *,
                                rehash: bool = False) -> tuple[bool, dict[str, Any]]:
-    """Verify a local file, reusing a full-hash result only while its stat identity is unchanged.
+    """Verify a local artifact, reusing a full-hash result only while its stat identity is unchanged.
 
     The cache is derived data.  Any size/device/inode/mtime/ctime change forces a full SHA-256,
     while ``rehash=True`` bypasses it unconditionally.
+
+    Directory artifacts (``format == "directory"``) are verified with the same
+    deterministic tree hash used at ingest; the stat-fingerprint cache does not
+    apply to them because a directory's own mtime changes on any member touch.
     """
+    expect_directory = str(record.get("format")) == "directory"
     try:
-        exists = path.exists() and path.is_file()
+        # A file<->directory type flip is reported as missing: the recorded
+        # bytes, whatever they were, are no longer at this path.
+        exists = path.is_dir() if expect_directory else path.is_file()
     except OSError:
         exists = False
     info: dict[str, Any] = {
@@ -156,6 +163,9 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
     if not info["exists"]:
         clear_local_file_verification(db, str(record["file_id"]))
         return False, info
+
+    if expect_directory:
+        return _verify_directory_identity(db, record, path, info)
 
     try:
         before = _local_file_fingerprint(path)
@@ -212,6 +222,37 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
         remember_local_file_verification(db, record, path)
     else:
         clear_local_file_verification(db, str(record["file_id"]))
+    return matched, info
+
+
+def _verify_directory_identity(db: Database, record: dict[str, Any], path: Path,
+                               info: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    """Verify a directory artifact against its manifest identity.
+
+    Always a full tree hash: no stat fingerprint is trustworthy for a
+    directory (its own size/mtime say nothing about members), and the
+    verification cache is never consulted nor written for directories.
+    """
+    try:
+        current_size = path_size_bytes(path)
+    except OSError as exc:
+        info.update(verification_method="stat_error", error=f"{type(exc).__name__}: {exc}")
+        return False, info
+    info["size_bytes"] = current_size
+    if current_size != int(record["size_bytes"]):
+        info["verification_method"] = "size_mismatch"
+        return False, info
+    try:
+        current_sha = sha256_path(path)
+    except OSError as exc:
+        info.update(verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}")
+        return False, info
+    matched = current_sha.lower() == str(record["sha256"]).lower()
+    info.update(
+        sha256_match=matched,
+        verification_method="full_sha256",
+        current_sha256=current_sha,
+    )
     return matched, info
 
 

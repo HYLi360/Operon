@@ -198,3 +198,19 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild
+- id: ODR-0013
+  title: Directory artifacts always fail the QC checksum stage and fanout source verification
+  reported: '2026-09-17'
+  introduced_in: null
+  affected: 0.8.2 and earlier; any manifest row with format=directory (e.g. adopted OrthoFinder/Notung result trees)
+  severity: medium
+  component: files
+  status: fixed
+  reproduction: 'Ingest or adopt a directory artifact (format=directory), then run built-in ''operon qc'' or ''operon fanout'' on it. verify_local_file_identity() required path.is_file(), so a directory always reported exists=False / sha256_match=False: the QC checksum_verified stage could never pass and fanout refused the source, a permanent false alarm for intact directory trees. (Batch ''operon verify'' was unaffected: verify_files() hashes via sha256_path(), which already handles directory trees.)'
+  disposition: 'verify_local_file_identity() now branches on the manifest format: directory records are verified with the same deterministic tree hash used at ingest (sha256_path + path_size_bytes), a file<->directory type flip reports missing, and the stat-fingerprint cache is bypassed for directories because directory mtimes change on any member touch and would spuriously invalidate the cache.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
+  - tests/unit/test_files_edges.py::test_directory_artifact_type_flip_reports_missing
+  - tests/unit/test_files_edges.py::test_builtin_qc_passes_directory_checksum_stage

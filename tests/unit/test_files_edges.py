@@ -572,3 +572,92 @@ def test_ingest_rearchives_bytes_missing_for_manifest_row(project_db, tmp_path):
     restored = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
     assert restored["file_id"] == row["file_id"]
     assert archived.read_bytes() == source.read_bytes()
+
+
+@pytest.mark.bug("ODR-0013")
+def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
+    project, db = project_db
+    directory = tmp_path / "results"
+    directory.mkdir()
+    (directory / "a.txt").write_text("alpha", encoding="utf-8")
+    (directory / "nested").mkdir()
+    (directory / "nested" / "b.txt").write_text("beta", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, directory, "annotation", "ANN_000001", "analysis_output",
+        fmt="directory", compression="none",
+    )
+    path = project.root / row["relative_path"]
+
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert matched and info["exists"] and info["verification_method"] == "full_sha256"
+    assert info["size_bytes"] == int(row["size_bytes"])
+    # Directories never use the stat-fingerprint cache: a directory's own
+    # mtime changes on any member touch and would spuriously invalidate it.
+    assert db.query(
+        "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+    ) == []
+
+    # Same-size member tamper is caught by the tree hash.
+    (path / "a.txt").write_text("ALPHA", encoding="utf-8")
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "full_sha256"
+
+    # A size-changing member edit reports size_mismatch.
+    (path / "nested" / "b.txt").write_text("beta-plus", encoding="utf-8")
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "size_mismatch"
+
+
+@pytest.mark.bug("ODR-0013")
+def test_directory_artifact_type_flip_reports_missing(project_db, tmp_path):
+    project, db = project_db
+    directory = tmp_path / "results"
+    directory.mkdir()
+    (directory / "a.txt").write_text("alpha", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, directory, "annotation", "ANN_000001", "analysis_output",
+        fmt="directory", compression="none",
+    )
+    path = project.root / row["relative_path"]
+
+    # Directory record whose path is now a regular file: missing.
+    import shutil
+    shutil.rmtree(path)
+    path.write_text("not a directory", encoding="utf-8")
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and not info["exists"] and info["verification_method"] == "missing"
+
+    # Regular-file record whose path is now a directory: also missing.
+    source = tmp_path / "x.fna"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    file_row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    file_path = project.root / file_row["relative_path"]
+    file_path.unlink()
+    file_path.mkdir()
+    matched, info = files.verify_local_file_identity(db, file_row, file_path)
+    assert not matched and not info["exists"] and info["verification_method"] == "missing"
+
+
+@pytest.mark.bug("ODR-0013")
+def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
+    from operon import qc
+
+    project, db = project_db
+    directory = tmp_path / "results"
+    directory.mkdir()
+    (directory / "a.txt").write_text("alpha", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, directory, "annotation", "ANN_000001", "analysis_output",
+        fmt="directory", compression="none",
+    )
+    result = qc.qc_file(db, project, row["file_id"])
+    assert result["ok"], result["error"]
+    metrics = {
+        (m["qc_stage"], m["metric_name"]): m["metric_value"]
+        for m in db.query("SELECT qc_stage, metric_name, metric_value FROM qc_results WHERE file_id=?",
+                          (row["file_id"],))
+    }
+    assert metrics[("file_integrity", "file_exists")] in ("1", "True", "true")
+    assert metrics[("file_integrity", "sha256_match")] in ("1", "True", "true")
+    # No parser exists for directory trees: parseable stays unmeasured.
+    assert ("file_integrity", "parseable") not in metrics

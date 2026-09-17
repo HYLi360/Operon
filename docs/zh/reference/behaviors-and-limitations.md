@@ -78,7 +78,6 @@
 - **配对 reads 匹配会被静默跳过**——当同批 FASTQ 没有 manifest 行或不在磁盘上时，既无指标也无警告（`qc/__init__.py`）。
 - **损坏的 FASTA 长度缓存会被静默重建。** 摘要/计数不匹配时删除并重建缓存（`qc/__init__.py`）。
 - **Cython 与纯 Python 解析器零容忍差异。** 指标与错误消息字符串必须逐字节一致；由 `tests/regression/test_cython_parser_parity.py` 强制。
-- **已知问题：目录产物永远无法通过内置 QC。** `verify_local_file_identity` 要求常规文件，因此 QC 记录 `file_exists=0`，把文件与实体标为 `QC_FAILED` 并给出“file missing or checksum mismatch”，而 `verify` 对同一产物做目录树哈希并报告 `CHECKSUM_VERIFIED`（`files.py`、`qc/__init__.py`）。
 - **`qc --file-id` 仍会继承同层文件的失败。** 实体状态聚合所有同层文件，因此只针对一个健康文件的运行会在同层文件 `QC_FAILED` 时以 1 退出；对 `REMOTE_ONLY` 文件执行 `--file-id` 时，唯一结果被跳过，同样以 1 退出（`qc/__init__.py`、`cli.py`）。
 - **R1/R2 配对信任未经校验的同层字节。** 同批 FASTQ 通过直接重读计数，没有 manifest 校验和检查，因此保持记录数不变的字节级损坏既不会改变配对指标，也不会影响报告出的完整性（`qc/__init__.py`、`qc/parsers.py`）。
 - **annotation 会继承同层文件的失败。** assembly 与 protein 输入在 GFF3 解析之前校验，因此缺失或变化的同层文件会在 annotation 上记录 `parseable=0` 并使其失败（`qc/__init__.py`）。
