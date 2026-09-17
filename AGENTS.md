@@ -97,6 +97,9 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     restores the previous file bytes on failure; keys the forms do not model
     are preserved verbatim; history modals restore snapshots into the editor
     as the next version; tools-check runs in a worker with per-row updates.
+    `operon/tui/parity.py` is the CLI/TUI parity registry: every CLI leaf
+    command is registered `implemented`/`cli-only`/`planned`, enforced by
+    `tests/unit/test_tui_cli_parity.py` (see Conventions).
     Textual is imported only inside this package, which the `tui` command
     handler imports lazily.
   - Other top-level modules by responsibility: `database.py` (SQLite schema
@@ -219,6 +222,13 @@ proceed with caution).
   bytes must raise `ConflictError`; identical bytes must be idempotent.
 - Manual overrides (e.g. `curate`, forced `set-state`) must always be
   recorded in the `changes` audit table.
+- CLI-first: new capabilities land in the CLI/core first, and the TUI never
+  runs ahead of the CLI. Any change to CLI commands, flags, or the TUI
+  surface must update the parity registry `operon/tui/parity.py` in the same
+  commit — the parity tests in `tests/unit/test_tui_cli_parity.py` fail
+  otherwise. Commands intentionally not offered in the TUI are registered
+  `cli-only` with a reason; known gaps are registered `planned` with a
+  milestone.
 - `docs/*/operations/database-compatibility.md` lists migration code that
   exists only for pre-1.0 databases and is scheduled for removal at the 1.0
   release; check it before touching `operon/database.py` migrations or the

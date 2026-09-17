@@ -105,6 +105,39 @@ python -m pytest tests/unit                          # 只跑本次改动涉及�
 `pyproject.toml` 的 `exclude_also` 中）。该 pragma 不能替代测试：凡是通过公开入口可达的代码
 都必须写测试覆盖，而不是排除。
 
+## TUI/CLI parity
+
+CLI 是规范面：新能力先落在 CLI 与核心函数，TUI 只调用同一套核心函数，绝不超前于 CLI。
+机器化契约有两处：
+
+- `operon/tui/parity.py` —— parity 注册表。CLI parser 的每个叶子命令恰好出现一次，
+  状态为三者之一：`implemented`（TUI 已有入口；条目点名背后的 `actions.*`/`data.*`
+  函数，写命令还点名 modal 类）、`cli-only`（有意不做进 TUI；`note` 写明理由）、
+  `planned`（已知缺口；`note` 写明归属里程碑）。对 `implemented` 条目，
+  `params` 与 `waived` 覆盖该命令的全部可选 CLI flag——以 argparse dest 为键
+  （`--entity-type` 对应 `entity_type`）——要么映射到 TUI 控件 id 或 `context: ...`
+  （屏幕选中项、固定 recipe），要么在 `waived` 中写明豁免理由。位置参数与
+  `-h/--help` 豁免：位置参数来自屏幕上下文，`--help` 只是 argparse 设施。
+- `tests/unit/test_tui_cli_parity.py` —— 四层测试：
+  1. **命令覆盖** —— 拦住"新增 CLI 命令却没有注册表条目"、重复条目，以及 CLI 中
+     已不存在的陈旧条目（TUI 不得超前于 CLI）。
+  2. **参数映射** —— 拦住没有任何 TUI 控件、上下文或 `waived` 理由覆盖的新增/变更
+     CLI flag，以及不再对应真实 flag 的失效映射键。
+  3. **预览/调用等价** —— headless 驱动 exemplar modal，拦住展示的等价命令
+     （`command_text()`，用真实 CLI parser 解析）与 modal 实际传给 `actions.*`
+     函数的 kwargs 之间的漂移。
+  4. **审计轨迹等价** —— 在 twin demo 项目上分别经 CLI 与 TUI action 执行同一操作，
+     拦住 `changes`/`workflow_runs` 审计行（及各 exemplar 的附属表）中超出易变 id、
+     时间戳与耗时的任何差异。
+
+第 1、2、4 层是纯 argparse/SQLite 内省，不依赖 `tui` extra；第 3 层需要 Textual，
+缺失时跳过。设置 `OPERON_PARITY_STRICT=1` 会把 `planned` 条目也视为失败——供最终
+对齐里程碑启用。
+
+新增或修改 CLI 命令/flag 时，必须在同一 commit 更新注册表：扩展 `implemented`
+条目的 `params`/`waived` 映射，或将命令登记为 `cli-only`/`planned` 并写明理由，
+否则 parity 测试失败。
+
 ## 文档同步
 
 修改 CLI、配置字段、行为或存储布局时，应在同一变更中更新中文与英文文档：

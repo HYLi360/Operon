@@ -112,6 +112,51 @@ python -m pytest tests/unit                          # the category you are chan
 
 Lines that cannot be exercised by any supported environment — platform-only guards, dependency-import fallbacks that cannot be triggered from an installed checkout, and defensive branches that are unreachable by construction — carry a trailing `# pragma: no cover` comment (already part of `exclude_also` in `pyproject.toml`). The pragma is not a substitute for a test: code reachable through a public entry point must be tested rather than excluded.
 
+## TUI/CLI parity
+
+The CLI is the normative surface: new capabilities land in the CLI and core
+functions first, and the TUI only ever calls the same core functions. The
+machine-enforced contract lives in two places:
+
+- `operon/tui/parity.py` — the parity registry. Every leaf command of the
+  CLI parser appears exactly once, with one of three statuses:
+  `implemented` (the TUI has an entry point; the entry names the backing
+  `actions.*`/`data.*` function and, for write commands, the modal class),
+  `cli-only` (deliberately not in the TUI; the `note` says why), or
+  `planned` (a known gap; the `note` names the milestone). For
+  `implemented` entries, `params` and `waived` account for every optional
+  CLI flag — keyed by the argparse dest (`entity_type` for
+  `--entity-type`) — either mapping it to a TUI widget id or
+  `context: ...` (screen selection, fixed recipe), or excusing it with a
+  reason. Positional arguments and `-h/--help` are exempt: positionals
+  arrive from screen context, and `--help` is argparse plumbing.
+- `tests/unit/test_tui_cli_parity.py` — four test layers:
+  1. **Command coverage** — catches a CLI command added without a registry
+     entry, a duplicated entry, or a stale entry whose CLI command no
+     longer exists (the TUI must never run ahead of the CLI).
+  2. **Flag mapping** — catches a new or changed CLI flag that no TUI
+     widget, context, or `waived` reason accounts for, and stale mapping
+     keys that no longer match a real flag.
+  3. **Preview/call equivalence** — drives exemplar modals headlessly and
+     catches drift between the displayed equivalent command
+     (`command_text()`, parsed with the real CLI parser) and the kwargs the
+     modal passes to its `actions.*` function.
+  4. **Audit-trail equivalence** — runs the same operation through the CLI
+     and through the TUI action on twin demo projects and catches any
+     difference in the `changes`/`workflow_runs` audit rows (and
+     per-exemplar side tables) beyond volatile ids, timestamps, and
+     timings.
+
+Layers 1, 2, and 4 are pure argparse/SQLite introspection and run without
+the `tui` extra; layer 3 needs Textual and skips without it. Setting
+`OPERON_PARITY_STRICT=1` turns `planned` entries into failures — intended
+for the final alignment milestone.
+
+When you add or change a CLI command or flag, update the registry in the
+same commit: extend the `params`/`waived` mapping of an `implemented`
+entry, or register the command as `cli-only` or `planned` with a reason.
+Otherwise the parity tests fail.
+
 ## Documentation synchronization
 
 When changing the CLI, configuration fields, behavior, or storage layout, update the Chinese and English documentation in the same change:
