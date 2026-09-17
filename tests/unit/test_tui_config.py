@@ -39,6 +39,7 @@ from operon.tui import actions, data
 from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog
 from operon.tui.screens.config import (
+    ENVIRONMENT_POLICIES,
     ConfigPanel,
     HistoryModal,
     NewProfileModal,
@@ -1469,6 +1470,214 @@ def test_config_screen_additional_parsers_save_and_reload(project: Project, pars
     recipe = get_recipe(project, "blastn_nt")
     assert recipe.raw["result_parser"] == parser
     assert recipe.version == 2
+
+
+# --- recipe editor: execution and parser-mapping fields ---------------------
+
+
+def test_recipe_editor_environment_policy_options_match_core() -> None:
+    from operon import tools
+
+    assert ENVIRONMENT_POLICIES == tuple(tools.ENVIRONMENT_POLICIES)
+
+
+NEW_RECIPE_INPUT_IDS = (
+    "#recipe-file-role-prefix", "#recipe-result-glob",
+    "#recipe-query-column", "#recipe-subject-column", "#recipe-numeric-columns",
+    "#recipe-qstart-column", "#recipe-qend-column", "#recipe-sstart-column",
+    "#recipe-send-column", "#recipe-evalue-column", "#recipe-bitscore-column",
+    "#recipe-pident-column",
+)
+NEW_RECIPE_SELECT_IDS = (
+    "#recipe-input-kind", "#recipe-output-kind",
+    "#recipe-environment-policy", "#recipe-hmmer-mode",
+)
+NEW_RECIPE_KEYS = (
+    "file_role_prefix", "input_kind", "output_kind", "environment_policy",
+    "result_glob", "hmmer_mode", "query_column", "subject_column",
+    "numeric_columns", "qstart_column", "qend_column", "sstart_column",
+    "send_column", "evalue_column", "bitscore_column", "pident_column",
+)
+
+
+def test_config_screen_recipe_new_fields_roundtrip(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            # blastn_nt declares none of the newly modeled keys.
+            for widget_id in NEW_RECIPE_SELECT_IDS:
+                assert panel.query_one(widget_id, Select).value is Select.NULL
+            for widget_id in NEW_RECIPE_INPUT_IDS:
+                assert panel.query_one(widget_id, Input).value == ""
+
+            # file_role_prefix is mutually exclusive with file_role: clear the role first.
+            panel.query_one("#recipe-file-role", Input).value = ""
+            panel.query_one("#recipe-file-role-prefix", Input).value = "genome"
+            panel.query_one("#recipe-input-kind", Select).value = "file"
+            panel.query_one("#recipe-output-kind", Select).value = "directory"
+            panel.query_one("#recipe-environment-policy", Select).value = "strict"
+            panel.query_one("#recipe-result-glob", Input).value = "summary*.json"
+            panel.query_one("#recipe-hmmer-mode", Select).value = "hmmsearch"
+            panel.query_one("#recipe-numeric-columns", Input).value = "pident, evalue"
+            for widget_id, value in (
+                    ("#recipe-query-column", "qseqid"),
+                    ("#recipe-subject-column", "sseqid"),
+                    ("#recipe-qstart-column", "qstart"),
+                    ("#recipe-qend-column", "qend"),
+                    ("#recipe-sstart-column", "sstart"),
+                    ("#recipe-send-column", "send"),
+                    ("#recipe-evalue-column", "evalue"),
+                    ("#recipe-bitscore-column", "bitscore"),
+                    ("#recipe-pident-column", "pident"),
+            ):
+                panel.query_one(widget_id, Input).value = value
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, RecipeSaveModal)
+            assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # The editor reloaded from disk; every control shows the saved value.
+            assert panel.query_one("#recipe-file-role", Input).value == ""
+            assert panel.query_one("#recipe-file-role-prefix", Input).value == "genome"
+            assert panel.query_one("#recipe-input-kind", Select).value == "file"
+            assert panel.query_one("#recipe-output-kind", Select).value == "directory"
+            assert panel.query_one("#recipe-environment-policy", Select).value == "strict"
+            assert panel.query_one("#recipe-result-glob", Input).value == "summary*.json"
+            assert panel.query_one("#recipe-hmmer-mode", Select).value == "hmmsearch"
+            assert panel.query_one("#recipe-numeric-columns", Input).value == "pident, evalue"
+            assert panel.query_one("#recipe-query-column", Input).value == "qseqid"
+            assert panel.query_one("#recipe-pident-column", Input).value == "pident"
+
+    _run(scenario())
+    raw = get_recipe(project, "blastn_nt").raw
+    assert raw["version"] == 2
+    assert raw["file_role"] == ""  # a cleared modeled key stays as an empty string
+    assert raw["file_role_prefix"] == "genome"
+    assert raw["input_kind"] == "file"
+    assert raw["output_kind"] == "directory"
+    assert raw["environment_policy"] == "strict"
+    assert raw["result_glob"] == "summary*.json"
+    assert raw["hmmer_mode"] == "hmmsearch"
+    assert raw["numeric_columns"] == ["pident", "evalue"]
+    assert raw["query_column"] == "qseqid"
+    assert raw["subject_column"] == "sseqid"
+    assert raw["qstart_column"] == "qstart"
+    assert raw["qend_column"] == "qend"
+    assert raw["sstart_column"] == "sstart"
+    assert raw["send_column"] == "send"
+    assert raw["evalue_column"] == "evalue"
+    assert raw["bitscore_column"] == "bitscore"
+    assert raw["pident_column"] == "pident"
+    history = data.recipe_history(project, "blastn_nt")
+    assert [row["version"] for row in history] == [2]
+    snapshot = data.get_recipe_snapshot(project, "blastn_nt", history[0]["snapshot_id"])
+    assert snapshot["recipe"]["environment_policy"] == "strict"
+    assert snapshot["recipe"]["numeric_columns"] == ["pident", "evalue"]
+    assert snapshot["recipe"]["file_role_prefix"] == "genome"
+
+
+def test_config_screen_recipe_blank_new_fields_stay_absent(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("hmmsearch_pfam")
+            await pilot.pause()
+            # hmmer_mode is declared by this recipe and renders selected.
+            assert panel.query_one("#recipe-hmmer-mode", Select).value == "hmmsearch"
+            panel.query_one("#recipe-description", Input).value = "touched"
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+    _run(scenario())
+    raw = get_recipe(project, "hmmsearch_pfam").raw
+    assert raw["version"] == 2
+    assert raw["description"] == "touched"
+    assert raw["hmmer_mode"] == "hmmsearch"
+    # Blank controls mean "key absent", never an empty string.
+    for key in NEW_RECIPE_KEYS:
+        if key != "hmmer_mode":
+            assert key not in raw
+    history = data.recipe_history(project, "hmmsearch_pfam")
+    assert [row["version"] for row in history] == [2]
+    snapshot = data.get_recipe_snapshot(project, "hmmsearch_pfam", history[0]["snapshot_id"])
+    assert "environment_policy" not in snapshot["recipe"]
+
+
+def test_config_screen_recipe_unknown_select_value_is_preserved(project: Project) -> None:
+    """An out-of-vocabulary value of a modeled Select stays selected and
+    preserved (get_recipe does not validate hmmer_mode at load time)."""
+    path = project.tools_config_path
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["tools"]["hmmsearch"]["recipes"]["hmmsearch_pfam"]["hmmer_mode"] = "hmmscan2"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("hmmsearch_pfam")
+            await pilot.pause()
+            assert panel.query_one("#recipe-hmmer-mode", Select).value == "hmmscan2"
+
+    _run(scenario())
+
+
+def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Project) -> None:
+    original_bytes = project.tools_config_path.read_bytes()
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            # blastn_nt sets file_role; adding a prefix must be rejected inline,
+            # before the confirmation modal opens.
+            panel.query_one("#recipe-file-role-prefix", Input).value = "genome"
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+            error = _static_text(panel.query_one("#recipe-save-error", Static))
+            assert "'file_role' and 'file_role_prefix' are mutually exclusive" in error
+            assert "blastn_nt" in error
+
+            # Clearing the conflict re-arms the save flow.
+            panel.query_one("#recipe-file-role-prefix", Input).value = ""
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            assert _static_text(panel.query_one("#recipe-save-error", Static)) == ""
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+    _run(scenario())
+    assert project.tools_config_path.read_bytes() == original_bytes
+    assert data.recipe_history(project, "blastn_nt") == []
 
 
 def test_config_screen_profile_deleted_under_the_ui(project: Project) -> None:

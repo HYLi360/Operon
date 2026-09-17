@@ -11,8 +11,9 @@ Two tabs:
   every version is preserved in ``recipe_snapshots``.
 
 Round-trip fidelity rule: keys the forms do not model (``value_by``,
-``source``, ``unknown``, ``result_glob``, parameter spec details, …) are
-preserved verbatim and shown as dim read-only notes, never silently dropped.
+``source``, ``unknown``, ``database_mode``, ``output_name``, parameter spec
+details, …) are preserved verbatim and shown as dim read-only notes, never
+silently dropped.
 """
 
 from __future__ import annotations
@@ -59,13 +60,24 @@ OPERATOR_OPTIONS = [(operator, operator) for operator in actions.PROFILE_OPERATO
 RESULT_PARSERS = (
     "none", "blast_tabular", "hmmer_tblout", "hmmer_domtblout", "rpsbproc_tabular", "busco_json",
 )
+ARTIFACT_KINDS = ("file", "directory")
+# Keep in sync with operon.tools.ENVIRONMENT_POLICIES (asserted in
+# tests/unit/test_tui_config.py); blank means the key stays absent and the
+# core default ("warn") applies.
+ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
+HMMER_MODES = ("hmmsearch", "hmmscan")
 
 PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
 RECIPE_MODELED_ORDER = (
-    "description", "entity_type", "file_role", "format", "database", "database_version",
-    "output_subdir", "output_suffix", "arguments", "parameters", "result_parser",
-    "result_columns", "hit_metric_columns", "max_hits_per_query",
+    "description", "entity_type", "file_role", "file_role_prefix", "format",
+    "input_kind", "output_kind", "database", "database_version",
+    "environment_policy", "output_subdir", "output_suffix", "arguments",
+    "parameters", "result_parser", "result_glob", "hmmer_mode",
+    "result_columns", "hit_metric_columns", "query_column", "subject_column",
+    "numeric_columns", "qstart_column", "qend_column", "sstart_column",
+    "send_column", "evalue_column", "bitscore_column", "pident_column",
+    "max_hits_per_query",
 )
 RECIPE_MODELED_KEYS = frozenset(RECIPE_MODELED_ORDER) | {"version"}
 
@@ -452,9 +464,22 @@ class ConfigPanel(Panel):
                         yield Static("Entity type (blank = *)", classes="modal-label")
                         yield Select(ENTITY_TYPE_OPTIONS, id="recipe-entity-type", allow_blank=True)
                         yield Input(placeholder="file_role", id="recipe-file-role")
+                        yield Input(placeholder="file_role_prefix (mutually exclusive with "
+                                                "file_role)",
+                                    id="recipe-file-role-prefix")
                         yield Input(placeholder="format", id="recipe-format")
+                        yield Static("Input kind (blank = key absent)", classes="modal-label")
+                        yield Select([(kind, kind) for kind in ARTIFACT_KINDS],
+                                     id="recipe-input-kind", allow_blank=True)
+                        yield Static("Output kind (blank = key absent)", classes="modal-label")
+                        yield Select([(kind, kind) for kind in ARTIFACT_KINDS],
+                                     id="recipe-output-kind", allow_blank=True)
                         yield Input(placeholder="database", id="recipe-database")
                         yield Input(placeholder="database_version", id="recipe-database-version")
+                        yield Static("Environment policy (blank = key absent; core default "
+                                     "'warn')", classes="modal-label")
+                        yield Select([(policy, policy) for policy in ENVIRONMENT_POLICIES],
+                                     id="recipe-environment-policy", allow_blank=True)
                         yield Input(placeholder="output_subdir", id="recipe-output-subdir")
                         yield Input(placeholder="output_suffix", id="recipe-output-suffix")
                         yield Static("Arguments (one per line; ${placeholders} stay as-is)",
@@ -467,13 +492,31 @@ class ConfigPanel(Panel):
                         yield Static("Result parser", classes="modal-label")
                         yield Select([(parser, parser) for parser in RESULT_PARSERS],
                                      value="none", id="recipe-result-parser", allow_blank=False)
+                        yield Input(placeholder="result_glob", id="recipe-result-glob")
+                        yield Static("HMMER mode (blank = key absent)", classes="modal-label")
+                        yield Select([(mode, mode) for mode in HMMER_MODES],
+                                     id="recipe-hmmer-mode", allow_blank=True)
                         yield Input(placeholder="result_columns (comma separated)",
                                     id="recipe-result-columns")
                         yield Input(placeholder="hit_metric_columns (comma separated)",
                                     id="recipe-hit-metric-columns")
+                        yield Static("Column mapping (blank = parser defaults)",
+                                     classes="modal-label")
+                        yield Input(placeholder="query_column", id="recipe-query-column")
+                        yield Input(placeholder="subject_column", id="recipe-subject-column")
+                        yield Input(placeholder="numeric_columns (comma separated)",
+                                    id="recipe-numeric-columns")
+                        yield Input(placeholder="qstart_column", id="recipe-qstart-column")
+                        yield Input(placeholder="qend_column", id="recipe-qend-column")
+                        yield Input(placeholder="sstart_column", id="recipe-sstart-column")
+                        yield Input(placeholder="send_column", id="recipe-send-column")
+                        yield Input(placeholder="evalue_column", id="recipe-evalue-column")
+                        yield Input(placeholder="bitscore_column", id="recipe-bitscore-column")
+                        yield Input(placeholder="pident_column", id="recipe-pident-column")
                         yield Input(placeholder="max_hits_per_query (blank restores default: 5)",
                                     id="recipe-max-hits")
                         yield Static("", id="recipe-extras-note")
+                        yield Static("", id="recipe-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save recipe", id="recipe-save",
                                          variant="primary", disabled=True)
@@ -627,7 +670,23 @@ class ConfigPanel(Panel):
             entity_select.set_options(entity_options)
         entity_select.value = entity_type if entity_type else Select.NULL
         self.query_one("#recipe-file-role", Input).value = str(document.get("file_role", "") or "")
+        self.query_one("#recipe-file-role-prefix", Input).value = str(
+            document.get("file_role_prefix", "") or "")
         self.query_one("#recipe-format", Input).value = str(document.get("format", "") or "")
+        for key, widget_id, options in (
+                ("input_kind", "#recipe-input-kind", ARTIFACT_KINDS),
+                ("output_kind", "#recipe-output-kind", ARTIFACT_KINDS),
+                ("environment_policy", "#recipe-environment-policy", ENVIRONMENT_POLICIES),
+                ("hmmer_mode", "#recipe-hmmer-mode", HMMER_MODES),
+        ):
+            value = str(document.get(key, "") or "")
+            select = self.query_one(widget_id, Select)
+            if value and value not in options:
+                select.set_options(
+                    [(option, option) for option in options]
+                    + [(f"{value} (preserved)", value)]
+                )
+            select.value = value if value else Select.NULL
         self.query_one("#recipe-database", Input).value = str(document.get("database", "") or "")
         self.query_one("#recipe-database-version", Input).value = str(
             document.get("database_version", "") or "")
@@ -659,12 +718,25 @@ class ConfigPanel(Panel):
                 [(p, p) for p in RESULT_PARSERS] + [(f"{parser} (preserved)", parser)]
             )
         parser_select.value = parser
+        for key, widget_id in (("result_glob", "#recipe-result-glob"),
+                               ("query_column", "#recipe-query-column"),
+                               ("subject_column", "#recipe-subject-column"),
+                               ("qstart_column", "#recipe-qstart-column"),
+                               ("qend_column", "#recipe-qend-column"),
+                               ("sstart_column", "#recipe-sstart-column"),
+                               ("send_column", "#recipe-send-column"),
+                               ("evalue_column", "#recipe-evalue-column"),
+                               ("bitscore_column", "#recipe-bitscore-column"),
+                               ("pident_column", "#recipe-pident-column")):
+            self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
         for key, widget_id in (("result_columns", "#recipe-result-columns"),
-                               ("hit_metric_columns", "#recipe-hit-metric-columns")):
+                               ("hit_metric_columns", "#recipe-hit-metric-columns"),
+                               ("numeric_columns", "#recipe-numeric-columns")):
             columns = document.get(key, []) or []
             self.query_one(widget_id, Input).value = ", ".join(str(c) for c in columns)
         max_hits = document.get("max_hits_per_query")
         self.query_one("#recipe-max-hits", Input).value = "" if max_hits is None else str(max_hits)
+        self.query_one("#recipe-save-error", Static).update("")
         extras = {key: value for key, value in document.items() if key not in RECIPE_MODELED_KEYS}
         self.query_one("#recipe-extras-note", Static).update(
             Text(_extras_note(extras), style="dim") if extras else ""
@@ -721,6 +793,11 @@ class ConfigPanel(Panel):
             for column in self.query_one("#recipe-hit-metric-columns", Input).value.split(",")
             if column.strip()
         ]
+        numeric_columns = [
+            column.strip()
+            for column in self.query_one("#recipe-numeric-columns", Input).value.split(",")
+            if column.strip()
+        ]
         max_hits_text = self.query_one("#recipe-max-hits", Input).value.strip()
         max_hits: Any = _OMIT
         if max_hits_text:
@@ -732,13 +809,31 @@ class ConfigPanel(Panel):
         new_values: dict[str, Any] = {}
         for key, widget_id in (("description", "#recipe-description"),
                                ("file_role", "#recipe-file-role"),
+                               ("file_role_prefix", "#recipe-file-role-prefix"),
                                ("format", "#recipe-format"),
                                ("database", "#recipe-database"),
                                ("database_version", "#recipe-database-version"),
                                ("output_subdir", "#recipe-output-subdir"),
-                               ("output_suffix", "#recipe-output-suffix")):
+                               ("output_suffix", "#recipe-output-suffix"),
+                               ("result_glob", "#recipe-result-glob"),
+                               ("query_column", "#recipe-query-column"),
+                               ("subject_column", "#recipe-subject-column"),
+                               ("qstart_column", "#recipe-qstart-column"),
+                               ("qend_column", "#recipe-qend-column"),
+                               ("sstart_column", "#recipe-sstart-column"),
+                               ("send_column", "#recipe-send-column"),
+                               ("evalue_column", "#recipe-evalue-column"),
+                               ("bitscore_column", "#recipe-bitscore-column"),
+                               ("pident_column", "#recipe-pident-column")):
             value = self.query_one(widget_id, Input).value.strip()
             new_values[key] = value if value or key in original else _OMIT
+        for key, widget_id in (("input_kind", "#recipe-input-kind"),
+                               ("output_kind", "#recipe-output-kind"),
+                               ("environment_policy", "#recipe-environment-policy"),
+                               ("hmmer_mode", "#recipe-hmmer-mode")):
+            select_value = self.query_one(widget_id, Select).value
+            text = "" if select_value is Select.NULL else str(select_value)
+            new_values[key] = text if text or key in original else _OMIT
         new_values["entity_type"] = (
             entity_type if entity_type or "entity_type" in original else _OMIT
         )
@@ -750,6 +845,9 @@ class ConfigPanel(Panel):
         )
         new_values["hit_metric_columns"] = (
             hit_columns if hit_columns or "hit_metric_columns" in original else _OMIT
+        )
+        new_values["numeric_columns"] = (
+            numeric_columns if numeric_columns or "numeric_columns" in original else _OMIT
         )
         new_values["max_hits_per_query"] = max_hits
 
@@ -935,6 +1033,19 @@ class ConfigPanel(Panel):
         if not self.current_recipe or not self.recipe_tool or self.recipe_doc is None:
             return
         document = self._compose_recipe_document()
+        error = self.query_one("#recipe-save-error", Static)
+        # Mirror the mutual-exclusion check of tools.get_recipe inline, before
+        # the confirmation modal opens; the save_recipe round-trip still
+        # re-validates everything else against the core loader.
+        if (str(document.get("file_role", "")).strip()
+                and str(document.get("file_role_prefix", "")).strip()):
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: 'file_role' and 'file_role_prefix' "
+                "are mutually exclusive",
+                style="red",
+            ))
+            return
+        error.update("")
         file_version = self._recipe_file_version(self.current_recipe)
         new_version = 1 if file_version is None else file_version + 1
         self.app.push_screen(
