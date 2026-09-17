@@ -43,8 +43,26 @@ from operon.errors import ExternalToolError, ValidationError
 from operon.shutdown import ShutdownRequested, cleanup_completed, graceful_shutdown
 from operon.utils import now_iso, sha256_file, sha256_path
 
-_VERSION_CACHE: dict[str, tuple[str, str]] = {}
-_DATABASE_IDENTITY_CACHE: dict[str, str] = {}
+_VERSION_CACHE: dict[str, tuple[float, tuple[str, str]]] = {}
+_DATABASE_IDENTITY_CACHE: dict[str, tuple[float, str]] = {}
+
+# Both caches are TTL-bound rather than process-lifetime: a batch still pays
+# for one probe, but a long-lived process (the TUI) notices an in-place tool
+# upgrade or a reference database replaced at the same path.  Mirrored from
+# the environment-capture probe cache (environment_capture._LOCAL_CAPTURE_TTL_SECONDS).
+_IDENTITY_CACHE_TTL_SECONDS = 300
+
+
+def _identity_cache_get(cache: dict[str, tuple[float, Any]], key: str) -> Any | None:
+    """Return a live cache entry, evicting entries older than the TTL."""
+    entry = cache.get(key)
+    if entry is None:
+        return None
+    timestamp, value = entry
+    if time.monotonic() - timestamp > _IDENTITY_CACHE_TTL_SECONDS:
+        cache.pop(key, None)
+        return None
+    return value
 
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
 
@@ -614,8 +632,13 @@ def _detect_version_record(command: list[str], pattern: str, label: str,
         {"command": command, "pattern": pattern, "executor": executor_identity},
         sort_keys=True,
     )
-    if cache_key in _VERSION_CACHE:
-        return _VERSION_CACHE[cache_key]
+    cached = _identity_cache_get(_VERSION_CACHE, cache_key)
+    if cached is not None:
+        return cached
+
+    def _store(value: tuple[str, str]) -> tuple[str, str]:
+        _VERSION_CACHE[cache_key] = (time.monotonic(), value)
+        return value
     if executor is not None and executor.name != "local":
         combined = _version_output_via_executor(executor, command, timeout)
     else:
@@ -631,18 +654,15 @@ def _detect_version_record(command: list[str], pattern: str, label: str,
     if pattern:
         match = re.search(pattern, combined, flags=re.IGNORECASE)
         if match:
-            _VERSION_CACHE[cache_key] = (match.group(1).strip(), combined.strip()[:4000])
-            return _VERSION_CACHE[cache_key]
+            return _store((match.group(1).strip(), combined.strip()[:4000]))
     for line in combined.splitlines():
         line = line.strip()
         if line:
             # Fallback: first plausible version-like token on the first line.
             m = re.search(r"([0-9]+(?:\.[0-9]+){1,}[^\s]*)", line)
             if m:
-                _VERSION_CACHE[cache_key] = (m.group(1), combined.strip()[:4000])
-                return _VERSION_CACHE[cache_key]
-            _VERSION_CACHE[cache_key] = (line[:200], combined.strip()[:4000])
-            return _VERSION_CACHE[cache_key]
+                return _store((m.group(1), combined.strip()[:4000]))
+            return _store((line[:200], combined.strip()[:4000]))
     raise ExternalToolError(
         f"could not determine version of {label} (command: {' '.join(command)}); "
         f"set 'version_pattern' in config/tools.yaml"
@@ -865,8 +885,9 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
         "mode": database_mode,
         "location": location_identity,
     }, sort_keys=True)
-    if cache_key in _DATABASE_IDENTITY_CACHE:
-        return _DATABASE_IDENTITY_CACHE[cache_key]
+    cached = _identity_cache_get(_DATABASE_IDENTITY_CACHE, cache_key)
+    if cached is not None:
+        return cached
     digest = str(recipe.raw.get("database_checksum", "") or "")
     if database_mode == "mutable_cache":
         digest = f"mutable-cache:{digest.lower()}" if digest else "mutable-cache"
@@ -893,7 +914,7 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
     if location_identity:
         canonical["location"] = location_identity
     identity = hashlib.sha256(json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
-    _DATABASE_IDENTITY_CACHE[cache_key] = identity
+    _DATABASE_IDENTITY_CACHE[cache_key] = (time.monotonic(), identity)
     return identity
 
 

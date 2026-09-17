@@ -1075,3 +1075,31 @@ def test_parameter_fingerprint_includes_command_versions():
     )
     assert v1 != base
     assert v1 != v2
+
+
+@pytest.mark.bug("ODR-0016")
+def test_version_and_database_identity_caches_expire_after_ttl(tmp_path, monkeypatch):
+    # Version probe cache: a live entry is reused, an expired one re-probes.
+    tools._VERSION_CACHE.clear()
+    outputs = iter(["tool 1.0.0\n", "tool 2.0.0\n"])
+    monkeypatch.setattr(subprocess, "run",
+                        lambda *_a, **_k: SimpleNamespace(stdout=next(outputs), stderr=""))
+    assert tools.detect_tool_version(tool_spec(), {}) == "1.0.0"
+    assert tools.detect_tool_version(tool_spec(), {}) == "1.0.0"
+    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 0)
+    assert tools.detect_tool_version(tool_spec(), {}) == "2.0.0"
+    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 300)
+    tools._VERSION_CACHE.clear()
+
+    # Database identity cache: a database replaced in place is noticed after expiry.
+    tools._DATABASE_IDENTITY_CACHE.clear()
+    database = tmp_path / "ref.db"
+    database.write_text("version-one", encoding="utf-8")
+    p = project(tmp_path)
+    first = tools.database_identity(p, recipe(database="ref.db"))
+    assert tools.database_identity(p, recipe(database="ref.db")) == first
+    database.write_text("version-two", encoding="utf-8")
+    assert tools.database_identity(p, recipe(database="ref.db")) == first  # still within TTL
+    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 0)
+    assert tools.database_identity(p, recipe(database="ref.db")) != first
+    tools._DATABASE_IDENTITY_CACHE.clear()

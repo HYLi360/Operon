@@ -110,7 +110,7 @@
 - **结果汇总基于被截断的 hit 集。** `hit_count`、`best_evalue` 与由此得出的“top hit”只用 `max_hits_per_query` 之内保留的 hits，`hit_rank` 是该行在结果文件中的位置而非得分排序，因此汇总可能偏少并给出错误顺序（`tools.py`）。
 - **recipe 笔误要么静默降级，要么抛出裸错误。** 不在 `result_columns` 中的指标列会被无提示丢弃，而 query/subject 列不在 `result_columns` 中会抛出普通 `ValueError`（退出码 1，而非校验错误）（`tools.py`）。
 - **HMMER 解析的默认行为不对称。** 没有 `# <program> ::` 头时按 hmmscan 列映射处理，且 tblout 解析器会静默丢弃不足 6 个字段的行，而 rpsbproc 解析器会报错（`tools.py`）。
-- **版本与数据库身份在进程生命周期内被缓存。** 模块级字典从不失效，因此长期运行的进程（例如 TUI）会在工具或数据库变化后继续使用陈旧的版本与数据库指纹（`tools.py`）。
+- **版本与数据库身份缓存带 300 秒 TTL。** 一个批次只付一次探测开销，但长期运行的进程（例如 TUI）会在 TTL 过期后重新探测，因此就地升级的工具或在原路径替换的参考数据库会被察觉；TTL 本身不可配置（`tools.py`）。
 - **版本探测有硬上限，并在 `logs/` 下暂存。** 它使用硬编码的 120 秒超时，并把临时输出暂存在项目的 `logs/` 目录下；两者都不可配置（`tools.py`）。
 - **命令链只校验最后一步的输出。** 中间产物在 run 被记为 `completed` 之前从不检查，因此链可以在中间产物缺失的情况下“完成”（`workflow.py`）。
 - **被采纳的 lineage 边只插不改。** `(derived_file_id, input_file_id)` 上的 `INSERT OR IGNORE` 意味着重复采纳永远不会更新 `workflow_run_id`，而且根本不存在更新路径（不同字节抛 `ConflictError`）；首个绝对源路径作为 `source_url` 胜出，相对 manifest 路径按项目根而非工作目录解析，也没有自引用或环检测（`lineage.py`）。
@@ -137,7 +137,7 @@
 - **SSH 超时可能留下仍在运行的远端进程。** 载荷在 `setsid --wait` 与远端 `/tmp` pidfile 下运行；超时时进程组先收 SIGTERM 再 SIGKILL，但 pidfile 缺失时错误只能提示“远端进程可能仍在运行”（`execution.py`）。
 - **输出回拉是不对称的。** 远端输出不存在时被跳过（由期望输出检查报告），但本地已有内容不同的输出会抛 `ConflictError`（`execution.py`）。
 - **路径改写跟随解析后的路径。** 远程执行会改写解析目标位于项目根内的参数，即使字面参数并不在根内；而字面上在根内、解析后却指向根外的路径会抛 `ValidationError`（`execution.py`）。
-- **本地环境探测在进程内记忆化 300 秒。** `LocalExecutor.run` 仍在载荷之前探测，但 `capture_local` 会对共享同一启动器和工作目录的重复命令复用脱敏后的文档，因此一个批次只付一次探测开销；不同的启动器（例如另一个 Conda 环境）或不同的 `cwd` 分别缓存。条目在 `_LOCAL_CAPTURE_TTL_SECONDS`（300 秒）后过期并重新探测——这是 TTL 而非上文版本/数据库身份所用的进程生命周期缓存，长期运行的 TUI 会话不会因此陈旧——且失败的捕获从不缓存，一次抖动不会污染整个批次（`execution.py`、`environment_capture.py`）。
+- **本地环境探测在进程内记忆化 300 秒。** `LocalExecutor.run` 仍在载荷之前探测，但 `capture_local` 会对共享同一启动器和工作目录的重复命令复用脱敏后的文档，因此一个批次只付一次探测开销；不同的启动器（例如另一个 Conda 环境）或不同的 `cwd` 分别缓存。条目在 `_LOCAL_CAPTURE_TTL_SECONDS`（300 秒）后过期并重新探测——与上文版本/数据库身份缓存相同的 TTL 策略，长期运行的 TUI 会话不会因此陈旧——且失败的捕获从不缓存，一次抖动不会污染整个批次（`execution.py`、`environment_capture.py`）。
 - **资源采样只观察直接子进程。** 使用默认的 `conda run`/`mamba run` 启动器时，`max_rss_mb`/`avg_rss_mb` 描述的是启动器进程，而不是它启动的工具（`execution.py`）。
 - **失败的环境采集仍会作为该 run 的环境入库。** 占位文档 `{"capture_schema": 1, "capture_status": "failed"}` 会成为作业的环境，随后的 `strict` 比较看到 `unavailable` 并降级为 `warn`（`execution.py`、`workflow.py`）。
 - **本地 Slurm 的取消失败是静默的。** 本地 Slurm 后端在超时和中断时忽略 `scancel` 失败，而远端 Slurm 路径会记录 `cancellation_error` 并给出警告；轮询中途的 `squeue`/SSH 控制失败会直接中止而不调用 `scancel`，因此正在运行的作业可能被遗留（`execution.py`）。
