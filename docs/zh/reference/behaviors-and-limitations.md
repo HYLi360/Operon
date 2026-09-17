@@ -255,7 +255,6 @@
 - **不支持的启动器与包元数据被原样存储。** wrapper 与容器启动器、以及未知的 conda/mamba 选项被记录为 `unsupported_launcher` 与 `capture_scope: executor_only`；每个包的完整 `depends` 列表和一行 base64 的 `conda-meta` 记录会被存储，且没有大小上限（`environment_capture.py`）。
 - **环境降级只被记录，不被强制执行。** Slurm 与远端 Slurm 后端没有作业前探针，因此 `strict` 策略被降级，run details 记录 ASCII 字面量 `environment_policy_degraded: strict->warn`；当任一侧缺少子指纹时，比对记录为 `environment_compare: unavailable`，此时 `warn` 照常复用，`strict` 也降级为 `warn` 而不会使缓存失效（见[执行模型](../architecture/external-analysis.md)）（`tools.py`、`environment.py`）。
 - **第二次信号跳过清理。** 第一次 SIGINT/SIGTERM 触发优雅关机（退出码 130）；清理期间的第二次信号直接 `os._exit(128+signum)`。`graceful_shutdown` 在主线程之外是 no-op（`shutdown.py`）。
-- **已知问题：清理完成后的信号仍会强制退出。** `_cleanup_in_progress` 只在关机上下文管理器退出时清除，因此任何在清理完成之后、上下文退栈之前到达的信号都会立即以 `128+signum` 退出（`shutdown.py`）。
 
 ## CLI 约定
 

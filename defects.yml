@@ -233,3 +233,19 @@ defects:
   - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_payload_is_validation_error
   - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_rejects_non_numeric_taxon_ids
   - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error
+- id: ODR-0015
+  title: A signal arriving after completed interrupt cleanup still force-exits the process
+  reported: '2026-09-17'
+  introduced_in: null
+  affected: 0.8.2 and earlier; long-running analyze batches interrupted by SIGINT/SIGTERM
+  severity: low
+  component: shutdown
+  status: fixed
+  reproduction: _cleanup_in_progress was cleared only when the graceful_shutdown() context manager unwound. After an interrupt's cleanup finished (subprocess/array terminated, analysis_jobs finalized, partial outputs removed) but before the context exited (batch-loop unwinding, exit-130 reporting), any further signal took the second-during-cleanup branch and called os._exit(128+signum), killing a process that had nothing left to clean up and cutting off its normal finalization.
+  disposition: 'Added shutdown.cleanup_completed(), invoked by every interrupt-cleanup site in tools.py once its bookkeeping is finalized; it re-arms graceful handling so a later signal raises a fresh ShutdownRequested (exit 130) instead of force-exiting. The force-exit escape hatch remains exactly where it is needed: a second signal while cleanup is genuinely still running.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_shutdown.py::test_signal_after_completed_cleanup_raises_gracefully
+  - tests/unit/test_shutdown.py::test_force_exit_still_applies_while_cleanup_is_running
+  - tests/unit/test_shutdown.py::test_cleanup_completed_without_a_signal_is_a_noop

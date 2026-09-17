@@ -8,7 +8,10 @@ finalize bookkeeping (``analysis_jobs`` status, partial output removal)
 before the process exits.
 
 A second signal received while shutdown cleanup is still in progress forces
-an immediate exit, so a stuck cleanup path can never trap the user.
+an immediate exit, so a stuck cleanup path can never trap the user.  Once a
+cleanup path has finalized its bookkeeping it calls ``cleanup_completed()``,
+re-arming graceful handling: a later signal then starts a fresh graceful
+shutdown instead of force-exiting a process that has nothing left to clean.
 """
 
 from __future__ import annotations
@@ -35,6 +38,19 @@ _cleanup_in_progress = False
 def _force_exit(signum: int) -> None:
     """Immediate exit for a second signal during cleanup (never returns)."""
     os._exit(128 + signum)
+
+
+def cleanup_completed() -> None:
+    """Re-arm graceful handling once interrupt cleanup has finalized.
+
+    Cleanup paths call this after their bookkeeping (terminated payloads,
+    finalized run records, removed partial outputs) is done.  A signal
+    arriving after this point raises a fresh :class:`ShutdownRequested`
+    rather than force-exiting; the immediate-exit escape hatch applies only
+    while cleanup is genuinely still running.
+    """
+    global _cleanup_in_progress
+    _cleanup_in_progress = False
 
 
 def _handler(signum: int, frame: object) -> None:

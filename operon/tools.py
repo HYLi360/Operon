@@ -40,7 +40,7 @@ import yaml
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ExternalToolError, ValidationError
-from operon.shutdown import ShutdownRequested, graceful_shutdown
+from operon.shutdown import ShutdownRequested, cleanup_completed, graceful_shutdown
 from operon.utils import now_iso, sha256_file, sha256_path
 
 _VERSION_CACHE: dict[str, tuple[str, str]] = {}
@@ -1412,6 +1412,7 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
                                                    run_record, keep_partial=keep_partial)
         except ShutdownRequested as exc:
             _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            cleanup_completed()
             raise
         except Exception as exc:
             _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
@@ -1491,6 +1492,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                 project, db, recipe, tool, executor, batch, results, finalized,
                 sftp=sftp, client=client, keep_partial=keep_partial, started=started,
             )
+            cleanup_completed()
             raise
         if len(exec_results) != len(batch):
             raise ExternalToolError(
@@ -1551,6 +1553,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                 executor._restore_output_backups(sftp, plan.backups)
                 plan.backups = []
             _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+        cleanup_completed()
         raise
     except Exception as exc:
         # Whole-batch failure (connect, staging setup, submission): every
@@ -1729,6 +1732,7 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
                                             keep_partial=keep_partial)
     except ShutdownRequested as exc:
         _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+        cleanup_completed()
         raise
     except Exception as exc:
         _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)

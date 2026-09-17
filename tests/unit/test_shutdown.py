@@ -64,3 +64,40 @@ def test_noop_outside_main_thread():
     thread.start()
     thread.join()
     assert not errors
+
+
+@pytest.mark.bug("ODR-0015")
+def test_signal_after_completed_cleanup_raises_gracefully(monkeypatch):
+    forced: list[int] = []
+    monkeypatch.setattr(shutdown, "_force_exit", forced.append)
+    with graceful_shutdown():
+        with pytest.raises(ShutdownRequested):
+            shutdown._handler(signal.SIGTERM, None)
+        shutdown.cleanup_completed()
+        # Cleanup is done: a later signal starts a fresh graceful shutdown
+        # instead of force-exiting a process with nothing left to clean up.
+        with pytest.raises(ShutdownRequested) as caught:
+            shutdown._handler(signal.SIGINT, None)
+        assert caught.value.signum == signal.SIGINT
+    assert forced == []
+
+
+@pytest.mark.bug("ODR-0015")
+def test_force_exit_still_applies_while_cleanup_is_running(monkeypatch):
+    forced: list[int] = []
+    monkeypatch.setattr(shutdown, "_force_exit", forced.append)
+    with graceful_shutdown():
+        with pytest.raises(ShutdownRequested):
+            shutdown._handler(signal.SIGTERM, None)
+        # No cleanup_completed() call: the escape hatch still fires.
+        with pytest.raises(ShutdownRequested):
+            shutdown._handler(signal.SIGINT, None)
+    assert forced == [signal.SIGINT]
+
+
+@pytest.mark.bug("ODR-0015")
+def test_cleanup_completed_without_a_signal_is_a_noop():
+    with graceful_shutdown():
+        shutdown.cleanup_completed()
+        with pytest.raises(ShutdownRequested):
+            shutdown._handler(signal.SIGTERM, None)

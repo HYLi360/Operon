@@ -258,7 +258,6 @@ remaining bullets are intended-but-implicit semantics or accepted limitations.
 - **Unsupported launchers and package metadata are stored verbatim.** Wrapper and container launchers, and unknown conda/mamba flags, are recorded as `unsupported_launcher` with `capture_scope: executor_only`; each package's full `depends` list and one base64 `conda-meta` record are stored with no size cap (`environment_capture.py`).
 - **Environment degradation is recorded, not enforced.** Slurm and remote-Slurm backends have no pre-job probe, so a `strict` policy is downgraded and the run details record the ASCII literal `environment_policy_degraded: strict->warn`; when either side lacks sub-fingerprints the comparison is recorded as `environment_compare: unavailable`, where `warn` reuses as usual and `strict` also degrades to `warn` rather than invalidating the cache (see the [execution model](../architecture/external-analysis.md)) (`tools.py`, `environment.py`).
 - **A second signal skips cleanup.** The first SIGINT/SIGTERM triggers graceful shutdown (exit code 130); a second signal during cleanup calls `os._exit(128+signum)` immediately. `graceful_shutdown` is a no-op outside the main thread (`shutdown.py`).
-- **Known issue: a signal after a completed cleanup still force-exits.** `_cleanup_in_progress` is only cleared when the shutdown context manager exits, so any signal arriving after cleanup finished but before the context unwinds exits immediately with `128+signum` (`shutdown.py`).
 
 ## CLI conventions
 
