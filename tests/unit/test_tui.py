@@ -12,6 +12,7 @@ pytest.importorskip("textual")
 
 from rich.text import Text
 from textual.widgets import (
+    Button,
     Checkbox,
     ContentSwitcher,
     DataTable,
@@ -1544,5 +1545,152 @@ def test_run_detail_follow_timer_stops_on_unmount(tmp_path: Path) -> None:
             # Leaving the screen stops the timer and clears the follow state.
             assert screen._follow_timer is None
             assert not screen._following
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# captured environments (milestone M2b)
+# ---------------------------------------------------------------------------
+
+
+def _seed_environments(project: Project) -> dict[str, str]:
+    """Record a fully captured and a partial environment plus a corrupt row."""
+    from operon.database import Database
+
+    db = Database(project.db_path)
+    try:
+        with db.transaction():
+            complete = db.record_environment({
+                "system": {"os": "Linux"},
+                "conda": {
+                    "status": "captured",
+                    "explicit": "@EXPLICIT\nhttps://conda.anaconda.org/ch/noarch/test-1.0-0.conda\n",
+                    "packages": [{
+                        "name": "test", "version": "1.0", "build": "0",
+                        "url": "https://conda.anaconda.org/ch/noarch/test-1.0-0.conda",
+                    }],
+                },
+            })
+            partial = db.record_environment(
+                {"system": {"os": "Linux"}, "capture_status": "partial"})
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO execution_environments (environment_id, document, created_at) "
+                "VALUES ('ENV_000000000000', 'not json', '2026-01-01T00:00:00+08:00')")
+    finally:
+        db.close()
+    return {"complete": complete, "partial": partial}
+
+
+def test_list_environments_documents_and_exports(tmp_path: Path) -> None:
+    project = Project.init(tmp_path / "environments-project")
+    seeded = _seed_environments(project)
+
+    rows = data.list_environments(project)
+    # Ordered by created_at, so the pinned corrupt row comes first (the two
+    # recorded rows share a timestamp and tie-break on their content address).
+    assert rows[0]["environment_id"] == "ENV_000000000000"
+    assert {row["environment_id"] for row in rows} == {
+        "ENV_000000000000", seeded["complete"], seeded["partial"],
+    }
+    by_id = {row["environment_id"]: row for row in rows}
+    assert by_id["ENV_000000000000"]["summary"] == "-"  # unparseable document
+    assert by_id[seeded["complete"]]["summary"] == "Linux; conda (1 packages)"
+    assert by_id[seeded["partial"]]["summary"] == "Linux; capture: partial"
+    assert "document" not in by_id[seeded["complete"]]
+
+    document = data.environment_document(project, seeded["complete"])
+    assert document["conda"]["status"] == "captured"
+    with pytest.raises(ValidationError, match="unknown environment: ENV_missing"):
+        data.environment_document(project, "ENV_missing")
+
+    assert data.export_environment(
+        project, seeded["complete"], "explicit").startswith("@EXPLICIT")
+    yaml_text = data.export_environment(project, seeded["complete"], "yaml")
+    assert "name: operon-restored" in yaml_text
+    assert "test=1.0=0" in yaml_text
+    with pytest.raises(ValidationError, match="no complete Conda explicit specification"):
+        data.export_environment(project, seeded["partial"], "explicit")
+    with pytest.raises(ValidationError, match="no complete Conda package inventory"):
+        data.export_environment(project, seeded["partial"], "yaml")
+
+
+def test_environments_modal_lists_and_renders(tmp_path: Path) -> None:
+    """The Tasks screen's environment browser mirrors list/show/export."""
+    from operon.tui.screens.environments import EnvironmentsModal
+
+    project = Project.init(tmp_path / "environments-ui-project")
+    seeded = _seed_environments(project)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-environments")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            assert isinstance(modal, EnvironmentsModal)
+            table = modal.query_one("#environments-table", DataTable)
+            assert table.row_count == 3
+            output = modal.query_one("#environments-output", RichLog)
+
+            ids = [row["environment_id"] for row in modal.environments]
+            table.focus()
+            table.move_cursor(row=ids.index(seeded["complete"]), animate=False)
+            await pilot.pause()
+            await _click(pilot, "#environments-show")
+            await pilot.pause()
+            assert '"status": "captured"' in _log_text(output)
+
+            await _click(pilot, "#environments-explicit")
+            await pilot.pause()
+            assert _log_text(output).startswith("@EXPLICIT")
+
+            await _click(pilot, "#environments-yaml")
+            await pilot.pause()
+            assert "name: operon-restored" in _log_text(output)
+
+            # A document without a conda inventory reports inline.
+            table.move_cursor(row=ids.index(seeded["partial"]), animate=False)
+            await pilot.pause()
+            await _click(pilot, "#environments-explicit")
+            await pilot.pause()
+            assert "no complete Conda explicit specification" in _static_text(
+                modal.query_one("#environments-error", Static))
+
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, EnvironmentsModal)
+
+    _run(scenario())
+
+
+def test_environments_modal_requires_a_selection(tmp_path: Path) -> None:
+    """Buttons without a selected row stay inline errors."""
+    from operon.tui.screens.environments import EnvironmentsModal
+
+    project = Project.init(tmp_path / "environments-empty-project")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            modal = EnvironmentsModal(project)
+            app.push_screen(modal)
+            await pilot.pause()
+            await _settled(app)
+            assert modal.query_one("#environments-table", DataTable).row_count == 0
+            modal.on_button_pressed(Button.Pressed(
+                modal.query_one("#environments-show", Button)))
+            assert "select an environment row first" in _static_text(
+                modal.query_one("#environments-error", Static))
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, EnvironmentsModal)
 
     _run(scenario())

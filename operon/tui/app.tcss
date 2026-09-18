@@ -176,6 +176,16 @@ HelpScreen {
     border-top: solid $primary;
 }
 
+#environments-table {
+    height: 10;
+}
+
+#environments-output {
+    height: 12;
+    padding: 0 1;
+    border-top: solid $primary;
+}
+
 #config-tabs {
     height: 1fr;
 }

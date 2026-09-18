@@ -658,6 +658,48 @@ def workflow_run_status(project: Project, run_id: str) -> dict[str, Any] | None:
     return {key: record.get(key) for key in ("run_id", "status", "exit_code", "finished_at")}
 
 
+def list_environments(project: Project) -> list[dict[str, Any]]:
+    """Return captured execution environments like ``operon environments list``.
+
+    Ordered by ``created_at`` (then id), each row carrying the single-line
+    ``environment_summary``; an unparseable stored document degrades to a
+    ``"-"`` summary instead of failing the load, exactly like the CLI.
+    """
+    from operon.environment import environment_summary
+    with _open(project) as db:
+        rows = _rows(
+            db,
+            "SELECT environment_id, document, created_at FROM execution_environments "
+            "ORDER BY created_at, environment_id",
+        )
+    for row in rows:
+        try:
+            row["summary"] = environment_summary(json.loads(row.pop("document"))) or "-"
+        except json.JSONDecodeError:
+            row["summary"] = "-"
+    return rows
+
+
+def environment_document(project: Project, environment_id: str) -> dict[str, Any]:
+    """Return one captured environment document (unknown id raises like the CLI)."""
+    with _open(project) as db:
+        row = _row(
+            db,
+            "SELECT document FROM execution_environments WHERE environment_id=?",
+            (environment_id,),
+        )
+    if row is None:
+        raise ValidationError(f"unknown environment: {environment_id}")
+    return json.loads(row["document"])
+
+
+def export_environment(project: Project, environment_id: str, fmt: str = "explicit") -> str:
+    """Render a Conda reconstruction spec like ``operon environments export``."""
+    from operon.environment_capture import export_conda
+
+    return export_conda(environment_document(project, environment_id), fmt)
+
+
 def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
     """Return one workflow run with ``execution_details`` JSON decoded.
 

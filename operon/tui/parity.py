@@ -559,9 +559,30 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "backend": "external-backend",
         },
     ),
-    ParityEntry(("environments", "list"), STATUS_PLANNED, note=_M2B),
-    ParityEntry(("environments", "show"), STATUS_PLANNED, note=_M2B),
-    ParityEntry(("environments", "export"), STATUS_PLANNED, note=_M2B),
+    ParityEntry(
+        ("environments", "list"),
+        STATUS_IMPLEMENTED,
+        actions="data.list_environments",
+        modal="operon.tui.screens.environments::EnvironmentsModal",
+    ),
+    ParityEntry(
+        ("environments", "show"),
+        STATUS_IMPLEMENTED,
+        note="the environment id comes from the selected row",
+        actions="data.environment_document",
+        modal="operon.tui.screens.environments::EnvironmentsModal",
+    ),
+    ParityEntry(
+        ("environments", "export"),
+        STATUS_IMPLEMENTED,
+        note="the environment id comes from the selected row; the conda spec is "
+        "rendered read-only, so writing it to a file stays a CLI redirection",
+        actions="data.export_environment",
+        modal="operon.tui.screens.environments::EnvironmentsModal",
+        params={
+            "format": "environments-explicit / environments-yaml (two buttons)",
+        },
+    ),
     ParityEntry(("extract-domains",), STATUS_PLANNED, note=_M3),
     ParityEntry(("select-sequences",), STATUS_PLANNED, note=_M3),
     ParityEntry(("classify-sequences",), STATUS_PLANNED, note=_M3),

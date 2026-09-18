@@ -73,6 +73,7 @@ class RunsPanel(Panel):
             with Horizontal(classes="config-buttons"):
                 yield Button("Analysis jobs", id="runs-jobs")
                 yield Button("Run external", id="runs-external")
+                yield Button("Environments", id="runs-environments")
                 yield Button("New analysis", id="runs-new-analysis")
             yield DataTable(id="runs-table", cursor_type="row")
 
@@ -175,6 +176,10 @@ class RunsPanel(Panel):
             from operon.tui.screens.run_external import RunExternalModal
 
             self.app.push_screen(RunExternalModal(self.project), self._external_finished)
+        elif event.button.id == "runs-environments":
+            from operon.tui.screens.environments import EnvironmentsModal
+
+            self.app.push_screen(EnvironmentsModal(self.project))
 
     def _external_finished(self, payload: Any) -> None:
         """Dismiss callback: reload the panel and open the finished run's record."""
