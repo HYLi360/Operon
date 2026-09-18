@@ -552,6 +552,102 @@ def test_qc_modal_command_text_matches_action_kwargs(
         assert kwargs == want
 
 
+def test_run_external_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select  # noqa: F401
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.run_external import RunExternalModal
+
+    payload = {
+        "run_id": "WF_0001",
+        "step": "busco",
+        "status": "completed",
+        "exit_code": 0,
+        "finished_at": "2026-09-18T12:00:00+08:00",
+        "error": None,
+        "stdout_file": "/tmp/stdout.log",
+        "stderr_file": "/tmp/stderr.log",
+        "messages": "",
+    }
+    calls = spy_action(monkeypatch, "run_external", payload)
+    preflights: list = []
+    monkeypatch.setattr(
+        actions,
+        "preflight_backend",
+        lambda _project, backend=None, *, recipe_name=None: (
+            preflights.append(backend)
+            or {"backend": backend or "local", "description": backend or "local"}
+        ),
+    )
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = RunExternalModal(project)
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            # Empty form: the preview keeps the CLI shape with placeholders.
+            assert modal.command_text() == "operon run-external --step '…' --command '…'"
+
+            modal.query_one("#external-step", Input).value = "busco"
+            modal.query_one("#external-command", Input).value = "busco -i in.fa -o out -m genome"
+            modal.query_one("#external-entity-type", Select).value = "assembly"
+            modal.query_one("#external-entity-id", Input).value = "ASM_000001"
+            modal.query_one("#external-tool", Input).value = "busco"
+            modal.query_one("#external-parameter-set", Input).value = "busco_v1"
+            modal.query_one("#external-inputs", Input).value = "a.fa, b.fa"
+            modal.query_one("#external-expected-outputs", Input).value = "out.tsv"
+            modal.query_one("#external-threads", Input).value = "4"
+            modal.query_one("#external-cwd", Input).value = "/tmp"
+            modal.query_one("#external-timeout", Input).value = "30"
+            modal.query_one("#external-backend", Select).value = "slurm"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.step == "busco"
+            assert ns.command_line == "busco -i in.fa -o out -m genome"
+            assert ns.entity_type == "assembly"
+            assert ns.entity_id == "ASM_000001"
+            assert ns.tool == "busco"
+            assert ns.parameter_set == "busco_v1"
+            assert ns.inputs == ["a.fa", "b.fa"]
+            assert ns.expected_output == ["out.tsv"]
+            assert ns.threads == 4
+            assert ns.cwd == "/tmp"
+            assert ns.timeout == 30.0
+            assert ns.backend == "slurm"
+
+            modal.confirm()
+            await _wait_until(lambda: bool(dismissed), "run-external modal dismissed")
+
+    _run(scenario())
+    assert dismissed == [payload]
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[1] == "busco"
+    assert args[2] == "busco -i in.fa -o out -m genome"
+    assert kwargs == {
+        "entity_type": "assembly",
+        "entity_id": "ASM_000001",
+        "parameter_set": "busco_v1",
+        "tool": "busco",
+        "inputs": ["a.fa", "b.fa"],
+        "expected_outputs": ["out.tsv"],
+        "threads": 4,
+        "cwd": "/tmp",
+        "timeout": 30.0,
+        "backend": "slurm",
+    }
+    # The modal preflights the resolved backend before any worker starts.
+    assert preflights == ["slurm"]
+
+
 # ---------------------------------------------------------------------------
 # Layer 4: audit-trail equivalence (CLI vs TUI actions)
 # ---------------------------------------------------------------------------

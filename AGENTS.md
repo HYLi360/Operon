@@ -85,10 +85,15 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     through the shared single-transaction `import_wizard._commit`),
     `reserve_entity_ids`, `create_release`, `export`, `run_coverage`
     (a below-threshold coverage report returns `exit_code=1` in the result
-    dict — a warning, not an exception), and `run_analysis` (backs the
-    AnalyzeModal launched from the Config screen's Run analysis button or the
-    Tasks screen's New analysis button; local/default backend only, with
-    progress and between-files cancellation). The
+    dict — a warning, not an exception), `preflight_backend`, `run_analysis`
+    (backing the AnalyzeModal launched from the Config screen's Run analysis
+    button or the Tasks screen's New analysis button; the modal mirrors
+    `--backend` — project default / local / slurm / ssh — and preflights the
+    selection inline, and cancellation sets the core's cooperative
+    `cancel_event`, so a queued Slurm job or array is cancelled with one
+    `scancel`) and `run_external` (backing the Tasks screen's Run external
+    dialog, which mirrors `run-external` field by field and opens the run
+    record when it finishes). The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
     `config/profiles/*.yaml` (kind `qc`) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text

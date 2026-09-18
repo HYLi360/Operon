@@ -33,6 +33,9 @@ from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
     ErrorDialog,
     WriteModal,
+    backend_select_options,
+    project_default_backend,
+    selected_backend,
 )
 
 FAILURE_STATUSES = frozenset({"error", "failed"})
@@ -81,29 +84,11 @@ class AnalyzeModal(WriteModal):
 
     def _backend_options(self) -> list[tuple[str, str]]:
         """Backend choices: CLI ``--backend`` values plus the project default."""
-        default = self._project_default_backend()
-        return [
-            (f"project default ({default})", ""),
-            ("local", "local"),
-            ("slurm", "slurm"),
-            ("ssh", "ssh"),
-        ]
-
-    def _project_default_backend(self) -> str:
-        execution = getattr(self.project, "config", {}) or {}
-        name = str((execution.get("execution", {}) or {}).get("backend") or "local")
-        return name.strip().lower() or "local"
-
-    def _selected_backend(self) -> str:
-        """The backend name the current selection resolves to ("" = default)."""
-        try:
-            widget = self.query_one("#analyze-backend", Select)
-        except NoMatches:  # not mounted yet
-            return ""
-        return "" if widget.value is Select.NULL else str(widget.value)
+        return backend_select_options(self.project)
 
     def _resolved_backend(self) -> str:
-        return self._selected_backend() or self._project_default_backend()
+        return (selected_backend(self, "analyze-backend")
+                or project_default_backend(self.project))
 
     def _update_cancel_note(self) -> None:
         """Describe cancel semantics for the selected backend."""

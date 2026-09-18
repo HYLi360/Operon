@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import shutil
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,6 +28,8 @@ from operon.tui.screens.decisions import CurateModal, DecisionsPanel, EvaluateMo
 from operon.tui.screens.entities import EntitiesPanel, LifecycleModal
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.files_ops import IngestModal, QcModal, VerifyModal
+from operon.tui.screens.run_external import RunExternalModal
+from operon.tui.screens.runs import RunDetailScreen
 
 
 @pytest.fixture(scope="module")
@@ -982,3 +986,242 @@ def test_qc_modal_options_validation_and_worker_values(project: Project, monkeyp
 
     _run(scenario())
     assert captured == [("FIL_000001", {"sample_size": 2, "phred_offset": "64", "rehash": True})]
+
+
+# ---------------------------------------------------------------------------
+# run-external: action, preview, failure reporting and cancellation limits
+# ---------------------------------------------------------------------------
+
+
+def _write_marker_script(tmp_path: Path) -> Path:
+    """A tiny external command: writes a marker file, then exits with argv[1].
+
+    ``marker_step.sh <exit code> <output path>`` lets one script cover the
+    success and recorded-failure paths of ``run_external``.
+    """
+    script = tmp_path / "marker_step.sh"
+    script.write_text(
+        '#!/usr/bin/env bash\necho ok > "$2"\nexit "$1"\n', encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+def test_run_external_action_success_failure_and_validation(project: Project,
+                                                            tmp_path: Path) -> None:
+    import yaml
+
+    script = _write_marker_script(tmp_path)
+    out = tmp_path / "step_out.txt"
+
+    result = actions.run_external(
+        project, "marker_step", shlex.join([str(script), "0", str(out)]),
+        expected_outputs=[str(out)], threads=2, timeout=60,
+    )
+    assert result["status"] == "completed"
+    assert result["exit_code"] == 0
+    assert result["run_id"].startswith("WF_")
+    # The CLI's pre-run note is captured, not printed over the screen.
+    assert f"watch: operon workflow show {result['run_id']} --follow" in result["messages"]
+    row = _query(
+        project, "SELECT * FROM workflow_runs WHERE run_id=?", (result["run_id"],))[0]
+    assert row["step"] == "marker_step"
+    assert row["executor"] == "local"
+    assert row["threads"] == 2
+
+    # A command that ran but failed is a *recorded* outcome, not an error.
+    failed_out = tmp_path / "failed_out.txt"
+    failed = actions.run_external(
+        project, "marker_step", shlex.join([str(script), "3", str(failed_out)]),
+        expected_outputs=[str(failed_out)],
+    )
+    assert failed["status"] == "failed"
+    assert "exit code 3" in failed["error"]
+    failed_row = _query(
+        project, "SELECT * FROM workflow_runs WHERE run_id=?", (failed["run_id"],))[0]
+    assert failed_row["status"] == "failed"
+    assert failed_row["exit_code"] == 3
+
+    # Tool provenance mirrors the CLI: an unconfigured name records no version,
+    # and a failed detection only warns (into the captured messages).
+    unconfigured = actions.run_external(
+        project, "marker_step", shlex.join([str(script), "0", str(out)]),
+        tool="no_such_tool",
+    )
+    assert _query(project, "SELECT tool FROM workflow_runs WHERE run_id=?",
+                  (unconfigured["run_id"],))[0]["tool"] == "no_such_tool"
+    project.tools_config_path.write_text(yaml.safe_dump({
+        "version": 1,
+        "tools": {"broken": {
+            "executable": str(tmp_path / "definitely-missing"),
+            "version_args": ["--version"],
+            "version_pattern": r"([0-9.]+)",
+            "recipes": {},
+        }},
+    }, sort_keys=False), encoding="utf-8")
+    warned = actions.run_external(
+        project, "marker_step", shlex.join([str(script), "0", str(out)]),
+        tool="broken",
+    )
+    assert warned["status"] == "completed"
+    assert "warning: version detection for 'broken' failed" in warned["messages"]
+
+    # Form-level problems validate like the CLI, before anything is written.
+    before = len(_query(project, "SELECT * FROM workflow_runs"))
+    with pytest.raises(ValidationError, match="--command must not be empty"):
+        actions.run_external(project, "marker_step", "   ")
+    with pytest.raises(ValidationError, match="unknown execution backend"):
+        actions.run_external(project, "marker_step", "true", backend="kubernetes")
+    with pytest.raises(ValidationError, match="declared input does not exist"):
+        actions.run_external(project, "marker_step", "true",
+                             inputs=[str(tmp_path / "nope.fa")])
+    with pytest.raises(ValidationError, match="timeout must be a positive number"):
+        actions.run_external(project, "marker_step", "true", timeout=0)
+    with pytest.raises(ValidationError, match="threads must be a positive integer"):
+        actions.run_external(project, "marker_step", "true", threads=-1)
+    assert len(_query(project, "SELECT * FROM workflow_runs")) == before
+
+
+def test_run_external_modal_preview_run_and_detail(project: Project, tmp_path: Path) -> None:
+    script = _write_marker_script(tmp_path)
+    out = tmp_path / "ui_out.txt"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-external")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, RunExternalModal)
+            assert "allocated at submission" in _static_text(
+                modal.query_one("#external-run-note", Static))
+
+            # Inline validation: nothing runs until the form is valid.
+            modal.confirm()
+            assert "step is required" in _static_text(modal.query_one("#modal-error", Static))
+            modal.query_one("#external-step", Input).value = "marker_step"
+            modal.confirm()
+            assert "command is required" in _static_text(modal.query_one("#modal-error", Static))
+            modal.query_one("#external-command", Input).value = shlex.join(
+                [str(script), "0", str(out)])
+            modal.query_one("#external-expected-outputs", Input).value = str(out)
+            modal.query_one("#external-threads", Input).value = "-1"
+            modal.confirm()
+            assert "threads must be a positive integer" in _static_text(
+                modal.query_one("#modal-error", Static))
+            modal.query_one("#external-threads", Input).value = ""
+            modal.query_one("#external-timeout", Input).value = "abc"
+            modal.confirm()
+            assert "timeout must be a positive number" in _static_text(
+                modal.query_one("#modal-error", Static))
+            modal.query_one("#external-timeout", Input).value = ""
+            await pilot.pause()
+            assert modal.command_text().startswith(
+                "operon run-external --step marker_step --command ")
+            assert f"--expected-output {out}" in modal.command_text()
+            assert not modal.running
+
+            await _click(pilot, "#confirm")
+            await _wait_until(lambda: not isinstance(app.screen, RunExternalModal),
+                              "external modal dismissal")
+            await _settled(app)
+            # The success callback opens the finished run's record.
+            assert isinstance(app.screen, RunDetailScreen)
+            detail = _static_text(app.screen.query_one("#run-detail", Static))
+            assert "marker_step" in detail
+            assert "Execution details" in detail
+
+    _run(scenario())
+    row = _query(project, "SELECT * FROM workflow_runs WHERE step='marker_step'")[0]
+    assert row["status"] == "completed"
+    assert out.read_text(encoding="utf-8").strip() == "ok"
+
+
+def test_run_external_modal_failed_command_opens_record(project: Project, tmp_path: Path) -> None:
+    script = _write_marker_script(tmp_path)
+    out = tmp_path / "failed_ui_out.txt"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-external")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, RunExternalModal)
+            modal.query_one("#external-step", Input).value = "marker_step"
+            modal.query_one("#external-command", Input).value = shlex.join(
+                [str(script), "3", str(out)])
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await _wait_until(lambda: not isinstance(app.screen, RunExternalModal),
+                              "failed external dismissal")
+            await _settled(app)
+            assert isinstance(app.screen, RunDetailScreen)
+            assert any(severity == "error" and "failed" in message
+                       for severity, message in
+                       [(n.severity, n.message) for n in app._notifications])
+            detail = _static_text(app.screen.query_one("#run-detail", Static))
+            assert "exit code 3" in detail
+
+    _run(scenario())
+    row = _query(project, "SELECT * FROM workflow_runs WHERE step='marker_step'")[0]
+    assert row["status"] == "failed"
+
+
+def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
+                                                              monkeypatch) -> None:
+    """A running external command has no cooperative cancel: the modal stays."""
+    released = threading.Event()
+    dismissed: list = []
+
+    def blocking_run(project_arg, step, command_line, **kwargs):
+        if not released.wait(10):
+            raise AssertionError("test never released the run stub")
+        return {"run_id": "WF_STUB", "step": step, "status": "completed",
+                "exit_code": 0, "finished_at": None, "error": None,
+                "stdout_file": "", "stderr_file": "", "messages": ""}
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            monkeypatch.setattr("operon.tui.screens.run_external.actions.run_external",
+                                blocking_run)
+            modal = RunExternalModal(project)
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            modal.query_one("#external-step", Input).value = "marker_step"
+            modal.query_one("#external-command", Input).value = "true"
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "running external command")
+            assert any("running…" in _static_text(
+                modal.query_one("#external-status", Static)) for _ in [0])
+
+            # Cancel and escape must not dismiss the modal mid-run.
+            modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
+            modal.action_cancel()
+            await pilot.pause()
+            assert app.screen is modal
+            assert any(severity == "warning" and "cannot be interrupted" in message
+                       for severity, message in
+                       [(n.severity, n.message) for n in app._notifications])
+            assert dismissed == []
+            assert all(widget.disabled for widget in modal.query("Input, Select"))
+
+            released.set()
+            await _wait_until(lambda: dismissed, "external modal dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert dismissed[0]["run_id"] == "WF_STUB"

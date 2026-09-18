@@ -680,16 +680,26 @@ def test_analysis_failure_callback_shows_error_dialog(project: Project, tmp_path
     _run(scenario())
 
 
-def test_analyze_modal_backend_helpers_before_mount(project: Project, tmp_path: Path) -> None:
-    """Reading the backend controls before the form mounts stays safe."""
+def test_backend_select_helpers_before_mount(project: Project, tmp_path: Path) -> None:
+    """Reading backend controls before the form mounts stays safe."""
+    from operon.tui.screens.common import (
+        backend_select_options,
+        project_default_backend,
+        selected_backend,
+    )
+
     _write_fake_tool(project, tmp_path)
     modal = AnalyzeModal(project, recipe_name="fake_nt")
-    assert modal._selected_backend() == ""
+    assert selected_backend(modal, "analyze-backend") == ""
+    assert selected_backend(modal, "external-backend") == ""
     assert modal._resolved_backend() == "local"  # the demo project's default
     modal._update_cancel_note()  # no-op: the note does not exist yet
     # The default option carries the project default in its label.
-    assert modal._backend_options()[0] == ("project default (local)", "")
-    assert [value for _label, value in modal._backend_options()] == ["", "local", "slurm", "ssh"]
+    assert project_default_backend(project) == "local"
+    assert backend_select_options(project)[0] == ("project default (local)", "")
+    assert [value for _label, value in backend_select_options(project)] == [
+        "", "local", "slurm", "ssh",
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ from textual.css.query import NoMatches
 from textual.geometry import Offset
 from textual.screen import ModalScreen
 from textual.widget import MountError
-from textual.widgets import Button, DataTable, Label, Static
+from textual.widgets import Button, DataTable, Label, Select, Static
 
 ENTITY_TYPE_OPTIONS = [
     (entity_type, entity_type)
@@ -137,6 +137,35 @@ def restore_table_view(table: DataTable, state: tuple[int, Offset], row_count: i
         table.scroll_to(x=scroll_offset.x, y=scroll_offset.y, animate=False)
 
     table.call_after_refresh(restore)
+
+
+# -- execution backends (shared by the analyze and run-external modals) -------
+
+
+def project_default_backend(project: Any) -> str:
+    """The ``execution.backend`` a CLI command uses when ``--backend`` is omitted."""
+    execution = getattr(project, "config", {}) or {}
+    name = str((execution.get("execution", {}) or {}).get("backend") or "local")
+    return name.strip().lower() or "local"
+
+
+def backend_select_options(project: Any) -> list[tuple[str, str]]:
+    """Select options mirroring ``--backend``: the project default, then names."""
+    return [
+        (f"project default ({project_default_backend(project)})", ""),
+        ("local", "local"),
+        ("slurm", "slurm"),
+        ("ssh", "ssh"),
+    ]
+
+
+def selected_backend(screen: Any, widget_id: str) -> str:
+    """Read a backend Select ("" = project default); safe before the form mounts."""
+    try:
+        widget = screen.query_one(f"#{widget_id}", Select)
+    except NoMatches:
+        return ""
+    return "" if widget.value is Select.NULL else str(widget.value)
 
 
 class Panel(VerticalScroll):

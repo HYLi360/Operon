@@ -20,7 +20,7 @@ import json
 import os
 import shutil
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -265,6 +265,16 @@ class AnalysisCancelled(Exception):
     """
 
 
+def _validate_backend_choice(backend: str | None) -> None:
+    """Reject anything the CLI's ``--backend`` choices would not accept."""
+    from operon.execution import VALID_BACKENDS
+
+    if backend is not None and str(backend) not in VALID_BACKENDS:
+        raise ValidationError(
+            f"unknown execution backend {backend!r}; valid: {', '.join(VALID_BACKENDS)}"
+        )
+
+
 def preflight_backend(
         project: Project,
         backend: str | None = None,
@@ -336,7 +346,6 @@ def run_analysis(
     output is captured into the returned ``messages`` so it never corrupts
     the screen.
     """
-    from operon.execution import VALID_BACKENDS
     from operon.shutdown import ShutdownRequested
     from operon.tools import run_analysis as _run_analysis
 
@@ -344,10 +353,7 @@ def run_analysis(
         raise ValidationError("limit must be a positive integer")
     if threads is not None and int(threads) <= 0:
         raise ValidationError("threads must be a positive integer")
-    if backend is not None and str(backend) not in VALID_BACKENDS:
-        raise ValidationError(
-            f"unknown execution backend {backend!r}; valid: {', '.join(VALID_BACKENDS)}"
-        )
+    _validate_backend_choice(backend)
     buffer = io.StringIO()
     try:
         with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
@@ -375,6 +381,109 @@ def run_analysis(
         "succeeded": len(results) - errors,
         "errors": errors,
         "dry_run": dry_run,
+    }
+
+
+def run_external(
+        project: Project,
+        step: str,
+        command_line: str,
+        *,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        parameter_set: str | None = None,
+        tool: str | None = None,
+        inputs: Iterable[str] = (),
+        expected_outputs: Iterable[str] = (),
+        threads: int | None = None,
+        cwd: str | None = None,
+        timeout: float | None = None,
+        backend: str | None = None,
+) -> dict[str, Any]:
+    """Run one external command like ``operon run-external``.
+
+    ``command_line`` is split with the same ``shlex`` rules as the CLI's
+    ``--command`` (shell quoting, no pipes or redirections).  Returns the
+    recorded run's summary — the fields the CLI prints plus the log paths and
+    the captured core output in ``messages``.  A command that *ran but failed*
+    is a recorded outcome, not an error: the core writes the ``workflow_runs``
+    row (with exit code, error and logs) before raising, so the failure comes
+    back as ``status == "failed"`` with the run id intact.  Form-level
+    problems — an empty command line, an unknown backend, a declared input
+    that does not exist, a retired entity — raise ``ValidationError`` exactly
+    like the CLI and the core.
+    """
+    import shlex
+
+    from operon.workflow import new_run_id, run_external_command
+
+    _validate_backend_choice(backend)
+    argv = shlex.split(command_line)
+    if not argv:
+        raise ValidationError("--command must not be empty")
+    if threads is not None and int(threads) <= 0:
+        raise ValidationError("threads must be a positive integer")
+    if timeout is not None and float(timeout) <= 0:
+        raise ValidationError("timeout must be a positive number")
+
+    buffer = io.StringIO()
+    tool_version: str | None = None
+    extra_details: dict[str, Any] | None = None
+    with contextlib.redirect_stdout(buffer):
+        if tool:
+            # Same provenance contract as the CLI: an unconfigured tool name is
+            # recorded without a version, and a failed detection only warns.
+            from operon.tools import (
+                detect_tool_version_record,
+                get_tool,
+                load_tools_config,
+            )
+            try:
+                tool_spec = get_tool(project, tool)
+            except ValidationError:
+                tool_spec = None
+            if tool_spec is not None:
+                try:
+                    config = load_tools_config(project)
+                    tool_version, raw_output = detect_tool_version_record(tool_spec, config)
+                    extra_details = {"tool_version_raw": raw_output}
+                except Exception as exc:  # noqa: BLE001 - detection never blocks the run
+                    print(f"warning: version detection for {tool!r} failed: {exc}")
+        run_id = new_run_id()
+        print(f"run {run_id}: logs {project.logs_root / (run_id + '.stdout.log')} / "
+              f"{project.logs_root / (run_id + '.stderr.log')}; "
+              f"watch: operon workflow show {run_id} --follow")
+        record: dict[str, Any]
+        try:
+            with _open_writable(project) as db:
+                record = run_external_command(
+                    db, project, argv, step=step,
+                    entity_type=entity_type, entity_id=entity_id,
+                    parameter_set=parameter_set,
+                    expected_outputs=list(expected_outputs),
+                    cwd=cwd, timeout=timeout, tool=tool, tool_version=tool_version,
+                    backend=backend, threads=threads, inputs=list(inputs),
+                    extra_details=extra_details, run_id=run_id,
+                )
+        except RuntimeError as exc:
+            # The core recorded the failed run before raising; keep the summary
+            # so the UI can open the full record.
+            record = {
+                "run_id": run_id, "step": step, "status": "failed",
+                "exit_code": None, "error": str(exc),
+                "stdout_file": str(project.logs_root / f"{run_id}.stdout.log"),
+                "stderr_file": str(project.logs_root / f"{run_id}.stderr.log"),
+            }
+    return {
+        "run_id": record.get("run_id", run_id),
+        "step": record.get("step", step),
+        "status": record.get("status"),
+        "exit_code": record.get("exit_code"),
+        "finished_at": record.get("finished_at"),
+        "error": record.get("error"),
+        "stdout_file": record.get("stdout_file"),
+        "stderr_file": record.get("stderr_file"),
+        "messages": buffer.getvalue(),
     }
 
 
