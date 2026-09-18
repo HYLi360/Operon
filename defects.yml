@@ -325,8 +325,7 @@ defects:
   title: The analysis-jobs dialog collapses its table to one row and overlaps its panes
   reported: '2026-09-18'
   introduced_in: null
-  affected: 0.8.2 and earlier; the Tasks screen's Analysis jobs dialog at every
-    terminal size
+  affected: None (Found before push)
   severity: medium
   component: tui
   status: fixed
@@ -342,7 +341,7 @@ defects:
     the detail moves to a right-hand column.  A regression test asserts the
     panes stay inside the box, do not overlap each other, and keep a usable
     size.'
-  fix_commit: null
+  fix_commit: ea61c4eeaa7546dcd35e06f57cdb34354ebff18f
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes
