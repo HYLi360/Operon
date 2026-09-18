@@ -73,12 +73,25 @@ def _run(coroutine) -> None:
 
 
 async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
+    """Wait until no workers are running, with a diagnostic timeout.
+
+    ``app.workers.wait_for_complete()`` is unbounded: a worker blocked in
+    ``call_from_thread`` (or spawned again by a timer) blocks the caller
+    forever.  Poll the worker set instead and fail fast with the stuck
+    worker states when the deadline passes.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while app.workers:
+    # The splash screen blocks key bindings until the startup worker finishes;
+    # that worker is scheduled via call_after_refresh, so the worker set can
+    # be momentarily empty before it starts — gate on _starting as well.  This
+    # also keeps a modal pushed during the splash from being popped by the
+    # splash's own pop_screen (it pops the top of the stack).
+    while app.workers or getattr(app, "_starting", False):
         if loop.time() > deadline:
-            raise TimeoutError(f"workers still running: {[w.name for w in app.workers]}")
-        await asyncio.sleep(0.02)
+            states = [worker.state.name for worker in app.workers]
+            raise TimeoutError(f"workers did not finish within {timeout}s: {states}")
+        await asyncio.sleep(0.05)
 
 
 async def _wait_until(predicate: Callable[[], bool], description: str,
@@ -106,12 +119,12 @@ async def _click(pilot, selector: str) -> None:
 async def _push(pilot, modal, selector: str | None = None) -> None:
     """Push a screen and wait until its form **and** buttons have composed.
 
-    ``push_screen`` mounts a modal in stages: querying a nested widget right
-    after ``pilot.pause()`` can raise ``NoMatches``, and under the full suite's
-    parallel workers a mount can occasionally take seconds of event-loop time.
-    Wait for the Confirm button plus a form widget (or an explicit selector),
-    and re-push once if the modal never mounted (guarded so a screen that is
-    already on the stack is never pushed twice).
+    ``push_screen`` mounts a modal in stages, so a bare ``pilot.pause()`` can
+    still observe an uncomposed widget (``query_one`` raises NoMatches); this
+    waits for the Confirm button plus a form widget (or an explicit selector).
+    If the modal is not on the stack afterwards it is pushed once more —
+    ``_settled`` already keeps callers clear of the startup splash, whose own
+    ``pop_screen`` would otherwise discard a modal pushed on top of it.
     """
     for attempt in range(2):
         if pilot.app.screen is not modal:
