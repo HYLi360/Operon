@@ -321,3 +321,28 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row
+- id: ODR-0020
+  title: The analysis-jobs dialog collapses its table to one row and overlaps its panes
+  reported: '2026-09-18'
+  introduced_in: null
+  affected: 0.8.2 and earlier; the Tasks screen's Analysis jobs dialog at every
+    terminal size
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'The dialog''s box is capped by max-height but holds no ``1fr``
+    child, so Textual handed the surplus height to the first auto-sized child:
+    measured at 160x50, #jobs-filters took 33 rows, the table and the detail
+    Static were squeezed to a single row each, and the table''s rows rendered
+    across its own slot — the header drifted and the table visually covered the
+    controls above and below it.  The detail pane was effectively invisible,
+    which is why the per-job error/artifact view went unnoticed.'
+  disposition: 'The dialog now uses a fixed tall box (``#modal-box.jobs``,
+    80%) with a two-pane body: the table takes ``1fr`` and scrolls internally,
+    the detail moves to a right-hand column.  A regression test asserts the
+    panes stay inside the box, do not overlap each other, and keep a usable
+    size.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes

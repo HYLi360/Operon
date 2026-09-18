@@ -17,6 +17,7 @@ from textual.geometry import Offset
 from textual.screen import ModalScreen
 from textual.widget import MountError
 from textual.widgets import Button, DataTable, Label, Select, Static
+from textual.widgets._select import SelectOverlay
 
 ENTITY_TYPE_OPTIONS = [
     (entity_type, entity_type)
@@ -166,6 +167,36 @@ def selected_backend(screen: Any, widget_id: str) -> str:
     except NoMatches:
         return ""
     return "" if widget.value is Select.NULL else str(widget.value)
+
+
+class FittingSelect(Select):
+    """A ``Select`` whose dropdown is as wide as its longest option.
+
+    Textual sizes the overlay to the control (``width: 1fr``), so an option
+    label longer than the control wraps onto a second line and stretches the
+    row — the panel then looks ragged next to single-line neighbours.  This
+    subclass sizes the overlay to its content (the longest label plus border
+    and padding) when it expands, so every option renders on one line, left
+    aligned; the width may therefore differ from the control's, capped at
+    ``overlay_max_share`` of the terminal.  The collapsed control keeps its own
+    width: ``app.tcss`` holds it to one line with an ellipsis.
+    """
+
+    overlay_max_share = 0.8
+
+    def _watch_expanded(self, expanded: bool) -> None:
+        super()._watch_expanded(expanded)
+        if expanded:
+            self.call_after_refresh(self._fit_overlay)
+
+    def _fit_overlay(self) -> None:
+        try:
+            overlay = self.query_one(SelectOverlay)
+        except NoMatches:
+            return
+        widest = max((len(str(label)) for label, _value in self._options), default=0)
+        cap = max(8, int(self.app.size.width * self.overlay_max_share))
+        overlay.styles.width = min(widest + 4, cap)
 
 
 def remount(container: Any, *widgets: Any) -> None:

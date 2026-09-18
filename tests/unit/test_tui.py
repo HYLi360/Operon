@@ -1393,7 +1393,10 @@ def test_normalize_workflow_time_matches_the_cli(value: str) -> None:
         _workflow_time("not a time")
 
 
-def test_runs_panel_advanced_filters(demo_project: Project) -> None:
+def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Project) -> None:
+    """The strip stays one row; the advanced filters live in the More… dialog."""
+    from operon.tui.screens.runs import RunsFiltersModal
+
     async def scenario() -> None:
         app = OperonApp(demo_project)
         async with app.run_test(size=(160, 50)) as pilot:
@@ -1405,66 +1408,78 @@ def test_runs_panel_advanced_filters(demo_project: Project) -> None:
             table = panel.query_one("#runs-table", DataTable)
             total = table.row_count
             assert total > 0
+            # One control strip: status/step/entity/limit + the More… button.
+            strip = panel.query_one("#runs-filters")
+            assert [child.id for child in strip.children] == [
+                "runs-status", "runs-step", "runs-entity", "runs-limit", "runs-more",
+            ]
+            assert strip.region.height <= 4
+            assert panel.query_one("#runs-more", Button).label.plain == "More…"
 
-            # A bad ISO bound is an inline error; the table keeps its rows.
-            panel.query_one("#runs-from", Input).value = "not-a-time"
+            # A bad ISO bound is refused inline and the dialog stays open.
+            await _click(pilot, "#runs-more")
             await pilot.pause()
             await _settled(app)
-            assert any("ISO-8601" in notification.message
-                       for notification in app._notifications)
+            modal = app.screen
+            assert isinstance(modal, RunsFiltersModal)
+            modal.query_one("#runs-filter-from", Input).value = "not-a-time"
+            modal.query_one("#runs-filter-apply", Button).press()
+            await pilot.pause()
+            assert "ISO-8601" in _static_text(modal.query_one("#runs-filter-error", Static))
+            assert isinstance(app.screen, RunsFiltersModal)
             assert table.row_count == total
-            panel.query_one("#runs-from", Input).value = ""
-            await pilot.pause()
-            await _settled(app)
 
-            # ``--from`` earlier than ``--to`` is rejected the same way.
-            panel.query_one("#runs-from", Input).value = "2026-12-31"
-            panel.query_one("#runs-to", Input).value = "2026-01-01"
+            # from < to is enforced with the CLI's own message.
+            modal.query_one("#runs-filter-from", Input).value = "2026-12-31"
+            modal.query_one("#runs-filter-to", Input).value = "2026-01-01"
+            modal.query_one("#runs-filter-apply", Button).press()
             await pilot.pause()
-            await _settled(app)
-            assert any("earlier than --to" in notification.message
-                       for notification in app._notifications)
-            panel.query_one("#runs-from", Input).value = ""
-            panel.query_one("#runs-to", Input).value = ""
-            await pilot.pause()
-            await _settled(app)
+            assert "earlier than --to" in _static_text(modal.query_one("#runs-filter-error", Static))
 
-            # Exact tool filter: no match, then back to the full listing.
-            panel.query_one("#runs-tool", Input).value = "no_such_tool"
-            await pilot.pause()
+            # Applying a real filter reloads the table and the button counts it.
+            modal.query_one("#runs-filter-from", Input).value = ""
+            modal.query_one("#runs-filter-to", Input).value = ""
+            modal.query_one("#runs-filter-tool", Input).value = "no_such_tool"
+            modal.query_one("#runs-filter-apply", Button).press()
+            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
+                              "the filters dialog to apply")
             await _settled(app)
             assert table.row_count == 0
-            panel.query_one("#runs-tool", Input).value = ""
+            assert panel.query_one("#runs-more", Button).label.plain == "More… (1)"
+
+            # oldest-first and paging still match the delegated query verbatim.
+            await _click(pilot, "#runs-more")
             await pilot.pause()
             await _settled(app)
+            modal = app.screen
+            modal.query_one("#runs-filter-tool", Input).value = ""
+            modal.query_one("#runs-filter-oldest-first", Checkbox).value = True
+            modal.query_one("#runs-filter-offset", Input).value = "1"
+            modal.query_one("#runs-filter-apply", Button).press()
+            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
+                              "the advanced filters to apply")
+            await _settled(app)
+            expected = data.list_workflow_runs(demo_project, limit=100, offset=1,
+                                               oldest_first=True)
+            assert [row["run_id"] for row in panel.runs] == [
+                row["run_id"] for row in expected]
+            assert panel.query_one("#runs-more", Button).label.plain == "More… (2)"
+
+            # Clear empties the advanced set again.
+            await _click(pilot, "#runs-more")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            modal.query_one("#runs-filter-clear", Button).press()
+            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
+                              "the advanced filters to clear")
+            await _settled(app)
+            assert panel.advanced == {}
+            assert panel.query_one("#runs-more", Button).label.plain == "More…"
             assert table.row_count == total
 
-            # oldest-first and paging match the delegated query verbatim.
-            panel.query_one("#runs-oldest-first", Checkbox).value = True
-            await pilot.pause()
-            await _settled(app)
-            expected = data.list_workflow_runs(demo_project, limit=100, oldest_first=True)
-            assert [row["run_id"] for row in panel.runs] == [
-                row["run_id"] for row in expected]
-            panel.query_one("#runs-oldest-first", Checkbox).value = False
-            panel.query_one("#runs-limit", Input).value = "1"
-            panel.query_one("#runs-offset", Input).value = "1"
-            await pilot.pause()
-            await _settled(app)
-            expected = data.list_workflow_runs(demo_project, limit=1, offset=1)
-            assert [row["run_id"] for row in panel.runs] == [
-                row["run_id"] for row in expected]
-
-            # The run-id filter selects exactly that row.
-            panel.query_one("#runs-limit", Input).value = "100"
-            panel.query_one("#runs-offset", Input).value = "0"
-            run_id = expected[0]["run_id"]
-            panel.query_one("#runs-run-id", Input).value = run_id
-            await pilot.pause()
-            await _settled(app)
-            assert [row["run_id"] for row in panel.runs] == [run_id]
-
     _run(scenario())
+
 
 
 def _running_run(tmp_path: Path, name: str) -> Project:
@@ -2079,5 +2094,102 @@ def test_filter_rows_keep_their_controls_inside_the_row(
                 assert not _overflowing_controls(modal), type(modal).__name__
                 app.pop_screen()
                 await pilot.pause()
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0020")
+def test_analysis_jobs_modal_layout_keeps_its_panes(demo_project: Project,
+                                                    tmp_path: Path) -> None:
+    """The jobs dialog's panes stay inside the box and never overlap (ODR-0020).
+
+    The box used to hold no ``1fr`` child, so the surplus height went to the
+    filter row: the table collapsed to one row, its rows rendered across the
+    neighbouring controls, and the detail pane was invisible.
+    """
+    project, _seeded = _seed_analysis_jobs(demo_project, tmp_path)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-jobs")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            assert isinstance(modal, AnalysisJobsModal)
+
+            box = modal.query_one("#modal-box").region
+            table = modal.query_one("#jobs-table", DataTable)
+            detail_scroll = modal.query_one("#jobs-detail-scroll").region
+            filters = modal.query_one("#jobs-filters").region
+            buttons = modal.query_one("#modal-buttons").region
+
+            # Every pane lives inside the box, and no two of the box's children
+            # overlap: the filter row used to absorb the whole height and sit on
+            # top of the table.
+            panes = [w for w in modal.query_one("#modal-box").children if w.display]
+            for pane in panes:
+                region = pane.region
+                assert region.y >= box.y, f"{pane.id} starts above the box"
+                assert region.y + region.height <= box.y + box.height, \
+                    f"{pane.id} ends below the box: {region} vs {box}"
+            for index, first in enumerate(panes):
+                for second in panes[index + 1:]:
+                    a, b = first.region, second.region
+                    assert not (a.x < b.x + b.width and b.x < a.x + a.width
+                                and a.y < b.y + b.height and b.y < a.y + a.height), \
+                        f"{first.id} overlaps {second.id}: {a} vs {b}"
+
+            # The table gets a real viewport (not the single squeezed row) and
+            # the detail keeps a usable column to its right.
+            assert table.region.height >= 5, f"table got {table.region.height} rows"
+            assert filters.y + filters.height <= table.region.y
+            assert table.region.y + table.region.height <= buttons.y
+            assert detail_scroll.width >= 20 and detail_scroll.height >= 5
+            assert detail_scroll.x >= table.region.x + table.region.width
+            assert table.region.y < detail_scroll.y + detail_scroll.height
+            assert detail_scroll.y < table.region.y + table.region.height
+
+    _run(scenario())
+
+
+def test_fitting_select_expands_to_the_longest_option(demo_project: Project) -> None:
+    """A long option renders on one line: the dropdown is as wide as its label."""
+    from textual.widgets._select import SelectOverlay
+
+    from operon.tui.screens.common import FittingSelect
+
+    label = "sequence_classification (label sequences)"
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            probe = FittingSelect([(label, "x"), ("short", "y")], value="x", id="fit-probe")
+            probe.styles.width = 20
+            short = FittingSelect([(label, "x"), ("short", "y")], value="y", id="fit-short")
+            short.styles.width = 20
+            await app.screen.mount(probe)
+            await app.screen.mount(short)
+            await pilot.pause()
+            await _settled(app)
+
+            # The collapsed control shows a long value without growing: a select
+            # whose value is long is exactly as tall as one whose value is short.
+            assert probe.region.height == short.region.height, (probe.region, short.region)
+
+            probe.focus()
+            probe.action_show_overlay()
+            overlay = probe.query_one(SelectOverlay)
+            await _wait_until(lambda: overlay.region.width > probe.region.width,
+                              "the dropdown to widen to its content")
+            assert overlay.region.width >= len(label) + 2, overlay.region
+            assert overlay.region.width <= int(app.size.width * 0.8) + 1, overlay.region
+            probe.expanded = False
+            await pilot.pause()
 
     _run(scenario())

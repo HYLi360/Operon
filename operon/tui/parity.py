@@ -357,7 +357,9 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("workflow", "list"),
         STATUS_IMPLEMENTED,
-        note="partial: RunsPanel filters plus delegated time/id/tool/executor filters",
+        note="partial: a one-row strip (status/step/entity/limit) plus the "
+        "More… dialog for the time/id/tool/executor/paging filters",
+        modal="operon.tui.screens.runs::RunsFiltersModal",
         actions="data.list_workflow_runs",
         params={
             "status": "runs-status",
@@ -365,14 +367,14 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "entity_type": "runs-entity",
             "entity_id": "runs-entity",
             "limit": "runs-limit",
-            "started_from": "runs-from (ISO-8601)",
-            "started_to": "runs-to (ISO-8601)",
-            "run_id": "runs-run-id",
-            "parent_run_id": "runs-parent-run-id",
-            "tool": "runs-tool",
-            "executor": "runs-executor",
-            "offset": "runs-offset",
-            "oldest_first": "runs-oldest-first",
+            "started_from": "runs-more → runs-filter-from (ISO-8601)",
+            "started_to": "runs-more → runs-filter-to (ISO-8601)",
+            "run_id": "runs-more → runs-filter-run-id",
+            "parent_run_id": "runs-more → runs-filter-parent-run-id",
+            "tool": "runs-more → runs-filter-tool",
+            "executor": "runs-more → runs-filter-executor",
+            "offset": "runs-more → runs-filter-offset",
+            "oldest_first": "runs-more → runs-filter-oldest-first",
         },
         waived={
             "resumes_run_id": f"no lineage filters in the Runs screen ({_M2B})",

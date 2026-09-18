@@ -30,7 +30,7 @@ from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import WriteModal, remount
+from operon.tui.screens.common import FittingSelect, WriteModal, remount
 
 # Keep in sync with operon.classify._OPERATORS (asserted in
 # tests/unit/test_tui_config.py); `like` is the case-insensitive SQL LIKE.
@@ -438,7 +438,8 @@ class ClassificationRuleRow(Vertical):
             yield Input(value=str(self.original.get("label", "")), placeholder="label",
                         classes="classrule-label")
             yield Select(list(RULE_MODES), value=mode, classes="classrule-mode", allow_blank=False)
-            yield Select(self._source_options(), classes="classrule-source", allow_blank=True)
+            yield FittingSelect(self._source_options(), classes="classrule-source",
+                                allow_blank=True)
             yield Button("✕", classes="classrule-remove")
         yield Static("when (all conditions must hold)", classes="modal-label classrule-when-label")
         yield Vertical(classes="classrule-when")

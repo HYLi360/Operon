@@ -24,25 +24,18 @@
     width: 1fr;
 }
 
-#files-filters, #runs-filters, #runs-filters-advanced {
+#files-filters, #runs-filters {
     height: auto;
-    padding: 0 1;
+    /* one blank line above the strip, one column of left margin */
+    padding: 1 1 0 1;
 }
 
-#runs-from, #runs-to {
-    width: 22;
+#runs-more {
+    width: 12;
 }
 
-#runs-run-id, #runs-parent-run-id {
-    width: 20;
-}
-
-#runs-tool, #runs-executor {
-    width: 14;
-}
-
-#runs-offset {
-    width: 8;
+#runs-actions {
+    padding-left: 1;
 }
 
 #files-filter {
@@ -202,6 +195,31 @@ HelpScreen {
     width: 12;
 }
 
+#modal-box.jobs {
+    width: 140;
+    height: 80%;
+}
+
+#jobs-body {
+    height: 1fr;
+}
+
+#jobs-table {
+    width: 1fr;
+    height: 1fr;
+}
+
+#jobs-detail-scroll {
+    width: 40;
+    height: 1fr;
+    padding: 0 1;
+    border-left: solid $primary;
+}
+
+#jobs-detail {
+    width: 1fr;
+}
+
 #fanout-preview-table {
     height: 6;
 }
@@ -341,6 +359,14 @@ HelpScreen {
 
 .rule-extras, #profile-extras-note, #recipe-extras-note, #recipe-parameters-note {
     padding-left: 2;
+}
+
+/* A Select shows a long value in its own width: keep the collapsed control at
+   one line and ellipsize instead of growing a row taller. */
+
+SelectCurrent Static#label {
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
 }
 
 /* -- classification profile editor (kind: sequence_classification) -------- */

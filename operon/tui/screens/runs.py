@@ -24,6 +24,7 @@ from textual.widgets import (
 )
 
 from operon.config import Project
+from operon.errors import ValidationError
 from operon.tui import data
 from operon.tui.screens.common import (
     DismissOnce,
@@ -40,6 +41,97 @@ RUN_STATUSES = ["running", "completed", "failed", "interrupted", "adopted", "pla
 ANALYSIS_JOB_CHOICES = [ALL_STATUSES, *data.ANALYSIS_JOB_STATUSES]
 
 
+class RunsFiltersModal(DismissOnce, ModalScreen):
+    """Advanced ``workflow list`` filters, behind the Tasks screen's More… button.
+
+    The one-row strip keeps the everyday controls (status/step/entity/limit);
+    everything adjusted rarely lives here.  The ISO bounds are validated with
+    the same rules the CLI applies — both parse, and ``from`` must be earlier
+    than ``to`` — and the payload is the mapping the panel merges into its
+    query (``{}`` clears the advanced filters, ``None`` cancels).
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Cancel"),
+    ]
+
+    def __init__(self, project: Project, current: dict[str, Any]) -> None:
+        super().__init__()
+        self.project = project
+        self.current = dict(current)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-box", classes="wide"):
+            yield Label("Advanced filters", id="modal-title")
+            yield Static("Time bounds (ISO-8601; naive values are local)",
+                         classes="modal-label")
+            yield Input(value=str(self.current.get("started_from") or ""),
+                        placeholder="from", id="runs-filter-from")
+            yield Input(value=str(self.current.get("started_to") or ""),
+                        placeholder="to", id="runs-filter-to")
+            yield Input(value=str(self.current.get("run_id") or ""),
+                        placeholder="run id", id="runs-filter-run-id")
+            yield Input(value=str(self.current.get("parent_run_id") or ""),
+                        placeholder="parent run id", id="runs-filter-parent-run-id")
+            yield Input(value=str(self.current.get("tool") or ""),
+                        placeholder="tool", id="runs-filter-tool")
+            yield Input(value=str(self.current.get("executor") or ""),
+                        placeholder="executor", id="runs-filter-executor")
+            yield Input(value=str(self.current.get("offset") or 0), placeholder="offset",
+                        id="runs-filter-offset", type="integer", restrict=r"\\d*")
+            yield Checkbox("oldest first",
+                           value=bool(self.current.get("oldest_first")),
+                           id="runs-filter-oldest-first")
+            yield Static("", id="runs-filter-error")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Apply", id="runs-filter-apply", variant="primary")
+                yield Button("Clear", id="runs-filter-clear")
+                yield Button("Cancel", id="runs-filter-cancel")
+
+    def _values(self) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        for key, widget_id in (
+            ("started_from", "runs-filter-from"), ("started_to", "runs-filter-to"),
+            ("run_id", "runs-filter-run-id"), ("parent_run_id", "runs-filter-parent-run-id"),
+            ("tool", "runs-filter-tool"), ("executor", "runs-filter-executor"),
+        ):
+            text = self.query_one(f"#{widget_id}", Input).value.strip()
+            if text:
+                values[key] = text
+        offset_text = self.query_one("#runs-filter-offset", Input).value.strip()
+        offset = int(offset_text) if offset_text.isdigit() else 0
+        if offset:
+            values["offset"] = offset
+        if self.query_one("#runs-filter-oldest-first", Checkbox).value:
+            values["oldest_first"] = True
+        return values
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "runs-filter-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id == "runs-filter-clear":
+            self.dismiss({})
+            return
+        if event.button.id != "runs-filter-apply":
+            return
+        values = self._values()
+        error = self.query_one("#runs-filter-error", Static)
+        try:
+            # Same normalization and ordering rule the CLI applies.
+            for key in ("started_from", "started_to"):
+                if key in values:
+                    values[key] = data.normalize_workflow_time(values[key])
+            if values.get("started_from") and values.get("started_to") \
+                    and values["started_from"] >= values["started_to"]:
+                raise ValidationError("--from must be earlier than --to")
+        except ValidationError as exc:
+            error.update(Text(str(exc), style="red"))
+            return
+        error.update("")
+        self.dismiss(values)
+
+
 class RunsPanel(Panel):
     """Filterable workflow run listing; refreshes on demand (``r``)."""
 
@@ -47,6 +139,7 @@ class RunsPanel(Panel):
         super().__init__(id="runs")
         self.project = project
         self.runs: list[dict[str, Any]] = []
+        self.advanced: dict[str, Any] = {}
         self._loading = False
 
     def compose(self) -> ComposeResult:
@@ -60,17 +153,8 @@ class RunsPanel(Panel):
                 yield Input(placeholder="entity contains", id="runs-entity")
                 yield Input(value="100", placeholder="limit", id="runs-limit",
                             type="integer", restrict=r"\d*")
-            with Horizontal(id="runs-filters-advanced"):
-                yield Input(placeholder="from (ISO-8601)", id="runs-from")
-                yield Input(placeholder="to (ISO-8601)", id="runs-to")
-                yield Input(placeholder="run id", id="runs-run-id")
-                yield Input(placeholder="parent run id", id="runs-parent-run-id")
-                yield Input(placeholder="tool", id="runs-tool")
-                yield Input(placeholder="executor", id="runs-executor")
-                yield Input(value="0", placeholder="offset", id="runs-offset",
-                            type="integer", restrict=r"\d*")
-                yield Checkbox("oldest first", id="runs-oldest-first")
-            with Horizontal(classes="config-buttons"):
+                yield Button("More…", id="runs-more")
+            with Horizontal(id="runs-actions", classes="config-buttons"):
                 yield Button("Analysis jobs", id="runs-jobs")
                 yield Button("Analysis hits", id="runs-hits")
                 yield Button("Run external", id="runs-external")
@@ -95,28 +179,35 @@ class RunsPanel(Panel):
         super()._apply(payload)
 
     def _filters(self) -> dict[str, Any]:
+        """The everyday strip plus whatever the More… dialog applied."""
         status_value = self.query_one("#runs-status", Select).value
         statuses = [] if status_value in (ALL_STATUSES, Select.NULL) else [str(status_value)]
         limit_text = self.query_one("#runs-limit", Input).value.strip()
-        offset_text = self.query_one("#runs-offset", Input).value.strip()
-
-        def text(widget_id: str) -> str | None:
-            return self.query_one(f"#{widget_id}", Input).value.strip() or None
-
-        return {
+        filters: dict[str, Any] = {
             "statuses": statuses,
             "step": self.query_one("#runs-step", Input).value.strip(),
             "entity": self.query_one("#runs-entity", Input).value.strip(),
             "limit": int(limit_text) if limit_text.isdigit() else 100,
-            "offset": int(offset_text) if offset_text.isdigit() else 0,
-            "started_from": text("runs-from"),
-            "started_to": text("runs-to"),
-            "run_id": text("runs-run-id"),
-            "parent_run_id": text("runs-parent-run-id"),
-            "tool": text("runs-tool"),
-            "executor": text("runs-executor"),
-            "oldest_first": self.query_one("#runs-oldest-first", Checkbox).value,
         }
+        filters.update(self.advanced)
+        return filters
+
+    def _open_advanced_filters(self) -> None:
+        self.app.push_screen(
+            RunsFiltersModal(self.project, self.advanced), self._apply_advanced_filters,
+        )
+
+    def _apply_advanced_filters(self, payload: Any) -> None:
+        if payload is None:
+            return
+        self.advanced = dict(payload)
+        self._update_more_label()
+        self.reload()
+
+    def _update_more_label(self) -> None:
+        """The More… button shows how many advanced filters are active."""
+        count = len(self.advanced)
+        self.query_one("#runs-more", Button).label = "More…" if not count else f"More… ({count})"
 
     def _fetch(self) -> list[dict[str, Any]]:
         # ``list_workflow_runs`` validates the ISO bounds; a bad value lands in
@@ -144,19 +235,11 @@ class RunsPanel(Panel):
         self.app.notify(f"runs load failed: {exc}", severity="error")
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in {
-            "runs-step", "runs-entity", "runs-limit", "runs-from", "runs-to",
-            "runs-run-id", "runs-parent-run-id", "runs-tool", "runs-executor",
-            "runs-offset",
-        }:
+        if event.input.id in {"runs-step", "runs-entity", "runs-limit"}:
             self.reload()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "runs-status":
-            self.reload()
-
-    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        if event.checkbox.id == "runs-oldest-first":
             self.reload()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -171,6 +254,8 @@ class RunsPanel(Panel):
                 AnalyzeModal(self.project),
                 lambda payload: analysis_finished(self.app, payload),
             )
+        elif event.button.id == "runs-more":
+            self._open_advanced_filters()
         elif event.button.id == "runs-jobs":
             self.app.push_screen(AnalysisJobsModal(self.project))
         elif event.button.id == "runs-hits":
@@ -201,7 +286,13 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
     bookkeeping finished; a task interrupted inside a job array keeps an
     ``analysis_jobs`` row and no run row.  This view reads the jobs table
     directly, joins the scheduler job id from the run when there is one, and
-    shows the selected row's full error and artifact paths underneath.
+    shows the selected row's full error and artifact paths in a side pane.
+
+    The body is a two-pane row — the table takes the flexible width and scrolls
+    internally, the detail keeps a fixed column — inside a box that claims 80%
+    of the screen height.  Without a ``1fr`` child the box used to hand its
+    surplus height to the filter row, collapse the table to a single row and
+    overlap its panes (ODR-0020).
     """
 
     BINDINGS = [
@@ -215,7 +306,7 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
         self._loading = False
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="modal-box"):
+        with Vertical(id="modal-box", classes="jobs"):
             yield Label("Analysis jobs", id="modal-title")
             with Horizontal(id="jobs-filters"):
                 yield Input(placeholder="analysis contains", id="jobs-analysis")
@@ -225,8 +316,10 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
                 )
                 yield Input(value="200", placeholder="limit", id="jobs-limit",
                             type="integer", restrict=r"\d*")
-            yield DataTable(id="jobs-table", cursor_type="row")
-            yield Static("", id="jobs-detail")
+            with Horizontal(id="jobs-body"):
+                yield DataTable(id="jobs-table", cursor_type="row")
+                with VerticalScroll(id="jobs-detail-scroll"):
+                    yield Static("", id="jobs-detail")
             with Horizontal(id="modal-buttons"):
                 yield Button("Close", id="cancel", variant="primary")
 

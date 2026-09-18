@@ -52,6 +52,7 @@ from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
     DismissOnce,
     ErrorDialog,
+    FittingSelect,
     Panel,
     WriteModal,
     remount,
@@ -302,7 +303,7 @@ class NewProfileModal(DismissOnce, ModalScreen):
             yield Label("New profile", id="modal-title")
             yield Input(placeholder="profile name, e.g. assembly_strict_v1", id="new-profile-name")
             yield Static("Kind", classes="modal-label")
-            yield Select(
+            yield FittingSelect(
                 [("qc (decision thresholds)", "qc"),
                  ("sequence_classification (label sequences)", actions.CLASSIFICATION_KIND)],
                 value="qc", id="new-profile-kind", allow_blank=False,

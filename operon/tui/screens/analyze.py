@@ -32,6 +32,7 @@ from operon.tui import actions, data
 from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
     ErrorDialog,
+    FittingSelect,
     WriteModal,
     backend_select_options,
     project_default_backend,
@@ -114,7 +115,7 @@ class AnalyzeModal(WriteModal):
         yield Input(placeholder="limit (blank = all files)", id="analyze-limit")
         yield Input(placeholder="threads (blank = project default)", id="analyze-threads")
         yield Static("Execution backend", classes="modal-label")
-        yield Select(self._backend_options(), value="", id="analyze-backend")
+        yield FittingSelect(self._backend_options(), value="", id="analyze-backend")
         yield Vertical(id="analyze-parameters")
         yield Checkbox("Dry run (plan only — nothing is executed or written)",
                        id="analyze-dry-run")
