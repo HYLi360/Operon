@@ -202,6 +202,14 @@ HelpScreen {
     width: 12;
 }
 
+#fanout-preview-table {
+    height: 6;
+}
+
+#classify-summary {
+    padding-top: 1;
+}
+
 #modal-box.wide {
     width: 140;
 }

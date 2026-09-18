@@ -451,6 +451,7 @@ class ConfigPanel(Panel):
                         with Horizontal(classes="config-buttons"):
                             yield Button("New profile", id="profile-new")
                             yield Button("History", id="profile-history", disabled=True)
+                            yield Button("Run classify", id="profile-run", disabled=True)
                     with VerticalScroll(id="profile-editor"):  # pragma: no branch
                         yield Static("select a profile", id="profile-heading")
                         yield Static("Description", classes="modal-label")
@@ -626,6 +627,7 @@ class ConfigPanel(Panel):
 
     def _render_profile_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
         self._show_editor("qc")
+        self.query_one("#profile-run", Button).disabled = True
         self.query_one("#profile-heading", Static).update(
             f"{name}" + (f"  —  {note}" if note else "")
         )
@@ -792,6 +794,11 @@ class ConfigPanel(Panel):
         self.query_one("#classification-save-error", Static).update("")
         self.query_one("#classification-save", Button).disabled = not supported
         self.query_one("#classification-history", Button).disabled = False
+        # Running reads the profile from disk, so a not-yet-saved (or
+        # read-only-nested) profile can still be run once its file exists.
+        self.query_one("#profile-run", Button).disabled = not (
+            self.project.profiles_dir / f"{name}.yaml"
+        ).exists()
 
     def _compose_classification_document(self) -> dict[str, Any]:
         original = self.classification_doc or {}
@@ -1193,6 +1200,8 @@ class ConfigPanel(Panel):
             self._start_classification_save()
         elif button_id == "classification-history":
             self._open_profile_history()
+        elif button_id == "profile-run":
+            self._open_classify()
         elif button_id == "recipe-save":
             self._start_recipe_save()
         elif button_id == "recipe-history":
@@ -1265,6 +1274,24 @@ class ConfigPanel(Panel):
             ),
             lambda document: restore(document) if document else None,
         )
+
+    def _open_classify(self) -> None:
+        """Run the selected classification profile (reads it from disk)."""
+        from operon.tui.screens.classify import ClassifyModal
+
+        name = self.classification_profile
+        if not name or not (self.project.profiles_dir / f"{name}.yaml").exists():
+            self.app.notify("save the classification profile before running it",
+                            severity="warning")
+            return
+        self.app.push_screen(
+            ClassifyModal(self.project, name, self.classification_doc),
+            self._after_classify,
+        )
+
+    def _after_classify(self, payload: Any) -> None:
+        if payload:
+            self.reload()
 
     def _start_recipe_save(self) -> None:
         if not self.current_recipe or not self.recipe_tool or self.recipe_doc is None:

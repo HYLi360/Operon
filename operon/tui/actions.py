@@ -18,6 +18,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import shutil
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -551,6 +552,237 @@ def write_analysis_report(
         text = "(no analysis results)\n"
     atomic_write_text(target, text)
     return {"path": str(target), "rows": len(rows), "format": fmt}
+
+
+def run_classify(project: Project, profile_name: str) -> dict[str, Any]:
+    """Run ``operon classify-sequences --profile`` like the CLI does.
+
+    One transaction, the same run row and the same idempotency contract: an
+    unchanged profile over unchanged inputs refreshes ``profile_sha256`` and
+    reports ``labels_written``/``labels_removed`` as 0.
+    """
+    from operon.classify import classify_sequences
+
+    _validate_config_name("profile", profile_name)
+    command = shlex.join(["operon", "classify-sequences", "--profile", profile_name])
+    with _open_writable(project) as db:
+        return classify_sequences(db, project, profile_name=profile_name, command=command)
+
+
+def extract_domains(
+        project: Project,
+        *,
+        file_id: str,
+        out: str,
+        analysis: str | None = None,
+        regions_tsv: str | None = None,
+        flank: int = 5,
+        min_length: int = 30,
+        best_only: bool = True,
+        subject_like: str | None = None,
+        evalue_max: float | None = None,
+        manifest: str | None = None,
+) -> dict[str, Any]:
+    """Run ``operon extract-domains``; the output FASTA stays unregistered.
+
+    ``analysis``/``regions_tsv`` are mutually exclusive and one is required,
+    and ``subject_like``/``evalue_max`` only apply to the analysis form — the
+    same rules the core enforces, checked here so the modal reports them inline
+    before any work starts.
+    """
+    from operon.sequence_tools import extract_domains as core_extract
+
+    if bool(analysis) == bool(regions_tsv):
+        raise ValidationError("exactly one of --analysis or --regions-tsv is required")
+    if regions_tsv and (subject_like or evalue_max is not None):
+        raise ValidationError("--subject-like/--evalue-max only apply to --analysis regions")
+    if not file_id.strip():
+        raise ValidationError("--file-id is required")
+    if not out.strip():
+        raise ValidationError("--out is required")
+    parts = ["operon", "extract-domains", "--file-id", file_id]
+    if analysis:
+        parts += ["--analysis", analysis]
+    else:
+        parts += ["--regions-tsv", str(regions_tsv)]
+    parts += ["--flank", str(flank), "--min-length", str(min_length)]
+    parts.append("--all-regions" if not best_only else "--best-only")
+    if subject_like:
+        parts += ["--subject-like", subject_like]
+    if evalue_max is not None:
+        parts += ["--evalue-max", str(evalue_max)]
+    parts += ["--out", out]
+    if manifest:
+        parts += ["--manifest", manifest]
+    with _open_writable(project) as db:
+        return core_extract(
+            db, project,
+            file_id=file_id, out=out, command=shlex.join(parts),
+            analysis=analysis, regions_tsv=regions_tsv,
+            flank=flank, min_length=min_length, best_only=best_only,
+            subject_like=subject_like, evalue_max=evalue_max, manifest=manifest,
+        )
+
+
+def select_sequences(
+        project: Project,
+        *,
+        file_id: str,
+        out: str,
+        analyses: Iterable[str] = (),
+        subject_like: str | None = None,
+        evalue_max: float | None = None,
+        min_span: int | None = None,
+        hit_type: str | None = None,
+        require_hit: bool = True,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        manifest: str | None = None,
+) -> dict[str, Any]:
+    """Run ``operon select-sequences``; the output FASTA stays unregistered."""
+    from operon.sequence_tools import select_sequences as core_select
+
+    analyses = [name for name in analyses if str(name).strip()]
+    if not file_id.strip():
+        raise ValidationError("--file-id is required")
+    if not out.strip():
+        raise ValidationError("--out is required")
+    if not analyses and subject_like is None and evalue_max is None \
+            and min_span is None and hit_type is None:
+        raise ValidationError(
+            "no hit criteria given; pass at least one of --analysis, --subject-like, "
+            "--evalue-max, --min-span or --hit-type"
+        )
+    parts = ["operon", "select-sequences", "--file-id", file_id]
+    for name in analyses:
+        parts += ["--analysis", name]
+    if subject_like:
+        parts += ["--subject-like", subject_like]
+    if evalue_max is not None:
+        parts += ["--evalue-max", str(evalue_max)]
+    if min_span is not None:
+        parts += ["--min-span", str(min_span)]
+    if hit_type:
+        parts += ["--hit-type", hit_type]
+    parts.append("--require-hit" if require_hit else "--require-no-hit")
+    if entity_type:
+        parts += ["--entity-type", entity_type]
+    if entity_id:
+        parts += ["--entity-id", entity_id]
+    parts += ["--out", out]
+    if manifest:
+        parts += ["--manifest", manifest]
+    with _open_writable(project) as db:
+        return core_select(
+            db, project,
+            file_id=file_id, out=out, command=shlex.join(parts),
+            analyses=analyses, subject_like=subject_like, evalue_max=evalue_max,
+            min_span=min_span, hit_type=hit_type, require_hit=require_hit,
+            entity_type=entity_type, entity_id=entity_id, manifest=manifest,
+        )
+
+
+def adopt(
+        project: Project,
+        *,
+        items: list[dict[str, Any]] | None = None,
+        manifest: str | None = None,
+        actor: str | None = None,
+) -> dict[str, Any]:
+    """Run ``operon adopt`` for one item or a manifest, like the CLI.
+
+    The result reports how many items were newly registered versus reused from
+    an identical existing registration (the core's idempotency contract); a
+    conflict (same entity+role, different bytes) raises and nothing is written.
+    """
+    from operon.files import find_existing_file
+    from operon.lineage import adopt_files, load_adopt_manifest
+    from operon.utils import sha256_file
+
+    if manifest:
+        items = load_adopt_manifest(manifest)
+    items = list(items or [])
+    if not items:
+        raise ValidationError("adopt needs one item or a manifest")
+    reused_flags: list[bool] = []
+    for item in items:
+        missing = [key for key in ("path", "entity_type", "entity_id", "role")
+                   if not str(item.get(key) or "").strip()]
+        if missing:
+            raise ValidationError(f"single-file adopt requires {', '.join(missing)}")
+        if not item.get("derived_from"):
+            raise ValidationError("single-file adopt requires at least one --derived-from FILE_ID")
+        path = Path(str(item["path"]))
+        sha = sha256_file(path) if path.exists() and path.is_file() else None
+        with _open_writable(project) as db:
+            existing = find_existing_file(
+                db, str(item["entity_type"]), str(item["entity_id"]), str(item["role"]),
+                sha or "",
+            ) if sha else None
+        reused_flags.append(existing is not None)
+    resolved_actor = (actor or os.environ.get("USER") or "adopt").strip()
+    with _open_writable(project) as db:
+        results = adopt_files(db, project, items=items, actor=resolved_actor)
+    for reused, result in zip(reused_flags, results):
+        result["reused"] = reused
+    return {
+        "registered": len(results),
+        "reused": sum(reused_flags),
+        "file_ids": [result["file_id"] for result in results],
+        "items": results,
+    }
+
+
+def fanout(
+        project: Project,
+        *,
+        assignments_file_id: str,
+        source_file_ids: Iterable[str],
+        entity_type: str,
+        entity_id: str,
+        role_prefix: str,
+        unit_column: str = "unit",
+        seqid_column: str = "seqid",
+        parent_run_id: str | None = None,
+        actor: str | None = None,
+        dry_run: bool = False,
+) -> dict[str, Any]:
+    """Run ``operon fanout`` (or its ``--dry-run`` preflight) like the CLI."""
+    from operon.fanout import fanout_units
+
+    source_file_ids = [file_id for file_id in source_file_ids if str(file_id).strip()]
+    missing = [name for name, value in (
+        ("--assignments-file", assignments_file_id), ("--entity-type", entity_type),
+        ("--entity-id", entity_id), ("--role-prefix", role_prefix),
+    ) if not str(value or "").strip()]
+    if missing:
+        raise ValidationError(f"fanout requires {', '.join(missing)}")
+    if not source_file_ids:
+        raise ValidationError("fanout requires at least one --source-file FILE_ID")
+    parts = [
+        "operon", "fanout", "--assignments-file", assignments_file_id,
+        "--entity-type", entity_type, "--entity-id", entity_id,
+        "--role-prefix", role_prefix,
+        "--unit-column", unit_column, "--seqid-column", seqid_column,
+    ]
+    for file_id in source_file_ids:
+        parts += ["--source-file", file_id]
+    if parent_run_id:
+        parts += ["--parent-run-id", parent_run_id]
+    if dry_run:
+        parts.append("--dry-run")
+    resolved_actor = (actor or os.environ.get("USER") or "fanout").strip()
+    with _open_writable(project) as db:
+        return fanout_units(
+            db, project,
+            assignments_file_id=assignments_file_id,
+            source_file_ids=source_file_ids,
+            entity_type=entity_type, entity_id=entity_id,
+            role_prefix=role_prefix,
+            unit_column=unit_column, seqid_column=seqid_column,
+            parent_run_id=parent_run_id, actor=resolved_actor,
+            dry_run=dry_run, command=shlex.join(parts),
+        )
 
 
 def _validate_config_name(kind: str, name: str) -> None:

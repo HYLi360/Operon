@@ -97,7 +97,14 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     Analysis hits browser's Export button: it runs the same read-only query
     and the same renderer as `report analysis --hits --format … --out …`, so
     the file is byte-identical and, like that command, writes no provenance
-    rows). Read-only TUI views added for `report analysis --hits` (alignment
+    rows). Phase 3 also covers the
+    derived-artifact loop: `run_classify` (the Config screen's Run classify
+    dialog, mirroring `classify-sequences` with the CLI's summary and a re-run
+    button), and — on the Files screen — `extract_domains`, `select_sequences`,
+    `adopt` and `fanout` (modals in `operon/tui/screens/derived_ops.py`:
+    extract/select chain into the adopt dialog with `derived_from` prefilled and
+    leave their output unregistered, adopt's manifest mode previews before
+    Confirm, and fanout's dry run is a mandatory preflight). Read-only TUI views added for `report analysis --hits` (alignment
     hits with the CLI's filters and columns) and for `sequence_labels` (the
     classify-sequences output: a per-file section in the Files detail plus
     the project-wide label summary behind the Files screen's `l` binding), which

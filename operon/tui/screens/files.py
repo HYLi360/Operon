@@ -44,6 +44,10 @@ class FilesPanel(Panel):
         Binding("v", "verify", "Verify"),
         Binding("q", "qc", "Run QC"),
         Binding("l", "labels", "Labels"),
+        Binding("e", "extract", "Extract domains"),
+        Binding("s", "select", "Select sequences"),
+        Binding("a", "adopt", "Adopt"),
+        Binding("f", "fanout", "Fanout"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -119,9 +123,71 @@ class FilesPanel(Panel):
             return self.files[table.cursor_row]
         return None
 
+    def _selected_file_id(self) -> str | None:
+        selected = self._selected_record()
+        return str(selected["file_id"]) if selected else None
+
     def _after_write(self, result: Any) -> None:
         if result:
             self.app.reload_after_write()
+
+    def _after_derived(self, payload: Any) -> None:
+        """extract/select leave their FASTA unregistered: offer to adopt it.
+
+        The adopt dialog opens pre-filled with the output path, the source
+        file as ``derived_from`` and the source file's entity, so the lineage
+        edge survives the hand-off.
+        """
+        if not payload:
+            return
+        from operon.tui.screens.derived_ops import AdoptModal
+
+        selected = self._selected_record() or {}
+        source_file_id = str(selected["file_id"]) if selected.get("file_id") else None
+        self.app.push_screen(
+            AdoptModal(
+                self.project,
+                path=str(payload.get("output") or ""),
+                derived_from=[source_file_id] if source_file_id else [],
+                entity_type=str(selected.get("entity_type") or "") or None,
+                entity_id=str(selected.get("entity_id") or "") or None,
+            ),
+            self._after_write,
+        )
+
+    def action_extract(self) -> None:
+        from operon.tui.screens.derived_ops import ExtractModal
+
+        self.app.push_screen(
+            ExtractModal(self.project, self._selected_file_id()), self._after_derived,
+        )
+
+    def action_select(self) -> None:
+        from operon.tui.screens.derived_ops import SelectSequencesModal
+
+        self.app.push_screen(
+            SelectSequencesModal(self.project, self._selected_file_id()), self._after_derived,
+        )
+
+    def action_adopt(self) -> None:
+        from operon.tui.screens.derived_ops import AdoptModal
+
+        selected = self._selected_record() or {}
+        self.app.push_screen(
+            AdoptModal(
+                self.project,
+                entity_type=str(selected.get("entity_type") or "") or None,
+                entity_id=str(selected.get("entity_id") or "") or None,
+            ),
+            self._after_write,
+        )
+
+    def action_fanout(self) -> None:
+        from operon.tui.screens.derived_ops import FanoutModal
+
+        self.app.push_screen(
+            FanoutModal(self.project, self._selected_file_id()), self._after_write,
+        )
 
     def action_ingest(self) -> None:
         self.app.push_screen(IngestModal(self.project, self._selected_record()), self._after_write)

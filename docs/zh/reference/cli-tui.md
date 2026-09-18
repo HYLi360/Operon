@@ -67,7 +67,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 |------|------|------|
 | Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。按 `i` 键打开导入向导（见下文）。 |
 | Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。 |
-| Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器（见下文）。 |
+| Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器，按 `e`/`s`/`a`/`f` 分别进行 extract-domains、select-sequences、adopt 与 fanout（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询，支持状态/step/entity/数量上限过滤，以及一行与 CLI 对应的进阶过滤：`--from`/`--to`（ISO-8601；非法值或 `--from` ≥ `--to` 内联报错）、`--run-id`、`--parent-run-id`、`--tool`、`--executor`、`--offset` 与 `--oldest-first`（`--resumes-run-id` 与机器格式仍只在 CLI）。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。对*运行中*的 run，详情屏的 *Follow logs* 每秒追加一次本地 `logs/<run_id>.stdout.log`/`.stderr.log` 的增量，直到 run 离开 `running` 并报告最终状态——它只观察、从不取消（SSH 后端的日志在结束时才拉回，因此在此之前没有内容）。*Analysis jobs* 按钮打开只读的 `analysis_jobs` 浏览器（analysis/status/limit 过滤，并显示选中行的完整错误与产物路径），其中也包括在 job array 中被中断的任务——这类行永远不会有 `workflow_runs` 行。*Environments* 按钮浏览已捕获的执行环境（与 `operon environments list` 相同的列表），并以只读方式渲染 *View JSON*、*Export explicit* 与 *Export yaml*——把 conda spec 落盘仍是 CLI 重定向（缺少包清单等错误内联显示）。*New analysis* 与 *Run external* 按钮分别打开分析对话框与外部命令对话框；*Analysis hits* 按钮打开比对命中浏览器（`report analysis --hits` 的列与过滤，*Export* 写出的文件与 CLI `--out` 逐字节一致）（见下文）。 |
 | Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles**（含 `kind: qc` 与 `kind: sequence_classification` 两类 profile，各自独立的表单）与 **Tools & Recipes**。详见下文。 |
@@ -88,6 +88,10 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | `e` | Decisions | 在选定的 profile 下评估全部实体或选中行所属实体；完成后提示"N decisions evaluated"。 | `operon evaluate --profile … [--entity-type … --entity-id …]` |
 | `c` | Decisions | 裁定选中的判定：选择新判定、reviewer（预填 `$USER`）、必填的 reason、可选的 evidence。校验错误（实体已退休、无自动判定）以内联方式显示，对话框不关闭。 | `operon curate --entity-type … --entity-id … --profile … --decision … --reviewer … --reason …` |
 | `l` | Files | 浏览 `sequence_labels`（`classify-sequences` 的产物）：项目级 label × 序列数/文件数摘要，加上选中文件的 label 行（500 行窗口）。label 没有对应的 CLI 读取命令——本视图即 `classify-sequences` 的读取侧，`report analysis --hits` 展示其背后的比对命中。 | —（无 CLI 对应命令） |
+| `e` | Files | 从选中的 FASTA 提取比对 query 区域（*Extract domains*）：区域来源是 Select（`--analysis` 命中或 `--regions-tsv` 路径，同一时刻只有一个可用），另有区域模式（best hit / all regions）、flank、最小长度、`--subject-like`/`--evalue-max`（仅 analysis 模式）、输出路径与可选 manifest。输出的 FASTA **不会**被注册：运行结束后 adopt 对话框会预填输出路径、源文件（作为 `derived_from`）与源实体。 | `operon extract-domains --file-id … (--analysis … \| --regions-tsv …) [--flank …] [--min-length …] [--best-only\|--all-regions] [--subject-like …] [--evalue-max …] --out … [--manifest …]` |
+| `s` | Files | 按分析命中筛选选中 FASTA 的子集（*Select sequences*）：两个 analysis 名（OR）、`--subject-like`、`--evalue-max`、`--min-span`、`--hit-type`、require-hit / require-no-hit Select、可选实体过滤、输出路径与可选 manifest。至少要有一个命中条件（与核心同一条规则）；输出未注册，成功后与 `e` 一样链入 adopt。 | `operon select-sequences --file-id … [--analysis … …] [--subject-like …] [--evalue-max …] [--min-span …] [--hit-type …] [--require-hit\|--require-no-hit] [--entity-type … --entity-id …] --out … [--manifest …]` |
+| `a` | Files | 注册派生产物（*Adopt*）：*single item* 表单（path、entity、role、format/compression 留空自动检测、逗号分隔的 `derived_from` file id、可选 workflow run id 与 actor）或 *manifest* 表单——其 JSON/TSV 先由 *Preview* 按钮解析，解析出的条目数显示前 Confirm 保持禁用。同一 entity+role 且字节相同会复用已有注册（通知里给出 reused 数量）；字节不同则抛冲突、内联显示且不写入任何内容。 | `operon adopt (--file … --entity-type … --entity-id … --role … --derived-from … … \| --from-manifest …) [--format …] [--compression …] [--workflow-run-id …] [--actor …]` |
+| `f` | Files | 把已注册 FASTA 拆分为按 unit 的文件（*Fan out units*）：assignments file id、逗号分隔的 source file id、所属实体、role 前缀、unit/seqid 列名与可选 parent run id。*Dry run (preflight)* 按钮执行真正的预检——源校验和与注册表新鲜度、unit 身份、冲突/占用检查——并把每个计划中的 unit 标为 `would_create`/`would_reuse`；只有干净的 dry run 之后 Confirm 才可用（输入一旦改动又会被禁用），真跑完成后报告 created/reused 数量。 | `operon fanout --assignments-file … --source-file … … --entity-type … --entity-id … --role-prefix … [--unit-column …] [--seqid-column …] [--parent-run-id …] [--actor …] [--dry-run]` |
 | — | Tasks | 浏览比对命中（即 `report analysis --hits` 视图）：analysis/entity/query/subject/evalue-max/limit 过滤，使用相同的只读查询与列顺序。*Export* 用 CLI 自己的渲染器写出当前查询结果，因此 text/tsv/json 文件与 CLI 逐字节一致；不带 `--hits` 的作业汇总视图仍只在 CLI。 | `operon report analysis --hits [--analysis … --entity-type … --entity-id … --query-id … --subject-id … --evalue-max … --limit … --include-retired --format {text,tsv,json} --out PATH]` |
 | `x` | Entities | 退休（对已退休实体则为恢复）选中实体。对话框先加载只读影响计划（受影响实体/文件/引用，物理变更——逻辑退休恒为零），计划显示无变化时阻止 Confirm；RETIRE 必须提供 reason code。 | `operon retire\|restore <id> --reason … [--reason-code …] --apply --yes` |
 | `i` | Files | 将文件（本地路径或 `sftp://`/`remote://` URL）归档到 `raw/`，表单根据选中行预填。format/compression 留空时自动检测。校验和冲突（同一实体+角色的字节不同）以红色内联显示，绝不覆盖。 | `operon ingest --source … --entity-type … --entity-id … --role …` |
@@ -206,6 +210,15 @@ Config 界面以结构化表单编辑两个带版本的配置文件，表单值�
 前缀、记录时间、使用计数），与 `operon profiles history` /
 `operon recipes history` 一致。*View* 将快照文档以 YAML 只读渲染；*Restore*
 把快照载入编辑器——随后保存会创建**下一个**版本。快照绝不会被原地覆盖。
+
+**运行分类（Run classify）。** 分类 profile 保存后，*Run classify* 按钮
+（位于 *New profile* / *History* 旁，仅对已保存的分类 profile 可用）打开一个
+与 `operon classify-sequences --profile` 对应的对话框：显示该 profile 的目标
+文件与 source/rule 数量，Confirm 调用同一个核心入口（一个事务、一行 run 记录）。
+运行结束后对话框保持打开并展示 CLI 自己的报告——labeled/unlabeled 数量、label
+表、labels written/removed 与 run id——同时把按钮改名为 *Run again*，因此对内容
+未变的 profile 与输入重跑会显示 0 变更。CLI 会打印的两条警告（忽略的已完成
+作业、没有注册序列的目标文件）也会以黄色显示在对话框内。
 
 **QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc` 与
 `kind: sequence_classification` profile（名称 + 版本；分类类带标签）。右侧：
