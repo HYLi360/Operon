@@ -317,7 +317,7 @@ defects:
     inside its row. A regression test mounts the affected screens and modals and
     asserts that each identified control is fully inside its row and at least 8
     columns wide.'
-  fix_commit: null
+  fix_commit: 7d1fce0bdf81eb6ea7893977e574525345a486cf
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row
