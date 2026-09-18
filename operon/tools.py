@@ -1446,6 +1446,15 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
     return [result for result in results if result is not None]
 
 
+class _CallbackAbortedBatch(Exception):
+    """Internal sentinel: a progress-callback exception already ran the abort
+    bookkeeping, so the batch failure handlers must re-raise it untouched."""
+
+    def __init__(self, original: BaseException) -> None:
+        super().__init__(f"{type(original).__name__}: {original}")
+        self.original = original
+
+
 def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
                             executor: Any, indexed_plans: list[tuple[int, _AnalysisExecution]],
                             results: list[dict[str, Any] | None],
@@ -1475,6 +1484,39 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
     started = now_iso()
     started_monotonic = time.monotonic()
     batch: list[tuple[int, _AnalysisExecution]] = []
+
+    def report_progress(index: int, file_id: str, phase: str) -> None:
+        """Invoke the progress callback; its exceptions abort the batch.
+
+        The callback is how cooperative callers (e.g. the TUI) cancel, so its
+        exceptions must reach the caller and never feed the per-file or
+        whole-batch failure paths.  A KeyboardInterrupt subclass keeps the
+        outer interrupt path; any other exception finalizes the tasks that
+        already wrote their exit-code file, marks the remaining plans
+        interrupted, and re-raises.
+        """
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(index, total, file_id, phase)
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            _finalize_interrupted_array(
+                project, db, recipe, tool, executor, batch, results, finalized,
+                sftp=sftp, client=client, keep_partial=keep_partial, started=started,
+            )
+            for _, pending_plan in indexed_plans:
+                if pending_plan.job_id in finalized:
+                    continue
+                if sftp is not None and pending_plan.backups:
+                    executor._restore_output_backups(sftp, pending_plan.backups)
+                    pending_plan.backups = []
+                _interrupt_analysis_execution(project, db, pending_plan, exc,
+                                              keep_partial=keep_partial)
+            cleanup_completed()
+            raise _CallbackAbortedBatch(exc) from exc
+
     try:
         if ssh_remote:
             client = executor._connect()
@@ -1487,8 +1529,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                     _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
                     finalized.add(plan.job_id)
                     results[index - 1] = _analysis_error_result(plan.file_record, recipe, exc)
-                    if progress_callback is not None:
-                        progress_callback(index, total, plan.file_record["file_id"], "error")
+                    report_progress(index, plan.file_record["file_id"], "error")
                 else:
                     batch.append((index, plan))
         else:
@@ -1562,9 +1603,8 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                 outcome = _analysis_error_result(plan.file_record, recipe, exc)
             finalized.add(plan.job_id)
             results[index - 1] = outcome
-            if progress_callback is not None:
-                progress_callback(index, total, plan.file_record["file_id"],
-                                  str(outcome.get("status", "done")))
+            report_progress(index, plan.file_record["file_id"],
+                            str(outcome.get("status", "done")))
     except KeyboardInterrupt as exc:
         # A shutdown during staging or collection: every plan that was never
         # finalized is the in-flight file of the sequential path.
@@ -1577,6 +1617,10 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
         cleanup_completed()
         raise
+    except _CallbackAbortedBatch as aborted:
+        # The progress callback aborted the batch; report_progress already
+        # finalized/interrupted every plan — re-raise its original exception.
+        raise aborted.original
     except Exception as exc:
         # Whole-batch failure (connect, staging setup, submission): every
         # planned file fails with the same error, as sequential submission
@@ -1616,6 +1660,8 @@ def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, 
     from operon.execution import ExecResult
     from operon.workflow import record_execution_result
     for index, plan in batch:
+        if plan.job_id in finalized:
+            continue
         exitcode_path = plan.stdout_path.parent / f"{plan.run_id}.exitcode"
         try:
             exit_code = int(exitcode_path.read_text(encoding="utf-8").strip())

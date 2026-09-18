@@ -277,3 +277,19 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
+- id: ODR-0018
+  title: Array analysis swallows progress-callback cancellations as per-file failures
+  reported: '2026-09-18'
+  introduced_in: null
+  affected: 0.8.2 and earlier; run_analysis on the Slurm-array path with a progress_callback that raises (the TUI's AnalysisCancelled)
+  severity: medium
+  component: tools
+  status: fixed
+  reproduction: 'In _execute_analysis_array the phase-3 progress_callback invocation sits inside the outer try whose ''except Exception'' is the whole-batch failure path. A plain-Exception cancellation raised by the callback (the TUI raises AnalysisCancelled, a plain Exception, from the callback when the worker is cancelled) is caught there: every not-yet-collected task is marked ''failed'', per-file ''error'' results are recorded, and the function returns normally, so the cancellation is swallowed — the TUI never sees its AnalysisCancelled and shows a successful/failed batch instead of a cancellation. KeyboardInterrupt subclasses escape correctly via the outer ''except KeyboardInterrupt'', so the CLI signal path is unaffected. The staging-error callback in the same function has the identical structure and the same swallow.'
+  disposition: 'Wrap both progress_callback invocations of _execute_analysis_array so callback exceptions abort the batch instead of feeding the per-file/batch failure paths: KeyboardInterrupt subclasses keep the existing outer interrupt path, and any other callback exception finalizes tasks that already wrote their exit-code file (same as the executor-interrupt path), marks the remaining plans interrupted, and re-raises so the caller''s cancellation propagates.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_cancellation_aborts_the_batch
+  - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_shutdown_interrupts_remaining_tasks
+  - tests/integration/test_analysis_array.py::TestAnalysisArrayRemote::test_remote_array_staging_callback_cancellation_aborts_the_batch

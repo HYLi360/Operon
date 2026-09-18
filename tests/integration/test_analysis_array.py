@@ -454,6 +454,63 @@ class TestAnalysisArray(PytestAssertions):
         self.assertIn("expected output missing or empty", jobs[0]["error"])
         self.assertEqual([r["status"] for r in self._runs()], ["failed", "completed"])
 
+    @pytest.mark.bug("ODR-0018")
+    def test_array_progress_callback_cancellation_aborts_the_batch(self, monkeypatch):
+        """A plain-Exception cancellation raised by the phase-3 progress
+        callback (the TUI's AnalysisCancelled) must propagate with the
+        completed tasks kept — never be swallowed as per-file failures."""
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._add_assembly(3)
+        self._fake_run(monkeypatch)
+        self._fake_run_array(monkeypatch)
+
+        class Cancelled(Exception):
+            pass
+
+        phases: list[tuple[str, str]] = []
+
+        def cancelling(index, total, file_id, phase):
+            phases.append((file_id, phase))
+            if phase == "completed":
+                raise Cancelled()
+
+        with pytest.raises(Cancelled):
+            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                         progress_callback=cancelling)
+
+        # The first task was collected before the cancellation; the remaining
+        # tasks had already written their exit-code files, so they finalize
+        # as completed instead of being misreported as failed.
+        self.assertEqual([j["status"] for j in self._jobs()],
+                         ["completed", "completed", "completed"])
+        self.assertEqual([r["status"] for r in self._runs()],
+                         ["completed", "completed", "completed"])
+
+    @pytest.mark.bug("ODR-0018")
+    def test_array_progress_callback_shutdown_interrupts_remaining_tasks(self, monkeypatch):
+        """A KeyboardInterrupt subclass from the phase-3 callback keeps the
+        interrupt path: uncollected tasks are interrupted, not failed."""
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._fake_run(monkeypatch)
+        self._fake_run_array(monkeypatch)
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "completed":
+                raise ShutdownRequested(signal.SIGINT)
+
+        with pytest.raises(ShutdownRequested):
+            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                         progress_callback=cancelling)
+
+        self.assertEqual([j["status"] for j in self._jobs()],
+                         ["completed", "interrupted"])
+
     def test_array_planning_error_and_fallback_failure_are_per_file(self, monkeypatch):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
@@ -748,6 +805,30 @@ class TestAnalysisArrayRemote(PytestAssertions):
         restored_targets = {entry[1][0][0] for entry in self._ops(executor, "restore")}
         self.assertEqual(restored_targets, {str(self._output_path(rows[1])),
                                             str(self._output_path(rows[2]))})
+
+    @pytest.mark.bug("ODR-0018")
+    def test_remote_array_staging_callback_cancellation_aborts_the_batch(self, monkeypatch):
+        """The same swallow existed at the staging-error callback: a
+        cancellation raised there must propagate with the never-submitted
+        plans interrupted, not failed."""
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        rows = [self._add_assembly(n) for n in (1, 2)]
+        executor = self._executor(monkeypatch)
+        executor.fail_staging_for = {str(self.project.root / rows[0]["relative_path"])}
+
+        class Cancelled(Exception):
+            pass
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "error":
+                raise Cancelled()
+
+        with pytest.raises(Cancelled):
+            run_analysis(self.project, self.db, "fake_nt", backend="ssh",
+                         progress_callback=cancelling)
+
+        self.assertEqual([j["status"] for j in self._jobs()], ["failed", "interrupted"])
 
     def test_remote_array_pull_failure_restores_backup_and_fails(self, monkeypatch):
         self._write_fake_blast()
