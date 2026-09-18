@@ -680,6 +680,18 @@ def test_analysis_failure_callback_shows_error_dialog(project: Project, tmp_path
     _run(scenario())
 
 
+def test_analyze_modal_backend_helpers_before_mount(project: Project, tmp_path: Path) -> None:
+    """Reading the backend controls before the form mounts stays safe."""
+    _write_fake_tool(project, tmp_path)
+    modal = AnalyzeModal(project, recipe_name="fake_nt")
+    assert modal._selected_backend() == ""
+    assert modal._resolved_backend() == "local"  # the demo project's default
+    modal._update_cancel_note()  # no-op: the note does not exist yet
+    # The default option carries the project default in its label.
+    assert modal._backend_options()[0] == ("project default (local)", "")
+    assert [value for _label, value in modal._backend_options()] == ["", "local", "slurm", "ssh"]
+
+
 # ---------------------------------------------------------------------------
 # M2b: execution backend selection and scheduler-aware cancellation
 # ---------------------------------------------------------------------------

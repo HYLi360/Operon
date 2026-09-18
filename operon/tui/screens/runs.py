@@ -10,12 +10,13 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import Screen
-from textual.widgets import Button, DataTable, Input, Select, Static
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Input, Label, Select, Static
 
 from operon.config import Project
 from operon.tui import data
 from operon.tui.screens.common import (
+    DismissOnce,
     Panel,
     capture_table_view,
     entity_label,
@@ -26,6 +27,7 @@ from operon.tui.screens.common import (
 
 ALL_STATUSES = "ALL"
 RUN_STATUSES = ["running", "completed", "failed", "interrupted", "adopted", "planned"]
+ANALYSIS_JOB_CHOICES = [ALL_STATUSES, *data.ANALYSIS_JOB_STATUSES]
 
 
 class RunsPanel(Panel):
@@ -48,6 +50,7 @@ class RunsPanel(Panel):
                 yield Input(placeholder="entity contains", id="runs-entity")
                 yield Input(value="100", placeholder="limit", id="runs-limit",
                             type="integer", restrict=r"\d*")
+                yield Button("Analysis jobs", id="runs-jobs")
                 yield Button("New analysis", id="runs-new-analysis")
             yield DataTable(id="runs-table", cursor_type="row")
 
@@ -122,6 +125,157 @@ class RunsPanel(Panel):
                 AnalyzeModal(self.project),
                 lambda payload: analysis_finished(self.app, payload),
             )
+        elif event.button.id == "runs-jobs":
+            self.app.push_screen(AnalysisJobsModal(self.project))
+
+
+class AnalysisJobsModal(DismissOnce, ModalScreen):
+    """Read-only ``analysis_jobs`` browser launched from the Tasks screen.
+
+    The Tasks list shows ``workflow_runs``, which only exist for tasks whose
+    bookkeeping finished; a task interrupted inside a job array keeps an
+    ``analysis_jobs`` row and no run row.  This view reads the jobs table
+    directly, joins the scheduler job id from the run when there is one, and
+    shows the selected row's full error and artifact paths underneath.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+    ]
+
+    def __init__(self, project: Project) -> None:
+        super().__init__()
+        self.project = project
+        self.jobs: list[dict[str, Any]] = []
+        self._loading = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-box"):
+            yield Label("Analysis jobs", id="modal-title")
+            with Horizontal(id="jobs-filters"):
+                yield Input(placeholder="analysis contains", id="jobs-analysis")
+                yield Select(
+                    [(name, name) for name in ANALYSIS_JOB_CHOICES],
+                    value=ALL_STATUSES, id="jobs-status",
+                )
+                yield Input(value="200", placeholder="limit", id="jobs-limit",
+                            type="integer", restrict=r"\d*")
+            yield DataTable(id="jobs-table", cursor_type="row")
+            yield Static("", id="jobs-detail")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Close", id="cancel", variant="primary")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#jobs-table", DataTable)
+        table.add_columns("job_id", "status", "analysis", "entity", "file_id",
+                          "scheduler_job_id", "finished_at")
+        self.reload()
+
+    def reload(self) -> None:
+        # Filter edits and manual refreshes must never pile up overlapping loads.
+        if self._loading:
+            return
+        self._loading = True
+        self._load()
+
+    def _filters(self) -> tuple[str, list[str], int]:
+        analysis = self.query_one("#jobs-analysis", Input).value.strip()
+        status_value = self.query_one("#jobs-status", Select).value
+        statuses = ([] if status_value in (ALL_STATUSES, Select.NULL)
+                    else [str(status_value)])
+        limit_text = self.query_one("#jobs-limit", Input).value.strip()
+        limit = int(limit_text) if limit_text.isdigit() and int(limit_text) > 0 else 200
+        return analysis, statuses, limit
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id in {"jobs-analysis", "jobs-limit"}:
+            self.reload()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "jobs-status":
+            self.reload()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel":
+            self.dismiss(None)
+
+    @work(thread=True)
+    def _load(self) -> None:
+        analysis, statuses, limit = self._filters()
+        try:
+            payload: Any = data.list_analysis_jobs(
+                self.project, analysis=analysis, statuses=statuses, limit=limit,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+            payload = exc
+        if self.app.is_running:
+            try:
+                self.app.call_from_thread(self._apply, payload)
+            except RuntimeError:  # pragma: no cover - app is shutting down
+                pass
+
+    def _apply(self, payload: Any) -> None:
+        self._loading = False
+        detail = self.query_one("#jobs-detail", Static)
+        if isinstance(payload, BaseException):
+            detail.update(Text(f"error: {payload}", style="red"))
+            return
+        self.jobs = payload
+        table = self.query_one("#jobs-table", DataTable)
+        view = capture_table_view(table)
+        table.clear()
+        for job in payload:
+            table.add_row(
+                str(job["job_id"]),
+                styled_status(job.get("status")),
+                str(job.get("analysis_name") or "-"),
+                entity_label(job),
+                str(job.get("file_id") or "-"),
+                str(job.get("scheduler_job_id") or "-"),
+                str(job.get("finished_at") or "-"),
+                key=str(job["job_id"]),
+            )
+        restore_table_view(table, view, len(payload))
+        detail.update(self._detail_text(payload[0] if payload else None))
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id != "jobs-table":
+            return
+        index = event.cursor_row
+        if 0 <= index < len(self.jobs):
+            self.query_one("#jobs-detail", Static).update(self._detail_text(self.jobs[index]))
+
+    def _detail_text(self, job: dict[str, Any] | None) -> Text:
+        text = Text()
+        if job is None:
+            text.append("no matching analysis jobs", style="dim")
+            return text
+        text.append(
+            f"job {job['job_id']} · {job.get('analysis_name')} · {job.get('status')}\n",
+            style="bold",
+        )
+        for label, value in (
+            ("entity", f"{job.get('entity_type')}:{job.get('entity_id')}"),
+            ("file_id", job.get("file_id")),
+            ("tool", f"{job.get('tool')} {job.get('tool_version')}"),
+            ("scheduler_job_id", job.get("scheduler_job_id")),
+            ("executor", job.get("executor")),
+            ("workflow_run_id", job.get("workflow_run_id")),
+            ("started_at", job.get("started_at")),
+            ("finished_at", job.get("finished_at")),
+            ("output", job.get("output_relative_path")),
+            ("stdout", job.get("stdout_file")),
+            ("stderr", job.get("stderr_file")),
+        ):
+            rendered = "-" if value in (None, "") else str(value)
+            text.append(f"  {label:<18} {rendered}\n")
+        error = str(job.get("error") or "").strip()
+        text.append(f"  {'error':<18} ")
+        if error:
+            text.append(f"{error}\n", style="red")
+        else:
+            text.append("-\n")
+        return text
 
 
 class RunDetailScreen(Screen):

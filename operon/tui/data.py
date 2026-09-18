@@ -622,6 +622,53 @@ def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
     return record
 
 
+# The statuses `analysis_jobs` rows actually carry: RUNNING for an in-flight
+# job (swept to `interrupted` on the next run after a crash), the rest set by
+# the finalizing paths in tools.py.
+ANALYSIS_JOB_STATUSES = ("RUNNING", "completed", "failed", "interrupted")
+
+
+def list_analysis_jobs(
+        project: Project,
+        *,
+        analysis: str = "",
+        statuses: Iterable[str] = (),
+        limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Return analysis jobs, newest first, with their scheduler job id.
+
+    Reads ``analysis_jobs`` directly rather than ``workflow_runs``: a task
+    interrupted inside a job array keeps its job row and never gets a run
+    row, so joining from runs would hide exactly the rows an operator needs
+    to see.  ``analysis`` is a case-insensitive substring over
+    ``analysis_name``; ``statuses`` uses exact matching (OR within the list).
+    ``scheduler_job_id``/``executor`` come from the run row when one exists
+    and are ``None`` otherwise.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+    status_list = list(statuses)
+    if analysis:
+        conditions.append("j.analysis_name LIKE ?")
+        params.append(f"%{analysis}%")
+    if status_list:
+        conditions.append(f"j.status IN ({', '.join('?' for _ in status_list)})")
+        params.extend(status_list)
+    sql = (
+        "SELECT j.job_id, j.analysis_name, j.entity_type, j.entity_id, j.file_id, "
+        "j.status, j.tool, j.tool_version, j.output_relative_path, j.output_sha256, "
+        "j.stdout_file, j.stderr_file, j.started_at, j.finished_at, j.error, "
+        "j.workflow_run_id, r.scheduler_job_id, r.executor "
+        "FROM analysis_jobs j LEFT JOIN workflow_runs r ON r.run_id = j.workflow_run_id"
+    )
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)  # nosec B608 # fixed condition fragments; filter values are bound
+    sql += " ORDER BY j.job_id DESC LIMIT ?"
+    params.append(max(1, int(limit)))
+    with _open(project) as db:
+        return _rows(db, sql, params)
+
+
 # ---------------------------------------------------------------------------
 # Import wizard pickers (read-only mirrors of the questionary wizard queries)
 # ---------------------------------------------------------------------------

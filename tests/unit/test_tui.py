@@ -20,6 +20,7 @@ from textual.widgets import (
     Static,
     Tree,
 )
+from textual.widgets.data_table import RowKey
 
 from operon.cli import main
 from operon.config import Project
@@ -29,7 +30,12 @@ from operon.tui.app import HelpScreen, OperonApp
 from operon.tui.screens.entities import EntitiesPanel
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.home import HomePanel
-from operon.tui.screens.runs import RunDetailScreen, RunsPanel
+from operon.tui.screens.runs import (
+    ALL_STATUSES,
+    AnalysisJobsModal,
+    RunDetailScreen,
+    RunsPanel,
+)
 from operon.utils import sha256_file
 
 
@@ -334,6 +340,84 @@ def test_workflow_run_detail_environment_summary(tmp_path: Path) -> None:
     assert detail["environment_summary"] is None
 
 
+def _seed_analysis_jobs(demo_project: Project, tmp_path: Path) -> tuple[Project, dict]:
+    """A private copy of the demo project with two seeded analysis jobs.
+
+    One completed job linked to a workflow run (so the scheduler job id is
+    joinable) and one interrupted task with no run row at all — exactly the
+    shape a cancelled job array leaves behind.
+    """
+    import shutil
+
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    target = tmp_path / "analysis-jobs-project"
+    shutil.copytree(demo_project.root, target)
+    project = Project.find(target)
+    db = Database(project.db_path)
+    try:
+        file_id = db.query("SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0]["file_id"]
+        run = log_run(db, project, {
+            "step": "analysis:seed_tool", "status": "completed",
+            "entity_type": "assembly", "entity_id": "ASM_000001",
+            "executor": "slurm", "scheduler_job_id": "7000_1",
+        })
+        base = {
+            "analysis_name": "seed_tool",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_id": file_id,
+            "tool": "seedtool",
+            "tool_version": "1.0",
+            "parameter_set": "seed_tool:1.0",
+            "parameter_sha256": "0" * 64,
+            "input_sha256": "1" * 64,
+            "database_identity": "none",
+            "status": "completed",
+            "started_at": "2026-09-18T10:00:00+08:00",
+            "finished_at": "2026-09-18T10:01:00+08:00",
+            "workflow_run_id": run["run_id"],
+        }
+        db.insert_row("analysis_jobs", base)
+        db.insert_row("analysis_jobs", {
+            **base,
+            "status": "interrupted",
+            "started_at": "2026-09-18T10:05:00+08:00",
+            "finished_at": None,
+            "workflow_run_id": None,
+            "error": "interrupted by SIGINT\nsecond line of the error",
+        })
+    finally:
+        db.close()
+    return project, {"run_id": run["run_id"], "file_id": file_id}
+
+
+def test_list_analysis_jobs_includes_interrupted_tasks(demo_project: Project,
+                                                       tmp_path: Path) -> None:
+    project, seeded = _seed_analysis_jobs(demo_project, tmp_path)
+
+    jobs = data.list_analysis_jobs(project)
+    assert [job["status"] for job in jobs] == ["interrupted", "completed"]  # newest first
+    interrupted, completed = jobs
+    # The interrupted task has no run row: it stays visible, but the joined
+    # scheduler columns are empty instead of hiding the row.
+    assert interrupted["workflow_run_id"] is None
+    assert interrupted["scheduler_job_id"] is None
+    assert interrupted["executor"] is None
+    assert "SIGINT" in interrupted["error"]
+    assert completed["workflow_run_id"] == seeded["run_id"]
+    assert completed["scheduler_job_id"] == "7000_1"
+    assert completed["executor"] == "slurm"
+
+    by_status = data.list_analysis_jobs(project, statuses=["interrupted"])
+    assert [job["job_id"] for job in by_status] == [interrupted["job_id"]]
+    assert data.list_analysis_jobs(project, analysis="seed") != []
+    assert data.list_analysis_jobs(project, analysis="no_such_analysis") == []
+    assert len(data.list_analysis_jobs(project, limit=1)) == 1
+    assert data.list_analysis_jobs(project, limit=0)[0]["job_id"] == interrupted["job_id"]
+
+
 def test_entity_tree_on_lifecycle_less_database(tmp_path: Path) -> None:
     """Databases predating schema 2.7 have no retirement view; nothing is retired."""
     import sqlite3
@@ -427,6 +511,7 @@ def test_data_layer_never_writes(demo_project: Project) -> None:
         runs = data.list_workflow_runs(demo_project, limit=100)
         data.list_workflow_runs(demo_project, step="qc", entity="RUN_000001")
         data.workflow_run_detail(demo_project, runs[0]["run_id"])
+        data.list_analysis_jobs(demo_project)
         # Phase-3 read paths (pickers, publish, coverage).
         data.list_organisms_for_picker(demo_project)
         data.list_samples_for_picker(demo_project, "ORG_000001")
@@ -794,6 +879,115 @@ def test_runs_screen_filters_and_detail(demo_project: Project) -> None:
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, RunDetailScreen)
+
+    _run(scenario())
+
+
+def test_analysis_jobs_modal_browses_interrupted_tasks(demo_project: Project,
+                                                       tmp_path: Path) -> None:
+    """The Tasks screen's jobs browser shows rows that have no workflow run."""
+    project, _seeded = _seed_analysis_jobs(demo_project, tmp_path)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-jobs")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            assert isinstance(modal, AnalysisJobsModal)
+            table = modal.query_one("#jobs-table", DataTable)
+            assert table.row_count == 2
+            assert {job["status"] for job in modal.jobs} == {"interrupted", "completed"}
+
+            # Selecting the interrupted task shows its full error text; it has
+            # no run row, so the scheduler columns stay empty.
+            table.focus()
+            table.move_cursor(row=0, animate=False)
+            await pilot.pause()
+            detail = _static_text(modal.query_one("#jobs-detail", Static))
+            assert "interrupted" in detail
+            assert "second line of the error" in detail
+            assert "scheduler_job_id" in detail
+
+            # The completed task shows the joined scheduler job id and no error.
+            table.move_cursor(row=1, animate=False)
+            await pilot.pause()
+            detail = _static_text(modal.query_one("#jobs-detail", Static))
+            assert "7000_1" in detail
+            assert "slurm" in detail
+            assert "error" in detail and detail.rstrip().endswith("-")
+            table.move_cursor(row=0, animate=False)
+            await pilot.pause()
+
+            # Highlight events from other tables and out-of-range cursor rows
+            # are ignored instead of rewriting the detail pane.
+            modal.on_data_table_row_highlighted(DataTable.RowHighlighted(
+                DataTable(id="other-table"), 0, RowKey("other")))
+            modal.on_data_table_row_highlighted(DataTable.RowHighlighted(
+                table, 99, RowKey("out-of-range")))
+            await pilot.pause()
+            assert "second line of the error" in _static_text(
+                modal.query_one("#jobs-detail", Static))
+
+            # Filters narrow the listing down to the task without a run row.
+            modal.query_one("#jobs-status", Select).value = "interrupted"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 1
+            assert modal.jobs[0]["status"] == "interrupted"
+            modal.query_one("#jobs-analysis", Input).value = "SEED"  # case-insensitive
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 1
+            assert modal.jobs[0]["analysis_name"] == "seed_tool"
+            modal.query_one("#jobs-analysis", Input).value = "no_such_analysis"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 0
+            assert "no matching analysis jobs" in _static_text(
+                modal.query_one("#jobs-detail", Static))
+
+            # Resetting the filters restores the full listing; a non-positive
+            # limit falls back to the default instead of hiding everything.
+            modal.query_one("#jobs-analysis", Input).value = ""
+            modal.query_one("#jobs-status", Select).value = ALL_STATUSES
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 2
+            modal.query_one("#jobs-limit", Input).value = "0"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 2
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, AnalysisJobsModal)
+
+    _run(scenario())
+
+
+def test_analysis_jobs_modal_reports_load_failures(demo_project: Project,
+                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode(*args, **kwargs):
+        raise RuntimeError("jobs query exploded")
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            monkeypatch.setattr(data, "list_analysis_jobs", explode)
+            modal = AnalysisJobsModal(demo_project)
+            app.push_screen(modal)
+            await pilot.pause()
+            await _settled(app)
+            assert "jobs query exploded" in _static_text(
+                modal.query_one("#jobs-detail", Static))
+            await pilot.press("escape")
+            await pilot.pause()
 
     _run(scenario())
 
