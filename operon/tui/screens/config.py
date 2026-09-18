@@ -27,6 +27,7 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import (
@@ -53,6 +54,14 @@ from operon.tui.screens.common import (
     ErrorDialog,
     Panel,
     WriteModal,
+    remount,
+)
+from operon.tui.screens.config_classification import (
+    CLASSIFICATION_MODELED_KEYS,
+    ClassificationRuleRow,
+    ClassificationSaveModal,
+    SourceRow,
+    classification_form_supported,
 )
 
 ENTITY_TYPE_NAMES = list(actions.ENTITY_TYPE_NAMES)
@@ -282,7 +291,7 @@ class HistoryModal(DismissOnce, ModalScreen):
 
 
 class NewProfileModal(DismissOnce, ModalScreen):
-    """Prompt for the name of a new qc profile."""
+    """Prompt for the name and kind of a new profile."""
 
     BINDINGS = [
         Binding("escape", "dismiss", "Close"),
@@ -290,8 +299,14 @@ class NewProfileModal(DismissOnce, ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
-            yield Label("New qc profile", id="modal-title")
+            yield Label("New profile", id="modal-title")
             yield Input(placeholder="profile name, e.g. assembly_strict_v1", id="new-profile-name")
+            yield Static("Kind", classes="modal-label")
+            yield Select(
+                [("qc (decision thresholds)", "qc"),
+                 ("sequence_classification (label sequences)", actions.CLASSIFICATION_KIND)],
+                value="qc", id="new-profile-kind", allow_blank=False,
+            )
             yield Static("", id="history-error")
             with Horizontal(id="modal-buttons"):
                 yield Button("Create", id="confirm", variant="primary")
@@ -307,7 +322,9 @@ class NewProfileModal(DismissOnce, ModalScreen):
         except ValidationError as exc:
             self.query_one("#history-error", Static).update(Text(str(exc), style="red"))
             return
-        self.dismiss(name)
+        kind_value = self.query_one("#new-profile-kind", Select).value
+        kind = "qc" if kind_value is Select.NULL else str(kind_value)
+        self.dismiss({"name": name, "kind": kind})
 
 
 class ProfileSaveModal(WriteModal):
@@ -399,7 +416,7 @@ class RecipeSaveModal(WriteModal):
 
 
 class ConfigPanel(Panel):
-    """Config screen: QC profile editor + tools/recipes editor."""
+    """Config screen: profile editors (qc + classification) + tools/recipes editor."""
 
     def __init__(self, project: Project) -> None:
         super().__init__(id="config")
@@ -409,6 +426,8 @@ class ConfigPanel(Panel):
         self.recipes: list[dict[str, Any]] = []
         self.current_profile: str | None = None
         self.profile_doc: dict[str, Any] | None = None
+        self.classification_profile: str | None = None
+        self.classification_doc: dict[str, Any] | None = None
         self._known_versions: dict[tuple[str, str], int] = {}
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
@@ -450,6 +469,29 @@ class ConfigPanel(Panel):
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save profile", id="profile-save",
                                          variant="primary", disabled=True)
+                    with VerticalScroll(id="classification-editor"):  # pragma: no branch
+                        yield Static("select a profile", id="classification-heading")
+                        yield Static("", id="classification-readonly-note")
+                        yield Static("Description", classes="modal-label")
+                        yield Input(id="classification-description")
+                        yield Static("Applies to (entity_type + file_role)", classes="modal-label")
+                        yield Input(placeholder="entity_type", id="classification-entity-type")
+                        yield Input(placeholder="file_role", id="classification-file-role")
+                        yield Static("", id="classification-version-note")
+                        yield Static("", id="classification-extras-note")
+                        yield Static("Sources (name → analysis, filter, best_by)",
+                                     classes="modal-label")
+                        yield Vertical(id="classification-sources")
+                        yield Button("add source", id="classification-add-source")
+                        yield Static("Rules (first match wins; label + source/when, absent, "
+                                     "or default)", classes="modal-label")
+                        yield Vertical(id="classification-rules")
+                        yield Button("add rule", id="classification-add-rule")
+                        yield Static("", id="classification-save-error")
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
+                            yield Button("Save profile", id="classification-save",
+                                         variant="primary", disabled=True)
+                            yield Button("History", id="classification-history", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
                     with Horizontal(classes="config-buttons"):
@@ -538,7 +580,10 @@ class ConfigPanel(Panel):
 
     def _fetch(self) -> dict[str, Any]:
         return {
-            "profiles": data.list_qc_profiles(self.project),
+            "profiles": (
+                data.list_qc_profiles(self.project)
+                + data.list_classification_profiles(self.project)
+            ),
             "tools": data.list_tools(self.project),
             "recipes": data.list_recipes(self.project),
         }
@@ -551,7 +596,8 @@ class ConfigPanel(Panel):
         list_view = self.query_one("#profiles-list", ListView)
         list_view.clear()
         for profile in self.profiles:
-            list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}")))
+            tag = "  · classification" if profile.get("kind") == actions.CLASSIFICATION_KIND else ""
+            list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{tag}")))
 
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
@@ -579,6 +625,7 @@ class ConfigPanel(Panel):
         return list(self.query_one(f"#profile-{section}-rules", Vertical).query(RuleRow))
 
     def _render_profile_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
+        self._show_editor("qc")
         self.query_one("#profile-heading", Static).update(
             f"{name}" + (f"  —  {note}" if note else "")
         )
@@ -599,23 +646,46 @@ class ConfigPanel(Panel):
         )
         for section in ("required", "warnings"):
             container = self.query_one(f"#profile-{section}-rules", Vertical)
-            container.remove_children()
-            for rule in document.get(section, []) or []:
-                if isinstance(rule, dict):
-                    container.mount(RuleRow(rule))
+            remount(container, *[
+                RuleRow(rule) for rule in document.get(section, []) or []
+                if isinstance(rule, dict)
+            ])
         self.query_one("#profile-save", Button).disabled = False
         self.query_one("#profile-history", Button).disabled = False
 
     def _load_profile(self, name: str) -> None:
+        kind = self._profile_kind(name)
         try:
-            document = data.get_profile_document(self.project, name)
+            document = data.get_profile_document(self.project, name, kind=kind)
         except ValidationError as exc:
             self.app.notify(str(exc), severity="error")
             return
-        self.current_profile = name
-        self.profile_doc = document
         self._remember_version("profile", name, document)
-        self._render_profile_form(name, document)
+        self._render_profile_document(name, document)
+
+    def _profile_kind(self, name: str) -> str:
+        """The on-disk kind of ``name`` (from the last listing; qc when unknown)."""
+        for profile in self.profiles:
+            if profile.get("name") == name:
+                return str(profile.get("kind") or "qc")
+        return "qc"
+
+    def _render_profile_document(self, name: str, document: dict[str, Any],
+                                 note: str = "") -> None:
+        """Route a document to the editor its kind needs (qc vs classification)."""
+        if str(document.get("kind", "qc")) == actions.CLASSIFICATION_KIND:
+            self.classification_profile = name
+            self.classification_doc = dict(document)
+            self._render_classification_form(name, dict(document), note)
+        else:
+            self.current_profile = name
+            self.profile_doc = dict(document)
+            self._render_profile_form(name, document, note)
+
+    def _show_editor(self, kind: str) -> None:
+        classification = kind == actions.CLASSIFICATION_KIND
+        self.query_one("#profile-editor").display = not classification
+        self.query_one("#classification-editor").display = classification
 
     def _remember_version(self, kind: str, name: str, document: dict[str, Any]) -> None:
         key = (kind, name)
@@ -649,13 +719,136 @@ class ConfigPanel(Panel):
         if name:
             self._load_profile(name)
 
-    def _profile_file_version(self, name: str) -> int | None:
+    def _profile_file_version(self, name: str, kind: str = "qc") -> int | None:
         try:
-            version = int(data.get_profile_document(self.project, name).get("version", 1))
+            version = int(data.get_profile_document(self.project, name, kind=kind).get("version", 1))
         except ValidationError:
             version = 0
         version = max(version, self._known_versions.get(("profile", name), 0))
         return data.config_version_floor(self.project, "profile", name, version) or None
+
+    # -- classification-profile editor --------------------------------------
+
+    def _source_names(self) -> list[str]:
+        """Names of the source rows, skipping a row that has not composed yet."""
+        names: list[str] = []
+        for row in self.query(".source-row").results(SourceRow):
+            try:
+                name = row.query_one(".source-name", Input).value.strip()
+            except NoMatches:
+                continue
+            if name:
+                names.append(name)
+        return names
+
+    def _refresh_rule_sources(self) -> None:
+        names = self._source_names()
+        for row in self.query(".classrule-row").results(ClassificationRuleRow):
+            row.set_sources(names)
+
+    def _render_classification_form(self, name: str, document: dict[str, Any],
+                                    note: str = "") -> None:
+        self._show_editor(actions.CLASSIFICATION_KIND)
+        supported, reason = classification_form_supported(document)
+        heading = f"{name}" + (f"  —  {note}" if note else "")
+        self.query_one("#classification-heading", Static).update(heading)
+        self.query_one("#classification-readonly-note", Static).update(
+            Text(
+                f"structure exceeds the manual form: {reason} — edit the YAML file; saving "
+                "from here is disabled and the file is never rewritten by the form",
+                style="yellow",
+            ) if not supported else ""
+        )
+        self.query_one("#classification-description", Input).value = str(
+            document.get("description", ""))
+        applies_to = document.get("applies_to")
+        applies_to = applies_to if isinstance(applies_to, dict) else {}
+        self.query_one("#classification-entity-type", Input).value = str(
+            applies_to.get("entity_type", "") or "")
+        self.query_one("#classification-file-role", Input).value = str(
+            applies_to.get("file_role", "") or "")
+        version = int(document.get("version", 1))
+        self.query_one("#classification-version-note", Static).update(Text(
+            f"version {version} — saving writes the next version and records a snapshot "
+            "that a classify run consumes",
+            style="dim",
+        ))
+        extras = {key: value for key, value in document.items() if key not in CLASSIFICATION_MODELED_KEYS}
+        self.query_one("#classification-extras-note", Static).update(
+            Text(_extras_note(extras), style="dim") if extras else ""
+        )
+        sources = document.get("sources")
+        sources = sources if isinstance(sources, dict) else {}
+        source_container = self.query_one("#classification-sources", Vertical)
+        remount(source_container, *[
+            SourceRow(str(source_name), source)
+            for source_name, source in sources.items() if isinstance(source, dict)
+        ])
+        rules = document.get("rules")
+        rules = [rule for rule in rules if isinstance(rule, dict)] if isinstance(rules, list) else []
+        rules_container = self.query_one("#classification-rules", Vertical)
+        names = [str(source_name) for source_name in sources]
+        remount(rules_container, *[ClassificationRuleRow(rule, names) for rule in rules])
+        self.query_one("#classification-save-error", Static).update("")
+        self.query_one("#classification-save", Button).disabled = not supported
+        self.query_one("#classification-history", Button).disabled = False
+
+    def _compose_classification_document(self) -> dict[str, Any]:
+        original = self.classification_doc or {}
+        sources: dict[str, Any] = {}
+        for row in self.query(".source-row").results(SourceRow):
+            name, source = row.source_document()
+            if name:
+                sources[name] = source
+        document: dict[str, Any] = {
+            "kind": actions.CLASSIFICATION_KIND,
+            "version": int(original.get("version", 1)),
+            "description": self.query_one("#classification-description", Input).value.strip(),
+            "applies_to": {
+                "entity_type": self.query_one("#classification-entity-type", Input).value.strip(),
+                "file_role": self.query_one("#classification-file-role", Input).value.strip(),
+            },
+            "sources": sources,
+            "rules": [
+                row.rule_document()
+                for row in self.query(".classrule-row").results(ClassificationRuleRow)
+            ],
+        }
+        for key, value in original.items():
+            if key not in document:
+                document[key] = value
+        return document
+
+    def _start_classification_save(self) -> None:
+        if not self.classification_profile or self.classification_doc is None:
+            return
+        error = self.query_one("#classification-save-error", Static)
+        names = self._source_names()
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            error.update(Text(
+                f"duplicate source name(s): {', '.join(duplicates)} — source names are the "
+                "mapping keys and must be unique",
+                style="red",
+            ))
+            return
+        error.update("")
+        name = self.classification_profile
+        document = self._compose_classification_document()
+        file_version = self._profile_file_version(name, actions.CLASSIFICATION_KIND)
+        new_version = 1 if file_version is None else file_version + 1
+        self.app.push_screen(
+            ClassificationSaveModal(self.project, name, document, new_version),
+            self._on_classification_saved,
+        )
+
+    def _on_classification_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+        name = self.classification_profile
+        if name:
+            self._load_profile(name)
 
     # -- recipe editor ------------------------------------------------------
 
@@ -956,6 +1149,21 @@ class ConfigPanel(Panel):
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
 
+    def on_source_row_remove_requested(self, event: SourceRow.RemoveRequested) -> None:
+        event.stop()
+        event.row.remove()
+        self._refresh_rule_sources()
+
+    def on_classification_rule_row_remove_requested(
+            self, event: ClassificationRuleRow.RemoveRequested) -> None:
+        event.stop()
+        event.row.remove()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.has_class("source-name"):
+            # Rule rows pick their source from the declared names.
+            self._refresh_rule_sources()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
         if button_id == "profile-add-required":
@@ -972,6 +1180,19 @@ class ConfigPanel(Panel):
             self._open_profile_history()
         elif button_id == "profile-new":
             self.app.push_screen(NewProfileModal(), self._on_new_profile)
+        elif button_id == "classification-add-source":
+            self.query_one("#classification-sources", Vertical).mount(
+                SourceRow("", {"analysis": "", "filter": []})
+            )
+        elif button_id == "classification-add-rule":
+            self.query_one("#classification-rules", Vertical).mount(
+                ClassificationRuleRow({"label": "", "source": "", "when": []},
+                                      self._source_names())
+            )
+        elif button_id == "classification-save":
+            self._start_classification_save()
+        elif button_id == "classification-history":
+            self._open_profile_history()
         elif button_id == "recipe-save":
             self._start_recipe_save()
         elif button_id == "recipe-history":
@@ -983,15 +1204,26 @@ class ConfigPanel(Panel):
 
     # -- flow starters ------------------------------------------------------
 
-    def _on_new_profile(self, name: Any) -> None:
-        if not name:
+    def _on_new_profile(self, payload: Any) -> None:
+        if not payload:
             return
-        name = str(name)
+        name = str(payload["name"])
+        kind = str(payload.get("kind") or "qc")
         if (self.project.profiles_dir / f"{name}.yaml").exists():
             self.app.notify(
                 f"profile {name!r} already exists — opening it instead", severity="warning",
             )
             self._load_profile(name)
+            return
+        if kind == actions.CLASSIFICATION_KIND:
+            self.classification_profile = name
+            self.classification_doc = {
+                "kind": actions.CLASSIFICATION_KIND, "version": 1, "description": "",
+                "applies_to": {"entity_type": "annotation", "file_role": "protein_fasta"},
+                "sources": {}, "rules": [],
+            }
+            self._render_classification_form(
+                name, dict(self.classification_doc), note="new profile (not saved yet)")
             return
         self.current_profile = name
         self.profile_doc = {
@@ -1020,8 +1252,8 @@ class ConfigPanel(Panel):
 
         def restore(document: dict[str, Any]) -> None:
             self.profile_doc = dict(document)
-            self._render_profile_form(
-                name, self.profile_doc,
+            self._render_profile_document(
+                name, dict(document),
                 note="restored from snapshot — saving creates the next version",
             )
 

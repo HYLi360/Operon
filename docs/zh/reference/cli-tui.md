@@ -70,7 +70,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询，支持状态/step/entity/数量上限过滤，以及一行与 CLI 对应的进阶过滤：`--from`/`--to`（ISO-8601；非法值或 `--from` ≥ `--to` 内联报错）、`--run-id`、`--parent-run-id`、`--tool`、`--executor`、`--offset` 与 `--oldest-first`（`--resumes-run-id` 与机器格式仍只在 CLI）。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。对*运行中*的 run，详情屏的 *Follow logs* 每秒追加一次本地 `logs/<run_id>.stdout.log`/`.stderr.log` 的增量，直到 run 离开 `running` 并报告最终状态——它只观察、从不取消（SSH 后端的日志在结束时才拉回，因此在此之前没有内容）。*Analysis jobs* 按钮打开只读的 `analysis_jobs` 浏览器（analysis/status/limit 过滤，并显示选中行的完整错误与产物路径），其中也包括在 job array 中被中断的任务——这类行永远不会有 `workflow_runs` 行。*Environments* 按钮浏览已捕获的执行环境（与 `operon environments list` 相同的列表），并以只读方式渲染 *View JSON*、*Export explicit* 与 *Export yaml*——把 conda spec 落盘仍是 CLI 重定向（缺少包清单等错误内联显示）。*New analysis* 与 *Run external* 按钮分别打开分析对话框与外部命令对话框；*Analysis hits* 按钮打开比对命中浏览器（`report analysis --hits` 的列与过滤，*Export* 写出的文件与 CLI `--out` 逐字节一致）（见下文）。 |
 | Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
-| Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles** 与 **Tools & Recipes**。详见下文。 |
+| Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles**（含 `kind: qc` 与 `kind: sequence_classification` 两类 profile，各自独立的表单）与 **Tools & Recipes**。详见下文。 |
 | Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
 | Coverage | `8` | 已导入的 NCBI Taxonomy 快照、已编译的 reference set、覆盖度报告生成（`operon report coverage`），以及已有 `reports/coverage/COV_*` 报告的浏览器。详见下文。 |
 
@@ -207,12 +207,31 @@ Config 界面以结构化表单编辑两个带版本的配置文件，表单值�
 `operon recipes history` 一致。*View* 将快照文档以 YAML 只读渲染；*Restore*
 把快照载入编辑器——随后保存会创建**下一个**版本。快照绝不会被原地覆盖。
 
-**QC Profiles 标签页。** 左侧：`config/profiles/` 中的 `kind: qc` profile
-（名称 + 版本）。右侧：编辑器——description、五个 `applies_to` 复选框、
-只读版本提示，以及两个规则小节（required / warnings）；每条规则是一行
-metric、operator（覆盖规则引擎全部操作符的 Select）、value、code 输入加
-删除按钮，"add rule" 按小节追加行。*New profile* 提示输入名称并从最小骨架
-开始。看似数字的值会存为数字。`taxonomy_coverage` profile 不在此处编辑。
+**QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc` 与
+`kind: sequence_classification` profile（名称 + 版本；分类类带标签）。右侧：
+按所选 profile 自身的 `kind` 切换（不是合并）到对应编辑器。*New profile*
+提示输入名称**与 kind**，并从该 kind 的最小骨架开始。qc 编辑器包含：
+description、五个 `applies_to` 复选框、只读版本提示，以及两个规则小节
+（required / warnings）；每条规则是一行 metric、operator（覆盖规则引擎全部
+操作符的 Select）、value、code 输入加删除按钮，"add rule" 按小节追加行。
+看似数字的值会存为数字。`taxonomy_coverage` profile 不在此处编辑。
+
+**分类 profile**（`kind: sequence_classification`）。编辑器对应
+`classify.py` 的语法：`applies_to` 是 `entity_type` + `file_role` 一对输入；
+*sources*（名称 → analysis、filter 条件列表，以及含 field / direction /
+`Value=rank` 映射 / default 的 `best_by` 条目）；*rules*（label 加三者之一：
+带 `when` 条件列表的 source、`absent: true`、或 `default: true`）。条件行提供
+核心的完整操作符集——`>=`、`<=`、`>`、`<`、`==`、`!=`、`in`、`not_in`、
+`between`、`exists` 以及大小写不敏感的 `like`——每行可以是平铺条件、一个
+`any of` 组，或一个 `not` 取反。规则行的 source 从已声明的 source 名称中选择；
+标记为 `default` 或 `absent` 的规则会隐藏它不应携带的字段。看似数字的操作数
+存为数字；`best_by` 仅在文件原本就有 `direction`、或输入偏离核心默认值
+（`asc`）时才写出该键；*Save profile* 走与 qc 编辑器相同的版本 + 快照 +
+回滚机制，因此之后的 `operon classify-sequences` 消费的正是这里保存的快照。
+手工表单无法表示的结构（条件嵌套深于一层 `any:`/`not:`，或 source/rule 不是
+映射）会以**只读**方式打开：编辑器说明原因、禁用保存、绝不改写文件——请直接
+编辑 YAML。表单未建模的键在每一层（document、source、rule、condition 与
+`best_by` 条目）都原样保留。
 
 **Tools & Recipes 标签页。** 工具表（名称、可执行文件、启动方式）加
 *Check tools* 按钮——等价于 `operon tools-check`，在后台 worker 中运行并逐行

@@ -99,11 +99,16 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     the file is byte-identical and, like that command, writes no provenance
     rows). Read-only TUI views added for `report analysis --hits` (alignment
     hits with the CLI's filters and columns) and for `sequence_labels` (the
-    classify-sequences output: a per-file section in the Files detail plus the
-    project-wide label summary behind the Files screen's `l` binding), which
+    classify-sequences output: a per-file section in the Files detail plus
+    the project-wide label summary behind the Files screen's `l` binding), which
     has no CLI reader at all. The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
-    `config/profiles/*.yaml` (kind `qc`) and single recipes inside
+    `config/profiles/*.yaml` (kind `qc` and kind `sequence_classification` —
+    each kind has its own form, dispatched by the document's own kind, with the
+    classification widgets in `operon/tui/screens/config_classification.py`
+    and `actions.save_classification_profile` sharing `save_profile`'s version,
+    snapshot and rollback machinery; a profile whose conditions nest deeper
+    than one `any:`/`not:` level opens read-only) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text
     YAML): every save bumps the `version`, records the same content-addressed
     snapshot the CLI records (`qc_profiles` / `recipe_snapshots`), and

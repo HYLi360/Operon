@@ -513,14 +513,14 @@ def list_profiles(project: Project) -> list[str]:
     return sorted(names)
 
 
-def list_qc_profiles(project: Project) -> list[dict[str, Any]]:
-    """Return the on-disk ``kind: qc`` profiles (name, version, description)."""
+def _profile_rows(project: Project, kind: str) -> list[dict[str, Any]]:
     from operon.profiles import load_profiles
 
-    profiles = load_profiles(project.profiles_dir, kind="qc")
+    profiles = load_profiles(project.profiles_dir, kind=kind)
     return [
         {
             "name": name,
+            "kind": kind,
             "version": int(doc.get("version", 1)),
             "description": str(doc.get("description", "")),
         }
@@ -528,11 +528,21 @@ def list_qc_profiles(project: Project) -> list[dict[str, Any]]:
     ]
 
 
-def get_profile_document(project: Project, name: str) -> dict[str, Any]:
-    """Return the current on-disk qc profile document for the editor."""
+def list_qc_profiles(project: Project) -> list[dict[str, Any]]:
+    """Return the on-disk ``kind: qc`` profiles (name, kind, version, description)."""
+    return _profile_rows(project, "qc")
+
+
+def list_classification_profiles(project: Project) -> list[dict[str, Any]]:
+    """Return the on-disk ``kind: sequence_classification`` profiles."""
+    return _profile_rows(project, "sequence_classification")
+
+
+def get_profile_document(project: Project, name: str, *, kind: str = "qc") -> dict[str, Any]:
+    """Return the current on-disk profile document for the editor."""
     from operon.profiles import load_profile
 
-    return load_profile(project.profiles_dir, name, expected_kind="qc")
+    return load_profile(project.profiles_dir, name, expected_kind=kind)
 
 
 def config_version_floor(project: Project, kind: str, name: str, version: int = 0) -> int:

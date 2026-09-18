@@ -499,6 +499,10 @@ def run_external(
 
 PROFILE_OPERATORS = (">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in", "exists")
 ENTITY_TYPE_NAMES = ("organism", "sample", "run", "assembly", "annotation")
+# The TUI's profile editor saves two kinds; taxonomy_coverage profiles stay
+# hand-edited (their editors are not modeled as forms).
+CLASSIFICATION_KIND = "sequence_classification"
+PROFILE_KINDS = ("qc", CLASSIFICATION_KIND)
 
 
 def write_analysis_report(
@@ -577,14 +581,58 @@ def _coerce_rule_values(rule: dict[str, Any]) -> None:
         rule["values"] = [coerce_scalar(v) if isinstance(v, str) else v for v in rule["values"]]
 
 
-def _validate_profile_document(name: str, document: dict[str, Any]) -> None:
+def _coerce_classification_values(document: dict[str, Any]) -> None:
+    """Coerce numeric-looking condition operands like :func:`_coerce_rule_values`.
+
+    The classification grammar compares numerically with a string fallback, so
+    the form's text inputs are coerced here before validation; ``any``/``not``
+    groups are walked recursively.
+    """
+    def coerce_condition(condition: Any) -> None:
+        if not isinstance(condition, dict):
+            return
+        if "any" in condition:
+            for sub in condition["any"] or []:
+                coerce_condition(sub)
+            return
+        if "not" in condition:
+            coerce_condition(condition["not"])
+            return
+        _coerce_rule_values(condition)
+
+    sources = document.get("sources")
+    if isinstance(sources, dict):
+        for source in sources.values():
+            if isinstance(source, dict):
+                for condition in source.get("filter") or []:
+                    coerce_condition(condition)
+    for rule in document.get("rules") or []:
+        if isinstance(rule, dict):
+            for condition in rule.get("when") or []:
+                coerce_condition(condition)
+
+
+def _validate_classification_document(name: str, document: dict[str, Any]) -> None:
+    """Validate a ``kind: sequence_classification`` document with the core rules."""
+    from operon.classify import validate_classification_profile
+
+    if "version" not in document:
+        raise ValidationError(f"profile {name!r}: 'version' is required")
+    validate_classification_profile(document, name)
+
+
+def _validate_profile_document(name: str, document: dict[str, Any], *,
+                               kind: str = "qc") -> None:
     if not isinstance(document, dict):
         raise ValidationError(f"profile {name!r}: document must be a mapping")
-    if str(document.get("kind", "")) != "qc":
+    if str(document.get("kind", "")) != kind:
         raise ValidationError(
-            f"profile {name!r}: only kind 'qc' profiles can be saved from the TUI "
-            "(taxonomy_coverage profiles are edited by hand)"
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
+            f"(taxonomy_coverage profiles are edited by hand); got {document.get('kind')!r}"
         )
+    if kind == CLASSIFICATION_KIND:
+        _validate_classification_document(name, document)
+        return
     if "version" not in document:
         raise ValidationError(f"profile {name!r}: 'version' is required")
     applies_to = document.get("applies_to", [])
@@ -633,17 +681,19 @@ def _saved_config(path: Path, text: str, previous_text: str | None,
 
 
 def save_profile(project: Project, name: str, document: dict[str, Any], *,
-                 known_version: int = 0) -> dict[str, Any]:
-    """Validate and save a ``kind: qc`` profile as a new version.
+                 known_version: int = 0, kind: str = "qc") -> dict[str, Any]:
+    """Validate and save a profile of ``kind`` as a new version.
 
-    The composed document is validated, written to
-    ``config/profiles/<name>.yaml`` with the same header style as
-    :func:`operon.profiles.write_default_profiles`, round-trip verified
-    through :func:`operon.profiles.load_profile`, and recorded as a
-    content-addressed snapshot with the exact canonical document
-    ``operon evaluate`` records.  On any failure the previous file content
-    is restored.  Saving unchanged content is a no-op: the version is not
-    bumped and no snapshot is recorded.
+    The composed document is validated (``qc`` rules or the core's
+    :func:`operon.classify.validate_classification_profile` for
+    ``sequence_classification``), written to ``config/profiles/<name>.yaml``
+    with the same header style as :func:`operon.profiles.write_default_profiles`,
+    round-trip verified through :func:`operon.profiles.load_profile`, and
+    recorded as a content-addressed snapshot with the exact canonical document
+    the core records when it consumes the profile (``qc_profiles`` serves both
+    kinds).  On any failure the previous file content is restored.  Saving
+    unchanged content is a no-op: the version is not bumped and no snapshot is
+    recorded.
 
     ``known_version`` preserves the editor's last observed file version if
     the file disappears before its first snapshot is recorded.
@@ -653,8 +703,13 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
     from operon.utils import now_iso
 
     _validate_config_name("profile", name)
-    if not isinstance(document, dict) or str(document.get("kind", "qc")) != "qc":
-        raise ValidationError(f"profile {name!r}: only kind 'qc' profiles can be saved from the TUI")
+    if kind not in PROFILE_KINDS:
+        raise ValidationError(f"profile {name!r}: unknown kind {kind!r}")
+    if not isinstance(document, dict) or str(document.get("kind", kind)) != kind:
+        raise ValidationError(
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
+            "(taxonomy_coverage profiles are edited by hand)"
+        )
     document = {str(key): value for key, value in document.items()}
     path = project.profiles_dir / f"{name}.yaml"
     previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
@@ -664,7 +719,7 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
         if not isinstance(parsed, dict):
             raise ValidationError(f"profile {name!r}: existing file is not a YAML mapping")
         existing = parsed
-        if str(existing.get("kind")) != "qc":
+        if str(existing.get("kind")) != kind:
             raise ValidationError(
                 f"profile {name!r}: on-disk kind is {existing.get('kind')!r}; refusing to edit"
             )
@@ -680,19 +735,22 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
         project, "profile", name,
         max(known_version, int(existing.get("version", 1)) if existing else 0),
     ) + 1
-    for section in ("required", "warnings"):
-        for rule in document.get(section, []) or []:
-            if isinstance(rule, dict):
-                _coerce_rule_values(rule)
-    _validate_profile_document(name, document)
+    if kind == CLASSIFICATION_KIND:
+        _coerce_classification_values(document)
+    else:
+        for section in ("required", "warnings"):
+            for rule in document.get(section, []) or []:
+                if isinstance(rule, dict):
+                    _coerce_rule_values(rule)
+    _validate_profile_document(name, document, kind=kind)
 
     text = (
-        f"# Operon qc profile {name} "
+        f"# Operon {kind} profile {name} "
         "(versioned; review and rename before changing a frozen definition)\n"
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
     )
     with _saved_config(path, text, previous_text, f"profile {name!r}"):
-        loaded = load_profile(project.profiles_dir, name, expected_kind="qc")
+        loaded = load_profile(project.profiles_dir, name, expected_kind=kind)
         profile_document = json.dumps(loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
         version = int(loaded.get("version", 1))
@@ -703,6 +761,13 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
         "name": name, "version": version, "sha256": sha256,
         "snapshot_id": snapshot_id, "unchanged": False,
     }
+
+
+def save_classification_profile(project: Project, name: str, document: dict[str, Any], *,
+                                known_version: int = 0) -> dict[str, Any]:
+    """Save a ``kind: sequence_classification`` profile (see :func:`save_profile`)."""
+    return save_profile(project, name, document, known_version=known_version,
+                        kind=CLASSIFICATION_KIND)
 
 
 def save_recipe(

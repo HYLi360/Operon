@@ -340,16 +340,16 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("profiles", "history"),
         STATUS_IMPLEMENTED,
-        note="qc-kind profiles only; sequence_classification profiles are "
-        f"{_M3} and taxonomy_coverage profiles are {_M4}",
+        note="qc and sequence_classification profiles share one snapshot table "
+        f"(qc_profiles); taxonomy_coverage profiles are {_M4}",
         actions="data.profile_history",
         modal="operon.tui.screens.config::HistoryModal",
     ),
     ParityEntry(
         ("profiles", "show"),
         STATUS_IMPLEMENTED,
-        note="qc-kind profiles only; sequence_classification profiles are "
-        f"{_M3} and taxonomy_coverage profiles are {_M4}",
+        note="qc and sequence_classification profiles share one snapshot table "
+        f"(qc_profiles); taxonomy_coverage profiles are {_M4}",
         actions="data.get_profile_document",
         modal="operon.tui.screens.config::SnapshotViewModal",
         params={"snapshot_id": "context: HistoryModal snapshot selection"},

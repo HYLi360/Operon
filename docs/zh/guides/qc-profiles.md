@@ -254,3 +254,8 @@ rules:
 
 以相同 profile 内容与相同输入重跑是空操作；修改 profile 后会重新判定受影响的
 序列，并在 `changes` 中逐条审计每次标签变更。
+
+[TUI 的 Config 屏](../reference/cli-tui.md) 以与 CLI 相同的表单、版本递增与
+内容寻址快照记录来编辑这些 profile（之后的 `classify-sequences` 消费的正是
+保存的快照）；条件嵌套深于一层 `any:`/`not:` 的 profile 在 TUI 中以只读打开，
+因此表单绝不会改写它无法表示的结构。

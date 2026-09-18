@@ -126,6 +126,8 @@
 - **TUI 日志跟随只读本地文件，且从不取消。** run 详情屏的 *Follow logs* 每秒用与 `workflow show --follow` 相同的增量读取器轮询 `logs/<run_id>.stdout.log`/`.stderr.log`（被截断或轮转的日志从头重读，开启开关会重放文件当前已有的内容），在 run 离开 `running` 时自行停止，且只观察——取消 run 仍是 CLI 动作。该开关仅在 run 运行中提供；SSH 后端的 stdout/stderr 在结束时才拉回，因此远程 run 在结束前不会显示任何内容（`tui/screens/runs.py`、`workflow.py`）。TUI 的 *Run external* 对话框所运行的命令同样无法从 TUI 中断（`tui/screens/run_external.py`）。
 - **命中浏览器的导出与 CLI 等价，而序列 label 没有 CLI 读取命令。** Tasks 屏的 *Analysis hits* 使用与 `report analysis --hits` 相同的只读查询，其 *Export* 走 CLI 自己的渲染器，因此文件（`text`/`tsv`/`json`）与 `--out` 逐字节一致——但与 CLI 报表一样，导出不会写入任何 `changes` 或 `workflow_runs` 行。`sequence_labels`（`classify-sequences` 的产物，显示在 Files 详情与 `l` 浏览器中）完全没有 CLI 读取命令：TUI 的 label 视图就是该表的读取侧。
 - **按钮在按压动画期间会忽略点击。** Textual 的 `Button` 在仍带有 `-active` 按压效果（约 0.2 秒）时会吞掉点击，因此对同一按钮的快速双击会丢失一次；TUI 各对话框按"一次操作一次 Confirm"设计，测试也会等该效果结束后再点击。
+- **分类 profile 表单只到一层 `any:`/`not:`。** Config 屏的 `sequence_classification` 编辑器建模平铺条件、一个 `any:` 组与一个 `not:` 取反——与 qc 编辑器为规则提供的形式一致。嵌套更深的 profile（或 `sources`/`rules` 不是映射）以只读打开：界面给出原因、禁用 *Save profile*、且绝不改写文件，因此手写的结构在每次访问编辑器后都完好如初。未建模的键在每一层原样保留，组合出的文档保持原有的键顺序。
+- **profile 的 kind 属于文件，而非编辑器。** TUI 按磁盘上读到的 `kind` 把文档分派到 qc 或分类表单；保存拒绝跨 kind（用分类文档编辑 `kind: qc` 文件，或反之，都会报错而不是写入）。`taxonomy_coverage` profile 仍由手工编辑。
 
 ### TimeTree
 

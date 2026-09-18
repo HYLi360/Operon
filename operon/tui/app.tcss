@@ -335,6 +335,58 @@ HelpScreen {
     padding-left: 2;
 }
 
+/* -- classification profile editor (kind: sequence_classification) -------- */
+
+#classification-editor {
+    display: none;
+    width: 1fr;
+    padding: 0 2;
+}
+
+.condition-row, .condition-editor, .source-row, .bestby-row, .classrule-row {
+    height: auto;
+}
+
+.condition-inputs, .source-inputs, .bestby-inputs, .classrule-inputs,
+.condition-body, .condition-group, .source-filter, .source-bestby, .classrule-when {
+    height: auto;
+}
+
+.condition-field, .condition-value, .source-name, .source-analysis,
+.bestby-field, .bestby-rank, .classrule-label {
+    width: 1fr;
+}
+
+.condition-operator, .condition-mode {
+    width: 16;
+}
+
+.bestby-direction {
+    width: 8;
+}
+
+.bestby-default {
+    width: 14;
+}
+
+.classrule-mode {
+    width: 10;
+}
+
+.classrule-source {
+    width: 26;
+}
+
+.condition-remove, .bestby-remove, .source-remove, .classrule-remove {
+    min-width: 3;
+    width: 3;
+    height: 1;
+}
+
+.condition-extras, .source-extras, .bestby-extras, .classrule-extras {
+    padding-left: 2;
+}
+
 #recipe-arguments, #recipe-parameters {
     height: 6;
 }

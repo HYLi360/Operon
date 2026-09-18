@@ -47,6 +47,7 @@ from operon.tui.screens.config import (
     RecipeSaveModal,
     SnapshotViewModal,
 )
+from operon.tui.screens.config_classification import ClassificationSaveModal
 
 
 @pytest.fixture(scope="module")
@@ -1907,3 +1908,303 @@ def test_config_screen_tools_check_worker_error(project: Project, monkeypatch) -
             assert not isinstance(app.screen, ErrorDialog)
 
     _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# classification profiles (kind: sequence_classification, milestone M3 C2)
+# ---------------------------------------------------------------------------
+
+BHLH_PROFILE = {
+    "kind": "sequence_classification",
+    "version": 1,
+    "description": "bHLH tiers",
+    "applies_to": {"entity_type": "annotation", "file_role": "protein_fasta"},
+    "sources": {
+        "core": {
+            "analysis": "rpsbproc_cdd",
+            "filter": [
+                {"field": "hit_type", "operator": "in", "values": ["Specific", "Motif"]},
+            ],
+            "best_by": [
+                {"field": "hit_type", "rank": {"Specific": 0, "Motif": 1}},
+                {"field": "evalue", "direction": "asc"},
+            ],
+        },
+    },
+    "rules": [
+        {"label": "A", "source": "core",
+         "when": [{"field": "short_name", "operator": "like", "value": "bHLH%"}]},
+        {"label": "U", "source": "core", "absent": True},
+        {"label": "C", "default": True},
+    ],
+}
+
+
+async def _await_rows(pilot, root, selector: str, count: int, child: str) -> list:
+    """Wait until ``root`` holds ``count`` ``selector`` rows whose ``child`` exists.
+
+    Mounting a row subtree takes more than one message-loop turn, so a single
+    ``pilot.pause()`` can observe a row that has not composed yet.
+    """
+    for _ in range(60):
+        rows = [row for row in root.query(selector) if len(list(row.query(child))) > 0]
+        if len(rows) >= count:
+            return rows
+        await pilot.pause()
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"{selector} rows with {child} never reached {count}")
+
+
+def _write_classification_profile(project: Project, name: str, document: dict) -> Path:
+    path = project.profiles_dir / f"{name}.yaml"
+    path.write_text("# hand-written comment\n" + yaml.safe_dump(document, sort_keys=False),
+                    encoding="utf-8")
+    return path
+
+
+def test_classification_operators_match_the_core() -> None:
+    """The form's operator list is the core grammar's (module comment)."""
+    from operon.classify import _OPERATORS
+    from operon.tui.screens.config_classification import CLASSIFICATION_OPERATORS
+
+    assert set(CLASSIFICATION_OPERATORS) == set(_OPERATORS)
+    assert "like" in CLASSIFICATION_OPERATORS
+
+
+def test_classification_profile_data_layer(project: Project) -> None:
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    assert "bhlh_tiers" not in [row["name"] for row in data.list_qc_profiles(project)]
+    listed = data.list_classification_profiles(project)
+    assert [row["name"] for row in listed] == ["bhlh_tiers"]
+    assert listed[0]["kind"] == "sequence_classification"
+    document = data.get_profile_document(project, "bhlh_tiers", kind="sequence_classification")
+    assert document["rules"][0]["label"] == "A"
+    with pytest.raises(ValidationError):
+        data.get_profile_document(project, "bhlh_tiers")  # qc is the default kind
+    with pytest.raises(ValidationError):
+        data.get_profile_document(project, "assembly_production_v1",
+                                  kind="sequence_classification")
+
+
+def test_save_classification_profile_versions_and_validation(project: Project) -> None:
+    def fresh() -> dict:
+        return json.loads(json.dumps(BHLH_PROFILE))
+
+    result = actions.save_classification_profile(project, "bhlh_saved", fresh())
+    assert result["version"] == 1 and result["snapshot_id"] is not None
+    text = (project.profiles_dir / "bhlh_saved.yaml").read_text(encoding="utf-8")
+    assert text.startswith("# Operon sequence_classification profile bhlh_saved")
+    load_profile(project.profiles_dir, "bhlh_saved", expected_kind="sequence_classification")
+    snapshot = _query(
+        project,
+        "SELECT profile_document FROM qc_profiles WHERE profile_name='bhlh_saved'",
+    )
+    assert json.loads(snapshot[0]["profile_document"])["kind"] == "sequence_classification"
+
+    unchanged = actions.save_classification_profile(project, "bhlh_saved", fresh())
+    assert unchanged["unchanged"] is True and unchanged["version"] == 1
+    changed = fresh()
+    changed["description"] = "changed"
+    assert actions.save_classification_profile(project, "bhlh_saved", changed)["version"] == 2
+
+    broken = fresh()
+    broken["applies_to"] = {"entity_type": "annotation"}
+    with pytest.raises(ValidationError, match="applies_to.file_role"):
+        actions.save_classification_profile(project, "broken", broken)
+    with pytest.raises(ValidationError, match="on-disk kind"):
+        actions.save_classification_profile(project, "assembly_production_v1", fresh())
+    with pytest.raises(ValidationError, match="only kind 'qc'"):
+        actions.save_profile(project, "bhlh_saved", fresh())
+    with pytest.raises(ValidationError, match="unknown kind"):
+        actions.save_profile(project, "x", {"kind": "qc"}, kind="taxonomy_coverage")
+
+    coerced = fresh()
+    coerced["rules"][0]["when"] = [{"field": "evalue", "operator": "<=", "value": "1e-5"}]
+    actions.save_classification_profile(project, "bhlh_coerced", coerced)
+    loaded = load_profile(project.profiles_dir, "bhlh_coerced",
+                          expected_kind="sequence_classification")
+    assert loaded["rules"][0]["when"][0]["value"] == 1e-05
+
+
+def test_config_classification_editor_end_to_end(project: Project) -> None:
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            list_view = panel.query_one("#profiles-list", ListView)
+            labels = [item.query_one(Label).render().plain for item in list_view.children]
+            assert any("bhlh_tiers" in label and "classification" in label for label in labels)
+
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            assert panel.query_one("#classification-editor").display
+            assert not panel.query_one("#profile-editor").display
+            assert panel.classification_profile == "bhlh_tiers"
+            assert panel.query_one("#classification-entity-type", Input).value == "annotation"
+            assert panel.query_one("#classification-file-role", Input).value == "protein_fasta"
+            assert len(list(panel.query(".source-row"))) == 1
+            assert len(list(panel.query(".classrule-row"))) == 3
+            assert len(list(panel.query(".bestby-row"))) == 2
+            # The form reproduces the on-disk document exactly.
+            assert panel._compose_classification_document() == BHLH_PROFILE
+            assert not panel.query_one("#classification-save", Button).disabled
+
+            # Edit a condition, add a source and a rule through the buttons.
+            rule_a = list(panel.query(".classrule-row"))[0]
+            rule_a.query_one(".condition-value", Input).value = "bHLH%, HLH%"
+            await _click(pilot, "#classification-add-source")
+            rows = await _await_rows(pilot, panel, ".source-row", 2, ".source-name")
+            source_row = rows[1]
+            source_row.query_one(".source-name", Input).value = "extra"
+            source_row.query_one(".source-analysis", Input).value = "hmmscan_pfam"
+            await pilot.pause()
+            await _click(pilot, "#classification-add-rule")
+            rules = await _await_rows(pilot, panel, ".classrule-row", 4, ".classrule-label")
+            new_rule = rules[3]
+            new_rule.query_one(".classrule-label", Input).value = "B"
+            source_select = new_rule.query_one(".classrule-source", Select)
+            assert "extra" in [value for _, value in source_select._options]  # refreshed
+            source_select.value = "extra"
+            # The editor scrolls: press the button directly (Pilot.click needs
+            # the target inside the visible area, and the selector matches rows).
+            new_rule.query_one(".classrule-add-when", Button).press()
+            when_rows = await _await_rows(pilot, new_rule, ".condition-row", 1, ".condition-field")
+            when_row = when_rows[0]
+            when_row.query_one(".condition-field", Input).value = "evalue"
+            when_row.query_one(".condition-value", Input).value = "1e-5"
+            # A default rule hides its source/when area.
+            default_rule = list(panel.query(".classrule-row"))[2]
+            assert default_rule.query_one(".classrule-when").display is False
+            assert default_rule.query_one(".classrule-source", Select).disabled is True
+
+            composed = panel._compose_classification_document()
+            assert composed["rules"][0]["when"][0]["value"] == "bHLH%, HLH%"
+            assert composed["rules"][3]["source"] == "extra"
+            assert composed["sources"]["extra"]["analysis"] == "hmmscan_pfam"
+
+            await _click(pilot, "#classification-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ClassificationSaveModal)
+            assert "kind sequence_classification" in _static_text(
+                modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, ClassificationSaveModal)
+            assert any("saved bhlh_tiers version 2" in message for _, message in _notifications(app))
+            # The editor reloaded from disk: the freshly saved structure renders.
+            assert len(list(panel.query(".source-row"))) == 2
+            assert len(list(panel.query(".classrule-row"))) == 4
+
+            # Removing rows is a form-only edit (nothing is written until save).
+            rows_after = await _await_rows(pilot, panel, ".source-row", 2, ".source-name")
+            rows_after[0].query_one(".source-remove", Button).press()
+            await pilot.pause()
+            assert len(list(panel.query(".source-row"))) == 1
+
+    _run(scenario())
+    saved = load_profile(project.profiles_dir, "bhlh_tiers",
+                         expected_kind="sequence_classification")
+    assert saved["version"] == 2
+    assert saved["rules"][0]["when"][0]["value"] == "bHLH%, HLH%"
+    assert saved["sources"]["extra"]["analysis"] == "hmmscan_pfam"
+    assert saved["rules"][3] == {"label": "B", "source": "extra",
+                                 "when": [{"field": "evalue", "operator": "==", "value": 1e-05}]}
+    assert _query(project, "SELECT profile_version FROM qc_profiles "
+                           "WHERE profile_name='bhlh_tiers'")[-1]["profile_version"] == 2
+
+
+def test_config_classification_editor_guards_and_readonly(project: Project) -> None:
+    nested = json.loads(json.dumps(BHLH_PROFILE))
+    nested["rules"][0]["when"] = [{"any": [{"not": {"field": "x", "operator": "exists"}}]}]
+    _write_classification_profile(project, "nested_tiers", nested)
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+
+            # Deeper nesting opens read-only with the reason spelled out.
+            panel._load_profile("nested_tiers")
+            await pilot.pause()
+            assert panel.query_one("#classification-save", Button).disabled
+            note = _static_text(panel.query_one("#classification-readonly-note", Static))
+            assert "nests conditions deeper" in note and "edit the YAML file" in note
+
+            # Duplicate source names are refused inline before the modal opens.
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            rows = list(panel.query(".source-row"))
+            rows[0].query_one(".source-name", Input).value = "dup"
+            await _click(pilot, "#classification-add-source")
+            await pilot.pause()
+            second = list(panel.query(".source-row"))[1]
+            second.query_one(".source-name", Input).value = "dup"
+            await _click(pilot, "#classification-save")
+            await pilot.pause()
+            assert not isinstance(app.screen, ClassificationSaveModal)
+            error = _static_text(panel.query_one("#classification-save-error", Static))
+            assert "duplicate source name" in error
+
+            # Unmodeled document keys survive a save untouched.
+            second.query_one(".source-name", Input).value = "second"
+            second.query_one(".source-analysis", Input).value = "second_analysis"
+            await pilot.pause()
+            panel.classification_doc = dict(panel.classification_doc or {}, custom_key="kept")
+
+    _run(scenario())
+
+
+def test_config_screen_new_classification_profile(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _click(pilot, "#profile-new")
+            await pilot.pause()
+            app.screen.query_one("#new-profile-name", Input).value = "new_tiers"
+            app.screen.query_one("#new-profile-kind", Select).value = "sequence_classification"
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            heading = _static_text(panel.query_one("#classification-heading", Static))
+            assert "new_tiers" in heading and "new profile (not saved yet)" in heading
+            assert panel.query_one("#classification-entity-type", Input).value == "annotation"
+            assert len(list(panel.query(".source-row"))) == 0
+            # An empty skeleton is still editable: adding rows is the point.
+            assert not panel.query_one("#classification-save", Button).disabled
+
+            await _click(pilot, "#classification-add-source")
+            source = (await _await_rows(pilot, panel, ".source-row", 1, ".source-name"))[0]
+            source.query_one(".source-name", Input).value = "core"
+            source.query_one(".source-analysis", Input).value = "rpsbproc_cdd"
+            await _click(pilot, "#classification-add-rule")
+            rule = (await _await_rows(pilot, panel, ".classrule-row", 1, ".classrule-label"))[0]
+            rule.query_one(".classrule-label", Input).value = "C"
+            rule.query_one(".classrule-mode", Select).value = "default"
+            await pilot.pause()
+            assert rule.query_one(".classrule-when").display is False
+
+            panel.query_one("#classification-description", Input).value = "created in the TUI"
+            await _click(pilot, "#classification-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ClassificationSaveModal)
+            assert "version 1" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    created = load_profile(project.profiles_dir, "new_tiers",
+                           expected_kind="sequence_classification")
+    assert created["version"] == 1
+    assert created["description"] == "created in the TUI"
+    assert created["sources"] == {"core": {"analysis": "rpsbproc_cdd", "filter": []}}
+    assert created["rules"] == [{"label": "C", "default": True}]

@@ -85,7 +85,7 @@ The left sidebar (or the number keys) switches between eight screens:
 | Files | `3` | Filterable manifest table (substring filter plus status selector). Moving the cursor shows the full file record, its `file_locations` residency list, and a *Sequence labels* section (the `classify-sequences` output aggregated per label and profile). Statuses are color-coded: verified green, `REMOTE_ONLY` blue, `MISSING`/`CHECKSUM_FAILED` red. Press `i`/`v`/`q`/`l` for ingest, verify, QC, and the label browser (see below). |
 | Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`, with status/step/entity/limit filters plus an advanced row mirroring the CLI's `--from`/`--to` (ISO-8601; an invalid value or `--from` ≥ `--to` is an inline error), `--run-id`, `--parent-run-id`, `--tool`, `--executor`, `--offset` and `--oldest-first` (`--resumes-run-id` and machine formats stay CLI-only). The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. On a *running* run's detail screen, *Follow logs* appends the local `logs/<run_id>.stdout.log`/`.stderr.log` tails once per second until the run leaves `running`, then reports the final status — it only observes and never cancels (with the SSH backend logs are pulled back at completion, so nothing streams until then). The *Analysis jobs* button opens a read-only `analysis_jobs` browser (analysis/status/limit filters, with the selected row's full error and artifact paths) that also lists tasks interrupted inside a job array — rows that never get a `workflow_runs` row. The *Environments* button browses captured execution environments (the same list as `operon environments list`) and renders *View JSON*, *Export explicit* and *Export yaml* read-only — writing a conda spec to a file stays a CLI redirection (errors such as a snapshot without a package inventory are shown inline). The *New analysis* and *Run external* buttons open the analysis and external-command dialogs; the *Analysis hits* button opens the alignment-hit browser (`report analysis --hits` columns and filters, with *Export* matching the CLI's `--out` byte for byte) (see below). |
 | Decisions | `5` | Current decisions from the `current_decisions` view (effective decision = curated override when present, marked `✎curated`), with profile/decision/text filters. Press `e` to evaluate, `c` to curate the selected row (see below). |
-| Config | `6` | Structured, control-based editors for the project's configuration files (no free-text YAML editing): **QC Profiles** and **Tools & Recipes**. See below. |
+| Config | `6` | Structured, control-based editors for the project's configuration files (no free-text YAML editing): **QC Profiles** (both `kind: qc` and `kind: sequence_classification` profiles, each with its own form) and **Tools & Recipes**. See below. |
 | Publish | `7` | Immutable release builder and selective export builder (two tabs), each with a read-only preview before anything is written. See below. |
 | Coverage | `8` | Imported NCBI Taxonomy snapshots, compiled reference sets, coverage report generation (`operon report coverage`), and a browser for existing `reports/coverage/COV_*` reports. See below. |
 
@@ -252,14 +252,35 @@ snapshot document read-only as YAML; *Restore* loads the snapshot into the
 editor — saving it then creates the **next** version. Snapshots are never
 overwritten in place.
 
-**QC Profiles tab.** Left: the `kind: qc` profiles found in
-`config/profiles/` (name + version). Right: the editor — description, the
-five `applies_to` checkboxes, a read-only version note, and two rule sections
-(required / warnings) where each rule is a row of metric, operator (Select
-over the operators the rule engine supports), value, and code inputs plus a
-remove button; "add rule" appends a row per section. *New profile* prompts
-for a name and starts from a minimal skeleton. Numeric-looking values are
-stored as numbers. `taxonomy_coverage` profiles are not editable here.
+**QC Profiles tab.** Left: every `kind: qc` and
+`kind: sequence_classification` profile found in `config/profiles/` (name +
+version; classification entries carry a tag). Right: the editor for the
+selected profile's kind — the qc and classification editors are swapped based
+on the document's own `kind`, never merged. *New profile* prompts for a name
+**and a kind** and starts from a minimal skeleton of that kind.
+`taxonomy_coverage` profiles are not editable here.
+
+**Classification profiles** (`kind: sequence_classification`). The editor
+mirrors `classify.py`'s grammar: `applies_to` as an `entity_type` +
+`file_role` pair, *sources* (name → analysis, a filter-condition list, and
+`best_by` entries of field / direction / `Value=rank` map / default), and
+*rules* (a label plus one of: a source with a `when` condition list,
+`absent: true`, or `default: true`). Condition rows offer the core's whole
+operator set — `>=`, `<=`, `>`, `<`, `==`, `!=`, `in`, `not_in`, `between`,
+`exists` and the case-insensitive `like` — and each row is either a flat
+condition, one `any of` group, or one `not` negation. Rule rows pick their
+source from the declared source names, and a rule marked `default` or
+`absent` hides the fields it must not carry. Operands that look numeric are
+stored as numbers, `best_by` emits `direction` only when the file had one or
+it differs from the core default (`asc`), and *Save profile* goes through the
+same version + snapshot + rollback machinery as the qc editor, so a later
+`operon classify-sequences` consumes exactly the snapshot saved here.
+Structure the manual form cannot represent (conditions nested deeper than one
+`any:`/`not:` level, sources or rules that are not mappings) opens
+**read-only**: the editor names the reason, disables saving, and never
+rewrites the file — edit the YAML instead. Keys the form does not model are
+preserved verbatim at every level (document, source, rule, condition and
+`best_by` entry).
 
 **Tools & Recipes tab.** A tools table (name, executable, run method) with a
 *Check tools* button — the equivalent of `operon tools-check`, run in a

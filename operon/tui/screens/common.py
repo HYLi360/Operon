@@ -168,6 +168,19 @@ def selected_backend(screen: Any, widget_id: str) -> str:
     return "" if widget.value is Select.NULL else str(widget.value)
 
 
+def remount(container: Any, *widgets: Any) -> None:
+    """Replace a container's children with ``widgets`` (atomically, from the UI).
+
+    ``Widget.remove_children()`` completes asynchronously, so mounting in the
+    same turn can be undone by the pending removal — the freshly mounted
+    children vanish when the removal lands.  Deferring the mount past the next
+    refresh keeps the replacement in order.
+    """
+    container.remove_children()
+    if widgets:
+        container.call_after_refresh(container.mount, *widgets)
+
+
 class Panel(VerticalScroll):
     """Base class for the four main panels.
 
