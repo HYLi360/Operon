@@ -1798,11 +1798,27 @@ def test_analysis_hits_filters_and_retired(tmp_path: Path) -> None:
     assert len(data.analysis_hits(project, include_retired=True)) == 3
 
 
-def test_sequence_label_readers(demo_project: Project) -> None:
+def test_sequence_label_readers(tmp_path: Path) -> None:
     from operon.database import Database
+    from operon.utils import sha256_file
 
-    db = Database(demo_project.db_path)
+    project = Project.init(tmp_path / "labels-project")
+    source = project.root / "labels.faa"
+    source.write_text(">s1\nMTEYK\n>s2\nMTEYR\n>s3\nMTEYD\n", encoding="utf-8")
+    db = Database(project.db_path)
     try:
+        db.insert_row("files", {
+            "file_id": "FIL_000001", "entity_type": "annotation", "entity_id": "ANN_000001",
+            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
+            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
+            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
+        })
+        db.insert_row("files", {
+            "file_id": "FIL_000002", "entity_type": "annotation", "entity_id": "ANN_000002",
+            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
+            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
+            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
+        })
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO sequence_labels(file_id, seqid, label, profile_name,"
@@ -1816,16 +1832,16 @@ def test_sequence_label_readers(demo_project: Project) -> None:
     finally:
         db.close()
 
-    summary = data.label_summary(demo_project)
+    summary = data.label_summary(project)
     assert [(row["label"], row["profile_name"], row["sequences"], row["files"])
             for row in summary] == [("A", "bhlh", 3, 2), ("B", "other", 1, 1), ("U", "bhlh", 1, 1)]
-    assert [row["label"] for row in data.label_summary(demo_project, profile_name="other")] == ["B"]
+    assert [row["label"] for row in data.label_summary(project, profile_name="other")] == ["B"]
 
-    labels = data.file_sequence_labels(demo_project, "FIL_000001")
+    labels = data.file_sequence_labels(project, "FIL_000001")
     assert [(row["label"], row["seqid"]) for row in labels] == [("A", "s1"), ("A", "s2"), ("U", "s3")]
-    assert data.file_sequence_labels(demo_project, "FIL_000009") == []
+    assert data.file_sequence_labels(project, "FIL_000009") == []
 
-    detail = data.file_detail(demo_project, "FIL_000001")
+    detail = data.file_detail(project, "FIL_000001")
     assert detail is not None
     assert detail["labels"] == labels
 

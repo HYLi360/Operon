@@ -40,6 +40,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from rich.text import Text
 
 from operon.cli import main as cli_main
 from operon.config import Project
@@ -246,6 +247,58 @@ def spy_action(
     return calls
 
 
+async def _push(pilot, modal, selector: str | None = None) -> None:
+    """Push a screen and wait until its form **and** buttons have composed.
+
+    ``push_screen`` mounts a modal in stages: querying a nested widget right
+    after ``pilot.pause()`` can raise ``NoMatches``, and under the full suite's
+    parallel workers a mount can occasionally take seconds of event-loop time.
+    Wait for the Confirm button plus a form widget (or an explicit selector),
+    and re-push once if the modal never mounted (guarded so a screen that is
+    already on the stack is never pushed twice).
+    """
+    for attempt in range(2):
+        if pilot.app.screen is not modal:
+            pilot.app.push_screen(modal)
+
+        def ready() -> bool:
+            if len(modal.query("#confirm")) == 0:
+                return False
+            if selector is None:
+                # Any composed form child means compose_form ran (ClassifyModal's
+                # form holds Statics only, so looking for inputs is not enough).
+                return bool(modal.query("#modal-form > *"))
+            return len(modal.query(selector)) > 0
+
+        try:
+            await _wait_until(ready, f"{type(modal).__name__} to compose", timeout=10.0)
+        except TimeoutError:
+            if attempt:
+                raise
+            await pilot.pause()
+            await asyncio.sleep(0.5)
+            continue
+        await pilot.pause()
+        return
+
+
+
+async def _q(modal, selector: str, *types):
+    """Query a widget inside a modal, waiting until compose has created it.
+
+    ``push_screen`` mounts a modal in stages; querying a nested widget right
+    after ``pilot.pause()`` can raise ``NoMatches`` on a loaded machine.  This
+    waits for the selector to resolve, then returns ``query_one``.
+    """
+    await _wait_until(lambda: len(modal.query(selector)) > 0, f"{selector} to exist")
+    return modal.query_one(selector, *types)
+
+
+def _static_text(widget) -> str:
+    renderable = widget.render()
+    return renderable.plain if isinstance(renderable, Text) else str(renderable)
+
+
 def parse_command_text(text: str):
     """Parse a modal's equivalent-command preview with the real CLI parser.
 
@@ -264,7 +317,7 @@ def parse_command_text(text: str):
 # (per-file copies are the established convention for the TUI test suite).
 
 SCENARIO_TIMEOUT = 60.0
-SETTLE_TIMEOUT = 15.0
+SETTLE_TIMEOUT = 30.0
 
 
 def _run(coroutine) -> None:
@@ -908,3 +961,273 @@ def test_audit_parity_qc_single_file(
     assert _normalized_execution_details(cli_project) == (
         _normalized_execution_details(tui_project)
     )
+
+
+def test_classify_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The classify dialog preview is the CLI call, and Confirm passes the profile."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.classify import ClassifyModal
+
+    payload = {
+        "profile": "bhlh_v1", "profile_sha256": "sha", "files": 1,
+        "files_without_sequences": 0, "ignored_completed_jobs": 0, "sequences": 5,
+        "label_counts": {"A": 3, "U": 2}, "unlabeled": 0, "labels_written": 5,
+        "labels_removed": 0, "run_id": "WF_0001",
+    }
+    calls = spy_action(monkeypatch, "run_classify", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ClassifyModal(project, "bhlh_v1", {"applies_to": {}, "sources": {},
+                                                      "rules": []})
+            await _push(pilot, modal, "#classify-summary")
+            ns = parse_command_text(modal.command_text())
+            assert ns.profile == "bhlh_v1"
+
+            modal.confirm()
+            await _wait_until(lambda: bool(calls), "classify run")
+            await pilot.pause()
+            # The modal stays open with the CLI-shaped summary and a re-run button.
+            summary = _static_text(await _q(modal, "#classify-summary", Static))
+            assert "labels written: 5, removed: 0 (run WF_0001)" in summary
+            assert "A" in summary and "3" in summary
+            assert (await _q(modal, "#confirm", Button)).label == "Run again"
+
+    _run(scenario())
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[1] == "bhlh_v1"
+    assert kwargs == {}
+
+
+def test_extract_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.derived_ops import ExtractModal
+
+    payload = {"extracted": 2, "excluded": 1, "output": "/tmp/out.faa", "manifest": None}
+    calls = spy_action(monkeypatch, "extract_domains", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = ExtractModal(project, "FIL_000001")
+            await _push(pilot, modal, "#extract-manifest")
+            (await _q(modal, "#extract-analysis", Input)).value = "cdd"
+            (await _q(modal, "#extract-flank", Input)).value = "7"
+            (await _q(modal, "#extract-min-length", Input)).value = "40"
+            (await _q(modal, "#extract-region-mode", Select)).value = "all"
+            (await _q(modal, "#extract-subject-like", Input)).value = "bHLH%"
+            (await _q(modal, "#extract-evalue-max", Input)).value = "1e-5"
+            (await _q(modal, "#extract-out", Input)).value = "/tmp/domains.faa"
+            (await _q(modal, "#extract-manifest", Input)).value = "/tmp/domains.tsv"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.file_id == "FIL_000001"
+            assert ns.analysis == "cdd" and ns.regions_tsv is None
+            assert ns.flank == 7 and ns.min_length == 40
+            assert ns.all_regions is True and ns.best_only is False
+            assert ns.subject_like == "bHLH%" and ns.evalue_max == 1e-5
+            assert ns.out == "/tmp/domains.faa" and ns.manifest == "/tmp/domains.tsv"
+
+            modal.confirm()
+            await _wait_until(lambda: bool(calls), "extract run")
+
+    _run(scenario())
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {
+        "file_id": "FIL_000001", "out": "/tmp/domains.faa", "analysis": "cdd",
+        "regions_tsv": None, "flank": 7, "min_length": 40, "best_only": False,
+        "subject_like": "bHLH%", "evalue_max": 1e-5, "manifest": "/tmp/domains.tsv",
+    }
+
+
+def test_select_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.derived_ops import SelectSequencesModal
+
+    payload = {"total": 5, "selected": 2, "excluded": 3, "output": "/tmp/sel.faa",
+               "manifest": None}
+    calls = spy_action(monkeypatch, "select_sequences", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = SelectSequencesModal(project, "FIL_000001")
+            await _push(pilot, modal, "#select-manifest")
+            (await _q(modal, "#select-analysis-1", Input)).value = "cdd"
+            (await _q(modal, "#select-analysis-2", Input)).value = "pfam"
+            (await _q(modal, "#select-subject-like", Input)).value = "bHLH%"
+            (await _q(modal, "#select-min-span", Input)).value = "20"
+            (await _q(modal, "#select-requirement", Select)).value = "no-hit"
+            (await _q(modal, "#select-entity-type", Select)).value = "annotation"
+            (await _q(modal, "#select-entity-id", Input)).value = "ANN_000001"
+            (await _q(modal, "#select-out", Input)).value = "/tmp/sel.faa"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.file_id == "FIL_000001"
+            assert ns.analysis == ["cdd", "pfam"]
+            assert ns.subject_like == "bHLH%" and ns.min_span == 20
+            assert ns.require_no_hit is True and ns.require_hit is False
+            assert ns.entity_type == "annotation" and ns.entity_id == "ANN_000001"
+            assert ns.out == "/tmp/sel.faa"
+
+            modal.confirm()
+            await _wait_until(lambda: bool(calls), "select run")
+
+    _run(scenario())
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {
+        "file_id": "FIL_000001", "out": "/tmp/sel.faa", "analyses": ["cdd", "pfam"],
+        "subject_like": "bHLH%", "evalue_max": None, "min_span": 20, "hit_type": None,
+        "require_hit": False, "entity_type": "annotation", "entity_id": "ANN_000001",
+        "manifest": None,
+    }
+
+
+def test_adopt_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.derived_ops import AdoptModal
+
+    payload = {"registered": 1, "reused": 0, "file_ids": ["FIL_000009"], "items": []}
+    calls = spy_action(monkeypatch, "adopt", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = AdoptModal(project, path="/tmp/derived.faa",
+                               derived_from=["FIL_000001"])
+            await _push(pilot, modal, "#adopt-preview-button")
+            (await _q(modal, "#adopt-entity-type", Select)).value = "annotation"
+            (await _q(modal, "#adopt-entity-id", Input)).value = "ANN_000001"
+            (await _q(modal, "#adopt-role", Input)).value = "selected_proteins"
+            (await _q(modal, "#adopt-format", Input)).value = "fasta"
+            (await _q(modal, "#adopt-compression", Input)).value = "none"
+            (await _q(modal, "#adopt-workflow-run-id", Input)).value = "WF_0001"
+            (await _q(modal, "#adopt-actor", Input)).value = "tester"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.file == "/tmp/derived.faa" and ns.manifest is None
+            assert ns.entity_type == "annotation" and ns.entity_id == "ANN_000001"
+            assert ns.role == "selected_proteins" and ns.fmt == "fasta"
+            assert ns.compression == "none" and ns.derived_from == ["FIL_000001"]
+            assert ns.workflow_run_id == "WF_0001" and ns.actor == "tester"
+
+            modal.confirm()
+            await _wait_until(lambda: bool(calls), "adopt run")
+
+    _run(scenario())
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs["actor"] == "tester"
+    assert kwargs["items"] == [{
+        "path": "/tmp/derived.faa", "entity_type": "annotation", "entity_id": "ANN_000001",
+        "role": "selected_proteins", "format": "fasta", "compression": "none",
+        "derived_from": ["FIL_000001"], "workflow_run_id": "WF_0001",
+    }]
+
+
+def test_fanout_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.derived_ops import FanoutModal
+
+    preview = {"dry_run": True, "units": [
+        {"unit": "unitA", "sequences": 2, "role": "units:unitA", "status": "would_create"},
+    ], "duplicate_rows": 0}
+    calls: list[tuple[tuple, dict]] = []
+
+    def stub(*args, **kwargs):
+        calls.append((args, kwargs))
+        return preview if kwargs.get("dry_run") else {
+            "created": 1, "reused": 0, "run_id": "WF_0002", "units": preview["units"],
+        }
+
+    monkeypatch.setattr(actions, "fanout", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = FanoutModal(project, "FIL_000001")
+            await _push(pilot, modal, "#fanout-preview-table")
+            (await _q(modal, "#fanout-assignments", Input)).value = "FIL_000002"
+            (await _q(modal, "#fanout-sources", Input)).value = "FIL_000001, FIL_000004"
+            (await _q(modal, "#fanout-entity-type", Select)).value = "annotation"
+            (await _q(modal, "#fanout-entity-id", Input)).value = "ANN_000001"
+            (await _q(modal, "#fanout-role-prefix", Input)).value = "units"
+            (await _q(modal, "#fanout-unit-column", Input)).value = "family"
+            (await _q(modal, "#fanout-parent-run", Input)).value = "WF_0001"
+            (await _q(modal, "#fanout-actor", Input)).value = "tester"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.assignments_file == "FIL_000002"
+            assert ns.source_file == ["FIL_000001", "FIL_000004"]
+            assert ns.entity_type == "annotation" and ns.entity_id == "ANN_000001"
+            assert ns.role_prefix == "units" and ns.unit_column == "family"
+            assert ns.seqid_column == "seqid" and ns.parent_run_id == "WF_0001"
+            assert ns.dry_run is False  # the preview command is the real run
+
+            modal.run_dry_run()
+            await _wait_until(lambda: len(calls) == 1, "fanout dry run")
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 2, "fanout run")
+
+    _run(scenario())
+    preview_args, preview_kwargs = calls[0]
+    run_args, run_kwargs = calls[1]
+    assert preview_args == (project,) and run_args == (project,)
+    assert preview_kwargs["dry_run"] is True and run_kwargs["dry_run"] is False
+    expected = {
+        "assignments_file_id": "FIL_000002",
+        "source_file_ids": ["FIL_000001", "FIL_000004"],
+        "entity_type": "annotation", "entity_id": "ANN_000001",
+        "role_prefix": "units", "unit_column": "family", "seqid_column": "seqid",
+        "parent_run_id": "WF_0001", "actor": "tester", "dry_run": False,
+    }
+    assert run_kwargs == expected
+    assert {key: value for key, value in preview_kwargs.items() if key != "dry_run"} == \
+        {key: value for key, value in expected.items() if key != "dry_run"}
