@@ -293,3 +293,31 @@ defects:
   - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_cancellation_aborts_the_batch
   - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_shutdown_interrupts_remaining_tasks
   - tests/integration/test_analysis_array.py::TestAnalysisArrayRemote::test_remote_array_staging_callback_cancellation_aborts_the_batch
+- id: ODR-0019
+  title: Modal filter rows over-constrain their controls, pushing widgets outside the box
+  reported: '2026-09-18'
+  introduced_in: null
+  affected: 0.8.2 and earlier; the Tasks screen's Analysis jobs modal at every
+    terminal width (its status select is clipped to a single column and its limit
+    input renders outside the modal box)
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'Filter rows lay their children out in a Horizontal without width
+    rules. Textual hands every child of an over-constrained Horizontal its own
+    preferred width, so the first Input consumes the whole row and the trailing
+    widgets are pushed past the parent''s right edge and clipped: in
+    AnalysisJobsModal the row is 78 columns wide, jobs-analysis alone fills it,
+    jobs-status shrinks to one column and jobs-limit lands entirely outside the
+    modal box, leaving both filters unusable. Tests kept passing because they set
+    widget values programmatically instead of clicking them.'
+  disposition: 'Width rules added for every panel/modal filter row (jobs-filters,
+    hits-filters, hits-filters-2, hits-export): flexible search inputs take 1fr,
+    narrow selects and limit fields get fixed widths, so every control stays
+    inside its row. A regression test mounts the affected screens and modals and
+    asserts that each identified control is fully inside its row and at least 8
+    columns wide.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row

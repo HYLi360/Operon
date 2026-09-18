@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 pytest.importorskip("textual")
 
 from rich.text import Text
+from textual.css.query import NoMatches
 from textual.widgets import (
     Button,
     Checkbox,
@@ -93,7 +96,31 @@ async def _click(pilot, selector: str) -> None:
     obscured (e.g. a modal button pushed out of the box), which otherwise
     surfaces much later as a confusing timeout.
     """
+    try:
+        widget = pilot.app.screen.query_one(selector)
+    except NoMatches:  # pragma: no cover - the click itself reports a missing target
+        widget = None
+    if isinstance(widget, Button) and widget.has_class("-active"):
+        # Textual's Button ignores a click while its press animation still holds
+        # the -active class (Button._on_click), so a rapid second click is lost.
+        await _wait_until(
+            lambda: not widget.has_class("-active"), f"{selector} to settle",
+        )
     assert await pilot.click(selector), f"click did not land on {selector}"
+
+
+async def _wait_until(
+    predicate: Callable[[], bool],
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
+) -> None:
+    """Wait for an observable UI result after a thread worker completes."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() > deadline:
+            raise TimeoutError(f"UI did not {description} within {timeout}s")
+        await asyncio.sleep(0.05)
 
 
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
@@ -1692,5 +1719,60 @@ def test_environments_modal_requires_a_selection(tmp_path: Path) -> None:
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, EnvironmentsModal)
+
+    _run(scenario())
+
+
+def _overflowing_controls(root: Any) -> list[str]:
+    """Return identified row controls that overflow or are unusably narrow (ODR-0019)."""
+    from textual.containers import Horizontal
+    from textual.widgets import Button, Checkbox, Input, Select
+
+    problems: list[str] = []
+    for row in root.query(Horizontal):
+        region = row.region
+        right, bottom = region.x + region.width, region.y + region.height
+        for child in row.children:
+            if not isinstance(child, (Button, Checkbox, Input, Select)):
+                continue
+            if child.id is None or not child.display or child.region.height == 0:
+                continue  # composite internals (a Select's own parts have no id)
+            child_region = child.region
+            if child_region.x + child_region.width > right or child_region.y >= bottom:
+                problems.append(
+                    f"{row.id}: {child.id} outside its row ({child_region} vs {region})"
+                )
+            elif child_region.width < 8:
+                problems.append(f"{row.id}: {child.id} squeezed to {child_region.width} columns")
+    return problems
+
+
+@pytest.mark.bug("ODR-0019")
+def test_filter_rows_keep_their_controls_inside_the_row(demo_project: Project) -> None:
+    """Every filter-row control fits inside its row (ODR-0019).
+
+    An over-constrained ``Horizontal`` hands each child its preferred width, so a
+    row without width rules pushes its trailing widgets past the right edge — the
+    Analysis jobs modal lost its status and limit filters that way.  Mount the
+    screens and the modal that own filter rows and check each identified control.
+    """
+    from operon.tui.screens.runs import AnalysisJobsModal
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            for screen in ("files", "runs"):
+                app.action_switch_screen(screen)
+                await pilot.pause()
+                await _settled(app)
+                assert not _overflowing_controls(app.screen), f"{screen} screen"
+            modal = AnalysisJobsModal(demo_project)
+            app.push_screen(modal)
+            await pilot.pause()
+            await _wait_until(lambda: not modal._loading, "AnalysisJobsModal load")
+            assert not _overflowing_controls(modal), "AnalysisJobsModal"
+            app.pop_screen()
+            await pilot.pause()
 
     _run(scenario())

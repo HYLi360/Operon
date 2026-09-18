@@ -186,6 +186,22 @@ HelpScreen {
     border-top: solid $primary;
 }
 
+/* Filter rows: without explicit widths an over-constrained Horizontal gives
+   every child its preferred width and pushes the trailing widgets outside the
+   row (ODR-0019).  Flexible search inputs take 1fr, narrow controls are fixed. */
+
+#jobs-analysis {
+    width: 1fr;
+}
+
+#jobs-status {
+    width: 20;
+}
+
+#jobs-limit {
+    width: 12;
+}
+
 #config-tabs {
     height: 1fr;
 }
