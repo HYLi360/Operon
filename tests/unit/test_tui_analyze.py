@@ -269,6 +269,25 @@ def test_run_analysis_progress_and_error_counts(project: Project, tmp_path: Path
     assert any(phase == "error" for _i, _t, _f, phase in seen)
 
 
+def test_run_analysis_forwards_cancel_event(project: Project, tmp_path: Path,
+                                            monkeypatch: pytest.MonkeyPatch) -> None:
+    _write_fake_tool(project, tmp_path)
+    received: dict[str, Any] = {}
+
+    def fake_core(project_arg, db, analysis, **kwargs):
+        received.update(kwargs)
+        return []
+
+    monkeypatch.setattr("operon.tools.run_analysis", fake_core)
+    cancel_event = threading.Event()
+    result = actions.run_analysis(
+        project, "fake_nt", parameters={"marker": "x"}, cancel_event=cancel_event,
+    )
+    assert received["cancel_event"] is cancel_event
+    assert received["progress_callback"] is None
+    assert result["total"] == 0
+
+
 # ---------------------------------------------------------------------------
 # AnalyzeModal
 # ---------------------------------------------------------------------------

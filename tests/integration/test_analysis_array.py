@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 from pathlib import Path
 
 import pytest
@@ -510,6 +511,140 @@ class TestAnalysisArray(PytestAssertions):
 
         self.assertEqual([j["status"] for j in self._jobs()],
                          ["completed", "interrupted"])
+
+    def test_array_forwards_cancel_event_to_supporting_executors(self, monkeypatch):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._fake_run(monkeypatch)
+        received: list = []
+
+        def aware_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
+                            batch_id=None, array_concurrency=None, cancel_event=None):
+            received.append(cancel_event)
+            results = []
+            for index, task in enumerate(tasks, start=1):
+                exitcode_path = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
+                    proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err,
+                                          cwd=cwd, check=False)
+                exitcode_path.write_text(f"{proc.returncode}\n", encoding="utf-8")
+                results.append(ExecResult(exit_code=proc.returncode,
+                                          scheduler_job_id=f"7000_{index}"))
+            return results
+
+        monkeypatch.setattr(SlurmExecutor, "run_array", aware_run_array)
+        cancel_event = threading.Event()
+        results = run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                               cancel_event=cancel_event)
+
+        self.assertEqual([r["status"] for r in results], ["completed", "completed"])
+        self.assertEqual(received, [cancel_event])
+
+    def test_array_collection_stops_at_task_boundary_on_cancel_event(self, monkeypatch):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._add_assembly(3)
+        self._fake_run(monkeypatch)
+        # _fake_run_array has no cancel_event parameter, so the event is not
+        # forwarded; the phase-3 collection boundary still honors it.
+        self._fake_run_array(monkeypatch)
+
+        cancel_event = threading.Event()
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "completed":
+                cancel_event.set()
+
+        with pytest.raises(ShutdownRequested):
+            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                         progress_callback=cancelling, cancel_event=cancel_event)
+
+        # Task 1 was collected; the set event stops collection, so the
+        # remaining plans are interrupted exactly as after a signal.
+        self.assertEqual([j["status"] for j in self._jobs()],
+                         ["completed", "interrupted", "interrupted"])
+
+    def test_two_phase_planning_stops_on_cancel_event(self, monkeypatch):
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._fake_run(monkeypatch)
+        self._fake_run_array(monkeypatch)
+
+        cancel_event = threading.Event()
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "start":
+                cancel_event.set()
+
+        with pytest.raises(ShutdownRequested):
+            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                         progress_callback=cancelling, cancel_event=cancel_event)
+
+        # File 1 was planned (RUNNING) before the event landed; file 2 was
+        # never planned.  The stale RUNNING row is swept on the next run.
+        self.assertEqual([j["status"] for j in self._jobs()], ["RUNNING"])
+        results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
+        self.assertEqual([r["status"] for r in results], ["completed", "completed"])
+        self.assertEqual([j["status"] for j in self._jobs()],
+                         ["interrupted", "completed", "completed"])
+
+    def test_two_phase_sequential_fallback_stops_on_cancel_event(self, monkeypatch):
+        # A commands chain never joins an array; the two-phase path executes
+        # it through the sequential fallback loop, which honors the event.
+        self._write_fake_blast()
+        recipe = {
+            "entity_type": "assembly",
+            "file_role": "genome_fasta",
+            "format": "fasta",
+            "output_subdir": "fake_nt",
+            "output_suffix": ".out.tsv",
+            "commands": [
+                {"arguments": [str(self.root / "fakeblast.py"),
+                               "-query", "${input}", "-out", "${output}"]},
+                {"arguments": [str(self.root / "fakeblast.py"), "-version"]},
+            ],
+            "result_parser": "blast_tabular",
+            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+            "slurm": {"array": True},
+        }
+        tool_config = {
+            "version": 1,
+            "tools": {
+                "fakeblast": {
+                    "executable": str(self.root / "fakeblast.py"),
+                    "run_method": sys.executable,
+                    "version_args": ["-version"],
+                    "version_pattern": r"fakeblast:\s*([^\s]+)",
+                    "recipes": {"fake_nt": recipe},
+                }
+            },
+        }
+        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self._add_assembly(1)
+        self._add_assembly(2)
+        self._add_assembly(3)
+        self._fake_run(monkeypatch)
+
+        cancel_event = threading.Event()
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "completed":
+                cancel_event.set()
+
+        with pytest.raises(ShutdownRequested):
+            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
+                         progress_callback=cancelling, cancel_event=cancel_event)
+
+        # File 1 completed through the fallback; the other planned rows stay
+        # RUNNING until the next run's stale sweep.
+        self.assertEqual([j["status"] for j in self._jobs()],
+                         ["completed", "RUNNING", "RUNNING"])
 
     def test_array_planning_error_and_fallback_failure_are_per_file(self, monkeypatch):
         self._write_fake_blast()

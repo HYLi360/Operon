@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -648,6 +649,23 @@ class TestSlurmArrayExecutor(PytestAssertions):
         self.assertTrue((self.logs / "WF_A1.env.sh").exists())
         self.assertTrue((self.logs / "WF_A2.env.sh").exists())
 
+    def test_run_array_cancel_event_scancels_the_waiting_array(self, monkeypatch):
+        monkeypatch.setattr(execution.shutil, "which", lambda name: name)
+        monkeypatch.setattr(execution, "_submit_slurm_job", lambda *_a: "4242")
+        # The array never leaves the queue, so the cancel check decides.
+        monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: False)
+        scancelled: list[str] = []
+        monkeypatch.setattr(execution, "_scancel_slurm_job", scancelled.append)
+
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with self.assertRaises(ShutdownRequested):
+            self.executor.run_array(
+                self._tasks(2), cwd=self.root, batch_id="batchC",
+                cancel_event=cancel_event,
+            )
+        self.assertEqual(scancelled, ["4242"])
+
 
 class TestSSHExecutorWithFakeClient(PytestAssertions):
     def setup_method(self):
@@ -1146,6 +1164,48 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
         self.assertFalse(any(c.startswith("scancel ") for c in client.commands))
 
+    def test_remote_slurm_array_cancel_event_scancels_and_pulls_exitcodes(self, monkeypatch):
+        remote_root = self.root / "remote-slurm-array"
+        remote_root.mkdir()
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), scheduler="slurm", client=client)
+        monkeypatch.setattr("operon.execution.time.sleep", lambda _s: None)
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("sbatch "):
+                # Task 1 finished before the cancellation landed; task 2
+                # never wrote its remote exit code.
+                (remote_root / "logs").mkdir(parents=True, exist_ok=True)
+                (remote_root / "logs" / "WF_RC1.exitcode").write_text("0", encoding="utf-8")
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            elif command.startswith("squeue "):
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            else:
+                proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+        tasks = [
+            {
+                "run_id": f"WF_RC{i}", "command": f"echo hello-{i}",
+                "stdout_path": self.root / "logs" / f"WF_RC{i}.stdout.log",
+                "stderr_path": self.root / "logs" / f"WF_RC{i}.stderr.log",
+                "cwd": self.root, "threads": 2,
+            }
+            for i in (1, 2)
+        ]
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with self.assertRaises(ShutdownRequested):
+            executor.run_array(tasks, cwd=self.root, batch_id="RC1",
+                               cancel_event=cancel_event)
+        self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))
+        # The finished task's exit-code file was pulled before propagation.
+        self.assertEqual((self.root / "logs" / "WF_RC1.exitcode").read_text().strip(), "0")
+        self.assertFalse((self.root / "logs" / "WF_RC2.exitcode").exists())
+
 
 FAKE_SBATCH_OK = """\
 #!/usr/bin/env bash
@@ -1247,6 +1307,34 @@ class TestShutdownCleanup(PytestAssertions):
             )
         self.assertEqual(scancel_log.read_text().strip(), "12345")
 
+    def test_slurm_cancel_event_cancels_cluster_job(self, monkeypatch):
+        bin_dir = self.root / "fakebin"
+        bin_dir.mkdir()
+        scancel_log = self.root / "scancel.log"
+        for name, content in (("sbatch", FAKE_SBATCH_OK), ("squeue", FAKE_SQUEUE_BUSY),
+                              ("scancel", FAKE_SCANCEL)):
+            script = bin_dir / name
+            script.write_text(content, encoding="utf-8")
+            script.chmod(0o755)
+        old_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{old_path}"
+        self.addCleanup(lambda: os.environ.__setitem__("PATH", old_path))
+        os.environ["SCANCEL_LOG"] = str(scancel_log)
+        self.addCleanup(lambda: os.environ.pop("SCANCEL_LOG", None))
+
+        executor = SlurmExecutor(self.project, SlurmConfig(poll_interval=0.05))
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with self.assertRaises(ShutdownRequested):
+            executor.run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "s.stdout.log",
+                stderr_path=self.root / "logs" / "s.stderr.log",
+                run_id="WF_SLURM_CANCEL",
+                cancel_event=cancel_event,
+            )
+        self.assertEqual(scancel_log.read_text().strip(), "12345")
+
 
 class _HangingChannel:
     def __init__(self):
@@ -1341,6 +1429,59 @@ class TestSSHShutdownCleanup(PytestAssertions):
                 stdout_path=self.root / "logs" / "rs.stdout.log",
                 stderr_path=self.root / "logs" / "rs.stderr.log",
                 run_id="WF_RSLURM_INT",
+            )
+        self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))
+
+    def test_direct_cancel_event_terminates_remote_process_group(self, monkeypatch):
+        client = FakeSSHClient()
+        hanging = _HangingChannel()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith("setsid "):
+                stream = _HangingStream(hanging)
+                return None, stream, stream
+            proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with self.assertRaises(ShutdownRequested):
+            self._executor("none", client).run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "c.stdout.log",
+                stderr_path=self.root / "logs" / "c.stderr.log",
+                run_id="WF_SSH_CANCEL",
+                cancel_event=cancel_event,
+            )
+        # Same contract as a signal: the remote process group is terminated.
+        self.assertTrue(any("kill -TERM" in command for command in client.commands))
+        self.assertTrue(hanging.closed)
+
+    def test_remote_slurm_cancel_event_cancels_job(self, monkeypatch):
+        client = FakeSSHClient()
+
+        def fake_exec(command, timeout=None):
+            client.commands.append(command)
+            if command.startswith(("sbatch ", "squeue ")):
+                proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
+            else:
+                proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+
+        client.exec_command = fake_exec
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with self.assertRaises(ShutdownRequested):
+            self._executor("slurm", client).run(
+                ["sleep", "30"], cwd=self.root,
+                stdout_path=self.root / "logs" / "rc.stdout.log",
+                stderr_path=self.root / "logs" / "rc.stderr.log",
+                run_id="WF_RSLURM_CANCEL",
+                cancel_event=cancel_event,
             )
         self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))
 

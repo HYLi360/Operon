@@ -43,7 +43,14 @@ from operon.config import Project
 from operon.environment import PROBE_SHELL_LINES, local_environment, parse_probe_output
 from operon.environment_capture import capture_local, probe_shell
 from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
+from operon.shutdown import ShutdownRequested
 from operon.utils import iter_directory_entries, sha256_file, sha256_path
+
+
+def _cancel_requested(cancel_event: threading.Event | None) -> bool:
+    """Cooperative cancellation: a set event raises like a KeyboardInterrupt,
+    so the existing interrupt cleanup (scancel / remote termination) runs."""
+    return cancel_event is not None and cancel_event.is_set()
 
 VALID_BACKENDS = ("local", "slurm", "ssh")
 
@@ -741,7 +748,8 @@ class SlurmExecutor:
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
             stderr_path: Path, timeout: float | None = None, threads: int | None = None,
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
-            expected_outputs: Iterable[Any] = ()) -> ExecResult:
+            expected_outputs: Iterable[Any] = (),
+            cancel_event: threading.Event | None = None) -> ExecResult:
         sbatch = shutil.which("sbatch")
         if not sbatch:
             raise ExternalToolError("slurm backend requires 'sbatch' in PATH")
@@ -769,6 +777,8 @@ class SlurmExecutor:
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
+                if _cancel_requested(cancel_event):
+                    raise ShutdownRequested(signal.SIGINT)
                 if _squeue_job_gone(squeue, job_id):
                     break
                 if deadline is not None and time.monotonic() > deadline:
@@ -795,7 +805,8 @@ class SlurmExecutor:
     def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
                   threads: int | None = None, timeout: float | None = None,
                   batch_id: str | None = None,
-                  array_concurrency: int | None = None) -> list[ExecResult]:
+                  array_concurrency: int | None = None,
+                  cancel_event: threading.Event | None = None) -> list[ExecResult]:
         """Submit all tasks as one Slurm job array and block until it drains.
 
         Each task is a dict with ``run_id``, ``command`` (a rendered single
@@ -804,8 +815,9 @@ class SlurmExecutor:
         ExecResult per task, in task order, with ``scheduler_job_id`` set to
         ``<array_id>_<task_index>``.
 
-        Interrupt contract: on KeyboardInterrupt the whole array is cancelled
-        once and the exception propagates; the caller distinguishes finished
+        Interrupt contract: on KeyboardInterrupt — or when ``cancel_event``
+        is set, which raises one — the whole array is cancelled once and the
+        exception propagates; the caller distinguishes finished
         tasks by which per-task exit-code files (``<run_id>.exitcode`` next
         to each task's stdout log) exist.  On timeout the array is cancelled
         and per-task results are still returned: tasks that left an exit-code
@@ -847,6 +859,8 @@ class SlurmExecutor:
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
+                if _cancel_requested(cancel_event):
+                    raise ShutdownRequested(signal.SIGINT)
                 if _squeue_job_gone(squeue, job_id):
                     break
                 if deadline is not None and time.monotonic() > deadline:
@@ -1079,7 +1093,8 @@ class SSHExecutor:
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
             stderr_path: Path, timeout: float | None = None, threads: int | None = None,
             run_id: str | None = None, stage_inputs: Iterable[Any] = (),
-            expected_outputs: Iterable[Any] = ()) -> ExecResult:
+            expected_outputs: Iterable[Any] = (),
+            cancel_event: threading.Event | None = None) -> ExecResult:
         client = self._connect()
         sftp = client.open_sftp()
         try:
@@ -1091,6 +1106,7 @@ class SSHExecutor:
                         client, sftp, [str(a) for a in argv], cwd=cwd,
                         stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
                         timeout=timeout, threads=threads, run_id=run_id,
+                        cancel_event=cancel_event,
                     )
                 else:
                     command = [str(a) for a in argv]
@@ -1100,6 +1116,7 @@ class SSHExecutor:
                             client, command, cwd=cwd,
                             stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
                             timeout=timeout, run_id=run_id, probe_path=remote_probe,
+                            cancel_event=cancel_event,
                         )
                     finally:
                         environment = _read_remote_probe_environment(sftp, remote_probe)
@@ -1274,7 +1291,8 @@ class SSHExecutor:
     def _run_direct(self, client: Any, argv: list[str], *, cwd: str | Path | None,
                     stdout_path: Path, stderr_path: Path,
                     timeout: float | None, run_id: str | None,
-                    probe_path: str | None = None) -> ExecResult:
+                    probe_path: str | None = None,
+                    cancel_event: threading.Event | None = None) -> ExecResult:
         command = shlex.join(self._rewrite(a) for a in argv)
         if probe_path:
             probe = probe_shell([self._rewrite(a) for a in argv])
@@ -1319,6 +1337,8 @@ class SSHExecutor:
         with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
             try:
                 while True:
+                    if _cancel_requested(cancel_event):
+                        raise ShutdownRequested(signal.SIGINT)
                     while channel.recv_ready():
                         out.write(channel.recv(65536))
                     while channel.recv_stderr_ready():
@@ -1419,7 +1439,8 @@ class SSHExecutor:
     def _run_via_slurm(self, client: Any, sftp: Any, argv: list[str], *,
                        cwd: str | Path | None, stdout_path: Path, stderr_path: Path,
                        timeout: float | None, threads: int | None,
-                       run_id: str | None) -> ExecResult:
+                       run_id: str | None,
+                       cancel_event: threading.Event | None = None) -> ExecResult:
         from operon.remotes import _remove_remote_tree, sftp_makedirs
         label = run_id or f"job_{int(time.time() * 1000)}"
         remote_stdout = self._rewrite(stdout_path)
@@ -1452,6 +1473,8 @@ class SSHExecutor:
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
+                if _cancel_requested(cancel_event):
+                    raise ShutdownRequested(signal.SIGINT)
                 rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
                 if rc != 0:
                     if "Invalid job id" in out:
@@ -1536,7 +1559,8 @@ class SSHExecutor:
     def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
                   threads: int | None = None, timeout: float | None = None,
                   batch_id: str | None = None,
-                  array_concurrency: int | None = None) -> list[ExecResult]:
+                  array_concurrency: int | None = None,
+                  cancel_event: threading.Event | None = None) -> list[ExecResult]:
         """Submit all tasks as one job array on the remote Slurm cluster.
 
         Task dicts follow the same contract as ``SlurmExecutor.run_array``;
@@ -1545,7 +1569,9 @@ class SSHExecutor:
         mirror — anything needing top-level shell operators must be wrapped
         in ``bash -c``.  Inputs/outputs are not staged or backed up here;
         that stays with the caller.  The interrupt/timeout contract matches
-        the local backend, with one addition: before an interrupt propagates,
+        the local backend — a set ``cancel_event`` raises KeyboardInterrupt's
+        subclass just like a signal would — with one addition: before an
+        interrupt propagates,
         any per-task exit-code files that already exist remotely are pulled
         back, so the caller can apply the same which-exitcode-files-exist
         bookkeeping against local paths.
@@ -1556,6 +1582,7 @@ class SSHExecutor:
             return self._run_array_via_slurm(
                 client, sftp, tasks, cwd=cwd, threads=threads, timeout=timeout,
                 batch_id=batch_id, array_concurrency=array_concurrency,
+                cancel_event=cancel_event,
             )
         finally:
             sftp.close()
@@ -1582,7 +1609,8 @@ class SSHExecutor:
     def _run_array_via_slurm(self, client: Any, sftp: Any, tasks: Iterable[dict[str, Any]],
                              *, cwd: str | Path | None, threads: int | None,
                              timeout: float | None, batch_id: str | None,
-                             array_concurrency: int | None) -> list[ExecResult]:
+                             array_concurrency: int | None,
+                             cancel_event: threading.Event | None = None) -> list[ExecResult]:
         from operon.remotes import _remove_remote_tree, sftp_makedirs
         batch_id = batch_id or f"array_{uuid.uuid4().hex[:12]}"
         _validate_array_batch(batch_id, array_concurrency)
@@ -1621,6 +1649,8 @@ class SSHExecutor:
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
+                if _cancel_requested(cancel_event):
+                    raise ShutdownRequested(signal.SIGINT)
                 rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
                 if rc != 0:
                     if "Invalid job id" in out:

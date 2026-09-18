@@ -23,13 +23,16 @@ re-verified against the manifest before every run.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -1254,6 +1257,14 @@ def _sweep_stale_running_jobs(db: Database, analysis_name: str) -> int:
         return cursor.rowcount
 
 
+def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
+    """Cooperative cancellation: a set event raises ``ShutdownRequested`` so
+    the existing interrupt bookkeeping (scancel, ``interrupted`` rows,
+    partial-output removal) runs exactly as for a signal."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise ShutdownRequested(signal.SIGINT)
+
+
 def run_analysis(project: Project, db: Database, analysis_name: str,
                  entity_type: str | None = None, entity_id: str | None = None,
                  dry_run: bool = False, force: bool = False, limit: int | None = None,
@@ -1261,6 +1272,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                  keep_partial: bool = False,
                  runtime_parameters: dict[str, str] | None = None,
                  progress_callback: Callable[[int, int, str, str], None] | None = None,
+                 cancel_event: threading.Event | None = None,
                  ) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files.
 
@@ -1268,6 +1280,11 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
     ``progress_callback(index, total, file_id, phase)`` with a 1-based
     ``index``; ``phase`` is ``"start"`` before the file's job begins and the
     result status (``completed``/``cached``/``error``/...) after it ends.
+
+    ``cancel_event``, when given, is checked at every file/planning/collection
+    boundary and — for executors that accept it — while a job array is still
+    waiting on the scheduler; once set, the batch aborts with
+    ``ShutdownRequested`` and the same interrupt bookkeeping as a signal.
     """
     recipe = get_recipe(project, analysis_name)
     resolved_parameters = resolve_runtime_parameters(recipe, runtime_parameters)
@@ -1311,9 +1328,10 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                     force=force, threads=threads, keep_partial=keep_partial,
                     runtime_parameters=resolved_parameters,
                     array_concurrency=slurm_config.array_concurrency,
-                    progress_callback=progress_callback,
+                    progress_callback=progress_callback, cancel_event=cancel_event,
                 )
             for index, file_record in enumerate(files, start=1):
+                _raise_if_cancelled(cancel_event)
                 if progress_callback is not None:
                     progress_callback(index, total, file_record["file_id"], "start")
                 try:
@@ -1377,6 +1395,7 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
                             runtime_parameters: dict[str, str] | None,
                             array_concurrency: int | None,
                             progress_callback: Callable[[int, int, str, str], None] | None,
+                            cancel_event: threading.Event | None = None,
                             ) -> list[dict[str, Any]]:
     """Array-enabled analyze: plan per file, submit once, collect per task.
 
@@ -1392,6 +1411,7 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
     results: list[dict[str, Any] | None] = [None] * total
     pending: list[tuple[int, _AnalysisExecution]] = []
     for index, file_record in enumerate(files, start=1):
+        _raise_if_cancelled(cancel_event)
         if progress_callback is not None:
             progress_callback(index, total, file_record["file_id"], "start")
         try:
@@ -1425,9 +1445,11 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
             project, db, recipe, tool, executor, array_plans, results,
             threads=threads, array_concurrency=array_concurrency,
             keep_partial=keep_partial, progress_callback=progress_callback, total=total,
+            cancel_event=cancel_event,
         )
         sequential = [(i, p) for i, p in pending if len(p.argv_steps) != 1]
     for index, plan in sequential:
+        _raise_if_cancelled(cancel_event)
         try:
             run_record = _execute_analysis_plan(project, db, recipe, tool, executor, plan)
             outcome = _finalize_analysis_execution(project, db, recipe, tool, plan,
@@ -1461,7 +1483,8 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                             *, threads: int, array_concurrency: int | None,
                             keep_partial: bool,
                             progress_callback: Callable[[int, int, str, str], None] | None,
-                            total: int) -> None:
+                            total: int,
+                            cancel_event: threading.Event | None = None) -> None:
     """Submit planned files as one job array and collect each task's result.
 
     ``run_array`` performs neither the input staging nor the remote output
@@ -1545,10 +1568,17 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             }
             for _, plan in batch
         ]
+        _raise_if_cancelled(cancel_event)
+        # Only forward the event to executors whose run_array knows the
+        # keyword; duck-typed executors without it simply never cancel
+        # mid-array and the collection-loop boundary still applies.
+        run_array_kwargs: dict[str, Any] = {}
+        if "cancel_event" in inspect.signature(executor.run_array).parameters:
+            run_array_kwargs["cancel_event"] = cancel_event
         try:
             exec_results = executor.run_array(
                 tasks, cwd=project.root, threads=threads,
-                array_concurrency=array_concurrency,
+                array_concurrency=array_concurrency, **run_array_kwargs,
             )
         except KeyboardInterrupt:
             _finalize_interrupted_array(
@@ -1563,6 +1593,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             )
         duration = round(time.monotonic() - started_monotonic, 3)
         for (index, plan), result in zip(batch, exec_results):
+            _raise_if_cancelled(cancel_event)
             try:
                 if sftp is not None and plan.backups:
                     if result.exit_code == 0 and not result.error:

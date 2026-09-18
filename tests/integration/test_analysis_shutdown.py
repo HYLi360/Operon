@@ -6,8 +6,10 @@ import signal
 import sys
 import tempfile
 import textwrap
+import threading
 from pathlib import Path
 
+import pytest
 import yaml
 
 from operon.cli import main
@@ -72,13 +74,13 @@ class TestAnalysisShutdown(PytestAssertions):
         }
         self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
 
-    def _add_assembly(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
-        fasta = self.root / "asm.fa"
-        fasta.write_text(">ctg1\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+    def _add_assembly(self, number: int = 1):
+        self.db.insert_row("organisms", {"organism_id": f"ORG_{number:06d}", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
+        self.db.insert_row("samples", {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"})
+        self.db.insert_row("assemblies", {"assembly_id": f"ASM_{number:06d}", "sample_id": f"SMP_{number:06d}", "assembly_level": "contig", "assembly_version": 1})
+        fasta = self.root / f"asm{number}.fa"
+        fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
+        return ingest_file(self.db, self.project, fasta, "assembly", f"ASM_{number:06d}", "genome_fasta")
 
     def _interrupting_run(self, file_id: str):
         """Fake executor.run: leave a partial output, then raise the signal."""
@@ -214,6 +216,34 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertIn("input missing", results[0]["error"])
         # The failure is pre-flight: no job row was ever inserted.
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+
+    def test_cancel_event_stops_sequential_batch_between_files(self, monkeypatch):
+        """Cooperative cancellation on the per-file path: the in-flight file
+        finishes, the batch stops at the next file boundary."""
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py")
+        self._add_assembly(1)
+        self._add_assembly(2)
+
+        cancel_event = threading.Event()
+
+        def cancelling(index, total, file_id, phase):
+            if phase == "completed":
+                cancel_event.set()
+
+        with pytest.raises(ShutdownRequested):
+            run_analysis(self.project, self.db, "fake_nt",
+                         progress_callback=cancelling, cancel_event=cancel_event)
+
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["completed"])
+
+        # The cancelled second file is simply computed on the next run.
+        results = run_analysis(self.project, self.db, "fake_nt")
+        self.assertEqual([r["status"] for r in results], ["cached", "completed"])
+        self.assertEqual(
+            [j["status"] for j in self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")],
+            ["completed", "completed"])
 
     def test_missing_reference_database_is_rejected_before_running(self):
         self._write_fake_blast()

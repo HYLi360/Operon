@@ -19,6 +19,7 @@ import io
 import json
 import os
 import shutil
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -268,14 +269,18 @@ def run_analysis(
         keep_partial: bool = False,
         parameters: dict[str, str] | None = None,
         progress: Callable[[int, int, str, str], None] | None = None,
+        cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Run one analysis recipe like ``operon analyze`` (local/default backend).
 
     ``progress`` is forwarded as the core ``progress_callback``
     ``(index, total, file_id, phase)``; raising from it aborts the batch
-    between files (results for files already processed are kept).  The core
-    prints directly (cache warnings, "no candidate files"); that output is
-    captured into the returned ``messages`` so it never corrupts the screen.
+    between files (results for files already processed are kept).
+    ``cancel_event`` is forwarded to the core: once set, the batch aborts at
+    the next file/planning/collection boundary with the same interrupt
+    bookkeeping as a signal.  The core prints directly (cache warnings,
+    "no candidate files"); that output is captured into the returned
+    ``messages`` so it never corrupts the screen.
     """
     from operon.tools import run_analysis as _run_analysis
 
@@ -290,7 +295,7 @@ def run_analysis(
             entity_type=entity_type, entity_id=entity_id,
             limit=limit, threads=threads, dry_run=dry_run, force=force,
             keep_partial=keep_partial, runtime_parameters=parameters,
-            progress_callback=progress,
+            progress_callback=progress, cancel_event=cancel_event,
         )
     errors = sum(1 for result in results if result.get("status") in {"error", "failed"})
     return {
