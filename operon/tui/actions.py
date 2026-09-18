@@ -501,6 +501,54 @@ PROFILE_OPERATORS = (">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in"
 ENTITY_TYPE_NAMES = ("organism", "sample", "run", "assembly", "annotation")
 
 
+def write_analysis_report(
+        project: Project,
+        *,
+        out: str,
+        fmt: str = "text",
+        analysis: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        query_id: str | None = None,
+        subject_id: str | None = None,
+        evalue_max: float | None = None,
+        limit: int = 20,
+        include_retired: bool = False,
+) -> dict[str, Any]:
+    """Write alignment hits to a path exactly like ``report analysis --hits --out``.
+
+    The rows come from the CLI's own read-only query (``data.analysis_hits``)
+    and are rendered by ``operon.reports.render_report_rows`` — the same
+    renderer the CLI uses — so the file matches a CLI export with the same
+    filters and limit byte for byte.  Like the CLI report, this writes no
+    ``changes`` or ``workflow_runs`` rows: it is a browsing export.
+    """
+    from operon.reports import render_report_rows
+    from operon.tui import data
+
+    if not out.strip():
+        raise ValidationError("an output path is required")
+    if fmt not in {"text", "tsv", "json"}:
+        raise ValidationError(f"unknown report format: {fmt}")
+    rows = data.analysis_hits(
+        project,
+        analysis=analysis,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        query_id=query_id,
+        subject_id=subject_id,
+        evalue_max=evalue_max,
+        limit=limit,
+        include_retired=include_retired,
+    )
+    target = Path(out)
+    text = render_report_rows(rows, fmt, headers=data.ANALYSIS_HIT_COLUMNS)
+    if not text:
+        text = "(no analysis results)\n"
+    atomic_write_text(target, text)
+    return {"path": str(target), "rows": len(rows), "format": fmt}
+
+
 def _validate_config_name(kind: str, name: str) -> None:
     if not name or Path(name).name != name or name in {".", ".."}:
         raise ValidationError(f"invalid {kind} name {name!r}")

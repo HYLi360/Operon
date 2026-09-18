@@ -43,6 +43,7 @@ class FilesPanel(Panel):
         Binding("i", "ingest", "Ingest"),
         Binding("v", "verify", "Verify"),
         Binding("q", "qc", "Run QC"),
+        Binding("l", "labels", "Labels"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -155,6 +156,14 @@ class FilesPanel(Panel):
             QcModal(self.project, file_id, len(self.files)), self._after_qc,
         )
 
+    def action_labels(self) -> None:
+        """Browse ``sequence_labels``: the project summary plus the selected file."""
+        from operon.tui.screens.labels import SequenceLabelsModal
+
+        selected = self._selected_record()
+        file_id = str(selected["file_id"]) if selected else None
+        self.app.push_screen(SequenceLabelsModal(self.project, file_id))
+
     def _after_qc(self, result: Any) -> None:
         if not result or result.get("cancelled"):
             return
@@ -230,4 +239,18 @@ class FilesPanel(Panel):
                     text.append(f"      verified {location['verified_at']}\n")
         else:
             text.append("  (no residency records)\n", style="dim")
+        text.append("\nSequence labels\n", style="bold")
+        labels = detail.get("labels") or []
+        if labels:
+            counts: dict[tuple[str, str], int] = {}
+            for row in labels:
+                counts[(row["label"], row["profile_name"])] = (
+                    counts.get((row["label"], row["profile_name"]), 0) + 1
+                )
+            for (label, profile), count in counts.items():
+                text.append(f"  {label:<8} {count:>5} sequence(s)   profile {profile}\n")
+            if len(labels) >= 500:
+                text.append("  (first 500 rows; press l for the full browser)\n", style="dim")
+        else:
+            text.append("  (no sequence labels — run classify-sequences)\n", style="dim")
         return text

@@ -32,7 +32,7 @@ from operon.cli import main
 from operon.config import Project
 from operon.demo import init_demo
 from operon.errors import ValidationError
-from operon.tui import data
+from operon.tui import actions, data
 from operon.tui.app import HelpScreen, OperonApp
 from operon.tui.screens.entities import EntitiesPanel
 from operon.tui.screens.files import FilesPanel
@@ -1527,8 +1527,8 @@ def test_run_detail_follow_streams_logs_until_finished(tmp_path: Path) -> None:
             assert screen._follow_timer is not None
 
             # New bytes are appended incrementally on the next tick.
-            with open(stdout_path, "a", encoding="utf-8") as handle:
-                handle.write("step 2 running\n")
+            stdout_path.write_text(
+                stdout_path.read_text(encoding="utf-8") + "step 2 running\n", encoding="utf-8")
             screen._follow_tick()
             await pilot.pause()
             text = _log_text(log)
@@ -1723,6 +1723,286 @@ def test_environments_modal_requires_a_selection(tmp_path: Path) -> None:
     _run(scenario())
 
 
+# ---------------------------------------------------------------------------
+# analysis hits and sequence labels (milestone M3)
+# ---------------------------------------------------------------------------
+
+
+def _seed_hits(project: Project) -> None:
+    """Insert two completed jobs and one failed job with alignments."""
+    from operon.database import Database
+
+    db = Database(project.db_path)
+    try:
+        db.conn.execute("PRAGMA foreign_keys=OFF")
+        for suffix in ("1", "2", "3"):
+            db.insert_row("organisms", {
+                "organism_id": f"ORG_00000{suffix}", "scientific_name": f"Organism {suffix}",
+            })
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO analysis_jobs(job_id, analysis_name, entity_type, entity_id, file_id,"
+                " tool, tool_version, parameter_set, parameter_sha256, input_sha256,"
+                " database_identity, status, started_at) VALUES "
+                "(1,'blastn_nt','organism','ORG_000001','F1','blastn','2','p','sha','in','db',"
+                " 'completed','t'),"
+                "(2,'blastn_nt','organism','ORG_000002','F2','blastn','2','p','sha','in','db',"
+                " 'completed','t'),"
+                "(3,'blastn_nt','organism','ORG_000003','F3','blastn','2','p','sha','in','db',"
+                " 'failed','t')"
+            )
+            db.conn.execute(
+                "INSERT INTO analysis_alignments(job_id, analysis_name, entity_type, entity_id,"
+                " query_id, subject_id, file_id, hit_rank, query_start, query_end, subject_start,"
+                " subject_end, evalue, bitscore, percent_identity) VALUES "
+                "(1,'blastn_nt','organism','ORG_000001','q1','s1','F1',1,1,10,1,10,1e-5,50.0,99.0),"
+                "(1,'blastn_nt','organism','ORG_000001','q1','s2','F1',2,1,10,2,11,1e-3,20.0,80.0),"
+                "(2,'blastn_nt','organism','ORG_000002','q2','s1','F2',1,5,15,5,15,1e-7,60.0,100.0),"
+                "(3,'blastn_nt','organism','ORG_000003','q9','s9','F3',1,1,9,1,9,1e-9,42.0,97.0)"
+            )
+    finally:
+        db.close()
+
+
+def test_analysis_hits_filters_and_retired(tmp_path: Path) -> None:
+    from operon.database import Database
+    from operon.lifecycle import apply_lifecycle_event
+
+    project = Project.init(tmp_path / "hits-project")
+    _seed_hits(project)
+
+    rows = data.analysis_hits(project, limit=100)
+    # Ordered by entity_id, query_id, hit_rank; the failed job is excluded.
+    assert [(row["entity_id"], row["query_id"], row["hit_rank"]) for row in rows] == [
+        ("ORG_000001", "q1", 1), ("ORG_000001", "q1", 2), ("ORG_000002", "q2", 1),
+    ]
+    assert set(rows[0]) == set(data.ANALYSIS_HIT_COLUMNS)
+
+    assert data.analysis_hits(project, entity_type="organism", limit=100) == rows
+    assert data.analysis_hits(project, entity_type="assembly") == []
+    assert len(data.analysis_hits(project, analysis="blastn_nt", limit=100)) == 3
+    assert data.analysis_hits(project, analysis="other") == []
+    assert len(data.analysis_hits(project, entity_id="ORG_000001", limit=100)) == 2
+    assert len(data.analysis_hits(project, query_id="q1", limit=100)) == 2
+    assert len(data.analysis_hits(project, subject_id="s1", limit=100)) == 2
+    assert len(data.analysis_hits(project, evalue_max=1e-4, limit=100)) == 2
+    assert len(data.analysis_hits(project, limit=1)) == 1
+
+    db = Database(project.db_path)
+    try:
+        apply_lifecycle_event(db, "organism", "ORG_000001", action="RETIRE",
+                              reason="test retirement", actor="tester", reason_code="duplicate")
+    finally:
+        db.close()
+    assert [row["entity_id"] for row in data.analysis_hits(project)] == ["ORG_000002"]
+    assert len(data.analysis_hits(project, include_retired=True)) == 3
+
+
+def test_sequence_label_readers(demo_project: Project) -> None:
+    from operon.database import Database
+
+    db = Database(demo_project.db_path)
+    try:
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO sequence_labels(file_id, seqid, label, profile_name,"
+                " profile_sha256, decided_at) VALUES "
+                "('FIL_000001','s1','A','bhlh','sha','t'),"
+                "('FIL_000001','s2','A','bhlh','sha','t'),"
+                "('FIL_000001','s3','U','bhlh','sha','t'),"
+                "('FIL_000002','s1','A','bhlh','sha','t'),"
+                "('FIL_000002','s9','B','other','sha','t')"
+            )
+    finally:
+        db.close()
+
+    summary = data.label_summary(demo_project)
+    assert [(row["label"], row["profile_name"], row["sequences"], row["files"])
+            for row in summary] == [("A", "bhlh", 3, 2), ("B", "other", 1, 1), ("U", "bhlh", 1, 1)]
+    assert [row["label"] for row in data.label_summary(demo_project, profile_name="other")] == ["B"]
+
+    labels = data.file_sequence_labels(demo_project, "FIL_000001")
+    assert [(row["label"], row["seqid"]) for row in labels] == [("A", "s1"), ("A", "s2"), ("U", "s3")]
+    assert data.file_sequence_labels(demo_project, "FIL_000009") == []
+
+    detail = data.file_detail(demo_project, "FIL_000001")
+    assert detail is not None
+    assert detail["labels"] == labels
+
+
+def test_write_analysis_report_matches_cli_export(tmp_path: Path) -> None:
+    """A TUI export is byte-identical to `report analysis --hits --out`."""
+    import argparse
+
+    from operon import cli
+    from operon.database import Database
+
+    project = Project.init(tmp_path / "hits-export-project")
+    _seed_hits(project)
+    for fmt in ("text", "tsv", "json"):
+        cli_path = tmp_path / f"cli-{fmt}.txt"
+        tui_path = tmp_path / f"tui-{fmt}.txt"
+        args = argparse.Namespace(
+            analysis=None, entity_type=None, entity_id=None, query_id=None,
+            subject_id=None, evalue_max=None, limit=50, include_retired=False,
+            hits=True, format=fmt, out=str(cli_path),
+        )
+        db = Database(project.db_path)
+        try:
+            assert cli._cmd_analysis_results(args, db) == 0
+        finally:
+            db.close()
+        result = actions.write_analysis_report(project, out=str(tui_path), fmt=fmt, limit=50)
+        assert result["rows"] == 3
+        assert result["path"] == str(tui_path)
+        assert tui_path.read_text(encoding="utf-8") == cli_path.read_text(encoding="utf-8")
+
+    # The CLI's empty-result line is reused for an empty export.
+    empty = tmp_path / "empty.txt"
+    actions.write_analysis_report(project, out=str(empty), fmt="text", analysis="missing")
+    assert empty.read_text(encoding="utf-8") == "(no analysis results)\n"
+
+    with pytest.raises(ValidationError, match="output path is required"):
+        actions.write_analysis_report(project, out="   ")
+    with pytest.raises(ValidationError, match="unknown report format"):
+        actions.write_analysis_report(project, out=str(tmp_path / "x"), fmt="yaml")
+
+
+def test_analysis_hits_modal_browses_and_exports(tmp_path: Path) -> None:
+    from operon.tui.screens.hits import AnalysisHitsModal
+
+    project = Project.init(tmp_path / "hits-ui-project")
+    _seed_hits(project)
+    out_path = tmp_path / "hits.tsv"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            await _click(pilot, "#runs-hits")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            assert isinstance(modal, AnalysisHitsModal)
+            table = modal.query_one("#hits-table", DataTable)
+            assert table.row_count == 3
+            assert "3 hit row(s)" in _static_text(modal.query_one("#hits-status", Static))
+
+            # Filters reload through the same read-only query.
+            modal.query_one("#hits-entity-id", Input).value = "ORG_000002"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 1
+            modal.query_one("#hits-query-id", Input).value = "nope"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 0
+            assert "0 hit row(s)" in _static_text(modal.query_one("#hits-status", Static))
+            modal.query_one("#hits-query-id", Input).value = ""
+            modal.query_one("#hits-entity-id", Input).value = ""
+            await pilot.pause()
+            await _settled(app)
+
+            modal.query_one("#hits-evalue-max", Input).value = "0.0001"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 2
+            modal.query_one("#hits-evalue-max", Input).value = ""
+            await pilot.pause()
+            await _settled(app)
+
+            # Export writes the same rows through the CLI's renderer.
+            modal.query_one("#hits-format", Select).value = "tsv"
+            modal.query_one("#hits-out", Input).value = str(out_path)
+            await _click(pilot, "#hits-export-button")
+            await _wait_until(
+                lambda: "wrote 3 row(s)" in _static_text(
+                    modal.query_one("#hits-status", Static)),
+                "hits export to finish",
+            )
+            # A failed export reports inline and keeps the modal open.
+            modal.query_one("#hits-out", Input).value = "   "
+            await _click(pilot, "#hits-export-button")
+            await _wait_until(
+                lambda: "export failed" in _static_text(
+                    modal.query_one("#hits-status", Static)),
+                "hits export error",
+            )
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, AnalysisHitsModal)
+
+    _run(scenario())
+    text = out_path.read_text(encoding="utf-8")
+    assert text.splitlines()[0].split("\t") == list(data.ANALYSIS_HIT_COLUMNS)
+    assert len(text.strip().splitlines()) == 4  # header + 3 hits
+
+
+def test_sequence_labels_modal_and_file_detail(tmp_path: Path) -> None:
+    from operon.database import Database
+    from operon.tui.screens.labels import SequenceLabelsModal
+    from operon.utils import sha256_file
+
+    project = Project.init(tmp_path / "labels-ui-project")
+    source = project.root / "labels.faa"
+    source.write_text(">s1\nMTEYK\n>s2\nMTEYR\n", encoding="utf-8")
+    db = Database(project.db_path)
+    try:
+        db.insert_row("files", {
+            "file_id": "FIL_000001", "entity_type": "annotation", "entity_id": "ANN_000001",
+            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
+            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
+            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
+        })
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO sequence_labels(file_id, seqid, label, profile_name,"
+                " profile_sha256, decided_at) VALUES "
+                "('FIL_000001','s1','A','bhlh','sha','t'),"
+                "('FIL_000001','s2','U','bhlh','sha','t')"
+            )
+    finally:
+        db.close()
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("files")
+            await pilot.pause()
+            await _settled(app)
+            table = app.query_one("#files-table", DataTable)
+            table.focus()
+            table.move_cursor(row=0, animate=False)
+            await pilot.pause()
+            await _settled(app)
+            detail = _static_text(app.query_one("#file-detail", Static))
+            assert "Sequence labels" in detail
+            assert "A" in detail and "bhlh" in detail
+
+            await pilot.press("l")
+            await pilot.pause()
+            await _settled(app)
+            modal = app.screen
+            assert isinstance(modal, SequenceLabelsModal)
+            assert modal.file_id is not None
+            summary_table = modal.query_one("#labels-table", DataTable)
+            assert summary_table.row_count == 2
+            assert "2 label/profile group(s) in the project" in _static_text(
+                modal.query_one("#labels-status", Static))
+            file_table = modal.query_one("#labels-file-table", DataTable)
+            assert modal.file_id == "FIL_000001"
+            assert file_table.row_count == 2
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, SequenceLabelsModal)
+
+    _run(scenario())
+
+
 def _overflowing_controls(root: Any) -> list[str]:
     """Return identified row controls that overflow or are unusably narrow (ODR-0019)."""
     from textual.containers import Horizontal
@@ -1748,15 +2028,22 @@ def _overflowing_controls(root: Any) -> list[str]:
 
 
 @pytest.mark.bug("ODR-0019")
-def test_filter_rows_keep_their_controls_inside_the_row(demo_project: Project) -> None:
+def test_filter_rows_keep_their_controls_inside_the_row(
+    demo_project: Project,
+    tmp_path: Path,
+) -> None:
     """Every filter-row control fits inside its row (ODR-0019).
 
     An over-constrained ``Horizontal`` hands each child its preferred width, so a
     row without width rules pushes its trailing widgets past the right edge — the
     Analysis jobs modal lost its status and limit filters that way.  Mount the
-    screens and the modal that own filter rows and check each identified control.
+    screens and modals that own filter rows and check each identified control.
     """
+    from operon.tui.screens.hits import AnalysisHitsModal
     from operon.tui.screens.runs import AnalysisJobsModal
+
+    hits_project = Project.init(tmp_path / "filter-row-project")
+    _seed_hits(hits_project)
 
     async def scenario() -> None:
         app = OperonApp(demo_project)
@@ -1767,12 +2054,14 @@ def test_filter_rows_keep_their_controls_inside_the_row(demo_project: Project) -
                 await pilot.pause()
                 await _settled(app)
                 assert not _overflowing_controls(app.screen), f"{screen} screen"
-            modal = AnalysisJobsModal(demo_project)
-            app.push_screen(modal)
-            await pilot.pause()
-            await _wait_until(lambda: not modal._loading, "AnalysisJobsModal load")
-            assert not _overflowing_controls(modal), "AnalysisJobsModal"
-            app.pop_screen()
-            await pilot.pause()
+            for modal in (AnalysisJobsModal(demo_project), AnalysisHitsModal(hits_project)):
+                app.push_screen(modal)
+                await pilot.pause()
+                await _wait_until(
+                    lambda target=modal: not target._loading, f"{type(modal).__name__} load",
+                )
+                assert not _overflowing_controls(modal), type(modal).__name__
+                app.pop_screen()
+                await pilot.pause()
 
     _run(scenario())

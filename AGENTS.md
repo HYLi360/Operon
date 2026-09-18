@@ -91,9 +91,17 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
     `--backend` — project default / local / slurm / ssh — and preflights the
     selection inline, and cancellation sets the core's cooperative
     `cancel_event`, so a queued Slurm job or array is cancelled with one
-    `scancel`) and `run_external` (backing the Tasks screen's Run external
+    `scancel`), `run_external` (backing the Tasks screen's Run external
     dialog, which mirrors `run-external` field by field and opens the run
-    record when it finishes). The
+    record when it finishes) and `write_analysis_report` (backing the
+    Analysis hits browser's Export button: it runs the same read-only query
+    and the same renderer as `report analysis --hits --format … --out …`, so
+    the file is byte-identical and, like that command, writes no provenance
+    rows). Read-only TUI views added for `report analysis --hits` (alignment
+    hits with the CLI's filters and columns) and for `sequence_labels` (the
+    classify-sequences output: a per-file section in the Files detail plus the
+    project-wide label summary behind the Files screen's `l` binding), which
+    has no CLI reader at all. The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
     `config/profiles/*.yaml` (kind `qc`) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text

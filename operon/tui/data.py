@@ -337,8 +337,28 @@ def file_statuses(project: Project) -> list[str]:
         return [str(row["status"]) for row in db.query("SELECT DISTINCT status FROM files ORDER BY status")]
 
 
+def _file_labels(db: Database, file_id: str, limit: int = 500) -> list[dict[str, Any]]:
+    return _rows(
+        db,
+        "SELECT seqid, label, profile_name, decided_at FROM sequence_labels "
+        "WHERE file_id=? ORDER BY label, seqid LIMIT ?",
+        (file_id, int(limit)),
+    )
+
+
+def file_sequence_labels(
+        project: Project,
+        file_id: str,
+        *,
+        limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Return one file's ``sequence_labels`` rows (``classify-sequences`` output)."""
+    with _open(project) as db:
+        return _file_labels(db, file_id, limit)
+
+
 def file_detail(project: Project, file_id: str) -> dict[str, Any] | None:
-    """Return one manifest file and its residency records."""
+    """Return one manifest file, its residency records, and its labels."""
     with _open(project) as db:
         record = _row(db, "SELECT * FROM files WHERE file_id=?", (file_id,))
         if record is None:
@@ -349,7 +369,96 @@ def file_detail(project: Project, file_id: str) -> dict[str, Any] | None:
             "status, verified_at FROM file_locations WHERE file_id=? ORDER BY location_name",
             (file_id,),
         )
-    return {"file": record, "locations": locations}
+        labels = _file_labels(db, file_id)
+    return {"file": record, "locations": locations, "labels": labels}
+
+
+ANALYSIS_HIT_COLUMNS = (
+    "analysis_name", "entity_type", "entity_id", "query_id", "subject_id",
+    "hit_rank", "query_start", "query_end", "subject_start", "subject_end",
+    "evalue", "bitscore", "percent_identity",
+)
+
+
+def analysis_hits(
+        project: Project,
+        *,
+        analysis: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        query_id: str | None = None,
+        subject_id: str | None = None,
+        evalue_max: float | None = None,
+        limit: int = 20,
+        include_retired: bool = False,
+) -> list[dict[str, Any]]:
+    """Return alignment-hit rows exactly like ``report analysis --hits``.
+
+    Same joins, filters, ordering (``entity_id``, ``query_id``, ``hit_rank``)
+    and retired-entity handling as the CLI's read-only query; the column set is
+    :data:`ANALYSIS_HIT_COLUMNS`, so an exported file matches the CLI's.
+    """
+    sql = """
+        SELECT a.analysis_name, a.entity_type, a.entity_id, a.query_id, a.subject_id,
+               a.hit_rank, a.query_start, a.query_end, a.subject_start, a.subject_end,
+               a.evalue, a.bitscore, a.percent_identity
+        FROM analysis_alignments a
+        JOIN analysis_jobs j ON j.job_id = a.job_id
+        WHERE j.status='completed'
+    """
+    with _open(project) as db:
+        if not include_retired and db.lifecycle_schema_available():
+            sql += (
+                " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities er "
+                "WHERE er.entity_type=a.entity_type AND er.entity_id=a.entity_id)"
+            )
+        params: list[Any] = []
+        if analysis is not None:
+            sql += " AND a.analysis_name=?"
+            params.append(analysis)
+        if entity_type is not None:
+            sql += " AND a.entity_type=?"
+            params.append(entity_type)
+        if entity_id is not None:
+            sql += " AND a.entity_id=?"
+            params.append(entity_id)
+        if query_id is not None:
+            sql += " AND a.query_id=?"
+            params.append(query_id)
+        if subject_id is not None:
+            sql += " AND a.subject_id=?"
+            params.append(subject_id)
+        if evalue_max is not None:
+            sql += " AND a.evalue IS NOT NULL AND a.evalue<=?"
+            params.append(float(evalue_max))
+        sql += " ORDER BY a.entity_id, a.query_id, a.hit_rank LIMIT ?"
+        params.append(int(limit))
+        return _rows(db, sql, params)
+
+
+def label_summary(
+        project: Project,
+        *,
+        profile_name: str | None = None,
+        limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Return ``label`` × how many sequences and files carry it.
+
+    ``sequence_labels`` rows are grouped by label and profile (backed by
+    ``idx_sequence_labels_label``); biggest label first.
+    """
+    sql = (
+        "SELECT label, profile_name, COUNT(*) AS sequences, "
+        "COUNT(DISTINCT file_id) AS files FROM sequence_labels"
+    )
+    params: list[Any] = []
+    if profile_name is not None:
+        sql += " WHERE profile_name=?"
+        params.append(profile_name)
+    sql += " GROUP BY label, profile_name ORDER BY sequences DESC, label LIMIT ?"
+    params.append(int(limit))
+    with _open(project) as db:
+        return _rows(db, sql, params)
 
 
 def list_decisions(

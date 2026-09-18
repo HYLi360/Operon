@@ -202,6 +202,37 @@ HelpScreen {
     width: 12;
 }
 
+#modal-box.wide {
+    width: 140;
+}
+
+#hits-filters, #hits-filters-2, #hits-export {
+    height: auto;
+    padding-top: 1;
+}
+
+#hits-analysis, #hits-entity-type, #hits-entity-id,
+#hits-query-id, #hits-subject-id, #hits-out {
+    width: 1fr;
+}
+
+#hits-limit {
+    width: 12;
+}
+
+#hits-evalue-max {
+    width: 16;
+}
+
+#hits-format {
+    width: 10;
+}
+
+#hits-status {
+    height: auto;
+    padding-top: 1;
+}
+
 #config-tabs {
     height: 1fr;
 }

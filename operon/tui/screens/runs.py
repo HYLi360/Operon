@@ -72,6 +72,7 @@ class RunsPanel(Panel):
                 yield Checkbox("oldest first", id="runs-oldest-first")
             with Horizontal(classes="config-buttons"):
                 yield Button("Analysis jobs", id="runs-jobs")
+                yield Button("Analysis hits", id="runs-hits")
                 yield Button("Run external", id="runs-external")
                 yield Button("Environments", id="runs-environments")
                 yield Button("New analysis", id="runs-new-analysis")
@@ -172,6 +173,10 @@ class RunsPanel(Panel):
             )
         elif event.button.id == "runs-jobs":
             self.app.push_screen(AnalysisJobsModal(self.project))
+        elif event.button.id == "runs-hits":
+            from operon.tui.screens.hits import AnalysisHitsModal
+
+            self.app.push_screen(AnalysisHitsModal(self.project))
         elif event.button.id == "runs-external":
             from operon.tui.screens.run_external import RunExternalModal
 

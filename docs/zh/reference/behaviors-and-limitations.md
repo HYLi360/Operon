@@ -124,6 +124,8 @@
 - **`fanout` 会把中断记为 `interrupted` 的 run。** Ctrl+C 会删除已创建的目标并把 `workflow_runs` 行落为 `interrupted`（退出码 130），不再停留在 `running`。零 unit 与无法解析或有歧义的 seqid 仍是硬错误。`--source-file` FASTA 的 SHA-256 与注册表新鲜度会被验证（dry-run 同样执行），但指派表本身不做校验和验证（`fanout.py`）。
 - **TUI 分析对话框通过协作式取消事件取消，而非信号式的精确落点。** 后端选择器与 `--backend` 对应（项目默认 / local / slurm / ssh），并在 worker 启动前预检：`execution.ssh` 配置不全、缺少 `sbatch`/`squeue`、或 recipe 的 `slurm:` 覆盖非法都会变成表单内联错误，而不是逐文件失败。Cancel/Escape 置位核心暴露的同一个 `cancel_event`（`run_analysis(..., cancel_event=...)`）并取消 worker；批处理在下一个文件/规划/收集边界停止——当前正在处理的文件仍可能跑完，进度回调异常路径保留为逐文件循环的第二道停止点。已提交的 Slurm 作业或 job array 以一次 `scancel` 取消，直连 SSH 载荷在远端主机上终止；所有取消路径都走与信号相同的中断收尾（`interrupted` 作业行、部分产物删除、下次运行时清扫陈旧 RUNNING 行）（`tui/actions.py`、`tui/screens/analyze.py`、`tools.py`、`execution.py`）。
 - **TUI 日志跟随只读本地文件，且从不取消。** run 详情屏的 *Follow logs* 每秒用与 `workflow show --follow` 相同的增量读取器轮询 `logs/<run_id>.stdout.log`/`.stderr.log`（被截断或轮转的日志从头重读，开启开关会重放文件当前已有的内容），在 run 离开 `running` 时自行停止，且只观察——取消 run 仍是 CLI 动作。该开关仅在 run 运行中提供；SSH 后端的 stdout/stderr 在结束时才拉回，因此远程 run 在结束前不会显示任何内容（`tui/screens/runs.py`、`workflow.py`）。TUI 的 *Run external* 对话框所运行的命令同样无法从 TUI 中断（`tui/screens/run_external.py`）。
+- **命中浏览器的导出与 CLI 等价，而序列 label 没有 CLI 读取命令。** Tasks 屏的 *Analysis hits* 使用与 `report analysis --hits` 相同的只读查询，其 *Export* 走 CLI 自己的渲染器，因此文件（`text`/`tsv`/`json`）与 `--out` 逐字节一致——但与 CLI 报表一样，导出不会写入任何 `changes` 或 `workflow_runs` 行。`sequence_labels`（`classify-sequences` 的产物，显示在 Files 详情与 `l` 浏览器中）完全没有 CLI 读取命令：TUI 的 label 视图就是该表的读取侧。
+- **按钮在按压动画期间会忽略点击。** Textual 的 `Button` 在仍带有 `-active` 按压效果（约 0.2 秒）时会吞掉点击，因此对同一按钮的快速双击会丢失一次；TUI 各对话框按"一次操作一次 Confirm"设计，测试也会等该效果结束后再点击。
 
 ### TimeTree
 

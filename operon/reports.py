@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ValidationError
 from operon.schema import write_tsv
 from operon.utils import format_table, now_iso, sha256_file
 
@@ -15,6 +17,51 @@ METADATA_REPORT_TABLES = [
     "organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files",
 ]
 SOURCE_REPORT_TABLES = ["data_sources", "source_links"]
+
+
+def render_report_rows(
+        rows: Sequence[Mapping[str, Any]],
+        fmt: str,
+        *,
+        headers: Sequence[str] | None = None,
+) -> str:
+    """Render report rows as aligned text, TSV, or JSON.
+
+    ``operon report analysis --hits --format … [--out …]`` and the TUI's export
+    button both go through this renderer, so a file exported from either
+    surface is byte-identical.  ``headers`` defaults to the first row's keys
+    (the SQL column order) and must be supplied when ``rows`` is empty; an
+    empty result renders as ``""`` in text mode so the caller can print its own
+    "(no results)" line, and as an empty JSON/TSV document otherwise.
+    """
+    keys = list(headers) if headers is not None else (
+        list(rows[0].keys()) if rows else []
+    )
+
+    def value(row: Any, key: str) -> Any:
+        try:  # dicts raise KeyError; sqlite3.Row raises IndexError
+            return row[key]
+        except (KeyError, IndexError):
+            return None
+
+    if fmt == "json":
+        return json.dumps(
+            [{key: value(row, key) for key in keys} for row in rows],
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+    if fmt == "tsv":
+        lines = ["\t".join(keys)]
+        lines.extend(
+            "\t".join("" if value(row, key) is None else str(value(row, key)) for key in keys)
+            for row in rows
+        )
+        return "\n".join(lines) + "\n"
+    if fmt != "text":
+        raise ValidationError(f"unknown report format: {fmt}")
+    if not rows:
+        return ""
+    return format_table(keys, ([value(row, key) for key in keys] for row in rows)) + "\n"
 
 
 def export_metadata_report(

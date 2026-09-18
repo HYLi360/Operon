@@ -28,6 +28,7 @@ from operon.reports import (
     export_qc_tsv,
     print_decisions,
     print_qc_table,
+    render_report_rows,
 )
 from operon.rules import (
     curate_decision,
@@ -1637,22 +1638,7 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
             "hit_rank", "query_start", "query_end", "subject_start", "subject_end",
             "evalue", "bitscore", "percent_identity",
         ]
-        if out_format == "json":
-            text = json.dumps(
-                [{h: row[h] for h in headers} for row in rows],
-                ensure_ascii=False, indent=2,
-            ) + "\n"
-        elif out_format == "tsv":
-            lines = ["\t".join(headers)]
-            lines.extend(
-                "\t".join("" if row[h] is None else str(row[h]) for h in headers)
-                for row in rows
-            )
-            text = "\n".join(lines) + "\n"
-        elif rows:
-            text = format_table(headers, ([row[h] for h in headers] for row in rows)) + "\n"
-        else:
-            text = "(no analysis results)\n"
+        text = render_report_rows(rows, out_format, headers=headers) or "(no analysis results)\n"
         if out_path:
             atomic_write_text(out_path, text)
         else:
