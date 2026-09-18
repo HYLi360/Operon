@@ -10,8 +10,18 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, DataTable, Input, Label, Select, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    Label,
+    RichLog,
+    Select,
+    Static,
+)
 
 from operon.config import Project
 from operon.tui import data
@@ -50,6 +60,16 @@ class RunsPanel(Panel):
                 yield Input(placeholder="entity contains", id="runs-entity")
                 yield Input(value="100", placeholder="limit", id="runs-limit",
                             type="integer", restrict=r"\d*")
+            with Horizontal(id="runs-filters-advanced"):
+                yield Input(placeholder="from (ISO-8601)", id="runs-from")
+                yield Input(placeholder="to (ISO-8601)", id="runs-to")
+                yield Input(placeholder="run id", id="runs-run-id")
+                yield Input(placeholder="parent run id", id="runs-parent-run-id")
+                yield Input(placeholder="tool", id="runs-tool")
+                yield Input(placeholder="executor", id="runs-executor")
+                yield Input(value="0", placeholder="offset", id="runs-offset",
+                            type="integer", restrict=r"\d*")
+                yield Checkbox("oldest first", id="runs-oldest-first")
             with Horizontal(classes="config-buttons"):
                 yield Button("Analysis jobs", id="runs-jobs")
                 yield Button("Run external", id="runs-external")
@@ -72,20 +92,34 @@ class RunsPanel(Panel):
         self._loading = False
         super()._apply(payload)
 
-    def _filters(self) -> tuple[list[str], str, str, int]:
+    def _filters(self) -> dict[str, Any]:
         status_value = self.query_one("#runs-status", Select).value
         statuses = [] if status_value in (ALL_STATUSES, Select.NULL) else [str(status_value)]
-        step = self.query_one("#runs-step", Input).value.strip()
-        entity = self.query_one("#runs-entity", Input).value.strip()
         limit_text = self.query_one("#runs-limit", Input).value.strip()
-        limit = int(limit_text) if limit_text.isdigit() else 100
-        return statuses, step, entity, limit
+        offset_text = self.query_one("#runs-offset", Input).value.strip()
+
+        def text(widget_id: str) -> str | None:
+            return self.query_one(f"#{widget_id}", Input).value.strip() or None
+
+        return {
+            "statuses": statuses,
+            "step": self.query_one("#runs-step", Input).value.strip(),
+            "entity": self.query_one("#runs-entity", Input).value.strip(),
+            "limit": int(limit_text) if limit_text.isdigit() else 100,
+            "offset": int(offset_text) if offset_text.isdigit() else 0,
+            "started_from": text("runs-from"),
+            "started_to": text("runs-to"),
+            "run_id": text("runs-run-id"),
+            "parent_run_id": text("runs-parent-run-id"),
+            "tool": text("runs-tool"),
+            "executor": text("runs-executor"),
+            "oldest_first": self.query_one("#runs-oldest-first", Checkbox).value,
+        }
 
     def _fetch(self) -> list[dict[str, Any]]:
-        statuses, step, entity, limit = self._filters()
-        return data.list_workflow_runs(
-            self.project, statuses=statuses, step=step, entity=entity, limit=limit,
-        )
+        # ``list_workflow_runs`` validates the ISO bounds; a bad value lands in
+        # show_error() as an inline notification and leaves the table as is.
+        return data.list_workflow_runs(self.project, **self._filters())
 
     def render_data(self, payload: list[dict[str, Any]]) -> None:
         self.runs = payload
@@ -108,11 +142,19 @@ class RunsPanel(Panel):
         self.app.notify(f"runs load failed: {exc}", severity="error")
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in {"runs-step", "runs-entity", "runs-limit"}:
+        if event.input.id in {
+            "runs-step", "runs-entity", "runs-limit", "runs-from", "runs-to",
+            "runs-run-id", "runs-parent-run-id", "runs-tool", "runs-executor",
+            "runs-offset",
+        }:
             self.reload()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "runs-status":
+            self.reload()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "runs-oldest-first":
             self.reload()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -292,24 +334,49 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
 
 
 class RunDetailScreen(Screen):
-    """Full record of one workflow run, mirroring `operon workflow show`."""
+    """Full record of one workflow run, mirroring `operon workflow show`.
+
+    While the run is ``running``, the *Follow logs* switch streams the local
+    ``logs/<run_id>.stdout.log``/``.stderr.log`` tails into the screen with a
+    one-second timer — the same files and incremental reads the CLI's
+    ``workflow show --follow`` uses.  Following only observes: it never
+    cancels or alters the run, it stops by itself once the run leaves
+    ``running``, and the timer is stopped on unmount.  With the SSH backend
+    the logs are pulled back only when the run ends, so nothing appears until
+    then.
+    """
 
     BINDINGS = [
         Binding("escape", "back", "Back"),
     ]
+
+    FOLLOW_INTERVAL = 1.0
 
     def __init__(self, project: Project, run_id: str) -> None:
         super().__init__()
         self.project = project
         self.run_id = run_id
         self.record: dict[str, Any] | None = None
+        self._follow_timer: Any = None
+        self._following = False
+        self._stdout_offset = 0
+        self._stderr_offset = 0
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="run-detail-scroll"):
-            yield Static("loading…", id="run-detail", classes="body")
+        with Vertical(id="run-detail-layout"):
+            with VerticalScroll(id="run-detail-scroll"):
+                yield Static("loading…", id="run-detail", classes="body")
+            yield Checkbox("Follow logs (while the run is running)", id="run-follow",
+                           disabled=True)
+            yield Static("", id="run-follow-note", classes="modal-info")
+            yield RichLog(id="run-follow-log", max_lines=500, wrap=True, markup=False)
 
     def on_mount(self) -> None:
         self._load()
+
+    def on_unmount(self) -> None:
+        # The follow timer must never outlive the screen.
+        self._stop_following()
 
     def action_back(self) -> None:
         # A queued second escape must not pop the screen underneath.
@@ -335,6 +402,82 @@ class RunDetailScreen(Screen):
             return
         self.record = payload
         view.update(self._detail_text(payload))
+        running = bool(payload and payload.get("status") == "running")
+        self.query_one("#run-follow", Checkbox).disabled = not running
+        note = self.query_one("#run-follow-note", Static)
+        if running:
+            note.update(
+                f"streams {self.project.logs_root / (self.run_id + '.stdout.log')} and "
+                f".stderr.log as they grow; with the SSH backend logs are pulled back "
+                "only when the run ends"
+            )
+        else:
+            note.update("log following is available while the run is running")
+        if not running and self._following:
+            self._finish_following()
+
+    # -- log following --------------------------------------------------------
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id != "run-follow":
+            return
+        if event.value:
+            self._start_following()
+        else:
+            self._stop_following()
+
+    def _start_following(self) -> None:
+        self._stdout_offset = 0
+        self._stderr_offset = 0
+        self._following = True
+        self.query_one("#run-follow-log", RichLog).clear()
+        self._follow_tick()
+        if self._following and self._follow_timer is None:
+            self._follow_timer = self.set_interval(self.FOLLOW_INTERVAL, self._follow_tick)
+
+    def _stop_following(self) -> None:
+        self._following = False
+        if self._follow_timer is not None:
+            self._follow_timer.stop()
+            self._follow_timer = None
+
+    def _finish_following(self) -> None:
+        """Stop at a final state, reset the switch and refresh the record."""
+        self._stop_following()
+        try:
+            follow = self.query_one("#run-follow", Checkbox)
+        except NoMatches:  # pragma: no cover - screen teardown race
+            return
+        follow.disabled = True
+        follow.value = False
+        self._load()
+
+    def _follow_tick(self) -> None:
+        """Append new log bytes and stop once the run no longer runs."""
+        from operon.workflow import read_log_tail
+
+        log = self.query_one("#run-follow-log", RichLog)
+        stdout_path = self.project.logs_root / f"{self.run_id}.stdout.log"
+        stderr_path = self.project.logs_root / f"{self.run_id}.stderr.log"
+        text, self._stdout_offset = read_log_tail(stdout_path, self._stdout_offset)
+        if text:
+            log.write(text.rstrip("\n"))
+        err_text, self._stderr_offset = read_log_tail(stderr_path, self._stderr_offset)
+        for line in err_text.splitlines():
+            log.write(f"stderr: {line}")
+        status = data.workflow_run_status(self.project, self.run_id)
+        if status is None:
+            log.write(f"workflow run disappeared while following: {self.run_id}")
+            self._finish_following()
+            return
+        if status["status"] != "running":
+            exit_code = status.get("exit_code")
+            log.write(
+                f"run {self.run_id} finished: status={status['status']} "
+                f"exit_code={exit_code if exit_code is not None else '-'}"
+            )
+            self.app.notify(f"run {self.run_id} finished: {status['status']}")
+            self._finish_following()
 
     def _detail_text(self, record: dict[str, Any] | None) -> Text:
         if record is None:

@@ -548,6 +548,26 @@ def get_recipe_snapshot(project: Project, name: str, snapshot_id: int) -> dict[s
     return json.loads(str(row["recipe_document"]))
 
 
+def normalize_workflow_time(value: str) -> str:
+    """Normalize an ISO-8601 ``workflow list`` time bound like the CLI.
+
+    ``Z`` suffixes become ``+00:00`` and naive values are interpreted in the
+    local timezone, exactly like ``--from``/``--to`` on the command line
+    (``operon.cli._workflow_time``); anything else raises ``ValidationError``
+    with the CLI's message.
+    """
+    from datetime import datetime
+
+    candidate = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        raise ValidationError("must be an ISO-8601 date or timestamp") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed.isoformat()
+
+
 def list_workflow_runs(
         project: Project,
         *,
@@ -556,36 +576,86 @@ def list_workflow_runs(
         entity: str = "",
         limit: int = 100,
         offset: int = 0,
+        started_from: str | None = None,
+        started_to: str | None = None,
+        run_id: str | None = None,
+        parent_run_id: str | None = None,
+        resumes_run_id: str | None = None,
+        tool: str | None = None,
+        executor: str | None = None,
+        oldest_first: bool = False,
 ) -> list[dict[str, Any]]:
-    """Return workflow runs, newest first.
+    """Return workflow runs with the CLI's ``workflow list`` filters.
 
-    ``statuses`` uses exact matching (OR within the list); ``step`` and
-    ``entity`` are case-insensitive substrings over ``step`` and
-    ``entity_type``/``entity_id`` respectively.  With no substring filters
-    this delegates to :func:`operon.workflow.list_runs`.
+    Every filter except ``step`` and ``entity`` mirrors
+    :func:`operon.workflow.list_runs` (the CLI's own query) and is delegated
+    to it verbatim; ``limit=0`` means no row limit, ``offset``/``oldest_first``
+    page and order exactly like ``workflow list``.  ``step`` and ``entity``
+    are the TUI's case-insensitive substrings over ``step`` and
+    ``entity_type``/``entity_id``; when either is set the same filters are
+    applied in one read-only query next to the substring matches.  Time bounds
+    accept the CLI's ISO-8601 forms (see :func:`normalize_workflow_time`).
     """
+    from datetime import datetime
+
+    if started_from is not None:
+        started_from = normalize_workflow_time(started_from)
+    if started_to is not None:
+        started_to = normalize_workflow_time(started_to)
+    if (started_from is not None and started_to is not None
+            and datetime.fromisoformat(started_from) >= datetime.fromisoformat(started_to)):
+        raise ValidationError("--from must be earlier than --to")
     with _open(project) as db:
         if not step and not entity:
             from operon.workflow import list_runs
-            return list_runs(db, statuses=list(statuses), limit=limit, offset=offset)
+            return list_runs(
+                db,
+                started_from=started_from, started_to=started_to, run_id=run_id,
+                statuses=list(statuses), parent_run_id=parent_run_id,
+                resumes_run_id=resumes_run_id, tool=tool, executor=executor,
+                limit=limit, offset=offset, oldest_first=oldest_first,
+            )
         conditions: list[str] = []
         params: list[Any] = []
         status_list = list(statuses)
         if status_list:
             conditions.append(f"status IN ({', '.join('?' for _ in status_list)})")
             params.extend(status_list)
+        if started_from is not None:
+            conditions.append("julianday(started_at) >= julianday(?)")
+            params.append(started_from)
+        if started_to is not None:
+            conditions.append("julianday(started_at) < julianday(?)")
+            params.append(started_to)
         if step:
             conditions.append("step LIKE ?")
             params.append(f"%{step}%")
         if entity:
             conditions.append("(entity_type LIKE ? OR entity_id LIKE ?)")
             params.extend((f"%{entity}%", f"%{entity}%"))
+        for column, value in (("run_id", run_id), ("parent_run_id", parent_run_id),
+                              ("resumes_run_id", resumes_run_id), ("tool", tool),
+                              ("executor", executor)):
+            if value is not None:
+                conditions.append(f"{column}=?")  # nosec B608 # fixed column names; filter values are bound
+                params.append(value)
         sql = "SELECT * FROM workflow_runs WHERE " + " AND ".join(conditions)  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
-        sql += " ORDER BY julianday(started_at) DESC, rowid DESC"
+        direction = "ASC" if oldest_first else "DESC"
+        sql += f" ORDER BY julianday(started_at) {direction}, rowid {direction}"
         if limit:
             sql += " LIMIT ? OFFSET ?"
             params.extend((limit, offset))
         return _rows(db, sql, params)
+
+
+def workflow_run_status(project: Project, run_id: str) -> dict[str, Any] | None:
+    """Return only the fields a log follower polls (no JSON decoding)."""
+    from operon.workflow import get_run
+    with _open(project) as db:
+        record = get_run(db, run_id)
+    if record is None:
+        return None
+    return {key: record.get(key) for key in ("run_id", "status", "exit_code", "finished_at")}
 
 
 def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:

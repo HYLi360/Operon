@@ -12,10 +12,12 @@ pytest.importorskip("textual")
 
 from rich.text import Text
 from textual.widgets import (
+    Checkbox,
     ContentSwitcher,
     DataTable,
     Input,
     Label,
+    RichLog,
     Select,
     Static,
     Tree,
@@ -25,6 +27,7 @@ from textual.widgets.data_table import RowKey
 from operon.cli import main
 from operon.config import Project
 from operon.demo import init_demo
+from operon.errors import ValidationError
 from operon.tui import data
 from operon.tui.app import HelpScreen, OperonApp
 from operon.tui.screens.entities import EntitiesPanel
@@ -1273,3 +1276,273 @@ def test_splash_resources_and_small_terminal(monkeypatch):
     monkeypatch.setattr(splash, "lake_pixels", missing)
     assert "OPERON" in splash.lake_text(80, 24).plain
     splash.lake_text.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# workflow list filters and run-detail log following (milestone M2b)
+# ---------------------------------------------------------------------------
+
+
+def _log_text(log) -> str:
+    """The plain text a RichLog currently holds."""
+    return "\n".join(strip.text for strip in log.lines)
+
+
+def test_list_workflow_runs_advanced_filters(tmp_path: Path) -> None:
+    """The delegated filters mirror the CLI's ``workflow list`` query."""
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / "runs-filters-project")
+    db = Database(project.db_path)
+    try:
+        first = log_run(db, project, {
+            "step": "qc", "status": "completed", "tool": "fastp", "executor": "local",
+            "entity_type": "run", "entity_id": "RUN_000001",
+            "started_at": "2026-09-01T10:00:00+08:00",
+        })
+        second = log_run(db, project, {
+            "step": "analysis:blastn_nt", "status": "failed", "tool": "blastn",
+            "executor": "slurm", "entity_type": "assembly", "entity_id": "ASM_000001",
+            "parent_run_id": first["run_id"],
+            "started_at": "2026-09-10T10:00:00+08:00",
+        })
+    finally:
+        db.close()
+
+    def run_ids(**filters) -> list[str]:
+        return [row["run_id"] for row in data.list_workflow_runs(project, **filters)]
+
+    # Newest first by default; ``oldest_first`` reverses the order.
+    assert run_ids() == [second["run_id"], first["run_id"]]
+    assert run_ids(oldest_first=True) == [first["run_id"], second["run_id"]]
+
+    # Half-open time bounds, in the delegated and the substring-filter path.
+    assert run_ids(started_from="2026-09-05") == [second["run_id"]]
+    assert run_ids(started_to="2026-09-05") == [first["run_id"]]
+    assert run_ids(step="qc", started_from="2026-09-05") == []
+    assert run_ids(step="qc", started_to="2026-09-05") == [first["run_id"]]
+
+    # Exact-match filters and paging.
+    assert run_ids(run_id=first["run_id"]) == [first["run_id"]]
+    assert run_ids(parent_run_id=first["run_id"]) == [second["run_id"]]
+    assert run_ids(tool="blastn") == [second["run_id"]]
+    assert run_ids(executor="slurm") == [second["run_id"]]
+    assert run_ids(statuses=["failed"]) == [second["run_id"]]
+    assert run_ids(limit=1, offset=1) == [first["run_id"]]
+    assert run_ids(limit=1, offset=1, oldest_first=True) == [second["run_id"]]
+
+    with pytest.raises(ValidationError, match="ISO-8601"):
+        data.list_workflow_runs(project, started_from="yesterday")
+    with pytest.raises(ValidationError, match="--from must be earlier than --to"):
+        data.list_workflow_runs(project, started_from="2026-09-10", started_to="2026-09-01")
+
+    status = data.workflow_run_status(project, second["run_id"])
+    assert status is not None
+    assert set(status) == {"run_id", "status", "exit_code", "finished_at"}
+    assert status["run_id"] == second["run_id"]
+    assert status["status"] == "failed"
+    assert status["exit_code"] is None
+    assert data.workflow_run_status(project, "WF_missing") is None
+
+
+@pytest.mark.parametrize("value", [
+    "2026-09-18",
+    "2026-09-18T10:00:00",
+    "2026-09-18T10:00:00+08:00",
+    "2026-09-18T10:00:00Z",
+])
+def test_normalize_workflow_time_matches_the_cli(value: str) -> None:
+    """The TUI normalizes ISO bounds exactly like ``workflow list --from/--to``."""
+    import argparse
+
+    from operon.cli import _workflow_time
+
+    assert data.normalize_workflow_time(value) == _workflow_time(value)
+    with pytest.raises(ValidationError, match="ISO-8601"):
+        data.normalize_workflow_time("not a time")
+    with pytest.raises(argparse.ArgumentTypeError, match="ISO-8601"):
+        _workflow_time("not a time")
+
+
+def test_runs_panel_advanced_filters(demo_project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(RunsPanel)
+            table = panel.query_one("#runs-table", DataTable)
+            total = table.row_count
+            assert total > 0
+
+            # A bad ISO bound is an inline error; the table keeps its rows.
+            panel.query_one("#runs-from", Input).value = "not-a-time"
+            await pilot.pause()
+            await _settled(app)
+            assert any("ISO-8601" in notification.message
+                       for notification in app._notifications)
+            assert table.row_count == total
+            panel.query_one("#runs-from", Input).value = ""
+            await pilot.pause()
+            await _settled(app)
+
+            # ``--from`` earlier than ``--to`` is rejected the same way.
+            panel.query_one("#runs-from", Input).value = "2026-12-31"
+            panel.query_one("#runs-to", Input).value = "2026-01-01"
+            await pilot.pause()
+            await _settled(app)
+            assert any("earlier than --to" in notification.message
+                       for notification in app._notifications)
+            panel.query_one("#runs-from", Input).value = ""
+            panel.query_one("#runs-to", Input).value = ""
+            await pilot.pause()
+            await _settled(app)
+
+            # Exact tool filter: no match, then back to the full listing.
+            panel.query_one("#runs-tool", Input).value = "no_such_tool"
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == 0
+            panel.query_one("#runs-tool", Input).value = ""
+            await pilot.pause()
+            await _settled(app)
+            assert table.row_count == total
+
+            # oldest-first and paging match the delegated query verbatim.
+            panel.query_one("#runs-oldest-first", Checkbox).value = True
+            await pilot.pause()
+            await _settled(app)
+            expected = data.list_workflow_runs(demo_project, limit=100, oldest_first=True)
+            assert [row["run_id"] for row in panel.runs] == [
+                row["run_id"] for row in expected]
+            panel.query_one("#runs-oldest-first", Checkbox).value = False
+            panel.query_one("#runs-limit", Input).value = "1"
+            panel.query_one("#runs-offset", Input).value = "1"
+            await pilot.pause()
+            await _settled(app)
+            expected = data.list_workflow_runs(demo_project, limit=1, offset=1)
+            assert [row["run_id"] for row in panel.runs] == [
+                row["run_id"] for row in expected]
+
+            # The run-id filter selects exactly that row.
+            panel.query_one("#runs-limit", Input).value = "100"
+            panel.query_one("#runs-offset", Input).value = "0"
+            run_id = expected[0]["run_id"]
+            panel.query_one("#runs-run-id", Input).value = run_id
+            await pilot.pause()
+            await _settled(app)
+            assert [row["run_id"] for row in panel.runs] == [run_id]
+
+    _run(scenario())
+
+
+def _running_run(tmp_path: Path, name: str) -> Project:
+    """A project with one ``running`` workflow run; returns the project."""
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    project = Project.init(tmp_path / name)
+    db = Database(project.db_path)
+    try:
+        log_run(db, project, {
+            "step": "qc", "status": "running",
+            "entity_type": "run", "entity_id": "RUN_000001",
+        })
+    finally:
+        db.close()
+    return project
+
+
+def _finish_run(project: Project, status: str = "completed") -> None:
+    from operon.database import Database
+
+    db = Database(project.db_path)
+    try:
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE workflow_runs SET status=?, exit_code=? WHERE step='qc'",
+                (status, 0 if status == "completed" else 1),
+            )
+    finally:
+        db.close()
+
+
+def test_run_detail_follow_streams_logs_until_finished(tmp_path: Path) -> None:
+    project = _running_run(tmp_path, "follow-project")
+    run_id = data.list_workflow_runs(project)[0]["run_id"]
+    stdout_path = project.logs_root / f"{run_id}.stdout.log"
+    stderr_path = project.logs_root / f"{run_id}.stderr.log"
+    stdout_path.write_text("starting\n", encoding="utf-8")
+    stderr_path.write_text("warning: heads up\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            screen = RunDetailScreen(project, run_id)
+            app.push_screen(screen)
+            await pilot.pause()
+            await _settled(app)
+            follow = screen.query_one("#run-follow", Checkbox)
+            # A running run enables the switch; entering follow drains the
+            # existing tails once (stdout verbatim, stderr prefixed).
+            assert not follow.disabled
+            follow.value = True
+            await pilot.pause()
+            log = screen.query_one("#run-follow-log", RichLog)
+            text = _log_text(log)
+            assert "starting" in text
+            assert "stderr: warning: heads up" in text
+            assert screen._follow_timer is not None
+
+            # New bytes are appended incrementally on the next tick.
+            with open(stdout_path, "a", encoding="utf-8") as handle:
+                handle.write("step 2 running\n")
+            screen._follow_tick()
+            await pilot.pause()
+            text = _log_text(log)
+            assert "step 2 running" in text
+            assert text.count("starting") == 1  # offsets: nothing is re-read
+
+            # The run finishing stops the follow and reports the final status.
+            _finish_run(project)
+            screen._follow_tick()
+            await pilot.pause()
+            text = _log_text(log)
+            assert f"run {run_id} finished: status=completed exit_code=0" in text
+            assert screen._follow_timer is None
+            assert not screen._following
+            assert follow.value is False and follow.disabled
+            assert any("finished: completed" in notification.message
+                       for notification in app._notifications)
+
+    _run(scenario())
+
+
+def test_run_detail_follow_timer_stops_on_unmount(tmp_path: Path) -> None:
+    project = _running_run(tmp_path, "follow-unmount-project")
+    run_id = data.list_workflow_runs(project)[0]["run_id"]
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            screen = RunDetailScreen(project, run_id)
+            app.push_screen(screen)
+            await pilot.pause()
+            await _settled(app)
+            screen.query_one("#run-follow", Checkbox).value = True
+            await pilot.pause()
+            assert screen._follow_timer is not None
+
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is not screen
+            # Leaving the screen stops the timer and clears the follow state.
+            assert screen._follow_timer is None
+            assert not screen._following
+
+    _run(scenario())

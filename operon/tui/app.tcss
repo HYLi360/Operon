@@ -24,9 +24,25 @@
     width: 1fr;
 }
 
-#files-filters, #runs-filters {
+#files-filters, #runs-filters, #runs-filters-advanced {
     height: auto;
     padding: 0 1;
+}
+
+#runs-from, #runs-to {
+    width: 22;
+}
+
+#runs-run-id, #runs-parent-run-id {
+    width: 20;
+}
+
+#runs-tool, #runs-executor {
+    width: 14;
+}
+
+#runs-offset {
+    width: 8;
 }
 
 #files-filter {
@@ -148,6 +164,16 @@ HelpScreen {
 
 #run-detail-scroll {
     padding: 1 2;
+}
+
+#run-detail-layout {
+    height: 1fr;
+}
+
+#run-follow-log {
+    height: 40%;
+    padding: 0 1;
+    border-top: solid $primary;
 }
 
 #config-tabs {
