@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import sys
 import textwrap
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -113,13 +115,15 @@ def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
         db.close()
 
 
-def _write_fake_tool(project: Project, tmp_path: Path) -> None:
+def _write_fake_tool(project: Project, tmp_path: Path,
+                     *, slurm: dict | None = None) -> None:
     """Install a runnable fake BLAST-style tool plus a broken one.
 
     ``fake_nt`` targets the demo's three assembly genome_fasta files and
     declares one choices parameter (``mode``) and one required parameter
     (``marker``); ``fake_broken`` points at a missing executable so every
-    file fails.
+    file fails.  ``slurm`` adds a recipe-level ``slurm:`` block (e.g.
+    ``{"array": True}``) exactly like a hand-written recipe.
     """
     script = tmp_path / "fakeblast.py"
     script.write_text(textwrap.dedent("""
@@ -157,6 +161,7 @@ def _write_fake_tool(project: Project, tmp_path: Path) -> None:
                             "marker": {"required": True},
                         },
                         "result_parser": "none",
+                        **({"slurm": dict(slurm)} if slurm else {}),
                     },
                 },
             },
@@ -269,8 +274,8 @@ def test_run_analysis_progress_and_error_counts(project: Project, tmp_path: Path
     assert any(phase == "error" for _i, _t, _f, phase in seen)
 
 
-def test_run_analysis_forwards_cancel_event(project: Project, tmp_path: Path,
-                                            monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_analysis_forwards_backend_and_cancel_event(project: Project, tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
     _write_fake_tool(project, tmp_path)
     received: dict[str, Any] = {}
 
@@ -281,11 +286,17 @@ def test_run_analysis_forwards_cancel_event(project: Project, tmp_path: Path,
     monkeypatch.setattr("operon.tools.run_analysis", fake_core)
     cancel_event = threading.Event()
     result = actions.run_analysis(
-        project, "fake_nt", parameters={"marker": "x"}, cancel_event=cancel_event,
+        project, "fake_nt", parameters={"marker": "x"}, backend="slurm",
+        cancel_event=cancel_event,
     )
     assert received["cancel_event"] is cancel_event
     assert received["progress_callback"] is None
+    assert received["backend"] == "slurm"
     assert result["total"] == 0
+
+    # The CLI's --backend choices are enforced before the core is called.
+    with pytest.raises(ValidationError, match="unknown execution backend 'kubernetes'"):
+        actions.run_analysis(project, "fake_nt", backend="kubernetes")
 
 
 # ---------------------------------------------------------------------------
@@ -667,3 +678,253 @@ def test_analysis_failure_callback_shows_error_dialog(project: Project, tmp_path
                        for severity, message in _notifications(app))
 
     _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# M2b: execution backend selection and scheduler-aware cancellation
+# ---------------------------------------------------------------------------
+
+# Captured at import time: individual tests narrow PATH, and the fake
+# scheduler scripts still need the system directories (bash, grep, ...).
+_SYSTEM_PATH = os.environ.get("PATH", "")
+
+FAKE_SBATCH = """\
+#!/usr/bin/env bash
+# Fake sbatch: single jobs run synchronously (honoring --output/--error like
+# Slurm); a job array is queued and only leaves the queue via the fake scancel.
+script="${!#}"
+out="$(grep -m1 '^#SBATCH --output=' "$script" | cut -d= -f2-)"
+err="$(grep -m1 '^#SBATCH --error=' "$script" | cut -d= -f2-)"
+if grep -q '^#SBATCH --array=' "$script"; then
+  touch "${OPERON_FAKE_SLURM_STATE}/array-submitted"
+  echo 4242
+  exit 0
+fi
+bash "$script" > "$out" 2> "$err"
+echo 4241
+"""
+
+FAKE_SQUEUE_EMPTY = """\
+#!/usr/bin/env bash
+# Fake squeue: the queue is always empty (every job finished).
+exit 0
+"""
+
+FAKE_SQUEUE_HOLDING = """\
+#!/usr/bin/env bash
+# Fake squeue: only the array job (4242) waits in the queue, until the fake
+# scancel records the cancellation.  The poll budget bounds a regression to a
+# failing assertion instead of a hanging test.
+for arg in "$@"; do
+  if [ "$arg" = "4242" ]; then
+    if [ -f "${OPERON_FAKE_SLURM_STATE}/cancelled" ]; then
+      exit 0
+    fi
+    polls=$(( $(cat "${OPERON_FAKE_SLURM_STATE}/polls" 2>/dev/null || echo 0) + 1 ))
+    echo "$polls" > "${OPERON_FAKE_SLURM_STATE}/polls"
+    if [ "$polls" -gt 200 ]; then
+      exit 0
+    fi
+    echo "4242 operon running"
+    exit 0
+  fi
+done
+exit 0
+"""
+
+FAKE_SCANCEL = """\
+#!/usr/bin/env bash
+# Fake scancel: record the cancelled job ids; squeue then reports it gone.
+printf '%s\\n' "$@" >> "${OPERON_FAKE_SLURM_STATE}/scancel.log"
+touch "${OPERON_FAKE_SLURM_STATE}/cancelled"
+"""
+
+
+def _install_fake_slurm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                        *, holding: bool) -> Path:
+    """Put fake sbatch/squeue/scancel binaries on PATH; returns the state dir.
+
+    ``SlurmExecutor`` shells out to these names, so a PATH shim is what makes
+    the real executor testable without a cluster.  With ``holding`` a
+    submitted array stays queued (squeue reports it present) until scancel
+    records the cancellation — the state a mid-array cancel has to deal with.
+    """
+    bin_dir = tmp_path / "fakebin"
+    state = tmp_path / "slurm-state"
+    bin_dir.mkdir(exist_ok=True)
+    state.mkdir(exist_ok=True)
+    scripts = {
+        "sbatch": FAKE_SBATCH,
+        "squeue": FAKE_SQUEUE_HOLDING if holding else FAKE_SQUEUE_EMPTY,
+    }
+    if holding:
+        scripts["scancel"] = FAKE_SCANCEL
+    for name, content in scripts.items():
+        script = bin_dir / name
+        script.write_text(content, encoding="utf-8")
+        script.chmod(0o755)
+    monkeypatch.setenv("OPERON_FAKE_SLURM_STATE", str(state))
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{_SYSTEM_PATH}")
+    return state
+
+
+def _empty_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PATH without any scheduler binary, for the preflight failure cases."""
+    empty = tmp_path / "empty-bin"
+    empty.mkdir(exist_ok=True)
+    monkeypatch.setenv("PATH", str(empty))
+
+
+def test_preflight_backend_resolves_and_validates(project: Project, tmp_path: Path,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    _empty_path(tmp_path, monkeypatch)
+
+    assert actions.preflight_backend(project) == {"backend": "local", "description": "local"}
+    assert actions.preflight_backend(project, "local")["backend"] == "local"
+    with pytest.raises(ValidationError, match="unknown execution backend"):
+        actions.preflight_backend(project, "kubernetes")
+    with pytest.raises(ValidationError, match="requires execution.ssh.host"):
+        actions.preflight_backend(project, "ssh")
+    with pytest.raises(ValidationError, match="slurm backend requires 'sbatch' in PATH"):
+        actions.preflight_backend(project, "slurm")
+
+    _install_fake_slurm(tmp_path, monkeypatch, holding=False)
+    assert actions.preflight_backend(project, "slurm") == {
+        "backend": "slurm", "description": "slurm",
+    }
+
+    # Recipe-level slurm overrides are validated by the same code path the
+    # core uses before a run starts.
+    _write_fake_tool(project, tmp_path, slurm={"poll_interval": -1})
+    with pytest.raises(ValidationError, match="poll_interval must be > 0"):
+        actions.preflight_backend(project, "slurm", recipe_name="fake_nt")
+
+
+def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
+        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cooperative cancel while the job array is queued: one scancel, and
+    the unfinished tasks land as ``interrupted`` (no workflow_runs rows)."""
+    _write_fake_tool(project, tmp_path, slurm={"array": True})
+    project.config["execution"]["slurm"]["poll_interval"] = 0.01
+    state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
+
+    cancel_event = threading.Event()
+
+    def cancel_once_submitted() -> None:
+        marker = state / "array-submitted"
+        deadline = time.monotonic() + 30
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        cancel_event.set()
+
+    watcher = threading.Thread(target=cancel_once_submitted, daemon=True)
+    watcher.start()
+    try:
+        with pytest.raises(actions.AnalysisCancelled):
+            actions.run_analysis(
+                project, "fake_nt", parameters={"marker": "TT"}, backend="slurm",
+                cancel_event=cancel_event,
+            )
+    finally:
+        watcher.join(timeout=5)
+
+    # The array was cancelled with one scancel carrying its job id.
+    assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
+    jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
+    assert [job["status"] for job in jobs] == ["interrupted"] * 3
+    assert _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'") == []
+
+
+def test_analyze_modal_backend_preflight_then_slurm_run(
+        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The backend select preflights inline, then runs on the real executor."""
+    _write_fake_tool(project, tmp_path)
+    _empty_path(tmp_path, monkeypatch)
+    dismissed: list[Any] = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            await _wait_until(
+                lambda: bool(modal.query("#analyze-param-marker")),
+                "parameter controls mounted",
+            )
+            modal.query_one("#analyze-param-marker", Input).value = "TT"
+            modal.query_one("#analyze-backend", Select).value = "slurm"
+            await pilot.pause()
+            assert "--backend slurm" in modal.command_text()
+            assert "scancel" in _static_text(
+                modal.query_one("#analyze-cancel-note", Static))
+
+            # No sbatch in PATH: the preflight reports inline, no worker starts.
+            modal.confirm()
+            assert "slurm backend requires 'sbatch' in PATH" in _static_text(
+                modal.query_one("#modal-error", Static))
+            assert not modal.running
+            assert not modal.query_one("#confirm", Button).disabled
+            assert dismissed == []
+
+            # With the scheduler commands available the same form runs on Slurm.
+            _install_fake_slurm(tmp_path, monkeypatch, holding=False)
+            modal.confirm()
+            await _wait_until(lambda: dismissed, "slurm analysis dismissal")
+            await _settled(app)
+
+    _run(scenario())
+    payload = dismissed[0]
+    assert payload["total"] == 3 and payload["succeeded"] == 3
+    runs = _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
+    assert {run["executor"] for run in runs} == {"slurm"}
+    assert {run["scheduler_job_id"] for run in runs} == {"4241"}
+    jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
+    assert {job["status"] for job in jobs} == {"completed"}
+
+
+def test_analyze_modal_cancel_mid_array_scancels_and_reports(
+        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cancel while the array is queued: scancel runs, the modal reports the
+    cancelled batch, and tasks land as interrupted."""
+    _write_fake_tool(project, tmp_path, slurm={"array": True})
+    project.config["execution"]["slurm"]["poll_interval"] = 0.01
+    state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
+    dismissed: list[Any] = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            await _wait_until(
+                lambda: bool(modal.query("#analyze-param-marker")),
+                "parameter controls mounted",
+            )
+            modal.query_one("#analyze-param-marker", Input).value = "TT"
+            modal.query_one("#analyze-backend", Select).value = "slurm"
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(
+                lambda: (state / "array-submitted").exists(),
+                "job array submission", timeout=30,
+            )
+            assert modal.running
+
+            modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
+            assert "cancelling…" in _static_text(
+                modal.query_one("#analyze-status", Static))
+            await _wait_until(lambda: dismissed, "cancelled analysis dismissal", timeout=30)
+            assert any("analysis cancelled after" in message
+                       for _severity, message in _notifications(app))
+            await _settled(app)
+
+    _run(scenario())
+    assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
+    assert dismissed == [{"cancelled": True, "done": 3, "total": 3}]
+    jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
+    assert [job["status"] for job in jobs] == ["interrupted"] * 3
+    assert _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'") == []

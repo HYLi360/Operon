@@ -253,7 +253,57 @@ def run_qc(
 
 
 class AnalysisCancelled(Exception):
-    """Raised between files when the analysis worker is cancelled."""
+    """Raised when the analyze worker is cancelled by the user.
+
+    The core reports cooperative cancellation with ``ShutdownRequested`` —
+    the same exception a SIGINT produces — once ``cancel_event`` is set, so
+    the full interrupt bookkeeping runs: unfinished tasks get ``interrupted``
+    job rows, partial outputs follow ``keep_partial``, and a still-queued
+    Slurm job or array is cancelled with one ``scancel``.  This wrapper is the
+    TUI's own signal: the analyze modal reports it as a cancelled run (files
+    already completed keep their results) instead of a failure.
+    """
+
+
+def preflight_backend(
+        project: Project,
+        backend: str | None = None,
+        *,
+        recipe_name: str | None = None,
+) -> dict[str, Any]:
+    """Resolve and validate an execution backend exactly like ``operon analyze``.
+
+    ``backend`` is the CLI's ``--backend`` value (``None`` selects the
+    project's ``execution.backend`` from ``project.yaml``); ``recipe_name``
+    applies the recipe's ``slurm:`` overrides the way the core does before a
+    run starts.  Returns ``{"backend": <name>, "description": <describe()>}``
+    and raises ``ValidationError`` for an unknown backend, an incomplete
+    ``execution.ssh`` block, or a local Slurm backend whose ``sbatch`` /
+    ``squeue`` are not on PATH — the failures the analyze modal shows inline
+    instead of starting a worker that would fail per file.
+    """
+    from operon.execution import get_executor
+    from operon.tools import get_recipe
+
+    overrides: dict[str, Any] | None = None
+    if recipe_name:
+        recipe_slurm = get_recipe(project, recipe_name).raw.get("slurm")
+        if isinstance(recipe_slurm, dict):
+            overrides = recipe_slurm
+    executor = get_executor(project, backend, slurm_overrides=overrides)
+    try:
+        name = str(getattr(executor, "name", "") or "")
+        # The SSH backend runs the scheduler commands on the remote host,
+        # which only a live run can probe; the local Slurm backend shells out.
+        if name == "slurm":
+            for binary in ("sbatch", "squeue"):
+                if not shutil.which(binary):
+                    raise ValidationError(f"slurm backend requires {binary!r} in PATH")
+        return {"backend": name, "description": executor.describe()}
+    finally:
+        close = getattr(executor, "close", None)
+        if close is not None:
+            close()
 
 
 def run_analysis(
@@ -268,35 +318,54 @@ def run_analysis(
         force: bool = False,
         keep_partial: bool = False,
         parameters: dict[str, str] | None = None,
+        backend: str | None = None,
         progress: Callable[[int, int, str, str], None] | None = None,
         cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
-    """Run one analysis recipe like ``operon analyze`` (local/default backend).
+    """Run one analysis recipe like ``operon analyze``.
 
+    ``backend`` mirrors ``--backend`` (``None`` = the project default), and
     ``progress`` is forwarded as the core ``progress_callback``
     ``(index, total, file_id, phase)``; raising from it aborts the batch
     between files (results for files already processed are kept).
     ``cancel_event`` is forwarded to the core: once set, the batch aborts at
-    the next file/planning/collection boundary with the same interrupt
-    bookkeeping as a signal.  The core prints directly (cache warnings,
-    "no candidate files"); that output is captured into the returned
-    ``messages`` so it never corrupts the screen.
+    the next file/planning/collection boundary, a still-queued scheduler job
+    or array is cancelled, and the interrupt bookkeeping runs exactly as
+    after a signal — reported here as :class:`AnalysisCancelled`.
+    The core prints directly (cache warnings, "no candidate files"); that
+    output is captured into the returned ``messages`` so it never corrupts
+    the screen.
     """
+    from operon.execution import VALID_BACKENDS
+    from operon.shutdown import ShutdownRequested
     from operon.tools import run_analysis as _run_analysis
 
     if limit is not None and int(limit) <= 0:
         raise ValidationError("limit must be a positive integer")
     if threads is not None and int(threads) <= 0:
         raise ValidationError("threads must be a positive integer")
-    buffer = io.StringIO()
-    with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
-        results = _run_analysis(
-            project, db, analysis,
-            entity_type=entity_type, entity_id=entity_id,
-            limit=limit, threads=threads, dry_run=dry_run, force=force,
-            keep_partial=keep_partial, runtime_parameters=parameters,
-            progress_callback=progress, cancel_event=cancel_event,
+    if backend is not None and str(backend) not in VALID_BACKENDS:
+        raise ValidationError(
+            f"unknown execution backend {backend!r}; valid: {', '.join(VALID_BACKENDS)}"
         )
+    buffer = io.StringIO()
+    try:
+        with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
+            results = _run_analysis(
+                project, db, analysis,
+                entity_type=entity_type, entity_id=entity_id,
+                limit=limit, threads=threads, dry_run=dry_run, force=force,
+                backend=backend,
+                keep_partial=keep_partial, runtime_parameters=parameters,
+                progress_callback=progress, cancel_event=cancel_event,
+            )
+    except ShutdownRequested:
+        # A cooperative cancel reaches the core as the signal-style interrupt;
+        # any other source (a real SIGINT in a main-thread caller) keeps its
+        # own exception type.
+        if cancel_event is not None and cancel_event.is_set():
+            raise AnalysisCancelled() from None
+        raise
     errors = sum(1 for result in results if result.get("status") in {"error", "failed"})
     return {
         "analysis": analysis,

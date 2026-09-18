@@ -34,6 +34,7 @@ import shlex
 import shutil
 import sys
 import textwrap
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -386,6 +387,17 @@ def test_analyze_modal_command_text_matches_action_kwargs(
         "errors": 0,
     }
     calls = spy_action(monkeypatch, "run_analysis", payload)
+    # The backend preflight constructs a real executor — out of scope for a
+    # preview/kwargs check; record the calls instead.
+    preflights: list[tuple] = []
+    monkeypatch.setattr(
+        actions,
+        "preflight_backend",
+        lambda _project, backend=None, *, recipe_name=None: (
+            preflights.append((backend, recipe_name))
+            or {"backend": backend or "local", "description": backend or "local"}
+        ),
+    )
     dismissed: list = []
 
     async def scenario() -> None:
@@ -409,7 +421,9 @@ def test_analyze_modal_command_text_matches_action_kwargs(
             await pilot.pause()
 
             # (a) the preview parses with the real CLI parser and carries the
-            # form values, repeated --param entries item by item.
+            # form values, repeated --param entries item by item; the default
+            # backend selection omits --backend exactly like the CLI default.
+            assert modal.query_one("#analyze-backend", Select).value == ""
             ns = parse_command_text(modal.command_text())
             assert ns.analysis == "fake_nt"
             assert ns.param == ["mode=sensitive", "marker=TT"]
@@ -420,28 +434,54 @@ def test_analyze_modal_command_text_matches_action_kwargs(
             assert ns.dry_run is False
             assert ns.force is True
             assert ns.keep_partial is True
-            assert ns.backend is None  # waived: the TUI pins the default backend
+            assert ns.backend is None  # project default
 
             # (b) confirming passes exactly the parsed parameters through.
             modal.confirm()
             await _wait_until(lambda: dismissed, "analysis modal dismissed")
 
+            # (c) an explicit scheduler backend appears in the preview and
+            # reaches the action unchanged.
+            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            await _wait_until(
+                lambda: bool(modal.query("#analyze-param-marker")),
+                "parameter controls mounted",
+            )
+            modal.query_one("#analyze-param-marker", Input).value = "TT"
+            modal.query_one("#analyze-backend", Select).value = "slurm"
+            await pilot.pause()
+            ns = parse_command_text(modal.command_text())
+            assert ns.backend == "slurm"
+            modal.confirm()
+            await _wait_until(lambda: len(dismissed) == 2, "second analysis modal dismissed")
+
     _run(scenario())
-    assert dismissed == [payload]
-    assert len(calls) == 1
+    assert dismissed == [payload, payload]
+    assert len(calls) == 2
     args, kwargs = calls[0]
     assert args[1] == "fake_nt"
     assert callable(kwargs.pop("progress"))
+    assert isinstance(kwargs.pop("cancel_event"), threading.Event)
     assert kwargs == {
         "entity_type": "assembly",
         "entity_id": "ASM_000001",
         "limit": 2,
         "threads": 4,
+        "backend": None,
         "dry_run": False,
         "force": True,
         "keep_partial": True,
         "parameters": {"mode": "sensitive", "marker": "TT"},
     }
+    args, kwargs = calls[1]
+    assert args[1] == "fake_nt"
+    assert callable(kwargs.pop("progress"))
+    assert isinstance(kwargs.pop("cancel_event"), threading.Event)
+    assert kwargs["backend"] == "slurm"
+    # The modal preflights the resolved backend before any worker starts.
+    assert preflights == [(None, "fake_nt"), ("slurm", "fake_nt")]
 
 
 def test_qc_modal_command_text_matches_action_kwargs(

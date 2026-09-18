@@ -1,16 +1,22 @@
 """Analyze modal: run a configured external-tool recipe from the TUI.
 
-Local/default backend only (M2a): Slurm/SSH execution, array cancellation,
-and ``--backend`` selection stay CLI-only for now.  Cancellation is
-cooperative, exactly like the QC modal: the worker is cancelled and the
-progress callback raises :class:`actions.AnalysisCancelled`, so the batch
-stops between files — the file currently being processed finishes, and
-completed files keep their results.
+The execution backend is selectable exactly like the CLI's ``--backend``
+(project default / local / slurm / ssh); choosing a scheduler backend
+preflights it before the worker starts, so a missing ``sbatch`` or an
+incomplete ``execution.ssh`` block shows up as an inline error instead of a
+per-file failed run.  Cancellation is cooperative and cancel-event based:
+the Cancel button/Escape sets a ``threading.Event`` and cancels the worker,
+so the batch stops at the next file/planning/collection boundary and a
+still-queued Slurm job or array is cancelled with one ``scancel`` (a direct
+SSH payload is terminated on the remote host) — the same interrupt
+bookkeeping a signal produces.  The file currently being processed may
+still finish, and files already completed keep their results.
 """
 
 from __future__ import annotations
 
 import shlex
+import threading
 from collections.abc import Iterable
 from typing import Any
 
@@ -30,6 +36,15 @@ from operon.tui.screens.common import (
 )
 
 FAILURE_STATUSES = frozenset({"error", "failed"})
+
+LOCAL_CANCEL_NOTE = (
+    "Cancel takes effect between files: the file currently being processed finishes."
+)
+SCHEDULER_CANCEL_NOTE = (
+    "Cancel stops the batch at the next boundary and cancels the submitted work as a "
+    "whole — a Slurm job array goes with one scancel, a direct SSH payload is "
+    "terminated on the remote host. Files already completed keep their results."
+)
 
 
 class AnalyzeModal(WriteModal):
@@ -54,9 +69,50 @@ class AnalyzeModal(WriteModal):
         self._options: dict[str, Any] = {}
         self._analysis_name = ""
         self._worker: Any = None
+        # Cooperative cancellation: set on Cancel/Escape, forwarded to the
+        # core so a queued/running job or array is cancelled at the next
+        # boundary (and while a scheduler poll loop waits).
+        self._cancel_event: threading.Event | None = None
+        self._executor_name = "local"
+        self._executor_description = "local"
         self.running = False
         self.done = 0
         self.total = 0
+
+    def _backend_options(self) -> list[tuple[str, str]]:
+        """Backend choices: CLI ``--backend`` values plus the project default."""
+        default = self._project_default_backend()
+        return [
+            (f"project default ({default})", ""),
+            ("local", "local"),
+            ("slurm", "slurm"),
+            ("ssh", "ssh"),
+        ]
+
+    def _project_default_backend(self) -> str:
+        execution = getattr(self.project, "config", {}) or {}
+        name = str((execution.get("execution", {}) or {}).get("backend") or "local")
+        return name.strip().lower() or "local"
+
+    def _selected_backend(self) -> str:
+        """The backend name the current selection resolves to ("" = default)."""
+        try:
+            widget = self.query_one("#analyze-backend", Select)
+        except NoMatches:  # not mounted yet
+            return ""
+        return "" if widget.value is Select.NULL else str(widget.value)
+
+    def _resolved_backend(self) -> str:
+        return self._selected_backend() or self._project_default_backend()
+
+    def _update_cancel_note(self) -> None:
+        """Describe cancel semantics for the selected backend."""
+        note = (LOCAL_CANCEL_NOTE if self._resolved_backend() == "local"
+                else SCHEDULER_CANCEL_NOTE)
+        try:
+            self.query_one("#analyze-cancel-note", Static).update(note)
+        except NoMatches:  # not mounted yet
+            pass
 
     def compose_form(self) -> Iterable[Any]:
         if self.fixed_recipe:
@@ -72,14 +128,15 @@ class AnalyzeModal(WriteModal):
         yield Input(placeholder="entity id (blank = all)", id="analyze-entity-id")
         yield Input(placeholder="limit (blank = all files)", id="analyze-limit")
         yield Input(placeholder="threads (blank = project default)", id="analyze-threads")
+        yield Static("Execution backend", classes="modal-label")
+        yield Select(self._backend_options(), value="", id="analyze-backend")
         yield Vertical(id="analyze-parameters")
         yield Checkbox("Dry run (plan only — nothing is executed or written)",
                        id="analyze-dry-run")
         yield Checkbox("Force re-run (--force)", id="analyze-force")
         yield Checkbox("Keep partial outputs on interrupt (--keep-partial)",
                        id="analyze-keep-partial")
-        yield Static("Cancel takes effect between files: the file currently being "
-                     "processed finishes.", id="analyze-cancel-note", classes="modal-info")
+        yield Static(LOCAL_CANCEL_NOTE, id="analyze-cancel-note", classes="modal-info")
         yield ProgressBar(total=1, id="analyze-progress")
         yield Static("", id="analyze-status", classes="modal-info")
         yield Static("", id="analyze-plan")
@@ -90,6 +147,7 @@ class AnalyzeModal(WriteModal):
         self.query_one("#analyze-plan", Static).display = False
         if self.fixed_recipe:
             self._set_recipe(self.fixed_recipe)
+        self._update_cancel_note()
 
     # -- recipe and parameter controls --------------------------------------
 
@@ -157,6 +215,7 @@ class AnalyzeModal(WriteModal):
 
     def _form_values(self) -> dict[str, Any]:
         entity_value = self.query_one("#analyze-entity-type", Select).value
+        backend_value = self.query_one("#analyze-backend", Select).value
         return {
             "analysis": self.recipe_name or "",
             "parameters": self._parameter_values(),
@@ -164,6 +223,7 @@ class AnalyzeModal(WriteModal):
             "entity_id": self.query_one("#analyze-entity-id", Input).value.strip(),
             "limit": self.query_one("#analyze-limit", Input).value.strip(),
             "threads": self.query_one("#analyze-threads", Input).value.strip(),
+            "backend": "" if backend_value is Select.NULL else str(backend_value),
             "dry_run": self.query_one("#analyze-dry-run", Checkbox).value,
             "force": self.query_one("#analyze-force", Checkbox).value,
             "keep_partial": self.query_one("#analyze-keep-partial", Checkbox).value,
@@ -175,7 +235,8 @@ class AnalyzeModal(WriteModal):
         for name, value in values["parameters"].items():
             parts += ["--param", shlex.quote(f"{name}={value}")]
         for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
-                            ("limit", "--limit"), ("threads", "--threads")):
+                            ("limit", "--limit"), ("threads", "--threads"),
+                            ("backend", "--backend")):
             if values[field]:
                 parts += [flag, shlex.quote(values[field])]
         for field, flag in (("dry_run", "--dry-run"), ("force", "--force"),
@@ -194,6 +255,8 @@ class AnalyzeModal(WriteModal):
             if event.value is not Select.NULL:
                 self._set_recipe(str(event.value))
         elif widget_id.startswith("analyze-"):
+            if widget_id == "analyze-backend":
+                self._update_cancel_note()
             self.refresh_command()
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -224,10 +287,16 @@ class AnalyzeModal(WriteModal):
         try:
             limit = self._positive_int(values["limit"], "limit")
             threads = self._positive_int(values["threads"], "threads")
-            # Same validation the CLI applies, before any worker starts.
+            # Same validation the CLI applies, before any worker starts —
+            # including the execution backend: a missing sbatch or an
+            # incomplete SSH block is an inline error, not a failed run.
             from operon.tools import get_recipe, resolve_runtime_parameters
             recipe = get_recipe(self.project, values["analysis"])
             resolve_runtime_parameters(recipe, values["parameters"])
+            backend_info = actions.preflight_backend(
+                self.project, values["backend"] or None,
+                recipe_name=values["analysis"],
+            )
         except ValidationError as exc:
             self.show_error(exc)
             return
@@ -236,12 +305,16 @@ class AnalyzeModal(WriteModal):
             "entity_id": values["entity_id"] or None,
             "limit": limit,
             "threads": threads,
+            "backend": values["backend"] or None,
             "dry_run": values["dry_run"],
             "force": values["force"],
             "keep_partial": values["keep_partial"],
             "parameters": values["parameters"],
         }
         self._analysis_name = values["analysis"]
+        self._executor_name = str(backend_info["backend"])
+        self._executor_description = str(backend_info["description"])
+        self._cancel_event = threading.Event()
         self.running = True
         self.done = 0
         self.total = 0
@@ -250,24 +323,37 @@ class AnalyzeModal(WriteModal):
         self.clear_error()
         self.query_one("#analyze-plan", Static).display = False
         self.query_one("#analyze-progress", ProgressBar).display = not values["dry_run"]
-        self.query_one("#analyze-status", Static).update("running…")
+        self.query_one("#analyze-status", Static).update(
+            f"running… (backend: {self._executor_description})"
+        )
         self._worker = self._run_analysis()
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Input, Select, Checkbox"):
             widget.disabled = disabled
 
+    def _request_cancel(self) -> None:
+        """Cancel cooperatively: set the event, then cancel the worker."""
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        if self._worker is not None:
+            self._worker.cancel()
+        note = ("cancelling… (the submitted job is cancelled at the next scheduler poll)"
+                if self._executor_name != "local" else "cancelling…")
+        try:
+            self.query_one("#analyze-status", Static).update(note)
+        except NoMatches:  # pragma: no cover - modal teardown race
+            pass
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
-            if self._worker is not None:
-                self._worker.cancel()
+            self._request_cancel()
             return
         super().on_button_pressed(event)
 
     def action_cancel(self) -> None:
         if self.running:
-            if self._worker is not None:
-                self._worker.cancel()
+            self._request_cancel()
             return
         self.dismiss(None)
 
@@ -287,7 +373,8 @@ class AnalyzeModal(WriteModal):
 
         try:
             payload: Any = actions.run_analysis(
-                self.project, self._analysis_name, progress=progress, **self._options,
+                self.project, self._analysis_name, progress=progress,
+                cancel_event=self._cancel_event, **self._options,
             )
         except Exception as exc:  # noqa: BLE001 - routed to _analysis_done
             payload = exc

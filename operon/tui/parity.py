@@ -465,13 +465,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "entity_id": "analyze-entity-id",
             "threads": "analyze-threads",
             "limit": "analyze-limit",
+            "backend": "analyze-backend",
             "dry_run": "analyze-dry-run",
             "force": "analyze-force",
             "keep_partial": "analyze-keep-partial",
-        },
-        waived={
-            "backend": "the TUI runs on the project default (local) backend; "
-            f"Slurm/SSH execution is {_M2B}",
         },
     ),
     # -- intentionally CLI-only ---------------------------------------------

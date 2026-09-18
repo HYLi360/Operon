@@ -95,7 +95,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
-| — | Config / Tasks | 对匹配的清单文件运行分析 recipe（Config 屏选中 recipe 后的 *Run analysis*，或 Tasks 屏 *New analysis* 内选择 recipe）。运行时参数按 recipe 声明的 spec 渲染并与 CLI 完全相同的校验；支持 entity-type/entity-id/limit/threads 过滤、dry-run（在对话框内显示只读计划）、force 与 keep-partial，带实时进度条与文件边界上的协作取消。逐文件失败在错误对话框中列出；运行结束后跳转到 Tasks 屏。 | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--dry-run] [--force] [--keep-partial]` |
+| — | Config / Tasks | 对匹配的清单文件运行分析 recipe（Config 屏选中 recipe 后的 *Run analysis*，或 Tasks 屏 *New analysis* 内选择 recipe）。运行时参数按 recipe 声明的 spec 渲染并与 CLI 完全相同的校验；支持 entity-type/entity-id/limit/threads 过滤、执行后端（项目默认 / local / slurm / ssh；worker 启动前预检，缺少 `sbatch` 或 `execution.ssh` 配置不全都会内联报错）、dry-run（在对话框内显示只读计划）、force 与 keep-partial，带实时进度条与协作取消。Cancel 在下一个文件/规划/收集边界停止批处理，并把已提交的工作整体取消（Slurm 作业或 job array 一次 `scancel`；直连 SSH 载荷在远端主机上终止）；已完成文件的结果保留。逐文件失败在错误对话框中列出；运行结束后跳转到 Tasks 屏。 | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--backend {local,slurm,ssh}] [--dry-run] [--force] [--keep-partial]` |
 
 以上所有操作都会追加与 CLI 相同的 `changes` 审计行和 `workflow_runs` 溯源
 记录，因此在报告与导出中，通过 TUI 执行的操作与命令行操作无法区分。
