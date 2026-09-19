@@ -514,7 +514,7 @@ defects:
     CI docs job, and tests/unit/test_docs_projects.py gained a guard that reads the
     workflow files (both the inline ``run:`` and the block form) and fails when a
     ``sphinx-build`` line does not name both language trees.'
-  fix_commit: null
+  fix_commit: 604725c511c793c9c601070c20b3bf22b93738aa
   fixed_in: null
   regression_tests:
   - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
