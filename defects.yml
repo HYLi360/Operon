@@ -461,3 +461,35 @@ defects:
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
   - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
+- id: ODR-0024
+  title: A second click on a button is swallowed by the press effect it still shows
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: 'test infrastructure only, no shipped behavior: any test that clicks the
+    same button twice in quick succession, which is what the Config screen''s recipe
+    save flow does'
+  severity: low
+  component: tests
+  status: fixed
+  reproduction: 'tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
+    clicks ``#recipe-save`` twice in a row (the first click must show the inline
+    file_role/file_role_prefix conflict, the second must open the confirmation modal).
+    Textual keeps a Button''s ``-active`` press effect for about 0.2 s and drops a
+    ``Button.Pressed`` raised inside that window, so the second ``Pilot.click``
+    reported ``landed=True`` while the panel handler never ran: an instrumented run
+    printed the handler entry for the first click only, with the stale inline error
+    still in place and no modal.  Surfaced by a four-file stress loop at ``-n 4``
+    (the same command that reproduced the local/CI flakiness): the *pre-fix* commit
+    e9e257d was red in 3 of 4 runs (the recipe test in 1 of them), and once the test
+    waits for the inline error instead of a fixed ``pause()`` the failure becomes
+    deterministic.'
+  disposition: 'tests/unit/test_tui_config.py::_click now waits for the ``-active``
+    effect to clear before clicking again — the same step
+    tests/unit/test_tui_derived_ops.py::_click has carried since the derived-artifact
+    dialogs — and the recipe test waits for the outcomes it expects (the inline
+    conflict error, then the modal) instead of a single ``pilot.pause()``.  The test
+    carries ``@pytest.mark.bug("ODR-0024")``.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save

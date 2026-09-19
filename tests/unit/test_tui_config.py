@@ -117,20 +117,25 @@ def _profile_doc(project: Project, name: str = "assembly_production_v1") -> dict
 
 
 async def _click(pilot, selector: str) -> None:
-    """Activate a widget, tolerating a rebuilt form that has not settled.
+    """Activate a widget, tolerating a rebuilt form and a lingering press effect.
 
     ``Pilot.click`` returns False when the target is clipped or obscured (e.g. a
     modal button pushed out of the box) and *raises* ``OutOfBounds`` when the
     target's centre is still outside the screen region — which is what the
-    deferred rebuild of an editor produces, and it surfaced as a failure in an
-    unrelated test on a slow runner (ODR-0023).  Scroll the target into view
-    first; an enabled button is then pressed directly, which is the same
-    activation a landed click produces, and anything else is retried until the
-    click lands.
+    deferred rebuild of an editor produces (ODR-0023).  A ``Button`` also keeps
+    its ``-active`` press effect for about 0.2 s and Textual drops a
+    ``Button.Pressed`` raised inside that window, so a rapid second click on the
+    same button reported ``landed=True`` and did nothing (ODR-0024): wait for
+    the effect to clear first.  An enabled button is then pressed directly when
+    the positional click cannot land, which is the same activation a landed
+    click produces, and anything else is retried until the click lands.
     """
     widget = pilot.app.screen.query_one(selector)
     widget.scroll_visible(animate=False)
     await pilot.pause()
+    if isinstance(widget, Button) and widget.has_class("-active"):
+        await _wait_until(lambda: not widget.has_class("-active"),
+                          f"{selector} to settle")
     for _ in range(10):
         try:
             landed = await pilot.click(selector)
@@ -1665,6 +1670,7 @@ def test_config_screen_recipe_unknown_select_value_is_preserved(project: Project
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-0024")
 def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Project) -> None:
     original_bytes = project.tools_config_path.read_bytes()
 
@@ -1679,9 +1685,15 @@ def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Pro
             # before the confirmation modal opens.
             panel.query_one("#recipe-file-role-prefix", Input).value = "genome"
             await _click(pilot, "#recipe-save")
-            await pilot.pause()
+            error_view = panel.query_one("#recipe-save-error", Static)
+            # The press is a queued message: wait for the outcome it produces
+            # instead of assuming one pause() cycle handled it (ODR-0024).
+            await _wait_until(
+                lambda: "mutually exclusive" in _static_text(error_view),
+                "the inline conflict error",
+            )
             assert not isinstance(app.screen, RecipeSaveModal)
-            error = _static_text(panel.query_one("#recipe-save-error", Static))
+            error = _static_text(error_view)
             assert "'file_role' and 'file_role_prefix' are mutually exclusive" in error
             assert "blastn_nt" in error
 
@@ -1689,6 +1701,8 @@ def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Pro
             panel.query_one("#recipe-file-role-prefix", Input).value = ""
             await _click(pilot, "#recipe-save")
             await pilot.pause()
+            await _wait_until(lambda: isinstance(app.screen, RecipeSaveModal),
+                              "the recipe save modal")
             assert isinstance(app.screen, RecipeSaveModal)
             assert _static_text(panel.query_one("#recipe-save-error", Static)) == ""
             await _click(pilot, "#cancel")
@@ -2319,5 +2333,6 @@ def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
             await pilot.press("escape")
 
     _run(scenario())
+
 
 
