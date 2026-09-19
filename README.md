@@ -53,4 +53,4 @@ sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
 sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
-Read the Docs publishes two projects linked as parent and translation: `operonproject` (English, `https://operonproject.readthedocs.io/en/latest/`) and `operonproject-zh` (Chinese, `https://operonproject.readthedocs.io/zh-cn/latest/`), each built through its own `.readthedocs*.yaml`.
+Read the Docs publishes two projects linked as parent and translation: `operonproject` (English, `https://operonproject.readthedocs.io/en/latest/`) and `operonproject-zh` (Chinese, `https://operonproject.readthedocs.io/zh-cn/latest/`), each built from its own `docs/<language>/.readthedocs.yaml`.

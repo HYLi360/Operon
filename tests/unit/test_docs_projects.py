@@ -1,11 +1,13 @@
 """Guard: the documentation keeps one Sphinx project per language.
 
 Each language owns a source tree, a Sphinx configuration, and the Read the Docs
-build file naming it: ``docs/<language>/conf.py`` and ``.readthedocs*.yaml``.
-Read the Docs links those projects as parent and translation, so a tree that
-drops a page, a configuration that stops going through the shared module, or a
-build file pointing at another language's configuration, would silently publish
-the wrong pages.
+build file naming it: ``docs/<language>/conf.py`` and
+``docs/<language>/.readthedocs.yaml`` — Read the Docs accepts no other file name
+there, so the language lives in the directory and the dashboard points each
+project at the matching path. Read the Docs links those projects as parent and
+translation, so a tree that drops a page, a configuration that stops going
+through the shared module, or a build file pointing at another language's
+configuration, would silently publish the wrong pages.
 
 Everything here is checked by parsing files instead of importing them: the test
 extra installs no Sphinx, so the documentation must stay verifiable without it.
@@ -24,8 +26,8 @@ DOCS_DIR = REPO_ROOT / "docs"
 
 #: Language directory -> (Sphinx language, Read the Docs project, build file).
 PROJECTS = {
-    "en": ("en", "operonproject", ".readthedocs.yaml"),
-    "zh": ("zh_CN", "operonproject-zh", ".readthedocs-zh.yaml"),
+    "en": ("en", "operonproject", "docs/en/.readthedocs.yaml"),
+    "zh": ("zh_CN", "operonproject-zh", "docs/zh/.readthedocs.yaml"),
 }
 
 BUILD_FILES = sorted(project[2] for project in PROJECTS.values())
@@ -125,8 +127,27 @@ def test_readthedocs_build_file_targets_its_language(directory):
 
 
 def test_readthedocs_build_files_are_all_registered():
-    found = sorted(path.name for path in REPO_ROOT.glob(".readthedocs*.yaml"))
+    """Read the Docs accepts only ``.readthedocs.yaml`` as the file name.
+
+    The language therefore lives in the directory, never in the file name: each
+    tree carries one ``.readthedocs.yaml`` next to its ``conf.py``, and its Read
+    the Docs project is pointed at exactly that path in the dashboard. A build
+    file at the repository root, or a second one somewhere under a language
+    tree, would be a configuration no project publishes.
+    """
+
+    root_level = sorted(path.name for path in REPO_ROOT.glob(".readthedocs*"))
+    assert root_level == [], (
+        "the build configurations belong to the language directories, not to "
+        f"the repository root: {root_level}"
+    )
+
+    found = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in DOCS_DIR.rglob(".readthedocs*")
+        if "_build" not in path.parts
+    )
     assert found == BUILD_FILES, (
-        f"every Read the Docs build file needs a language project: found "
+        "every Read the Docs build file needs a language project: found "
         f"{found}, registered {BUILD_FILES}"
     )

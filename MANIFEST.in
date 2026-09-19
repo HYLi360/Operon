@@ -4,8 +4,8 @@ include LICENSE
 include MANIFEST.in
 include README.md
 include README_ZH.md
-include .readthedocs.yaml
-include .readthedocs-zh.yaml
+include docs/en/.readthedocs.yaml
+include docs/zh/.readthedocs.yaml
 include pyproject.toml
 include setup.py
 recursive-include .github *.yml

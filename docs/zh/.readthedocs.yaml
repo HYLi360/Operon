@@ -2,9 +2,11 @@
 # (`operonproject-zh`), served under the parent project's domain as
 # https://operonproject.readthedocs.io/zh-cn/latest/ .
 #
-# Set this path in the `Build configuration file` field of
+# Set `docs/zh/.readthedocs.yaml` in the `Build configuration file` field of
 # Admin -> Settings, and set the project language to Chinese (China) so that
-# Read the Docs passes `-D language=zh_CN` to Sphinx. See
+# Read the Docs passes `-D language=zh_CN` to Sphinx. Read the Docs accepts no
+# build-configuration file name other than `.readthedocs.yaml`, which is why the
+# language is identified by the directory holding it. See
 # docs/zh/contributor/documentation-deployment.md.
 version: 2
 

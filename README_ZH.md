@@ -51,4 +51,4 @@ sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
 sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
-Read the Docs 发布两个互为父项目与翻译的项目：`operonproject`（英文，`https://operonproject.readthedocs.io/en/latest/`）与 `operonproject-zh`（中文，`https://operonproject.readthedocs.io/zh-cn/latest/`），各自通过自己的 `.readthedocs*.yaml` 构建。
+Read the Docs 发布两个互为父项目与翻译的项目：`operonproject`（英文，`https://operonproject.readthedocs.io/en/latest/`）与 `operonproject-zh`（中文，`https://operonproject.readthedocs.io/zh-cn/latest/`），各自从 `docs/<语言>/.readthedocs.yaml` 构建。

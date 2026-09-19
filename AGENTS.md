@@ -26,7 +26,7 @@ principle-to-implementation mapping.
 
 Current version markers (must stay consistent across code and docs):
 
-- `operon` 0.8.2 (`pyproject.toml`)
+- `operon` 0.8.3 (`pyproject.toml`)
 - database schema 2.11 (`operon/database.py`, `SCHEMA_VERSION`)
 - metadata schema 1.4 (`operon/schema.py`, `METADATA_SCHEMA_VERSION`)
 
@@ -161,8 +161,11 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
   `contributor/`. Each tree is a Sphinx project of its own
   (`docs/<language>/conf.py`, sharing settings from `docs/conf_common.py`) and
   a Read the Docs project of its own, linked there as parent and translation:
-  `operonproject` (English, `.readthedocs.yaml`) and `operonproject-zh`
-  (Chinese, `.readthedocs-zh.yaml`). `docs/locales/` is the catalog directory
+  `operonproject` (English) and `operonproject-zh` (Chinese). Read the Docs
+  accepts no build-configuration file name other than `.readthedocs.yaml`, so
+  each tree carries one next to its `conf.py`
+  (`docs/<language>/.readthedocs.yaml`) and the dashboard points the project at
+  that path. `docs/locales/` is the catalog directory
   for a future gettext-maintained language; `tests/unit/test_docs_projects.py`
   guards the layout.
 - `benchmarks/` — representative entity sets for QC performance diagnostics
@@ -297,9 +300,10 @@ change:
 - Contributor-facing processes → `docs/*/contributor/`; navigation →
   `docs/*/index.md`
 - The set of language projects → `docs/<language>/conf.py`, its
-  `.readthedocs*.yaml`, and the registry in `tests/unit/test_docs_projects.py`
+  `docs/<language>/.readthedocs.yaml`, and the registry in
+  `tests/unit/test_docs_projects.py`
 
-Version markers in docs (`operon` 0.8.2, database schema 2.11, metadata
+Version markers in docs (`operon` 0.8.3, database schema 2.11, metadata
 schema 1.4) must match `pyproject.toml` and the code. Do not write the
 current values literally in Markdown sources: use the `myst_substitutions`
 references `{{ operon_version }}`, `{{ db_schema }}`, and

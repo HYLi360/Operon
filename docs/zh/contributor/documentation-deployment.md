@@ -10,8 +10,8 @@
 | `docs/zh/` | `docs/zh/conf.py` | `operonproject-zh`（翻译项目），中文（中国） |
 
 - `docs/conf_common.py`：两个项目共享的全部设置——版本替换、MyST 选项、主题选项，以及下文所述的语言守卫。语言的 `conf.py` 只声明自己的语言、标题后缀与 Read the Docs 项目名；
-- `.readthedocs.yaml`：父项目（英文）的构建配置；
-- `.readthedocs-zh.yaml`：翻译项目（中文）的构建配置；
+- `docs/en/.readthedocs.yaml`：父项目（英文）的构建配置；
+- `docs/zh/.readthedocs.yaml`：翻译项目（中文）的构建配置。Read the Docs 不接受此处使用其它文件名，因此语言由所在目录标识，每个项目在 `Build configuration file` 中填写完整路径。仓库根目录下的构建配置不会被任何项目发布；
 - `docs/requirements.txt`：两个项目共用的依赖文件（`pyproject.toml` 的 `docs` extra）；
 - `docs/locales/`：用于以 gettext 而非第二棵 Markdown 树来维护某种语言的目录，使用方式见其中的 README。
 
@@ -34,8 +34,8 @@ Read the Docs 会在项目 `Build configuration file` 设置所指定文件的�
 ## 接入 Read the Docs
 
 1. 在 Read the Docs 中导入 GitHub 仓库 `HYLi360/Operon`。
-2. 父项目 `operonproject`：`Build configuration file` 保持 `.readthedocs.yaml`，语言保持英文，选择要发布的默认分支并触发首次构建。
-3. 用同一仓库创建翻译项目，命名 `operonproject-zh`，语言设为 `Chinese (China)`，`Build configuration file` 设为 `.readthedocs-zh.yaml`。
+2. 父项目 `operonproject`：`Build configuration file` 设为 `docs/en/.readthedocs.yaml`，语言保持英文，选择要发布的默认分支并触发首次构建。
+3. 用同一仓库创建翻译项目，命名 `operonproject-zh`，语言设为 `Chinese (China)`，`Build configuration file` 设为 `docs/zh/.readthedocs.yaml`。
 4. 在父项目的 Translations 页面添加 `operonproject-zh`。此后 Read the Docs 会带着语言前缀在父项目的域名下提供该翻译，并在语言选择器中列出它。
 5. 两个项目构建完成后，检查域名根路径（会跳转到父项目的语言）、带语言前缀的翻译地址、侧边栏的语言选择器，以及两种语言各一个深层页面。
 6. 在 Read the Docs 的版本设置中只开放需要公开的分支或标签。
@@ -51,7 +51,7 @@ Read the Docs 会以 `-D language=<语言>` 把项目语言传给 Sphinx，该�
 ## 新增语言
 
 1. 新增 `docs/<语言>/`，页面与其它树保持相同相对路径，并添加调用 `apply_shared_settings(globals(), language=..., title_suffix=..., rtd_project=...)` 的 `conf.py`。
-2. 在现有构建配置旁新增该语言的 Read the Docs 构建配置文件，并在 `tests/unit/test_docs_projects.py` 中登记该语言。
+2. 新增 `docs/<语言>/.readthedocs.yaml`（Read the Docs 不接受其它文件名），并在 `tests/unit/test_docs_projects.py` 中登记该语言。
 3. 创建 Read the Docs 项目，设置其语言与 `Build configuration file`，并加入父项目的 Translations 页面。
 
 若某种语言改用 gettext 目录而非第二棵 Markdown 树来维护，可在其 `conf.py` 中声明 `language = "auto"`，构建时语言将取自 Read the Docs 而非声明值。目录结构与提取方式见 `docs/locales/README.md`。

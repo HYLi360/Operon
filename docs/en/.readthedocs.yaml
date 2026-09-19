@@ -2,10 +2,13 @@
 # (`operonproject`), which publishes the English tree at
 # https://operonproject.readthedocs.io/en/latest/ .
 #
-# The Chinese translation project (`operonproject-zh`) builds from
-# `.readthedocs-zh.yaml` and is linked to this project on its Translations
-# page; Read the Docs then serves it under this project's domain with the
-# language prefix. See docs/en/contributor/documentation-deployment.md.
+# Read the Docs accepts no build-configuration file name other than
+# `.readthedocs.yaml`, so each language keeps one next to its `conf.py` and its
+# project names that path in Admin -> Settings -> `Build configuration file`:
+# `docs/en/.readthedocs.yaml` for this project, `docs/zh/.readthedocs.yaml` for
+# the Chinese translation project (`operonproject-zh`), which is linked to this
+# project on its Translations page and then served under this project's domain
+# with the language prefix. See docs/en/contributor/documentation-deployment.md.
 version: 2
 
 build:

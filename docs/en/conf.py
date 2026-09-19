@@ -2,8 +2,9 @@
 
 This tree is the parent Read the Docs project ``operonproject``, published at
 ``https://operonproject.readthedocs.io/en/latest/``; the Chinese translation
-project builds ``docs/zh/`` from ``.readthedocs-zh.yaml``. Shared settings live
-in ``docs/conf_common.py``; see ``contributor/documentation-deployment.md``.
+project builds ``docs/zh/`` from ``docs/zh/.readthedocs.yaml``. Shared settings
+live in ``docs/conf_common.py``; see
+``contributor/documentation-deployment.md``.
 """
 
 from __future__ import annotations

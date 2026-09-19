@@ -13,9 +13,10 @@ Source tree      Sphinx configuration  Read the Docs project
 Read the Docs links the two projects as parent and translation; that link is
 dashboard state (Admin -> Settings -> Translations), not repository state.
 Each project also names the build configuration file it uses in its
-``Build configuration file`` setting, so the repository ships
-``docs/en/.readthedocs.yaml`` for the parent project and
-``docs/.readthedocs-zh.yaml`` for the translation.
+``Build configuration file`` setting, and Read the Docs accepts no file name
+there other than ``.readthedocs.yaml``: the language is identified by the
+directory holding it, so the repository ships ``docs/en/.readthedocs.yaml`` and
+``docs/zh/.readthedocs.yaml``.
 
 Read the Docs runs Sphinx from the directory that holds the configuration
 file. That directory is the source directory — every page of a language lives

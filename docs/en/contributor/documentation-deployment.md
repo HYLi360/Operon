@@ -10,8 +10,8 @@ The documentation is built with Sphinx, MyST Parser, and the Read the Docs theme
 | `docs/zh/` | `docs/zh/conf.py` | `operonproject-zh` (translation), Chinese (China) |
 
 - `docs/conf_common.py`: everything the two projects share — version substitutions, MyST options, theme options, and the language guard below. A language `conf.py` only declares its own language, title suffix, and Read the Docs project;
-- `.readthedocs.yaml`: build configuration of the parent (English) project;
-- `.readthedocs-zh.yaml`: build configuration of the translation (Chinese) project;
+- `docs/en/.readthedocs.yaml`: build configuration of the parent (English) project;
+- `docs/zh/.readthedocs.yaml`: build configuration of the translation (Chinese) project. Read the Docs accepts no file name other than `.readthedocs.yaml` here, so a language is identified by the directory holding it and each project names its full path in the `Build configuration file` setting. Nothing is published from a repository-root build file;
 - `docs/requirements.txt`: the dependency file both projects install (the `docs` extra of `pyproject.toml`);
 - `docs/locales/`: catalog directory for a language maintained through gettext instead of a second Markdown tree; see the README inside it.
 
@@ -34,8 +34,8 @@ Run both projects from the repository root with the project virtual environment:
 ## Connect Read the Docs
 
 1. Import the GitHub repository `HYLi360/Operon` in Read the Docs.
-2. Parent project `operonproject`: leave `Build configuration file` at `.readthedocs.yaml` and its language at English, select the default branch to publish, and trigger the first build.
-3. Create the translation project from the same repository, named `operonproject-zh`, with `Chinese (China)` as its language and `.readthedocs-zh.yaml` as its `Build configuration file`.
+2. Parent project `operonproject`: set `Build configuration file` to `docs/en/.readthedocs.yaml`, keep its language at English, select the default branch to publish, and trigger the first build.
+3. Create the translation project from the same repository, named `operonproject-zh`, with `Chinese (China)` as its language and `docs/zh/.readthedocs.yaml` as its `Build configuration file`.
 4. On the Translations page of the parent project, add `operonproject-zh`. Read the Docs then serves it under the parent's domain with the language prefix and lists it in the language selector.
 5. After both builds finish, check the domain root (it redirects to the parent's language), the translation URL with its language prefix, the language selector in the sidebar, and one nested page per language.
 6. Enable only the branches or tags that should be public in the Read the Docs version settings.
@@ -51,7 +51,7 @@ Read the Docs passes the language of the project to Sphinx as `-D language=<lang
 ## Adding a language
 
 1. Add `docs/<language>/` with the same relative pages as the other trees and a `conf.py` that calls `apply_shared_settings(globals(), language=..., title_suffix=..., rtd_project=...)`.
-2. Add its Read the Docs build file next to the existing ones and register the language in `tests/unit/test_docs_projects.py`.
+2. Add `docs/<language>/.readthedocs.yaml` — Read the Docs accepts no other file name — and register the language in `tests/unit/test_docs_projects.py`.
 3. Create the Read the Docs project, set its language and `Build configuration file`, and add it to the parent project's Translations page.
 
 A language maintained through gettext catalogs instead of a second Markdown tree declares `language = "auto"` in its `conf.py`; the build then takes its language from Read the Docs instead of the declaration. `docs/locales/README.md` describes the catalog layout and how to extract it.
