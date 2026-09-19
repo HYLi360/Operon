@@ -158,8 +158,13 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
 - `docs/` — Sphinx documentation in two mirrored language trees, `docs/en/`
   and `docs/zh/`, each split into `overview.md`, `getting-started/`,
   `guides/`, `architecture/`, `reference/`, `operations/`, and
-  `contributor/`. Built with `docs/conf.py`; published via Read the Docs
-  (`.readthedocs.yaml`).
+  `contributor/`. Each tree is a Sphinx project of its own
+  (`docs/<language>/conf.py`, sharing settings from `docs/conf_common.py`) and
+  a Read the Docs project of its own, linked there as parent and translation:
+  `operonproject` (English, `.readthedocs.yaml`) and `operonproject-zh`
+  (Chinese, `.readthedocs-zh.yaml`). `docs/locales/` is the catalog directory
+  for a future gettext-maintained language; `tests/unit/test_docs_projects.py`
+  guards the layout.
 - `benchmarks/` — representative entity sets for QC performance diagnostics
   (see `docs/*/operations/qc-performance.md`).
 - `scripts/` — local developer tooling; `setup-test-matrix.sh` and
@@ -189,7 +194,8 @@ scripts/run-test-matrix.sh          # whole suite on 3.10-3.15 concurrently
 
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
-sphinx-build -W --keep-going -b html docs docs/_build/html  # strict docs build
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html  # strict build,
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html  # one per language
 ```
 
 Run the relevant test category after any change; run the full suite before
@@ -290,12 +296,14 @@ change:
   `docs/*/operations/`
 - Contributor-facing processes → `docs/*/contributor/`; navigation →
   `docs/*/index.md`
+- The set of language projects → `docs/<language>/conf.py`, its
+  `.readthedocs*.yaml`, and the registry in `tests/unit/test_docs_projects.py`
 
 Version markers in docs (`operon` 0.8.2, database schema 2.11, metadata
 schema 1.4) must match `pyproject.toml` and the code. Do not write the
 current values literally in Markdown sources: use the `myst_substitutions`
 references `{{ operon_version }}`, `{{ db_schema }}`, and
-`{{ metadata_schema }}`, which `docs/conf.py` resolves from the single
+`{{ metadata_schema }}`, which `docs/conf_common.py` resolves from the single
 sources above at build time. Substitutions expand in paragraph text only,
 never inside code spans or fenced code blocks — examples there use
 `<version>` placeholders instead. Intentional historical pins stay literal — either on the

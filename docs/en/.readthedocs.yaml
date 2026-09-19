@@ -1,0 +1,26 @@
+# Read the Docs build configuration for the parent documentation project
+# (`operonproject`), which publishes the English tree at
+# https://operonproject.readthedocs.io/en/latest/ .
+#
+# The Chinese translation project (`operonproject-zh`) builds from
+# `.readthedocs-zh.yaml` and is linked to this project on its Translations
+# page; Read the Docs then serves it under this project's domain with the
+# language prefix. See docs/en/contributor/documentation-deployment.md.
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  # Read the Docs runs Sphinx from the directory holding this file, so
+  # `docs/en/` is both the configuration directory and the source directory.
+  # Paths elsewhere in this file stay relative to the repository root.
+  configuration: docs/en/conf.py
+  builder: html
+  fail_on_warning: true
+
+python:
+  install:
+    - requirements: docs/requirements.txt

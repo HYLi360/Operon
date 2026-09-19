@@ -1,7 +1,7 @@
 """Guard: documentation must not hardcode the current version markers.
 
 Current versions in the Markdown sources are rendered through
-``myst_substitutions`` (see ``docs/conf.py``): ``{{ operon_version }}``,
+``myst_substitutions`` (see ``docs/conf_common.py``): ``{{ operon_version }}``,
 ``{{ db_schema }}``, and ``{{ metadata_schema }}``. A literal occurrence of a
 current version therefore means somebody bypassed the substitution — fail the
 build instead of drifting. Historical version mentions are facts and stay

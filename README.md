@@ -45,11 +45,12 @@ python -m pip install -e '.[dev]'
 
 ## Documentation
 
-The complete documentation is maintained in [English](docs/en/index.md) and [Chinese](docs/zh/index.md). To build the Sphinx site locally:
+The complete documentation is maintained in [English](docs/en/index.md) and [Chinese](docs/zh/index.md). Each language is its own Sphinx project; build both without warnings:
 
 ```bash
 python -m pip install -e '.[docs]'
-sphinx-build -W --keep-going -b html docs docs/_build/html
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
-Read the Docs uses the repository's `.readthedocs.yaml` configuration and publishes a language-selection page with mirrored `/en/` and `/zh/` documentation trees.
+Read the Docs publishes two projects linked as parent and translation: `operonproject` (English, `https://operonproject.readthedocs.io/en/latest/`) and `operonproject-zh` (Chinese, `https://operonproject.readthedocs.io/zh-cn/latest/`), each built through its own `.readthedocs*.yaml`.

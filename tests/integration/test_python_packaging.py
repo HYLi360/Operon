@@ -91,13 +91,14 @@ def test_sdist_contains_complete_project_source(tmp_path):
         f"{prefix}operon/tui/assets/splash.png",
         f"{prefix}operon/tui/assets/splash.rgb.z",
         f"{prefix}.readthedocs.yaml",
-        f"{prefix}docs/conf.py",
+        f"{prefix}.readthedocs-zh.yaml",
+        f"{prefix}docs/conf_common.py",
         f"{prefix}docs/requirements.txt",
+        f"{prefix}docs/en/conf.py",
+        f"{prefix}docs/zh/conf.py",
         f"{prefix}docs/zh/architecture/index.md",
         f"{prefix}docs/en/architecture/index.md",
-        f"{prefix}docs/_templates/layout.html",
-        f"{prefix}docs/_static/operon.css",
-        f"{prefix}docs/_static/language-switcher.js",
+        f"{prefix}docs/locales/README.md",
     }
     with tarfile.open(archive, "r:gz") as source_tar:
         names = set(source_tar.getnames())

@@ -1,0 +1,26 @@
+# Read the Docs build configuration for the Chinese translation project
+# (`operonproject-zh`), served under the parent project's domain as
+# https://operonproject.readthedocs.io/zh-cn/latest/ .
+#
+# Set this path in the `Build configuration file` field of
+# Admin -> Settings, and set the project language to Chinese (China) so that
+# Read the Docs passes `-D language=zh_CN` to Sphinx. See
+# docs/zh/contributor/documentation-deployment.md.
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+
+sphinx:
+  # Read the Docs runs Sphinx from the directory holding this file, so
+  # `docs/zh/` is both the configuration directory and the source directory.
+  # Paths elsewhere in this file stay relative to the repository root.
+  configuration: docs/zh/conf.py
+  builder: html
+  fail_on_warning: true
+
+python:
+  install:
+    - requirements: docs/requirements.txt

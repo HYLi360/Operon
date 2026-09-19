@@ -5,11 +5,12 @@ include MANIFEST.in
 include README.md
 include README_ZH.md
 include .readthedocs.yaml
+include .readthedocs-zh.yaml
 include pyproject.toml
 include setup.py
 recursive-include .github *.yml
 recursive-include benchmarks *.tsv
-recursive-include docs *.css *.html *.js *.md *.py *.txt
+recursive-include docs *.css *.html *.js *.md *.po *.py *.txt
 prune docs/_build
 recursive-include operon *.py *.pyx *.tcss
 recursive-include operon/tui/assets *.png *.z *.md

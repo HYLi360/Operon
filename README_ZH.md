@@ -43,11 +43,12 @@ python -m pip install -e '.[dev]'
 
 ## 文档
 
-完整文档同时维护[中文](docs/zh/index.md)和[英文](docs/en/index.md)版本。本地构建 Sphinx 站点：
+完整文档同时维护[中文](docs/zh/index.md)和[英文](docs/en/index.md)版本。每种语言是独立的 Sphinx 工程，两条构建都必须无警告通过：
 
 ```bash
 python -m pip install -e '.[docs]'
-sphinx-build -W --keep-going -b html docs docs/_build/html
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
-Read the Docs 使用仓库根目录的 `.readthedocs.yaml`，发布带语言选择入口及 `/zh/`、`/en/` 镜像目录的文档站点。
+Read the Docs 发布两个互为父项目与翻译的项目：`operonproject`（英文，`https://operonproject.readthedocs.io/en/latest/`）与 `operonproject-zh`（中文，`https://operonproject.readthedocs.io/zh-cn/latest/`），各自通过自己的 `.readthedocs*.yaml` 构建。
