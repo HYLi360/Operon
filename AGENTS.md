@@ -171,10 +171,11 @@ The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
 - `benchmarks/` — representative entity sets for QC performance diagnostics
   (see `docs/*/operations/qc-performance.md`).
 - `scripts/` — local developer tooling; `setup-test-matrix.sh` and
-  `run-test-matrix.sh` build and drive the uv-managed Python 3.10–3.14
+  `run-test-matrix.sh` build and drive the uv-managed Python 3.10–3.15
   matrix under .matrix/ (see `docs/*/contributor/development-testing.md`);
-  `defects.sh` appends to and queries the defect registry (`defects.yml`,
-  see "Defect reports" below).
+  `release-preflight.sh` is the release gate and the script the publish
+  workflow runs on the tag; `defects.sh` appends to and queries the defect
+  registry (`defects.yml`, see "Defect reports" below).
 
 ## Setup, test, and build
 
@@ -193,7 +194,13 @@ python -m pytest tests/unit         # by category: unit / integration /
 
 python -m pytest --lf -q --no-cov   # iterate: last failures, no coverage
 python -m pytest -n 4 --dist loadfile   # parallel full suite (xdist, in the dev/test extras)
-scripts/run-test-matrix.sh          # whole suite on 3.10-3.15 concurrently
+scripts/setup-test-matrix.sh        # once per machine: uv-managed 3.10-3.15 venvs
+scripts/run-test-matrix.sh          # whole suite on 3.10-3.15, in waves
+                                    # (MATRIX_CONCURRENCY / MATRIX_JOBS override the split)
+scripts/release-preflight.sh        # the release gate: version, full suite, both doc
+                                    # trees, defect registry, matrix evidence for HEAD;
+                                    # --run-matrix runs the matrix inside the gate, and
+                                    # --tag vX.Y.Z asserts the tag's name/signature/target
 
 python setup.py build_ext --inplace # rebuild only the Cython extension
 
@@ -205,14 +212,19 @@ Run the relevant test category after any change; run the full suite before
 considering work done.
 
 CI (`.github/workflows/test.yml`) runs pytest on Python 3.10–3.15 and the strict
-Sphinx build. Releases are published exclusively to PyPI; see `docs/*/contributor/pypi-release.md`.
+Sphinx build. Releases are published exclusively to PyPI, and
+`.github/workflows/publish.yml` builds nothing and uploads nothing until its
+`verify-release` job has seen a `success` conclusion for the tagged commit's `test`
+run *and* a passing `scripts/release-preflight.sh --ci --tag <tag>`; see
+`docs/*/contributor/pypi-release.md`.
 
 The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests
 to prevent unexpected or random test results.
 
 > Running `python -m pytest` directly takes approx 35 seconds
-> (auto: 24 workers). Running the local test matrix takes 3 minutes
-> (6 jobs × 4 workers), or 4~5min (6 jobs × 2 workers in default).
+> (auto: 24 workers). Running the local test matrix takes about 5 minutes
+> (6 versions, 3 at a time × 7 workers by default; `MATRIX_CONCURRENCY` /
+> `MATRIX_JOBS` override the split).
 > 
 > Measured on Intel Core i7-13700HX (16c24t).
 
