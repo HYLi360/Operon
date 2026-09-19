@@ -425,7 +425,7 @@ defects:
     test clicks a control whose centre a rebuilt layout has not repositioned yet
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'The panel replaces an editor through ``remount`` (remove the old rows,
     mount the new ones a turn later) and each row mounts its own nested rows a turn
     after that, so "the panel rendered" is not "the form can be read". CI showed it
@@ -469,9 +469,11 @@ defects:
     and the row latch''s contract.  The selector-based ``mount_later`` API also removed
     a late-binding bug found on the way in ``SourceRow.on_mount``, where two lambdas
     shared one ``view`` variable and the filter container waited on the best_by
-    container forever.'
-  fix_commit: null
-  fixed_in: null
+    container forever.  The completion landed in 60a2d46 (deep row readiness and the
+    Select guard) and f1fd525 (waits at the add-row sites); this record''s fix_commit
+    names the latter.'
+  fix_commit: f1fd5257ca0eca9ceb447c8edc59e2dcfe51aba6
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
   - tests/unit/test_tui_config.py::test_row_reports_ready_only_once_its_subtree_is_in_the_tree
@@ -542,7 +544,7 @@ defects:
     on CI only, under load'
   severity: high
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'CI run 35434598469 (head f1fd525) failed
     tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end on
     ubuntu-latest 3.12 and 3.13: the composed document held
@@ -559,7 +561,7 @@ defects:
     reader waits instead of composing a blank operator; ``BestByRow`` parses rank
     values and defaults through ``actions.coerce_scalar``, keeping whole numbers
     whole.'
-  fix_commit: null
+  fix_commit: 729fc99378fb01279b6dd87e6b9bb432261f4085
   fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
