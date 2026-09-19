@@ -489,7 +489,7 @@ defects:
     dialogs — and the recipe test waits for the outcomes it expects (the inline
     conflict error, then the modal) instead of a single ``pilot.pause()``.  The test
     carries ``@pytest.mark.bug("ODR-0024")``.'
-  fix_commit: null
+  fix_commit: 44c265e67f5c82d25ee802fda2113c54956730e5
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
