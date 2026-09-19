@@ -572,6 +572,7 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
     assert sorted(row["profile_version"] for row in rows) == [1, 2]
 
 
+@pytest.mark.bug("ODR-0027")
 def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
     """The rules editor must scroll: rule containers use height 1fr by default
     (plain Vertical), which clipped the rules to a fixed non-scrolling window."""
@@ -581,8 +582,15 @@ def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
         async with app.run_test(size=(160, 50)) as pilot:
             panel = await _open_config(app, pilot)
             _select_profile(panel, "assembly_production_v1")
-            await pilot.pause()
+            await _await_form_ready(pilot, panel)
             editor = panel.query_one("#profile-editor", VerticalScroll)
+            # The rows are in the tree before the layout gives the editor its
+            # content height, so wait for the growth the test is about instead
+            # of measuring in the mounting turn (ODR-0027).
+            await _wait_until(
+                lambda: editor.virtual_size.height > editor.scrollable_content_region.height,
+                "the rules editor to grow past its viewport",
+            )
             assert editor.virtual_size.height > editor.scrollable_content_region.height
             assert editor.max_scroll_y > 0
             editor.scroll_end(animate=False)
@@ -703,6 +711,20 @@ def test_config_screen_recipe_save_end_to_end(project: Project) -> None:
 # ---------------------------------------------------------------------------
 # Headless UI: remaining editor, history, and tools-check paths
 # ---------------------------------------------------------------------------
+
+
+async def _await_notification(pilot, app, needle: str) -> None:
+    """Wait until some raised notification's message contains ``needle``.
+
+    A save runs on a worker and raises its notification a message-loop turn
+    after the modal closes, so reading ``_notifications(app)`` right after a
+    single ``pause()`` sees the list before the text is in it — on a slow
+    runner that turns a correct save into a failure (ODR-0027).
+    """
+    await _wait_until(
+        lambda: any(needle in message for _, message in _notifications(app)),
+        f"the notification {needle!r}",
+    )
 
 
 def _notifications(app) -> list[tuple[str, str]]:
@@ -893,8 +915,7 @@ def test_config_screen_profile_unmodeled_keys_survive_save(project: Project) -> 
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, ProfileSaveModal)
-            assert any("saved probe_extras_v1 version 2" in message
-                       for _, message in _notifications(app))
+            await _await_notification(pilot, app, "saved probe_extras_v1 version 2")
 
     _run(scenario())
     loaded = load_profile(project.profiles_dir, "probe_extras_v1", expected_kind="qc")
@@ -1013,10 +1034,8 @@ def test_config_screen_unchanged_profile_save_notifies(project: Project) -> None
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, ProfileSaveModal)
-            assert any(
-                "assembly_production_v1: unchanged — version 1 kept" in message
-                for _, message in _notifications(app)
-            )
+            await _await_notification(
+                pilot, app, "assembly_production_v1: unchanged — version 1 kept")
 
     _run(scenario())
     assert load_profile(
@@ -1103,8 +1122,7 @@ def test_config_screen_new_profile_is_created_as_version_1(project: Project) -> 
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, ProfileSaveModal)
-            assert any("saved assembly_strict_v1 version 1" in message
-                       for _, message in _notifications(app))
+            await _await_notification(pilot, app, "saved assembly_strict_v1 version 1")
 
     _run(scenario())
     loaded = load_profile(project.profiles_dir, "assembly_strict_v1", expected_kind="qc")
@@ -1136,10 +1154,8 @@ def test_config_screen_new_profile_with_existing_name_opens_it(project: Project)
             assert "reads_qc_v1" in _static_text(panel.query_one("#profile-heading", Static))
             assert panel.query_one("#profile-description", Input).value.startswith("Raw read QC")
             assert len(panel._rule_rows("required")) == 4
-            assert any(
-                "profile 'reads_qc_v1' already exists — opening it instead" in message
-                for _, message in _notifications(app)
-            )
+            await _await_notification(
+                pilot, app, "profile 'reads_qc_v1' already exists — opening it instead")
 
     _run(scenario())
 
@@ -1310,8 +1326,7 @@ def test_config_screen_recipe_unchanged_max_hits_and_cancel(project: Project) ->
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, RecipeSaveModal)
-            assert any("saved blastn_nt version 2" in message
-                       for _, message in _notifications(app))
+            await _await_notification(pilot, app, "saved blastn_nt version 2")
 
             # A recipe without max_hits_per_query also saves as a no-op.
             panel._load_recipe("busco_autolineage")
@@ -2079,6 +2094,7 @@ def test_save_classification_profile_versions_and_validation(project: Project) -
     assert loaded["rules"][0]["when"][0]["value"] == 1e-05
 
 
+@pytest.mark.bug("ODR-0027")
 def test_config_classification_editor_end_to_end(project: Project) -> None:
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
 
@@ -2160,7 +2176,7 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, ClassificationSaveModal)
-            assert any("saved bhlh_tiers version 2" in message for _, message in _notifications(app))
+            await _await_notification(pilot, app, "saved bhlh_tiers version 2")
             # The editor reloaded from disk: the freshly saved structure renders.
             assert len(list(panel.query(".source-row"))) == 2
             assert len(list(panel.query(".classrule-row"))) == 4

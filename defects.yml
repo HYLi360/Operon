@@ -567,3 +567,34 @@ defects:
   - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_with_an_uninitialised_select
   - tests/unit/test_tui_config.py::test_best_by_rank_map_keeps_whole_ranks_whole
+- id: ODR-0027
+  title: Two config-screen tests read the UI a message-loop turn too early
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: 'the config screen tests on a slow runner: both are green locally and on
+    the local cross-version matrix (3.10-3.15) while CI''s ubuntu-latest 3.13 leg
+    failed them twice, on two different commits'
+  severity: medium
+  component: tests
+  status: fixed
+  reproduction: 'CI run 35437444763 (head f16d077) and run 35436469140 (head 4a116ce,
+    second attempt) each failed ``pytest (ubuntu-latest, 3.13)`` in
+    ``tests/unit/test_tui_config.py``.  ``test_profile_editor_scrolls_to_all_rules``
+    asserted ``editor.virtual_size.height > editor.scrollable_content_region.height``
+    and reported ``assert 46 > 46`` — the profile rows were not in the tree in the
+    turn the test measured, so the editor had not grown past its viewport yet.
+    ``test_config_classification_editor_end_to_end`` closed its save and asserted
+    ``any("saved bhlh_tiers version 2" in message for _, message in
+    _notifications(app))`` before the notification the save worker raises a turn
+    later had arrived.'
+  disposition: 'Neither wait is a fixed number of ``pilot.pause()`` cycles any more:
+    the scroll test waits through ``_await_form_ready`` and then for the editor''s own
+    growth, and the notification assertions go through a new ``_await_notification``
+    helper.  Applied to every site of that shape in the file (six notification
+    assertions), because the ones that happened to pass are the ones the next slow run
+    picks.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
+  - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
