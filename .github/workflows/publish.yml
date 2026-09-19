@@ -8,7 +8,42 @@ permissions:
   contents: read
 
 jobs:
+  verify-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pyyaml
+      - name: The tagged commit passed its own CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          conclusion=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=$sha&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "no run"')
+          echo "$RELEASE_TAG -> $sha: test.yml concluded '$conclusion'"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::test.yml on $sha concluded '$conclusion'; rerun it (gh run rerun) before releasing"
+            exit 1
+          fi
+      - name: Release preflight
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: scripts/release-preflight.sh --ci --tag "$RELEASE_TAG"
+
   source-distribution:
+    needs: verify-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -35,6 +70,7 @@ jobs:
           if-no-files-found: error
 
   documentation:
+    needs: verify-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -48,6 +84,7 @@ jobs:
           sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 
   wheels:
+    needs: verify-release
     strategy:
       fail-fast: false
       matrix:
@@ -86,7 +123,7 @@ jobs:
           if-no-files-found: error
 
   pypi-publish:
-    needs: [source-distribution, wheels]
+    needs: [verify-release, source-distribution, wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi

@@ -89,7 +89,9 @@ The full suite takes about seven minutes serially; the loop below aims to run it
    directly with that interpreter; the directory is wiped before a run starts, so the
    leftovers of an earlier one never pass for the current run, and a second run refuses
    to start (exit 2) while one is in flight rather than wipe the files it is still
-   reporting from. The scripts work on Linux and macOS. `.matrix/` is git-ignored.
+   reporting from. The run also records the commit it tested in `.matrix/logs/head`,
+   which is how `scripts/release-preflight.sh` refuses matrix evidence that belongs to
+   another commit. The scripts work on Linux and macOS. `.matrix/` is git-ignored.
 5. **Platform-specific code cannot be verified by one matrix job alone.** Linux and macOS
    differ in the system utilities the environment probe calls and in `pathlib`/`resource`
    behaviour. Code guarded by `sys.platform`/`os.name`, or shelling out to system tools,

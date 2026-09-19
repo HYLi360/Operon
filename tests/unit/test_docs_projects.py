@@ -16,6 +16,7 @@ extra installs no Sphinx, so the documentation must stay verifiable without it.
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
 import pytest
@@ -186,3 +187,40 @@ def test_every_workflow_builds_both_language_trees():
             f"{directories or ['docs']} — the pre-split source directory no "
             "longer holds a conf.py"
         )
+
+
+def test_the_publish_workflow_gates_on_the_release_preflight() -> None:
+    """A release builds and uploads only after the tagged commit proved itself.
+
+    The publish workflow used to build whatever the tag pointed at, so a tag on a
+    commit whose CI was red — or cancelled before it ever ran — reached PyPI anyway.
+    The gate is the ``verify-release`` job: it asserts the ``test`` workflow's
+    conclusion for that exact commit and then runs
+    ``scripts/release-preflight.sh``, and every job that builds or uploads waits for
+    it.  A release cannot exercise that path in a test, so this keeps it in place.
+    """
+
+    preflight = REPO_ROOT / "scripts" / "release-preflight.sh"
+    assert preflight.is_file(), "the release preflight script is missing"
+    assert os.access(preflight, os.X_OK), f"{preflight} is not executable"
+
+    publish = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    )
+    jobs = publish["jobs"]
+    verify = jobs["verify-release"]
+    commands = "\n".join(
+        step.get("run", "") for step in verify["steps"] if isinstance(step, dict)
+    )
+    assert "release-preflight.sh" in commands, "verify-release does not run the preflight"
+    assert "test.yml" in commands and "conclusion" in commands, (
+        "verify-release does not assert the test workflow's conclusion for the tagged commit"
+    )
+    assert verify.get("permissions", {}).get("actions") == "read", (
+        "verify-release reads workflow runs, so it needs actions: read"
+    )
+
+    for job in ("source-distribution", "documentation", "wheels", "pypi-publish"):
+        needs = jobs[job]["needs"]
+        needs = [needs] if isinstance(needs, str) else list(needs)
+        assert "verify-release" in needs, f"{job} does not wait for verify-release"

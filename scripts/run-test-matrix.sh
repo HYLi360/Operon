@@ -46,6 +46,9 @@ rm -rf "$LOGS"
 mkdir -p "$LOGS"
 echo $$ >"$OWNER"
 trap 'rm -f "$OWNER"' EXIT
+# Bind the evidence to a commit: release-preflight.sh checks that the statuses
+# below belong to the tree it is gating.
+{ git rev-parse HEAD; date +%Y-%m-%dT%H:%M:%S%z; } >"$LOGS/head" 2>/dev/null || echo unknown >"$LOGS/head"
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(tests)
 

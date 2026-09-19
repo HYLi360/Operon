@@ -79,8 +79,9 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
 
    每个版本的日志在 `.matrix/logs/<version>.log`，失败后可直接用对应解释器重跑；日志目录在每次
    运行前清空，因此不会把上一轮的残留误当成本轮结果，且同一时间只允许一个运行——第二个会以退出码 2
-   拒绝启动，而不是清空正在汇报的那一轮的日志。脚本在 Linux 与 macOS 上均可运行，`.matrix/` 已被
-   git 忽略。
+   拒绝启动，而不是清空正在汇报的那一轮的日志。运行还会把被测提交写入
+   `.matrix/logs/head`，`scripts/release-preflight.sh` 据此拒绝把别的提交的矩阵结果当作
+   本次发布的证据。脚本在 Linux 与 macOS 上均可运行，`.matrix/` 已被 git 忽略。
 5. **平台相关代码不能只靠单个矩阵任务验证。** Linux 与 macOS 在环境探测所调用的系统工具、以及
    `pathlib`/`resource` 行为上都不同。凡是用 `sys.platform`/`os.name` 分支或调用系统工具的代码，
    都应带一个能在 Linux 上复现对端平台条件的测试（例如不含 GNU `timeout` 的空 `PATH`），而不是
