@@ -29,6 +29,6 @@ htmlcov/
 /site/
 /docs/_build/
 /workflows/
-/HPC/
+/others/
 .matrix/
 cobertura.xml
