@@ -29,6 +29,7 @@ from operon.tui import data
 from operon.tui.screens.common import (
     DismissOnce,
     Panel,
+    WorkerResults,
     capture_table_view,
     entity_label,
     format_duration,
@@ -279,7 +280,7 @@ class RunsPanel(Panel):
         self.app.push_screen(RunDetailScreen(self.project, payload["run_id"]))
 
 
-class AnalysisJobsModal(DismissOnce, ModalScreen):
+class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
     """Read-only ``analysis_jobs`` browser launched from the Tasks screen.
 
     The Tasks list shows ``workflow_runs``, which only exist for tasks whose
@@ -366,11 +367,7 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         self._loading = False
@@ -436,7 +433,7 @@ class AnalysisJobsModal(DismissOnce, ModalScreen):
         return text
 
 
-class RunDetailScreen(Screen):
+class RunDetailScreen(WorkerResults, Screen):
     """Full record of one workflow run, mirroring `operon workflow show`.
 
     While the run is ``running``, the *Follow logs* switch streams the local
@@ -492,11 +489,7 @@ class RunDetailScreen(Screen):
             payload: Any = data.workflow_run_detail(self.project, self.run_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the screen
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         view = self.query_one("#run-detail", Static)

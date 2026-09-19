@@ -113,11 +113,7 @@ class LifecycleModal(WriteModal):
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_plan, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_plan, payload)
 
     def _apply_plan(self, payload: Any) -> None:
         if isinstance(payload, BaseException):
@@ -294,11 +290,7 @@ class EntitiesPanel(Panel):
             payload: Any = data.entity_detail(self.project, entity_type, entity_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_detail, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_detail, payload)
 
     def _apply_detail(self, payload: Any) -> None:
         detail_view = self.query_one("#entity-detail", Static)

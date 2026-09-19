@@ -378,3 +378,40 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session
+- id: ODR-0022
+  title: A write modal's worker result lands after the modal was dismissed
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: unreleased (the TUI write modals are not in any tagged release; v0.8.2
+    and earlier lack them). Triggered when a write finishes after its modal was
+    dismissed — escape, Cancel, or a second Confirm — so the queued result is applied
+    to a widget tree that is already gone
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'WriteModal._action_done() ran on a torn-down modal, so
+    set_confirm_enabled()/show_error() raised NoMatches *inside the worker thread*;
+    Textual turned that into WorkerFailed and failed the whole application. CI showed
+    it as unrelated tests failing: common.py:388 set_confirm_enabled ->
+    query_one("#confirm") on AdoptModal and FanoutModal (macos 3.12/3.14,
+    test_adopt_modal_manifest_requires_preview, test_fanout_modal_requires_the_dry_run)
+    and common.py:390 show_error -> query_one("#modal-error") while #confirm was still
+    resolvable, i.e. a partially torn-down modal
+    (test_adopt_modal_conflict_stays_inline). The race needs the dismiss to happen in
+    the same turn in which the queued result lands, so it reproduced only on slow
+    runners: 4 of the 12 CI jobs, and 1 of 6 local full-suite runs. Panel._apply
+    already carried the same guard, which is why panels never failed this way.'
+  disposition: 'operon/tui/screens/common.py gained WorkerResults: post_to_ui() hands
+    a worker result to the UI thread and apply_from_worker() drops it when the widget
+    is gone. WriteModal and Panel inherit it, as do AnalysisJobsModal,
+    RunDetailScreen, SequenceLabelsModal, EnvironmentsModal, AnalysisHitsModal and
+    ImportWizardScreen, and every worker call site in operon/tui/screens now goes
+    through post_to_ui() — which also replaced the hand-rolled
+    is_running/RuntimeError blocks. The regression test dismisses a modal and asserts
+    that a result handed to the torn-down widgets is dropped while the unguarded call
+    still raises; the race itself is timing-dependent, so the test pins the guard and
+    its precondition rather than the interleaving.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown

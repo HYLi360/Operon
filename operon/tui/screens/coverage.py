@@ -240,11 +240,7 @@ class CoveragePanel(Panel):
             payload: Any = data.read_coverage_report(self.project, report_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_report, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_report, payload)
 
     def _apply_report(self, payload: Any) -> None:
         headline = self.query_one("#coverage-report-headline", Static)

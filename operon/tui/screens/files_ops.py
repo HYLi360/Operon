@@ -241,10 +241,7 @@ class QcModal(WriteModal):
         def progress(done: int, total: int, result: dict[str, Any]) -> None:
             if worker.is_cancelled:
                 raise QcCancelled()
-            try:
-                self.app.call_from_thread(self._progress, done, total, result)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+            self.post_to_ui(self._progress, done, total, result)
 
         try:
             payload: Any = actions.run_qc(
@@ -252,11 +249,7 @@ class QcModal(WriteModal):
             )
         except Exception as exc:  # noqa: BLE001 - routed to _qc_done
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._qc_done, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._qc_done, payload)
 
     def _progress(self, done: int, total: int, result: dict[str, Any]) -> None:
         self.done = done

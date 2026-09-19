@@ -1098,21 +1098,13 @@ class ConfigPanel(Panel):
     @work(thread=True)
     def _tools_check_worker(self) -> None:
         def on_result(entry: dict[str, Any]) -> None:
-            try:
-                self.app.call_from_thread(self._apply_tool_result, entry)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+            self.post_to_ui(self._apply_tool_result, entry)
 
         try:
             payload: Any = actions.check_tools(self.project, on_result=on_result)
         except Exception as exc:  # noqa: BLE001 - routed to _tools_check_done
             payload = exc
-        if not self.app.is_running:  # pragma: no cover - shutdown race guard
-            return
-        try:
-            self.app.call_from_thread(self._tools_check_done, payload)
-        except RuntimeError:  # pragma: no cover - app is shutting down
-            pass
+        self.post_to_ui(self._tools_check_done, payload)
 
     def _apply_tool_result(self, entry: dict[str, Any]) -> None:
         table = self.query_one("#tools-table", DataTable)

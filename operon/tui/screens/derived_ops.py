@@ -386,11 +386,7 @@ class AdoptModal(WriteModal):
             payload: Any = len(load_adopt_manifest(path))
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_preview, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_preview, payload)
 
     def _apply_preview(self, payload: Any) -> None:
         view = self.query_one("#adopt-preview", Static)
@@ -559,11 +555,7 @@ class FanoutModal(WriteModal):
             payload: Any = actions.fanout(self.project, dry_run=True, **values)
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._dry_run_done, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._dry_run_done, payload)
 
     def _dry_run_done(self, payload: Any) -> None:
         table = self.query_one("#fanout-preview-table", DataTable)

@@ -352,10 +352,7 @@ class AnalyzeModal(WriteModal):
         def progress(index: int, total: int, file_id: str, phase: str) -> None:
             if worker.is_cancelled:
                 raise actions.AnalysisCancelled()
-            try:
-                self.app.call_from_thread(self._progress, index, total, file_id, phase)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+            self.post_to_ui(self._progress, index, total, file_id, phase)
 
         try:
             payload: Any = actions.run_analysis(
@@ -364,11 +361,7 @@ class AnalyzeModal(WriteModal):
             )
         except Exception as exc:  # noqa: BLE001 - routed to _analysis_done
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._analysis_done, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._analysis_done, payload)
 
     def _progress(self, index: int, total: int, file_id: str, phase: str) -> None:
         self.done = index

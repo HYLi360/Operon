@@ -22,13 +22,13 @@ from textual.widgets import Button, DataTable, Label, Static
 
 from operon.config import Project
 from operon.tui import data
-from operon.tui.screens.common import DismissOnce
+from operon.tui.screens.common import DismissOnce, WorkerResults
 
 FILE_LABEL_COLUMNS = ("seqid", "label", "profile_name", "decided_at")
 SUMMARY_COLUMNS = ("label", "profile_name", "sequences", "files")
 
 
-class SequenceLabelsModal(DismissOnce, ModalScreen):
+class SequenceLabelsModal(DismissOnce, WorkerResults, ModalScreen):
     """Read-only ``sequence_labels`` browser (per file + project summary)."""
 
     BINDINGS = [
@@ -77,11 +77,7 @@ class SequenceLabelsModal(DismissOnce, ModalScreen):
             }
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         status = self.query_one("#labels-status", Static)

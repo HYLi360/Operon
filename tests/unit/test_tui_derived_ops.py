@@ -664,3 +664,40 @@ def test_classify_action_runs_the_profile(derived_project: Project) -> None:
                   "SELECT * FROM workflow_runs WHERE step='classify-sequences'")
     with pytest.raises(ValidationError):
         actions.run_classify(derived_project, "../escape")
+
+
+@pytest.mark.bug("ODR-0022")
+def test_write_modal_drops_a_result_that_arrives_after_teardown(
+    derived_project: Project,
+) -> None:
+    """A worker result handed to a torn-down modal is dropped, not raised.
+
+    The race itself is timing-dependent: the modal is dismissed while the write
+    is still in flight, so the result can be applied to a widget tree that is
+    already gone.  Textual reports that lookup as ``NoMatches`` *inside the
+    worker thread*, where it escaped as ``WorkerFailed`` and failed the whole
+    application (and, in CI, whichever test happened to be running).  This
+    pins the guard: with the modal's widgets gone, the result is dropped
+    instead — the unguarded call still raises, which is what used to happen.
+    """
+    from textual.css.query import NoMatches
+
+    payload = {"registered": 1, "reused": 0, "file_ids": ["FIL_000001"], "items": []}
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            modal = AdoptModal(derived_project)
+            await _push(pilot, modal)
+            modal.dismiss(None)
+            await _wait_until(
+                lambda: len(modal.query("#confirm")) == 0,
+                "the dismissed modal's widgets to be removed",
+            )
+            with pytest.raises(NoMatches):
+                modal._action_done(payload)
+            modal.apply_from_worker(modal._action_done, payload)
+            assert app.is_running
+
+    _run(scenario())

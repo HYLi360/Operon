@@ -29,7 +29,7 @@ from operon.import_wizard import (
     _synchronize_new_entity_links,
 )
 from operon.tui import actions, data
-from operon.tui.screens.common import DismissOnce
+from operon.tui.screens.common import DismissOnce, WorkerResults
 
 CREATE_NEW = "__new__"
 
@@ -74,7 +74,7 @@ def _select_value(screen: Screen, widget_id: str) -> str:
     return "" if value is Select.NULL else str(value)
 
 
-class ImportWizardScreen(DismissOnce, Screen):
+class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
     """Full-screen wizard that builds and commits an import draft."""
 
     BINDINGS = [
@@ -227,11 +227,7 @@ class ImportWizardScreen(DismissOnce, Screen):
             }
         except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
             payload = exc
-        if self.app.is_running:  # pragma: no cover - shutdown race guard
-            try:
-                self.app.call_from_thread(self._startup_done, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._startup_done, payload)
 
     def _startup_done(self, payload: Any) -> None:
         self._set_loading(False)
@@ -307,11 +303,7 @@ class ImportWizardScreen(DismissOnce, Screen):
                 payload["summary"] = data.import_summary(self.project, self.draft)
         except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
             payload = exc
-        if self.app.is_running:  # pragma: no cover - shutdown race guard
-            try:
-                self.app.call_from_thread(self._show_page, page, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._show_page, page, payload)
 
     def _show_page(self, page: str, payload: Any) -> None:
         self._set_loading(False)
@@ -650,11 +642,7 @@ class ImportWizardScreen(DismissOnce, Screen):
             payload: Any = actions.import_dataset(self.project, self.draft)
         except Exception as exc:  # noqa: BLE001 - shown inline; staged files rolled back
             payload = exc
-        if self.app.is_running:  # pragma: no cover - shutdown race guard
-            try:
-                self.app.call_from_thread(self._import_done, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._import_done, payload)
 
     def _import_done(self, payload: Any) -> None:
         self._executing = False

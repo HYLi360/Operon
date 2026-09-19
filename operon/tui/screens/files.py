@@ -263,11 +263,7 @@ class FilesPanel(Panel):
             payload: Any = data.file_detail(self.project, file_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_detail, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_detail, payload)
 
     def _apply_detail(self, payload: Any) -> None:
         detail_view = self.query_one("#file-detail", Static)

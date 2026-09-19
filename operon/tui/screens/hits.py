@@ -24,6 +24,7 @@ from operon.config import Project
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     DismissOnce,
+    WorkerResults,
     capture_table_view,
     restore_table_view,
 )
@@ -35,7 +36,7 @@ LOOKUP_WIDGETS = (
 RELOAD_WIDGETS = (*LOOKUP_WIDGETS, "hits-include-retired")
 
 
-class AnalysisHitsModal(DismissOnce, ModalScreen):
+class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
     """Filter + table browser over ``analysis_alignments``."""
 
     BINDINGS = [
@@ -126,11 +127,7 @@ class AnalysisHitsModal(DismissOnce, ModalScreen):
             payload: Any = data.analysis_hits(self.project, **self._filters())
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         self._loading = False
@@ -172,11 +169,7 @@ class AnalysisHitsModal(DismissOnce, ModalScreen):
                 self.project, out=out_path, fmt=fmt, **filters)
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply_export, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply_export, payload)
 
     def _apply_export(self, payload: Any) -> None:
         self._exporting = False

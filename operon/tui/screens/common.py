@@ -212,7 +212,42 @@ def remount(container: Any, *widgets: Any) -> None:
         container.call_after_refresh(container.mount, *widgets)
 
 
-class Panel(VerticalScroll):
+class WorkerResults:
+    """Worker results for a widget that can disappear while they are in flight.
+
+    A modal or a pushed screen can be dismissed while its worker still runs,
+    and Textual then reports any widget lookup on the torn-down widget as
+    ``NoMatches`` — raised inside the worker thread, where it escapes as
+    ``WorkerFailed`` and fails the whole application (ODR-0022).  Workers of
+    such a widget hand their result to :meth:`post_to_ui` instead of
+    ``app.call_from_thread``; the result is rendered through
+    :meth:`apply_from_worker` and dropped when there is nothing left to render.
+    """
+
+    #: Supplied by the concrete widget (``Widget.app``).
+    app: Any
+
+    def post_to_ui(self, callback: Callable[..., None], *args: Any) -> None:
+        """Hand a worker result to the UI thread (call it from the worker)."""
+
+        app = self.app
+        if not app.is_running:  # pragma: no cover - shutdown race guard
+            return
+        try:
+            app.call_from_thread(self.apply_from_worker, callback, *args)
+        except RuntimeError:  # pragma: no cover - app is shutting down
+            pass
+
+    def apply_from_worker(self, callback: Callable[..., None], *args: Any) -> None:
+        """Render a worker result, or drop it once the widget is gone."""
+
+        try:
+            callback(*args)
+        except (MountError, NoMatches):
+            return
+
+
+class Panel(WorkerResults, VerticalScroll):
     """Base class for the four main panels.
 
     Data loads happen in short-lived worker threads against
@@ -236,13 +271,7 @@ class Panel(VerticalScroll):
             payload = self._fetch()
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        app = self.app
-        if not app.is_running:  # pragma: no cover - shutdown race guard
-            return
-        try:
-            app.call_from_thread(self._apply, payload)
-        except RuntimeError:  # pragma: no cover - app is shutting down
-            pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         # The result can arrive while the panel is being torn down (the user
@@ -290,7 +319,7 @@ class DismissOnce:
         return super().dismiss(result)
 
 
-class WriteModal(DismissOnce, ModalScreen):
+class WriteModal(DismissOnce, WorkerResults, ModalScreen):
     """Base class for phase-2 write-operation modals.
 
     Every write flow looks and behaves the same: a title, a form/preview
@@ -376,13 +405,7 @@ class WriteModal(DismissOnce, ModalScreen):
             payload: Any = fn()
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        app = self.app
-        if not app.is_running:  # pragma: no cover - shutdown race guard
-            return
-        try:
-            app.call_from_thread(self._action_done, payload)
-        except RuntimeError:  # pragma: no cover - app is shutting down
-            pass
+        self.post_to_ui(self._action_done, payload)
 
     def _action_done(self, payload: Any) -> None:
         self.set_confirm_enabled(True)

@@ -23,10 +23,10 @@ from textual.widgets import Button, DataTable, Label, RichLog, Static
 
 from operon.config import Project
 from operon.tui import data
-from operon.tui.screens.common import DismissOnce
+from operon.tui.screens.common import DismissOnce, WorkerResults
 
 
-class EnvironmentsModal(DismissOnce, ModalScreen):
+class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
     """Read-only table of captured environments with show/export views."""
 
     BINDINGS = [
@@ -61,11 +61,7 @@ class EnvironmentsModal(DismissOnce, ModalScreen):
             payload: Any = data.list_environments(self.project)
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal
             payload = exc
-        if self.app.is_running:
-            try:
-                self.app.call_from_thread(self._apply, payload)
-            except RuntimeError:  # pragma: no cover - app is shutting down
-                pass
+        self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
         if isinstance(payload, BaseException):
