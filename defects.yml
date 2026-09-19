@@ -15,7 +15,7 @@ defects:
   affected: pre-fix releases; requires influence over config/schemas.yaml
   severity: medium
   component: import_wizard
-  status: fixed
+  status: verified
   reproduction: '`_normalized_new_rows()` accepts project schema field names and
 
     `_commit()` formerly interpolated them directly into INSERT columns.
@@ -37,7 +37,7 @@ defects:
 
     changes, with the workflow run recorded failed.'
   fix_commit: da6edd964091e9ae23d32c4cc29bef1244dc7517
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/regression/test_sql_identifier_security.py::test_wizard_rejects_schema_column_injection_atomically
 - id: ODR-0002
@@ -47,11 +47,11 @@ defects:
   affected: pre-fix releases; Python API boundary
   severity: medium
   component: database
-  status: fixed
+  status: verified
   reproduction: '`Database.insert_row()` and `Database.upsert_rows()` interpolated the table and column names given by their Python caller. A column name such as `scientific_name) VALUES (?, upper(?)) --` was reproduced to evaluate `upper(?)` in a temporary database, and the table argument accepted a full `VALUES (...) --` fragment. The CLI add path has additional schema checks; this is a low-level API boundary defect, not evidence of an unconditional remote exploit.'
   disposition: Both methods, and the read helpers `table_columns()`, `export_rows()` and `export_active_rows()`, now validate and quote every dynamic identifier with `operon.sql.quote_identifier()` (same alphabet as metadata column creation, so keyword names such as `select` still work). Values still use SQLite parameter binding.
   fix_commit: ef429f5089d3808db9151fa582e35b5b5f146ab3
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/regression/test_sql_identifier_security.py::test_column_cannot_replace_insert_values
   - tests/regression/test_sql_identifier_security.py::test_table_argument_is_not_sql
@@ -63,11 +63,11 @@ defects:
   affected: pre-fix releases; requires influence over the Python preview object
   severity: medium
   component: table_import
-  status: fixed
+  status: verified
   reproduction: '`apply_table_import()` trusted the preview''s column list, table name and per-row `differences`. Replacing a difference column with `scientific_name=upper(?) WHERE organism_id=? --` made the original implementation evaluate `upper(?)`, and the table name was not rechecked against the importable list. Normal `preview_table_import()` checks external headers; the defect is the missing revalidation at the execution boundary.'
   disposition: '`apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES` and validates/quotes every identifier through `operon.sql.quote_identifier()`; a tampered preview raises ValidationError, the update is rolled back, and no `changes` rows are written.'
   fix_commit: 35a0f78b7a574301ee9b1fd70fc993bf5388ecaa
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/regression/test_sql_identifier_security.py::test_table_import_rejects_tampered_update_column
   - tests/regression/test_sql_identifier_security.py::test_table_import_rechecks_allowed_table
@@ -79,11 +79,11 @@ defects:
   affected: all releases; triggered by an upload whose bytes fail sha256 verification (truncated or corrupted transfer)
   severity: high
   component: remotes
-  status: fixed
+  status: verified
   reproduction: '`SFTPRemoteStore.put()` publishes uploaded bytes directly to the final remote path before `push` verifies them. A truncated upload stays at the final path with no manifest entry; the next `push` of the same file takes the different-bytes path, marks the location CORRUPT and refuses to overwrite until an operator removes the remote object by hand.'
   disposition: '`SFTPStore.put()` now verifies the expected sha256/size on the staging name before the final rename, and `push` passes the manifest identity down; a failed verification removes the staged bytes, so the final remote path is never occupied by unverified content and the next push retries the upload.'
   fix_commit: 71e88bcc2d214064ae6a84e988b8da535a417a09
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_remote_taxonomy_more.py::test_push_reports_an_upload_that_lands_wrong_bytes
 - id: ODR-0005
@@ -93,11 +93,11 @@ defects:
   affected: all releases; triggered by a --profile value that names no config/profiles/<profile>.yaml file (for example a typo)
   severity: high
   component: release
-  status: fixed
+  status: verified
   reproduction: The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
   disposition: 'The preflight no longer returns early when the profile file is missing: `load_profile` raises ValidationError for an unknown profile, and decision-based export validates the named QC profile before staging any output. A typo now fails loudly instead of publishing a zero-member release or an empty bundle.'
   fix_commit: bd7de18c7bc82653e5880586f234e861b4d477ac
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_views_release_reports_edges.py::test_release_and_export_reject_an_unknown_profile
 - id: ODR-0006
@@ -107,11 +107,11 @@ defects:
   affected: all releases; triggered by a crash between the final staging rename and the releases insert
   severity: medium
   component: release
-  status: fixed
+  status: verified
   reproduction: A crash between the final rename of the staged release tree and the `releases` database insert leaves a release directory with no row; the retry then fails with FileExistsError until the tree is removed by hand.
   disposition: 'create_release now recovers the crash window: when the final path exists without a releases row, the orphan tree is removed — but only when its provenance.json names that release version — and the release is rebuilt. Any other occupant of the path still raises FileExistsError.'
   fix_commit: d63e494bac3a8efbc639a3f03187c9c662fc2d13
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_views_release_reports_edges.py::test_release_recovers_an_interrupted_publication_on_retry
 - id: ODR-0007
@@ -121,11 +121,11 @@ defects:
   affected: all releases; triggered by a failure after the workflow_runs commit but before the final rename
   severity: medium
   component: export
-  status: fixed
+  status: verified
   reproduction: The export `workflow_runs` row is committed before the final rename and its command embeds the staging path, so the database and the JSONL log can report a completed export whose destination does not exist.
   disposition: export_files now records the workflow run only after the workspace has been renamed to the final destination, and the recorded command names that destination instead of the staging path; if recording fails, the published tree is removed, so the database can neither claim a publication that never happened nor leave a publication it never recorded.
   fix_commit: 395664cf3207719e09c85e6062bce58e24a83815
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_export.py::test_export_run_row_follows_publication
 - id: ODR-0008
@@ -135,11 +135,11 @@ defects:
   affected: all releases; triggered by `export --link symlink` into an existing empty destination directory that later fails
   severity: high
   component: export
-  status: fixed
+  status: verified
   reproduction: With `--link symlink` and an existing empty destination, the export workspace is the caller's directory itself, and the failure path deletes every child of that directory.
   disposition: 'export_files no longer uses an existing empty destination as the workspace: every export stages in a hidden sibling directory, an existing empty destination is removed with rmdir (failing safe if it gained content) immediately before the atomic rename, and the failure path only ever removes the staging tree, never the caller''s directory children.'
   fix_commit: e8c03a85aa9f8bebc59f50e572c5935d4b9468a5
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_export.py::test_failed_symlink_export_never_touches_the_callers_directory
 - id: ODR-0009
@@ -149,11 +149,11 @@ defects:
   affected: all releases; triggered by re-ingesting identical bytes for a file that already carries STANDARDIZED status
   severity: medium
   component: files
-  status: fixed
+  status: verified
   reproduction: Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so a standardized file silently loses that status; `set_file_status` itself is a no-op that writes nothing when the status is unchanged.
   disposition: 'The idempotent re-ingest path no longer rewrites files.status unconditionally: a STANDARDIZED file keeps its status, and any other transition goes through the audited set_file_status (a no-op when unchanged), so re-verifying identical bytes never silently demotes a standardized file.'
   fix_commit: ebdc356e5b3cad979bfb8af54b20de84d16aea24
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_files_edges.py::test_reingest_preserves_standardized_status_and_audits_transitions
 - id: ODR-0010
@@ -163,11 +163,11 @@ defects:
   affected: all releases; triggered by standardizing a RELEASED or ACCEPTED entity, or by standardize_all selecting on files.status alone
   severity: medium
   component: files
-  status: fixed
+  status: verified
   reproduction: '`standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity state with no transition check and no `changes` row.'
   disposition: 'standardize_file now routes both writes through the audited paths: set_file_status for files.status and set_state for the entity transition, so illegal transitions (RELEASED/ACCEPTED -> STANDARDIZED) are rejected with ConflictError and every change lands in the changes table. The idempotent path repairs a CHECKSUM_VERIFIED crash window without touching entities that already moved on, and TRANSITIONS gained a CHECKSUM_FAILED -> STANDARDIZED recovery edge for re-verified bytes. The CHECKSUM_FAILED alarm write on a checksum mismatch was left as-is.'
   fix_commit: 34fa5f0082af63b1d27524caead21877bb808a67
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_files_edges.py::test_standardize_goes_through_the_audited_state_machine
 - id: ODR-0011
@@ -177,11 +177,11 @@ defects:
   affected: all releases; triggered by re-running qc or evaluate on an entity in ACCEPTED or RELEASED state
   severity: medium
   component: qc
-  status: fixed
+  status: verified
   reproduction: QC drives its state writes through the forced bulk path and offers no --force or prior-state warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED; `evaluate` does the same for an entity without a curated_decision, while a curated decision is protected.
   disposition: 'Batch QC and automatic re-evaluation now write entity states through workflow.set_state_guarded: entities in ACCEPTED/REVIEW/REJECTED/RELEASED keep their lifecycle state while fresh QC evidence and decision rows are still recorded; only an explicit curate or forced set-state moves them. The guarded aggregate reports the preserved state as entity_qc_state.'
   fix_commit: 325dff26717a54b4f08a35684174e9814e130367
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_qc_and_rules.py::TestQCAndRules::test_rerun_qc_and_evaluate_do_not_demote_decided_entities
 - id: ODR-0012
@@ -191,11 +191,11 @@ defects:
   affected: all releases; triggered by two operon processes (or the CLI and the TUI) opening the same database writable at the same time
   severity: low
   component: database
-  status: fixed
+  status: verified
   reproduction: 'Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second busy timeout cannot absorb, surfacing as exit 1.'
   disposition: _ensure_current_schema_objects now drops and recreates the derived views inside a single immediate transaction acquired through Database.transaction(), so a concurrent writable opener waits on the writer lock instead of landing between DROP and CREATE. Plain execute calls replace executescript, which would implicitly commit and break the atomic window.
   fix_commit: c33a149fd46f03a8035f25420c069d78e4db512a
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild
 - id: ODR-0013
@@ -205,11 +205,11 @@ defects:
   affected: 0.8.2 and earlier; any manifest row with format=directory (e.g. adopted OrthoFinder/Notung result trees)
   severity: medium
   component: files
-  status: fixed
+  status: verified
   reproduction: 'Ingest or adopt a directory artifact (format=directory), then run built-in ''operon qc'' or ''operon fanout'' on it. verify_local_file_identity() required path.is_file(), so a directory always reported exists=False / sha256_match=False: the QC checksum_verified stage could never pass and fanout refused the source, a permanent false alarm for intact directory trees. (Batch ''operon verify'' was unaffected: verify_files() hashes via sha256_path(), which already handles directory trees.)'
   disposition: 'verify_local_file_identity() now branches on the manifest format: directory records are verified with the same deterministic tree hash used at ingest (sha256_path + path_size_bytes), a file<->directory type flip reports missing, and the stat-fingerprint cache is bypassed for directories because directory mtimes change on any member touch and would spuriously invalidate the cache.'
   fix_commit: a74213fa3555a193d6a39ef35465fbb5d12a558b
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
   - tests/unit/test_files_edges.py::test_directory_artifact_type_flip_reports_missing
@@ -221,11 +221,11 @@ defects:
   affected: 0.8.2 and earlier; timetree fetch/calibrate snapshot loading and calibration inputs
   severity: low
   component: timetree
-  status: fixed
+  status: verified
   reproduction: load_snapshot() on a snapshot directory without snapshot.json raised FileNotFoundError, on malformed JSON a JSONDecodeError, on a structurally incomplete manifest a bare KeyError, and on a missing raw payload a bare OSError from sha256_file. calibrate_tree() propagated ValueError from int() on non-numeric taxon_id/taxon_a/taxon_b cells and whatever exception Phylo.read raised for a missing or malformed tree file. All surfaced as tracebacks instead of an 'error:' message.
   disposition: load_snapshot() wraps read/parse/structure/payload failures into ValidationError naming the cause; calibrate_tree() guards the integer conversions and wraps tree read/parse failures; _resolve_cli_taxa() additionally raises a named ValidationError should a resolve_taxon implementation ever return an empty candidate list instead of raising.
   fix_commit: fcf4f3487ed90febfa9711db244d539b505be24e
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_manifest_is_validation_error
   - tests/unit/test_timetree_snapshots.py::test_load_snapshot_malformed_manifest_is_validation_error
@@ -240,11 +240,11 @@ defects:
   affected: 0.8.2 and earlier; long-running analyze batches interrupted by SIGINT/SIGTERM
   severity: low
   component: shutdown
-  status: fixed
+  status: verified
   reproduction: _cleanup_in_progress was cleared only when the graceful_shutdown() context manager unwound. After an interrupt's cleanup finished (subprocess/array terminated, analysis_jobs finalized, partial outputs removed) but before the context exited (batch-loop unwinding, exit-130 reporting), any further signal took the second-during-cleanup branch and called os._exit(128+signum), killing a process that had nothing left to clean up and cutting off its normal finalization.
   disposition: 'Added shutdown.cleanup_completed(), invoked by every interrupt-cleanup site in tools.py once its bookkeeping is finalized; it re-arms graceful handling so a later signal raises a fresh ShutdownRequested (exit 130) instead of force-exiting. The force-exit escape hatch remains exactly where it is needed: a second signal while cleanup is genuinely still running.'
   fix_commit: b3de56e136aac6077c64baea2431268075ee7637
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_shutdown.py::test_signal_after_completed_cleanup_raises_gracefully
   - tests/unit/test_shutdown.py::test_force_exit_still_applies_while_cleanup_is_running
@@ -256,11 +256,11 @@ defects:
   affected: 0.8.2 and earlier; long-lived processes (the TUI) running analyses after an in-place tool upgrade or reference-database replacement
   severity: medium
   component: tools
-  status: fixed
+  status: verified
   reproduction: '_VERSION_CACHE and _DATABASE_IDENTITY_CACHE are process-lifetime dicts. In a TUI session that stays open while the tool binary is upgraded in place or the reference database is replaced at the same path, subsequent analyses keep planning with the stale version string and stale database identity: cache identity does not reflect the new bytes (old results are reused against a different database) and provenance records the pre-upgrade version.'
   disposition: 'Both caches are now TTL-bound (300s, monotonic clock), mirroring the environment-capture probe cache: entries re-probe after expiry, so a batch still pays for one probe while a long-lived process notices in-place upgrades. Failed version probes were never cached and still are not.'
   fix_commit: 93a05b5adc51e6dd09ef82f8ec9a0e9240a0ceb9
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tools_edges.py::test_version_and_database_identity_caches_expire_after_ttl
 - id: ODR-0017
@@ -270,11 +270,11 @@ defects:
   affected: 0.8.2 and earlier; test suite under pytest-xdist (intermittent)
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: operon.__version__ is resolved via importlib.metadata at import time; from the checkout root it resolves to the in-tree OperonDBS.egg-info, which setuptools rewrites in place during every build_sdist call (test_sdist_contains_complete_project_source). Under xdist, a worker whose first operon import lands inside a sibling worker's build window freezes a stale (site-packages) or missing ('0+unknown') version into the module, and test_pyproject_is_the_single_application_version_source then fails against pyproject.toml. Solo runs never race, so the failure is intermittent.
   disposition: The test now re-reads operon.__version__ via importlib.reload() while holding the same machine-wide _sdist_build_lock() the builds already take, so the assertion always observes a consistent metadata state.
   fix_commit: 49b802d46b0548c02fcea62a828d06ac4fe9c756
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
 - id: ODR-0018
@@ -284,11 +284,11 @@ defects:
   affected: 0.8.2 and earlier; run_analysis on the Slurm-array path with a progress_callback that raises (the TUI's AnalysisCancelled)
   severity: medium
   component: tools
-  status: fixed
+  status: verified
   reproduction: 'In _execute_analysis_array the phase-3 progress_callback invocation sits inside the outer try whose ''except Exception'' is the whole-batch failure path. A plain-Exception cancellation raised by the callback (the TUI raises AnalysisCancelled, a plain Exception, from the callback when the worker is cancelled) is caught there: every not-yet-collected task is marked ''failed'', per-file ''error'' results are recorded, and the function returns normally, so the cancellation is swallowed — the TUI never sees its AnalysisCancelled and shows a successful/failed batch instead of a cancellation. KeyboardInterrupt subclasses escape correctly via the outer ''except KeyboardInterrupt'', so the CLI signal path is unaffected. The staging-error callback in the same function has the identical structure and the same swallow.'
   disposition: 'Wrap both progress_callback invocations of _execute_analysis_array so callback exceptions abort the batch instead of feeding the per-file/batch failure paths: KeyboardInterrupt subclasses keep the existing outer interrupt path, and any other callback exception finalizes tasks that already wrote their exit-code file (same as the executor-interrupt path), marks the remaining plans interrupted, and re-raises so the caller''s cancellation propagates.'
   fix_commit: b2c14e328c06330459dd5c20075a38e946e82e6c
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_cancellation_aborts_the_batch
   - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_shutdown_interrupts_remaining_tasks
@@ -302,7 +302,7 @@ defects:
     input renders outside the modal box)
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Filter rows lay their children out in a Horizontal without width
     rules. Textual hands every child of an over-constrained Horizontal its own
     preferred width, so the first Input consumes the whole row and the trailing
@@ -318,7 +318,7 @@ defects:
     asserts that each identified control is fully inside its row and at least 8
     columns wide.'
   fix_commit: 7d1fce0bdf81eb6ea7893977e574525345a486cf
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row
 - id: ODR-0020
@@ -328,7 +328,7 @@ defects:
   affected: None (Found before push)
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'The dialog''s box is capped by max-height but holds no ``1fr``
     child, so Textual handed the surplus height to the first auto-sized child:
     measured at 160x50, #jobs-filters took 33 rows, the table and the detail
@@ -342,7 +342,7 @@ defects:
     panes stay inside the box, do not overlap each other, and keep a usable
     size.'
   fix_commit: ea61c4eeaa7546dcd35e06f57cdb34354ebff18f
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes
 - id: ODR-0021
@@ -353,7 +353,7 @@ defects:
     project directory which was read while its database file was read-only'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'test_data_layer_never_writes() chmods the module-scoped demo database
     to 0444 and runs the read-only data layer against it; SQLite then creates
     operon.sqlite-shm and operon.sqlite-wal with that read-only mode, and the test''s
@@ -375,7 +375,7 @@ defects:
     no longer leaks into every later test that copies it. A regression test asserts
     that a copied project opens for writing after a read-only session.'
   fix_commit: 1737b0067e3a0b0b154b9bbc65d8f8ac8b1419bd
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session
 - id: ODR-0022
@@ -388,7 +388,7 @@ defects:
     to a widget tree that is already gone
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'WriteModal._action_done() ran on a torn-down modal, so
     set_confirm_enabled()/show_error() raised NoMatches *inside the worker thread*;
     Textual turned that into WorkerFailed and failed the whole application. CI showed
@@ -412,7 +412,7 @@ defects:
     still raises; the race itself is timing-dependent, so the test pins the guard and
     its precondition rather than the interleaving.'
   fix_commit: 41c504cf57011446a41acb791cbeb782aba36870
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown
 - id: ODR-0023
@@ -425,7 +425,7 @@ defects:
     test clicks a control whose centre a rebuilt layout has not repositioned yet
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'The panel replaces an editor through ``remount`` (remove the old rows,
     mount the new ones a turn later) and each row mounts its own nested rows a turn
     after that, so "the panel rendered" is not "the form can be read". CI showed it
@@ -457,7 +457,7 @@ defects:
     way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and
     the filter container waited on the best_by container forever.'
   fix_commit: 1d7eb0086e3d7fbea3995770bb43ddf3edd0e8e2
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
   - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
@@ -470,7 +470,7 @@ defects:
     save flow does'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
     clicks ``#recipe-save`` twice in a row (the first click must show the inline
     file_role/file_role_prefix conflict, the second must open the confirmation modal).
@@ -490,7 +490,7 @@ defects:
     conflict error, then the modal) instead of a single ``pilot.pause()``.  The test
     carries ``@pytest.mark.bug("ODR-0024")``.'
   fix_commit: 44c265e67f5c82d25ee802fda2113c54956730e5
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
 - id: ODR-0025
@@ -503,7 +503,7 @@ defects:
     only, so the job is red without blocking the upload)'
   severity: low
   component: ci
-  status: fixed
+  status: verified
   reproduction: 'The release-triggered publish run for v0.8.3 (run 35427002855)
     failed its documentation job in 47 s.  After the split each language owns its
     Sphinx project, so ``docs/`` holds no conf.py and
@@ -515,6 +515,6 @@ defects:
     workflow files (both the inline ``run:`` and the block form) and fails when a
     ``sphinx-build`` line does not name both language trees.'
   fix_commit: 604725c511c793c9c601070c20b3bf22b93738aa
-  fixed_in: null
+  fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
