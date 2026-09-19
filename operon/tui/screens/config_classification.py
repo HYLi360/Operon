@@ -330,15 +330,17 @@ class BestByRow(ComposedRows, Vertical):
         if "direction" in self.original or direction != "asc":
             ordered["direction"] = direction
         if rank_text:
-            rank: dict[str, float] = {}
+            rank: dict[str, Any] = {}
             for part in rank_text.split(","):
                 if not part.strip():
                     continue
                 key, _, value = part.partition("=")
-                rank[key.strip()] = float(value.strip()) if value.strip() else 0.0
+                # ``float`` rewrote whole ranks as ``0.0``/``1.0``, so a form
+                # round trip did not reproduce the on-disk document (ODR-0026).
+                rank[key.strip()] = actions.coerce_scalar(value.strip()) if value.strip() else 0
             ordered["rank"] = rank
         if default_text:
-            ordered["default"] = float(default_text)
+            ordered["default"] = actions.coerce_scalar(default_text)
         ordered.update(document)
         return ordered
 

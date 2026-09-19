@@ -187,10 +187,24 @@ class FittingSelect(Select):
     (``remount`` mounts a whole editor a message-loop turn later), which raised
     ``NoMatches`` from inside Textual and failed the app (ODR-0023).  The work
     is retried a turn at a time until the children are there.
+
+    Until that retry lands the Select has no overlay to paint its label into,
+    and Textual resolves the value *after* reaching for the overlay: the row
+    would read back as blank — a condition whose operator was ``like`` came out
+    as ``''`` (ODR-0026).  The guard therefore adopts the initial value before
+    the retry (``_adopt_value_before_overlay``) and advertises
+    :attr:`options_ready` so a form reader can wait instead of reading a
+    half-initialised control.
     """
 
     overlay_max_share = 0.8
     _mount_retry_limit = 50
+    _options_ready = False
+
+    @property
+    def options_ready(self) -> bool:
+        """True once Textual has initialised this Select's options and value."""
+        return self._options_ready
 
     def _watch_expanded(self, expanded: bool) -> None:
         super()._watch_expanded(expanded)
@@ -210,7 +224,31 @@ class FittingSelect(Select):
         try:
             super()._on_mount(_event)
         except NoMatches:  # the overlay/label are not composed yet (ODR-0023)
+            self._options_ready = False
+            self._adopt_value_before_overlay()
             self._init_options_when_composed(attempt=0)
+        else:
+            self._options_ready = True
+
+    def _adopt_value_before_overlay(self) -> None:
+        """Store the selected value while the render targets are missing.
+
+        ``Select._init_selected_option`` resolves the constructor's value *after*
+        ``_setup_options_renderables`` reached for the overlay, so a mount whose
+        lookup failed leaves ``value`` at ``NULL`` — Textual stores the value
+        first in ``_watch_value``, which only needs the overlay to paint the
+        label.  Resolve it here and let the retry paint it (ODR-0026).
+        """
+        hint = self._value
+        if hint == self.NULL and not self._allow_blank and self._options:
+            hint = self._options[0][1]
+        try:
+            self.value = hint
+        except NoMatches:
+            # Textual stores the value before it paints it (``_watch_value``
+            # assigns first and only then reaches for the overlay), so the
+            # value survives the failed paint.
+            pass
 
     def _init_options_when_composed(self, attempt: int) -> None:
         try:
@@ -219,6 +257,8 @@ class FittingSelect(Select):
         except NoMatches:
             if attempt < self._mount_retry_limit:
                 self.call_after_refresh(self._init_options_when_composed, attempt + 1)
+        else:
+            self._options_ready = True
 
 
 class MountTracked(Vertical):

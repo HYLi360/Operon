@@ -533,3 +533,35 @@ defects:
   fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
+- id: ODR-0026
+  title: A condition's operator composes as blank when a Select could not finish mounting
+  reported: '2026-09-19'
+  introduced_in: 0.8.3
+  affected: 'the classification editor''s condition operators, and any Select the
+    FittingSelect mount guard covers, when Textual''s mount-time lookup fails; seen
+    on CI only, under load'
+  severity: high
+  component: tui
+  status: fixed
+  reproduction: 'CI run 35434598469 (head f1fd525) failed
+    tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end on
+    ubuntu-latest 3.12 and 3.13: the composed document held
+    ``{"field": "short_name", "operator": "", "value": "bHLH%"}`` where the file
+    said ``"operator": "like"``.  Textual''s ``Select._on_mount`` calls
+    ``_setup_options_renderables`` — which queries ``SelectOverlay`` — *before*
+    ``_init_selected_option`` stores the value the control was built with, so the
+    guard added for ODR-0023 deferred both steps and left ``value`` at ``NULL``,
+    which the editor reads as an empty operator.  The same read reported whole rank
+    maps as ``0.0``/``1.0`` because ``BestByRow`` parsed them with ``float``.'
+  disposition: 'FittingSelect adopts the value it was built with before deferring
+    (``_adopt_value_before_overlay``) and publishes ``options_ready``, which
+    ``ConfigPanel._form_mounting`` now requires of every Select in the form, so a
+    reader waits instead of composing a blank operator; ``BestByRow`` parses rank
+    values and defaults through ``actions.coerce_scalar``, keeping whole numbers
+    whole.'
+  fix_commit: null
+  fixed_in: 0.8.3
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
+  - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_with_an_uninitialised_select
+  - tests/unit/test_tui_config.py::test_best_by_rank_map_keeps_whole_ranks_whole

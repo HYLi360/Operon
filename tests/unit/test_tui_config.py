@@ -38,7 +38,7 @@ from operon.profiles import load_profile
 from operon.tools import get_recipe
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
-from operon.tui.screens.common import ErrorDialog, MountTracked
+from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
     ConfigPanel,
@@ -49,7 +49,7 @@ from operon.tui.screens.config import (
     RuleRow,
     SnapshotViewModal,
 )
-from operon.tui.screens.config_classification import ClassificationSaveModal
+from operon.tui.screens.config_classification import BestByRow, ClassificationSaveModal
 
 
 @pytest.fixture(scope="module")
@@ -2108,6 +2108,9 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             await _await_rows(pilot, panel, ".classrule-when .condition-row", 1,
                               ".condition-field")
             await _await_rows(pilot, panel, ".bestby-row", 2, ".bestby-field")
+            # … and for the Selects they hold, which take their value a turn
+            # after the row composes (ODR-0026).
+            await _await_form_ready(pilot, panel)
             # The form reproduces the on-disk document exactly.
             assert panel._compose_classification_document() == BHLH_PROFILE
             assert not panel.query_one("#classification-save", Button).disabled
@@ -2140,6 +2143,7 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             assert default_rule.query_one(".classrule-when").display is False
             assert default_rule.query_one(".classrule-source", Select).disabled is True
 
+            await _await_form_ready(pilot, panel)
             composed = panel._compose_classification_document()
             assert composed["rules"][0]["when"][0]["value"] == "bHLH%, HLH%"
             assert composed["rules"][3]["source"] == "extra"
@@ -2369,4 +2373,77 @@ def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-0026")
+def test_select_whose_mount_lookup_failed_adopts_its_value() -> None:
+    """A Select that could not paint its label must still report its value.
 
+    Textual's ``_init_selected_option`` reaches for the overlay *before* it
+    stores the value it was constructed with, so the deferred mount guarded for
+    ODR-0023 left ``value`` at ``NULL`` — and a condition whose operator was
+    ``like`` composed as ``''`` (ODR-0026).
+    """
+    select = FittingSelect([("like", "like"), ("==", "==")], value="like", allow_blank=False)
+    select._value = Select.NULL            # what the interrupted mount left behind
+    select._options_ready = False
+    select._adopt_value_before_overlay()
+    assert select.value == "like"
+    assert not select.options_ready
+
+
+@pytest.mark.bug("ODR-0026")
+def test_classification_save_refuses_a_form_with_an_uninitialised_select(project: Project) -> None:
+    """A Select that has not adopted its value yet is a half-built control.
+
+    Reading it yields a blank operator, so the save refuses — like any other
+    not-yet-mounted part of the form (ODR-0023) — and proceeds once the Select
+    reports itself ready.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await _await_form_ready(pilot, panel)
+            select = panel.query_one(".condition-operator", FittingSelect)
+            assert select.options_ready
+
+            select._options_ready = False
+            panel._start_classification_save()
+            error = panel.query_one("#classification-save-error", Static)
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(error)
+            assert not isinstance(app.screen, ClassificationSaveModal)
+
+            select._options_ready = True
+            panel._start_classification_save()
+            await pilot.pause()
+            assert isinstance(app.screen, ClassificationSaveModal)
+            await pilot.press("escape")
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0026")
+def test_best_by_rank_map_keeps_whole_ranks_whole(project: Project) -> None:
+    """A rank map of whole numbers must not be rewritten as floats.
+
+    ``float`` turned ``{Specific: 0, Motif: 1}`` into ``0.0``/``1.0``, so saving
+    an untouched form rewrote the file it was read from (ODR-0026).
+    """
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            hook = MountTracked()
+            app.screen.mount(hook)
+            await pilot.pause()
+            row = BestByRow({"field": "hit_type", "direction": "asc",
+                             "rank": {"Specific": 0, "Motif": 1}})
+            hook.mount(row)
+            await _wait_until(lambda: row.form_ready, "the best-by row to compose")
+            document = row.best_by_document()
+            assert document["rank"] == {"Specific": 0, "Motif": 1}
+            assert [type(value) for value in document["rank"].values()] == [int, int]
+
+    _run(scenario())

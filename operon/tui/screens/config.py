@@ -1239,13 +1239,20 @@ class ConfigPanel(Panel):
         container that fills itself later says so through :class:`MountTracked`,
         and every row latches :attr:`ComposedRows.form_ready` in its own
         ``on_mount`` — which Textual runs only once the row's whole subtree
-        (inputs and their children) is in the tree.
+        (inputs and their children) is in the tree.  A third signal covers the
+        one control that can still be half-alive inside a composed row: a
+        ``Select`` whose own mount lookup failed reports
+        :attr:`FittingSelect.options_ready` only once it has adopted its value
+        (ODR-0026).
         """
         for container in self.query(".mount-tracked").results(MountTracked):
             if not container.mounts_settled:
                 return True
         for row in self.query(self.EDITOR_ROW_SELECTORS).results(ComposedRows):
             if not row.form_ready:
+                return True
+        for select in self.query(FittingSelect):
+            if not select.options_ready:
                 return True
         return False
 
