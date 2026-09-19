@@ -586,7 +586,13 @@ defects:
     ``test_config_classification_editor_end_to_end`` closed its save and asserted
     ``any("saved bhlh_tiers version 2" in message for _, message in
     _notifications(app))`` before the notification the save worker raises a turn
-    later had arrived.'
+    later had arrived.  A third run failed
+    ``test_config_classification_editor_guards_and_readonly`` on ubuntu 3.10 in the
+    same family: the row the add-source click produces never reached the helper''s
+    budget, because ``_await_rows`` and ``_click`` bounded themselves by a fixed
+    number of loop cycles (60 and 10, roughly a second on an idle machine) instead of
+    the file''s own wall-clock settle timeout, and a loaded runner needs longer to
+    deliver the click and mount the row.'
   disposition: 'Neither wait is a fixed number of ``pilot.pause()`` cycles any more:
     the scroll test waits through ``_await_form_ready`` and then for the editor''s own
     growth, and the notification assertions go through a new ``_await_notification``
@@ -598,3 +604,4 @@ defects:
   regression_tests:
   - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
   - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
+  - tests/unit/test_tui_config.py::test_config_classification_editor_guards_and_readonly

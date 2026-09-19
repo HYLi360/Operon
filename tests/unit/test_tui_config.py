@@ -137,7 +137,9 @@ async def _click(pilot, selector: str) -> None:
     if isinstance(widget, Button) and widget.has_class("-active"):
         await _wait_until(lambda: not widget.has_class("-active"),
                           f"{selector} to settle")
-    for _ in range(10):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SETTLE_TIMEOUT
+    while True:
         try:
             landed = await pilot.click(selector)
         except OutOfBounds:
@@ -148,9 +150,10 @@ async def _click(pilot, selector: str) -> None:
             widget.press()
             await pilot.pause()
             return
+        if loop.time() > deadline:
+            raise AssertionError(f"click did not land on {selector}")
         await pilot.pause()
         await asyncio.sleep(0.02)
-    raise AssertionError(f"click did not land on {selector}")
 
 
 # ---------------------------------------------------------------------------
@@ -1995,15 +1998,23 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     """Wait until ``root`` holds ``count`` ``selector`` rows whose ``child`` exists.
 
     Mounting a row subtree takes more than one message-loop turn, so a single
-    ``pilot.pause()`` can observe a row that has not composed yet.
+    ``pilot.pause()`` can observe a row that has not composed yet.  The budget is
+    this file's wall-clock settle timeout rather than a fixed number of cycles: a
+    loaded CI runner needs seconds to deliver the click and mount the row it
+    produces, and a cycle count that is generous on a fast machine runs out there
+    (ODR-0027).
     """
-    for _ in range(60):
-        rows = [row for row in root.query(selector) if len(list(row.query(child))) > 0]
-        if len(rows) >= count:
-            return rows
-        await pilot.pause()
-        await asyncio.sleep(0.02)
-    raise AssertionError(f"{selector} rows with {child} never reached {count}")
+    def composed() -> list:
+        return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
+
+    try:
+        await _wait_until(lambda: len(composed()) >= count,
+                          f"{count} {selector} rows with {child}")
+    except TimeoutError as error:
+        raise AssertionError(
+            f"{selector} rows with {child}: saw {len(composed())}, wanted {count}"
+        ) from error
+    return composed()
 
 
 async def _await_form_ready(pilot, panel) -> None:
@@ -2199,6 +2210,7 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
                            "WHERE profile_name='bhlh_tiers'")[-1]["profile_version"] == 2
 
 
+@pytest.mark.bug("ODR-0027")
 def test_config_classification_editor_guards_and_readonly(project: Project) -> None:
     nested = json.loads(json.dumps(BHLH_PROFILE))
     nested["rules"][0]["when"] = [{"any": [{"not": {"field": "x", "operator": "exists"}}]}]
