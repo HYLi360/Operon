@@ -50,6 +50,7 @@ from operon.errors import ValidationError
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
+    ComposedRows,
     DismissOnce,
     ErrorDialog,
     FittingSelect,
@@ -99,7 +100,7 @@ def _extras_note(extras: dict[str, Any]) -> str:
     return "preserved as-is: " + ", ".join(str(key) for key in extras)
 
 
-class RuleRow(Vertical):
+class RuleRow(ComposedRows, Vertical):
     """One editable rule row: metric / operator / value / code + remove button.
 
     Rule keys the form does not model (``value_by``, ``source``, ``unknown``,
@@ -120,6 +121,9 @@ class RuleRow(Vertical):
         super().__init__(classes="rule-row")
         self.original = dict(rule)
         self.extras = {key: value for key, value in rule.items() if key not in RULE_MODELED_KEYS}
+
+    def on_mount(self) -> None:
+        self.mark_form_ready()
 
     def compose(self) -> ComposeResult:
         operator = str(self.original.get("operator", ">="))
@@ -1215,21 +1219,33 @@ class ConfigPanel(Panel):
     #: Shown when a save arrives before a deferred form rebuild has composed.
     FORM_MOUNTING_MESSAGE = "the form is still loading — save again in a moment"
 
+    #: Rows whose own composed subtree must be in the tree before a read.
+    EDITOR_ROW_SELECTORS = (
+        ".rule-row, .source-row, .classrule-row, .bestby-row, .condition-row, "
+        ".condition-editor"
+    )
+
     def _form_mounting(self) -> bool:
-        """True while a deferred editor rebuild has not mounted its rows yet.
+        """True while a deferred editor rebuild has not composed its rows yet.
 
         The panel replaces a whole editor with ``remount``: the replacement rows
-        mount a message-loop turn later, and each row mounts its own nested rows
-        — a source's filter editors, a rule's when-conditions, a condition
-        editor's body — a turn after that.  Reading the form inside that window
-        walks half-built rows; the composition then either raises ``NoMatches``
-        or, worse, returns a document with the missing rows silently dropped,
-        which is why a save refuses instead (ODR-0023).  Every container that
-        fills itself later says so through :class:`MountTracked`, so one query
-        covers the whole editor at any nesting depth.
+        mount a message-loop turn later, each row mounts its own nested rows — a
+        source's filter editors, a rule's when-conditions, a condition editor's
+        body — a turn after that, and a ``Select`` inside those rows is queried
+        by Textual while it mounts.  Reading the form inside that window walks
+        half-built rows; the composition then either raises ``NoMatches`` or,
+        worse, returns a document with the missing rows silently dropped, which
+        is why a save refuses instead (ODR-0023).  Two signals cover it: every
+        container that fills itself later says so through :class:`MountTracked`,
+        and every row latches :attr:`ComposedRows.form_ready` in its own
+        ``on_mount`` — which Textual runs only once the row's whole subtree
+        (inputs and their children) is in the tree.
         """
         for container in self.query(".mount-tracked").results(MountTracked):
             if not container.mounts_settled:
+                return True
+        for row in self.query(self.EDITOR_ROW_SELECTORS).results(ComposedRows):
+            if not row.form_ready:
                 return True
         return False
 

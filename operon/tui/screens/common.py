@@ -180,9 +180,17 @@ class FittingSelect(Select):
     aligned; the width may therefore differ from the control's, capped at
     ``overlay_max_share`` of the terminal.  The collapsed control keeps its own
     width: ``app.tcss`` holds it to one line with an ellipsis.
+
+    It also shields Textual's own mount-time lookups: ``Select._on_mount``
+    queries ``SelectOverlay`` and ``SelectCurrent``'s label before its compose
+    children exist when the widget is mounted through a deferred chain
+    (``remount`` mounts a whole editor a message-loop turn later), which raised
+    ``NoMatches`` from inside Textual and failed the app (ODR-0023).  The work
+    is retried a turn at a time until the children are there.
     """
 
     overlay_max_share = 0.8
+    _mount_retry_limit = 50
 
     def _watch_expanded(self, expanded: bool) -> None:
         super()._watch_expanded(expanded)
@@ -197,6 +205,20 @@ class FittingSelect(Select):
         widest = max((len(str(label)) for label, _value in self._options), default=0)
         cap = max(8, int(self.app.size.width * self.overlay_max_share))
         overlay.styles.width = min(widest + 4, cap)
+
+    def _on_mount(self, event: Any) -> None:
+        try:
+            super()._on_mount(event)
+        except NoMatches:  # the overlay/label are not composed yet (ODR-0023)
+            self._init_options_when_composed(attempt=0)
+
+    def _init_options_when_composed(self, attempt: int) -> None:
+        try:
+            self._setup_options_renderables()
+            self._init_selected_option(self._value)
+        except NoMatches:
+            if attempt < self._mount_retry_limit:
+                self.call_after_refresh(self._init_options_when_composed, attempt + 1)
 
 
 class MountTracked(Vertical):
@@ -271,6 +293,32 @@ def remount(container: Any, *widgets: Any) -> None:
     if isinstance(container, MountTracked):
         container.expect_mounts()
     container.call_after_refresh(container.mount, *widgets)
+
+
+class ComposedRows:
+    """A row that reports when its own ``compose`` has landed.
+
+    Textual composes a widget's whole subtree while mounting it, so a row that
+    is already in the tree may still be missing the inputs — and the inputs'
+    own children — that a reader queries; only the row's ``on_mount`` runs once
+    that subtree exists.  Rows latch a flag there and readers ask
+    :attr:`form_ready` (ODR-0023).  The latch is one-way on purpose: removing a
+    row later (a user deleting a condition) must not make the form look like it
+    is still mounting.
+    """
+
+    _form_ready = False
+
+    def mark_form_ready(self) -> None:
+        """Record that this row's composed subtree is in the tree."""
+
+        self._form_ready = True
+
+    @property
+    def form_ready(self) -> bool:
+        """True once this row's ``on_mount`` has run."""
+
+        return self._form_ready
 
 
 class WorkerResults:

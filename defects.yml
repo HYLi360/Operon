@@ -425,7 +425,7 @@ defects:
     test clicks a control whose centre a rebuilt layout has not repositioned yet
   severity: medium
   component: tui
-  status: verified
+  status: fixed
   reproduction: 'The panel replaces an editor through ``remount`` (remove the old rows,
     mount the new ones a turn later) and each row mounts its own nested rows a turn
     after that, so "the panel rendered" is not "the form can be read". CI showed it
@@ -440,26 +440,41 @@ defects:
     ``textual.pilot.OutOfBounds: Target offset is outside of currently-visible screen
     region``.  The same window in the product read a half-built form: the composition
     either raised out of a button handler or returned a document with the rows it
-    could not see silently dropped.'
-  disposition: 'Container-level mount tracking: ``MountTracked`` (operon/tui/screens/
-    common.py) is a container that fills itself later and reports ``mounts_settled``,
-    set through ``expect_mounts``/``mount_later`` and by ``remount`` itself, with the
-    check evaluated lazily and latched (a ``call_after_refresh`` callback is posted to
-    the widget''s own queue, which a container that is still mounting never pumps).
-    The classification editor''s sources/rules/filters/best_by/when/condition bodies
-    are ``MountTracked``, as are the QC editor''s rule containers, and
-    ``ConfigPanel._form_mounting()`` answers with one query.  ``_form_document()``
-    refuses a save with ``FORM_MOUNTING_MESSAGE`` while that holds instead of walking
-    a half-built tree.  The tests wait through ``_await_form_ready``/``_await_rows``
-    before reading a form directly, and ``_click`` tolerates ``OutOfBounds`` by
-    pressing an enabled button — the same activation a landed click produces.  The
-    selector-based ``mount_later`` API also removed a late-binding bug found on the
-    way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and
-    the filter container waited on the best_by container forever.'
-  fix_commit: 1d7eb0086e3d7fbea3995770bb43ddf3edd0e8e2
-  fixed_in: 0.8.3
+    could not see silently dropped.  A first fix (container-level tracking) closed
+    only part of it: the v0.8.3 CI run 35432524587 still failed four jobs, all in this
+    family — ``_form_mounting()`` accepted a row whose own children were present but
+    whose grandchildren were not (``.condition-field`` missing on a ConditionRow), and
+    Textual''s ``Select`` crashed in ``_on_mount`` /
+    ``_init_selected_option -> _watch_value -> SelectCurrent.update`` while mounted
+    through the deferred chain (``SelectOverlay`` / ``#label`` not composed yet).'
+  disposition: 'Container-level mount tracking plus deep row readiness: ``MountTracked``
+    (operon/tui/screens/common.py) is a container that fills itself later and reports
+    ``mounts_settled``, set through ``expect_mounts``/``mount_later`` and by ``remount``
+    itself, with the check evaluated lazily and latched (a ``call_after_refresh``
+    callback is posted to the widget''s own queue, which a container that is still
+    mounting never pumps).  Every editor row (RuleRow, ConditionRow, ConditionEditor,
+    BestByRow, SourceRow, ClassificationRuleRow) is a ``ComposedRows``: it latches
+    ``form_ready`` in its own ``on_mount``, which Textual runs only after the row''s
+    whole subtree — inputs and their children — is in the tree, and the latch is
+    one-way so deleting a row later cannot make the form look unfinished.
+    ``ConfigPanel._form_mounting()`` answers from both signals, and ``_form_document()``
+    refuses a save with ``FORM_MOUNTING_MESSAGE`` while that holds instead of walking a
+    half-built tree.  ``FittingSelect`` shields Textual''s own mount-time lookups by
+    retrying ``_setup_options_renderables``/``_init_selected_option`` a turn at a time,
+    and the classification editor''s selects (condition operator, condition mode,
+    best_by direction, rule mode) are that subclass.  The tests wait through
+    ``_await_form_ready``/``_await_rows`` before reading a form directly, ``_click``
+    tolerates ``OutOfBounds`` by pressing an enabled button and waits out the lingering
+    ``-active`` press effect (ODR-0024), and two regression tests pin the save refusal
+    and the row latch''s contract.  The selector-based ``mount_later`` API also removed
+    a late-binding bug found on the way in ``SourceRow.on_mount``, where two lambdas
+    shared one ``view`` variable and the filter container waited on the best_by
+    container forever.'
+  fix_commit: null
+  fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
+  - tests/unit/test_tui_config.py::test_row_reports_ready_only_once_its_subtree_is_in_the_tree
   - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
 - id: ODR-0024
   title: A second click on a button is swallowed by the press effect it still shows

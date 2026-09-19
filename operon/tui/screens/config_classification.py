@@ -30,7 +30,13 @@ from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import FittingSelect, MountTracked, WriteModal, remount
+from operon.tui.screens.common import (
+    ComposedRows,
+    FittingSelect,
+    MountTracked,
+    WriteModal,
+    remount,
+)
 
 # Keep in sync with operon.classify._OPERATORS (asserted in
 # tests/unit/test_tui_config.py); `like` is the case-insensitive SQL LIKE.
@@ -82,7 +88,7 @@ def _condition_placeholder(operator: str) -> str:
     return "value"
 
 
-class ConditionRow(Vertical):
+class ConditionRow(ComposedRows, Vertical):
     """One flat condition: field / operator / operand (+ verbatim extras)."""
 
     class RemoveRequested(Message):
@@ -100,6 +106,9 @@ class ConditionRow(Vertical):
         self.extras = _extras(self.original, CONDITION_MODELED_KEYS)
         self.removable = removable
 
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
     def compose(self) -> ComposeResult:
         operator = str(self.original.get("operator", "=="))
         options = [(item, item) for item in CLASSIFICATION_OPERATORS]
@@ -108,7 +117,8 @@ class ConditionRow(Vertical):
         with Horizontal(classes="condition-inputs"):
             yield Input(value=str(self.original.get("field", "")), placeholder="field",
                         classes="condition-field")
-            yield Select(options, value=operator, classes="condition-operator", allow_blank=False)
+            yield FittingSelect(options, value=operator,
+                                classes="condition-operator", allow_blank=False)
             yield Input(value=_condition_value_text(self.original),
                         placeholder=_condition_placeholder(operator), classes="condition-value")
             if self.removable:
@@ -160,7 +170,7 @@ class ConditionRow(Vertical):
         return ordered
 
 
-class ConditionEditor(Vertical):
+class ConditionEditor(ComposedRows, Vertical):
     """A top-level condition: flat, one ``any:`` group, or one ``not:`` wrap."""
 
     class RemoveRequested(Message):
@@ -180,7 +190,8 @@ class ConditionEditor(Vertical):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="condition-inputs"):
-            yield Select(list(CONDITION_MODES), value=self._mode, classes="condition-mode",
+            yield FittingSelect(list(CONDITION_MODES), value=self._mode,
+                                 classes="condition-mode",
                          allow_blank=False)
             yield Button("✕", classes="condition-remove")
         yield MountTracked(classes="condition-body")
@@ -189,6 +200,7 @@ class ConditionEditor(Vertical):
 
     def on_mount(self) -> None:
         self._rebuild(self._mode, self.original)
+        self.mark_form_ready()
 
     def _original_mode(self) -> str:
         if "any" in self.original:
@@ -254,7 +266,7 @@ class ConditionEditor(Vertical):
         return document
 
 
-class BestByRow(Vertical):
+class BestByRow(ComposedRows, Vertical):
     """One ``best_by`` entry: field / direction / optional rank map / default."""
 
     class RemoveRequested(Message):
@@ -271,6 +283,9 @@ class BestByRow(Vertical):
         self.original = dict(entry)
         self.extras = _extras(self.original, BEST_BY_MODELED_KEYS)
 
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
     def compose(self) -> ComposeResult:
         direction = str(self.original.get("direction", "asc") or "asc")
         options = [(item, item) for item in BEST_BY_DIRECTIONS]
@@ -282,7 +297,8 @@ class BestByRow(Vertical):
         with Horizontal(classes="bestby-inputs"):
             yield Input(value=str(self.original.get("field", "")), placeholder="field",
                         classes="bestby-field")
-            yield Select(options, value=direction, classes="bestby-direction", allow_blank=False)
+            yield FittingSelect(options, value=direction,
+                                classes="bestby-direction", allow_blank=False)
             yield Input(value=rank_text, placeholder="rank map: Value=rank, … (blank = none)",
                         classes="bestby-rank")
             yield Input(value="" if default is None else str(default),
@@ -327,7 +343,7 @@ class BestByRow(Vertical):
         return ordered
 
 
-class SourceRow(Vertical):
+class SourceRow(ComposedRows, Vertical):
     """One ``sources`` entry: name + analysis + filter conditions + best_by."""
 
     class RemoveRequested(Message):
@@ -373,6 +389,7 @@ class SourceRow(Vertical):
             self.query_one(".source-bestby", MountTracked).mount_later(
                 *[BestByRow(item) for item in entries], when_present=".bestby-row",
             )
+        self.mark_form_ready()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("source-remove"):
@@ -420,7 +437,7 @@ class SourceRow(Vertical):
         return name, document
 
 
-class ClassificationRuleRow(Vertical):
+class ClassificationRuleRow(ComposedRows, Vertical):
     """One ``rules`` entry: label + (source & when) | absent | default."""
 
     class RemoveRequested(Message):
@@ -443,7 +460,8 @@ class ClassificationRuleRow(Vertical):
         with Horizontal(classes="classrule-inputs"):
             yield Input(value=str(self.original.get("label", "")), placeholder="label",
                         classes="classrule-label")
-            yield Select(list(RULE_MODES), value=mode, classes="classrule-mode", allow_blank=False)
+            yield FittingSelect(list(RULE_MODES), value=mode,
+                                classes="classrule-mode", allow_blank=False)
             yield FittingSelect(self._source_options(), classes="classrule-source",
                                 allow_blank=True)
             yield Button("✕", classes="classrule-remove")
@@ -494,6 +512,7 @@ class ClassificationRuleRow(Vertical):
                 when_present=".condition-editor",
             )
         self._sync_mode()
+        self.mark_form_ready()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.has_class("classrule-mode"):

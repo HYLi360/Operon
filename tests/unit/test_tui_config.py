@@ -38,7 +38,7 @@ from operon.profiles import load_profile
 from operon.tools import get_recipe
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
-from operon.tui.screens.common import ErrorDialog
+from operon.tui.screens.common import ErrorDialog, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
     ConfigPanel,
@@ -46,6 +46,7 @@ from operon.tui.screens.config import (
     NewProfileModal,
     ProfileSaveModal,
     RecipeSaveModal,
+    RuleRow,
     SnapshotViewModal,
 )
 from operon.tui.screens.config_classification import ClassificationSaveModal
@@ -2298,6 +2299,35 @@ def test_classification_save_refuses_a_form_that_is_still_mounting(project: Proj
             await pilot.pause()
             assert isinstance(app.screen, ClassificationSaveModal)
             await pilot.press("escape")
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0023")
+def test_row_reports_ready_only_once_its_subtree_is_in_the_tree(project: Project) -> None:
+    """A mounted row is not readable until its own subtree composed.
+
+    The panel refuses a save while the form is still mounting, and the signal it
+    reads is the row's own latch: mounted-but-uncomposed rows are what made a
+    composition walk half-built widgets and raise ``NoMatches`` out of a button
+    handler (ODR-0023).  This pins both halves of that contract.
+    """
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            container = panel.query_one("#profile-required-rules", MountTracked)
+            row = RuleRow({"metric": "assembly.length", "operator": ">=", "value": "1",
+                           "code": "C_LEN"})
+            container.mount_later(row, when_present=".rule-row")
+            # The mount lands a message-loop turn later: in this turn the row is
+            # not in the tree, so both the row and the form report "not yet".
+            assert not row.form_ready
+            assert panel._form_mounting()
+
+            await _wait_until(lambda: row.form_ready, "the row's subtree to compose")
+            assert not panel._form_mounting()
 
     _run(scenario())
 
