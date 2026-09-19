@@ -374,7 +374,7 @@ defects:
     of the demo project instead of the shared module fixture, so the read-only window
     no longer leaks into every later test that copies it. A regression test asserts
     that a copied project opens for writing after a read-only session.'
-  fix_commit: null
+  fix_commit: 1737b0067e3a0b0b154b9bbc65d8f8ac8b1419bd
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session
@@ -411,7 +411,7 @@ defects:
     that a result handed to the torn-down widgets is dropped while the unguarded call
     still raises; the race itself is timing-dependent, so the test pins the guard and
     its precondition rather than the interleaving.'
-  fix_commit: null
+  fix_commit: 41c504cf57011446a41acb791cbeb782aba36870
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown
@@ -456,7 +456,7 @@ defects:
     selector-based ``mount_later`` API also removed a late-binding bug found on the
     way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and
     the filter container waited on the best_by container forever.'
-  fix_commit: null
+  fix_commit: 1d7eb0086e3d7fbea3995770bb43ddf3edd0e8e2
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
