@@ -13,7 +13,8 @@ python -m pytest tests/integration
 python -m pytest tests/regression tests/compatibility
 
 # 严格构建 Sphinx 文档
-sphinx-build -W --keep-going -b html docs docs/_build/html
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
 pytest 测试按 `unit`、`integration`、`regression`、`compatibility` 四类组织，覆盖：
@@ -61,14 +62,20 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
    可将耗时压到 30～40 秒。`--dist loadfile` 保证同一个测试文件只落在一个
    worker 上，这是 Textual UI 测试所需要的。覆盖率统计最贵：迭代时用 `--no-cov`，最后只测一次。
 4. **一次跑完跨版本矩阵。** `scripts/setup-test-matrix.sh` 用 uv 安装 CPython 3.10–3.15 并在
-   `.matrix/` 下为每个版本建 venv。`scripts/run-test-matrix.sh` 可并发跑完六个版本：
+   `.matrix/` 下为每个版本建 venv。`scripts/run-test-matrix.sh` 每次并发 `MATRIX_CONCURRENCY`
+   个版本（默认 3 个，六个版本分两波），每个版本给 `MATRIX_JOBS` 个 xdist worker；默认值把机器
+   核心数摊到并发版本上，并留出一个核心：
 
    ```bash
-   scripts/setup-test-matrix.sh                      # 每台机器执行一次
-   scripts/run-test-matrix.sh                        # 全量 × 六个版本，约 2～3 分钟
-   scripts/run-test-matrix.sh tests/unit -x          # 其余 pytest 参数原样透传
-   MATRIX_JOBS=4 scripts/run-test-matrix.sh          # 每个版本的 worker 数
+   scripts/setup-test-matrix.sh                        # 每台机器执行一次
+   scripts/run-test-matrix.sh                          # 全量 × 六个版本，24 线程约 5 分钟
+   scripts/run-test-matrix.sh tests/unit -x            # 其余 pytest 参数原样透传
+   MATRIX_JOBS=4 scripts/run-test-matrix.sh            # 每个版本的 worker 数
+   MATRIX_CONCURRENCY=2 scripts/run-test-matrix.sh     # 同时运行的版本数
    ```
+
+   矩阵相当于把全量测试跑六遍，所以分波只影响峰值占用，不改变总耗时——总耗时由核心数决定。
+   Linux 机器跑不到的那一半仍由 CI 覆盖（`.github/workflows/test.yml` 在 macOS 上跑同样版本）。
 
    每个版本的日志在 `.matrix/logs/<version>.log`，失败后可直接用对应解释器重跑。脚本在 Linux
    与 macOS 上均可运行。`.matrix/` 已被 git 忽略。
@@ -157,7 +164,7 @@ CLI 是规范面：新能力先落在 CLI 与核心函数，TUI 只调用同一�
 {{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
 ```
 
-由 `docs/conf.py` 在构建时从 `pyproject.toml` 与代码常量解析。替换只在正文段落中展开，行内代码与代码块内不生效，
+由 `docs/conf_common.py` 在构建时从 `pyproject.toml` 与代码常量解析。替换只在正文段落中展开，行内代码与代码块内不生效，
 这些位置的示例改用 `<version>` 占位符。有意保留的历史版本号保持字面量：要么位于 `docs/*/operations/`
 下 allowlist 中的时代绑定页面，要么在行内附带 `<!-- version-pin -->` 标记。`tests/unit/test_docs_versions.py`
 负责强制此规则。

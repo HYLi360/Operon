@@ -14,7 +14,8 @@ python -m pytest tests/integration
 python -m pytest tests/regression tests/compatibility
 
 # build the Sphinx documentation strictly
-sphinx-build -W --keep-going -b html docs docs/_build/html
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 ```
 
 The pytest suite is organized into four categories — `unit`, `integration`, `regression`, `compatibility` — covering:
@@ -67,18 +68,27 @@ The full suite takes about seven minutes serially; the loop below aims to run it
    is assigned to only one worker, which is required for Textual UI testing.
    Coverages are the most resource-intensive: use `--no-cov` during iterations and run the test only once at the end.
 4. **Cross-version matrix in one pass.** `scripts/setup-test-matrix.sh` creates uv-managed CPython 3.10-3.15
-   interpreters plus one venv per version inside `.matrix/`. `scripts/run-test-matrix.sh` runs all six concurrently:
+   interpreters plus one venv per version inside `.matrix/`. `scripts/run-test-matrix.sh` runs them
+   `MATRIX_CONCURRENCY` at a time (three by default, so six versions go out as two waves) with
+   `MATRIX_JOBS` xdist workers each; the defaults split the machine's cores over the concurrent
+   versions and leave one core free:
 
    ```bash
-   scripts/setup-test-matrix.sh                      # once per machine
-   scripts/run-test-matrix.sh                        # whole suite, six versions, 2~3 minutes
-   scripts/run-test-matrix.sh tests/unit -x          # extra pytest arguments are forwarded
-   MATRIX_JOBS=4 scripts/run-test-matrix.sh          # workers per version
+   scripts/setup-test-matrix.sh                        # once per machine
+   scripts/run-test-matrix.sh                          # whole suite, six versions, ~5 min on 24 threads
+   scripts/run-test-matrix.sh tests/unit -x            # extra pytest arguments are forwarded
+   MATRIX_JOBS=4 scripts/run-test-matrix.sh            # xdist workers per version
+   MATRIX_CONCURRENCY=2 scripts/run-test-matrix.sh     # versions running at once
    ```
 
+   The matrix is six times one suite, so waves trade peak load and nothing else: the wall
+   clock follows the cores, not the grouping. What a Linux box cannot run is still CI's
+   half — `.github/workflows/test.yml` runs the same versions on macOS.
+
    Each version logs to `.matrix/logs/<version>.log`, so a failure there can be re-run
-   directly with that interpreter. The scripts work on Linux and macOS. `.matrix/` is
-   git-ignored.
+   directly with that interpreter; the directory is wiped before a run starts, so the
+   leftovers of an earlier one never pass for the current run. The scripts work on Linux
+   and macOS. `.matrix/` is git-ignored.
 5. **Platform-specific code cannot be verified by one matrix job alone.** Linux and macOS
    differ in the system utilities the environment probe calls and in `pathlib`/`resource`
    behaviour. Code guarded by `sys.platform`/`os.name`, or shelling out to system tools,
@@ -175,4 +185,4 @@ Software versions, database schema versions, and metadata schema versions stated
 {{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
 ```
 
-`docs/conf.py` resolves them from `pyproject.toml` and the code constants at build time. Substitutions expand in paragraph text only, not inside code spans or fenced code blocks; examples there use `<version>` placeholders instead. Intentional historical pins stay literal: they either live on the allowlisted era-pinned pages under `docs/*/operations/` or carry an inline `<!-- version-pin -->` marker. `tests/unit/test_docs_versions.py` enforces the rule.
+`docs/conf_common.py` resolves them from `pyproject.toml` and the code constants at build time. Substitutions expand in paragraph text only, not inside code spans or fenced code blocks; examples there use `<version>` placeholders instead. Intentional historical pins stay literal: they either live on the allowlisted era-pinned pages under `docs/*/operations/` or carry an inline `<!-- version-pin -->` marker. `tests/unit/test_docs_versions.py` enforces the rule.
