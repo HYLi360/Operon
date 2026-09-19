@@ -493,3 +493,28 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
+- id: ODR-0025
+  title: The publish workflow builds the pre-split documentation source directory
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: 'the publish workflow''s documentation job on any commit after the
+    per-language documentation split; found while preparing the v0.8.3 release,
+    before any upload (pypi-publish depends on source-distribution and wheels
+    only, so the job is red without blocking the upload)'
+  severity: low
+  component: ci
+  status: fixed
+  reproduction: 'The release-triggered publish run for v0.8.3 (run 35427002855)
+    failed its documentation job in 47 s.  After the split each language owns its
+    Sphinx project, so ``docs/`` holds no conf.py and
+    ``sphinx-build -W --keep-going -b html docs docs/_build/html`` fails; the CI
+    workflow was updated in the split commit while the publish workflow kept the old
+    line, and nothing asserted the workflows.'
+  disposition: 'The publish workflow now builds docs/en and docs/zh exactly like the
+    CI docs job, and tests/unit/test_docs_projects.py gained a guard that reads the
+    workflow files (both the inline ``run:`` and the block form) and fails when a
+    ``sphinx-build`` line does not name both language trees.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
