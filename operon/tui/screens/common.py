@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from rich.text import Text
-from textual import work
+from textual import events, work
 from textual.app import ComposeResult
 from textual.await_complete import AwaitComplete
 from textual.binding import Binding
@@ -206,9 +206,9 @@ class FittingSelect(Select):
         cap = max(8, int(self.app.size.width * self.overlay_max_share))
         overlay.styles.width = min(widest + 4, cap)
 
-    def _on_mount(self, event: Any) -> None:
+    def _on_mount(self, _event: events.Mount) -> None:
         try:
-            super()._on_mount(event)
+            super()._on_mount(_event)
         except NoMatches:  # the overlay/label are not composed yet (ODR-0023)
             self._init_options_when_composed(attempt=0)
 

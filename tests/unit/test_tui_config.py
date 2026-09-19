@@ -797,18 +797,20 @@ def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -
             )
 
             await _click(pilot, "#profile-add-required")
-            await pilot.pause()
+            added_rows = await _await_rows(pilot, panel.query_one("#profile-required-rules"),
+                                           ".rule-row", 6, ".rule-metric")
             assert len(panel._rule_rows("required")) == 6
-            added = panel._rule_rows("required")[-1]
+            added = added_rows[-1]
             assert added.query_one(".rule-operator", Select).value == ">="
             added.query_one(".rule-metric", Input).value = "gene_count"
             added.query_one(".rule-value", Input).value = "7"
             added.query_one(".rule-code", Input).value = "TOO_FEW_GENES"
 
             await _click(pilot, "#profile-add-warnings")
-            await pilot.pause()
+            warn_rows = await _await_rows(pilot, panel.query_one("#profile-warnings-rules"),
+                                          ".rule-row", 3, ".rule-metric")
             assert len(panel._rule_rows("warnings")) == 3
-            warn = panel._rule_rows("warnings")[-1]
+            warn = warn_rows[-1]
             assert warn.query_one(".rule-operator", Select).value == ">"
             warn.query_one(".rule-metric", Input).value = "n_percent"
             warn.query_one(".rule-value", Input).value = "2"
@@ -1085,8 +1087,8 @@ def test_config_screen_new_profile_is_created_as_version_1(project: Project) -> 
 
             panel.query_one("#profile-description", Input).value = "strict assembly gate"
             await _click(pilot, "#profile-add-required")
-            await pilot.pause()
-            row = panel._rule_rows("required")[0]
+            row = (await _await_rows(pilot, panel.query_one("#profile-required-rules"),
+                                     ".rule-row", 1, ".rule-metric"))[0]
             row.query_one(".rule-metric", Input).value = "total_length"
             row.query_one(".rule-value", Input).value = "5000"
             row.query_one(".rule-code", Input).value = "TOO_SHORT"
@@ -2198,11 +2200,13 @@ def test_config_classification_editor_guards_and_readonly(project: Project) -> N
             # Duplicate source names are refused inline before the modal opens.
             panel._load_profile("bhlh_tiers")
             await pilot.pause()
-            rows = list(panel.query(".source-row"))
+            # A row is in the tree a turn before its inputs are: wait for the
+            # composed row instead of reading it in the mounting turn (ODR-0023).
+            rows = await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
             rows[0].query_one(".source-name", Input).value = "dup"
             await _click(pilot, "#classification-add-source")
-            await pilot.pause()
-            second = list(panel.query(".source-row"))[1]
+            rows = await _await_rows(pilot, panel, ".source-row", 2, ".source-name")
+            second = rows[1]
             second.query_one(".source-name", Input).value = "dup"
             await _click(pilot, "#classification-save")
             await pilot.pause()
