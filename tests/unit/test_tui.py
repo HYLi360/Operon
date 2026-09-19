@@ -44,7 +44,6 @@ from operon.tui.screens.runs import (
     RunsPanel,
 )
 from operon.utils import sha256_file
-
 from tests.helpers import copy_project_tree
 
 

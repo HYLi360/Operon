@@ -18,7 +18,7 @@ silently dropped.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import yaml
@@ -53,6 +53,7 @@ from operon.tui.screens.common import (
     DismissOnce,
     ErrorDialog,
     FittingSelect,
+    MountTracked,
     Panel,
     WriteModal,
     remount,
@@ -463,10 +464,10 @@ class ConfigPanel(Panel):
                         yield Static("", id="profile-version-note")
                         yield Static("", id="profile-extras-note")
                         yield Static("Required rules", classes="modal-label")
-                        yield Vertical(id="profile-required-rules")
+                        yield MountTracked(id="profile-required-rules")
                         yield Button("add rule", id="profile-add-required")
                         yield Static("Warning rules", classes="modal-label")
-                        yield Vertical(id="profile-warnings-rules")
+                        yield MountTracked(id="profile-warnings-rules")
                         yield Button("add rule", id="profile-add-warnings")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
                             yield Button("Save profile", id="profile-save",
@@ -483,11 +484,11 @@ class ConfigPanel(Panel):
                         yield Static("", id="classification-extras-note")
                         yield Static("Sources (name → analysis, filter, best_by)",
                                      classes="modal-label")
-                        yield Vertical(id="classification-sources")
+                        yield MountTracked(id="classification-sources")
                         yield Button("add source", id="classification-add-source")
                         yield Static("Rules (first match wins; label + source/when, absent, "
                                      "or default)", classes="modal-label")
-                        yield Vertical(id="classification-rules")
+                        yield MountTracked(id="classification-rules")
                         yield Button("add rule", id="classification-add-rule")
                         yield Static("", id="classification-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
@@ -842,7 +843,9 @@ class ConfigPanel(Panel):
             return
         error.update("")
         name = self.classification_profile
-        document = self._compose_classification_document()
+        document = self._form_document(self._compose_classification_document, error)
+        if document is None:
+            return
         file_version = self._profile_file_version(name, actions.CLASSIFICATION_KIND)
         new_version = 1 if file_version is None else file_version + 1
         self.app.push_screen(
@@ -1167,12 +1170,14 @@ class ConfigPanel(Panel):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
         if button_id == "profile-add-required":
-            self.query_one("#profile-required-rules", Vertical).mount(
-                RuleRow({"metric": "", "operator": ">=", "value": "", "code": ""})
+            self.query_one("#profile-required-rules", MountTracked).mount_later(
+                RuleRow({"metric": "", "operator": ">=", "value": "", "code": ""}),
+                when_present=".rule-row",
             )
         elif button_id == "profile-add-warnings":
-            self.query_one("#profile-warnings-rules", Vertical).mount(
-                RuleRow({"metric": "", "operator": ">", "value": "", "code": ""})
+            self.query_one("#profile-warnings-rules", MountTracked).mount_later(
+                RuleRow({"metric": "", "operator": ">", "value": "", "code": ""}),
+                when_present=".rule-row",
             )
         elif button_id == "profile-save":
             self._start_profile_save()
@@ -1181,13 +1186,14 @@ class ConfigPanel(Panel):
         elif button_id == "profile-new":
             self.app.push_screen(NewProfileModal(), self._on_new_profile)
         elif button_id == "classification-add-source":
-            self.query_one("#classification-sources", Vertical).mount(
-                SourceRow("", {"analysis": "", "filter": []})
+            self.query_one("#classification-sources", MountTracked).mount_later(
+                SourceRow("", {"analysis": "", "filter": []}), when_present=".source-row",
             )
         elif button_id == "classification-add-rule":
-            self.query_one("#classification-rules", Vertical).mount(
+            self.query_one("#classification-rules", MountTracked).mount_later(
                 ClassificationRuleRow({"label": "", "source": "", "when": []},
-                                      self._source_names())
+                                      self._source_names()),
+                when_present=".classrule-row",
             )
         elif button_id == "classification-save":
             self._start_classification_save()
@@ -1205,6 +1211,48 @@ class ConfigPanel(Panel):
             self._start_tools_check()
 
     # -- flow starters ------------------------------------------------------
+
+    #: Shown when a save arrives before a deferred form rebuild has composed.
+    FORM_MOUNTING_MESSAGE = "the form is still loading — save again in a moment"
+
+    def _form_mounting(self) -> bool:
+        """True while a deferred editor rebuild has not mounted its rows yet.
+
+        The panel replaces a whole editor with ``remount``: the replacement rows
+        mount a message-loop turn later, and each row mounts its own nested rows
+        — a source's filter editors, a rule's when-conditions, a condition
+        editor's body — a turn after that.  Reading the form inside that window
+        walks half-built rows; the composition then either raises ``NoMatches``
+        or, worse, returns a document with the missing rows silently dropped,
+        which is why a save refuses instead (ODR-0023).  Every container that
+        fills itself later says so through :class:`MountTracked`, so one query
+        covers the whole editor at any nesting depth.
+        """
+        for container in self.query(".mount-tracked").results(MountTracked):
+            if not container.mounts_settled:
+                return True
+        return False
+
+    def _form_document(
+        self,
+        compose: Callable[[], dict[str, Any]],
+        error_view: Static | None = None,
+    ) -> dict[str, Any] | None:
+        """Compose an editor document, or report a form that is still mounting.
+
+        A save is answered with :attr:`FORM_MOUNTING_MESSAGE` while
+        :meth:`_form_mounting` holds, so the composition never runs on a tree
+        that is missing rows — and a genuine selector problem stays loud
+        instead of hiding behind the message (the end-to-end save tests would
+        catch it).
+        """
+        if self._form_mounting():
+            if error_view is None:
+                self.app.notify(self.FORM_MOUNTING_MESSAGE, severity="warning")
+            else:
+                error_view.update(Text(self.FORM_MOUNTING_MESSAGE, style="yellow"))
+            return None
+        return compose()
 
     def _on_new_profile(self, payload: Any) -> None:
         if not payload:
@@ -1238,7 +1286,9 @@ class ConfigPanel(Panel):
         if not self.current_profile or self.profile_doc is None:
             return
         name = self.current_profile
-        document = self._compose_profile_document()
+        document = self._form_document(self._compose_profile_document)
+        if document is None:
+            return
         file_version = self._profile_file_version(name)
         new_version = 1 if file_version is None else file_version + 1
         self.app.push_screen(

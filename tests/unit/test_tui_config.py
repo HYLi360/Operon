@@ -16,6 +16,7 @@ pytest.importorskip("textual")
 import yaml
 from rich.text import Text
 from textual.containers import VerticalScroll
+from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -116,16 +117,34 @@ def _profile_doc(project: Project, name: str = "assembly_production_v1") -> dict
 
 
 async def _click(pilot, selector: str) -> None:
-    """Click a widget, failing loudly when the click does not land on it.
+    """Activate a widget, tolerating a rebuilt form that has not settled.
 
-    ``Pilot.click`` silently returns False when the target is clipped or
-    obscured (e.g. a modal button pushed out of the box), which otherwise
-    surfaces much later as a confusing timeout.  Scroll the target into
-    view first so buttons at the bottom of a scrollable form are clickable.
+    ``Pilot.click`` returns False when the target is clipped or obscured (e.g. a
+    modal button pushed out of the box) and *raises* ``OutOfBounds`` when the
+    target's centre is still outside the screen region — which is what the
+    deferred rebuild of an editor produces, and it surfaced as a failure in an
+    unrelated test on a slow runner (ODR-0023).  Scroll the target into view
+    first; an enabled button is then pressed directly, which is the same
+    activation a landed click produces, and anything else is retried until the
+    click lands.
     """
-    pilot.app.screen.query_one(selector).scroll_visible(animate=False)
+    widget = pilot.app.screen.query_one(selector)
+    widget.scroll_visible(animate=False)
     await pilot.pause()
-    assert await pilot.click(selector), f"click did not land on {selector}"
+    for _ in range(10):
+        try:
+            landed = await pilot.click(selector)
+        except OutOfBounds:
+            landed = False
+        if landed:
+            return
+        if isinstance(widget, Button) and not widget.disabled:
+            widget.press()
+            await pilot.pause()
+            return
+        await pilot.pause()
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"click did not land on {selector}")
 
 
 # ---------------------------------------------------------------------------
@@ -1955,6 +1974,22 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     raise AssertionError(f"{selector} rows with {child} never reached {count}")
 
 
+async def _await_form_ready(pilot, panel) -> None:
+    """Wait until the editor's deferred row mounts have landed (ODR-0023).
+
+    Reads the same signal the save path uses: ``remount`` replaces an editor's
+    rows a message-loop turn later, and the rows mount their own nested rows a
+    turn after that, so a single ``pilot.pause()`` can still observe a form
+    that is missing rows.
+    """
+    for _ in range(120):
+        if not panel._form_mounting():
+            return
+        await pilot.pause()
+        await asyncio.sleep(0.02)
+    raise AssertionError("the editor form never finished mounting")
+
+
 def _write_classification_profile(project: Project, name: str, document: dict) -> Path:
     path = project.profiles_dir / f"{name}.yaml"
     path.write_text("# hand-written comment\n" + yaml.safe_dump(document, sort_keys=False),
@@ -2048,6 +2083,14 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             assert len(list(panel.query(".source-row"))) == 1
             assert len(list(panel.query(".classrule-row"))) == 3
             assert len(list(panel.query(".bestby-row"))) == 2
+            # Rows mount a message-loop turn after their container is emptied and
+            # compose their inputs a turn after that: wait for the inputs before
+            # reading the form, or the composition sees half-built rows (ODR-0023).
+            await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
+            await _await_rows(pilot, panel, ".classrule-row", 3, ".classrule-label")
+            await _await_rows(pilot, panel, ".classrule-when .condition-row", 1,
+                              ".condition-field")
+            await _await_rows(pilot, panel, ".bestby-row", 2, ".bestby-field")
             # The form reproduces the on-disk document exactly.
             assert panel._compose_classification_document() == BHLH_PROFILE
             assert not panel.query_one("#classification-save", Button).disabled
@@ -2208,3 +2251,73 @@ def test_config_screen_new_classification_profile(project: Project) -> None:
     assert created["description"] == "created in the TUI"
     assert created["sources"] == {"core": {"analysis": "rpsbproc_cdd", "filter": []}}
     assert created["rules"] == [{"label": "C", "default": True}]
+
+
+@pytest.mark.bug("ODR-0023")
+def test_classification_save_refuses_a_form_that_is_still_mounting(project: Project) -> None:
+    """Saving inside a deferred rebuild is refused with a message, not a crash.
+
+    ``_render_classification_form`` replaces the source and rule rows through
+    ``remount``, and those rows mount their own filter/when rows a turn later,
+    so the form is not readable in the turn the render returns in.  Reading it
+    there used to raise ``NoMatches`` out of a button handler — or, when the
+    containers were still empty, compose a document with the rows silently
+    dropped (ODR-0023).  The save reports the wait, and opens the modal once
+    the form has mounted.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            # No await in between: this is the state a click handler sees in the
+            # turn after a rebuild, with the rows still on their way.
+            panel._start_classification_save()
+            error = panel.query_one("#classification-save-error", Static)
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(error)
+            assert not isinstance(app.screen, ClassificationSaveModal)
+
+            await _await_form_ready(pilot, panel)
+            panel._start_classification_save()
+            await pilot.pause()
+            assert isinstance(app.screen, ClassificationSaveModal)
+            await pilot.press("escape")
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0023")
+def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
+    project: Project, monkeypatch
+) -> None:
+    """``_click`` activates an enabled button even when ``Pilot.click`` cannot.
+
+    A rebuilt layout can leave the target's centre outside the screen region,
+    where ``Pilot.click`` raises ``OutOfBounds`` instead of returning False —
+    the failure that reached CI in an unrelated test (ODR-0023).  Pressing the
+    button is the same activation a landed click produces.
+    """
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            _select_profile(panel, "assembly_production_v1")
+            await pilot.pause()
+
+            async def click_away(*_args, **_kwargs):
+                raise OutOfBounds(
+                    "Target offset is outside of currently-visible screen region."
+                )
+
+            monkeypatch.setattr(pilot, "click", click_away)
+            await _click(pilot, "#profile-save")
+            await pilot.pause()
+            assert isinstance(app.screen, ProfileSaveModal)
+            await pilot.press("escape")
+
+    _run(scenario())
+
+

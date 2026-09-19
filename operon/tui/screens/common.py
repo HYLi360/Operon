@@ -199,17 +199,78 @@ class FittingSelect(Select):
         overlay.styles.width = min(widest + 4, cap)
 
 
+class MountTracked(Vertical):
+    """A container that fills itself from ``on_mount`` and reports when it did.
+
+    ``mount()`` lands a message-loop turn later, and the classification editor
+    does this at every nesting level (a rule mounts its when-conditions, a
+    source its filter editors, a condition editor its body rows), so "the
+    panel rendered" is not the same as "the form can be read": a reader that
+    runs in between sees an empty container, which either raises ``NoMatches``
+    or silently drops the rows it cannot see (ODR-0023).  Readers ask
+    :attr:`mounts_settled` first; the class carries the CSS class
+    ``mount-tracked`` so a panel can look its tracked containers up in one
+    query instead of naming every one of them.
+
+    The answer is evaluated lazily instead of scheduled: a callback registered
+    with ``call_after_refresh`` is posted to the widget's own message queue,
+    which a container that is still being mounted never pumps, and it would
+    leave the container waiting forever.  The check latches once it holds, so
+    removing a row later (a user deleting a when-condition) does not re-arm it.
+    """
+
+    _waiting = False
+    _wait_selector: str | None = None
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        classes = str(kwargs.pop("classes", "") or "")
+        super().__init__(*args, classes=f"{classes} mount-tracked".strip(), **kwargs)
+
+    def expect_mounts(self, when_present: str | None = None) -> None:
+        """Mark the container as waiting for rows that are on their way.
+
+        *when_present* is a selector the mounted rows must match (``None`` means
+        "any child").  The check reads *this* container instead of a value
+        captured by the caller: two calls that share a local variable would
+        otherwise wait on the wrong container, and the container would never
+        settle.
+        """
+        self._waiting = True
+        self._wait_selector = when_present
+
+    def mount_later(self, *widgets: Any, when_present: str | None = None) -> None:
+        """Mount *widgets* now and report settled once *when_present* is matched."""
+        self.expect_mounts(when_present)
+        self.mount(*widgets)
+
+    @property
+    def mounts_settled(self) -> bool:
+        """False while the rows this container mounts are not there yet."""
+        if not self._waiting:
+            return True
+        selector = self._wait_selector
+        present = bool(self.children) if selector is None else bool(self.query(selector))
+        if present:
+            self._waiting = False
+            return True
+        return False
+
+
 def remount(container: Any, *widgets: Any) -> None:
     """Replace a container's children with ``widgets`` (atomically, from the UI).
 
     ``Widget.remove_children()`` completes asynchronously, so mounting in the
     same turn can be undone by the pending removal — the freshly mounted
     children vanish when the removal lands.  Deferring the mount past the next
-    refresh keeps the replacement in order.
+    refresh keeps the replacement in order, and a :class:`MountTracked`
+    container reports that the rows are on their way (ODR-0023).
     """
     container.remove_children()
-    if widgets:
-        container.call_after_refresh(container.mount, *widgets)
+    if not widgets:
+        return
+    if isinstance(container, MountTracked):
+        container.expect_mounts()
+    container.call_after_refresh(container.mount, *widgets)
 
 
 class WorkerResults:

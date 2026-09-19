@@ -30,7 +30,7 @@ from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import FittingSelect, WriteModal, remount
+from operon.tui.screens.common import FittingSelect, MountTracked, WriteModal, remount
 
 # Keep in sync with operon.classify._OPERATORS (asserted in
 # tests/unit/test_tui_config.py); `like` is the case-insensitive SQL LIKE.
@@ -183,7 +183,7 @@ class ConditionEditor(Vertical):
             yield Select(list(CONDITION_MODES), value=self._mode, classes="condition-mode",
                          allow_blank=False)
             yield Button("✕", classes="condition-remove")
-        yield Vertical(classes="condition-body")
+        yield MountTracked(classes="condition-body")
         if self.extras:
             yield Static(Text(_extras_note(self.extras), style="dim"), classes="condition-extras")
 
@@ -212,7 +212,9 @@ class ConditionEditor(Vertical):
             self.post_message(self.RemoveRequested(self))
         elif event.button.has_class("condition-add"):
             event.stop()
-            self.query_one(".condition-group", Vertical).mount(ConditionRow({"field": ""}))
+            self.query_one(".condition-group", MountTracked).mount_later(
+                ConditionRow({"field": ""}), when_present=".condition-row",
+            )
 
     def on_condition_row_remove_requested(self, event: ConditionRow.RemoveRequested) -> None:
         event.stop()
@@ -226,7 +228,7 @@ class ConditionEditor(Vertical):
             rows = [item for item in group if isinstance(item, dict)] or [{"field": ""}]
             remount(
                 body,
-                Vertical(*[ConditionRow(row) for row in rows], classes="condition-group"),
+                MountTracked(*[ConditionRow(row) for row in rows], classes="condition-group"),
                 Button("add condition", classes="condition-add"),
             )
         else:
@@ -351,10 +353,10 @@ class SourceRow(Vertical):
                         classes="source-analysis")
             yield Button("✕", classes="source-remove")
         yield Static("filter conditions (AND-ed; empty = all rows)", classes="modal-label")
-        yield Vertical(classes="source-filter")
+        yield MountTracked(classes="source-filter")
         yield Button("add filter condition", classes="source-add-filter")
         yield Static("best_by (empty = hit_rank ascending)", classes="modal-label")
-        yield Vertical(classes="source-bestby")
+        yield MountTracked(classes="source-bestby")
         yield Button("add best_by entry", classes="source-add-bestby")
         if self.extras:
             yield Static(Text(_extras_note(self.extras), style="dim"), classes="source-extras")
@@ -362,13 +364,14 @@ class SourceRow(Vertical):
     def on_mount(self) -> None:
         filters = [item for item in self.original.get("filter") or [] if isinstance(item, dict)]
         if filters:
-            self.query_one(".source-filter", Vertical).mount(
-                *[ConditionEditor(item) for item in filters]
+            self.query_one(".source-filter", MountTracked).mount_later(
+                *[ConditionEditor(item) for item in filters],
+                when_present=".condition-editor",
             )
         entries = [item for item in self.original.get("best_by") or [] if isinstance(item, dict)]
         if entries:
-            self.query_one(".source-bestby", Vertical).mount(
-                *[BestByRow(item) for item in entries]
+            self.query_one(".source-bestby", MountTracked).mount_later(
+                *[BestByRow(item) for item in entries], when_present=".bestby-row",
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -377,11 +380,14 @@ class SourceRow(Vertical):
             self.post_message(self.RemoveRequested(self))
         elif event.button.has_class("source-add-filter"):
             event.stop()
-            self.query_one(".source-filter", Vertical).mount(ConditionEditor({"field": ""}))
+            self.query_one(".source-filter", MountTracked).mount_later(
+                ConditionEditor({"field": ""}), when_present=".condition-editor",
+            )
         elif event.button.has_class("source-add-bestby"):
             event.stop()
-            self.query_one(".source-bestby", Vertical).mount(
-                BestByRow({"field": "hit_rank", "direction": "asc"})
+            self.query_one(".source-bestby", MountTracked).mount_later(
+                BestByRow({"field": "hit_rank", "direction": "asc"}),
+                when_present=".bestby-row",
             )
 
     def on_condition_editor_remove_requested(self, event: ConditionEditor.RemoveRequested) -> None:
@@ -442,7 +448,7 @@ class ClassificationRuleRow(Vertical):
                                 allow_blank=True)
             yield Button("✕", classes="classrule-remove")
         yield Static("when (all conditions must hold)", classes="modal-label classrule-when-label")
-        yield Vertical(classes="classrule-when")
+        yield MountTracked(classes="classrule-when")
         yield Button("add when condition", classes="classrule-add-when")
         if self.extras:
             yield Static(Text(_extras_note(self.extras), style="dim"), classes="classrule-extras")
@@ -483,8 +489,9 @@ class ClassificationRuleRow(Vertical):
             self.query_one(".classrule-source", Select).value = str(source)
         conditions = [item for item in self.original.get("when") or [] if isinstance(item, dict)]
         if conditions:
-            self.query_one(".classrule-when", Vertical).mount(
-                *[ConditionEditor(item) for item in conditions]
+            self.query_one(".classrule-when", MountTracked).mount_later(
+                *[ConditionEditor(item) for item in conditions],
+                when_present=".condition-editor",
             )
         self._sync_mode()
 
@@ -499,7 +506,9 @@ class ClassificationRuleRow(Vertical):
             self.post_message(self.RemoveRequested(self))
         elif event.button.has_class("classrule-add-when"):
             event.stop()
-            self.query_one(".classrule-when", Vertical).mount(ConditionEditor({"field": ""}))
+            self.query_one(".classrule-when", MountTracked).mount_later(
+                ConditionEditor({"field": ""}), when_present=".condition-editor",
+            )
 
     def on_condition_editor_remove_requested(self, event: ConditionEditor.RemoveRequested) -> None:
         event.stop()

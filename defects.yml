@@ -415,3 +415,49 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown
+- id: ODR-0023
+  title: The config editors read a form whose deferred rows have not mounted
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: unreleased (the classification editor is not in any tagged release; v0.8.2
+    and earlier lack it). Triggered when the form is read in the message-loop turn in
+    which ``remount`` replaces an editor's rows — a save pressed there — and when a
+    test clicks a control whose centre a rebuilt layout has not repositioned yet
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'The panel replaces an editor through ``remount`` (remove the old rows,
+    mount the new ones a turn later) and each row mounts its own nested rows a turn
+    after that, so "the panel rendered" is not "the form can be read". CI showed it
+    as two unrelated tests failing: ``test_config_classification_editor_end_to_end``
+    on ubuntu 3.10/3.11 and macos 3.11 composing the document right after
+    ``_load_profile`` and hitting ``NoMatches`` — ``.condition-field`` on a
+    ConditionRow, ``.condition-body .condition-row`` on a ConditionEditor, and
+    Textual''s own ``Select._on_mount -> _setup_options_renderables ->
+    query_one(SelectOverlay)`` while a select was mounted inside the moving subtree —
+    and ``test_config_screen_unchanged_profile_save_notifies`` on macos 3.13, where
+    ``_click(pilot, "#profile-save")`` raised
+    ``textual.pilot.OutOfBounds: Target offset is outside of currently-visible screen
+    region``.  The same window in the product read a half-built form: the composition
+    either raised out of a button handler or returned a document with the rows it
+    could not see silently dropped.'
+  disposition: 'Container-level mount tracking: ``MountTracked`` (operon/tui/screens/
+    common.py) is a container that fills itself later and reports ``mounts_settled``,
+    set through ``expect_mounts``/``mount_later`` and by ``remount`` itself, with the
+    check evaluated lazily and latched (a ``call_after_refresh`` callback is posted to
+    the widget''s own queue, which a container that is still mounting never pumps).
+    The classification editor''s sources/rules/filters/best_by/when/condition bodies
+    are ``MountTracked``, as are the QC editor''s rule containers, and
+    ``ConfigPanel._form_mounting()`` answers with one query.  ``_form_document()``
+    refuses a save with ``FORM_MOUNTING_MESSAGE`` while that holds instead of walking
+    a half-built tree.  The tests wait through ``_await_form_ready``/``_await_rows``
+    before reading a form directly, and ``_click`` tolerates ``OutOfBounds`` by
+    pressing an enabled button — the same activation a landed click produces.  The
+    selector-based ``mount_later`` API also removed a late-binding bug found on the
+    way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and
+    the filter container waited on the best_by container forever.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
+  - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
