@@ -345,3 +345,36 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes
+- id: ODR-0021
+  title: A copied project inherits the read-only WAL side files of a read-only database
+  reported: '2026-09-19'
+  introduced_in: null
+  affected: 'test infrastructure only, no shipped behavior: any test that copies a
+    project directory which was read while its database file was read-only'
+  severity: low
+  component: tests
+  status: fixed
+  reproduction: 'test_data_layer_never_writes() chmods the module-scoped demo database
+    to 0444 and runs the read-only data layer against it; SQLite then creates
+    operon.sqlite-shm and operon.sqlite-wal with that read-only mode, and the test''s
+    finally restores only the database file. A later shutil.copytree() of the same
+    demo project (for example _seed_analysis_jobs) preserves the 0444 side files, so
+    opening the copy for writing raises sqlite3.OperationalError: attempt to write a
+    readonly database in Database._migrate_recovery_schema_2_6. Reproduced in
+    isolation (chmod a WAL database 0444, open it with mode=ro, restore the database
+    mode, copytree it, write -> "attempt to write a readonly database"). Measured
+    locally: the chmod window appeared in 6/6 runs of tests/unit/test_tui.py (-n 4),
+    a copy inherited the read-only -shm in 4 of those runs, and every one of the four
+    failed (test_analysis_jobs_modal_layout_keeps_its_panes); CI hit
+    test_analysis_jobs_modal_browses_interrupted_tasks in 3 of 12 jobs.'
+  disposition: 'tests/helpers.copy_project_tree() copies a project into a writable
+    tree: it drops every *.sqlite-shm (SQLite rebuilds the shared-memory index from
+    the log on the next open) and restores write permission on the copied database,
+    log and journal files. test_data_layer_never_writes() now works on a private copy
+    of the demo project instead of the shared module fixture, so the read-only window
+    no longer leaks into every later test that copies it. A regression test asserts
+    that a copied project opens for writing after a read-only session.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session

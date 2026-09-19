@@ -2,11 +2,37 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import Any
 
 import pytest
+
+
+def copy_project_tree(source: str | Path, target: str | Path) -> Path:
+    """Copy a project directory into a *writable* one and return the copy.
+
+    ``shutil.copytree`` preserves file modes, and a project whose database was
+    read while it was itself read-only carries side files with that read-only
+    mode: SQLite gives ``operon.sqlite-shm``/``-wal`` the mode of the database
+    it opened.  A copy inherits them and can no longer be written — opening it
+    raises ``attempt to write a readonly database`` (ODR-0021).  Dropping the
+    shared-memory file is safe (SQLite rebuilds it from the log on the next
+    open) and restoring write permission on the database, log and journal files
+    makes the copy behave like the project it was copied from.
+    """
+
+    source_path = Path(source)
+    target_path = Path(target)
+    shutil.copytree(source_path, target_path)
+    for shm_path in target_path.rglob("*.sqlite-shm"):
+        shm_path.unlink()
+    for sqlite_path in target_path.rglob("*.sqlite*"):
+        if sqlite_path.is_file():
+            sqlite_path.chmod(0o644)
+    return target_path
 
 
 class PytestAssertions:

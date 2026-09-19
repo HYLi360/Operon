@@ -45,6 +45,8 @@ from operon.tui.screens.runs import (
 )
 from operon.utils import sha256_file
 
+from tests.helpers import copy_project_tree
+
 
 @pytest.fixture(scope="module")
 def demo_project(tmp_path_factory) -> Project:
@@ -378,13 +380,10 @@ def _seed_analysis_jobs(demo_project: Project, tmp_path: Path) -> tuple[Project,
     joinable) and one interrupted task with no run row at all — exactly the
     shape a cancelled job array leaves behind.
     """
-    import shutil
-
     from operon.database import Database
     from operon.workflow import log_run
 
-    target = tmp_path / "analysis-jobs-project"
-    shutil.copytree(demo_project.root, target)
+    target = copy_project_tree(demo_project.root, tmp_path / "analysis-jobs-project")
     project = Project.find(target)
     db = Database(project.db_path)
     try:
@@ -524,39 +523,48 @@ def test_workflow_run_detail_execution_details_variants(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_data_layer_never_writes(demo_project: Project) -> None:
-    """The data layer works on an OS-read-only database and never modifies it."""
-    db_path = demo_project.db_path
+def test_data_layer_never_writes(demo_project: Project, tmp_path: Path) -> None:
+    """The data layer works on an OS-read-only database and never modifies it.
+
+    The read-only pass runs on a private copy of the demo project.  SQLite
+    hands the WAL side files of a read-only database that same read-only mode,
+    and the shared module fixture must not carry it into every later test that
+    copies it (ODR-0021).  The copy keeps the assertion meaningful: the
+    database it starts from is byte-identical to the demo's.
+    """
+    project = Project.find(
+        copy_project_tree(demo_project.root, tmp_path / "read-only-project"))
+    db_path = project.db_path
     before = sha256_file(db_path)
     os.chmod(db_path, 0o444)
     try:
-        data.project_summary(demo_project)
-        data.attention_items(demo_project)
-        data.entity_tree(demo_project)
-        data.entity_tree(demo_project, include_retired=True)
-        data.entity_detail(demo_project, "assembly", "ASM_000001")
-        data.entity_metrics(demo_project, "assembly", "ASM_000001")
-        data.list_files(demo_project)
-        data.file_statuses(demo_project)
-        data.file_detail(demo_project, data.list_files(demo_project)[0]["file_id"])
-        runs = data.list_workflow_runs(demo_project, limit=100)
-        data.list_workflow_runs(demo_project, step="qc", entity="RUN_000001")
-        data.workflow_run_detail(demo_project, runs[0]["run_id"])
-        data.list_analysis_jobs(demo_project)
+        data.project_summary(project)
+        data.attention_items(project)
+        data.entity_tree(project)
+        data.entity_tree(project, include_retired=True)
+        data.entity_detail(project, "assembly", "ASM_000001")
+        data.entity_metrics(project, "assembly", "ASM_000001")
+        data.list_files(project)
+        data.file_statuses(project)
+        data.file_detail(project, data.list_files(project)[0]["file_id"])
+        runs = data.list_workflow_runs(project, limit=100)
+        data.list_workflow_runs(project, step="qc", entity="RUN_000001")
+        data.workflow_run_detail(project, runs[0]["run_id"])
+        data.list_analysis_jobs(project)
         # Phase-3 read paths (pickers, publish, coverage).
-        data.list_organisms_for_picker(demo_project)
-        data.list_samples_for_picker(demo_project, "ORG_000001")
-        data.list_assemblies_for_picker(demo_project, "SMP_000001")
-        data.list_annotations_for_picker(demo_project, "ASM_000001")
-        data.list_releases(demo_project)
-        data.release_preview(demo_project, "assembly_production_v1")
-        data.export_preview(demo_project, entity_type="assembly")
-        data.list_taxonomy_snapshots(demo_project)
-        data.list_reference_sets(demo_project)
-        data.list_coverage_reports(demo_project)
+        data.list_organisms_for_picker(project)
+        data.list_samples_for_picker(project, "ORG_000001")
+        data.list_assemblies_for_picker(project, "SMP_000001")
+        data.list_annotations_for_picker(project, "ASM_000001")
+        data.list_releases(project)
+        data.release_preview(project, "assembly_production_v1")
+        data.export_preview(project, entity_type="assembly")
+        data.list_taxonomy_snapshots(project)
+        data.list_reference_sets(project)
+        data.list_coverage_reports(project)
 
         async def scenario() -> None:
-            app = OperonApp(demo_project)
+            app = OperonApp(project)
             async with app.run_test(size=(140, 45)) as pilot:
                 for key in "12345678":
                     await pilot.press(key)
@@ -567,6 +575,54 @@ def test_data_layer_never_writes(demo_project: Project) -> None:
     finally:
         os.chmod(db_path, 0o644)
     assert sha256_file(db_path) == before
+
+
+@pytest.mark.bug("ODR-0021")
+def test_copied_project_stays_writable_after_a_read_only_session(
+    demo_project: Project, tmp_path: Path
+) -> None:
+    """A copy of a project that was read read-only still opens for writing.
+
+    A read-only connection to a read-only database makes SQLite create the WAL
+    side files with that read-only mode, and ``shutil.copytree`` preserves it:
+    the copy's database could not be written, which is how the defect reached
+    CI as an unrelated test failing with "attempt to write a readonly
+    database".  ``copy_project_tree`` drops the shared-memory file and restores
+    write permission.
+    """
+    from operon.database import Database
+    from operon.workflow import log_run
+
+    source = Project.find(
+        copy_project_tree(demo_project.root, tmp_path / "read-only-source"))
+    original_mode = source.db_path.stat().st_mode
+    os.chmod(source.db_path, 0o444)
+    try:
+        reader = Database(source.db_path, read_only=True)
+        try:
+            reader.query("SELECT COUNT(*) AS n FROM files")
+        finally:
+            reader.close()
+    finally:
+        os.chmod(source.db_path, original_mode)
+
+    shared_memory = Path(f"{source.db_path}-shm")
+    assert shared_memory.exists(), (
+        "the read-only session no longer leaves a -shm file behind; the "
+        "regression test needs a different precondition"
+    )
+    assert not shared_memory.stat().st_mode & 0o200, (
+        "the read-only session no longer leaves a read-only -shm file behind; "
+        "the regression test needs a different precondition"
+    )
+
+    target = copy_project_tree(source.root, tmp_path / "copy")
+    copied = Project.find(target)
+    db = Database(copied.db_path)
+    try:
+        log_run(db, copied, {"step": "copy-probe", "status": "completed"})
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
