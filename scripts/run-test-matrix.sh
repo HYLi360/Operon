@@ -20,16 +20,32 @@
 # change how much of the machine the run holds at once.
 #
 # Each version runs in its own process; logs land in .matrix/logs/<version>.log
-# and the exit status in .matrix/logs/<version>.status.  The log directory is
-# wiped before anything starts, so a run in flight is never read against the
-# previous run's leftovers.
+# and the exit status in .matrix/logs/<version>.status.  One run at a time owns
+# that directory: it is wiped before anything starts, so a run in flight is never
+# read against the previous run's leftovers, and a second run refuses to start
+# rather than wipe the files the first one is still reporting from.
 
 set -u
 cd "$(dirname "$0")/.."   # repository root
 ROOT=$PWD
 LOGS=$ROOT/.matrix/logs
+OWNER=$ROOT/.matrix/logs.owner
+# One run owns the log directory: a second run would wipe the files the first
+# one is still reporting from (its statuses then look like results).  A lock
+# left behind by a run that was killed is taken over after six hours.
+if [ -f "$OWNER" ]; then
+  owner=$(cat "$OWNER" 2>/dev/null)
+  if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null \
+     && [ -z "$(find "$OWNER" -mmin +360 2>/dev/null)" ]; then
+    echo "refusing to start: matrix run $owner is still using $LOGS" >&2
+    exit 2
+  fi
+  echo "taking over a stale lock $OWNER (pid ${owner:-unknown})"
+fi
 rm -rf "$LOGS"
 mkdir -p "$LOGS"
+echo $$ >"$OWNER"
+trap 'rm -f "$OWNER"' EXIT
 TARGETS=("$@")
 [ ${#TARGETS[@]} -eq 0 ] && TARGETS=(tests)
 

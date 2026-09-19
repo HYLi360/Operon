@@ -77,8 +77,10 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
    矩阵相当于把全量测试跑六遍，所以分波只影响峰值占用，不改变总耗时——总耗时由核心数决定。
    Linux 机器跑不到的那一半仍由 CI 覆盖（`.github/workflows/test.yml` 在 macOS 上跑同样版本）。
 
-   每个版本的日志在 `.matrix/logs/<version>.log`，失败后可直接用对应解释器重跑。脚本在 Linux
-   与 macOS 上均可运行。`.matrix/` 已被 git 忽略。
+   每个版本的日志在 `.matrix/logs/<version>.log`，失败后可直接用对应解释器重跑；日志目录在每次
+   运行前清空，因此不会把上一轮的残留误当成本轮结果，且同一时间只允许一个运行——第二个会以退出码 2
+   拒绝启动，而不是清空正在汇报的那一轮的日志。脚本在 Linux 与 macOS 上均可运行，`.matrix/` 已被
+   git 忽略。
 5. **平台相关代码不能只靠单个矩阵任务验证。** Linux 与 macOS 在环境探测所调用的系统工具、以及
    `pathlib`/`resource` 行为上都不同。凡是用 `sys.platform`/`os.name` 分支或调用系统工具的代码，
    都应带一个能在 Linux 上复现对端平台条件的测试（例如不含 GNU `timeout` 的空 `PATH`），而不是
