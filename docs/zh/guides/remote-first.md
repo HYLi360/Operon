@@ -147,6 +147,23 @@ operon pull --remote mycluster --file-id FIL_000001
 含 `REMOTE_ONLY` 文件时，本地数据库与远端镜像 root 是两个独立的备份对象；
 见 [备份、迁移与续跑](backup-migration.md)。
 
+## 常见陷阱
+
+- **参考数据库不会随镜像同步。** `push`、`evict`、`pull` 只搬运 manifest 文件，因此
+  recipe 的 `database` 必须手工部署到远端目标路径（`reference` 还需
+  `database_checksum`），镜像换主机或换 root 后要重新部署。
+- **`database` 建议写项目相对路径。** 绝对路径或 `~/...` 会原样出现在远端命令中，远端
+  必须存在同一路径；项目相对路径才会映射进远端 root。
+- **`--dry-run` 只是预览。** 它跳过数据库检查，也不经后端探测工具版本，因此部署要靠
+  首次真实运行验证，而不是靠 dry run。
+- **`analyze` 不会把字节取回本地。** `REMOTE_ONLY` 输入在原位读取，状态仍是
+  `REMOTE_ONLY`；`standardize`、`release`、`export` 需要本地字节，先 `pull`。
+- **结果缓存带位置属性。** 数据库身份包含 SSH 主机与 root，因此同一 recipe 在 `local`
+  与 `ssh` 后端之间、两台主机之间都不共享缓存结果。
+- **切换后端不只是速度开关。** 任何 `remote_root` 非空的 `ssh` 运行都要求
+  `database_checksum`，并跳过本地数据库存在性检查；字段级规则与其余陷阱见
+  [Slurm 与 SSH 远程执行](remote-execution.md)。
+
 ## 限制
 
 - `run-external` 与 `analyze` 是同步阻塞的：本地 CLI 进程全程持有远端作业。进程

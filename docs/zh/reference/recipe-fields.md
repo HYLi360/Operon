@@ -348,7 +348,15 @@ database_mode: mutable_cache
   检查路径存在。显式 checksum 与 SSH 主机/root 一起进入数据库缓存身份；
 - `mutable_cache` 必须有 `database_version`，目标目录不存在时通过 SFTP 创建；
 - 本地存在同名数据库不代表远端已经部署，反之亦然；缺失会在提交分析前明确报错；
-- 不同 SSH 主机/root 不共享分析缓存身份，避免在内容位置不明时跨集群复用结果。
+- 不同 SSH 主机/root 不共享分析缓存身份，避免在内容位置不明时跨集群复用结果；
+- 项目根之外的路径——包括展开后的 `~/...`——原样传给远端命令，因此计算端必须在同一路径
+  存在该文件；`database` 写成项目相对路径才会映射进 `remote_root`，多数 recipe 应当如此；
+- 这两项检查都不会在 `--dry-run` 下执行：预览会对根本不存在于任何位置的数据库给出
+  `planned`，只有首次真实运行才会报 `reference database not found: <path>; edit
+  config/tools.yaml`（本地）或 `remote reference database is not provisioned at <path>`
+  （远端）；
+- 数据库不是 manifest 文件：`push`、`evict`、`pull` 都不会搬运它，`operon remotes`
+  也不统计它，镜像换到新 root 后需要重新部署。
 
 这里的 `database_checksum` 是 recipe 对冻结数据库发布身份的显式声明。对于需要逐字节
 审计的参考库，应在部署阶段另外执行发布方校验或生成 Operon 可复核的清单；运行期不会

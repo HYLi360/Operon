@@ -129,8 +129,92 @@ recipes:
       time: "72:00:00"
 ```
 
-> **测试说明**：Slurm 与 SSH 后端的自动化测试基于模拟环境（fake sbatch/squeue
-> 与内存态 SSH/SFTP 实现）。SSH/SFTP、远端原位分析和远端 Slurm 链路还于
-> 2026-09-04 在 Linux OpenSSH 登录节点、共享 GPFS 文件系统和 Slurm 计算节点上完成
-> 真实冒烟。每套部署仍应运行自己的短任务，核对主机密钥、文件系统可见性、分区、
-> 提交、取消、轮询与输出拉回。
+## 部署冒烟测试
+
+Slurm 与 SSH 后端的自动化测试基于模拟环境（fake sbatch/squeue 与内存态 SSH/SFTP
+实现）。SSH/SFTP、远端原位分析与远端 Slurm 链路也已在真实集群上完成冒烟：
+
+- 2026-09-04——Linux OpenSSH 登录节点、共享 GPFS 文件系统与 Slurm 计算节点；
+- 2026-09-20——带 `sbatch`/`squeue`/`sacct` 与 `cu` 分区的 OpenSSH 登录节点，
+  镜像 root 与计算 root 在同一共享文件系统上：`evict` → 远端原位 `analyze`
+  （HMMER recipe）→ `pull`，输入 13 MB。
+
+每套部署仍应自跑一个短任务；下面的检查清单、参考流程与陷阱即 2026-09-20 部署的
+验证内容。
+
+### 检查清单
+
+1. **镜像可达性与主机密钥。** `operon remotes` 必须把镜像列为 `ok`；未知主机在公钥
+   写入 `known_hosts` 或固定 `host_key_sha256` 之前一律拒绝。
+2. **一套文件系统、两类节点。** `remote_root`（默认继承 `storage_remote` 的 root）
+   必须在提交 `sbatch` 的登录节点与计算节点上都可见。
+3. **调度器。** `sbatch`、`squeue`、`sacct` 必须在登录节点的非交互式 `PATH` 中，
+   且所配分区存在。
+4. **计算端工具。** recipe 的 `executable` 必须在被提交作业继承到的 `PATH` 中。
+   `operon tools-check` 只在本地探测，无法验证远端；仅交互式 shell 可见、或只存在于
+   非交互式 shell 不会激活的 conda 环境中的可执行文件，会在探测或提交阶段失败。
+5. **参考数据库。** 预先放到远端目标路径并声明 `database_checksum`；`database`
+   建议写成项目相对路径，以便映射进远端 root（见
+   [Recipe 配置参考](../reference/recipe-fields.md) 的“SSH 远程数据库”一节）。
+6. **用一个小文件跑一个短 recipe**，让冒烟在几分钟内结束。
+
+若还要覆盖远端原位读取，请按 [远端优先工作流](remote-first.md) 配置
+`execution.ssh.storage_remote`，并在分析前先 evict 该文件。
+
+### 参考冒烟流程
+
+```bash
+operon evict --remote mycluster --file-id FIL_000001                    # 文件转为 REMOTE_ONLY
+operon analyze --analysis <recipe> --entity-id <entity> --threads 24 --backend ssh
+operon analyze --analysis <recipe> --entity-id <entity> --threads 24 --backend ssh   # 必须显示 cached
+operon pull --remote mycluster --file-id FIL_000001                     # 取回本地字节
+```
+
+随后在两侧核对：
+
+| 位置 | 核对内容 |
+|---|---|
+| `analysis_jobs` | `launcher = [ssh:user@host]`、`status = completed`、`output_sha256`、`environment_id`、`recipe_snapshot_id`，以及 `command` 中解析后的数据库路径 |
+| `execution_details` | `scheduler_job_id`、`slurm_elapsed_seconds`、`host`，以及 `remote_root/logs/` 下的远端 `script` 路径 |
+| `execution_environments` | 探针描述的是**计算节点**（CPU 型号、cpuset），而非登录节点 |
+| 远端主机 | `logs/<run_id>.sbatch` 只含改写后的路径——`cd` 与所有位于 `remote_root` 内的项目路径；`<run_id>.exitcode` 为 `0` |
+| 两侧 | 拉回输出的 SHA-256 与远端文件的 `sha256sum` 一致 |
+| 本地 `logs/` | `<run_id>.stdout.log` / `.stderr.log` 是从远端作业取回的副本 |
+| `changes` / `locations` | evict 到 `REMOTE_ONLY` 与 pull 回 `CHECKSUM_VERIFIED` 都有审计记录，且 `.operon/placeholders/` 下的占位符在 `pull` 后消失 |
+
+同样的命令再跑一次必须显示 `cached` 而不是重新提交作业；若又提交了作业，说明缓存身份
+变了（后端或主机/root 不同、recipe 被编辑，或解析出的 `database` 不同）。
+
+### 常见陷阱
+
+- **项目根之外的 `database` 不会被映射。** 绝对值——包括会被展开的 `~/...`——原样
+  传给远端命令，因此计算端必须存在同一路径。本地用 `/data/db/Pfam-A.hmm` 或
+  `~/resources/hmm/PF00010.hmm` 能跑通的 recipe，在远端会失败。项目相对路径才会被
+  映射进 `remote_root`，这也是多数 recipe 想要的形式。
+- **`--dry-run` 既不校验数据库，也不校验远端。** 本地存在性检查与远端预置检查都会被
+  跳过，且非 `local` 后端下工具版本显示为 `not probed (backend=…)`。因此预览会对一个
+  根本不在磁盘上的数据库给出 `planned`；真正的报错只出现在首次真实运行：本地为
+  `reference database not found: <path>; edit config/tools.yaml`，远端为
+  `remote reference database is not provisioned at <path>`。验证部署请用真实文件，
+  不要用 `--dry-run`。
+- **远端 `reference` 数据库必须声明 `database_checksum`。** 缺少时在提交任何作业之前
+  即被拒绝：`remote reference databases require database_checksum so cache identity
+  does not depend on a missing local path`。
+- **参考数据库不是 manifest 文件。** `push`、`evict`、`pull` 只搬运已登记文件，因此
+  `operon remotes` 不会统计数据库，镜像换到新 root 时需手工重新部署。
+- **远端原位语义由后端决定，而不是由文件状态决定。** 任何 `remote_root` 非空的 `ssh`
+  运行都会跳过本地数据库存在性检查、要求 `database_checksum`，并把 SSH 位置混入数据库
+  缓存身份。因此 `local` 与 `ssh` 后端之间、两台主机/root 之间都不共享结果——切换
+  后端按设计会重算。
+- **输入不会自动回到本地。** 本地存在的输入经 SFTP 上传；`REMOTE_ONLY` 输入则先对照
+  本地清单、远端清单与远端实际字节校验，再在原位读取。两种情况字节都留在原处，
+  `pull` 始终是显式步骤。
+- **工具输出可能内嵌产生它的命令。** HMMER 的 `--tblout`/`--domtblout` 末尾 banner 记录了
+  query/target 路径、完整 argv、工作目录与日期，因此同一输入在本地与远端跑出的字节并不
+  相同，即使命中表逐字节一致（实测某文件：135 行数据行相同，5 行 banner 不同，
+  `output_sha256` 由 `a64cc0c5…` 变为 `1a0fc453…`）。请把 `output_sha256` 视为与主机和
+  路径相关：换后端重跑会覆盖已记录的输出，旧作业行的哈希随之与磁盘文件不符（该行在下次
+  被命中时会被标记为 `superseded`）。这也是缓存身份必须包含 SSH 位置的原因之一。
+- **工具版本经后端探测，请保持两端安装可比。** `qc-measure` 的 payload 是唯一“版本
+  不一致只告警”的场景；对 `analyze` 结果而言，远端工具版本不同会改变记录的
+  `tool_version`，进而改变缓存身份。

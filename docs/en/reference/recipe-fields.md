@@ -300,7 +300,10 @@ When SSH uses a non-empty `remote_root`, paths under the local project root in `
 - `reference` must be placed at the remote target path by an administrator in advance, with `database_checksum` configured; path existence is checked before the run. The explicit checksum enters the database cache identity together with the SSH host/root;
 - `mutable_cache` must have a `database_version`, and the target directory is created over SFTP when missing;
 - A database existing locally under the same name does not mean it is deployed remotely, and vice versa; a missing database is reported clearly before the analysis is submitted;
-- Different SSH hosts/roots do not share analysis cache identity, avoiding cross-cluster reuse of results when content location is unclear.
+- Different SSH hosts/roots do not share analysis cache identity, avoiding cross-cluster reuse of results when content location is unclear;
+- Paths outside the project root are passed through verbatim — including `~/...` after expansion — so they must exist at that exact path on the compute side; a project-relative `database` is mapped into `remote_root` and is what most recipes should use;
+- Neither check runs under `--dry-run`: a preview reports `planned` for a database that exists nowhere, and only the first real run reports `reference database not found: <path>; edit config/tools.yaml` (local) or `remote reference database is not provisioned at <path>` (remote);
+- The database is not a manifest file: `push`, `evict` and `pull` never transfer it and `operon remotes` does not count it, so a new mirror root needs the database redeployed.
 
 Here `database_checksum` is the recipe's explicit declaration of a frozen database's published identity. For reference databases that need byte-level auditing, additionally run the publisher's verification or generate an Operon-verifiable manifest at deployment time; the runtime does not repeatedly traverse multi-terabyte databases for every candidate input.
 

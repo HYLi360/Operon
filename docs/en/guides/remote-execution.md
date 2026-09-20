@@ -94,4 +94,56 @@ recipes:
 
 See [Recipe Field Reference](../reference/recipe-fields.md#slurm-resource-overrides) for the complete field list, including the `array` / `array_concurrency` job-array keys, which apply equally to local Slurm and to remote Slurm over SSH.
 
-> The automated tests for Slurm and SSH use simulated sbatch/squeue and in-memory SSH/SFTP implementations. The SSH/SFTP, remote-only analysis, and remote Slurm paths were also smoke-tested on 2026-09-04 against a Linux OpenSSH login node, a shared GPFS filesystem, and a Slurm compute node. Each deployment should still run a short local smoke task to validate its host keys, filesystem visibility, partitions, submission, cancellation, polling, and output retrieval.
+## Smoke-testing a deployment
+
+The automated tests for Slurm and SSH use simulated sbatch/squeue and in-memory SSH/SFTP implementations. The SSH/SFTP, remote-only analysis, and remote Slurm paths have also been smoke-tested against real clusters:
+
+- 2026-09-04 — Linux OpenSSH login node, shared GPFS filesystem, Slurm compute node;
+- 2026-09-20 — OpenSSH login node with `sbatch`/`squeue`/`sacct` and a `cu` partition, mirror and compute root on one shared filesystem: `evict` → remote-only `analyze` of an HMMER recipe → `pull`, over 13 MB of input.
+
+Each deployment should still run a short task of its own; the checklist, reference run and pitfalls below are what validated the 2026-09-20 deployment.
+
+### Checklist
+
+1. **Mirror reachability and host key.** `operon remotes` must list the mirror as `ok`; an unknown host is rejected until its key is in `known_hosts` or `host_key_sha256` is pinned.
+2. **One filesystem, two node classes.** `remote_root` (inherited from `storage_remote` by default) must be visible from the login node that runs `sbatch` and from the compute nodes.
+3. **Scheduler.** `sbatch`, `squeue` and `sacct` must be in the login node's non-interactive `PATH`, and the configured partition must exist.
+4. **Tools on the compute side.** Every recipe `executable` must be on the `PATH` the submitted job inherits. `operon tools-check` probes the local machine only, so it cannot validate the remote side; a binary reachable only from an interactive shell, or only from a conda environment the non-interactive shell does not activate, fails at probe or submit time.
+5. **Reference database.** Deploy it in advance at the remote target path and declare `database_checksum`; prefer a project-relative `database` so the path is mapped into the remote root (see [Databases on SSH remotes](../reference/recipe-fields.md#databases-on-ssh-remotes)).
+6. **A short recipe over one small file**, so the smoke run takes minutes rather than hours.
+
+To also exercise remote-only input consumption, configure `execution.ssh.storage_remote` as in [Remote-First Operation](remote-first.md) and evict the file before the run.
+
+### Reference smoke run
+
+```bash
+operon evict --remote mycluster --file-id FIL_000001                    # input becomes REMOTE_ONLY
+operon analyze --analysis <recipe> --entity-id <entity> --threads 24 --backend ssh
+operon analyze --analysis <recipe> --entity-id <entity> --threads 24 --backend ssh   # must report cached
+operon pull --remote mycluster --file-id FIL_000001                     # restore the local bytes
+```
+
+Then check both planes:
+
+| Where | What to verify |
+|---|---|
+| `analysis_jobs` | `launcher = [ssh:user@host]`, `status = completed`, `output_sha256`, `environment_id`, `recipe_snapshot_id`, and a `command` naming the resolved database |
+| `execution_details` | `scheduler_job_id`, `slurm_elapsed_seconds`, `host`, and the remote `script` path under `remote_root/logs/` |
+| `execution_environments` | the probe describes the **compute node** (CPU model, cpuset), not the login node |
+| remote host | `logs/<run_id>.sbatch` contains rewritten paths only — the `cd` and every project path inside `remote_root`; `<run_id>.exitcode` holds `0` |
+| both sides | the retrieved output's SHA-256 equals `sha256sum` of the remote file |
+| local `logs/` | `<run_id>.stdout.log` / `.stderr.log` are copies retrieved from the remote job |
+| `changes` / `locations` | the eviction to `REMOTE_ONLY` and the restore to `CHECKSUM_VERIFIED` are audited, and the placeholder under `.operon/placeholders/` is gone after `pull` |
+
+A second identical run must report `cached` for the file instead of submitting another job; if it resubmits, the cache identity changed (a different backend or host/root, an edited recipe, or a different resolved `database`).
+
+### Pitfalls
+
+- **A `database` outside the project root is never mapped.** Absolute values — including `~/...`, which is expanded before mapping — are passed through verbatim, so the compute side must have that exact path. A recipe that works locally with `/data/db/Pfam-A.hmm` or `~/resources/hmm/PF00010.hmm` fails remotely. A project-relative value is mapped into `remote_root` instead, which is what most recipes want.
+- **`--dry-run` validates neither the database nor the remote side.** The local existence check and the remote provisioning precheck are both skipped, and with a non-`local` backend the tool version is reported as `not probed (backend=…)`. A preview therefore shows `planned` for a database that exists nowhere on disk; the first real run reports `reference database not found: <path>; edit config/tools.yaml`, or `remote reference database is not provisioned at <path>`. Validate a deployment with one real file, not with `--dry-run`.
+- **A remote `reference` database must declare `database_checksum`.** Without it the run is rejected before anything is submitted: `remote reference databases require database_checksum so cache identity does not depend on a missing local path`.
+- **The reference database is not a manifest file.** `push`, `evict` and `pull` move ingested files only, so `operon remotes` does not count the database and a new mirror root needs it redeployed by hand.
+- **Remote-only semantics come from the backend, not from the file's status.** Any `ssh` run with a non-empty `remote_root` skips the local database existence check, requires `database_checksum`, and mixes the SSH location into the database cache identity. Results are therefore not shared between the `local` and `ssh` backends, or between two hosts/roots — a backend switch recomputes by design.
+- **The input never travels back on its own.** A locally present input is uploaded over SFTP; a `REMOTE_ONLY` input is checked against the local manifest, the remote manifest and the live remote bytes, then consumed in place. Either way the bytes stay where they are, and `pull` remains an explicit step.
+- **Tool outputs may embed the command that produced them.** HMMER's `--tblout`/`--domtblout` banner records the query and target paths, the full argv, the working directory and the date, so the same input analyzed locally and remotely yields different bytes even when the hit table is identical (observed on one file: 135 identical data lines, 5 differing banner lines, `output_sha256` `a64cc0c5…` → `1a0fc453…`). Treat `output_sha256` as host- and path-specific: a re-run on another backend overwrites the recorded output, and the older job row's hash then no longer matches the file on disk — such a row is marked `superseded` the next time it is hit. This is another reason the cache identity includes the SSH location.
+- **Tool versions are probed through the backend, so keep the two installations compatible.** `qc-measure` payloads are the one place where a version mismatch is only a warning; for `analyze` results, a remote tool of a different version changes the recorded `tool_version` and therefore the cache identity.

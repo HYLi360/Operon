@@ -124,6 +124,15 @@ operon pull --remote mycluster --file-id FIL_000001
 
 `REMOTE_ONLY` files make the local database and the remote mirror root two separate backup targets; see [Backup, Migration, and Resumption](backup-migration.md).
 
+## Common pitfalls
+
+- **The reference database is not mirrored.** `push`, `evict` and `pull` move manifest files only, so a recipe `database` must be deployed at the remote target path by hand — with a `database_checksum` for a `reference` database — and redeployed whenever the mirror moves to another host or root.
+- **Keep `database` project-relative.** An absolute or `~/...` value reaches the remote command verbatim and must exist at that exact path there; a project-relative value is mapped into the remote root instead.
+- **`--dry-run` only previews.** It skips the database checks and does not probe the tool through the backend, so a deployment is validated by the first real run, not by a dry run.
+- **`analyze` hydrates nothing.** A `REMOTE_ONLY` input is consumed in place and stays `REMOTE_ONLY`; `standardize`, `release` and `export` still need local bytes, so `pull` first.
+- **Results are location-scoped.** The database identity includes the SSH host and root, so the same recipe does not share cached results between the `local` and `ssh` backends, or between two hosts.
+- **A backend switch is not just a speed setting.** Any `ssh` run with a non-empty `remote_root` requires `database_checksum` and skips the local database existence check. See [Remote Execution with Slurm and SSH](remote-execution.md#pitfalls) for the field-level rules and the rest of the list.
+
 ## Limitations
 
 - `run-external` and `analyze` are synchronous and blocking: the local CLI process holds the remote job for its whole lifetime. Interrupting the process or hitting `--timeout` cancels the remote job (`scancel` for remote Slurm, TERM/KILL to the process group for direct SSH). There is no submit-and-disconnect mode that recovers a job later.
