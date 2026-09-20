@@ -576,7 +576,7 @@ defects:
     failed them twice, on two different commits'
   severity: medium
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'CI run 35437444763 (head f16d077) and run 35436469140 (head 4a116ce,
     second attempt) each failed ``pytest (ubuntu-latest, 3.13)`` in
     ``tests/unit/test_tui_config.py``.  ``test_profile_editor_scrolls_to_all_rules``
@@ -599,8 +599,8 @@ defects:
     helper.  Applied to every site of that shape in the file (six notification
     assertions), because the ones that happened to pass are the ones the next slow run
     picks.'
-  fix_commit: null
-  fixed_in: null
+  fix_commit: b2e8c9cee602e0aaa6c8c2924df838f933699af8
+  fixed_in: 0.8.4
   regression_tests:
   - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
   - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
