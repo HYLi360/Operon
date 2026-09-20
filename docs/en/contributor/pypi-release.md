@@ -19,7 +19,9 @@ It validates that the release tag is exactly `v<project.version>`, then builds:
 A `verify-release` job runs before every other job, and they all need it: it
 checks out the release tag and refuses to continue unless the `test` workflow's run
 for that exact commit concluded `success` and `scripts/release-preflight.sh --ci
---tag <tag>` passes. A tag on a commit whose CI is red — or cancelled before it ran
+--tag <tag>` passes. It imports the maintainer's published GPG key first, so the
+tag's signature is verified rather than merely present; without that key the gate
+reports the check as skipped instead of failed. A tag on a commit whose CI is red — or cancelled before it ran
 — therefore builds and uploads nothing.
 
 Each wheel is installed in an isolated test environment before upload. The

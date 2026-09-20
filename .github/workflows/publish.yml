@@ -37,6 +37,10 @@ jobs:
             echo "::error::test.yml on $sha concluded '$conclusion'; rerun it (gh run rerun) before releasing"
             exit 1
           fi
+      - name: Import the maintainer's published GPG key
+        run: |
+          curl -sSL "https://github.com/${{ github.repository_owner }}.gpg" | gpg --import
+          gpg --list-keys --with-colons | grep '^pub' | wc -l
       - name: Release preflight
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}

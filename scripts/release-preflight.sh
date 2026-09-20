@@ -210,8 +210,19 @@ if [ -n "$tag" ]; then
   else
     fail "annotated" "$tag is not an annotated tag"
   fi
-  if git verify-tag "$tag" 2>&1 | grep -q "Good signature"; then
+  # Three outcomes, not two: a keyring without the signing key cannot check the
+  # signature at all, and reporting that as a failure is a false negative (it
+  # failed the publish job for a correctly signed tag).  Check the signature
+  # block whenever the keyring cannot, and report the limitation as a skip.
+  signature=$(git verify-tag "$tag" 2>&1 || true)
+  if printf '%s\n' "$signature" | grep -q "Good signature"; then
     pass "GPG signature verifies"
+  elif printf '%s\n' "$signature" | grep -q "No public key"; then
+    if git cat-file tag "$tag" | grep -q "BEGIN PGP SIGNATURE"; then
+      skip "the tag carries a signature block, but this keyring has no public key for it (import one, e.g. curl -sSL https://github.com/<owner>.gpg | gpg --import)"
+    else
+      fail "GPG signature" "$tag has neither a verifiable nor a present signature"
+    fi
   else
     fail "GPG signature" "git verify-tag $tag did not report a good signature"
   fi

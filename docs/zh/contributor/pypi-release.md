@@ -18,7 +18,9 @@ tag 必须严格等于 `v<project.version>`，再构建：
 
 `verify-release` job 会先于其他所有 job 运行，且它们都依赖它：它检出 release tag，
    并断言"该提交的 `test` workflow 结论为 `success`"以及
-   `scripts/release-preflight.sh --ci --tag <tag>` 通过。因此，tag 落在 CI 为红（或压根
+   `scripts/release-preflight.sh --ci --tag <tag>` 通过。它会先导入维护者公开的 GPG 公钥，
+   因此 tag 的签名是被**真正验证**过，而不只是"存在签名"；若该公钥不可用，这一项报 `skip`
+   而不是 `fail`。因此，tag 落在 CI 为红（或压根
    被取消、没跑完）的提交上时，什么都不会被构建，更不会被上传。
 
 每个 wheel 都会先安装到隔离测试环境，导入编译后的 parser 并调用 CLI；源码分发包
