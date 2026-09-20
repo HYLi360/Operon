@@ -605,3 +605,52 @@ defects:
   - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
   - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
   - tests/unit/test_tui_config.py::test_config_classification_editor_guards_and_readonly
+- id: ODR-0028
+  title: '`--dry-run` reports a plan that cannot execute and does not probe the
+    configured backend'
+  reported: '2026-09-20'
+  introduced_in: null
+  affected: 'all releases; `analyze --dry-run` on any project whose recipe
+    `database` is missing locally (every backend) or not deployed on the
+    compute side (ssh/slurm with a non-empty `remote_root`), and the
+    `tool_version` column of any dry run on a non-local backend;
+    preconditions: a misconfigured or unprovisioned reference database, or
+    a deployment being preflighted with `--dry-run`'
+  severity: low
+  component: tools
+  status: confirmed
+  reproduction: 'Reproduced on 2026-09-20 against a real OpenSSH + Slurm cluster and in
+    an isolated `operon init-demo` project. (1) Remote reference database
+    absent: after the pre-provisioned remote copy of the recipe database
+    was removed, `operon analyze --analysis hmmsearch_pf00010 --entity-id
+    ANN_000001 --backend ssh --dry-run` still printed `adoptable` with an
+    output path, `tool_version` `not probed
+    (backend=ssh:lihuanyu@202.117.107.236)` and `dry-run: 1 planned
+    job(s), 0 job(s) left. no command executed`, exit 0; the same command
+    without `--dry-run` failed with `RemoteError: remote reference
+    database is not provisioned at
+    /home/lizhonghu/lihuanyu/operon/project_bhlh/hmm/PF00010/PF00010.hmm`,
+    exit 1. (2) Local database absent: in a demo project whose `blastn_nt`
+    recipe database was `/nonexistent/nt`, `analyze --limit 1 --dry-run`
+    printed status `planned` with exit 0, while the real run failed with
+    `ExternalToolError: blastn_nt: reference database not found:
+    /nonexistent/nt; edit config/tools.yaml`. Both gates are the `not
+    dry_run` conditions around the local existence check and
+    `executor.prepare_database()` in `plan_analysis_for_file`
+    (`operon/tools.py`). (3) Documented promise:
+    `docs/*/reference/cli-analysis.md` states that in a dry run
+    `tool_version` contains the detected version, but a non-local backend
+    always reports `not probed (backend=...)`, because the probe itself
+    runs through the backend; the remote `database_checksum` rule is the
+    one database check that does fire in a dry run.'
+  disposition: 'Confirmed, no fix yet: registered 2026-09-20 during the remote-first
+    smoke test, with the fix deliberately deferred. The gap is documented
+    as a pitfall in `docs/*/guides/remote-execution.md` and
+    `docs/*/reference/recipe-fields.md`. A fix would either make
+    `--dry-run` perform the validations that need no command execution
+    (local database existence, remote `reference` provisioning over SFTP,
+    and the backend version probe) or align the `--dry-run` promise in
+    `docs/*/reference/cli-analysis.md` with the current behaviour.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
