@@ -13,9 +13,9 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from types import SimpleNamespace
 
 from operon import execution
 from operon.cli import main
