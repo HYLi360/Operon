@@ -471,13 +471,19 @@ defects:
     shared one ``view`` variable and the filter container waited on the best_by
     container forever.  The completion landed in 60a2d46 (deep row readiness and the
     Select guard) and f1fd525 (waits at the add-row sites); this record''s fix_commit
-    names the latter.'
+    names the latter.  Appendix (after 0.8.4, ODR-0033 round of repair): the QC editor''s rule
+    operator was the one control still outside that coverage — a bare ``Select`` inside
+    a ``remount``-replaced row, so invisible to the ``FittingSelect``-based readiness
+    query — and is now a ``FittingSelect`` as well; the recipe editor''s and the analyze
+    modal''s selects are composed once with their screen instead of being replaced and
+    stay bare, which ``RuleRow``''s docstring records.'
   fix_commit: f1fd5257ca0eca9ceb447c8edc59e2dcfe51aba6
   fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
   - tests/unit/test_tui_config.py::test_row_reports_ready_only_once_its_subtree_is_in_the_tree
   - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
+  - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
 - id: ODR-0024
   title: A second click on a button is swallowed by the press effect it still shows
   reported: '2026-09-19'
@@ -560,13 +566,17 @@ defects:
     ``ConfigPanel._form_mounting`` now requires of every Select in the form, so a
     reader waits instead of composing a blank operator; ``BestByRow`` parses rank
     values and defaults through ``actions.coerce_scalar``, keeping whole numbers
-    whole.'
+    whole.  Appendix (after 0.8.4, ODR-0033 round of repair): that query reads every
+    ``FittingSelect`` in the form, and the QC rule operator — still a bare ``Select``
+    and therefore outside it — is now the subclass as well, which the same test below
+    covers (see ODR-0023).'
   fix_commit: 729fc99378fb01279b6dd87e6b9bb432261f4085
   fixed_in: 0.8.3
   regression_tests:
   - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
   - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_with_an_uninitialised_select
   - tests/unit/test_tui_config.py::test_best_by_rank_map_keeps_whole_ranks_whole
+  - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
 - id: ODR-0027
   title: Two config-screen tests read the UI a message-loop turn too early
   reported: '2026-09-19'

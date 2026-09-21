@@ -2479,6 +2479,58 @@ def test_best_by_rank_map_keeps_whole_ranks_whole(project: Project) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# The QC rule operator control (ODR-0023 / ODR-0026)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.bug("ODR-0023")
+@pytest.mark.bug("ODR-0026")
+def test_rule_operator_controls_are_guarded_and_keep_their_value(project: Project) -> None:
+    """The QC rule operator is the guarded Select: ready, and on its value.
+
+    ``RuleRow`` is one of the rows ``remount`` rebuilds, so its operator control
+    must be a ``FittingSelect``.  A bare ``Select`` there was invisible to
+    ``_form_mounting``'s readiness query and carried both exposures the guarded
+    subclass exists for — Textual's own mount-phase lookups (ODR-0023) and the
+    value the control was built with being lost when that setup is deferred
+    (ODR-0026).  This drives the real path: the editor is rendered twice through
+    ``_load_profile``, so the second pass replaces an already populated form and
+    its rows arrive while the previous generation is still retiring, and each
+    pass reads the controls and the document they compose.
+    """
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("config")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(ConfigPanel)
+            await _await_form_ready(pilot, panel)
+
+            document = _profile_doc(project, "assembly_production_v1")
+            operators = [str(rule.get("operator", "")) for rule in document["required"]]
+            assert operators, "the demo profile needs required rules"
+
+            for render in range(2):
+                panel._load_profile("assembly_production_v1")
+                await _await_form_ready(pilot, panel)
+                rows = panel._rule_rows("required")
+                assert len(rows) == len(operators)
+                for row, operator in zip(rows, operators):
+                    control = row.query_one(".rule-operator")
+                    assert isinstance(control, FittingSelect), (
+                        f"render {render}: the operator control is a bare "
+                        f"{type(control).__name__}, so _form_mounting cannot see it"
+                    )
+                    assert control.options_ready
+                    assert control.value == operator
+                    assert row.rule_document()["operator"] == operator
+
+    _run(scenario())
+
+
+# --------------------------------------------------------------------------- #
 # Two editor rebuilds in one turn (ODR-0030)
 # --------------------------------------------------------------------------- #
 

@@ -106,6 +106,14 @@ class RuleRow(ComposedRows, Vertical):
     Rule keys the form does not model (``value_by``, ``source``, ``unknown``,
     ``unknown_code``, ``min``/``max``/``values``, …) are kept verbatim and
     rendered as a dim note below the inputs.
+
+    The operator control is a :class:`FittingSelect` because this is one of the
+    rows ``remount`` rebuilds: the guarded subclass retries Textual's own
+    mount-phase lookups, adopts the value it was built with and advertises
+    ``options_ready``, which ``ConfigPanel._form_mounting`` reads for every
+    ``FittingSelect`` in the form (ODR-0023, ODR-0026).  The recipe editor's and
+    the analyze modal's selects are composed once with their screen instead of
+    being replaced, so they stay bare.
     """
 
     class RemoveRequested(Message):
@@ -136,7 +144,8 @@ class RuleRow(ComposedRows, Vertical):
                 value=str(self.original.get("metric", "")),
                 placeholder="metric", classes="rule-metric",
             )
-            yield Select(options, value=operator, classes="rule-operator", allow_blank=False)
+            yield FittingSelect(options, value=operator, classes="rule-operator",
+                                allow_blank=False)
             yield Input(
                 value="" if value is None else str(value),
                 placeholder="value", classes="rule-value",
