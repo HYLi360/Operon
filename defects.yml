@@ -956,3 +956,54 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
+
+
+- id: ODR-0038
+  title: A Select's own on_mount runs unguarded next to the guarded override, so its mount failure reaches the app
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'any FittingSelect whose overlay is not composed yet when it mounts: under load
+    the first mount lookup fails and the traceback is reported to the application
+    error boundary even though the override recovers the state'
+  severity: low
+  component: tui
+  status: confirmed
+  reproduction: 'The 3.11 and 3.12 legs of the local matrix (MATRIX_JOBS=4) on 6ec3a00:
+    textual.css.query.NoMatches: No nodes match SelectOverlay on FittingSelect(classes=condition-operator)
+    in the run log, raised inside Textual''s Select._on_mount -> _setup_options_renderables.
+    Textual dispatches a message handler defined in several classes of the MRO, so
+    Select._on_mount runs as well as FittingSelect._on_mount (ODR-0023), and only
+    the latter wraps the call.  The leg''s functional failure was the unrelated blank
+    operator value read by the test; the noise appears in every load-sensitive run.'
+  expectation: 'A mount whose lookup can fail should fail in one place, logged at debug
+    level, without a traceback reaching the application error boundary.'
+  disposition: 'Registered from matrix evidence, not yet fixed.  Direction: let the
+    override be the only handler (drop the base handler''s work by making the guarded
+    path the one that runs, e.g. by overriding the private hook Textual''s handler
+    calls) or catch the base failure in the app''s error path for this widget.  Needs
+    a mutation-checked test that drives a Select mount with the overlay absent.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0039
+  title: An exhausted Select mount retry leaves options_ready False for good, and the form gate then waits forever
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'a FittingSelect whose overlay lookup misses on more than _mount_retry_limit
+    refreshes (50): options_ready stays False, so ConfigPanel._form_mounting keeps
+    reporting True — the form never becomes readable or saveable and nothing says why'
+  severity: low
+  component: tui
+  status: confirmed
+  reproduction: 'Code reading after the matrix runs: FittingSelect._init_options_when_composed
+    stops retrying at _mount_retry_limit and sets no flag or message on that path
+    (operon/tui/screens/common.py).  Not yet reproduced on a run; 50 consecutive missed
+    refreshes have not been observed, so the field impact is unmeasured.'
+  expectation: 'A guard that gives up should say so: a warning naming the control,
+    and a readiness signal a reader can distinguish from "still coming".'
+  disposition: 'Registered from code reading, not yet fixed.  Direction: log a warning
+    at the give-up branch and let the gate''s message name controls whose retry budget
+    ran out instead of only reporting "still mounting".'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
