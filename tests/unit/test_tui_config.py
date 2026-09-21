@@ -16,7 +16,6 @@ pytest.importorskip("textual")
 import yaml
 from rich.text import Text
 from textual.containers import VerticalScroll
-from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -29,6 +28,7 @@ from textual.widgets import (
     TabbedContent,
     TextArea,
 )
+from textual.pilot import OutOfBounds
 
 from operon.config import Project
 from operon.database import Database
@@ -79,7 +79,7 @@ def _static_text(widget: Static) -> str:
 
 
 SCENARIO_TIMEOUT = 60.0
-SETTLE_TIMEOUT = 15.0
+SETTLE_TIMEOUT = 30.0
 
 
 def _run(coroutine) -> None:
@@ -118,18 +118,18 @@ def _profile_doc(project: Project, name: str = "assembly_production_v1") -> dict
 
 
 async def _click(pilot, selector: str) -> None:
-    """Activate a widget, tolerating a rebuilt form and a lingering press effect.
+    """Activate a widget, tolerating a rebuilt layout and a lingering press effect.
 
-    ``Pilot.click`` returns False when the target is clipped or obscured (e.g. a
-    modal button pushed out of the box) and *raises* ``OutOfBounds`` when the
-    target's centre is still outside the screen region — which is what the
-    deferred rebuild of an editor produces (ODR-0023).  A ``Button`` also keeps
-    its ``-active`` press effect for about 0.2 s and Textual drops a
-    ``Button.Pressed`` raised inside that window, so a rapid second click on the
-    same button reported ``landed=True`` and did nothing (ODR-0024): wait for
+    ``Pilot.click`` returns False when the target is clipped or obscured and
+    *raises* ``OutOfBounds`` when the target's centre is still outside the screen
+    region, which is what a deferred editor rebuild produces (ODR-0023).  A
+    ``Button`` also keeps its ``-active`` press effect for about 0.2 s and
+    Textual drops a ``Button.Pressed`` raised inside that window, so a rapid
+    second click reported ``landed=True`` and did nothing (ODR-0024): wait for
     the effect to clear first.  An enabled button is then pressed directly when
-    the positional click cannot land, which is the same activation a landed
-    click produces, and anything else is retried until the click lands.
+    the positional click cannot land — the same activation a landed click
+    produces — and anything else is retried until it lands or the budget runs
+    out, so a rebuilt layout fails loudly instead of silently.
     """
     widget = pilot.app.screen.query_one(selector)
     widget.scroll_visible(animate=False)
@@ -154,6 +154,7 @@ async def _click(pilot, selector: str) -> None:
             raise AssertionError(f"click did not land on {selector}")
         await pilot.pause()
         await asyncio.sleep(0.02)
+
 
 
 # ---------------------------------------------------------------------------
@@ -2023,14 +2024,14 @@ async def _await_form_ready(pilot, panel) -> None:
     Reads the same signal the save path uses: ``remount`` replaces an editor's
     rows a message-loop turn later, and the rows mount their own nested rows a
     turn after that, so a single ``pilot.pause()`` can still observe a form
-    that is missing rows.
+    that is missing rows.  The budget is wall-clock, not a number of cycles: 120
+    cycles of ``pause() + sleep`` is about a second on an idle machine and runs
+    out on a loaded one (ODR-0027).
     """
-    for _ in range(120):
-        if not panel._form_mounting():
-            return
-        await pilot.pause()
-        await asyncio.sleep(0.02)
-    raise AssertionError("the editor form never finished mounting")
+    await _wait_until(
+        lambda: not panel._form_mounting(),
+        "finish mounting the editor form",
+    )
 
 
 def _write_classification_profile(project: Project, name: str, document: dict) -> Path:

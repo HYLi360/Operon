@@ -276,7 +276,6 @@ async def _push(pilot, modal, selector: str | None = None) -> None:
             if attempt:
                 raise
             await pilot.pause()
-            await asyncio.sleep(0.5)
             continue
         await pilot.pause()
         return

@@ -60,7 +60,7 @@ from operon.tui.screens.home import HomePanel
 from operon.tui.screens.runs import RunDetailScreen, RunsPanel
 
 SCENARIO_TIMEOUT = 60.0
-SETTLE_TIMEOUT = 15.0
+SETTLE_TIMEOUT = 30.0
 
 
 @pytest.fixture(scope="module")
