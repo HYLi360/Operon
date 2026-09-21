@@ -124,6 +124,26 @@ async def _wait_until(
         await asyncio.sleep(0.05)
 
 
+def _detail_text(app) -> str:
+    """Text of the open screen's ``#run-detail``, or "" while it is still composing."""
+    try:
+        return _static_text(app.screen.query_one("#run-detail", Static))
+    except NoMatches:
+        return ""
+
+
+async def _await_detail_text(app, needle: str) -> str:
+    """Wait for the run-detail screen to carry *needle*, and return its text.
+
+    ``_settled`` only says that no worker is running *at that instant*: the
+    detail screen starts its read from ``on_mount``, which needs a message-loop
+    turn of its own, so a read straight afterwards can land on the ``loading…``
+    placeholder — the window a slow runner stops on (ODR-0029).
+    """
+    await _wait_until(lambda: needle in _detail_text(app), f"run detail to show {needle!r}")
+    return _detail_text(app)
+
+
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
     stack = list(tree.root.children)
     while stack:
@@ -957,7 +977,7 @@ def test_runs_screen_filters_and_detail(demo_project: Project) -> None:
             await _settled(app)
             assert isinstance(app.screen, RunDetailScreen)
             run_id = panel.runs[0]["run_id"]
-            detail_text = _static_text(app.screen.query_one("#run-detail", Static))
+            detail_text = await _await_detail_text(app, str(run_id))
             assert run_id in detail_text
             assert "Workflow run" in detail_text
             assert "Execution details" in detail_text
@@ -1316,6 +1336,88 @@ def test_splash_quit_during_minimum_display(demo_project):
         assert not app.is_running
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-0029")
+def test_run_detail_read_waits_for_the_loaded_content(demo_project, monkeypatch):
+    """The run-detail read must key on the content, not on the worker set.
+
+    ``_settled`` returns while no worker is registered — and the detail screen
+    starts its read from ``on_mount``, a message-loop turn after it is pushed,
+    so the read could still see the ``loading…`` placeholder on a slow runner.
+    The test holds the load back to make that window deterministic: the old
+    shape reads the placeholder, the content wait cannot.
+    """
+    import threading
+
+    monkeypatch.setattr(RunDetailScreen, "on_mount", lambda screen: None)  # load not scheduled
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            table = app.query_one("#runs-table", DataTable)
+            table.focus()
+            table.move_cursor(row=0, animate=False)
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, RunDetailScreen)
+
+            # The window the flake fell into: no worker to wait for, so the old
+            # gate passes while the pane still holds its placeholder.
+            await _settled(app)
+            assert not app.workers
+            assert "loading" in _detail_text(app)
+
+            released = threading.Event()
+            original = data.workflow_run_detail
+
+            def gated_detail(project_arg, run_id):
+                if not released.wait(10):
+                    raise AssertionError("test never released the run-detail read")
+                return original(project_arg, run_id)
+
+            monkeypatch.setattr(data, "workflow_run_detail", gated_detail)
+            screen = app.screen
+            screen._load()
+            await pilot.pause()
+            released.set()
+            detail = await _await_detail_text(app, "Execution details")
+            assert "Workflow run" in detail
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0029")
+def test_no_tui_test_reads_run_detail_straight_after_settling() -> None:
+    """Every read of ``#run-detail`` in the TUI tests waits for its content.
+
+    The window this guards is invisible to a single run: ``_settled`` reports
+    the worker *set*, and the detail screen schedules its load a turn after
+    ``on_mount``, so on a fast machine a raw read happens to see the loaded text
+    and on a slow one it reads the ``loading…`` placeholder (ODR-0029).
+    ``_await_detail_text`` is that wait; a raw
+    ``= _static_text(app.screen.query_one('#run-detail' …))`` assignment is the
+    shape the fix removed.
+    """
+    import re
+    from pathlib import Path
+
+    raw_read = re.compile(r'=\s*_static_text\(\s*app\.screen\.query_one\(\s*"#run-detail"')
+    offenders = []
+    for path in sorted(Path(__file__).parent.glob("test_tui*.py")):
+        text = path.read_text(encoding="utf-8")
+        for match in raw_read.finditer(text):
+            line = text[: match.start()].count("\n") + 1
+            offenders.append(f"{path.name}:{line}")
+    assert not offenders, (
+        "these reads take #run-detail from a settled app instead of waiting for "
+        "its content: " + ", ".join(offenders)
+    )
 
 
 def test_plain_q_does_not_quit(demo_project):

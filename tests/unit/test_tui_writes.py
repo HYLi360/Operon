@@ -58,6 +58,28 @@ def _static_text(widget: Static) -> str:
     return renderable.plain if isinstance(renderable, Text) else str(renderable)
 
 
+def _detail_text(app) -> str:
+    """Text of the open screen's ``#run-detail``, or "" while it is still composing."""
+    try:
+        return _static_text(app.screen.query_one("#run-detail", Static))
+    except NoMatches:
+        return ""
+
+
+async def _await_detail_text(app, needle: str) -> str:
+    """Wait for the run-detail screen to carry *needle*, and return its text.
+
+    ``_settled`` only says that no worker is running *at that instant*: the
+    detail screen starts its read from ``on_mount``, which needs a message-loop
+    turn of its own, so a read straight afterwards can still land on the
+    ``loading…`` placeholder — the window a slow runner stops on (ODR-0029).
+    Waiting for the content instead of for the worker set is what the sites in
+    this module and ``test_tui.py`` do now.
+    """
+    await _wait_until(lambda: needle in _detail_text(app), f"run detail to show {needle!r}")
+    return _detail_text(app)
+
+
 SCENARIO_TIMEOUT = 60.0
 SETTLE_TIMEOUT = 15.0
 
@@ -1129,8 +1151,8 @@ def test_run_external_modal_preview_run_and_detail(project: Project, tmp_path: P
                               "external modal dismissal")
             await _settled(app)
             # The success callback opens the finished run's record.
+            detail = await _await_detail_text(app, "marker_step")
             assert isinstance(app.screen, RunDetailScreen)
-            detail = _static_text(app.screen.query_one("#run-detail", Static))
             assert "marker_step" in detail
             assert "Execution details" in detail
 
@@ -1167,8 +1189,7 @@ def test_run_external_modal_failed_command_opens_record(project: Project, tmp_pa
             assert any(severity == "error" and "failed" in message
                        for severity, message in
                        [(n.severity, n.message) for n in app._notifications])
-            detail = _static_text(app.screen.query_one("#run-detail", Static))
-            assert "exit code 3" in detail
+            assert "exit code 3" in await _await_detail_text(app, "exit code 3")
 
     _run(scenario())
     row = _query(project, "SELECT * FROM workflow_runs WHERE step='marker_step'")[0]

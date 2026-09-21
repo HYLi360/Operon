@@ -663,7 +663,7 @@ defects:
     table
   severity: medium
   component: tests
-  status: confirmed
+  status: fixed
   reproduction: 'CI run 35499613546, macos-latest Python 3.13, failed test_run_external_modal_preview_run_and_detail
     at test_tui_writes.py:1134: marker_step was absent from loading…. A local controlled RunDetailScreen.on_mount
     gate reproduces screen_is_detail=true and workers=0 while _settled returns and the text
@@ -671,14 +671,20 @@ defects:
     Second audit round (2026-09-21) found the same shape at test_tui.py:957-963, where
     enter on the runs table is followed by _settled, an isinstance check and a read of
     #run-detail.'
-  disposition: Audit only; no fix applied. Wait for the expected detail content (or an explicit
-    initial-load completion signal) in both run-external outcomes instead of treating _settled
-    as screen readiness. Keep a deterministic delayed-mount regression. Fix every site of the
-    shape in one pass (test_tui_writes.py:1127-1135 and 1162-1171, test_tui.py:957-963), because
-    the sites that happen to pass are the ones the next slow run picks.
+  disposition: 'Fixed.  Every read of #run-detail in the TUI tests now waits for the content it
+    asserts instead of for the worker set.  test_tui_writes.py gained _detail_text() and
+    _await_detail_text(), and its two run-external sites read the detail text only once the marker
+    they assert is there; test_tui.py runs-table site does the same through its own copy of the
+    pair.  The window is invisible to a single run, so the shape is also guarded rather than only
+    fixed — test_no_tui_test_reads_run_detail_straight_after_settling reads the test modules for a
+    raw assignment of _static_text(app.screen.query_one("#run-detail" …)) and fails on one, and
+    test_run_detail_read_waits_for_the_loaded_content holds the screen load back so the old gate
+    passes while the placeholder is still up, the way the flake fell into it.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui.py::test_run_detail_read_waits_for_the_loaded_content
+  - tests/unit/test_tui.py::test_no_tui_test_reads_run_detail_straight_after_settling
 - id: ODR-0030
   title: Old editor rows falsely satisfy readiness during a deferred form replacement
   reported: '2026-09-20'
