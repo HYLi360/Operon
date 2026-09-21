@@ -267,15 +267,17 @@ class PublishPanel(Panel):
             return
         self.query_one("#release-error", Static).update("")
         self.query_one("#release-preview-summary", Static).update("loading preview…")
-        self._load_release_preview(profile)
+        self._load_release_preview(
+            profile, self.begin_request(("release", profile)),
+        )
 
     @work(thread=True, exclusive=True, group="release-preview")
-    def _load_release_preview(self, profile: str) -> None:
+    def _load_release_preview(self, profile: str, key: Any = None) -> None:
         try:
             payload: Any = data.release_preview(self.project, profile)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        self.post_to_ui(self._apply_release_preview, payload)
+        self.post_to_ui(self._apply_release_preview, payload, key=key)
 
     def _apply_release_preview(self, payload: Any) -> None:
         if isinstance(payload, BaseException):
@@ -360,10 +362,12 @@ class PublishPanel(Panel):
             return
         self.query_one("#export-error", Static).update("")
         self.query_one("#export-preview-summary", Static).update("loading preview…")
-        self._load_export_preview(filters)
+        self._load_export_preview(
+            filters, self.begin_request(("export", tuple(sorted(filters.items())))),
+        )
 
     @work(thread=True, exclusive=True, group="export-preview")
-    def _load_export_preview(self, filters: dict[str, Any]) -> None:
+    def _load_export_preview(self, filters: dict[str, Any], key: Any = None) -> None:
         try:
             payload: Any = data.export_preview(
                 self.project,
@@ -378,7 +382,7 @@ class PublishPanel(Panel):
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        self.post_to_ui(self._apply_export_preview, payload)
+        self.post_to_ui(self._apply_export_preview, payload, key=key)
 
     def _apply_export_preview(self, payload: Any) -> None:
         if isinstance(payload, BaseException):

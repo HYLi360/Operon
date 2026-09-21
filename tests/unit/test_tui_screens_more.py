@@ -1662,3 +1662,145 @@ def test_panel_surfaces_a_failed_load_inside_the_panel():
     assert panel.errors == [failure]
     assert panel.initial_load_complete is True
     assert panel.initial_load_failed is True
+
+
+# --------------------------------------------------------------------------- #
+# Worker results carry the request they answer (ODR-0031)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.bug("ODR-0031")
+def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project,
+                                                                monkeypatch) -> None:
+    """A read already inside its thread must not paint over a newer selection.
+
+    ``exclusive=True`` cancels the previous worker's *await*, not the read the
+    thread is in the middle of: that thread still posts its payload, and without
+    the request stamp the pane ends up showing the row the user left behind
+    (ODR-0031).
+    """
+    held = threading.Event()
+    started = threading.Event()
+    slow_for: list[str] = []
+    original = data.file_detail
+
+    def gated_detail(project_arg: Project, file_id: str) -> Any:
+        if slow_for and file_id == slow_for[0]:
+            started.set()
+            if not held.wait(10):
+                raise AssertionError("test never released the slow detail read")
+        return original(project_arg, file_id)
+
+    monkeypatch.setattr(data, "file_detail", gated_detail)
+
+    delivered: list[Any] = []
+    original_apply = FilesPanel.apply_from_worker
+
+    def counting_apply(panel, callback, *args, key=None):
+        delivered.append(key)
+        original_apply(panel, callback, *args, key=key)
+
+    monkeypatch.setattr(FilesPanel, "apply_from_worker", counting_apply)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("files")
+            await _settled(app)
+            panel = app.query_one(FilesPanel)
+            await _wait_until(lambda: len(panel.files) >= 2, "the file list to load")
+            slow = str(panel.files[1]["file_id"])
+            fast = str(panel.files[0]["file_id"])
+            assert slow != fast
+            slow_for.append(slow)
+            delivered.clear()
+
+            table = panel.query_one("#files-table", DataTable)
+            table.move_cursor(row=1, animate=False)  # the read that blocks
+            await _wait_until(started.is_set, "the first detail read to block")
+            table.move_cursor(row=0, animate=False)  # the read that lands first
+            # Gate on the *delivery*, not on the pane: the pane may already
+            # show this file from the initial highlight, which would let the
+            # slow read's payload race in before the newer one landed.
+            await _wait_until(lambda: fast in delivered, "the newer detail read to land")
+            held.set()
+            await _wait_until(lambda: len(delivered) >= 2, "both detail reads to deliver")
+
+            # The slow read for the row the user left arrived last and was
+            # dropped instead of overwriting the newer answer.
+            assert delivered == [fast, slow]
+            detail = _static_text(panel.query_one("#file-detail", Static))
+            assert fast in detail
+            assert slow not in detail
+            assert panel.detail is not None
+            assert str(panel.detail["file"]["file_id"]) == fast
+
+    try:
+        _run(scenario())
+    finally:
+        held.set()
+
+
+@pytest.mark.bug("ODR-0031")
+def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Project,
+                                                            monkeypatch) -> None:
+    """The same stamp keeps the entity pane on the highlighted node."""
+    held = threading.Event()
+    started = threading.Event()
+    slow_for: list[Any] = []
+    original = data.entity_detail
+
+    def gated_detail(project_arg: Project, entity_type: str, entity_id: str) -> Any:
+        if slow_for and (entity_type, entity_id) == slow_for[0]:
+            started.set()
+            if not held.wait(10):
+                raise AssertionError("test never released the slow entity read")
+        return original(project_arg, entity_type, entity_id)
+
+    monkeypatch.setattr(data, "entity_detail", gated_detail)
+
+    delivered: list[Any] = []
+    original_apply = EntitiesPanel.apply_from_worker
+
+    def counting_apply(panel, callback, *args, key=None):
+        delivered.append(key)
+        original_apply(panel, callback, *args, key=key)
+
+    monkeypatch.setattr(EntitiesPanel, "apply_from_worker", counting_apply)
+
+    async def scenario() -> None:
+        app = OperonApp(demo_template)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("entities")
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            tree = panel.query_one("#entities-tree", Tree)
+            nodes = [node for node in tree.root.children if node.data is not None]
+            assert len(nodes) >= 2, "the demo project needs two top-level entities"
+            raw_slow: Any = nodes[1].data
+            raw_fast: Any = nodes[0].data
+            slow_key = tuple(raw_slow)
+            fast_key = tuple(raw_fast)
+            assert slow_key != fast_key
+            slow_for.append(slow_key)
+            delivered.clear()
+
+            tree.move_cursor(nodes[1])  # the read that blocks
+            await _wait_until(started.is_set, "the first entity read to block")
+            tree.move_cursor(nodes[0])  # the read that lands first
+            await _wait_until(lambda: fast_key in delivered, "the newer entity read to land")
+            held.set()
+            await _wait_until(lambda: len(delivered) >= 2, "both entity reads to deliver")
+
+            assert delivered == [fast_key, slow_key]
+            detail = _static_text(panel.query_one("#entity-detail", Static))
+            assert fast_key[1] in detail
+            assert slow_key[1] not in detail
+            assert panel.detail is not None
+            assert (panel.detail["entity_type"], panel.detail["entity_id"]) == fast_key
+
+    try:
+        _run(scenario())
+    finally:
+        held.set()

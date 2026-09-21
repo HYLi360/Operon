@@ -232,7 +232,12 @@ class CoveragePanel(Panel):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "coverage-reports-table" and event.row_key is not None:
-            self._load_report(str(event.row_key.value))
+            self._show_report(str(event.row_key.value))
+
+    def _show_report(self, report_id: str) -> None:
+        """Read one coverage report, stamped with the row it answers (ODR-0031)."""
+        self.begin_request(report_id)
+        self._load_report(report_id)
 
     @work(thread=True, exclusive=True, group="coverage-report")
     def _load_report(self, report_id: str) -> None:
@@ -240,7 +245,7 @@ class CoveragePanel(Panel):
             payload: Any = data.read_coverage_report(self.project, report_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        self.post_to_ui(self._apply_report, payload)
+        self.post_to_ui(self._apply_report, payload, key=report_id)
 
     def _apply_report(self, payload: Any) -> None:
         headline = self.query_one("#coverage-report-headline", Static)

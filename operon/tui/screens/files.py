@@ -251,11 +251,23 @@ class FilesPanel(Panel):
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.data_table.id == "files-table" and event.row_key is not None:
-            self._load_detail(str(event.row_key.value))
+            self._show_detail(str(event.row_key.value))
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "files-table" and event.row_key is not None:
-            self._load_detail(str(event.row_key.value))
+            self._show_detail(str(event.row_key.value))
+
+    def _show_detail(self, file_id: str) -> None:
+        """Read one file's detail, stamped with the selection it answers.
+
+        ``exclusive=True`` cancels the previous worker's await, not a read
+        already inside the thread, and that thread still posts its payload — so
+        the request is stamped here, on the UI thread, and a payload a newer
+        selection superseded is dropped instead of overwriting the pane
+        (ODR-0031).
+        """
+        self.begin_request(file_id)
+        self._load_detail(file_id)
 
     @work(thread=True, exclusive=True, group="file-detail")
     def _load_detail(self, file_id: str) -> None:
@@ -263,7 +275,7 @@ class FilesPanel(Panel):
             payload: Any = data.file_detail(self.project, file_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        self.post_to_ui(self._apply_detail, payload)
+        self.post_to_ui(self._apply_detail, payload, key=file_id)
 
     def _apply_detail(self, payload: Any) -> None:
         detail_view = self.query_one("#file-detail", Static)

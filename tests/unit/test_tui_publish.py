@@ -142,6 +142,20 @@ async def _click(pilot, selector: str) -> None:
     assert await pilot.click(selector), f"click did not land on {selector}"
 
 
+async def _wait_until(
+    predicate,
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
+) -> None:
+    """Wait for an observable UI result after a thread worker completes."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() > deadline:
+            raise TimeoutError(f"UI did not {description} within {timeout}s")
+        await asyncio.sleep(0.05)
+
+
 BUTTON_IDLE_TIMEOUT = 5.0
 
 
@@ -939,3 +953,210 @@ def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> 
                     assert wizard.query_one("#iw-run-platform", Select).value is Select.NULL
 
     _run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Preview workers carry the request they answer (ODR-0031)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.bug("ODR-0031")
+def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: Project,
+                                                            monkeypatch) -> None:
+    """The report read for the row the user left must not answer for the new one.
+
+    ``exclusive=True`` cancels the previous worker's *await*, not the read the
+    thread is inside; that thread posts its payload afterwards, so the request
+    stamp is what keeps the pane on the row the user actually selected
+    (ODR-0031).
+    """
+    import threading
+
+    result = actions.run_coverage(coverage_project, "cov@cov.1")
+    real = data.read_coverage_report(coverage_project, result["report_id"])
+    slow_id, fast_id = "COV_ODR0031_SLOW", "COV_ODR0031_FAST"
+    payloads = {slow_id: dict(real, report_id=slow_id),
+                fast_id: dict(real, report_id=fast_id)}
+
+    held = threading.Event()
+    started = threading.Event()
+
+    def gated_read(project_arg: Project, report_id: str) -> dict:
+        if report_id == slow_id:
+            started.set()
+            if not held.wait(10):
+                raise AssertionError("test never released the slow report read")
+        return payloads[report_id]
+
+    monkeypatch.setattr(data, "read_coverage_report", gated_read)
+
+    delivered: list = []
+    original_apply = CoveragePanel.apply_from_worker
+
+    def counting_apply(panel, callback, *args, key=None):
+        delivered.append(key)
+        original_apply(panel, callback, *args, key=key)
+
+    monkeypatch.setattr(CoveragePanel, "apply_from_worker", counting_apply)
+
+    async def scenario() -> None:
+        app = OperonApp(coverage_project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("coverage")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(CoveragePanel)
+            delivered.clear()
+
+            panel._show_report(slow_id)  # the read that blocks
+            await _wait_until(started.is_set, "the first report read to block")
+            panel._show_report(fast_id)  # the read that lands first
+            await _wait_until(
+                lambda: panel.report is not None and panel.report["report_id"] == fast_id,
+                "the new report to render",
+            )
+            held.set()
+            await _wait_until(lambda: len(delivered) >= 2, "both report reads to deliver")
+
+            assert delivered == [fast_id, slow_id]
+            assert panel.report is not None and panel.report["report_id"] == fast_id
+            headline = _static_text(panel.query_one("#coverage-report-headline", Static))
+            assert fast_id in headline
+            assert slow_id not in headline
+
+    try:
+        _run(scenario())
+    finally:
+        held.set()
+
+
+@pytest.mark.bug("ODR-0031")
+def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Project,
+                                                                 monkeypatch) -> None:
+    """A preview for the profile the user left must not answer for the new one."""
+    import threading
+
+    held = threading.Event()
+    started = threading.Event()
+    slow_for: list[str] = []
+
+    def gated_preview(project_arg: Project, profile: str) -> dict:
+        if slow_for and profile == slow_for[0]:
+            started.set()
+            if not held.wait(10):
+                raise AssertionError("test never released the slow preview")
+        members = 1 if slow_for and profile == slow_for[0] else 3
+        return {"members": [{"file_id": f"FIL_{index}"} for index in range(members)],
+                "member_bytes": 1024 * members, "exclusions": []}
+
+    monkeypatch.setattr(data, "release_preview", gated_preview)
+
+    delivered: list = []
+    original_apply = PublishPanel.apply_from_worker
+
+    def counting_apply(panel, callback, *args, key=None):
+        delivered.append(key)
+        original_apply(panel, callback, *args, key=key)
+
+    monkeypatch.setattr(PublishPanel, "apply_from_worker", counting_apply)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("publish")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(PublishPanel)
+            assert len(panel.profiles) >= 2, "the demo project needs two profiles"
+            slow, fast = panel.profiles[0], panel.profiles[1]
+            slow_for.append(slow)
+            delivered.clear()
+
+            select = panel.query_one("#release-profile", Select)
+            select.value = slow
+            await _wait_until(started.is_set, "the first preview to block")
+            select.value = fast
+            await _wait_until(
+                lambda: "3 member file(s)" in _static_text(
+                    panel.query_one("#release-preview-summary", Static)),
+                "the new preview to render",
+            )
+            held.set()
+            await _wait_until(lambda: len(delivered) >= 2, "both previews to deliver")
+
+            assert delivered == [("release", fast), ("release", slow)]
+            assert panel.release_preview_data is not None
+            assert len(panel.release_preview_data["members"]) == 3
+
+    try:
+        _run(scenario())
+    finally:
+        held.set()
+
+
+@pytest.mark.bug("ODR-0031")
+def test_export_preview_drops_a_read_a_newer_filter_set_superseded(project: Project,
+                                                                   monkeypatch) -> None:
+    """The same stamp covers the export preview's filter-driven read."""
+    import threading
+
+    held = threading.Event()
+    started = threading.Event()
+    slow_for: list[str] = []
+
+    def gated_preview(project_arg: Project, *, file_ids=(), **filters) -> dict:
+        if slow_for and list(file_ids) == [slow_for[0]]:
+            started.set()
+            if not held.wait(10):
+                raise AssertionError("test never released the slow preview")
+        count = 1 if (slow_for and list(file_ids) == [slow_for[0]]) else 3
+        return {"count": count, "bytes": 1024 * count}
+
+    monkeypatch.setattr(data, "export_preview", gated_preview)
+
+    delivered: list = []
+    original_apply = PublishPanel.apply_from_worker
+
+    def counting_apply(panel, callback, *args, key=None):
+        delivered.append(key)
+        original_apply(panel, callback, *args, key=key)
+
+    monkeypatch.setattr(PublishPanel, "apply_from_worker", counting_apply)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("publish")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(PublishPanel)
+            slow, fast = "FIL_000001", "FIL_000002"
+            slow_for.append(slow)
+            delivered.clear()
+
+            field = panel.query_one("#export-file-id", Input)
+            field.value = slow
+            panel._start_export_preview()  # the read that blocks
+            await _wait_until(started.is_set, "the first export preview to block")
+            field.value = fast
+            panel._start_export_preview()  # the read that lands first
+            await _wait_until(
+                lambda: "3 file(s)" in _static_text(
+                    panel.query_one("#export-preview-summary", Static)),
+                "the new export preview to render",
+            )
+            held.set()
+            await _wait_until(lambda: len(delivered) >= 2, "both export previews to deliver")
+
+            assert delivered[0] == panel._request_key
+            assert delivered[1] != delivered[0]
+            summary = _static_text(panel.query_one("#export-preview-summary", Static))
+            assert "3 file(s)" in summary
+            assert "1 file(s)" not in summary
+
+    try:
+        _run(scenario())
+    finally:
+        held.set()

@@ -724,7 +724,7 @@ defects:
     than the first read takes
   severity: medium
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
     the stale-detail scenario). Stub data.file_detail so the read for FIL_000002 sleeps 0.6
     s, highlight FIL_000002 and one turn later FIL_000003 in the Files table, then let the
@@ -736,14 +736,21 @@ defects:
     post_to_ui(self._apply_detail, payload) with no request identity, so the last payload to
     arrive wins. EntitiesPanel._load_detail has the same shape, as do the coverage and
     publish preview workers.'
-  disposition: Audit only; no fix applied. Stamp the request (file_id, entity or form values)
-    into the payload and drop a result whose key is not the current selection, or check the
-    current worker for cancellation before posting. Regression shape — a gated slow read for
-    the previous selection plus a fast read for the new one, then assert the pane names the
-    highlighted record.
+  disposition: Fixed.  WorkerResults stamps every request with a key and panels hand the key to the
+    worker result (post_to_ui(..., key=...) on the thread side, apply_from_worker(..., key=...) in the
+    panel), so a payload that arrives after a newer request was stamped is dropped instead of rendered.
+    A result without a key and a widget that never stamped one are both treated as current, so the
+    mechanism is inert for workers that do not opt in.  Panel.begin_request() + is_current_result()
+    are the two halves; FilesPanel and EntitiesPanel stamp file_id or the entity key, CoveragePanel
+    stamps the report id, and PublishPanel stamps the release profile and the export filter tuple.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui_screens_more.py::test_files_detail_drops_a_read_a_newer_selection_superseded
+  - tests/unit/test_tui_screens_more.py::test_entity_detail_drops_a_read_a_newer_node_superseded
+  - tests/unit/test_tui_publish.py::test_coverage_report_drops_a_read_a_newer_row_superseded
+  - tests/unit/test_tui_publish.py::test_release_preview_drops_a_read_a_newer_profile_superseded
+  - tests/unit/test_tui_publish.py::test_export_preview_drops_a_read_a_newer_filter_set_superseded
 - id: ODR-0032
   title: A dropped initial panel render leaves the app on the splash screen
   reported: '2026-09-21'

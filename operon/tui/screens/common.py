@@ -443,25 +443,59 @@ class WorkerResults:
     such a widget hand their result to :meth:`post_to_ui` instead of
     ``app.call_from_thread``; the result is rendered through
     :meth:`apply_from_worker` and dropped when there is nothing left to render.
+
+    ``exclusive=True`` is not enough to keep the *rendered* answer in step with
+    the request: it cancels the previous worker's await, not the thread already
+    inside a read, and that thread still posts its payload.  A widget whose
+    payload is identified by the selection it was read for calls
+    :meth:`begin_request` when it starts the read and passes the same key to
+    :meth:`post_to_ui`; a result that a newer request superseded is then dropped
+    instead of overwriting its answer (ODR-0031).
     """
 
     #: Supplied by the concrete widget (``Widget.app``).
     app: Any
 
-    def post_to_ui(self, callback: Callable[..., None], *args: Any) -> None:
+    #: The key of the request this widget is currently waiting for (ODR-0031).
+    _request_key: Any = None
+
+    def begin_request(self, key: Any) -> Any:
+        """Record *key* as the widget's current request and return it.
+
+        Call it on the UI thread where the request is made — not in the worker,
+        which cannot know what the widget is showing by the time it reads.
+        """
+        self._request_key = key
+        return key
+
+    def is_current_result(self, key: Any) -> bool:
+        """True when *key* still names the request this widget waits for.
+
+        A result without a key and a widget that never stamped one are both
+        current: the guard only drops a result that a *newer* stamped request
+        superseded (ODR-0031).
+        """
+        if key is None or self._request_key is None:
+            return True
+        return bool(key == self._request_key)
+
+    def post_to_ui(self, callback: Callable[..., None], *args: Any, key: Any = None) -> None:
         """Hand a worker result to the UI thread (call it from the worker)."""
 
         app = self.app
         if not app.is_running:  # pragma: no cover - shutdown race guard
             return
         try:
-            app.call_from_thread(self.apply_from_worker, callback, *args)
+            app.call_from_thread(self.apply_from_worker, callback, *args, key=key)
         except RuntimeError:  # pragma: no cover - app is shutting down
             pass
 
-    def apply_from_worker(self, callback: Callable[..., None], *args: Any) -> None:
-        """Render a worker result, or drop it once the widget is gone."""
+    def apply_from_worker(self, callback: Callable[..., None], *args: Any,
+                          key: Any = None) -> None:
+        """Render a worker result, or drop it once it is gone or superseded."""
 
+        if not self.is_current_result(key):
+            return
         try:
             callback(*args)
         except (MountError, NoMatches):

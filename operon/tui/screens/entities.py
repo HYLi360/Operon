@@ -278,11 +278,21 @@ class EntitiesPanel(Panel):
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         if event.node.data is not None:
-            self._load_detail(*event.node.data)
+            self._show_detail(*event.node.data)
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         if event.node.data is not None:
-            self._load_detail(*event.node.data)
+            self._show_detail(*event.node.data)
+
+    def _show_detail(self, entity_type: str, entity_id: str) -> None:
+        """Read one entity's detail, stamped with the node it answers.
+
+        A read already inside its thread still posts its payload when
+        ``exclusive=True`` cancelled its worker (ODR-0031): the stamp lets the
+        panel drop the superseded entity instead of overwriting the pane.
+        """
+        self.begin_request((entity_type, entity_id))
+        self._load_detail(entity_type, entity_id)
 
     @work(thread=True, exclusive=True, group="entity-detail")
     def _load_detail(self, entity_type: str, entity_id: str) -> None:
@@ -290,7 +300,7 @@ class EntitiesPanel(Panel):
             payload: Any = data.entity_detail(self.project, entity_type, entity_id)
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel
             payload = exc
-        self.post_to_ui(self._apply_detail, payload)
+        self.post_to_ui(self._apply_detail, payload, key=(entity_type, entity_id))
 
     def _apply_detail(self, payload: Any) -> None:
         detail_view = self.query_one("#entity-detail", Static)
