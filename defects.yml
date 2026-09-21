@@ -1014,7 +1014,7 @@ defects:
     answers a blocked save through _blocked_save_message, which names the stalled
     controls and points at a profile reload once any of them gave up, and keeps the
     still-loading wording otherwise.'
-  fix_commit: null
+  fix_commit: 7ceccc5788ed67b1827f62124958b7f2c91c787b
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
