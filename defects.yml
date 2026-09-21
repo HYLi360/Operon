@@ -680,7 +680,7 @@ defects:
     raw assignment of _static_text(app.screen.query_one("#run-detail" …)) and fails on one, and
     test_run_detail_read_waits_for_the_loaded_content holds the screen load back so the old gate
     passes while the placeholder is still up, the way the flake fell into it.'
-  fix_commit: null
+  fix_commit: 8204e189737b102d9c5ac1e4195ae33623e8adcb
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_run_detail_read_waits_for_the_loaded_content
@@ -718,7 +718,7 @@ defects:
     the rows the user sees, and the save modal composes the profile file's own rules.  The regression
     test drives two rebuilds inside one turn and then saves, asserting one generation of rows and a
     document equal to the file's.
-  fix_commit: null
+  fix_commit: ed6e199d9cebf8e2ac86749c1c7bf3afa73eab96
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_two_editor_rebuilds_in_one_turn_leave_one_generation
@@ -749,7 +749,7 @@ defects:
     mechanism is inert for workers that do not opt in.  Panel.begin_request() + is_current_result()
     are the two halves; FilesPanel and EntitiesPanel stamp file_id or the entity key, CoveragePanel
     stamps the report id, and PublishPanel stamps the release profile and the export filter tuple.
-  fix_commit: null
+  fix_commit: 2384e2c37a7a4ef3768113bc88de376822f91d41
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_screens_more.py::test_files_detail_drops_a_read_a_newer_selection_superseded
@@ -783,7 +783,7 @@ defects:
     panels that did not, pops the splash and notifies the user that r retries.  The deadline is
     covered by stepping the app clock (a frozen clock cannot show elapsed time), and the panel-level
     test parametrises both drop shapes, MountError and NoMatches.'
-  fix_commit: null
+  fix_commit: 7f73c472728ccfc34a7aab6f255d1051e45a2adf
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
