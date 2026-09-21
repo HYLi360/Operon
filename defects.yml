@@ -789,3 +789,34 @@ defects:
   - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
   - tests/unit/test_tui.py::test_splash_leaves_after_the_startup_deadline
   - tests/unit/test_tui_screens_more.py::test_panel_drops_a_result_whose_widgets_are_gone
+- id: ODR-0033
+  title: Environment-capture tests assert a raw path that capture redacts under $HOME
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'test infrastructure only, no shipped behavior: the three conda_prefix assertions
+    in tests/unit/test_environment_capture.py whenever the scratch directory (TMPDIR) sits
+    inside the home directory'
+  severity: low
+  component: tests
+  status: fixed
+  reproduction: 'Cross-version matrix run on 7f73c472728ccfc34a7aab6f255d1051e45a2adf, leg
+    Python 3.12.14, TMPDIR under the home directory (/home/hyli360/.hermes/cache/scratch/pytest-of-…):
+    the leg reported 3 failed, 1936 passed, each failure the same shape — the capture recorded
+    ''~/.hermes/cache/scratch/…/tool env'' while the test compared it with the raw absolute
+    path ''/home/hyli360/.hermes/cache/scratch/…/tool env'' in assert env["conda_prefix"] ==
+    fake_conda[-1]. Capture-time redaction collapses whole-segment home prefixes
+    (environment._redact_home), so the assertions only hold while the scratch directory is
+    outside $HOME — which every scripted run except an unstamped matrix leg arranges. The
+    3.10/3.11 legs of that run and CI never saw it.'
+  disposition: 'Fixed in tests/unit/test_environment_capture.py. The three assertions compare
+    against the capture''s own form of the path, a new _captured() helper that applies
+    environment._redact_home with environment._local_home() to the expected value, so they hold
+    wherever the scratch directory lives; a run whose TMPDIR is inside $HOME is now a condition
+    the matrix exercises instead of one it trips on. The three tests carry
+    @pytest.mark.bug("ODR-0033").'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_environment_capture.py::test_actual_target_environment_and_workflow_roundtrip
+  - tests/unit/test_environment_capture.py::test_slurm_probe_runs_after_setup_inside_launcher
+  - tests/unit/test_environment_capture.py::test_direct_ssh_captures_target_and_removes_raw_probe

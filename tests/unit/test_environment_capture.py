@@ -15,7 +15,12 @@ from operon import environment_capture
 from operon.cli import main
 from operon.config import Project
 from operon.database import Database
-from operon.environment import environment_summary, parse_probe_output
+from operon.environment import (
+    _local_home,
+    _redact_home,
+    environment_summary,
+    parse_probe_output,
+)
 from operon.environment_capture import (
     _clear_local_capture_cache,
     bounded_shell,
@@ -113,6 +118,17 @@ def test_unsupported_launcher_is_not_guessed(argv):
     assert probe_command(argv) is None
 
 
+def _captured(path: str) -> str:
+    """The path as capture records it: a home-directory prefix collapses to ``~``.
+
+    Capture-time redaction rewrites whole-segment home prefixes, so an assertion
+    against the raw path only holds while the scratch directory lives outside
+    ``$HOME`` — the shape that turned three of these tests red in a matrix leg
+    whose ``TMPDIR`` sat inside the home directory (ODR-0033).
+    """
+    return _redact_home(path, _local_home())
+
+
 @pytest.fixture
 def fake_conda(tmp_path, monkeypatch):
     prefix = tmp_path / "tool env"
@@ -126,6 +142,7 @@ def fake_conda(tmp_path, monkeypatch):
     return [str(manager), "run", "-p", str(prefix)]
 
 
+@pytest.mark.bug("ODR-0033")
 def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, capsys):
     project = Project.init(tmp_path / "project")
     with closing(Database(project.db_path)) as db:
@@ -133,7 +150,7 @@ def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, 
         row = db.conn.execute("SELECT document FROM execution_environments WHERE environment_id=?",
                               (run["environment_id"],)).fetchone()
         env = json.loads(row["document"])
-        assert env["conda_prefix"] == fake_conda[-1]
+        assert env["conda_prefix"] == _captured(fake_conda[-1])
         assert env["conda"]["status"] == "captured"
     assert main(["--project", str(project.root), "environments", "export", run["environment_id"]]) == 0
     assert "@EXPLICIT" in capsys.readouterr().out
@@ -144,6 +161,7 @@ def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, 
     assert main(["--project", str(project.root), "environments", "show", "missing"]) != 0
 
 
+@pytest.mark.bug("ODR-0033")
 def test_slurm_probe_runs_after_setup_inside_launcher(tmp_path, fake_conda):
     probe = tmp_path / "job.env"
     script = render_slurm_script(
@@ -155,7 +173,7 @@ def test_slurm_probe_runs_after_setup_inside_launcher(tmp_path, fake_conda):
     assert result.returncode == 0, result.stderr
     env = parse_probe_output(probe.read_text())
     assert probe.stat().st_mode & 0o077 == 0
-    assert env["conda_prefix"] == fake_conda[-1]
+    assert env["conda_prefix"] == _captured(fake_conda[-1])
     assert env["runtime_settings"]["OMP_NUM_THREADS"] == "3"
     assert env["conda"]["status"] == "captured"
 
@@ -287,6 +305,7 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
         export_conda(document(), "unsupported")
 
 
+@pytest.mark.bug("ODR-0033")
 def test_direct_ssh_captures_target_and_removes_raw_probe(tmp_path, fake_conda):
     from operon.execution import SSHExecutor
     from tests.unit.test_execution import FakeSSHClient
@@ -298,7 +317,7 @@ def test_direct_ssh_captures_target_and_removes_raw_probe(tmp_path, fake_conda):
                           stdout_path=project.logs_root / "out", stderr_path=project.logs_root / "err")
     assert result.exit_code == 0
     env = result.details["environment"]
-    assert env["conda_prefix"] == fake_conda[-1]
+    assert env["conda_prefix"] == _captured(fake_conda[-1])
     assert env["conda"]["package_fingerprint"] == document()["conda"]["package_fingerprint"]
     import re
     probe_paths = re.findall(r"/tmp/operon-env-[0-9a-f]+", "\n".join(client.commands))
