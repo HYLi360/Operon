@@ -673,7 +673,7 @@ defects:
     table
   severity: medium
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'CI run 35499613546, macos-latest Python 3.13, failed test_run_external_modal_preview_run_and_detail
     at test_tui_writes.py:1134: marker_step was absent from loading…. A local controlled RunDetailScreen.on_mount
     gate reproduces screen_is_detail=true and workers=0 while _settled returns and the text
@@ -691,7 +691,7 @@ defects:
     test_run_detail_read_waits_for_the_loaded_content holds the screen load back so the old gate
     passes while the placeholder is still up, the way the flake fell into it.'
   fix_commit: 8204e189737b102d9c5ac1e4195ae33623e8adcb
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui.py::test_run_detail_read_waits_for_the_loaded_content
   - tests/unit/test_tui.py::test_no_tui_test_reads_run_detail_straight_after_settling
@@ -703,7 +703,7 @@ defects:
     deferred replacement completes, or two renders arriving before the first replacement lands
   severity: high
   component: tui
-  status: fixed
+  status: verified
   reproduction: On Python 3.14.4 and Textual 8.2.8, render BHLH_PROFILE with _render_profile_document
     and await readiness. Render the same document with a new description and first rule label
     CHANGED, then call _form_mounting and _start_classification_save synchronously before
@@ -729,7 +729,7 @@ defects:
     test drives two rebuilds inside one turn and then saves, asserting one generation of rows and a
     document equal to the file's.
   fix_commit: ed6e199d9cebf8e2ac86749c1c7bf3afa73eab96
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_config.py::test_two_editor_rebuilds_in_one_turn_leave_one_generation
 - id: ODR-0031
@@ -740,7 +740,7 @@ defects:
     than the first read takes
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
     the stale-detail scenario). Stub data.file_detail so the read for FIL_000002 sleeps 0.6
     s, highlight FIL_000002 and one turn later FIL_000003 in the Files table, then let the
@@ -760,7 +760,7 @@ defects:
     are the two halves; FilesPanel and EntitiesPanel stamp file_id or the entity key, CoveragePanel
     stamps the report id, and PublishPanel stamps the release profile and the export filter tuple.
   fix_commit: 2384e2c37a7a4ef3768113bc88de376822f91d41
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_screens_more.py::test_files_detail_drops_a_read_a_newer_selection_superseded
   - tests/unit/test_tui_screens_more.py::test_entity_detail_drops_a_read_a_newer_node_superseded
@@ -774,7 +774,7 @@ defects:
   affected: 0.8.4; any panel whose first render is dropped by a lookup failure during startup
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
     the dropped-initial-load scenario). Make HomePanel.render_data raise NoMatches once.
     Panel._apply returns on its (MountError, NoMatches) guard before it latches
@@ -794,7 +794,7 @@ defects:
     covered by stepping the app clock (a frozen clock cannot show elapsed time), and the panel-level
     test parametrises both drop shapes, MountError and NoMatches.'
   fix_commit: 7f73c472728ccfc34a7aab6f255d1051e45a2adf
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
   - tests/unit/test_tui.py::test_splash_leaves_after_the_startup_deadline
@@ -808,7 +808,7 @@ defects:
     inside the home directory'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'Cross-version matrix run on 7f73c472728ccfc34a7aab6f255d1051e45a2adf, leg
     Python 3.12.14, TMPDIR under the home directory (/home/hyli360/.hermes/cache/scratch/pytest-of-…):
     the leg reported 3 failed, 1936 passed, each failure the same shape — the capture recorded
@@ -825,7 +825,7 @@ defects:
     the matrix exercises instead of one it trips on. The three tests carry
     @pytest.mark.bug("ODR-0033").'
   fix_commit: 380f7077df7c9aa15b58f0c5ac1db32e4beb3aa2
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_environment_capture.py::test_actual_target_environment_and_workflow_roundtrip
   - tests/unit/test_environment_capture.py::test_slurm_probe_runs_after_setup_inside_launcher
@@ -843,7 +843,7 @@ defects:
     editor is ever built for it'
   severity: low
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Third audit pass, coverage report of the TUI test files: the module''s
     77 % line coverage included branches whose condition variables were never set. Reading
     the call sites showed _condition_within_depth(condition, 0) at both panel call sites
@@ -861,7 +861,7 @@ defects:
     test_classification_form_refuses_what_it_cannot_represent, whose cases name every
     refused shape and the reason the read-only note shows.'
   fix_commit: 0c77dab399f2d9419bd47c805a325731a0a12194
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent
 
@@ -877,7 +877,7 @@ defects:
     which failed only in the coverage run — the slower variant of the suite.'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Run the TUI test file with the coverage gate: test_classification_condition_editor_mode_and_nested_rows
     failed with "NoMatches: No nodes match ''.condition-body .condition-row'' on ConditionEditor"
     raised from editor_document(), while a wait polled the composition across a switch
@@ -895,7 +895,7 @@ defects:
     so the read happens exactly inside the window instead of when a poll happens to
     land there.'
   fix_commit: 6dbcd2050612aa1411220028c6a84ab3a9bf88a2
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations
 
@@ -912,7 +912,7 @@ defects:
     silently.'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'TUI test files with the coverage gate (the loaded variant), mode-switch
     test: NoMatches "No nodes match ''.condition-field'' on ConditionRow(classes=''condition-row'')"
     raised from condition_document() while the test read the composition after pressing
@@ -926,7 +926,7 @@ defects:
     and the leaf branches keep the condition instead of raising.  Pinned by a test that
     reads every turn from the ✕ press until the row is gone.'
   fix_commit: 021b9552e779c8632bcf7804cd72d27e6f987cf9
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed
 
@@ -940,7 +940,7 @@ defects:
     the pid into it'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'Full unit suite with the default xdist worker count, after the TUI
     work: ValueError: invalid literal for int() with base 10: '''' raised by int(pidfile.read_text().strip()).
     The payload is ``sleep 60 & echo $! > pidfile``, so the file exists as soon as the
@@ -953,7 +953,7 @@ defects:
     pre-interrupt wait keeps its tolerance (it may proceed without a pid) while the
     post-run read is strict.  The test carries @pytest.mark.bug("ODR-0037").'
   fix_commit: 07b0d5cf007e317d4cac2b411526e4e0649f0709
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
 
@@ -968,7 +968,7 @@ defects:
     boundary — run_test re-raises it at teardown, so the run fails'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'The 3.11 and 3.12 legs of the local matrix (MATRIX_JOBS=4) on 6ec3a00:
     textual.css.query.NoMatches: No nodes match SelectOverlay on FittingSelect(classes=condition-operator),
     raised through MessagePump._on_message -> _callback.invoke -> _select.py:628 in
@@ -986,7 +986,7 @@ defects:
     the tree instead (_overlay_present) before latching options_ready — the ODR-0023/ODR-0026
     contract is unchanged for readers.'
   fix_commit: 5aa574b7ec6c68c3d61b436c6fc3768fe1773916
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui.py::test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
 - id: ODR-0039
@@ -1000,7 +1000,7 @@ defects:
     becomes true'
   severity: low
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Registered from code reading after the matrix runs; the state is driven
     deterministically in test_fitting_select_reports_a_mount_that_ran_out_of_retries
     (a Select mounted with its overlay kept out of the tree, so all 50 retries miss)
@@ -1015,7 +1015,7 @@ defects:
     controls and points at a profile reload once any of them gave up, and keeps the
     still-loading wording otherwise.'
   fix_commit: 7ceccc5788ed67b1827f62124958b7f2c91c787b
-  fixed_in: null
+  fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
   - tests/unit/test_tui_config.py::test_blocked_save_names_a_control_that_never_finished_loading
