@@ -894,7 +894,7 @@ defects:
     condition the user was editing.  Pinned by a test that hooks the body''s own mount
     so the read happens exactly inside the window instead of when a poll happens to
     land there.'
-  fix_commit: null
+  fix_commit: 6dbcd2050612aa1411220028c6a84ab3a9bf88a2
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations
@@ -925,7 +925,7 @@ defects:
     the leaf/not body has no such row, so the any: branch reports the rows that remain
     and the leaf branches keep the condition instead of raising.  Pinned by a test that
     reads every turn from the ✕ press until the row is gone.'
-  fix_commit: null
+  fix_commit: 021b9552e779c8632bcf7804cd72d27e6f987cf9
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed
@@ -952,7 +952,7 @@ defects:
     the content parses, with the same five-second budget — at both read sites; the
     pre-interrupt wait keeps its tolerance (it may proceed without a pid) while the
     post-run read is strict.  The test carries @pytest.mark.bug("ODR-0037").'
-  fix_commit: null
+  fix_commit: 07b0d5cf007e317d4cac2b411526e4e0649f0709
   fixed_in: null
   regression_tests:
   - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
