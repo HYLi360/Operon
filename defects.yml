@@ -764,7 +764,7 @@ defects:
   affected: 0.8.4; any panel whose first render is dropped by a lookup failure during startup
   severity: medium
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
     the dropped-initial-load scenario). Make HomePanel.render_data raise NoMatches once.
     Panel._apply returns on its (MountError, NoMatches) guard before it latches
@@ -775,10 +775,17 @@ defects:
     production the panels stay unreachable and the only way out is ctrl+q. The panel-level
     test test_panel_drops_a_result_whose_widgets_are_gone pins the dropped result as intended
     for teardown, which a live render failure is indistinguishable from.'
-  disposition: Audit only; no fix applied. Separate a teardown from a render failure (latch
-    the initial-load state when a result is dropped for a teardown) or give _finish_startup a
-    deadline that pops the splash with a warning instead of waiting forever. Regression shape —
-    a panel whose first render raises NoMatches must still let the app finish starting.
+  disposition: 'Fixed in operon/tui/screens/common.py and operon/tui/app.py.  Panel._apply still drops
+    a result whose widgets are gone, but a dropped result no longer returns before the app is told
+    that the panel first load is over — the initial-load state latches either way, so a live render
+    failure is reported instead of parking the splash.  OperonApp._finish_startup stops waiting for
+    panels that never report at all: after startup_deadline seconds it shows what did load, logs the
+    panels that did not, pops the splash and notifies the user that r retries.  The deadline is
+    covered by stepping the app clock (a frozen clock cannot show elapsed time), and the panel-level
+    test parametrises both drop shapes, MountError and NoMatches.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
+  - tests/unit/test_tui.py::test_splash_leaves_after_the_startup_deadline
+  - tests/unit/test_tui_screens_more.py::test_panel_drops_a_result_whose_widgets_are_gone

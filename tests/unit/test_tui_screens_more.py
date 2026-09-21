@@ -1633,18 +1633,22 @@ class _StubPanel(Panel):
         return {}
 
 
+@pytest.mark.bug("ODR-0032")
 @pytest.mark.parametrize("failure", [MountError("widget tree is gone"), NoMatches("#profiles-list")])
 def test_panel_drops_a_result_whose_widgets_are_gone(failure):
     """Quitting during the initial load used to fail the app from the worker.
 
     The panel's children can be unmounted (or never mounted) when a background
     load delivers its payload; Textual reports that as MountError/NoMatches and
-    the result simply has nowhere to go.
+    the result simply has nowhere to go.  The drop still reports the load as
+    finished — the startup screen waits for every panel to report one, so a
+    dropped first render must not hold the app behind the splash (ODR-0032).
     """
     panel = _StubPanel(failure)
     panel._apply({"profiles": []})
     assert panel.rendered == []
-    assert panel.initial_load_complete is False
+    assert panel.initial_load_complete is True
+    assert panel.initial_load_failed is True
 
 
 def test_panel_still_renders_and_records_a_normal_result():

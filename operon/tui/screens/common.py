@@ -532,17 +532,21 @@ class Panel(WorkerResults, VerticalScroll):
         # The result can arrive while the panel is being torn down (the user
         # quit during the initial load) or before its children finished
         # mounting.  There is nowhere to render it then, and Textual reports
-        # that as MountError/NoMatches; dropping the result is correct, while
-        # letting it escape would fail the whole app from a worker thread.
+        # that as MountError/NoMatches; letting it escape would fail the whole
+        # app from a worker thread, so the result is dropped.  The drop still
+        # reports a finished load: the startup screen waits for every panel to
+        # report one, and a dropped first render must not leave the app behind
+        # the splash screen with no way out (ODR-0032).
+        dropped = False
         try:
             if isinstance(payload, BaseException):
                 self.show_error(payload)
             else:
                 self.render_data(payload)
         except (MountError, NoMatches):
-            return
+            dropped = True
         if not self.initial_load_complete:
-            self.initial_load_failed = isinstance(payload, BaseException)
+            self.initial_load_failed = dropped or isinstance(payload, BaseException)
             self.initial_load_complete = True
 
     def _fetch(self) -> Any:  # pragma: no cover - abstract stub

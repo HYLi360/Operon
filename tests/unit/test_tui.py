@@ -144,6 +144,30 @@ async def _await_detail_text(app, needle: str) -> str:
     return _detail_text(app)
 
 
+async def _tick_until(
+    predicate: Callable[[], bool],
+    clock: list[float],
+    *,
+    step: float = 2.0,
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
+) -> None:
+    """Wait for *predicate*, advancing a fake ``monotonic`` clock as it waits.
+
+    The startup worker captures its start time on its first turn, so a clock
+    that is set once and then frozen can never show elapsed time — the wait
+    would run forever against a deadline that is never reached.  Stepping the
+    clock keeps the difference growing no matter when the first turn happened.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() > deadline:
+            raise TimeoutError(f"UI did not {description} within {timeout}s")
+        clock[0] += step
+        await asyncio.sleep(0.05)
+
+
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
     stack = list(tree.root.children)
     while stack:
@@ -1334,6 +1358,71 @@ def test_splash_quit_during_minimum_display(demo_project):
             assert isinstance(app.screen, SplashScreen)
             await pilot.press("ctrl+q")
         assert not app.is_running
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0032")
+def test_splash_leaves_when_a_panel_drops_its_first_render(demo_project, monkeypatch):
+    """A first render the panel cannot show must not wedge startup behind the splash.
+
+    ``Panel._apply`` drops a result it has nowhere to render (the widget tree is
+    not there yet, or this one was never composed); the drop used to skip the
+    initial-load latch as well, and the startup worker waits for every panel to
+    latch — the app then stayed on the splash screen with every panel
+    unreachable (ODR-0032).
+    """
+    import operon.tui.app as app_module
+    from operon.tui.splash import SplashScreen
+
+    clock = [0.0]
+    monkeypatch.setattr(app_module, "monotonic", lambda: clock[0])
+
+    def unrenderable(panel, payload):
+        raise NoMatches("#home-summary")
+
+    monkeypatch.setattr(HomePanel, "render_data", unrenderable)
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(120, 40)) as pilot:
+            home = app.query_one(HomePanel)
+            await _wait_until(lambda: home.initial_load_complete, "the panel to report its load")
+            assert home.initial_load_failed is True
+            assert app._starting is True
+            await _tick_until(lambda: not app._starting, clock,
+                              description="the splash screen to leave")
+            await pilot.pause()
+            assert not isinstance(app.screen, SplashScreen)
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0032")
+def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
+    """A load that never reports one must not hold the splash screen forever.
+
+    The readiness gate cannot cover a worker that never delivers at all (a
+    hung read, a result posted after shutdown); without a deadline the app
+    would sit on the splash screen with no key able to leave it (ODR-0032).
+    """
+    import operon.tui.app as app_module
+    from operon.tui.splash import SplashScreen
+
+    clock = [0.0]
+    monkeypatch.setattr(app_module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(HomePanel, "_load", lambda panel: None)  # never delivers
+
+    async def scenario():
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(120, 40)) as pilot:
+            home = app.query_one(HomePanel)
+            assert home.initial_load_complete is False
+            assert app._starting is True
+            await _tick_until(lambda: not app._starting, clock,
+                              description="the startup deadline to release the app")
+            await pilot.pause()
+            assert not isinstance(app.screen, SplashScreen)
 
     _run(scenario())
 

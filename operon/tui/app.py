@@ -146,25 +146,46 @@ class OperonApp(App):
         # Start the clock only after the splash has actually been painted.
         splash.call_after_refresh(self._finish_startup, splash)
 
+    #: The splash screen waits for the panels' first load, but not forever: a
+    #: worker that never delivers a result must not leave the app with no way
+    #: past it (ODR-0032).
+    startup_deadline = 30.0
+    #: Minimum time the splash stays up, so a quick load does not flash by.
+    splash_minimum = 2.0
+
     @work
     async def _finish_startup(self, splash: SplashScreen) -> None:
         started = monotonic()
         panels = list(self.query(Panel))
         while self.is_running:
             pending = [panel for panel in panels if not panel.initial_load_complete]
-            if pending:
+            expired = monotonic() - started >= self.startup_deadline
+            if pending and not expired:
                 names = ", ".join((panel.id or "data").title() for panel in pending)
                 splash.set_status(f"Loading {names}...")
             else:
                 failed = sum(panel.initial_load_failed for panel in panels)
-                splash.set_status("Loaded with errors" if failed else "Ready")
-                if monotonic() - started >= 2.0:
+                if pending:
+                    # Nothing arrived for these panels. Show what did load and
+                    # say so, instead of waiting behind the splash for a result
+                    # that may never come (ODR-0032).
+                    self.log.warning(
+                        "startup deadline reached while panels were still loading: "
+                        + ", ".join((panel.id or "data") for panel in pending)
+                    )
+                splash.set_status("Loaded with errors" if failed or pending else "Ready")
+                if monotonic() - started >= self.splash_minimum:
                     self._starting = False
                     self.pop_screen()
                     if failed:
                         self.notify(
                             "Some panels could not load. See panel errors; press r to retry.",
                             severity="error",
+                        )
+                    elif pending:
+                        self.notify(
+                            "Some panels are still loading — press r to retry.",
+                            severity="warning",
                         )
                     return
             await asyncio.sleep(0.05)
