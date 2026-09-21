@@ -247,6 +247,11 @@ class ConditionEditor(ComposedRows, Vertical):
             leaf = document
             if mode == "not" and isinstance(document.get("not"), dict):
                 leaf = document["not"]
+            # A leaf body is what both group modes fall back to.  ``editor_document``
+            # reports the mode that was just selected, so a mode change hands in a
+            # document that already carries the new group key and this branch is
+            # the editor's own last line of defence: the panel's
+            # ``classification_form_supported`` gate opens anything else read-only.
             if not isinstance(leaf, dict) or "any" in leaf or "not" in leaf:
                 leaf = {"field": ""}
             remount(body, ConditionRow(dict(leaf), removable=False))
@@ -571,18 +576,19 @@ def _leaf_condition(condition: Any) -> bool:
     return (isinstance(condition, dict) and "any" not in condition and "not" not in condition)
 
 
-def _condition_within_depth(condition: Any, depth: int) -> bool:
-    """Flat conditions plus one level of ``any:``/``not:`` — deeper is YAML-only."""
+def _condition_within_depth(condition: Any) -> bool:
+    """Flat conditions plus one level of ``any:``/``not:`` — deeper is YAML-only.
+
+    Either the condition is a leaf, or a single ``any:``/``not:`` that holds
+    leaves.  A ``not:`` of an ``any:`` (or any group inside a group) is deeper
+    than the form represents, so it opens read-only rather than losing structure.
+    """
     if not isinstance(condition, dict):
         return False
     if "any" in condition:
         group = condition["any"]
-        if depth >= 1 or not isinstance(group, list):
-            return False
-        return all(_leaf_condition(item) for item in group)
+        return isinstance(group, list) and all(_leaf_condition(item) for item in group)
     if "not" in condition:
-        if depth >= 1:
-            return False
         return _leaf_condition(condition["not"])
     return _leaf_condition(condition)
 
@@ -604,7 +610,7 @@ def classification_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
         if not isinstance(source, dict):
             return False, f"source {name!r} is not a mapping"
         for condition in source.get("filter") or []:
-            if not _condition_within_depth(condition, 0):
+            if not _condition_within_depth(condition):
                 return False, f"source {name!r} nests conditions deeper than one any:/not: level"
         for entry in source.get("best_by") or []:
             if not isinstance(entry, dict):
@@ -618,7 +624,7 @@ def classification_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
         if not isinstance(rule, dict):
             return False, f"rule {index} is not a mapping"
         for condition in rule.get("when") or []:
-            if not _condition_within_depth(condition, 0):
+            if not _condition_within_depth(condition):
                 return False, f"rule {index} nests conditions deeper than one any:/not: level"
     return True, ""
 

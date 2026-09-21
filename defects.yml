@@ -824,9 +824,43 @@ defects:
     wherever the scratch directory lives; a run whose TMPDIR is inside $HOME is now a condition
     the matrix exercises instead of one it trips on. The three tests carry
     @pytest.mark.bug("ODR-0033").'
-  fix_commit: null
+  fix_commit: 380f7077df7c9aa15b58f0c5ac1db32e4beb3aa2
   fixed_in: null
   regression_tests:
   - tests/unit/test_environment_capture.py::test_actual_target_environment_and_workflow_roundtrip
   - tests/unit/test_environment_capture.py::test_slurm_probe_runs_after_setup_inside_launcher
   - tests/unit/test_environment_capture.py::test_direct_ssh_captures_target_and_removes_raw_probe
+
+
+- id: ODR-0034
+  title: The classification editor's nesting limit is enforced by branches no caller can reach
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'operon/tui/screens/config_classification.py, _condition_within_depth (the depth
+    parameter) and ConditionEditor._rebuild (the leaf fallback): the depth argument was
+    only ever passed 0, so its two guards could not fire, and the fallback tests a
+    document shape the panel''s classification_form_supported gate opens read-only, so no
+    editor is ever built for it'
+  severity: low
+  component: tui
+  status: fixed
+  reproduction: 'Third audit pass, coverage report of the TUI test files: the module''s
+    77 % line coverage included branches whose condition variables were never set. Reading
+    the call sites showed _condition_within_depth(condition, 0) at both panel call sites
+    and ConditionEditor._rebuild reached only through on_mount (self.original, a dict) and
+    the mode-change handler (editor_document(), a dict that already carries the new group
+    key) — so neither depth >= 1 nor "a group reached a leaf rebuild" could occur.'
+  expectation: 'The depth limit is a property of what the form can edit, so it belongs in
+    the predicate and in the panel''s read-only gate, not in a parameter no caller sets or
+    a fallback no caller trips.'
+  disposition: 'The depth parameter is gone: _condition_within_depth(condition) now returns
+    False for a group inside a group, a not: of a group, a non-list any: group and a
+    non-dict condition, which is exactly the set of shapes classification_form_supported
+    refuses. The _rebuild leaf fallback stays (it is the editor''s own last line of defence
+    against a document the gate did not filter) and now says so in a comment. Pinned by
+    test_classification_form_refuses_what_it_cannot_represent, whose cases name every
+    refused shape and the reason the read-only note shows.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent

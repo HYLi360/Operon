@@ -49,7 +49,11 @@ from operon.tui.screens.config import (
     RuleRow,
     SnapshotViewModal,
 )
-from operon.tui.screens.config_classification import BestByRow, ClassificationSaveModal
+from operon.tui.screens.config_classification import (
+    BestByRow,
+    ClassificationSaveModal,
+    classification_form_supported,
+)
 
 
 @pytest.fixture(scope="module")
@@ -2581,5 +2585,331 @@ def test_two_editor_rebuilds_in_one_turn_leave_one_generation(project: Project) 
             assert isinstance(modal, ProfileSaveModal)
             assert modal.document["required"] == document["required"]
             assert modal.document["warnings"] == document["warnings"]
+
+    _run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Classification editor: row buttons and unmodelled values
+# --------------------------------------------------------------------------- #
+
+def test_classification_editor_row_buttons_add_and_remove(project: Project) -> None:
+    """Every add/remove button in the classification editor edits its own row.
+
+    The row-scoped buttons sit in a scrolling editor, so the press is sent to the
+    button itself (``Pilot.click`` needs the target inside the visible region).
+    Each pair adds a row and removes it again, and the document composed at the
+    end is the one on disk with only the emptied ``when`` list left over — a
+    removal must not leave a row, an input or a message handler behind.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            source = (await _await_rows(pilot, panel, ".source-row", 1, ".source-name"))[0]
+
+            # The source's filter editors: add one, remove it again.
+            await _await_rows(pilot, source, ".condition-editor", 1, ".condition-field")
+            source.query_one(".source-add-filter", Button).press()
+            editors = await _await_rows(pilot, source, ".condition-editor", 2, ".condition-field")
+            editors[1].query_one(".condition-remove", Button).press()
+            await _await_rows(pilot, source, ".condition-editor", 1, ".condition-field")
+
+            # The editor's own nested add/remove is covered by the mode test below.
+            # best_by entries.
+            source.query_one(".source-add-bestby", Button).press()
+            entries = await _await_rows(pilot, source, ".bestby-row", 3, ".bestby-field")
+            entries[2].query_one(".bestby-remove", Button).press()
+            await _await_rows(pilot, source, ".bestby-row", 2, ".bestby-field")
+
+            # A whole source and a whole rule.
+            await _click(pilot, "#classification-add-source")
+            sources = await _await_rows(pilot, panel, ".source-row", 2, ".source-name")
+            sources[1].query_one(".source-remove", Button).press()
+            await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
+            await _click(pilot, "#classification-add-rule")
+            rules = await _await_rows(pilot, panel, ".classrule-row", 4, ".classrule-label")
+            rules[3].query_one(".classrule-remove", Button).press()
+            await _await_rows(pilot, panel, ".classrule-row", 3, ".classrule-label")
+
+            # A rule's when condition (a filter editor, removed through its own ✕).
+            rule_a = (await _await_rows(pilot, panel, ".classrule-row", 3,
+                                        ".classrule-label"))[0]
+            whens = await _await_rows(pilot, rule_a, ".condition-editor", 1,
+                                      ".condition-field")
+            whens[0].query_one(".condition-remove", Button).press()
+            await _wait_until(lambda: not rule_a.query(".condition-editor"),
+                              "the when condition to go")
+
+            await _await_form_ready(pilot, panel)
+            expected = json.loads(json.dumps(BHLH_PROFILE))
+            expected["rules"][0]["when"] = []
+            assert panel._compose_classification_document() == expected
+
+    _run(scenario())
+
+
+def test_classification_condition_editor_mode_and_nested_rows(project: Project) -> None:
+    """A filter editor rebuilds its body between a leaf and an ``any`` group.
+
+    The ``any`` body is the one that carries the add/remove pair for its nested
+    rows, and it seeds one empty row when the document holds none; removing the
+    row again leaves the group the editor composes.  Every step waits for the
+    rows the rebuild produced instead of reading the body in its mounting turn.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            source = (await _await_rows(pilot, panel, ".source-row", 1, ".source-name"))[0]
+            editor = (await _await_rows(pilot, source, ".condition-editor", 1,
+                                        ".condition-field"))[0]
+
+            editor.query_one(".condition-mode", FittingSelect).value = "any"
+            # The add button is what makes the body an any-group: wait for it
+            # rather than for a row, which both bodies carry.
+            await _wait_until(lambda: bool(editor.query(".condition-add")),
+                              "the any-mode body to compose")
+            rows = await _await_rows(pilot, editor, ".condition-row", 1, ".condition-field")
+            assert rows[0].query_one(".condition-field", Input).value == ""
+
+            editor.query_one(".condition-add", Button).press()
+            rows = await _await_rows(pilot, editor, ".condition-row", 2, ".condition-field")
+            rows[1].query_one(".condition-field", Input).value = "evalue"
+            rows[1].query_one(".condition-value", Input).value = "1e-5"
+            rows[1].query_one(".condition-remove", Button).press()
+            await _wait_until(
+                lambda: len(list(editor.query(".condition-row"))) == 1,
+                "the nested condition to go",
+            )
+
+            await _await_form_ready(pilot, panel)
+            assert editor.editor_document() == {
+                "any": [{"field": "", "operator": "==", "value": ""}]
+            }
+
+            # Not-mode: an any-group body cannot seed a ``not:``, so the inner
+            # condition starts empty.
+            editor.query_one(".condition-mode", FittingSelect).value = "not"
+            body = editor.query_one(".condition-body")
+            await _wait_until(lambda: not body.query(".condition-group"),
+                              "the not body to compose")
+            assert editor.editor_document() == {
+                "not": {"field": "", "operator": "==", "value": ""}
+            }
+
+            # Back to a leaf: the body loses its rows and its remove button.  The
+            # not-group and the leaf have the same widgets, so the wait reads the
+            # composition itself — a stale body still reports the ``not:``.
+            editor.query_one(".condition-mode", FittingSelect).value = "condition"
+            await _wait_until(
+                lambda: list(editor.editor_document()) == ["field", "operator", "value"],
+                "the leaf body to compose",
+            )
+            leaf = await _await_rows(pilot, editor, ".condition-row", 1, ".condition-field")
+            assert not leaf[0].query(".condition-remove")
+            assert list(editor.editor_document()) == ["field", "operator", "value"]
+
+    _run(scenario())
+
+
+def test_classification_editor_keeps_operands_and_keys_it_does_not_model(
+    project: Project,
+) -> None:
+    """A profile using operands and keys the form does not model round-trips.
+
+    ``between`` operands, ``exists``, an operator and a direction with no option
+    in the pickers, and extra keys at the condition, best_by, source and rule
+    level: what the editor composes is what it read, and the operand inputs show
+    the text the loader derived for each operator.  The one shape it does not
+    keep verbatim is a quoted numeric operand — that text is composed as the
+    number it looks like, the coercion the form pins for every operand input
+    (``test_tui_config.py``'s ``value == 7`` assertion next to the QC editor) —
+    and a condition that omits what its operator needs comes back canonically
+    (``{"field": x}`` gains ``"operator": "=="`` and ``"value": ""``), which is
+    the shape ``classify``'s own validator asks for.
+    """
+    document = json.loads(json.dumps(BHLH_PROFILE))
+    source = document["sources"]["core"]
+    source["note"] = "kept verbatim"
+    source["filter"] = [
+        {"field": "hit_type", "operator": "in", "values": ["Specific", "Motif"]},
+        {"field": "length", "operator": "between", "min": 100, "max": 200},
+        {"field": "description", "operator": "exists"},
+        {"field": "score", "operator": "custom_op", "value": "n/a", "note": "unknown"},
+        {"not": {"field": "description", "operator": "==", "value": ""}},
+    ]
+    source["best_by"] = [
+        {"field": "hit_type", "rank": {"Specific": 0, "Motif": 1}},
+        {"field": "evalue", "direction": "asc", "default": 1e-5, "note": "kept too"},
+        {"field": "score", "direction": "sideways"},
+    ]
+    document["rules"][0]["note"] = "extra at rule level"
+    _write_classification_profile(project, "bhlh_rich", document)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_rich")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            # Five source filters plus the first rule's when condition.
+            await _await_rows(pilot, panel, ".condition-editor", 6, ".condition-field")
+
+            def editor_for(field: str, operator: str):
+                """The filter editor for ``field`` using ``operator``.
+
+                The same field name can appear in two entries (``description`` is
+                both an ``exists`` leaf and the inner condition of a ``not:``), so
+                the operator is what identifies the row.
+                """
+                for candidate in panel.query(".condition-editor"):
+                    if candidate.query_one(".condition-field", Input).value != field:
+                        continue
+                    control = candidate.query_one(".condition-operator", Select)
+                    if str(control.value) == operator:
+                        return candidate
+                raise AssertionError(f"no {operator!r} editor for {field!r}")
+
+            between = editor_for("length", "between")
+            assert between.query_one(".condition-value", Input).value == "100, 200"
+            assert between.query_one(".condition-value", Input).placeholder == "min, max"
+
+            exists = editor_for("description", "exists")
+            assert exists.query_one(".condition-value", Input).value == ""
+            assert exists.query_one(".condition-value", Input).placeholder == (
+                "(no value for 'exists')"
+            )
+
+            unknown = editor_for("score", "custom_op")
+            assert unknown.query_one(".condition-operator", FittingSelect).value == "custom_op"
+            assert unknown.query_one(".condition-value", Input).value == "n/a"
+
+            direction = panel.query(".bestby-direction").results(FittingSelect)
+            assert [str(item.value) for item in direction] == ["asc", "asc", "sideways"]
+
+            composed = panel._compose_classification_document()
+            core = document["sources"]["core"]
+            assert composed["sources"]["core"]["filter"] == core["filter"]
+            assert composed["sources"]["core"]["best_by"] == core["best_by"]
+            assert composed["sources"]["core"] == core
+            assert composed["rules"] == document["rules"]
+            assert composed == document
+
+            # A stray comma in a rank map is skipped rather than becoming a rank
+            # with an empty name.
+            ranked = list(panel.query(".bestby-row").results(BestByRow))[1]
+            ranked.query_one(".bestby-rank", Input).value = "Specific=0, , Motif=1"
+            await _await_form_ready(pilot, panel)
+            assert panel._compose_classification_document()["sources"]["core"][
+                "best_by"
+            ][1]["rank"] == {"Specific": 0, "Motif": 1}
+
+    _run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Which documents the classification form can represent
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        ({"sources": {"core": {"filter": [{"field": "hit_type"}]}},
+          "rules": [{"label": "A", "when": [{"field": "x"}]}]}, (True, "")),
+        ({"sources": {"core": {"filter": [
+            {"any": [{"field": "a"}, {"field": "b"}]}]}}, "rules": []}, (True, "")),
+        ({"sources": {"core": {"filter": [{"not": {"field": "a"}}]}},
+          "rules": []}, (True, "")),
+        ({}, (True, "")),  # missing collections are editable, not read-only
+        ({"version": 3, "description": "x"}, (True, "")),  # keys the form ignores
+    ],
+)
+def test_classification_form_accepts_flat_conditions(
+    document: dict, expected: tuple[bool, str]
+) -> None:
+    assert classification_form_supported(document) == expected
+
+
+@pytest.mark.parametrize(
+    ("document", "reason"),
+    [
+        ({"sources": "core", "rules": []}, "sources is not a mapping"),
+        ({"sources": {"core": "rpsbproc_cdd"}, "rules": []},
+         "source 'core' is not a mapping"),
+        ({"sources": {"core": {"best_by": ["evalue"]}}, "rules": []},
+         "source 'core' has a best_by entry that is not a mapping"),
+        ({"sources": {"core": {"filter": [{"any": [{"any": [{"field": "a"}]}]}]}},
+          "rules": []},
+         "source 'core' nests conditions deeper than one any:/not: level"),
+        ({"sources": {"core": {"filter": [{"not": {"any": [{"field": "a"}]}}]}},
+          "rules": []},
+         "source 'core' nests conditions deeper than one any:/not: level"),
+        ({"sources": {"core": {"filter": ["hit_type"]}}, "rules": []},
+         "source 'core' nests conditions deeper than one any:/not: level"),
+        ({"sources": {"core": {"filter": [{"any": {"field": "a"}}]}}, "rules": []},
+         "source 'core' nests conditions deeper than one any:/not: level"),
+        ({"sources": {}, "rules": {"label": "A"}}, "rules is not a list"),
+        ({"sources": {}, "rules": ["label A"]}, "rule 0 is not a mapping"),
+        ({"sources": {}, "rules": [{"label": "A",
+                                    "when": [{"any": [{"field": "a"},
+                                                      {"not": {"field": "b"}}]}]}]},
+         "rule 0 nests conditions deeper than one any:/not: level"),
+    ],
+)
+@pytest.mark.bug("ODR-0034")
+def test_classification_form_refuses_what_it_cannot_represent(
+    document: dict, reason: str
+) -> None:
+    """Every shape the form would rewrite rather than preserve says so.
+
+    The reason reaches the read-only note, so it names the offending source or
+    rule index instead of a bare "unsupported".
+    """
+    supported, message = classification_form_supported(document)
+    assert supported is False
+    assert message == reason
+
+
+def test_classification_save_of_an_unchanged_document_keeps_the_version(
+    project: Project,
+) -> None:
+    """Saving a form that composes the file it came from keeps the version.
+
+    ``save_classification_profile`` compares the composed document with the one
+    on disk and reports ``unchanged``; the modal has to say so and leave the
+    version alone instead of writing a new one for a no-op.
+    """
+    _write_classification_profile(project, "bhlh_unchanged", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_unchanged")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            await _click(pilot, "#classification-save")
+            await pilot.pause()
+            assert isinstance(app.screen, ClassificationSaveModal)
+            await _click(pilot, "#confirm")
+            await _await_notification(
+                pilot, app, "bhlh_unchanged: unchanged — version 1 kept"
+            )
+            assert data.get_profile_document(
+                project, "bhlh_unchanged", kind="sequence_classification"
+            )["version"] == 1
 
     _run(scenario())
