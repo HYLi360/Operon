@@ -898,3 +898,34 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations
+
+
+- id: ODR-0036
+  title: A composition that lands while a nested condition row is being removed reads a row with no inputs
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'operon/tui/screens/config_classification.py, ConditionEditor.editor_document()
+    composing a ConditionRow whose inputs Textual has already pruned: the row is not
+    out of the tree yet, and its ComposedRows.form_ready latch stays set by design, so
+    the panel''s readiness gate cannot see the window either.  Raised NoMatches from
+    condition_document(); a row that reads as absent would instead have been dropped
+    silently.'
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'TUI test files with the coverage gate (the loaded variant), mode-switch
+    test: NoMatches "No nodes match ''.condition-field'' on ConditionRow(classes=''condition-row'')"
+    raised from condition_document() while the test read the composition after pressing
+    a nested row''s ✕.  The same read is safe without the coverage load, so the window
+    is the turn between the row''s children being pruned and the row leaving the tree.'
+  expectation: 'A read that lands while a row is being removed skips that row: it is
+    leaving the document, not part of it.'
+  disposition: 'editor_document() composes only rows whose .condition-field is in the
+    tree (ConditionEditor._composable_rows) and falls back to _seeded_document when
+    the leaf/not body has no such row, so the any: branch reports the rows that remain
+    and the leaf branches keep the condition instead of raising.  Pinned by a test that
+    reads every turn from the ✕ press until the row is gone.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed

@@ -260,6 +260,21 @@ class ConditionEditor(ComposedRows, Vertical):
                 leaf = {"field": ""}
             remount(body, ConditionRow(dict(leaf), removable=False))
 
+    def _composable_rows(self, selector: str) -> list[ConditionRow]:
+        """The rows under *selector* that a composition may read.
+
+        ``Widget.remove()`` calls ``App._prune``, which marks the node and its whole
+        subtree with ``_pruning`` before the children go, and the row leaves the
+        tree only after Textual has pruned it.  A composition that lands in between
+        would read a row whose inputs are gone — or worse, a control that still
+        answers with a blank value (ODR-0026) — and ``form_ready`` latches one-way
+        on purpose (ODR-0023), so the panel's readiness gate cannot see the window.
+        Such a row is on its way out: leaving it out of the document is what the
+        removal asks for.
+        """
+        return [row for row in self.query(selector).results(ConditionRow)
+                if not row._pruning and row.query(".condition-field")]
+
     def editor_document(self) -> dict[str, Any]:
         """Compose the condition this editor edits.
 
@@ -270,19 +285,24 @@ class ConditionEditor(ComposedRows, Vertical):
         reader that lands in the window — a save pressed in the same turn as the
         mode change — gets the document the replacement was seeded from, instead of
         a ``NoMatches`` in leaf/not mode or an empty ``any:`` group that would drop
-        the condition (ODR-0035).
+        the condition (ODR-0035).  A row that is being removed right now is skipped
+        rather than read (ODR-0036).
         """
         mode_value = self.query_one(".condition-mode", Select).value
         mode = "condition" if mode_value is Select.NULL else str(mode_value)
-        if not self.query_one(".condition-body", MountTracked).mounts_settled:
+        body = self.query_one(".condition-body", MountTracked)
+        if not body.mounts_settled:
             document: dict[str, Any] = dict(self._seeded_document)
         elif mode == "any":
-            rows = list(self.query(".condition-group .condition-row").results(ConditionRow))
+            rows = self._composable_rows(".condition-group .condition-row")
             document = {"any": [row.condition_document() for row in rows]}
         else:
-            row = self.query_one(".condition-body .condition-row", ConditionRow)
-            leaf = row.condition_document()
-            document = {"not": leaf} if mode == "not" else leaf
+            rows = self._composable_rows(".condition-body .condition-row")
+            if not rows:
+                document = dict(self._seeded_document)
+            else:
+                leaf = rows[0].condition_document()
+                document = {"not": leaf} if mode == "not" else leaf
         for key, value in self.extras.items():
             document.setdefault(key, value)
         return document

@@ -17,7 +17,6 @@ pytest.importorskip("textual")
 import yaml
 from rich.text import Text
 from textual.containers import VerticalScroll
-from textual.css.query import NoMatches
 from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
@@ -2701,38 +2700,31 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
             }
 
             # Not-mode: an any-group body cannot seed a ``not:``, so the inner
-            # condition starts empty.
+            # condition starts empty.  Every wait reads through the editor's own
+            # composition (safe inside a replace window, ODR-0035/ODR-0036) and on
+            # the group the replacement retired — never on a raw row, which the
+            # next turn may prune out from under the test.
             editor.query_one(".condition-mode", FittingSelect).value = "not"
             body = editor.query_one(".condition-body", MountTracked)
-            # Wait for the row the not body mounts *and* for its inputs: a row that
-            # is already in the tree may still be composing them (ODR-0023), and a
-            # row-based wait would also be satisfied by the group it retired.
-            not_row = (await _await_rows(pilot, body, ".condition-row", 1,
-                                         ".condition-field"))[0]
             await _wait_until(lambda: not body.query(".condition-group"),
                               "the retired group to go")
-            assert not_row.query_one(".condition-field", Input).value == ""
             assert editor.editor_document() == {
                 "not": {"field": "", "operator": "==", "value": ""}
             }
+            # The not body keeps one row, and it is not removable from here.
+            assert len(list(body.query(".condition-remove"))) == 0
 
             # Back to a leaf: the body loses its rows and its remove button.  The
             # not-group and the leaf have the same widgets, so the wait reads the
-            # composition itself — a stale body still reports the ``not:``.
+            # composition as well as the retired group.
             editor.query_one(".condition-mode", FittingSelect).value = "condition"
-
-            def leaf_composed() -> bool:
-                # The predicate reads through the editor, so it must tolerate the
-                # replace window it is waiting out.
-                try:
-                    return list(editor.editor_document()) == ["field", "operator", "value"]
-                except NoMatches:
-                    return False
-
-            await _wait_until(leaf_composed, "the leaf body to compose")
-            leaf = await _await_rows(pilot, editor, ".condition-row", 1, ".condition-field")
-            assert not leaf[0].query(".condition-remove")
+            await _wait_until(
+                lambda: not body.query(".condition-group")
+                and list(editor.editor_document()) == ["field", "operator", "value"],
+                "the leaf body to compose",
+            )
             assert list(editor.editor_document()) == ["field", "operator", "value"]
+            assert len(list(body.query(".condition-remove"))) == 0
 
     _run(scenario())
 
@@ -2981,5 +2973,60 @@ def test_classification_editor_composes_while_the_body_is_between_generations(
                         "values": ["Specific", "Motif"]},
             }
             assert editor.editor_document() == reads[0]
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0036")
+def test_classification_editor_composes_while_a_nested_row_is_being_removed(
+    project: Project,
+) -> None:
+    """A read across a nested row's removal skips the row that is going away.
+
+    Textual prunes a removed row's children a turn before the row leaves the tree,
+    and the row's ``form_ready`` latch stays set (one-way by design, ODR-0023), so a
+    composition that lands in that turn read a row with no inputs and raised
+    ``NoMatches`` — the shape the loaded-suite failure of the mode test showed.  The
+    read is taken every turn from the removal until the row is gone, so the window is
+    polled rather than hoped for.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            source = (await _await_rows(pilot, panel, ".source-row", 1, ".source-name"))[0]
+            editor = (await _await_rows(pilot, source, ".condition-editor", 1,
+                                        ".condition-field"))[0]
+            editor.query_one(".condition-mode", FittingSelect).value = "any"
+            await _wait_until(lambda: bool(editor.query(".condition-add")),
+                              "the any-mode body to compose")
+            await _await_rows(pilot, editor, ".condition-row", 1, ".condition-field")
+            editor.query_one(".condition-add", Button).press()
+            rows = await _await_rows(pilot, editor, ".condition-row", 2, ".condition-field")
+            victim = rows[1]
+
+            reads: list[Any] = []
+            victim.query_one(".condition-remove", Button).press()
+            for _ in range(40):
+                try:
+                    reads.append(editor.editor_document())
+                except Exception as exc:  # noqa: BLE001 - the defect is the raise
+                    reads.append(exc)
+                if len(list(editor.query(".condition-row"))) == 1:
+                    break
+                await pilot.pause()
+
+            assert len(list(editor.query(".condition-row"))) == 1, "the row is still in the tree"
+            assert not [read for read in reads if isinstance(read, Exception)], reads
+            # The row that left carries nothing into the document, and the row that
+            # stayed is composed as it stands.  (A *blank* control belongs to
+            # ODR-0026's window — a select that has not adopted its value yet — which
+            # the readiness gate covers, not this one.)
+            assert reads[-1] == {"any": [{"field": "", "operator": "==", "value": ""}]}
 
     _run(scenario())
