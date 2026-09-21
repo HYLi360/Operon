@@ -15,8 +15,8 @@ pytest.importorskip("textual")
 
 from rich.text import Text
 from textual.css.query import NoMatches
-from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tree
 from textual.pilot import OutOfBounds
+from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tree
 
 from operon.config import Project
 from operon.database import Database

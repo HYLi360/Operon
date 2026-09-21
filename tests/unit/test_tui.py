@@ -14,6 +14,7 @@ pytest.importorskip("textual")
 
 from rich.text import Text
 from textual.css.query import NoMatches
+from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -27,7 +28,6 @@ from textual.widgets import (
     Tree,
 )
 from textual.widgets.data_table import RowKey
-from textual.pilot import OutOfBounds
 
 from operon.cli import main
 from operon.config import Project

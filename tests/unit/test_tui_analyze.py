@@ -19,6 +19,7 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
+from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -28,7 +29,6 @@ from textual.widgets import (
     Static,
     TabbedContent,
 )
-from textual.pilot import OutOfBounds
 
 from operon.config import Project
 from operon.database import Database

@@ -22,8 +22,8 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
-from textual.widgets import Button, DataTable, Input, Select, Static
 from textual.pilot import OutOfBounds
+from textual.widgets import Button, DataTable, Input, Select, Static
 
 from operon.cli import main
 from operon.config import Project
