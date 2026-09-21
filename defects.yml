@@ -985,7 +985,7 @@ defects:
     can no longer be inferred from that exception, so _on_mount and the retry ask
     the tree instead (_overlay_present) before latching options_ready — the ODR-0023/ODR-0026
     contract is unchanged for readers.'
-  fix_commit: null
+  fix_commit: 5aa574b7ec6c68c3d61b436c6fc3768fe1773916
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui.py::test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
