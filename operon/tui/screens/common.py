@@ -220,15 +220,30 @@ class FittingSelect(Select):
         cap = max(8, int(self.app.size.width * self.overlay_max_share))
         overlay.styles.width = min(widest + 4, cap)
 
+    def _overlay_present(self) -> bool:
+        """Whether Textual's overlay is in the tree (the renderables' target)."""
+        try:
+            self.query_one(SelectOverlay)
+        except NoMatches:
+            return False
+        return True
+
     def _on_mount(self, _event: events.Mount) -> None:
         try:
             super()._on_mount(_event)
-        except NoMatches:  # the overlay/label are not composed yet (ODR-0023)
+        except NoMatches:
+            # The overrides above absorb the overlay lookups, so anything still
+            # raised here is Textual reaching for something else that is not
+            # composed yet; readiness is decided below, not by this exception.
+            pass
+        if self._overlay_present():
+            self._options_ready = True
+        else:
+            # Textual's own handler runs beside this one (ODR-0038), so readiness
+            # is read from the tree instead of from whether a lookup raised.
             self._options_ready = False
             self._adopt_value_before_overlay()
             self._init_options_when_composed(attempt=0)
-        else:
-            self._options_ready = True
 
     def _adopt_value_before_overlay(self) -> None:
         """Store the selected value while the render targets are missing.
@@ -250,15 +265,42 @@ class FittingSelect(Select):
             # value survives the failed paint.
             pass
 
-    def _init_options_when_composed(self, attempt: int) -> None:
+    def _setup_options_renderables(self) -> None:
+        """Build the option renderables, tolerating an overlay that is not there.
+
+        Textual dispatches a handler on *every* class in the MRO, so ``Select``'s
+        own ``_on_mount`` runs beside :meth:`_on_mount` above and calls this through
+        the instance — our override, not Textual's, is what it reaches.  Swallowing
+        the lookup failure here keeps Textual's dispatch from raising into the
+        application, which is how this surfaced: under load the traceback reached
+        the app and ``run_test`` re-raised it at teardown (ODR-0038).  The retry
+        path above calls this again once the overlay is in the tree (ODR-0026).
+        """
         try:
-            self._setup_options_renderables()
-            self._init_selected_option(self._value)
+            super()._setup_options_renderables()
         except NoMatches:
-            if attempt < self._mount_retry_limit:
-                self.call_after_refresh(self._init_options_when_composed, attempt + 1)
-        else:
+            pass
+
+    def _init_selected_option(self, hint: Any = Select.NULL) -> None:
+        """Adopt the selected value, tolerating an overlay that is not there.
+
+        Same reason as :meth:`_setup_options_renderables`: ``_watch_value`` stores
+        the value and only then reaches for the overlay to paint the label, so the
+        paint can fail while the value is already in hand — see
+        :meth:`_adopt_value_before_overlay`.
+        """
+        try:
+            super()._init_selected_option(hint)
+        except NoMatches:
+            pass
+
+    def _init_options_when_composed(self, attempt: int) -> None:
+        self._setup_options_renderables()
+        self._init_selected_option(self._value)
+        if self._overlay_present():
             self._options_ready = True
+        elif attempt < self._mount_retry_limit:
+            self.call_after_refresh(self._init_options_when_composed, attempt + 1)
 
 
 #: Sentinel for a replacement that mounts nothing: that wait settles once the

@@ -2460,3 +2460,49 @@ def test_fitting_select_expands_to_the_longest_option(demo_project: Project) -> 
             await pilot.pause()
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-0038")
+def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
+    demo_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A select mounted before its overlay exists does not raise into the app.
+
+    Textual dispatches ``_on_mount`` on every class in the MRO, so ``Select``'s own
+    handler runs next to ``FittingSelect``'s guarded override — and only the override
+    caught the failed overlay lookup.  Under load (the 3.11 and 3.12 legs of the
+    local matrix) the traceback reached the app and ``run_test`` re-raised it at
+    teardown.  The overlay is kept out of the tree here, so every retry misses too:
+    the app has to survive, the value has to be adopted before the paint (ODR-0026),
+    and readiness has to stay false rather than the app dying.
+    """
+    from textual.widgets import Select
+    from textual.widgets._select import SelectOverlay
+
+    from operon.tui.screens.common import FittingSelect
+
+    original_compose = Select.compose
+
+    def without_overlay(self: Select):
+        for child in original_compose(self):
+            if not isinstance(child, SelectOverlay):
+                yield child
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _settled(app)
+            monkeypatch.setattr(Select, "compose", without_overlay)
+            probe = FittingSelect([("short", "x"), ("longer", "y")], value="y", id="odr-0038")
+            await app.screen.mount(probe)
+            monkeypatch.undo()
+
+            # The retry budget runs out with the overlay still missing, and the app
+            # is still there to be asked about it.
+            for _ in range(60):
+                await pilot.pause()
+            assert probe.is_mounted
+            assert not probe.options_ready
+            assert probe.value == "y"
+
+    _run(scenario())

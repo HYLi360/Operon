@@ -962,29 +962,33 @@ defects:
   title: A Select's own on_mount runs unguarded next to the guarded override, so its mount failure reaches the app
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'any FittingSelect whose overlay is not composed yet when it mounts: under load
-    the first mount lookup fails and the traceback is reported to the application
-    error boundary even though the override recovers the state'
-  severity: low
+  affected: 'any FittingSelect whose overlay is not composed yet when it mounts: under
+    load the first mount lookup fails and Textual''s own Select._on_mount, dispatched
+    beside FittingSelect._on_mount, lets the exception reach the application error
+    boundary — run_test re-raises it at teardown, so the run fails'
+  severity: medium
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: 'The 3.11 and 3.12 legs of the local matrix (MATRIX_JOBS=4) on 6ec3a00:
-    textual.css.query.NoMatches: No nodes match SelectOverlay on FittingSelect(classes=condition-operator)
-    in the run log, raised inside Textual''s Select._on_mount -> _setup_options_renderables.
-    Textual dispatches a message handler defined in several classes of the MRO, so
-    Select._on_mount runs as well as FittingSelect._on_mount (ODR-0023), and only
-    the latter wraps the call.  The leg''s functional failure was the unrelated blank
-    operator value read by the test; the noise appears in every load-sensitive run.'
-  expectation: 'A mount whose lookup can fail should fail in one place, logged at debug
-    level, without a traceback reaching the application error boundary.'
-  disposition: 'Registered from matrix evidence, not yet fixed.  Direction: let the
-    override be the only handler (drop the base handler''s work by making the guarded
-    path the one that runs, e.g. by overriding the private hook Textual''s handler
-    calls) or catch the base failure in the app''s error path for this widget.  Needs
-    a mutation-checked test that drives a Select mount with the overlay absent.'
+    textual.css.query.NoMatches: No nodes match SelectOverlay on FittingSelect(classes=condition-operator),
+    raised through MessagePump._on_message -> _callback.invoke -> _select.py:628 in
+    _on_mount -> _setup_options_renderables -> query_one.  Textual dispatches a handler
+    defined in several classes of the MRO and only the subclass wrapped its call, so
+    the base handler''s lookup escaped.  test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
+    drives it deterministically: a Select is mounted with its overlay kept out of
+    the tree, so every retry misses as well.'
+  expectation: 'A lookup that can fail should fail in one place: the guarded path,
+    with no traceback reaching the application error boundary and no run aborted.'
+  disposition: 'FittingSelect now overrides the two methods Textual''s handler calls
+    through the instance (_setup_options_renderables and _init_selected_option) and
+    absorbs the overlay NoMatches there, so the base handler cannot raise.  Readiness
+    can no longer be inferred from that exception, so _on_mount and the retry ask
+    the tree instead (_overlay_present) before latching options_ready — the ODR-0023/ODR-0026
+    contract is unchanged for readers.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui.py::test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
 - id: ODR-0039
   title: An exhausted Select mount retry leaves options_ready False for good, and the form gate then waits forever
   reported: '2026-09-21'
