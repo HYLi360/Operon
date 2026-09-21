@@ -261,6 +261,11 @@ class FittingSelect(Select):
             self._options_ready = True
 
 
+#: Sentinel for a replacement that mounts nothing: that wait settles once the
+#: rows it replaced are out of the tree (ODR-0030).
+_EMPTIED = object()
+
+
 class MountTracked(Vertical):
     """A container that fills itself from ``on_mount`` and reports when it did.
 
@@ -282,13 +287,18 @@ class MountTracked(Vertical):
     """
 
     _waiting = False
-    _wait_selector: str | None = None
+    _wait_selector: Any = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         classes = str(kwargs.pop("classes", "") or "")
         super().__init__(*args, classes=f"{classes} mount-tracked".strip(), **kwargs)
+        #: Number of replacements this container has been asked for; a
+        #: replacement whose token is no longer the current one drops itself.
+        self._generation = 0
+        #: The children the last replacement is retiring (ODR-0030).
+        self._retiring: tuple[Any, ...] = ()
 
-    def expect_mounts(self, when_present: str | None = None) -> None:
+    def expect_mounts(self, when_present: str | None = None) -> int:
         """Mark the container as waiting for rows that are on their way.
 
         *when_present* is a selector the mounted rows must match (``None`` means
@@ -296,42 +306,104 @@ class MountTracked(Vertical):
         captured by the caller: two calls that share a local variable would
         otherwise wait on the wrong container, and the container would never
         settle.
+
+        Returns this wait's generation token: a later wait supersedes it, and
+        :meth:`replace_children` drops the superseded replacement instead of
+        mounting it next to the newer rows (ODR-0030).
         """
+        self._generation += 1
         self._waiting = True
         self._wait_selector = when_present
+        return self._generation
 
     def mount_later(self, *widgets: Any, when_present: str | None = None) -> None:
         """Mount *widgets* now and report settled once *when_present* is matched."""
         self.expect_mounts(when_present)
         self.mount(*widgets)
 
+    def replace_children(self, *widgets: Any) -> None:
+        """Replace this container's children with *widgets*, one generation at a time.
+
+        ``remove_children()`` completes asynchronously — Textual prunes the old
+        rows in their own message-loop turns — so the replacement waits for the
+        removal to land before it mounts; mounting in the same turn lets the
+        pending removal sweep the new rows away with the old ones.  A
+        replacement that was superseded while it waited drops itself: two
+        selections delivered in the same turn would otherwise land *both*
+        editors, and a reader would compose a document holding both
+        generations' rows (ODR-0030).
+        """
+        retiring = tuple(self.children)
+        removal = self.remove_children()
+        self._retiring = retiring
+        token = self.expect_mounts()
+        if not widgets:
+            # Nothing is on its way: this replacement settles once the retired
+            # rows are gone (emptying a section is a replacement too).
+            self._wait_selector = _EMPTIED
+            return
+
+        async def mount_when_current() -> None:
+            if token != self._generation:
+                return
+            await removal
+            if token != self._generation:
+                return
+            try:
+                await self.mount(*widgets)
+            except (MountError, NoMatches):  # pragma: no cover - teardown race
+                return
+
+        self.call_after_refresh(mount_when_current)
+
     @property
     def mounts_settled(self) -> bool:
         """False while the rows this container mounts are not there yet."""
         if not self._waiting:
             return True
+        if self._replacing():
+            # The rows being replaced are still in the tree, so whatever a
+            # reader sees right now belongs to the previous generation: latching
+            # here would let an old editor answer for a new one (ODR-0030).
+            return False
         selector = self._wait_selector
+        if selector is _EMPTIED:
+            self._settle()
+            return True
         present = bool(self.children) if selector is None else bool(self.query(selector))
         if present:
-            self._waiting = False
+            self._settle()
             return True
         return False
+
+    def _settle(self) -> None:
+        """Record that the replacement this container waits for has landed."""
+        self._waiting = False
+        self._retiring = ()
+        self._wait_selector = None
+
+    def _replacing(self) -> bool:
+        """True while a replaced generation is still in the tree."""
+        if not self._retiring:
+            return False
+        retiring = {id(child) for child in self._retiring}
+        return any(id(child) in retiring for child in self.children)
 
 
 def remount(container: Any, *widgets: Any) -> None:
     """Replace a container's children with ``widgets`` (atomically, from the UI).
 
-    ``Widget.remove_children()`` completes asynchronously, so mounting in the
-    same turn can be undone by the pending removal — the freshly mounted
-    children vanish when the removal lands.  Deferring the mount past the next
-    refresh keeps the replacement in order, and a :class:`MountTracked`
-    container reports that the rows are on their way (ODR-0023).
+    A :class:`MountTracked` container serializes the replacement and drops a
+    superseded one (ODR-0030); any other container keeps the plain deferred
+    mount, which is enough for a container nobody reads back through a
+    readiness check.
     """
+    if isinstance(container, MountTracked):
+        container.replace_children(*widgets)
+        return
     container.remove_children()
     if not widgets:
         return
-    if isinstance(container, MountTracked):
-        container.expect_mounts()
     container.call_after_refresh(container.mount, *widgets)
 
 

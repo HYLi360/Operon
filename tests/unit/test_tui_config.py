@@ -2475,3 +2475,58 @@ def test_best_by_rank_map_keeps_whole_ranks_whole(project: Project) -> None:
             assert [type(value) for value in document["rank"].values()] == [int, int]
 
     _run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Two editor rebuilds in one turn (ODR-0030)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.bug("ODR-0030")
+def test_two_editor_rebuilds_in_one_turn_leave_one_generation(project: Project) -> None:
+    """Two rebuilds in one turn must not leave both generations in the form.
+
+    Both selections are handled before either replacement's deferred mount
+    lands.  The first replacement used to mount next to the second one's rows,
+    so the form held two generations, the readiness check read the *old* rows as
+    if the new form were ready, and a save composed a document with every rule
+    twice (ODR-0030).  The two profiles below hold 1 + 3 and 6 + 3 rules, so a
+    doubled generation is unmistakable.
+    """
+    first = "annotation_busco_viridiplantae_odb12_v1"
+    second = "annotation_release_v1"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("config")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(ConfigPanel)
+
+            # Two rebuilds inside one turn: the second replaces the first
+            # before its deferred mount could land.
+            panel._load_profile(first)
+            panel._load_profile(second)
+            await _wait_until(lambda: not panel._form_mounting(),
+                              "the editor to finish rebuilding")
+
+            document = _profile_doc(project, second)
+            container = panel.query_one("#profile-required-rules", MountTracked)
+            rows = panel._rule_rows("required")
+            assert len(rows) == len(document["required"])
+            assert len(container.children) == len(document["required"])
+            assert [row.query_one(".rule-metric", Input).value for row in rows] == [
+                rule["metric"] for rule in document["required"]
+            ]
+            assert panel.current_profile == second
+
+            # A save right after the rebuild composes the file's rules once.
+            await _click(pilot, "#profile-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ProfileSaveModal)
+            assert modal.document["required"] == document["required"]
+            assert modal.document["warnings"] == document["warnings"]
+
+    _run(scenario())

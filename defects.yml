@@ -687,7 +687,7 @@ defects:
     deferred replacement completes, or two renders arriving before the first replacement lands
   severity: high
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: On Python 3.14.4 and Textual 8.2.8, render BHLH_PROFILE with _render_profile_document
     and await readiness. Render the same document with a new description and first rule label
     CHANGED, then call _form_mounting and _start_classification_save synchronously before
@@ -702,17 +702,20 @@ defects:
     _form_mounting() false, and ProfileSaveModal then composes 7 required + 6 warnings, so a
     confirmed save would write a duplicated profile. Two enter presses one turn apart did not
     reproduce it.
-  disposition: Audit only; no fix applied. Related to the incomplete ODR-0023 readiness guard.
-    Track completion of the specific replacement (removal and mount, including empty replacements),
-    not presence of arbitrary old children; cover populated-to-populated and populated-to-empty
-    replacements and repeated renders. This controlled interleaving proves the save guard
-    gap, not its frequency during human interaction or the cause of the latest CI failure.
-    A replacement that has not landed must be cancelled or retired by the next one, and the
-    regression has to include the two-renders-in-one-turn case followed by a real save
-    (duplicate rows plus a document that differs from the file), not only the mixed read.
+  disposition: Fixed in operon/tui/screens/common.py.  MountTracked now retires the generation it is
+    replacing before it mounts the next one and stamps each replacement with a generation token, so a
+    replacement that is superseded while its removal is in flight drops its mount instead of adding a
+    second generation.  mounts_settled reports false until the replacement the editor is waiting for
+    has landed, with an _EMPTIED sentinel keeping a populated-to-empty replacement in that waiting
+    state, and _replacing() keeps readiness false while a previous generation is still in the tree.
+    Two selections delivered in one turn now leave one generation of rows, the readiness check reads
+    the rows the user sees, and the save modal composes the profile file's own rules.  The regression
+    test drives two rebuilds inside one turn and then saves, asserting one generation of rows and a
+    document equal to the file's.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_two_editor_rebuilds_in_one_turn_leave_one_generation
 - id: ODR-0031
   title: Detail panes apply a worker result that no longer matches the selection
   reported: '2026-09-21'
