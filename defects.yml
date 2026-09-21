@@ -860,7 +860,7 @@ defects:
     against a document the gate did not filter) and now says so in a comment. Pinned by
     test_classification_form_refuses_what_it_cannot_represent, whose cases name every
     refused shape and the reason the read-only note shows.'
-  fix_commit: null
+  fix_commit: 0c77dab399f2d9419bd47c805a325731a0a12194
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent
