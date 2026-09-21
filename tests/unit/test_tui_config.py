@@ -8,6 +8,7 @@ import json
 import shutil
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +17,8 @@ pytest.importorskip("textual")
 import yaml
 from rich.text import Text
 from textual.containers import VerticalScroll
+from textual.css.query import NoMatches
+from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -28,7 +31,6 @@ from textual.widgets import (
     TabbedContent,
     TextArea,
 )
-from textual.pilot import OutOfBounds
 
 from operon.config import Project
 from operon.database import Database
@@ -2701,9 +2703,15 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
             # Not-mode: an any-group body cannot seed a ``not:``, so the inner
             # condition starts empty.
             editor.query_one(".condition-mode", FittingSelect).value = "not"
-            body = editor.query_one(".condition-body")
+            body = editor.query_one(".condition-body", MountTracked)
+            # Wait for the row the not body mounts *and* for its inputs: a row that
+            # is already in the tree may still be composing them (ODR-0023), and a
+            # row-based wait would also be satisfied by the group it retired.
+            not_row = (await _await_rows(pilot, body, ".condition-row", 1,
+                                         ".condition-field"))[0]
             await _wait_until(lambda: not body.query(".condition-group"),
-                              "the not body to compose")
+                              "the retired group to go")
+            assert not_row.query_one(".condition-field", Input).value == ""
             assert editor.editor_document() == {
                 "not": {"field": "", "operator": "==", "value": ""}
             }
@@ -2712,10 +2720,16 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
             # not-group and the leaf have the same widgets, so the wait reads the
             # composition itself — a stale body still reports the ``not:``.
             editor.query_one(".condition-mode", FittingSelect).value = "condition"
-            await _wait_until(
-                lambda: list(editor.editor_document()) == ["field", "operator", "value"],
-                "the leaf body to compose",
-            )
+
+            def leaf_composed() -> bool:
+                # The predicate reads through the editor, so it must tolerate the
+                # replace window it is waiting out.
+                try:
+                    return list(editor.editor_document()) == ["field", "operator", "value"]
+                except NoMatches:
+                    return False
+
+            await _wait_until(leaf_composed, "the leaf body to compose")
             leaf = await _await_rows(pilot, editor, ".condition-row", 1, ".condition-field")
             assert not leaf[0].query(".condition-remove")
             assert list(editor.editor_document()) == ["field", "operator", "value"]
@@ -2911,5 +2925,61 @@ def test_classification_save_of_an_unchanged_document_keeps_the_version(
             assert data.get_profile_document(
                 project, "bhlh_unchanged", kind="sequence_classification"
             )["version"] == 1
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0035")
+def test_classification_editor_composes_while_the_body_is_between_generations(
+    project: Project, monkeypatch
+) -> None:
+    """A read inside a mode change's replace window composes the seeded document.
+
+    ``replace_children`` retires the old rows and mounts the next generation a turn
+    later, so for that moment the body holds nothing a reader can compose: before
+    the fix this raised ``NoMatches`` in leaf/not mode (and reported an empty group
+    in any mode), which is what a save pressed in the same turn would get.  The test
+    hooks the body's own ``mount`` — the product calls it after the retirement has
+    landed — so the read happens exactly inside the window instead of whenever a
+    polling loop happens to land there, which is how the pre-fix failure surfaced as
+    a load-dependent flake (ODR-0035).
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            source = (await _await_rows(pilot, panel, ".source-row", 1, ".source-name"))[0]
+            editor = (await _await_rows(pilot, source, ".condition-editor", 1,
+                                        ".condition-field"))[0]
+            body = editor.query_one(".condition-body", MountTracked)
+
+            reads: list[Any] = []
+            original_mount = body.mount
+
+            async def watched_mount(*args, **kwargs):
+                try:
+                    reads.append(editor.editor_document())
+                except Exception as exc:  # noqa: BLE001 - the defect is the raise
+                    reads.append(exc)
+                return await original_mount(*args, **kwargs)
+
+            monkeypatch.setattr(body, "mount", watched_mount)
+            editor.query_one(".condition-mode", FittingSelect).value = "not"
+            await _wait_until(lambda: bool(reads), "the read inside the replace window")
+            await _await_form_ready(pilot, panel)
+
+            assert reads and not isinstance(reads[0], Exception), reads
+            # The seed is the condition the editor was holding, wrapped for the mode
+            # it is switching to; the live composition agrees once the body lands.
+            assert reads[0] == {
+                "not": {"field": "hit_type", "operator": "in",
+                        "values": ["Specific", "Motif"]},
+            }
+            assert editor.editor_document() == reads[0]
 
     _run(scenario())

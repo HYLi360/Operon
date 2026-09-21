@@ -864,3 +864,37 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent
+
+
+- id: ODR-0035
+  title: The classification editor raises while a mode change replaces its body
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'operon/tui/screens/config_classification.py, ConditionEditor.editor_document()
+    whenever a reader lands between MountTracked.replace_children''s remove_children()
+    and the mount of the next generation: leaf/not mode raised NoMatches, and any:
+    mode silently composed an empty group.  Surfaced by the new mode-switch test,
+    which failed only in the coverage run — the slower variant of the suite.'
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'Run the TUI test file with the coverage gate: test_classification_condition_editor_mode_and_nested_rows
+    failed with "NoMatches: No nodes match ''.condition-body .condition-row'' on ConditionEditor"
+    raised from editor_document(), while a wait polled the composition across a switch
+    to not: mode.  The same test passed without the coverage load, so the window is
+    one message-loop turn wide and only a reader that lands in it is hit.'
+  expectation: 'A reader must never see a half-replaced body: while the replacement
+    is in flight the editor composes the document the rebuild was seeded from, which
+    is the document the new body is becoming.'
+  disposition: 'editor_document() asks the body''s own MountTracked.mounts_settled
+    first — the readiness answer ODR-0023 introduced — and composes ConditionEditor._seeded_document,
+    recorded by _rebuild before it replaces the body, while the rows are not there yet.
+    Both modes now answer with the seeded condition instead of raising (leaf/not) or
+    reporting an empty group (any:), so a save that lands in the window keeps the
+    condition the user was editing.  Pinned by a test that hooks the body''s own mount
+    so the read happens exactly inside the window instead of when a poll happens to
+    land there.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations

@@ -187,6 +187,9 @@ class ConditionEditor(ComposedRows, Vertical):
         self.original = dict(condition)
         self.extras = _extras(self.original, CONDITION_MODELED_KEYS | {"any", "not"})
         self._mode = self._original_mode()
+        #: The document the body was last seeded from.  A reader that lands while
+        #: a mode change is replacing the body composes this (ODR-0035).
+        self._seeded_document: dict[str, Any] = dict(condition)
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="condition-inputs"):
@@ -235,6 +238,7 @@ class ConditionEditor(ComposedRows, Vertical):
     def _rebuild(self, mode: str, document: dict[str, Any]) -> None:
         """Swap the body to the widgets the mode needs, seeding from ``document``."""
         body = self.query_one(".condition-body", Vertical)
+        self._seeded_document = dict(document)
         if mode == "any":
             group = document.get("any") if isinstance(document.get("any"), list) else []
             rows = [item for item in group if isinstance(item, dict)] or [{"field": ""}]
@@ -257,11 +261,24 @@ class ConditionEditor(ComposedRows, Vertical):
             remount(body, ConditionRow(dict(leaf), removable=False))
 
     def editor_document(self) -> dict[str, Any]:
+        """Compose the condition this editor edits.
+
+        A mode change replaces the body through ``MountTracked.replace_children``,
+        which retires the old rows and mounts the next generation a turn later:
+        while that is in flight the body holds nothing to compose.  The container
+        answers "are my rows there yet" through ``mounts_settled`` (ODR-0023), so a
+        reader that lands in the window — a save pressed in the same turn as the
+        mode change — gets the document the replacement was seeded from, instead of
+        a ``NoMatches`` in leaf/not mode or an empty ``any:`` group that would drop
+        the condition (ODR-0035).
+        """
         mode_value = self.query_one(".condition-mode", Select).value
         mode = "condition" if mode_value is Select.NULL else str(mode_value)
-        if mode == "any":
+        if not self.query_one(".condition-body", MountTracked).mounts_settled:
+            document: dict[str, Any] = dict(self._seeded_document)
+        elif mode == "any":
             rows = list(self.query(".condition-group .condition-row").results(ConditionRow))
-            document: dict[str, Any] = {"any": [row.condition_document() for row in rows]}
+            document = {"any": [row.condition_document() for row in rows]}
         else:
             row = self.query_one(".condition-body .condition-row", ConditionRow)
             leaf = row.condition_document()
