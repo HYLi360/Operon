@@ -654,3 +654,115 @@ defects:
   fix_commit: null
   fixed_in: null
   regression_tests: []
+- id: ODR-0029
+  title: Run detail tests treat an empty worker set as completed screen loading
+  reported: '2026-09-20'
+  introduced_in: null
+  affected: 0.8.4; run-external success and failure detail assertions before the new
+    screen schedules its load worker, plus the run-detail read after enter on the runs
+    table
+  severity: medium
+  component: tests
+  status: confirmed
+  reproduction: 'CI run 35499613546, macos-latest Python 3.13, failed test_run_external_modal_preview_run_and_detail
+    at test_tui_writes.py:1134: marker_step was absent from loading…. A local controlled RunDetailScreen.on_mount
+    gate reproduces screen_is_detail=true and workers=0 while _settled returns and the text
+    is still loading; releasing the gate lets the real loader update the screen normally.
+    Second audit round (2026-09-21) found the same shape at test_tui.py:957-963, where
+    enter on the runs table is followed by _settled, an isinstance check and a read of
+    #run-detail.'
+  disposition: Audit only; no fix applied. Wait for the expected detail content (or an explicit
+    initial-load completion signal) in both run-external outcomes instead of treating _settled
+    as screen readiness. Keep a deterministic delayed-mount regression. Fix every site of the
+    shape in one pass (test_tui_writes.py:1127-1135 and 1162-1171, test_tui.py:957-963), because
+    the sites that happen to pass are the ones the next slow run picks.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0030
+  title: Old editor rows falsely satisfy readiness during a deferred form replacement
+  reported: '2026-09-20'
+  introduced_in: null
+  affected: 0.8.4; rebuilding an already populated config editor and requesting save before
+    deferred replacement completes, or two renders arriving before the first replacement lands
+  severity: high
+  component: tui
+  status: confirmed
+  reproduction: On Python 3.14.4 and Textual 8.2.8, render BHLH_PROFILE with _render_profile_document
+    and await readiness. Render the same document with a new description and first rule label
+    CHANGED, then call _form_mounting and _start_classification_save synchronously before
+    yielding. _form_mounting returns false and ClassificationSaveModal.document contains the
+    new description but old labels A/U/C. After refresh the editor contains CHANGED/U/C. No
+    save was confirmed. remount defers insertion, while MountTracked.mounts_settled clears
+    its latch upon seeing any existing child, including old rows awaiting removal. Second
+    audit round (2026-09-21) used reports/tui-timing-audit-2026-09-20/probe_two_selections.py
+    and delivered two selections in one message-loop turn, the way the handler that reads the
+    live event.list_view.index receives queued messages — both generations survive rather
+    than mixing; 13 .rule-row widgets for a profile whose file holds 6 required + 3 warnings,
+    _form_mounting() false, and ProfileSaveModal then composes 7 required + 6 warnings, so a
+    confirmed save would write a duplicated profile. Two enter presses one turn apart did not
+    reproduce it.
+  disposition: Audit only; no fix applied. Related to the incomplete ODR-0023 readiness guard.
+    Track completion of the specific replacement (removal and mount, including empty replacements),
+    not presence of arbitrary old children; cover populated-to-populated and populated-to-empty
+    replacements and repeated renders. This controlled interleaving proves the save guard
+    gap, not its frequency during human interaction or the cause of the latest CI failure.
+    A replacement that has not landed must be cancelled or retired by the next one, and the
+    regression has to include the two-renders-in-one-turn case followed by a real save
+    (duplicate rows plus a document that differs from the file), not only the mixed read.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0031
+  title: Detail panes apply a worker result that no longer matches the selection
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 0.8.4; files and entities detail panes when two highlights arrive closer together
+    than the first read takes
+  severity: medium
+  component: tui
+  status: confirmed
+  reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
+    the stale-detail scenario). Stub data.file_detail so the read for FIL_000002 sleeps 0.6
+    s, highlight FIL_000002 and one turn later FIL_000003 in the Files table, then let the
+    app settle. The reads finish out of order (FIL_000003 at 14.983 s, FIL_000002 at 15.468
+    s) and the pane renders file FIL_000002 while the table highlights FIL_000003 —
+    pane_names_highlighted false and pane_names_slow true. FilesPanel._load_detail is
+    @work(thread=True, exclusive=True, group="file-detail"), and exclusive cancels the
+    previous worker await rather than its thread; the thread still calls
+    post_to_ui(self._apply_detail, payload) with no request identity, so the last payload to
+    arrive wins. EntitiesPanel._load_detail has the same shape, as do the coverage and
+    publish preview workers.'
+  disposition: Audit only; no fix applied. Stamp the request (file_id, entity or form values)
+    into the payload and drop a result whose key is not the current selection, or check the
+    current worker for cancellation before posting. Regression shape — a gated slow read for
+    the previous selection plus a fast read for the new one, then assert the pane names the
+    highlighted record.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0032
+  title: A dropped initial panel render leaves the app on the splash screen
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 0.8.4; any panel whose first render is dropped by a lookup failure during startup
+  severity: medium
+  component: tui
+  status: confirmed
+  reproduction: 'Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py,
+    the dropped-initial-load scenario). Make HomePanel.render_data raise NoMatches once.
+    Panel._apply returns on its (MountError, NoMatches) guard before it latches
+    initial_load_complete, and OperonApp._finish_startup waits for every panel to latch with
+    no deadline, so the probe reports starting true, screen SplashScreen, splash_status
+    "Loading Home...", home_initial_load_complete false and workers [RUNNING], and nothing
+    changes afterwards. In a test run every _settled then times out with RUNNING; in
+    production the panels stay unreachable and the only way out is ctrl+q. The panel-level
+    test test_panel_drops_a_result_whose_widgets_are_gone pins the dropped result as intended
+    for teardown, which a live render failure is indistinguishable from.'
+  disposition: Audit only; no fix applied. Separate a teardown from a render failure (latch
+    the initial-load state when a result is dropped for a teardown) or give _finish_startup a
+    deadline that pops the splash with a warning instead of waiting forever. Regression shape —
+    a panel whose first render raises NoMatches must still let the app finish starting.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
