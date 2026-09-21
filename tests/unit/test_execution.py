@@ -13,6 +13,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+
+import pytest
 from types import SimpleNamespace
 
 from operon import execution
@@ -1247,6 +1249,23 @@ class TestShutdownCleanup(PytestAssertions):
             time.sleep(0.05)
         return False
 
+    def _grandchild_pid(self, pidfile: Path, deadline: float = 5.0) -> int:
+        """The pid the payload's grandchild wrote, once the file carries it.
+
+        The shell creates the redirect target before the pid text lands, so waiting
+        for the file to exist is not enough: a read in that turn finds no file yet,
+        and the turn after an empty one — ``int()`` raises on both (ODR-0037).  This
+        waits for a pid instead.
+        """
+        limit = time.monotonic() + deadline
+        while time.monotonic() < limit:
+            try:
+                return int(pidfile.read_text().strip())
+            except (FileNotFoundError, ValueError):
+                time.sleep(0.02)
+        raise AssertionError(f"{pidfile} never received a pid")
+
+    @pytest.mark.bug("ODR-0037")
     def test_local_interrupt_kills_whole_process_group(self, monkeypatch):
         # This test interrupts the payload, not the preceding environment probe.
         monkeypatch.setattr("operon.execution.capture_local", lambda *args: {})
@@ -1260,10 +1279,13 @@ class TestShutdownCleanup(PytestAssertions):
         def interrupting_wait(process, timeout=None):
             if not interrupted["done"]:
                 interrupted["done"] = True
-                # Let the child actually spawn its grandchild first.
-                deadline = time.monotonic() + 5
-                while not pidfile.exists() and time.monotonic() < deadline:
-                    time.sleep(0.02)
+                # Let the child actually spawn its grandchild first.  The pid text
+                # may not be in the file yet, so this is not a hard requirement
+                # here — the check after the run is.
+                try:
+                    self._grandchild_pid(pidfile)
+                except AssertionError:
+                    pass
                 raise ShutdownRequested(signal.SIGINT)
             return real_wait(process, timeout)
 
@@ -1273,7 +1295,7 @@ class TestShutdownCleanup(PytestAssertions):
                 ["bash", "-c", f"sleep 60 & echo $! > {pidfile}; wait"],
                 cwd=self.root, stdout_path=out_log, stderr_path=err_log,
             )
-        grandchild = int(pidfile.read_text().strip())
+        grandchild = self._grandchild_pid(pidfile)
         # SIGTERM went to the whole group: the grandchild sleep must be gone.
         self.assertTrue(self._wait_until_dead(grandchild))
 

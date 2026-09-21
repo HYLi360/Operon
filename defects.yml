@@ -929,3 +929,30 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed
+
+
+- id: ODR-0037
+  title: A shutdown test reads the grandchild pid file before the shell has written the pid
+  reported: '2026-09-21'
+  introduced_in: null
+  affected: 'test infrastructure only, no shipped behavior: tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
+    whenever the payload''s shell has created the redirect target but not yet written
+    the pid into it'
+  severity: low
+  component: tests
+  status: fixed
+  reproduction: 'Full unit suite with the default xdist worker count, after the TUI
+    work: ValueError: invalid literal for int() with base 10: '''' raised by int(pidfile.read_text().strip()).
+    The payload is ``sleep 60 & echo $! > pidfile``, so the file exists as soon as the
+    redirect opens — the test waited for the file, then read text that was still empty.
+    The test passes on an idle machine, where the write lands before the read.'
+  expectation: 'A wait names the value the test reads: the pid, not the file that
+    will hold it.'
+  disposition: 'The test asks a new _grandchild_pid() helper for the pid — polling until
+    the content parses, with the same five-second budget — at both read sites; the
+    pre-interrupt wait keeps its tolerance (it may proceed without a pid) while the
+    post-run read is strict.  The test carries @pytest.mark.bug("ODR-0037").'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
