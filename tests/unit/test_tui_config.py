@@ -2708,6 +2708,10 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
             body = editor.query_one(".condition-body", MountTracked)
             await _wait_until(lambda: not body.query(".condition-group"),
                               "the retired group to go")
+            # The replacement's row is in the tree a turn before its operator
+            # Select has adopted its value (ODR-0026), so this value assertion
+            # waits on the same signal the save path waits on.
+            await _await_form_ready(pilot, panel)
             assert editor.editor_document() == {
                 "not": {"field": "", "operator": "==", "value": ""}
             }
@@ -2723,6 +2727,8 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
                 and list(editor.editor_document()) == ["field", "operator", "value"],
                 "the leaf body to compose",
             )
+            # Same readiness as the save path reads before this assertion.
+            await _await_form_ready(pilot, panel)
             assert list(editor.editor_document()) == ["field", "operator", "value"]
             assert len(list(body.query(".condition-remove"))) == 0
 
