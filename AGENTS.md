@@ -30,8 +30,6 @@ Current version markers (must stay consistent across code and docs):
 - database schema 2.11 (`operon/database.py`, `SCHEMA_VERSION`)
 - metadata schema 1.4 (`operon/schema.py`, `METADATA_SCHEMA_VERSION`)
 
-The project is licensed AGPL-3.0-or-later (`LICENSE` at the repo root).
-
 ## Repository layout
 
 - `operon/` — the Python package (CLI entry points: `operon/cli.py`,
