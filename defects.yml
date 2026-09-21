@@ -995,19 +995,27 @@ defects:
   introduced_in: null
   affected: 'a FittingSelect whose overlay lookup misses on more than _mount_retry_limit
     refreshes (50): options_ready stays False, so ConfigPanel._form_mounting keeps
-    reporting True — the form never becomes readable or saveable and nothing says why'
+    reporting True — the form never becomes readable or saveable and every save is
+    answered with "the form is still loading — save again in a moment", which never
+    becomes true'
   severity: low
   component: tui
-  status: confirmed
-  reproduction: 'Code reading after the matrix runs: FittingSelect._init_options_when_composed
-    stops retrying at _mount_retry_limit and sets no flag or message on that path
-    (operon/tui/screens/common.py).  Not yet reproduced on a run; 50 consecutive missed
-    refreshes have not been observed, so the field impact is unmeasured.'
-  expectation: 'A guard that gives up should say so: a warning naming the control,
-    and a readiness signal a reader can distinguish from "still coming".'
-  disposition: 'Registered from code reading, not yet fixed.  Direction: log a warning
-    at the give-up branch and let the gate''s message name controls whose retry budget
-    ran out instead of only reporting "still mounting".'
+  status: fixed
+  reproduction: 'Registered from code reading after the matrix runs; the state is driven
+    deterministically in test_fitting_select_reports_a_mount_that_ran_out_of_retries
+    (a Select mounted with its overlay kept out of the tree, so all 50 retries miss)
+    and the message in test_blocked_save_names_a_control_that_never_finished_loading.
+    50 consecutive missed refreshes have not been observed in the field.'
+  expectation: 'A guard that gives up should say so: a warning naming the control, and
+    a readiness signal a reader can distinguish from "still coming" — so the refused
+    save can tell the user to reload instead of to wait.'
+  disposition: 'FittingSelect gains options_gave_up (a second signal beside options_ready)
+    and logs one warning naming the control when the retry budget runs out.  ConfigPanel
+    answers a blocked save through _blocked_save_message, which names the stalled
+    controls and points at a profile reload once any of them gave up, and keeps the
+    still-loading wording otherwise.'
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+  - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
+  - tests/unit/test_tui_config.py::test_blocked_save_names_a_control_that_never_finished_loading

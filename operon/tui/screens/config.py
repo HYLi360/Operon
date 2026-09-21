@@ -1227,6 +1227,12 @@ class ConfigPanel(Panel):
 
     #: Shown when a save arrives before a deferred form rebuild has composed.
     FORM_MOUNTING_MESSAGE = "the form is still loading — save again in a moment"
+    #: Answered when a control ran out of mount retries: waiting cannot help it, so
+    #: the message names the controls and sends the reader to a reload (ODR-0039).
+    FORM_STALLED_MESSAGE = (
+        "a dropdown in this form never finished loading — reload the profile (r) "
+        "and try again"
+    )
 
     #: Rows whose own composed subtree must be in the tree before a read.
     EDITOR_ROW_SELECTORS = (
@@ -1279,12 +1285,29 @@ class ConfigPanel(Panel):
         catch it).
         """
         if self._form_mounting():
+            message = self._blocked_save_message()
             if error_view is None:
-                self.app.notify(self.FORM_MOUNTING_MESSAGE, severity="warning")
+                self.app.notify(message, severity="warning")
             else:
-                error_view.update(Text(self.FORM_MOUNTING_MESSAGE, style="yellow"))
+                error_view.update(Text(message, style="yellow"))
             return None
         return compose()
+
+    def _blocked_save_message(self) -> str:
+        """What a refused save says: waiting, or a control that will never come.
+
+        A select whose mount retries ran out blocks the form exactly like one that is
+        still mounting, and no amount of waiting helps it — so name those controls and
+        send the reader to a reload instead of telling them to try again (ODR-0039).
+        """
+        stalled = [
+            str(select.id or type(select).__name__)
+            for select in self.query(FittingSelect)
+            if select.options_gave_up
+        ]
+        if not stalled:
+            return self.FORM_MOUNTING_MESSAGE
+        return f"{self.FORM_STALLED_MESSAGE}: {', '.join(stalled)}"
 
     def _on_new_profile(self, payload: Any) -> None:
         if not payload:

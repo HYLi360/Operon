@@ -2506,3 +2506,57 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
             assert probe.value == "y"
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-0039")
+def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
+    demo_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A select that never gets its overlay says so, by name.
+
+    ``options_ready`` stays False when the retry budget runs out, which reads exactly
+    like "still coming" — so the form refuses every save with no reason to give.  The
+    control has to report the difference: a reader can then tell the two apart and
+    name what is stuck.
+    """
+    from textual.widgets import Select
+    from textual.widgets._select import SelectOverlay
+
+    from operon.tui.screens.common import FittingSelect
+
+    original_compose = Select.compose
+
+    def without_overlay(self: Select):
+        for child in original_compose(self):
+            if not isinstance(child, SelectOverlay):
+                yield child
+
+    warnings: list[str] = []
+
+    class Recorder:
+        """Stands in for the widget's Logger, which is a read-only property."""
+
+        def warning(self, message: str, *args, **kwargs) -> None:
+            warnings.append(message)
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _settled(app)
+            monkeypatch.setattr(FittingSelect, "log", property(lambda self: Recorder()))
+            monkeypatch.setattr(Select, "compose", without_overlay)
+            probe = FittingSelect([("short", "x")], value="x", id="odr-0039")
+            await app.screen.mount(probe)
+
+            # Out of retries, with the overlay still missing.  The patches stay for
+            # the whole run: the recorder above has to be the widget's logger while
+            # the retries give up, and the compose patch only matters at mount time.
+            for _ in range(60):
+                await pilot.pause()
+            assert probe.is_mounted
+            assert not probe.options_ready
+            assert probe.options_gave_up
+            assert warnings, "the exhausted retry path reported nothing"
+            assert "odr-0039" in warnings[0], warnings
+
+    _run(scenario())

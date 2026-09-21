@@ -200,11 +200,23 @@ class FittingSelect(Select):
     overlay_max_share = 0.8
     _mount_retry_limit = 50
     _options_ready = False
+    _options_gave_up = False
 
     @property
     def options_ready(self) -> bool:
         """True once Textual has initialised this Select's options and value."""
         return self._options_ready
+
+    @property
+    def options_gave_up(self) -> bool:
+        """True once the mount retries ran out with the overlay still missing.
+
+        :attr:`options_ready` stays ``False`` in that state, so a reader that only
+        asks for readiness cannot tell "still coming" from "never" — the form would
+        refuse a save forever without saying why (ODR-0039).  This is the signal
+        that distinguishes them.
+        """
+        return self._options_gave_up
 
     def _watch_expanded(self, expanded: bool) -> None:
         super()._watch_expanded(expanded)
@@ -301,6 +313,15 @@ class FittingSelect(Select):
             self._options_ready = True
         elif attempt < self._mount_retry_limit:
             self.call_after_refresh(self._init_options_when_composed, attempt + 1)
+        else:
+            # Out of retries: say so once, by name, instead of leaving a control
+            # that quietly answers nothing (ODR-0039).
+            self._options_gave_up = True
+            self.log.warning(
+                f"{type(self).__name__} {self.id or '<unnamed>'} never got its "
+                f"overlay after {self._mount_retry_limit} refreshes — its options "
+                "stay uninitialised"
+            )
 
 
 #: Sentinel for a replacement that mounts nothing: that wait settles once the

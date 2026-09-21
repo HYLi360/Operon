@@ -2345,6 +2345,41 @@ def test_classification_save_refuses_a_form_that_is_still_mounting(project: Proj
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-0039")
+def test_blocked_save_names_a_control_that_never_finished_loading(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused save tells "still loading" and "never loaded" apart.
+
+    A select whose mount retries ran out blocks the form exactly like one that is
+    still mounting, and waiting never helps it — so the message has to say that and
+    name the control.  The stalled pair of signals is set on the class here; that the
+    real exhaustion path sets them is covered by
+    test_fitting_select_reports_a_mount_that_ran_out_of_retries.
+    """
+    from operon.tui.screens.common import FittingSelect
+
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await _await_form_ready(pilot, panel)
+
+            monkeypatch.setattr(FittingSelect, "options_ready", property(lambda self: False))
+            monkeypatch.setattr(FittingSelect, "options_gave_up", property(lambda self: True))
+            panel._start_classification_save()
+            error = panel.query_one("#classification-save-error", Static)
+            await pilot.pause()
+            text = _static_text(error)
+            assert panel.FORM_STALLED_MESSAGE in text
+            assert panel.FORM_MOUNTING_MESSAGE not in text
+
+    _run(scenario())
+
+
 @pytest.mark.bug("ODR-0023")
 def test_row_reports_ready_only_once_its_subtree_is_in_the_tree(project: Project) -> None:
     """A mounted row is not readable until its own subtree composed.
