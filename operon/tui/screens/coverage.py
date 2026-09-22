@@ -243,7 +243,7 @@ class CoveragePanel(Panel):
     def _load_report(self, report_id: str) -> None:
         try:
             payload: Any = data.read_coverage_report(self.project, report_id)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_report, payload, key=report_id)
 

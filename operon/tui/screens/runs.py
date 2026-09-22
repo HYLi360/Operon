@@ -365,7 +365,7 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
             payload: Any = data.list_analysis_jobs(
                 self.project, analysis=analysis, statuses=statuses, limit=limit,
             )
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 
@@ -487,7 +487,7 @@ class RunDetailScreen(WorkerResults, Screen):
     def _load(self) -> None:
         try:
             payload: Any = data.workflow_run_detail(self.project, self.run_id)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the screen
+        except Exception as exc:  # noqa: BLE001 - surfaced in the screen  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 

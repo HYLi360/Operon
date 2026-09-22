@@ -225,7 +225,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 "ids": actions.reserve_entity_ids(self.project),
                 "organisms": data.list_organisms_for_picker(self.project),
             }
-        except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
+        except Exception as exc:  # noqa: BLE001 - surfaced in the wizard  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._startup_done, payload)
 
@@ -301,7 +301,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     self.project, assembly_id)
             elif page == "summary":
                 payload["summary"] = data.import_summary(self.project, self.draft)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the wizard
+        except Exception as exc:  # noqa: BLE001 - surfaced in the wizard  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._show_page, page, payload)
 
@@ -640,7 +640,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
     def _run_import(self) -> None:
         try:
             payload: Any = actions.import_dataset(self.project, self.draft)
-        except Exception as exc:  # noqa: BLE001 - shown inline; staged files rolled back
+        except Exception as exc:  # noqa: BLE001 - shown inline; staged files rolled back  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._import_done, payload)
 

@@ -1119,7 +1119,7 @@ def _current_environment_document(executor: Any, command: list[str],
         else:
             probe = getattr(executor, "probe_environment", None)
             document = probe() if probe is not None else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - environment capture degrades to None, never raises  # pylint: disable=broad-exception-caught
         return None
     return document if isinstance(document, dict) and document else None
 
@@ -1345,7 +1345,7 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                     # Bookkeeping already finalized in run_analysis_for_file;
                     # stop the batch here and let the CLI report exit 130.
                     raise
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - per-file analysis failures become error results; interrupts re-raise  # pylint: disable=broad-exception-caught
                     result = _analysis_error_result(file_record, recipe, exc)
                 results.append(result)
                 if progress_callback is not None:
@@ -1732,7 +1732,7 @@ def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, 
                 )
             outcome = _finalize_analysis_execution(
                 project, db, recipe, tool, plan, run_record, keep_partial=keep_partial)
-        except Exception as finalize_exc:
+        except Exception as finalize_exc:  # noqa: BLE001 - a per-task finalize failure marks the task failed  # pylint: disable=broad-exception-caught
             # A task whose exit code exists but whose result cannot be
             # finalized (lost output, parse error) is failed, not completed.
             if sftp is not None and plan.backups:

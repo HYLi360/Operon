@@ -591,7 +591,7 @@ def qc_file(db: Database, project: Project, file_id: str, sample_size: int = 100
             "file_qc_state": file_qc_state, "entity_qc_state": entity_qc_state,
             "file_statuses": sibling_statuses,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - per-file QC failure is recorded and returned as data  # pylint: disable=broad-exception-caught
         parseable = 0
         error = f"{type(exc).__name__}: {exc}"
         metrics.append(metric(entity_type, entity_id, "file_integrity", "parseable", 0, parameter_set=parameter_set))

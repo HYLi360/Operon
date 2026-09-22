@@ -111,7 +111,7 @@ class LifecycleModal(WriteModal):
             payload: Any = actions.lifecycle_preview(
                 self.project, self.entity_id, self.action,
             )
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_plan, payload)
 
@@ -298,7 +298,7 @@ class EntitiesPanel(Panel):
     def _load_detail(self, entity_type: str, entity_id: str) -> None:
         try:
             payload: Any = data.entity_detail(self.project, entity_type, entity_id)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_detail, payload, key=(entity_type, entity_id))
 

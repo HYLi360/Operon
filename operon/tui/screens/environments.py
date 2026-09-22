@@ -59,7 +59,7 @@ class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
     def _load(self) -> None:
         try:
             payload: Any = data.list_environments(self.project)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 
@@ -109,7 +109,7 @@ class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
             else:
                 fmt = "explicit" if event.button.id == "environments-explicit" else "yaml"
                 text = data.export_environment(self.project, environment_id, fmt).rstrip("\n")
-        except Exception as exc:  # noqa: BLE001 - shown inline
+        except Exception as exc:  # noqa: BLE001 - shown inline  # pylint: disable=broad-exception-caught
             self._show_error(exc)
             return
         self._clear_error()

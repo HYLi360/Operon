@@ -587,7 +587,7 @@ class Panel(WorkerResults, VerticalScroll):
     def _load(self) -> None:
         try:
             payload = self._fetch()
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 
@@ -725,7 +725,7 @@ class WriteModal(DismissOnce, WorkerResults, ModalScreen):
     def _execute(self, fn: Callable[[], Any]) -> None:
         try:
             payload: Any = fn()
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._action_done, payload)
 

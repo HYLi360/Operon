@@ -507,8 +507,8 @@ def run_external_command(
         if probe is not None:
             try:
                 environment = probe()
-            except Exception:
-                environment = None  # probe failures must never affect the run
+            except Exception:  # noqa: BLE001 - probe failures must never affect the run  # pylint: disable=broad-exception-caught
+                environment = None
         step_records: list[dict[str, Any]] = []
         result = None
         for step_index, step_argv in enumerate(argv_steps, start=1):
@@ -586,7 +586,7 @@ def run_external_command(
         record.update(status="failed", error=str(exc), exit_code=None)
     except OperonError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failures are recorded as failed runs and re-raised  # pylint: disable=broad-exception-caught
         record.update(
             status="failed", error=f"{type(exc).__name__}: {exc}", exit_code=None,
         )

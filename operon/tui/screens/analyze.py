@@ -359,7 +359,7 @@ class AnalyzeModal(WriteModal):
                 self.project, self._analysis_name, progress=progress,
                 cancel_event=self._cancel_event, **self._options,
             )
-        except Exception as exc:  # noqa: BLE001 - routed to _analysis_done
+        except Exception as exc:  # noqa: BLE001 - routed to _analysis_done  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._analysis_done, payload)
 

@@ -252,7 +252,7 @@ def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
         _, stdout, _ = client.exec_command(f"sha256sum -- {shlex.quote(remote_path)}", timeout=timeout)
         output = stdout.read().decode("utf-8", "replace")
         status = stdout.channel.recv_exit_status()
-    except Exception:
+    except Exception:  # noqa: BLE001 - exec-channel failure falls back to the SFTP streaming hash  # pylint: disable=broad-exception-caught
         # The connection may still serve the SFTP fallback below.
         status = None
     if status == 0:
@@ -801,7 +801,7 @@ def push(db: Database, project: Project, name: str,
                             "format": record.get("format"), "synced_at": now_iso(),
                         }
                         manifest_changed = True
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - one failed file must not stop the push batch  # pylint: disable=broad-exception-caught
                     result.update(status="error", error=f"{type(exc).__name__}: {exc}")
                 results.append(result)
 

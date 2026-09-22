@@ -273,7 +273,7 @@ class FilesPanel(Panel):
     def _load_detail(self, file_id: str) -> None:
         try:
             payload: Any = data.file_detail(self.project, file_id)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_detail, payload, key=file_id)
 

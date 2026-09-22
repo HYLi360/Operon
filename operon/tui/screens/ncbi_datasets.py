@@ -255,7 +255,7 @@ class NcbiDatasetsModal(WriteModal):
             options["plan_only"] = True
         try:
             payload: Any = actions.ncbi_datasets(self.project, **options)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._preflight_done, payload)
 
@@ -375,7 +375,7 @@ class NcbiDatasetsModal(WriteModal):
             payload: Any = actions.ncbi_datasets(
                 self.project, cancel_event=self._cancel_event, **self._run_kwargs,
             )
-        except Exception as exc:  # noqa: BLE001 - routed to _run_done
+        except Exception as exc:  # noqa: BLE001 - routed to _run_done  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._run_done, payload)
 

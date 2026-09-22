@@ -247,7 +247,7 @@ class QcModal(WriteModal):
             payload: Any = actions.run_qc(
                 self.project, file_id=self.file_id, progress=progress, **self._qc_options,
             )
-        except Exception as exc:  # noqa: BLE001 - routed to _qc_done
+        except Exception as exc:  # noqa: BLE001 - routed to _qc_done  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._qc_done, payload)
 

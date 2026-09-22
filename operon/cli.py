@@ -1229,7 +1229,7 @@ def _cmd_qc_measure(args: argparse.Namespace) -> int:
             assembly_fasta=args.assembly_fasta, protein_fasta=args.protein_fasta,
             paired_read=args.paired_read,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level CLI boundary: any error becomes exit 1  # pylint: disable=broad-exception-caught
         print(f"error: {exc}", file=sys.stderr)
         return 1
     text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"

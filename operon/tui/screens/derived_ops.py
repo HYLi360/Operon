@@ -384,7 +384,7 @@ class AdoptModal(WriteModal):
         path = self.query_one("#adopt-manifest", Input).value.strip()
         try:
             payload: Any = len(load_adopt_manifest(path))
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_preview, payload)
 
@@ -553,7 +553,7 @@ class FanoutModal(WriteModal):
     def _dry_run(self, values: dict[str, Any]) -> None:
         try:
             payload: Any = actions.fanout(self.project, dry_run=True, **values)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._dry_run_done, payload)
 

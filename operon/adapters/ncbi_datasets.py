@@ -1194,7 +1194,7 @@ def _record_interrupted_run(ctx: _AdapterRunContext, exc: KeyboardInterrupt) -> 
                        else "interrupted"),
                 execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - failed-run bookkeeping must not mask the original error  # pylint: disable=broad-exception-caught
             pass
 
 
@@ -1429,10 +1429,7 @@ def _local_zip_entry_names(path: Path, limit: int = 200) -> list[str]:
         end = start + name_len
         if end > len(data):
             break
-        try:
-            names.append(data[start:end].decode("utf-8", errors="replace"))
-        except Exception:  # pragma: no cover
-            names.append("<undecodable>")
+        names.append(data[start:end].decode("utf-8", errors="replace"))
         if comp_size == 0xFFFFFFFF:
             break
         offset = end + extra_len + comp_size
@@ -1780,7 +1777,7 @@ def download_ncbi_datasets_parallel(
                 completed_queue=completed_queue,
                 cancel_event=cancel_event,
             ))
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001 - worker-thread errors are ferried to the consumer and re-raised  # pylint: disable=broad-exception-caught
             runner_errors.append(exc)
         finally:
             # Give up once the consumer has gone (error/shutdown): a blocking

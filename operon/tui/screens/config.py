@@ -290,7 +290,7 @@ class HistoryModal(DismissOnce, ModalScreen):
             return
         try:
             document = self.fetch_snapshot(int(row["snapshot_id"]))
-        except Exception as exc:  # noqa: BLE001 - shown inline
+        except Exception as exc:  # noqa: BLE001 - shown inline  # pylint: disable=broad-exception-caught
             self._show_error(exc)
             return
         if event.button.id == "view":
@@ -1118,7 +1118,7 @@ class ConfigPanel(Panel):
 
         try:
             payload: Any = actions.check_tools(self.project, on_result=on_result)
-        except Exception as exc:  # noqa: BLE001 - routed to _tools_check_done
+        except Exception as exc:  # noqa: BLE001 - routed to _tools_check_done  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._tools_check_done, payload)
 

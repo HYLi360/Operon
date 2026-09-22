@@ -125,7 +125,7 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
     def _load(self) -> None:
         try:
             payload: Any = data.analysis_hits(self.project, **self._filters())
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 
@@ -167,7 +167,7 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
         try:
             payload: Any = actions.write_analysis_report(
                 self.project, out=out_path, fmt=fmt, **filters)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_export, payload)
 

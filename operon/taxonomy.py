@@ -655,7 +655,7 @@ def import_ncbi_taxonomy(
                 "input_sha256": source_sha,
                 "error": f"{type(exc).__name__}: {exc}",
             })
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort failed-run bookkeeping; the original exception propagates  # pylint: disable=broad-exception-caught
             pass
         raise
     return {

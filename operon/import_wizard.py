@@ -550,7 +550,7 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                 "command": "import dataset",
                 "error": f"{type(exc).__name__}: {exc}",
             })
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort failed-run bookkeeping; the original exception propagates  # pylint: disable=broad-exception-caught
             pass
         raise
     flush_run_log(project, provenance_buffer)

@@ -659,7 +659,7 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                             project, name, record, db=db, store=stores[name],
                             manifest=manifests[name],
                         )
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 - one broken remote location must not stop the batch  # pylint: disable=broad-exception-caught
                         if opening_store and name not in stores:
                             connection_errors[name] = f"{type(exc).__name__}: {exc}"
                         location_status = db.conn.execute(
@@ -840,7 +840,7 @@ def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> 
     for row in rows:
         try:
             results.append(standardize_file(db, project, row["file_id"], link_kind=link_kind))
-        except Exception as exc:  # one broken file should not stop the batch
+        except Exception as exc:  # noqa: BLE001 - one broken file should not stop the batch  # pylint: disable=broad-exception-caught
             results.append({"file_id": row["file_id"], "error": str(exc)})
     return results
 

@@ -275,7 +275,7 @@ class PublishPanel(Panel):
     def _load_release_preview(self, profile: str, key: Any = None) -> None:
         try:
             payload: Any = data.release_preview(self.project, profile)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_release_preview, payload, key=key)
 
@@ -380,7 +380,7 @@ class PublishPanel(Panel):
                 decision=filters["decision"],
                 profile=filters["profile"],
             )
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_export_preview, payload, key=key)
 

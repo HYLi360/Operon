@@ -217,7 +217,7 @@ def print_decisions(
         try:
             parsed = _json.loads(value or "[]")
             return ", ".join(str(x) for x in parsed) if isinstance(parsed, list) else value or ""
-        except Exception:
+        except ValueError:
             return value or ""
 
     return format_table(

@@ -448,7 +448,7 @@ def run_external(
                     config = load_tools_config(project)
                     tool_version, raw_output = detect_tool_version_record(tool_spec, config)
                     extra_details = {"tool_version_raw": raw_output}
-                except Exception as exc:  # noqa: BLE001 - detection never blocks the run
+                except Exception as exc:  # noqa: BLE001 - detection never blocks the run  # pylint: disable=broad-exception-caught
                     print(f"warning: version detection for {tool!r} failed: {exc}")
         run_id = new_run_id()
         print(f"run {run_id}: logs {project.logs_root / (run_id + '.stdout.log')} / "
@@ -1119,7 +1119,7 @@ def check_tools(
             entry["run_method"] = tool.run_method
             entry["version"] = detect_tool_version(tool, config, timeout=timeout)
             entry["ok"] = True
-        except Exception as exc:  # noqa: BLE001 - one bad tool must not break the batch
+        except Exception as exc:  # noqa: BLE001 - one bad tool must not break the batch  # pylint: disable=broad-exception-caught
             entry["error"] = str(exc)
         results.append(entry)
         if on_result is not None:

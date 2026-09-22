@@ -75,7 +75,7 @@ class SequenceLabelsModal(DismissOnce, WorkerResults, ModalScreen):
                 "file": (data.file_sequence_labels(self.project, self.file_id)
                          if self.file_id is not None else []),
             }
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply, payload)
 

@@ -95,7 +95,7 @@ def source_constant(module: str, name: str) -> str:
     try:
         imported = __import__(f"operon.{module}", fromlist=[name])
         return str(getattr(imported, name))
-    except Exception:
+    except (ImportError, AttributeError):
         source = (REPO_ROOT / "operon" / f"{module}.py").read_text(encoding="utf-8")
         match = re.search(rf'^{name} = "([^"]+)"', source, re.MULTILINE)
         if match is None:

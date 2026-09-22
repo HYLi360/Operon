@@ -491,7 +491,7 @@ class LocalExecutor:
         """Collect the local execution environment document."""
         try:
             return local_environment()
-        except Exception:
+        except Exception:  # noqa: BLE001 - environment probe is best-effort; failures degrade to None  # pylint: disable=broad-exception-caught
             return None
 
     def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
@@ -1414,7 +1414,7 @@ class SSHExecutor:
         )
         try:
             rc, output = self._remote_exec(client, command, timeout=max(5.0, self.connect_timeout))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - termination errors are returned as data to the caller  # pylint: disable=broad-exception-caught
             return False, f"{type(exc).__name__}: {exc}"
         if rc == 0:
             return True, ""
