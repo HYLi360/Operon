@@ -558,6 +558,121 @@ def run_ncbi_datasets_adapter(
 ) -> dict[str, Any]:
     """Import existing NCBI Datasets outputs and optionally download packages."""
 
+    requested = _validate_adapter_args(
+        inputs=inputs,
+        accessions=accessions,
+        accession_file=accession_file,
+        includes=includes,
+        plan_only=plan_only,
+        batch_size=batch_size,
+        download_workers=download_workers,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+    )
+    ctx, download_groups, skipped_existing = _prepare_run(
+        db,
+        project,
+        requested=requested,
+        includes=includes,
+        archive_files=archive_files,
+        standardize=standardize,
+        dry_run=dry_run,
+        preserve_sources=preserve_sources,
+        email=email,
+        api_key=api_key,
+        batch_size=batch_size,
+        download_workers=download_workers,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+    )
+    fingerprint = _request_fingerprint(
+        ctx,
+        inputs=inputs,
+        requested=requested,
+        includes=includes,
+        archive_files=archive_files,
+        standardize=standardize,
+        download_groups=download_groups,
+        skipped_existing=skipped_existing,
+        download_workers=download_workers,
+        max_retries=max_retries,
+        plan_only=plan_only,
+    )
+    if fingerprint is None:
+        return ctx.summary
+    command_text, request_sha256, request_document = fingerprint
+    _begin_run(
+        ctx,
+        requested=requested,
+        includes=includes,
+        resume_run_id=resume_run_id,
+        command_text=command_text,
+        request_sha256=request_sha256,
+        request_document=request_document,
+        skipped_existing=skipped_existing,
+    )
+
+    try:
+        for raw_input in inputs:
+            source = Path(raw_input).resolve()
+            _process_source(ctx, source, label=str(source))
+        if download_groups:
+            _consume_download_batches(
+                ctx,
+                download_groups,
+                batch_size=batch_size,
+                timeout=timeout,
+                download_workers=download_workers,
+                max_retries=max_retries,
+                retry_backoff=retry_backoff,
+            )
+        return _finalize_run(ctx, skipped_existing)
+    except KeyboardInterrupt as exc:
+        _record_interrupted_run(ctx, exc)
+        raise
+    except Exception as exc:
+        reported_exc = _record_failed_run(ctx, exc)
+        if reported_exc is not exc:
+            raise reported_exc from exc
+        raise
+
+
+@dataclass
+class _AdapterRunContext:
+    """Mutable state shared by the per-source import steps of one adapter run."""
+
+    db: Database
+    project: Project
+    run_id: str
+    started_at: str
+    dry_run: bool
+    preserve_sources: bool
+    archive_files: bool
+    standardize: bool
+    email: str | None
+    api_key: str | None
+    preview_schema: Schema
+    summary: dict[str, Any]
+    persisted_schema: Schema | None = None
+    imported_assembly_ids: set[str] = field(default_factory=set)
+    observed_assembly_groups: dict[str, set[str]] = field(default_factory=dict)
+    accession_group: dict[str, str] = field(default_factory=dict)
+    download_failures: list[dict[str, str]] = field(default_factory=list)
+
+
+def _validate_adapter_args(
+        *,
+        inputs: Sequence[str | Path],
+        accessions: Sequence[str],
+        accession_file: str | Path | None,
+        includes: Sequence[str],
+        plan_only: bool,
+        batch_size: int,
+        download_workers: int,
+        max_retries: int,
+        retry_backoff: float,
+) -> list[str]:
+    """Collect requested accessions and reject invalid argument combinations."""
     requested = _collect_accessions(accessions, accession_file)
     if not inputs and not requested:
         raise ValidationError("provide at least one --input, --accession, or --accession-file")
@@ -574,15 +689,29 @@ def run_ncbi_datasets_adapter(
         raise ValidationError("--retries must be between 0 and 10")
     if retry_backoff < 0:
         raise ValidationError("--retry-backoff must be >= 0")
+    return requested
 
+
+def _prepare_run(
+        db: Database,
+        project: Project,
+        *,
+        requested: Sequence[str],
+        includes: Sequence[str],
+        archive_files: bool,
+        standardize: bool,
+        dry_run: bool,
+        preserve_sources: bool,
+        email: str | None,
+        api_key: str | None,
+        batch_size: int,
+        download_workers: int,
+        max_retries: int,
+        retry_backoff: float,
+) -> tuple[_AdapterRunContext, dict[tuple[str, ...], list[str]], list[str]]:
+    """Build the run context, summary skeleton and missing-download plan."""
     run_id = new_run_id()
     started_at = now_iso()
-    preview_schema = _adapter_schema(project, persist=False)
-    persisted_schema: Schema | None = None
-    imported_assembly_ids: set[str] = set()
-    observed_assembly_groups: dict[str, set[str]] = {}
-    accession_group: dict[str, str] = {}
-    download_failures: list[dict[str, str]] = []
     summary: dict[str, Any] = {
         "run_id": run_id,
         "dry_run": dry_run,
@@ -613,6 +742,20 @@ def run_ncbi_datasets_adapter(
         "download_failures": [],
         "skipped_existing": [],
     }
+    ctx = _AdapterRunContext(
+        db=db,
+        project=project,
+        run_id=run_id,
+        started_at=started_at,
+        dry_run=dry_run,
+        preserve_sources=preserve_sources,
+        archive_files=archive_files,
+        standardize=standardize,
+        email=email,
+        api_key=api_key,
+        preview_schema=_adapter_schema(project, persist=False),
+        summary=summary,
+    )
 
     download_groups: dict[tuple[str, ...], list[str]] = {
         tuple(includes): list(requested),
@@ -627,6 +770,25 @@ def run_ncbi_datasets_adapter(
         {"includes": list(signature), "accessions": list(values)}
         for signature, values in download_groups.items()
     ]
+    return ctx, download_groups, skipped_existing
+
+
+def _request_fingerprint(
+        ctx: _AdapterRunContext,
+        *,
+        inputs: Sequence[str | Path],
+        requested: Sequence[str],
+        includes: Sequence[str],
+        archive_files: bool,
+        standardize: bool,
+        download_groups: dict[tuple[str, ...], list[str]],
+        skipped_existing: Sequence[str],
+        download_workers: int,
+        max_retries: int,
+        plan_only: bool,
+) -> tuple[str, str, dict[str, Any]] | None:
+    """Hash the request; return (command, sha256, document), or None for plan-only."""
+    summary = ctx.summary
     to_download_count = sum(len(values) for values in download_groups.values())
     command_text = (
         "offline import" if not requested
@@ -647,7 +809,23 @@ def run_ncbi_datasets_adapter(
     if plan_only:
         summary["plan_only"] = True
         summary["request_sha256"] = request_sha256
-        return summary
+        return None
+    return command_text, request_sha256, request_document
+
+
+def _begin_run(
+        ctx: _AdapterRunContext,
+        *,
+        requested: Sequence[str],
+        includes: Sequence[str],
+        resume_run_id: str | None,
+        command_text: str,
+        request_sha256: str,
+        request_document: dict[str, Any],
+        skipped_existing: Sequence[str],
+) -> None:
+    """Validate a resume request and open the workflow run with its items."""
+    db = ctx.db
     if resume_run_id:
         previous = db.conn.execute(
             "SELECT run_id, input_sha256 FROM workflow_runs WHERE run_id=?",
@@ -660,13 +838,13 @@ def run_ncbi_datasets_adapter(
                 "--resume-run request differs from the original run; use the same inputs, "
                 "accessions, include set and archival options"
             )
-    if not dry_run:
+    if not ctx.dry_run:
         start_run(db, {
-            "run_id": run_id,
+            "run_id": ctx.run_id,
             "resumes_run_id": resume_run_id,
             "step": "ncbi_datasets_import",
             "status": "running",
-            "started_at": started_at,
+            "started_at": ctx.started_at,
             "tool": "NCBI Datasets adapter",
             "parameter_set": ",".join(includes),
             "command": command_text,
@@ -676,8 +854,8 @@ def run_ncbi_datasets_adapter(
         for accession in requested:
             status = "skipped" if accession in skipped_existing else "pending"
             db.upsert_adapter_run_item(
-                run_id, accession, json.dumps(list(includes)), status,
-                started_at=started_at,
+                ctx.run_id, accession, json.dumps(list(includes)), status,
+                started_at=ctx.started_at,
                 finished_at=now_iso() if status == "skipped" else None,
                 result_json=(
                     json.dumps({"reason": "requested roles already archived"})
@@ -685,290 +863,345 @@ def run_ncbi_datasets_adapter(
                 ),
             )
 
-    def process_source(
-            source_path: Path,
-            *,
-            label: str,
-            requested_batch: Sequence[str] = (),
-            already_preserved: Path | None = None,
-    ) -> dict[str, Any]:
-        nonlocal persisted_schema
-        bundle = _open_source(source_path, project, False, label=label)
-        try:
-            bundle_reports = load_dataset_reports(
-                bundle.root,
-                direct_file=bundle.source if bundle.source.is_file() else None,
-            )
-            if not bundle_reports and requested_batch and (email or os.environ.get("NCBI_EMAIL")):
-                bundle_reports.extend(fetch_entrez_assembly_reports(
-                    requested_batch,
-                    email=email or os.environ.get("NCBI_EMAIL"),
-                    api_key=api_key or os.environ.get("NCBI_API_KEY"),
-                ))
-            bundle_assets = discover_dataset_assets(bundle.root, bundle_reports, bundle.label)
-            source_summary = {
-                "source": bundle.label,
-                "preserved_path": (
-                    project_rel(project, already_preserved) if already_preserved else None
-                ),
-                "reports": len(bundle_reports),
-                "assets": len(bundle_assets),
-            }
-            summary["sources"].append(source_summary)
-            if not bundle_reports:
-                return {}
 
-            # Track report identity independently of allocated IDs.  This
-            # keeps large --dry-run summaries correct even though dry runs do
-            # not write one batch's ID allocations for the next batch to see.
-            for report in bundle_reports:
-                meta = _extract_metadata(report)
-                related = set(_unique([
-                    meta.get("accession"),
-                    meta.get("current_accession"),
-                    meta.get("paired_accession"),
-                ]))
-                if not related:  # pragma: no cover
-                    continue
-                roots = {accession_group[item] for item in related if item in accession_group}
-                root = min(roots) if roots else min(related)
-                members = set(related)
-                for old_root in roots:
-                    members.update(observed_assembly_groups.pop(old_root, set()))
-                observed_assembly_groups[root] = members
-                for item in members:
-                    accession_group[item] = root
+def _process_source(
+        ctx: _AdapterRunContext,
+        source_path: Path,
+        *,
+        label: str,
+        requested_batch: Sequence[str] = (),
+        already_preserved: Path | None = None,
+) -> dict[str, Any]:
+    """Import one source bundle (offline input or downloaded package)."""
+    db = ctx.db
+    project = ctx.project
+    summary = ctx.summary
+    bundle = _open_source(source_path, project, False, label=label)
+    try:
+        bundle_reports = load_dataset_reports(
+            bundle.root,
+            direct_file=bundle.source if bundle.source.is_file() else None,
+        )
+        if not bundle_reports and requested_batch and (ctx.email or os.environ.get("NCBI_EMAIL")):
+            bundle_reports.extend(fetch_entrez_assembly_reports(
+                requested_batch,
+                email=ctx.email or os.environ.get("NCBI_EMAIL"),
+                api_key=ctx.api_key or os.environ.get("NCBI_API_KEY"),
+            ))
+        bundle_assets = discover_dataset_assets(bundle.root, bundle_reports, bundle.label)
+        source_summary = {
+            "source": bundle.label,
+            "preserved_path": (
+                project_rel(project, already_preserved) if already_preserved else None
+            ),
+            "reports": len(bundle_reports),
+            "assets": len(bundle_assets),
+        }
+        summary["sources"].append(source_summary)
+        if not bundle_reports:
+            return {}
 
-            plan = _PlanBuilder(db).build(bundle_reports, bundle_assets)
-            _preflight_assets(db, plan)
-            _validate_plan_rows(preview_schema, plan)
-            imported_assembly_ids.update(plan.assembly_ids.values())
-            for table, rows in plan.tables.items():
-                summary["metadata_rows"][table] += len(rows)
-            for entity_type, count in plan.new_ids.items():
-                summary["new_ids"][entity_type] += count
-            summary["discovered_files"] += len(plan.assets)
-            if dry_run:
-                return {
-                    "assembly_ids": sorted(set(plan.assembly_ids.values())),
-                    "annotation_ids": sorted(set(plan.annotation_ids.values())),
-                    "file_ids": [],
-                }
+        _track_assembly_groups(ctx, bundle_reports)
 
-            if preserve_sources and already_preserved is None and bundle.source.is_file():
-                bundle.preserved_path = _preserve_source(bundle.source, project)
-                source_summary["preserved_path"] = project_rel(project, bundle.preserved_path)
-
-            if persisted_schema is None:
-                persisted_schema = _adapter_schema(project, persist=True)
-            _apply_plan(
-                db, project, plan, persisted_schema, workflow_run_id=run_id,
-            )
-            source_file_ids: list[str] = []
-            if archive_files:
-                for asset in plan.assets:
-                    accession = _canonical_accession(asset.accession)
-                    if asset.role in {"annotation_gff3", "cds_fasta", "protein_fasta"}:
-                        entity_type = "annotation"
-                        entity_id = plan.annotation_ids[accession]
-                    else:
-                        entity_type = "assembly"
-                        entity_id = plan.assembly_ids[accession]
-                    row = _ingest_dataset_asset(
-                        db,
-                        project,
-                        asset,
-                        entity_type,
-                        entity_id,
-                        run_id=run_id,
-                        standardize=standardize,
-                    )
-                    summary["archived_files"].append(row["file_id"])
-                    source_file_ids.append(row["file_id"])
-                    if entity_type == "assembly":
-                        pointer = (
-                            "genome_file_id" if asset.role.startswith("genome_fasta")
-                            else "report_file_id" if asset.role.startswith("assembly_report")
-                            else None
-                        )
-                        if pointer:  # pragma: no branch
-                            with db.transaction():
-                                db.conn.execute(
-                                    f"UPDATE ncbi_assembly_records SET {pointer}=?, "
-                                    "workflow_run_id=?, updated_at=? WHERE accession=?",  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
-                                    (row["file_id"], run_id, now_iso(), accession),
-                                )
-                    if row.get("standardized_file_id"):
-                        summary["standardized_files"].append(row["standardized_file_id"])
+        plan = _PlanBuilder(db).build(bundle_reports, bundle_assets)
+        _preflight_assets(db, plan)
+        _validate_plan_rows(ctx.preview_schema, plan)
+        ctx.imported_assembly_ids.update(plan.assembly_ids.values())
+        for table, rows in plan.tables.items():
+            summary["metadata_rows"][table] += len(rows)
+        for entity_type, count in plan.new_ids.items():
+            summary["new_ids"][entity_type] += count
+        summary["discovered_files"] += len(plan.assets)
+        if ctx.dry_run:
             return {
                 "assembly_ids": sorted(set(plan.assembly_ids.values())),
                 "annotation_ids": sorted(set(plan.annotation_ids.values())),
-                "file_ids": source_file_ids,
+                "file_ids": [],
             }
-        finally:
-            # Critical for large accession lists: no source bundle or staging
-            # directory is allowed to survive into the next batch.
-            bundle.close()
 
-    try:
-        for raw_input in inputs:
-            source = Path(raw_input).resolve()
-            process_source(source, label=str(source))
-        if download_groups:
-            # Keep downloads off /tmp: it is commonly a small tmpfs.  The
-            # staging directory lives on the project filesystem.  Batches are
-            # downloaded concurrently and consumed as soon as each finishes.
-            with tempfile.TemporaryDirectory(
-                    prefix=".operon-ncbi-download-", dir=str(project.root)
-            ) as temp_name:
-                for missing_signature, group_accessions in download_groups.items():
-                    batches = list(_chunks(group_accessions, batch_size))
+        if ctx.preserve_sources and already_preserved is None and bundle.source.is_file():
+            bundle.preserved_path = _preserve_source(bundle.source, project)
+            source_summary["preserved_path"] = project_rel(project, bundle.preserved_path)
 
-                    def consume_batch(batch: Sequence[str], zip_path: Path) -> None:
-                        preserved_path: Path | None = None
-                        source_path = zip_path
-                        if not dry_run:
-                            for accession in batch:
-                                db.upsert_adapter_run_item(
-                                    run_id, accession, json.dumps(list(missing_signature)),
-                                    "downloading", started_at=now_iso(),
-                                )
-                        try:
-                            if preserve_sources and not dry_run:
-                                preserved_path = _preserve_source(zip_path, project, move=True)
-                                source_path = preserved_path
-                            result = process_source(
-                                source_path,
-                                label=f"download:{','.join(batch)}",
-                                requested_batch=batch,
-                                already_preserved=preserved_path,
-                            )
-                            if not dry_run:
-                                for accession in batch:
-                                    db.upsert_adapter_run_item(
-                                        run_id, accession, json.dumps(list(missing_signature)),
-                                        "completed", started_at=started_at, finished_at=now_iso(),
-                                        result_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
-                                    )
-                        except BaseException as exc:
-                            if not dry_run:
-                                status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
-                                for accession in batch:
-                                    db.upsert_adapter_run_item(
-                                        run_id, accession, json.dumps(list(missing_signature)),
-                                        status, started_at=started_at, finished_at=now_iso(),
-                                        error=f"{type(exc).__name__}: {exc}",
-                                    )
-                            raise
-                        finally:
-                            zip_path.unlink(missing_ok=True)
-
-                    def record_download_failure(batch: Sequence[str], error: BaseException) -> None:
-                        download_failures.append({
-                            "accessions": ",".join(batch),
-                            "includes": ",".join(missing_signature),
-                            "error": f"{type(error).__name__}: {error}",
-                        })
-                        summary["download_failures"] = download_failures
-                        if not dry_run:
-                            for accession in batch:
-                                db.upsert_adapter_run_item(
-                                    run_id, accession, json.dumps(list(missing_signature)),
-                                    "failed", started_at=started_at, finished_at=now_iso(),
-                                    error=f"{type(error).__name__}: {error}",
-                                )
-
-                    download_ncbi_datasets_parallel(
-                        batches,
-                        Path(temp_name),
-                        includes=missing_signature,
-                        email=email,
-                        api_key=api_key,
-                        timeout=timeout,
-                        max_workers=download_workers,
-                        max_retries=max_retries,
-                        retry_backoff=retry_backoff,
-                        on_complete=consume_batch,
-                        on_error=record_download_failure,
-                    )
-
-        if download_failures and dry_run:
-            summary["assembly_records"] = len(observed_assembly_groups)
-            return summary
-        if not imported_assembly_ids and not skipped_existing:
-            if download_failures:
-                details = "\n".join(
-                    f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
-                )
-                raise ValidationError(
-                    "no NCBI assembly records could be imported; download batch failures:\n" + details
-                )
-            raise ValidationError("no NCBI assembly records found in the supplied input/download")
-        summary["assembly_records"] = len(observed_assembly_groups)
-        if dry_run:
-            return summary
-        evidence = ", ".join(
-            item["preserved_path"] for item in summary["sources"] if item["preserved_path"]
-        ) or None
-        db.record_change(
-            "adapter",
-            run_id,
-            None,
-            None,
-            json.dumps(summary, ensure_ascii=False, sort_keys=True),
-            "NCBI Datasets import",
-            evidence=evidence,
-            actor=os.environ.get("USER"),
-            workflow_run_id=run_id,
+        if ctx.persisted_schema is None:
+            ctx.persisted_schema = _adapter_schema(project, persist=True)
+        _apply_plan(
+            db, project, plan, ctx.persisted_schema, workflow_run_id=ctx.run_id,
         )
+        source_file_ids = _archive_plan_assets(ctx, plan)
+        return {
+            "assembly_ids": sorted(set(plan.assembly_ids.values())),
+            "annotation_ids": sorted(set(plan.annotation_ids.values())),
+            "file_ids": source_file_ids,
+        }
+    finally:
+        # Critical for large accession lists: no source bundle or staging
+        # directory is allowed to survive into the next batch.
+        bundle.close()
+
+
+def _track_assembly_groups(ctx: _AdapterRunContext, bundle_reports: Sequence[dict[str, Any]]) -> None:
+    """Track report identity independently of allocated IDs."""
+    # This keeps large --dry-run summaries correct even though dry runs do
+    # not write one batch's ID allocations for the next batch to see.
+    observed_assembly_groups = ctx.observed_assembly_groups
+    accession_group = ctx.accession_group
+    for report in bundle_reports:
+        meta = _extract_metadata(report)
+        related = set(_unique([
+            meta.get("accession"),
+            meta.get("current_accession"),
+            meta.get("paired_accession"),
+        ]))
+        if not related:  # pragma: no cover
+            continue
+        roots = {accession_group[item] for item in related if item in accession_group}
+        root = min(roots) if roots else min(related)
+        members = set(related)
+        for old_root in roots:
+            members.update(observed_assembly_groups.pop(old_root, set()))
+        observed_assembly_groups[root] = members
+        for item in members:
+            accession_group[item] = root
+
+
+def _archive_plan_assets(ctx: _AdapterRunContext, plan: ImportPlan) -> list[str]:
+    """Archive every planned asset and return the source file IDs."""
+    db = ctx.db
+    project = ctx.project
+    summary = ctx.summary
+    source_file_ids: list[str] = []
+    if ctx.archive_files:
+        for asset in plan.assets:
+            accession = _canonical_accession(asset.accession)
+            if asset.role in {"annotation_gff3", "cds_fasta", "protein_fasta"}:
+                entity_type = "annotation"
+                entity_id = plan.annotation_ids[accession]
+            else:
+                entity_type = "assembly"
+                entity_id = plan.assembly_ids[accession]
+            row = _ingest_dataset_asset(
+                db,
+                project,
+                asset,
+                entity_type,
+                entity_id,
+                run_id=ctx.run_id,
+                standardize=ctx.standardize,
+            )
+            summary["archived_files"].append(row["file_id"])
+            source_file_ids.append(row["file_id"])
+            if entity_type == "assembly":
+                pointer = (
+                    "genome_file_id" if asset.role.startswith("genome_fasta")
+                    else "report_file_id" if asset.role.startswith("assembly_report")
+                    else None
+                )
+                if pointer:  # pragma: no branch
+                    with db.transaction():
+                        db.conn.execute(
+                            f"UPDATE ncbi_assembly_records SET {pointer}=?, "
+                            "workflow_run_id=?, updated_at=? WHERE accession=?",  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                            (row["file_id"], ctx.run_id, now_iso(), accession),
+                        )
+            if row.get("standardized_file_id"):
+                summary["standardized_files"].append(row["standardized_file_id"])
+    return source_file_ids
+
+
+def _consume_download_batch(
+        ctx: _AdapterRunContext,
+        batch: Sequence[str],
+        zip_path: Path,
+        *,
+        includes: Sequence[str],
+) -> None:
+    """Preserve and import one downloaded batch ZIP, tracking per-accession status."""
+    db = ctx.db
+    preserved_path: Path | None = None
+    source_path = zip_path
+    if not ctx.dry_run:
+        for accession in batch:
+            db.upsert_adapter_run_item(
+                ctx.run_id, accession, json.dumps(list(includes)),
+                "downloading", started_at=now_iso(),
+            )
+    try:
+        if ctx.preserve_sources and not ctx.dry_run:
+            preserved_path = _preserve_source(zip_path, ctx.project, move=True)
+            source_path = preserved_path
+        result = _process_source(
+            ctx,
+            source_path,
+            label=f"download:{','.join(batch)}",
+            requested_batch=batch,
+            already_preserved=preserved_path,
+        )
+        if not ctx.dry_run:
+            for accession in batch:
+                db.upsert_adapter_run_item(
+                    ctx.run_id, accession, json.dumps(list(includes)),
+                    "completed", started_at=ctx.started_at, finished_at=now_iso(),
+                    result_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
+                )
+    except BaseException as exc:
+        if not ctx.dry_run:
+            status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+            for accession in batch:
+                db.upsert_adapter_run_item(
+                    ctx.run_id, accession, json.dumps(list(includes)),
+                    status, started_at=ctx.started_at, finished_at=now_iso(),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+        raise
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+
+def _record_download_failure(
+        ctx: _AdapterRunContext,
+        batch: Sequence[str],
+        error: BaseException,
+        *,
+        includes: Sequence[str],
+) -> None:
+    """Record one failed download batch in the summary and the run items."""
+    ctx.download_failures.append({
+        "accessions": ",".join(batch),
+        "includes": ",".join(includes),
+        "error": f"{type(error).__name__}: {error}",
+    })
+    ctx.summary["download_failures"] = ctx.download_failures
+    if not ctx.dry_run:
+        for accession in batch:
+            ctx.db.upsert_adapter_run_item(
+                ctx.run_id, accession, json.dumps(list(includes)),
+                "failed", started_at=ctx.started_at, finished_at=now_iso(),
+                error=f"{type(error).__name__}: {error}",
+            )
+
+
+def _consume_download_batches(
+        ctx: _AdapterRunContext,
+        download_groups: dict[tuple[str, ...], list[str]],
+        *,
+        batch_size: int,
+        timeout: float,
+        download_workers: int,
+        max_retries: int,
+        retry_backoff: float,
+) -> None:
+    """Download the planned batches concurrently and import each as it lands."""
+    # Keep downloads off /tmp: it is commonly a small tmpfs.  The
+    # staging directory lives on the project filesystem.  Batches are
+    # downloaded concurrently and consumed as soon as each finishes.
+    with tempfile.TemporaryDirectory(
+            prefix=".operon-ncbi-download-", dir=str(ctx.project.root)
+    ) as temp_name:
+        for missing_signature, group_accessions in download_groups.items():
+            batches = list(_chunks(group_accessions, batch_size))
+            download_ncbi_datasets_parallel(
+                batches,
+                Path(temp_name),
+                includes=missing_signature,
+                email=ctx.email,
+                api_key=ctx.api_key,
+                timeout=timeout,
+                max_workers=download_workers,
+                max_retries=max_retries,
+                retry_backoff=retry_backoff,
+                on_complete=lambda batch, zip_path, signature=missing_signature:
+                    _consume_download_batch(ctx, batch, zip_path, includes=signature),
+                on_error=lambda batch, error, signature=missing_signature:
+                    _record_download_failure(ctx, batch, error, includes=signature),
+            )
+
+
+def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> dict[str, Any]:
+    """Record the audit entry and close out the run, or raise on failures."""
+    db = ctx.db
+    summary = ctx.summary
+    download_failures = ctx.download_failures
+    if download_failures and ctx.dry_run:
+        summary["assembly_records"] = len(ctx.observed_assembly_groups)
+        return summary
+    if not ctx.imported_assembly_ids and not skipped_existing:
         if download_failures:
-            failed_count = len(download_failures)
             details = "\n".join(
                 f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
             )
-            if failed_count > 20:
-                details += f"\n- ... and {failed_count - 20} more failed batch(es)"
             raise ValidationError(
-                f"{failed_count} NCBI download batch(es) failed while other batches were imported successfully:\n"
-                + details
+                "no NCBI assembly records could be imported; download batch failures:\n" + details
             )
-        finish_run(
-            db, project, run_id, status="completed", exit_code=0,
-            execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
-        )
+        raise ValidationError("no NCBI assembly records found in the supplied input/download")
+    summary["assembly_records"] = len(ctx.observed_assembly_groups)
+    if ctx.dry_run:
         return summary
-    except KeyboardInterrupt as exc:
-        # SIGINT/SIGTERM (ShutdownRequested included): record the interruption
-        # so an aborted run is visible in the audit trail instead of looking
-        # like it never happened.
-        if not dry_run:
-            try:
-                signum = getattr(exc, "signum", None)
-                finish_run(
-                    db, project, run_id, status="interrupted", exit_code=130,
-                    error=(f"interrupted by signal {signum}" if signum is not None
-                           else "interrupted"),
-                    execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
-                )
-            except Exception:
-                pass
-        raise
-    except Exception as exc:
-        reported_exc: Exception = exc
-        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-            reported_exc = _no_space_error(project.root, "NCBI Datasets import", exc)
-        if not dry_run:
-            try:
-                finish_run(
-                    db, project, run_id, status="failed", exit_code=1,
-                    error=str(reported_exc),
-                    execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
-                )
-            except Exception:
-                pass
-        if reported_exc is not exc:
-            raise reported_exc from exc
-        raise
+    evidence = ", ".join(
+        item["preserved_path"] for item in summary["sources"] if item["preserved_path"]
+    ) or None
+    db.record_change(
+        "adapter",
+        ctx.run_id,
+        None,
+        None,
+        json.dumps(summary, ensure_ascii=False, sort_keys=True),
+        "NCBI Datasets import",
+        evidence=evidence,
+        actor=os.environ.get("USER"),
+        workflow_run_id=ctx.run_id,
+    )
+    if download_failures:
+        failed_count = len(download_failures)
+        details = "\n".join(
+            f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
+        )
+        if failed_count > 20:
+            details += f"\n- ... and {failed_count - 20} more failed batch(es)"
+        raise ValidationError(
+            f"{failed_count} NCBI download batch(es) failed while other batches were imported successfully:\n"
+            + details
+        )
+    finish_run(
+        db, ctx.project, ctx.run_id, status="completed", exit_code=0,
+        execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
+    )
+    return summary
+
+
+def _record_interrupted_run(ctx: _AdapterRunContext, exc: KeyboardInterrupt) -> None:
+    """Best-effort interruption record so aborted runs stay in the audit trail."""
+    # SIGINT/SIGTERM (ShutdownRequested included): record the interruption
+    # so an aborted run is visible in the audit trail instead of looking
+    # like it never happened.
+    if not ctx.dry_run:
+        try:
+            signum = getattr(exc, "signum", None)
+            finish_run(
+                ctx.db, ctx.project, ctx.run_id, status="interrupted", exit_code=130,
+                error=(f"interrupted by signal {signum}" if signum is not None
+                       else "interrupted"),
+                execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
+            )
+        except Exception:
+            pass
+
+
+def _record_failed_run(ctx: _AdapterRunContext, exc: Exception) -> Exception:
+    """Translate ENOSPC, best-effort record the failure, return the error to raise."""
+    reported_exc: Exception = exc
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        reported_exc = _no_space_error(ctx.project.root, "NCBI Datasets import", exc)
+    if not ctx.dry_run:
+        try:
+            finish_run(
+                ctx.db, ctx.project, ctx.run_id, status="failed", exit_code=1,
+                error=str(reported_exc),
+                execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
+            )
+        except Exception:
+            pass
+    return reported_exc
 
 
 _ANNOTATION_INCLUDE_ROLES = {
@@ -1304,6 +1537,143 @@ def download_ncbi_dataset(
     ) from last_error
 
 
+def _download_headers(email: str | None, api_key: str | None) -> dict[str, str]:
+    """Common request headers for the NCBI Datasets package endpoint."""
+    headers = {
+        "Accept": "application/zip",
+        "User-Agent": f"Operon/{__version__} NCBI-Datasets-Adapter ({email or 'email-not-provided'})",
+    }
+    if api_key:
+        headers["api-key"] = api_key
+    return headers
+
+
+def _download_params(includes: Sequence[str]) -> list[tuple[str, str]]:
+    """Include-type query parameters for the package endpoint."""
+    return [("include_annotation_type", INCLUDE_TYPES[name]) for name in includes]
+
+
+def _response_content_length(headers: Any) -> int | None:
+    """Best-effort Content-Length parsing; None when absent or unreadable."""
+    try:
+        return int((headers or {}).get("Content-Length", "") or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def _zip_download_precheck(destination: Path, content_length: int | None) -> tuple[int, str]:
+    """Reserve disk space and open the staging temp file for a ZIP download."""
+    if content_length:
+        _require_disk_space(destination.parent, content_length, "download NCBI dataset package")
+    return tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
+
+
+def _finalize_zip_download(tmp_name: str, destination: Path, canonical: Sequence[str]) -> None:
+    """Validate the staged payload as a ZIP and promote it to the destination."""
+    if not zipfile.is_zipfile(tmp_name):
+        retryable, detail = _zip_package_diagnostic(Path(tmp_name), canonical)
+        if retryable:
+            raise _RetryableDownloadError(detail) from None
+        raise ValidationError(detail) from None
+    os.replace(tmp_name, destination)
+
+
+def _discard_zip_tempfile(tmp_name: str) -> None:
+    """Best-effort removal of the staging temp file after a failed download."""
+    try:
+        os.unlink(tmp_name)
+    except OSError:
+        pass
+
+
+def _stream_zip_to_destination(
+        destination: Path,
+        *,
+        chunks: Iterable[bytes],
+        content_length: int | None,
+        canonical: Sequence[str],
+        retryable_stream_errors: tuple[type[BaseException], ...] = (),
+) -> Path:
+    """Write response chunks to the destination as a validated ZIP package."""
+    fd, tmp_name = _zip_download_precheck(destination, content_length)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            for chunk in chunks:
+                if chunk:
+                    handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _finalize_zip_download(tmp_name, destination, canonical)
+    except BaseException as exc:
+        _discard_zip_tempfile(tmp_name)
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+        if isinstance(exc, retryable_stream_errors):
+            raise _RetryableDownloadError(str(exc)) from exc
+        raise
+    return destination
+
+
+def _request_zip_response(
+        session: Any,
+        *,
+        joined: str,
+        params: Sequence[tuple[str, str]],
+        headers: dict[str, str],
+        timeout: float,
+) -> Any:
+    """GET the package from the primary API base, then the fallback on 404/410."""
+    import requests
+
+    response = None
+    last_error: Exception | None = None
+    for base in (NCBI_DATASETS_API, NCBI_DATASETS_API_FALLBACK):
+        url = f"{base}/genome/accession/{quote(joined, safe=',._')}/download"
+        try:
+            response = session.get(
+                url,
+                params=params,
+                headers=headers,
+                stream=True,
+                timeout=(30.0, timeout),
+            )
+            if response is None:
+                raise _RetryableDownloadError("HTTP client returned no response")
+            if response.status_code in {404, 410} and base == NCBI_DATASETS_API:
+                response.close()
+                response = None
+                continue
+            if response.status_code in RETRYABLE_HTTP_STATUS:
+                raise _RetryableDownloadError(f"HTTP {response.status_code} from NCBI Datasets")
+            try:
+                response.raise_for_status()
+            except BaseException:
+                response.close()
+                raise
+            break
+        except _RetryableDownloadError as exc:
+            last_error = exc
+            if response is not None:
+                response.close()
+                response = None
+            if base == NCBI_DATASETS_API_FALLBACK:
+                raise
+        except (ssl.SSLError, requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as exc:
+            last_error = exc
+            if response is not None:  # pragma: no cover
+                response.close()
+                response = None
+            if base == NCBI_DATASETS_API_FALLBACK:
+                raise _RetryableDownloadError(str(exc)) from exc
+
+    if response is None:  # pragma: no cover
+        if last_error is None:
+            last_error = ValidationError("NCBI Datasets returned no downloadable package")
+        raise ValidationError(f"NCBI Datasets download failed: {last_error}") from last_error
+    return response
+
+
 def _download_ncbi_dataset_once(
         *,
         canonical: Sequence[str],
@@ -1317,109 +1687,27 @@ def _download_ncbi_dataset_once(
     """One download attempt over primary and fallback API bases."""
     import requests
 
-    headers = {
-        "Accept": "application/zip",
-        "User-Agent": f"Operon/{__version__} NCBI-Datasets-Adapter ({email or 'email-not-provided'})",
-    }
-    if api_key:
-        headers["api-key"] = api_key
-    params = [("include_annotation_type", INCLUDE_TYPES[name]) for name in includes]
+    headers = _download_headers(email, api_key)
+    params = _download_params(includes)
     joined = ",".join(canonical)
-    response = None
-    last_error: Exception | None = None
+    response = _request_zip_response(
+        session, joined=joined, params=params, headers=headers, timeout=timeout,
+    )
     try:
-        for base in (NCBI_DATASETS_API, NCBI_DATASETS_API_FALLBACK):
-            url = f"{base}/genome/accession/{quote(joined, safe=',._')}/download"
-            try:
-                response = session.get(
-                    url,
-                    params=params,
-                    headers=headers,
-                    stream=True,
-                    timeout=(30.0, timeout),
-                )
-                if response is None:
-                    raise _RetryableDownloadError("HTTP client returned no response")
-                if response.status_code in {404, 410} and base == NCBI_DATASETS_API:
-                    response.close()
-                    response = None
-                    continue
-                if response.status_code in RETRYABLE_HTTP_STATUS:
-                    raise _RetryableDownloadError(f"HTTP {response.status_code} from NCBI Datasets")
-                response.raise_for_status()
-                break
-            except _RetryableDownloadError as exc:
-                last_error = exc
-                if response is not None:
-                    response.close()
-                    response = None
-                if base == NCBI_DATASETS_API_FALLBACK:
-                    raise
-            except ssl.SSLError as exc:
-                last_error = exc
-                if response is not None:  # pragma: no cover
-                    response.close()
-                    response = None
-                if base == NCBI_DATASETS_API_FALLBACK:
-                    raise _RetryableDownloadError(str(exc)) from exc
-            except requests.exceptions.ConnectionError as exc:
-                last_error = exc
-                if response is not None:  # pragma: no cover
-                    response.close()
-                    response = None
-                if base == NCBI_DATASETS_API_FALLBACK:
-                    raise _RetryableDownloadError(str(exc)) from exc
-            except requests.exceptions.Timeout as exc:
-                last_error = exc
-                if response is not None:  # pragma: no cover
-                    response.close()
-                    response = None
-                if base == NCBI_DATASETS_API_FALLBACK:
-                    raise _RetryableDownloadError(str(exc)) from exc
-
-        if response is None:  # pragma: no cover
-            if last_error is None:
-                last_error = ValidationError("NCBI Datasets returned no downloadable package")
-            raise ValidationError(f"NCBI Datasets download failed: {last_error}") from last_error
-
-        content_length = None
-        response_headers = getattr(response, "headers", {}) or {}
-        try:
-            content_length = int(response_headers.get("Content-Length", ""))
-        except (TypeError, ValueError):
-            content_length = None
-        if content_length is not None and content_length > 0:
-            _require_disk_space(destination.parent, content_length, "download NCBI dataset package")
-
-        fd, tmp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        handle.write(chunk)
-                handle.flush()
-                os.fsync(handle.fileno())
-            if not zipfile.is_zipfile(tmp_name):
-                retryable, detail = _zip_package_diagnostic(Path(tmp_name), canonical)
-                if retryable:
-                    raise _RetryableDownloadError(detail) from None
-                raise ValidationError(detail) from None
-            os.replace(tmp_name, destination)
-        except BaseException as exc:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-            if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-                raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
-            if isinstance(exc, (ssl.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout,
-                                requests.exceptions.ChunkedEncodingError)):
-                raise _RetryableDownloadError(str(exc)) from exc
-            raise
-        return destination
+        return _stream_zip_to_destination(
+            destination,
+            chunks=response.iter_content(chunk_size=1024 * 1024),
+            content_length=_response_content_length(getattr(response, "headers", None)),
+            canonical=canonical,
+            retryable_stream_errors=(
+                ssl.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ChunkedEncodingError,
+            ),
+        )
     finally:
-        if response is not None:
-            response.close()
+        response.close()
 
 
 def download_ncbi_datasets_parallel(
@@ -1598,6 +1886,90 @@ async def _interruptible_retry_sleep(seconds: float, cancel_event: Any) -> None:
         remaining -= step
 
 
+async def _fetch_zip_response(session: Any, urls: Sequence[str], params: Sequence[tuple[str, str]]) -> Any:
+    """GET the package from the primary API base, then the fallback on 404/410."""
+    import aiohttp
+
+    response = None
+    for index, url in enumerate(urls):
+        try:
+            response = await session.get(url, params=params)
+            if response.status in {404, 410} and index == 0:
+                response.release()
+                response = None
+                continue
+            if response.status in RETRYABLE_HTTP_STATUS:
+                raise _RetryableDownloadError(f"HTTP {response.status} from NCBI Datasets")
+            response.raise_for_status()
+            break
+        except _RetryableDownloadError:
+            if response is not None:  # pragma: no branch
+                response.release()
+                response = None
+            if index == len(urls) - 1:
+                raise
+        except (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
+                aiohttp.ServerDisconnectedError, asyncio.TimeoutError, ssl.SSLError) as exc:
+            if response is not None:  # pragma: no cover
+                response.release()
+                response = None
+            if index == len(urls) - 1:
+                raise _RetryableDownloadError(str(exc)) from exc
+    if response is None:  # pragma: no cover
+        raise _RetryableDownloadError("NCBI Datasets returned no downloadable package")
+    return response
+
+
+async def _astream_zip_to_destination(
+        destination: Path,
+        *,
+        response: Any,
+        content_length: int | None,
+        canonical: Sequence[str],
+        cancel_event: Any,
+) -> Path:
+    """Write an aiohttp response body to the destination as a validated ZIP."""
+    fd, tmp_name = _zip_download_precheck(destination, content_length)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            async for chunk in response.content.iter_chunked(1024 * 1024):
+                if cancel_event.is_set():
+                    raise _DownloadCancelled()
+                handle.write(chunk)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _finalize_zip_download(tmp_name, destination, canonical)
+    except BaseException as exc:
+        _discard_zip_tempfile(tmp_name)
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+        raise
+    return destination
+
+
+def _classify_attempt_failure(exc: BaseException, destination: Path) -> BaseException:
+    """Map one failed attempt to its retry error; fatal errors are raised."""
+    import aiohttp
+
+    if isinstance(exc, _DownloadCancelled):
+        raise exc
+    if isinstance(exc, _RetryableDownloadError):
+        return exc
+    if isinstance(exc, (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
+                        aiohttp.ServerDisconnectedError, aiohttp.ClientPayloadError,
+                        asyncio.TimeoutError, ssl.SSLError)):
+        return exc
+    if isinstance(exc, OSError):
+        if exc.errno == errno.ENOSPC:
+            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+        return exc
+    if isinstance(exc, aiohttp.ClientResponseError):
+        if exc.status in RETRYABLE_HTTP_STATUS:
+            return exc
+        raise ValidationError(f"NCBI Datasets download failed: {exc}") from exc
+    raise exc
+
+
 async def _download_batch_aiohttp(
         accessions: Sequence[str],
         destination: Path,
@@ -1618,13 +1990,8 @@ async def _download_batch_aiohttp(
         raise ValidationError("no NCBI assembly accessions supplied for download")
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    headers = {
-        "Accept": "application/zip",
-        "User-Agent": f"Operon/{__version__} NCBI-Datasets-Adapter ({email or 'email-not-provided'})",
-    }
-    if api_key:
-        headers["api-key"] = api_key
-    params = [("include_annotation_type", INCLUDE_TYPES[name]) for name in includes]
+    headers = _download_headers(email, api_key)
+    params = _download_params(includes)
     joined = ",".join(canonical)
     urls = [
         f"{base}/genome/accession/{quote(joined, safe=',._')}/download"
@@ -1643,82 +2010,19 @@ async def _download_batch_aiohttp(
             )
         try:
             async with aiohttp.ClientSession(headers=headers, timeout=client_timeout) as session:
-                response = None
-                for index, url in enumerate(urls):
-                    try:
-                        response = await session.get(url, params=params)
-                        if response.status in {404, 410} and index == 0:
-                            response.release()
-                            response = None
-                            continue
-                        if response.status in RETRYABLE_HTTP_STATUS:
-                            raise _RetryableDownloadError(f"HTTP {response.status} from NCBI Datasets")
-                        response.raise_for_status()
-                        break
-                    except _RetryableDownloadError:
-                        if response is not None:  # pragma: no branch
-                            response.release()
-                            response = None
-                        if index == len(urls) - 1:
-                            raise
-                    except (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
-                            aiohttp.ServerDisconnectedError, asyncio.TimeoutError, ssl.SSLError) as exc:
-                        if response is not None:  # pragma: no cover
-                            response.release()
-                            response = None
-                        if index == len(urls) - 1:
-                            raise _RetryableDownloadError(str(exc)) from exc
-                if response is None:  # pragma: no cover
-                    raise _RetryableDownloadError("NCBI Datasets returned no downloadable package")
-
+                response = await _fetch_zip_response(session, urls, params)
                 try:
-                    content_length = int(response.headers.get("Content-Length", "") or 0)
-                except (TypeError, ValueError):
-                    content_length = 0
-                if content_length > 0:
-                    _require_disk_space(destination.parent, content_length, "download NCBI dataset package")
-
-                fd, tmp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
-                try:
-                    with os.fdopen(fd, "wb") as handle:
-                        async for chunk in response.content.iter_chunked(1024 * 1024):
-                            if cancel_event.is_set():
-                                raise _DownloadCancelled()
-                            handle.write(chunk)
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                    if not zipfile.is_zipfile(tmp_name):
-                        retryable, detail = _zip_package_diagnostic(Path(tmp_name), canonical)
-                        if retryable:
-                            raise _RetryableDownloadError(detail) from None
-                        raise ValidationError(detail) from None
-                    os.replace(tmp_name, destination)
+                    return await _astream_zip_to_destination(
+                        destination,
+                        response=response,
+                        content_length=_response_content_length(response.headers),
+                        canonical=canonical,
+                        cancel_event=cancel_event,
+                    )
                 finally:
-                    if response is not None:  # pragma: no branch
-                        response.release()
-                    response = None
-                    try:
-                        os.unlink(tmp_name)
-                    except OSError:
-                        pass
-                return destination
-        except _DownloadCancelled:
-            raise
-        except _RetryableDownloadError as exc:
-            last_error = exc
-        except (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
-                aiohttp.ServerDisconnectedError, aiohttp.ClientPayloadError,
-                asyncio.TimeoutError, ssl.SSLError) as exc:
-            last_error = exc
-        except OSError as exc:
-            if exc.errno == errno.ENOSPC:
-                raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
-            last_error = exc
-        except aiohttp.ClientResponseError as exc:
-            if exc.status in RETRYABLE_HTTP_STATUS:
-                last_error = exc
-            else:
-                raise ValidationError(f"NCBI Datasets download failed: {exc}") from exc
+                    response.release()
+        except BaseException as exc:
+            last_error = _classify_attempt_failure(exc, destination)
 
     raise ValidationError(
         f"NCBI Datasets download failed after {max_retries + 1} attempt(s): {last_error}"
