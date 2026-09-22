@@ -6,6 +6,9 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+
 # A newer push supersedes an in-flight run of the same ref.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,6 +52,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[test]'
           python -m pytest
-      - uses: codacy/codacy-coverage-reporter-action@v1.3.0
+      - uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}

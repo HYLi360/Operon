@@ -78,6 +78,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -133,11 +135,13 @@ jobs:
       name: pypi
       url: https://pypi.org/project/operondbs/
     permissions:
-      id-token: write
+      # This is a standard OIDC Keyless Authorization Statements,
+      # NOT a hardcoding token
+      id-token: write  # nosemgrep: security.hard-coded-tokens
     steps:
       - uses: actions/download-artifact@v8
         with:
           pattern: python-package-*
           path: dist/
           merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
