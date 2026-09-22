@@ -65,7 +65,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 
 | 界面 | 按键 | 内容 |
 |------|------|------|
-| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。按 `i` 键打开导入向导（见下文）。 |
+| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。*NCBI Datasets import* 与 *Import dataset* 按钮分别打开 NCBI Datasets 对话框（见下文）与导入向导；向导也可用 `i` 键打开。 |
 | Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。 |
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器，按 `e`/`s`/`a`/`f` 分别进行 extract-domains、select-sequences、adopt 与 fanout（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询。一行紧凑过滤条放 状态/step/entity/数量上限；CLI 其余过滤——`--from`/`--to`（ISO-8601；非法值或 `--from` ≥ `--to` 在对话框内内联报错）、`--run-id`、`--parent-run-id`、`--tool`、`--executor`、`--offset` 与 `--oldest-first`——收在 *More…* 按钮后的进阶过滤对话框里，按钮上显示当前生效的过滤项数（*Clear* 清空；`--resumes-run-id` 与机器格式仍只在 CLI）。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。对*运行中*的 run，详情屏的 *Follow logs* 每秒追加一次本地 `logs/<run_id>.stdout.log`/`.stderr.log` 的增量，直到 run 离开 `running` 并报告最终状态——它只观察、从不取消（SSH 后端的日志在结束时才拉回，因此在此之前没有内容）。*Analysis jobs* 按钮打开只读的 `analysis_jobs` 浏览器（analysis/status/limit 过滤，并显示选中行的完整错误与产物路径），其中也包括在 job array 中被中断的任务——这类行永远不会有 `workflow_runs` 行。*Environments* 按钮浏览已捕获的执行环境（与 `operon environments list` 相同的列表），并以只读方式渲染 *View JSON*、*Export explicit* 与 *Export yaml*——把 conda spec 落盘仍是 CLI 重定向（缺少包清单等错误内联显示）。*New analysis* 与 *Run external* 按钮分别打开分析对话框与外部命令对话框；*Analysis hits* 按钮打开比对命中浏览器（`report analysis --hits` 的列与过滤，*Export* 写出的文件与 CLI `--out` 逐字节一致）（见下文）。 |
@@ -98,6 +98,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | `v` | Files | 校验选中文件，或在"verify all N files?"确认后校验全部文件。失败项（`MISSING`、`CHECKSUM_FAILED` 等）会在错误对话框中列出。 | `operon verify [--file-id …]` |
 | `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | 全局 | 打开数据集导入向导（也可通过 Home 按钮；在 Files 界面 `i` 仍为归档 ingest）。 | `operon import dataset` |
+| — | Home | 从 NCBI Datasets 导入（*NCBI Datasets import* 按钮）：离线输入（report JSON/JSONL、Datasets ZIP、已解包目录）和/或按 accession 在线下载，覆盖 CLI 的全部参数。*Dry run (preflight)* 按钮是 Confirm 前的强制预检——离线输入以 `--dry-run` 解析（不写入任何内容），纯 accession 请求以 `--plan-only` 运行（只给出下载计划，不下载、不写 run 行）——任何表单改动都会重新锁定 Confirm。下载过程中 Cancel 为协作式取消：运行在下一个批次边界停止，记录为 `interrupted`，并可用 `--resume-run` 续跑。 | `operon ncbi-datasets [--input … …] [--accession … …] [--accession-file …] [--include … …] [--no-archive-files] [--standardize] [--dry-run] [--no-preserve-source] [--email …] [--api-key …] [--timeout …] [--batch-size …] [--download-workers …] [--retries …] [--retry-backoff …] [--resume-run …] [--plan-only]` |
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
@@ -139,6 +140,32 @@ ID 已不在列表中，选择器保持未选择并显示错误，必须明确�
 `import_wizard._commit`——数据源注册、实体行、`entity_state`、`changes` 审计、
 文件归档（失败时回滚已暂存文件）以及运行日志完全一致。成功后通知列出创建的
 实体 ID 与文件数量；错误内联显示，不会留下写入一半的数据。
+
+## NCBI Datasets 导入
+
+该对话框（通过 Home 界面的 *NCBI Datasets import* 按钮打开）是
+`operon ncbi-datasets` 的 TUI 表单。它接受离线输入（逗号分隔的
+`assembly_data_report` JSON/JSONL 路径、Datasets ZIP 或已解包目录）、
+逗号分隔的 accession 和/或 accession 文件、include 类型列表，以及 CLI 的
+全部调优参数（`--no-archive-files`、`--standardize`、`--dry-run`、
+`--no-preserve-source`、`--email`/`--api-key`、`--timeout`、`--batch-size`、
+`--download-workers`、`--retries`、`--retry-backoff`、`--resume-run`、
+`--plan-only`）。命令预览只显示非默认参数的等效 CLI 调用。
+
+**Dry run (preflight)** 是 Confirm 前的强制步骤：有离线输入时以
+`dry_run=True` 运行适配器（解析 report 并显示计划，不写入任何内容）；
+纯 accession 请求以 `plan_only=True` 运行（缺失 include 的下载分组，
+不下载、不写 `workflow_runs` 行）。预览列出解析到的来源、assembly 记录数、
+下载计划与已归档而跳过的条目。预检失败（非法 accession、未知 include 类型、
+输入不可读）会显示在预览区并保持 Confirm 禁用；干净预检之后的任何表单改动
+同样会重新锁定 Confirm。数值字段在 worker 启动前校验。
+
+Confirm 在后台 worker 中真实运行适配器，并显示实时计时状态行。运行期间点击
+**Cancel**（或按 `esc`）为协作式取消：它设置一个 `threading.Event`，下载器在
+每个批次/数据块边界检查它，核心以与 SIGINT 相同的中断记账中止——run 行记录为
+`interrupted`（退出码 130），把该 run id 填入 resume 字段即可续跑。取消后对话框
+保持打开且控件恢复可编辑；失败时错误内联显示；成功时通知报告 assembly 记录数与
+run id。
 
 ## Publish 界面
 

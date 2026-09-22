@@ -80,7 +80,7 @@ The left sidebar (or the number keys) switches between eight screens:
 
 | Screen | Key | Contents |
 |--------|-----|----------|
-| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). Press `i` to open the import wizard (see below). |
+| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). The *NCBI Datasets import* and *Import dataset* buttons open the NCBI Datasets dialog (see below) and the import wizard; the wizard also opens with `i`. |
 | Entities | `2` | Hierarchy tree (organisms → samples → runs and assemblies → annotations) with the current state of each entity. Selecting a node shows its metadata fields, accessions, state, files, and the latest built-in QC and external-analysis (e.g. BUSCO/QUAST) metrics. Logically retired entities are shown by default, dimmed and struck-through; press `t` to hide them. Press `x` for the lifecycle dialog (see below). |
 | Files | `3` | Filterable manifest table (substring filter plus status selector). Moving the cursor shows the full file record, its `file_locations` residency list, and a *Sequence labels* section (the `classify-sequences` output aggregated per label and profile). Statuses are color-coded: verified green, `REMOTE_ONLY` blue, `MISSING`/`CHECKSUM_FAILED` red. Press `i`/`v`/`q`/`l` for ingest, verify, QC, and the label browser, and `e`/`s`/`a`/`f` for extract-domains, select-sequences, adopt, and fanout (see below). |
 | Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`. One compact filter strip holds status/step/entity/limit; the rest of the CLI's filters — `--from`/`--to` (ISO-8601; an invalid value or `--from` ≥ `--to` is an inline error inside the dialog), `--run-id`, `--parent-run-id`, `--tool`, `--executor`, `--offset` and `--oldest-first` — live behind the *More…* button, which opens an advanced-filter dialog and shows how many filters are active (its *Clear* empties them; `--resumes-run-id` and machine formats stay CLI-only). The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. On a *running* run's detail screen, *Follow logs* appends the local `logs/<run_id>.stdout.log`/`.stderr.log` tails once per second until the run leaves `running`, then reports the final status — it only observes and never cancels (with the SSH backend logs are pulled back at completion, so nothing streams until then). The *Analysis jobs* button opens a read-only `analysis_jobs` browser (analysis/status/limit filters, with the selected row's full error and artifact paths) that also lists tasks interrupted inside a job array — rows that never get a `workflow_runs` row. The *Environments* button browses captured execution environments (the same list as `operon environments list`) and renders *View JSON*, *Export explicit* and *Export yaml* read-only — writing a conda spec to a file stays a CLI redirection (errors such as a snapshot without a package inventory are shown inline). The *New analysis* and *Run external* buttons open the analysis and external-command dialogs; the *Analysis hits* button opens the alignment-hit browser (`report analysis --hits` columns and filters, with *Export* matching the CLI's `--out` byte for byte) (see below). |
@@ -113,6 +113,7 @@ you type, and records exactly what that command would record.
 | `v` | Files | Verify the selected file, or all files after a "verify all N files?" confirm. Failures (`MISSING`, `CHECKSUM_FAILED`, …) are listed in an error dialog. | `operon verify [--file-id …]` |
 | `q` | Files | Run built-in QC for the selected file or all files, with a live progress bar ("k/n · current file_id"). The completion notification mirrors the CLI text ("QC complete: ok/total file(s) passed built-in stages"); failures are listed in an error dialog. Cancel stops the batch cooperatively *between* files — results for files already processed are kept. | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | global | Open the import dataset wizard (also via the Home button; on the Files screen `i` stays ingest). | `operon import dataset` |
+| — | Home | Import from NCBI Datasets (*NCBI Datasets import* button): offline inputs (report JSON/JSONL, Datasets ZIP, unpacked directory) and/or accession downloads, with all of the CLI's flags. The *Dry run (preflight)* button is mandatory before Confirm — offline inputs are parsed with `--dry-run` (nothing written), accession-only requests run `--plan-only` (the download plan, no downloads, no run rows) — and any form change locks Confirm again. Cancel during a download is cooperative: the run stops at the next batch boundary, is recorded as `interrupted`, and stays resumable with `--resume-run`. | `operon ncbi-datasets [--input … …] [--accession … …] [--accession-file …] [--include … …] [--no-archive-files] [--standardize] [--dry-run] [--no-preserve-source] [--email …] [--api-key …] [--timeout …] [--batch-size …] [--download-workers …] [--retries …] [--retry-backoff …] [--resume-run …] [--plan-only]` |
 | — | Publish | Create an immutable release after a members/exclusions preview; a duplicate version is rejected inline. | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | Materialize a selective export after a count/bytes preview; a non-empty output directory is rejected inline. | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | Generate a taxonomy coverage report; a result below the profile thresholds is a warning notification (FAIL), never a crash. | `operon report coverage --reference-set … [--release …]` |
@@ -164,6 +165,38 @@ rows, `entity_state`, `changes` audit, file ingest with staged-file rollback
 on failure, and run logging are identical. On success a notification lists
 the created entity IDs and file count; errors are shown inline and nothing
 is left half-written.
+
+## NCBI Datasets import
+
+The dialog (opened with the *NCBI Datasets import* button on the Home
+screen) is the TUI form of `operon ncbi-datasets`. It accepts offline
+inputs (comma-separated `assembly_data_report` JSON/JSONL paths, Datasets
+ZIPs, or unpacked directories), comma-separated accessions and/or an
+accession file, the include-type list, and every tuning flag of the CLI
+(`--no-archive-files`, `--standardize`, `--dry-run`, `--no-preserve-source`,
+`--email`/`--api-key`, `--timeout`, `--batch-size`, `--download-workers`,
+`--retries`, `--retry-backoff`, `--resume-run`, `--plan-only`). The command
+preview shows the equivalent CLI invocation with only the non-default flags.
+
+**Dry run (preflight)** is mandatory before Confirm: with offline inputs it
+runs the adapter with `dry_run=True` (reports are parsed and the plan is
+shown, nothing is written); with accession-only requests it runs
+`plan_only=True` (the missing-include download groups, no downloads, no
+`workflow_runs` rows). The preview lists the parsed sources, assembly-record
+count, download plan and already-archived skips. A failed dry run (an
+invalid accession, an unknown include type, an unreadable input) is shown in
+the preview and keeps Confirm disabled, as does any form edit after a clean
+dry run. Numeric fields are validated before the worker starts.
+
+Confirm runs the adapter for real in a background worker with a live
+elapsed-time status line. **Cancel** (or `esc`) during the run is
+cooperative: it sets a `threading.Event` the downloader checks at every
+batch/chunk boundary, and the core aborts with the same interrupt
+bookkeeping as a SIGINT — the run row is recorded as `interrupted`
+(exit code 130) and can be resumed by entering its run id in the resume
+field. After a cancellation the dialog stays open with the controls
+unlocked; after a failure the error is shown inline; on success a
+notification reports the assembly-record count and the run id.
 
 ## Publish screen
 

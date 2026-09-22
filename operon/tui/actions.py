@@ -1146,6 +1146,123 @@ def import_dataset(project: Project, draft: dict[str, Any]) -> dict[str, Any]:
         return _commit(db, project, draft)
 
 
+class NcbiDatasetsCancelled(Exception):
+    """Raised when the NCBI Datasets import worker is cancelled by the user.
+
+    The core reports cooperative cancellation with ``ShutdownRequested`` — the
+    same exception a SIGINT produces — once ``cancel_event`` is set, so the run
+    row is recorded as ``interrupted`` and stays resumable with
+    ``--resume-run``.  This wrapper is the TUI's own signal: the modal reports
+    it as a cancelled run instead of a failure.
+    """
+
+
+def ncbi_datasets(
+        project: Project,
+        *,
+        inputs: Iterable[str] = (),
+        accessions: Iterable[str] = (),
+        accession_file: str | None = None,
+        include: Iterable[str] | None = None,
+        archive_files: bool = True,
+        standardize: bool = False,
+        dry_run: bool = False,
+        preserve_sources: bool = True,
+        email: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 300.0,
+        batch_size: int = 10,
+        download_workers: int = 3,
+        retries: int = 4,
+        retry_backoff: float = 1.0,
+        resume_run_id: str | None = None,
+        plan_only: bool = False,
+        cancel_event: threading.Event | None = None,
+) -> dict[str, Any]:
+    """Run the NCBI Datasets adapter like ``operon ncbi-datasets``.
+
+    Same value domain and validation messages as the CLI/core, checked here
+    before the core call so a form-level problem writes nothing.  ``include``
+    of ``None`` means the CLI default (all supported types); empty-string
+    ``email``/``api_key`` count as not provided (the core falls back to
+    ``NCBI_EMAIL``/``NCBI_API_KEY``).  The core's stdout (cache notes, plans)
+    is captured into the returned ``messages``.  ``cancel_event`` is forwarded
+    to the downloader: once set, the run aborts with the interrupt bookkeeping
+    of a signal and is reported here as :class:`NcbiDatasetsCancelled`.
+    """
+    from operon.adapters.ncbi_datasets import (
+        DEFAULT_INCLUDES,
+        INCLUDE_TYPES,
+        VERSIONED_ACCESSION_RE,
+        run_ncbi_datasets_adapter,
+    )
+    from operon.shutdown import ShutdownRequested
+
+    inputs = [str(value).strip() for value in inputs if str(value).strip()]
+    accessions = [str(value).strip() for value in accessions if str(value).strip()]
+    if not inputs and not accessions and not (accession_file or "").strip():
+        raise ValidationError("provide at least one --input, --accession, or --accession-file")
+    if plan_only and inputs:
+        raise ValidationError("--plan-only supports accession requests, not offline --input packages")
+    for accession in accessions:
+        if not VERSIONED_ACCESSION_RE.fullmatch(accession.upper()):
+            raise ValidationError(f"invalid NCBI assembly accession: {accession!r}")
+    includes = [str(value).strip() for value in include if str(value).strip()] \
+        if include is not None else None
+    unknown_includes = sorted(set(includes or ()) - set(INCLUDE_TYPES))
+    if unknown_includes:
+        raise ValidationError(f"unknown NCBI include type(s): {unknown_includes}")
+    batch_size = int(batch_size)
+    if batch_size < 1 or batch_size > 100:
+        raise ValidationError("--batch-size must be between 1 and 100")
+    download_workers = int(download_workers)
+    if download_workers < 1 or download_workers > 10:
+        raise ValidationError("--download-workers must be between 1 and 10")
+    retries = int(retries)
+    if retries < 0 or retries > 10:
+        raise ValidationError("--retries must be between 0 and 10")
+    retry_backoff = float(retry_backoff)
+    if retry_backoff < 0:
+        raise ValidationError("--retry-backoff must be >= 0")
+    timeout = float(timeout)
+    if timeout <= 0:
+        raise ValidationError("timeout must be a positive number")
+
+    buffer = io.StringIO()
+    try:
+        with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
+            summary = run_ncbi_datasets_adapter(
+                db,
+                project,
+                inputs=inputs,
+                accessions=accessions,
+                accession_file=(accession_file or "").strip() or None,
+                includes=includes or DEFAULT_INCLUDES,
+                archive_files=archive_files,
+                standardize=standardize,
+                dry_run=dry_run,
+                preserve_sources=preserve_sources,
+                email=(email or "").strip() or None,
+                api_key=(api_key or "").strip() or None,
+                timeout=timeout,
+                batch_size=batch_size,
+                download_workers=download_workers,
+                max_retries=retries,
+                retry_backoff=retry_backoff,
+                resume_run_id=(resume_run_id or "").strip() or None,
+                plan_only=plan_only,
+                cancel_event=cancel_event,
+            )
+    except ShutdownRequested:
+        # A cooperative cancel reaches the core as the signal-style interrupt;
+        # any other source (a real SIGINT in a main-thread caller) keeps its
+        # own exception type.
+        if cancel_event is not None and cancel_event.is_set():
+            raise NcbiDatasetsCancelled() from None
+        raise
+    return {**summary, "messages": buffer.getvalue()}
+
+
 def reserve_entity_ids(project: Project) -> dict[str, str]:
     """Reserve one fresh internal ID per entity type for the import wizard.
 

@@ -224,6 +224,29 @@ HelpScreen {
     height: 6;
 }
 
+/* NCBI Datasets import modal: fixed-height preflight log so the button row
+   stays visible; the form itself scrolls inside #modal-form. */
+
+#ncbi-preview {
+    height: 8;
+    border-top: solid $primary;
+    padding-top: 1;
+}
+
+#ncbi-status {
+    height: auto;
+    padding-top: 1;
+}
+
+#home-actions {
+    height: auto;
+    padding: 1 2 0 2;
+}
+
+#home-actions Button {
+    margin-right: 2;
+}
+
 #classify-summary {
     padding-top: 1;
 }

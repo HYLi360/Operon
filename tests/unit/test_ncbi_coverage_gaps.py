@@ -1516,3 +1516,71 @@ def test_download_batches_cancel_pending_tasks_after_a_failure(tmp_path, monkeyp
         ))
     assert started.is_set() is True
     assert cancelled.is_set() is True
+
+
+# --------------------------------------------------------------------------
+# Cooperative cancellation through a caller-supplied cancel_event (TUI path)
+# --------------------------------------------------------------------------
+
+def test_parallel_download_external_cancel_event_stops_before_download(tmp_path, monkeypatch):
+    """A pre-set caller event aborts before any download and raises ShutdownRequested."""
+    from operon.shutdown import ShutdownRequested
+
+    def fail_if_called(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("a download was attempted despite the set cancel event")
+
+    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fail_if_called)
+    consumed: list[tuple[Any, Any]] = []
+    cancel_event = threading.Event()
+    cancel_event.set()
+    with pytest.raises(ShutdownRequested):
+        ncbi.download_ncbi_datasets_parallel(
+            [["GCF_000000001.1"], ["GCF_000000002.2"]],
+            tmp_path,
+            includes=["genome"],
+            timeout=1.0,
+            max_workers=1,
+            max_retries=0,
+            retry_backoff=0.0,
+            on_complete=lambda batch, zip_path: consumed.append((batch, zip_path)),
+            cancel_event=cancel_event,
+        )
+    assert consumed == []
+
+
+def test_adapter_run_with_set_cancel_event_is_recorded_interrupted(project_db):
+    """The TUI cancellation path records the run as interrupted, like a signal."""
+    from operon.shutdown import ShutdownRequested
+
+    project, db = project_db
+    cancel_event = threading.Event()
+    cancel_event.set()
+    with pytest.raises(ShutdownRequested):
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000001405.40"], cancel_event=cancel_event,
+        )
+    runs = db.query(
+        "SELECT status, exit_code FROM workflow_runs WHERE step='ncbi_datasets_import'"
+    )
+    assert [dict(row) for row in runs] == [{"status": "interrupted", "exit_code": 130}]
+
+
+def test_parallel_download_without_event_keeps_internal_cancellation(tmp_path, monkeypatch):
+    """No caller event: behaviour is unchanged (batches complete normally)."""
+    async def fake_batch_download(batch, destination, **_kwargs):
+        Path(destination).write_bytes(b"zip")
+
+    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_batch_download)
+    consumed: list[tuple[Any, Any]] = []
+    completed = ncbi.download_ncbi_datasets_parallel(
+        [["GCF_000000001.1"]],
+        tmp_path,
+        includes=["genome"],
+        timeout=1.0,
+        max_workers=1,
+        max_retries=0,
+        retry_backoff=0.0,
+        on_complete=lambda batch, zip_path: consumed.append((batch, zip_path)),
+    )
+    assert len(completed) == 1
+    assert consumed[0][0] == ["GCF_000000001.1"]

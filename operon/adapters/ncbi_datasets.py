@@ -22,6 +22,7 @@ import shutil
 import ssl
 import stat
 import tempfile
+import threading
 import time
 import zipfile
 from collections.abc import Iterable, Iterator, Sequence
@@ -555,8 +556,15 @@ def run_ncbi_datasets_adapter(
         retry_backoff: float = 1.0,
         resume_run_id: str | None = None,
         plan_only: bool = False,
+        cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
-    """Import existing NCBI Datasets outputs and optionally download packages."""
+    """Import existing NCBI Datasets outputs and optionally download packages.
+
+    ``cancel_event`` is the cooperative-cancellation hook used by the TUI:
+    once set, in-flight downloads stop at the next chunk/batch boundary and
+    the run aborts with ``ShutdownRequested``, so the run row is recorded as
+    interrupted exactly as after a signal.  The CLI leaves it unset.
+    """
 
     requested = _validate_adapter_args(
         inputs=inputs,
@@ -625,6 +633,7 @@ def run_ncbi_datasets_adapter(
                 download_workers=download_workers,
                 max_retries=max_retries,
                 retry_backoff=retry_backoff,
+                cancel_event=cancel_event,
             )
         return _finalize_run(ctx, skipped_existing)
     except KeyboardInterrupt as exc:
@@ -1090,6 +1099,7 @@ def _consume_download_batches(
         download_workers: int,
         max_retries: int,
         retry_backoff: float,
+        cancel_event: threading.Event | None = None,
 ) -> None:
     """Download the planned batches concurrently and import each as it lands."""
     # Keep downloads off /tmp: it is commonly a small tmpfs.  The
@@ -1110,6 +1120,7 @@ def _consume_download_batches(
                 max_workers=download_workers,
                 max_retries=max_retries,
                 retry_backoff=retry_backoff,
+                cancel_event=cancel_event,
                 on_complete=lambda batch, zip_path, signature=missing_signature:
                     _consume_download_batch(ctx, batch, zip_path, includes=signature),
                 on_error=lambda batch, error, signature=missing_signature:
@@ -1723,6 +1734,7 @@ def download_ncbi_datasets_parallel(
         retry_backoff: float = 1.0,
         on_complete: Any,
         on_error: Any | None = None,
+        cancel_event: threading.Event | None = None,
 ) -> list[Path]:
     """Download accession batches concurrently and consume each as it lands.
 
@@ -1732,8 +1744,17 @@ def download_ncbi_datasets_parallel(
     the background.  Failed batches are isolated: other batches keep going and
     are processed normally, then an aggregate ValidationError is raised unless
     `on_error` is provided to collect failures instead.
+
+    ``cancel_event`` is the cooperative-cancellation hook: when the caller
+    supplies an event and it is set, pending batches stop at the next
+    chunk/batch boundary and this function raises ``ShutdownRequested``, the
+    same exception a SIGINT/SIGTERM produces, so the caller's interrupt
+    bookkeeping (run recorded as ``interrupted``) runs unchanged.  With no
+    event supplied an internal one is used, exactly as before.
     """
-    import threading
+    import signal
+
+    from operon.shutdown import ShutdownRequested
 
     staging_dir = Path(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=True)
@@ -1741,7 +1762,7 @@ def download_ncbi_datasets_parallel(
     # Bound the number of finished-but-not-yet-imported ZIPs.  When the queue
     # is full the asyncio producer blocks, which also backs off the network.
     completed_queue: queue.Queue[Any] = queue.Queue(maxsize=max_workers)
-    cancel_event = threading.Event()
+    cancel_event = cancel_event if cancel_event is not None else threading.Event()
     runner_errors: list[BaseException] = []
 
     def runner() -> None:
@@ -1781,7 +1802,19 @@ def download_ncbi_datasets_parallel(
     failures: list[tuple[Sequence[str], Exception]] = []
     try:
         while True:
-            item = completed_queue.get()
+            # A caller-supplied event that is set means cooperative cancel:
+            # raise the signal-style interrupt so the run is recorded as
+            # interrupted, exactly as after SIGINT/SIGTERM.  The internal
+            # event is only set by the finally below (after this loop has
+            # exited), so this check never fires for the CLI path.  The poll
+            # also keeps the consumer from blocking forever on a queue whose
+            # producer side goes quiet once the event is set.
+            if cancel_event.is_set():
+                raise ShutdownRequested(signal.SIGINT)
+            try:
+                item = completed_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
             if item is sentinel:
                 break
             batch, zip_path, error = item

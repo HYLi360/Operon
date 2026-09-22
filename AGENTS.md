@@ -81,6 +81,11 @@ Current version markers (must stay consistent across code and docs):
     Confirm → background worker → notify + reload or inline error. Phase 3
     actions in the same module: `import_dataset` (commits wizard drafts
     through the shared single-transaction `import_wizard._commit`),
+    `ncbi_datasets` (backing the Home screen's NCBI Datasets import dialog:
+    a mandatory dry-run preflight — `dry_run` for offline inputs,
+    `plan_only` for accession-only requests — gates Confirm, and Cancel sets
+    a cooperative `cancel_event` the core records as an `interrupted`,
+    `--resume-run`-able run),
     `reserve_entity_ids`, `create_release`, `export`, `run_coverage`
     (a below-threshold coverage report returns `exit_code=1` in the result
     dict — a warning, not an exception), `preflight_backend`, `run_analysis`
