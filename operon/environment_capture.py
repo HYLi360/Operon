@@ -197,10 +197,9 @@ def _safe_url(value: str) -> str:
     return urlunsplit((parts.scheme, host, path, "", ""))
 
 
-def enrich_document(env: dict[str, Any], text: str) -> dict[str, Any]:
-    """Decode selected probe records; malformed/partial captures stay explicit."""
+def _decode_records(env: dict[str, Any], text: str, errors: list[str]) -> dict[str, list[str]]:
+    """Decode the selected base64 probe records and drop their raw keys from ``env``."""
     decoded: dict[str, list[str]] = {}
-    errors: list[str] = []
     for line in text.splitlines():
         key, separator, value = line.partition("=")
         if key not in {"distribution", "cpu", "libc", "affinity", "memory", "gpu",
@@ -212,66 +211,92 @@ def enrich_document(env: dict[str, Any], text: str) -> dict[str, Any]:
                 decoded.setdefault(key, []).append(base64.b64decode(value, validate=True).decode("utf-8"))
             except (ValueError, UnicodeError):
                 errors.append(f"invalid {key} record")
-    def first(key: str) -> str:
-        return next(iter(decoded.get(key, [])), "").strip()
-    unsupported = bool(env.pop("capture_unsupported", None))
-    if env.pop("capture_unavailable", None):
-        return {"capture_schema": 1, "capture_status": "unavailable", "reason": "timeout utility unavailable"}
-    complete = env.pop("capture_complete", None) == "1"
-    present = env.pop("conda_present", None) == "1"
-    env["capture_schema"] = 1
+    return decoded
+
+
+def _first_record(decoded: dict[str, list[str]], key: str) -> str:
+    return next(iter(decoded.get(key, [])), "").strip()
+
+
+def _distribution_info(decoded: dict[str, list[str]]) -> dict[str, str]:
     distribution = {}
-    for line in first("distribution").splitlines():
+    for line in _first_record(decoded, "distribution").splitlines():
         key, sep, value = line.partition("=")
         if sep and key in {"ID", "VERSION_ID", "PRETTY_NAME"}:
             distribution[key.lower()] = value.strip('"')
+    return distribution
+
+
+def _system_section(env: dict[str, Any], distribution: dict[str, str],
+                    decoded: dict[str, list[str]]) -> dict[str, Any]:
     system = {key: env[key] for key in ("os", "os_release", "machine") if key in env}
-    system.update(distribution=distribution, libc=first("libc"))
-    hardware = {"cpu": sorted(set(first("cpu").splitlines())),
-                "memory_total": first("memory"), "nvidia_gpus": sorted(first("gpu").splitlines())}
-    env["system"] = system
-    env["hardware"] = hardware
-    env["system_fingerprint"] = environment_fingerprint(system)
-    env["hardware_fingerprint"] = environment_fingerprint(hardware)
-    env["runtime_settings"] = {key.removeprefix("setting_"): values[0] for key, values in decoded.items()
-                               if key.startswith("setting_") and values and values[0]}
-    env["cpu_affinity"] = first("affinity")
-    env["hardware_capture"] = {"cpu": "captured" if hardware["cpu"] else "unavailable",
-                               "gpu": "captured" if hardware["nvidia_gpus"] else "unavailable_or_absent"}
-    if present and not unsupported:
-        packages = []
-        for raw in decoded.get("package", []):
-            try:
-                record = json.loads(raw)
-                if not isinstance(record, dict) or not all(record.get(k) for k in ("name", "version", "build")):
-                    raise ValueError("missing identity")
-                package = {key: record[key] for key in (
-                    "name", "version", "build", "build_number", "subdir", "sha256", "md5", "depends",
-                ) if key in record}
-                package["url"] = _safe_url(str(record.get("url", "")))
-                packages.append(package)
-            except (ValueError, TypeError):
-                errors.append("invalid Conda package record")
-        packages.sort(key=lambda record: (record["name"], record["version"], record["build"]))
-        explicit = []
-        missing = []
-        for package in packages:
-            checksum = next((str(package[key]) for key, length in (("sha256", 64), ("md5", 32))
-                             if re.fullmatch(r"[0-9a-fA-F]{%d}" % length, str(package.get(key, "")))), "")
-            if package["url"] and checksum:
-                explicit.append(package["url"] + "#" + checksum.lower())
-            else:
-                missing.append(package["name"])
-        conda = {"status": "captured" if complete and not errors and not missing and packages else "partial",
-                 "packages": packages, "package_fingerprint": environment_fingerprint(packages),
-                 "missing_artifacts": missing,
-                 "pip_distributions": sorted({value.strip() for value in decoded.get("pip_distribution", [])}),
-                 "scope": "Conda package artifacts only; pip/local edits and activation scripts are not restored"}
-        if conda["status"] == "captured":
-            conda["explicit"] = "@EXPLICIT\n" + "\n".join(explicit) + "\n"
-        env["conda"] = conda
-    else:
-        env["conda"] = {"status": "not_detected" if complete else "unknown"}
+    system.update(distribution=distribution, libc=_first_record(decoded, "libc"))
+    return system
+
+
+def _hardware_section(decoded: dict[str, list[str]]) -> dict[str, Any]:
+    return {"cpu": sorted(set(_first_record(decoded, "cpu").splitlines())),
+            "memory_total": _first_record(decoded, "memory"),
+            "nvidia_gpus": sorted(set(_first_record(decoded, "gpu").splitlines()))}
+
+
+def _runtime_settings(decoded: dict[str, list[str]]) -> dict[str, str]:
+    return {key.removeprefix("setting_"): values[0] for key, values in decoded.items()
+            if key.startswith("setting_") and values and values[0]}
+
+
+def _hardware_capture_status(hardware: dict[str, Any]) -> dict[str, str]:
+    return {"cpu": "captured" if hardware["cpu"] else "unavailable",
+            "gpu": "captured" if hardware["nvidia_gpus"] else "unavailable_or_absent"}
+
+
+def _parse_packages(decoded: dict[str, list[str]], errors: list[str]) -> list[dict[str, Any]]:
+    packages = []
+    for raw in decoded.get("package", []):
+        try:
+            record = json.loads(raw)
+            if not isinstance(record, dict) or not all(record.get(k) for k in ("name", "version", "build")):
+                raise ValueError("missing identity")
+            package = {key: record[key] for key in (
+                "name", "version", "build", "build_number", "subdir", "sha256", "md5", "depends",
+            ) if key in record}
+            package["url"] = _safe_url(str(record.get("url", "")))
+            packages.append(package)
+        except (ValueError, TypeError):
+            errors.append("invalid Conda package record")
+    packages.sort(key=lambda record: (record["name"], record["version"], record["build"]))
+    return packages
+
+
+def _explicit_artifacts(packages: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    explicit = []
+    missing = []
+    for package in packages:
+        checksum = next((str(package[key]) for key, length in (("sha256", 64), ("md5", 32))
+                         if re.fullmatch(r"[0-9a-fA-F]{%d}" % length, str(package.get(key, "")))), "")
+        if package["url"] and checksum:
+            explicit.append(package["url"] + "#" + checksum.lower())
+        else:
+            missing.append(package["name"])
+    return explicit, missing
+
+
+def _conda_section(decoded: dict[str, list[str]], complete: bool,
+                   errors: list[str]) -> dict[str, Any]:
+    packages = _parse_packages(decoded, errors)
+    explicit, missing = _explicit_artifacts(packages)
+    conda = {"status": "captured" if complete and not errors and not missing and packages else "partial",
+             "packages": packages, "package_fingerprint": environment_fingerprint(packages),
+             "missing_artifacts": missing,
+             "pip_distributions": sorted({value.strip() for value in decoded.get("pip_distribution", [])}),
+             "scope": "Conda package artifacts only; pip/local edits and activation scripts are not restored"}
+    if conda["status"] == "captured":
+        conda["explicit"] = "@EXPLICIT\n" + "\n".join(explicit) + "\n"
+    return conda
+
+
+def _apply_capture_status(env: dict[str, Any], complete: bool,
+                          errors: list[str], unsupported: bool) -> None:
     env["capture_status"] = "complete" if complete and not errors else "partial"
     if errors:
         env["capture_errors"] = sorted(set(errors))
@@ -281,6 +306,32 @@ def enrich_document(env: dict[str, Any], text: str) -> dict[str, Any]:
         env["conda"] = {"status": "unknown"}
     else:
         env["capture_scope"] = "tool_launch_context"
+
+
+def enrich_document(env: dict[str, Any], text: str) -> dict[str, Any]:
+    """Decode selected probe records; malformed/partial captures stay explicit."""
+    errors: list[str] = []
+    decoded = _decode_records(env, text, errors)
+    unsupported = bool(env.pop("capture_unsupported", None))
+    if env.pop("capture_unavailable", None):
+        return {"capture_schema": 1, "capture_status": "unavailable", "reason": "timeout utility unavailable"}
+    complete = env.pop("capture_complete", None) == "1"
+    present = env.pop("conda_present", None) == "1"
+    env["capture_schema"] = 1
+    system = _system_section(env, _distribution_info(decoded), decoded)
+    hardware = _hardware_section(decoded)
+    env["system"] = system
+    env["hardware"] = hardware
+    env["system_fingerprint"] = environment_fingerprint(system)
+    env["hardware_fingerprint"] = environment_fingerprint(hardware)
+    env["runtime_settings"] = _runtime_settings(decoded)
+    env["cpu_affinity"] = _first_record(decoded, "affinity")
+    env["hardware_capture"] = _hardware_capture_status(hardware)
+    if present and not unsupported:
+        env["conda"] = _conda_section(decoded, complete, errors)
+    else:
+        env["conda"] = {"status": "not_detected" if complete else "unknown"}
+    _apply_capture_status(env, complete, errors, unsupported)
     return env
 
 
