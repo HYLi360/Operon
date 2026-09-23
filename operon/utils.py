@@ -16,10 +16,25 @@ from typing import Any
 
 SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 GZIP_MAGIC = b"\x1f\x8b"
+FORMULA_PREFIX_CHARS = "=+-@\t\r"
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def escape_formula_text(value: Any) -> Any:
+    """Prefix spreadsheet formula triggers with an apostrophe for CSV/TSV cells.
+
+    A text cell beginning with ``=``, ``+``, ``-``, ``@``, TAB or CR is read as
+    a formula (or worse) when a report file is opened in a spreadsheet
+    application; the leading apostrophe forces literal text.  Non-string and
+    empty values pass through unchanged so numeric columns keep their exact
+    bytes.
+    """
+    if isinstance(value, str) and value != "" and value[0] in FORMULA_PREFIX_CHARS:
+        return "'" + value
+    return value
 
 
 def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:

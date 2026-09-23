@@ -32,7 +32,7 @@ from typing import Any
 
 from operon.errors import QCError
 from operon.qc._parsers import iter_fasta
-from operon.utils import atomic_write_text
+from operon.utils import atomic_write_text, escape_formula_text
 
 GAP_CHARACTERS = frozenset("-.")
 
@@ -71,7 +71,10 @@ def compute_alignment_qc(records: Iterable[tuple[str, str]]) -> AlignmentQCResul
                 column_nongap[index] += 1
                 column_counts[index][char] += 1
         sequence_rows.append({
-            "safe_id": header,
+            # ODR-0040: a header beginning with a spreadsheet formula trigger
+            # would execute as a formula when sequence_qc.tsv is opened in a
+            # spreadsheet application, so safe_id is stored already escaped.
+            "safe_id": escape_formula_text(header),
             "alignment_length": aln_len,
             "non_gap_sites": nongap,
             "coverage": nongap / aln_len if aln_len else 0.0,

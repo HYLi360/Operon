@@ -1019,3 +1019,38 @@ defects:
   regression_tests:
   - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
   - tests/unit/test_tui_config.py::test_blocked_save_names_a_control_that_never_finished_loading
+- id: ODR-0040
+  title: Alignment sequence_qc.tsv and the shared write_tsv emit cells beginning with
+    spreadsheet formula triggers verbatim, so a FASTA header or metadata value starting
+    with = + - @ executes as a formula when a report TSV is opened in Excel
+  reported: '2026-09-23'
+  introduced_in: null
+  affected: 'All released versions: any project whose alignment FASTA headers or imported
+    metadata free text begin with =, +, -, @ (also TAB/CR). sequence_qc.tsv writes the
+    raw FASTA header in safe_id; write_tsv (releases, exports, reports, timetree
+    candidates) writes string cells verbatim.'
+  severity: low
+  component: qc
+  status: fixed
+  reproduction: 'compute_alignment_qc stores the FASTA header verbatim in safe_id
+    (operon/qc/alignment.py and the Cython twin operon/qc/_alignment.pyx) and
+    _render_sequence_qc writes it unescaped, so a header like ''=1+1'' lands in
+    sequence_qc.tsv as a formula cell; write_tsv string cells (operon/schema.py) have
+    the same shape. Confirmed by the 2026-09-23 security audit of the Codacy defusedcsv
+    findings.'
+  disposition: 'Escape formula triggers on write: a text cell whose first character is
+    one of = + - @ TAB CR is prefixed with an apostrophe (the standard spreadsheet text
+    escape) in both compute_alignment_qc backends (keeping byte parity) and in
+    schema.write_tsv. Non-string values pass through untouched, so numeric columns keep
+    their exact bytes. The taxonomy reference-set writer is intentionally unchanged (its
+    bytes are hashed for provenance). Round-trip safety: the only in-tree re-ingester of
+    write_tsv output, release-scope coverage, consumes generated identity/join columns
+    (ids, sha256, size_bytes) that can never begin with a trigger character, and
+    provenance hashes are computed over the escaped bytes at write time; no operon
+    import path feeds write_tsv output back into the database.'
+  fix_commit: 220cd0256ba09782b3188509b2a80bfc81bb229c
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv
+  - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_match_across_backends
+  - tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells

@@ -252,7 +252,11 @@ def test_pairs_from_tsv_returns_sorted_unique_pairs(tmp_path):
     (("5", "5"), "require two different positive NCBI IDs"),
 ])
 def test_pairs_from_tsv_rejects_invalid_rows(tmp_path, row, message):
-    path = write_pairs(tmp_path / "pairs.tsv", [row])
+    # Hand-written so malformed input reaches the reader verbatim: write_tsv
+    # now escapes a leading "-" (ODR-0040), which is writer-side behavior this
+    # reader test does not intend to exercise.
+    path = tmp_path / "pairs.tsv"
+    path.write_text("taxon_a\ttaxon_b\n" + "\t".join(row) + "\n", encoding="utf-8")
     with pytest.raises(ValidationError, match=message):
         timetree.pairs_from_tsv(path)
 

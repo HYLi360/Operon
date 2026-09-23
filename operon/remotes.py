@@ -22,6 +22,7 @@ import posixpath
 import shlex
 import shutil
 import stat as stat_module
+import sys
 import tempfile
 import time
 import uuid
@@ -161,6 +162,12 @@ def connect_ssh(host: str, user: str = "", port: int = 22, key_file: str = "",
 
         client.set_missing_host_key_policy(PinnedHostKeyPolicy())
     elif insecure_accept_unknown_host:
+        print(
+            f"warning: SSH host-key verification is disabled for {host}:{int(port)} "
+            "(insecure_accept_unknown_host): unknown host keys are accepted and "
+            "the connection is vulnerable to man-in-the-middle attacks",
+            file=sys.stderr,
+        )
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     else:
         client.set_missing_host_key_policy(paramiko.RejectPolicy())

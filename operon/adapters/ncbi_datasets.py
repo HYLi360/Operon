@@ -1212,7 +1212,7 @@ def _record_failed_run(ctx: _AdapterRunContext, exc: Exception) -> Exception:
                 error=str(reported_exc),
                 execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - failed-run bookkeeping must not mask the original error  # pylint: disable=broad-exception-caught
             pass
     return reported_exc
 
