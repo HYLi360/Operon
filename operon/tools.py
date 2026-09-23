@@ -431,162 +431,12 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             raw = recipes[analysis_name]
             if not isinstance(raw, dict):
                 raise ValidationError(f"analysis {analysis_name!r} must be a mapping")
-            raw_version = raw.get("version", 1)
-            if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 1:
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: version must be a positive integer"
-                )
-            fmt = str(raw.get("format", "")).strip()
-            file_role = str(raw.get("file_role", "")).strip()
-            file_role_prefix = str(raw.get("file_role_prefix", "")).strip()
-            if file_role and file_role_prefix:
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: 'file_role' and 'file_role_prefix' "
-                    "are mutually exclusive"
-                )
-            if file_role_prefix and any(char in file_role_prefix for char in "%*?"):
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: file_role_prefix {file_role_prefix!r} "
-                    "must not contain wildcard characters (% * ?); matching is an "
-                    "exact role or a prefix at a ':' boundary, not a pattern"
-                )
-            input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
-            output_kind = str(raw.get("output_kind", "file")).strip()
-            if input_kind not in {"file", "directory"}:
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: input_kind must be 'file' or 'directory'"
-                )
-            if output_kind not in {"file", "directory"}:
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: output_kind must be 'file' or 'directory'"
-                )
-            environment_policy = str(raw.get("environment_policy", "warn") or "warn").strip()
-            if environment_policy not in ENVIRONMENT_POLICIES:
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: environment_policy must be one of "
-                    f"{', '.join(ENVIRONMENT_POLICIES)}; got {environment_policy!r}"
-                )
-            if fmt == "directory" and input_kind != "directory":
-                raise ValidationError(
-                    f"analysis {analysis_name!r}: format=directory requires input_kind=directory"
-                )
-            default_suffix = "" if output_kind == "directory" else ".tsv"
-            output_suffix = str(raw["output_suffix"]) if "output_suffix" in raw else default_suffix
-            raw_parameters = raw.get("parameters", {}) or {}
-            if not isinstance(raw_parameters, dict):
-                raise ValidationError(f"analysis {analysis_name!r}: parameters must be a mapping")
-            parameters: dict[str, dict[str, Any]] = {}
-            for parameter_name, parameter_spec in raw_parameters.items():
-                name = str(parameter_name)
-                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-                    raise ValidationError(
-                        f"analysis {analysis_name!r}: invalid parameter name {name!r}"
-                    )
-                if parameter_spec is None:
-                    parameter_spec = {}
-                if not isinstance(parameter_spec, dict):
-                    raise ValidationError(
-                        f"analysis {analysis_name!r}: parameter {name!r} must be a mapping"
-                    )
-                parameters[name] = dict(parameter_spec)
-            raw_commands = raw.get("commands")
-            commands: list[RecipeCommand] = []
-            if raw_commands is not None:
-                if raw.get("arguments"):
-                    raise ValidationError(
-                        f"analysis {analysis_name!r}: 'commands' and 'arguments' are mutually exclusive"
-                    )
-                if not isinstance(raw_commands, list) or not raw_commands:
-                    raise ValidationError(
-                        f"analysis {analysis_name!r}: commands must be a non-empty list of command blocks"
-                    )
-                for block_index, block in enumerate(raw_commands, start=1):
-                    if (
-                        not isinstance(block, dict)
-                        or not isinstance(block.get("arguments"), list)
-                        or not block["arguments"]
-                    ):
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: each commands block requires "
-                            "a non-empty 'arguments' list"
-                        )
-                    unknown_keys = sorted(
-                        set(block) - {"arguments", "version_args", "version_pattern"}
-                    )
-                    if unknown_keys:
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: commands block {block_index} "
-                            f"has unsupported key(s): {', '.join(unknown_keys)}; every step "
-                            "of a chain runs in the parent tool's single run_method "
-                            "environment by deliberate limitation — per-step environments "
-                            "are not supported (use an external workflow engine such as "
-                            "Snakemake/Nextflow and 'adopt' for multi-environment pipelines)"
-                        )
-                    raw_version_args = block.get("version_args")
-                    if raw_version_args is not None and (
-                        not isinstance(raw_version_args, list) or not raw_version_args
-                    ):
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: commands block {block_index} "
-                            "version_args must be a non-empty list when configured"
-                        )
-                    raw_version_pattern = block.get("version_pattern", "")
-                    if not isinstance(raw_version_pattern, str):
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: commands block {block_index} "
-                            "version_pattern must be a string"
-                        )
-                    if raw_version_pattern and raw_version_args is None:
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: commands block {block_index} "
-                            "version_pattern requires version_args"
-                        )
-                    commands.append(RecipeCommand(
-                        arguments=[str(x) for x in block["arguments"]],
-                        version_args=(
-                            [str(x) for x in raw_version_args]
-                            if raw_version_args is not None else None
-                        ),
-                        version_pattern=raw_version_pattern,
-                    ))
-                # The first command is the recipe's logical owner: the job's
-                # recorded tool_version and the version component of cache
-                # identity describe its program. Without its own probe that
-                # program must be the tool's executable, otherwise the
-                # tool-level probe would silently describe a different binary.
-                if commands and commands[0].version_args is None:
-                    tool_executable = str(raw_tool.get("executable", tool_name))
-                    first_executable = commands[0].arguments[0]
-                    if first_executable != tool_executable:
-                        raise ValidationError(
-                            f"analysis {analysis_name!r}: the first command "
-                            f"({first_executable!r}) is the recipe's logical owner but "
-                            f"does not match the tool's executable ({tool_executable!r}); "
-                            "declare version_args/version_pattern on the first command "
-                            "block, or point the tool's executable at it"
-                        )
-            return Recipe(
-                name=analysis_name,
-                tool_name=tool_name,
-                version=raw_version,
-                description=str(raw.get("description", "")),
-                entity_type=str(raw.get("entity_type", "")).strip(),
-                file_role=file_role,
-                file_role_prefix=file_role_prefix,
-                fmt=fmt,
-                input_kind=input_kind,
-                database=str(raw.get("database", "") or ""),
-                database_version=str(raw.get("database_version", "") or ""),
-                output_subdir=str(raw.get("output_subdir", analysis_name) or analysis_name),
-                output_kind=output_kind,
-                output_name_template=str(raw.get("output_name", "") or ""),
-                output_suffix=output_suffix,
-                arguments=[str(x) for x in raw.get("arguments", [])],
-                commands=commands,
-                parameters=parameters,
-                result_parser=str(raw.get("result_parser", "none") or "none"),
-                max_hits_per_query=int(raw.get("max_hits_per_query", 5) or 5),
-                raw=raw,
+            raw_version = _validate_recipe_version(analysis_name, raw)
+            kinds = _normalize_recipe_kinds(analysis_name, raw)
+            parameters = _normalize_recipe_parameters(analysis_name, raw)
+            commands = _normalize_recipe_commands(analysis_name, raw, raw_tool, tool_name)
+            return _build_recipe(
+                analysis_name, tool_name, raw_version, raw, kinds, commands, parameters
             )
     available = sorted(
         f"{tool}.{recipe}" for tool, tool_cfg in config.get("tools", {}).items()
@@ -594,6 +444,209 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
     )
     raise ValidationError(
         f"unknown analysis {analysis_name!r}; available recipes: {', '.join(available) or '(none)'}"
+    )
+
+
+def _validate_recipe_version(analysis_name: str, raw: dict[str, Any]) -> int:
+    raw_version = raw.get("version", 1)
+    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 1:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: version must be a positive integer"
+        )
+    return raw_version
+
+
+def _validate_recipe_environment_policy(analysis_name: str, raw: dict[str, Any]) -> None:
+    environment_policy = str(raw.get("environment_policy", "warn") or "warn").strip()
+    if environment_policy not in ENVIRONMENT_POLICIES:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: environment_policy must be one of "
+            f"{', '.join(ENVIRONMENT_POLICIES)}; got {environment_policy!r}"
+        )
+
+
+def _normalize_recipe_kinds(
+    analysis_name: str, raw: dict[str, Any]
+) -> tuple[str, str, str, str, str, str]:
+    """Normalize format/kind/role fields and derive the output suffix.
+
+    Returns ``(fmt, file_role, file_role_prefix, input_kind, output_kind,
+    output_suffix)``. The environment-policy check runs between the kind
+    checks and the format-consistency check so that a config with several
+    problems raises the same first error as before the split.
+    """
+    fmt = str(raw.get("format", "")).strip()
+    file_role = str(raw.get("file_role", "")).strip()
+    file_role_prefix = str(raw.get("file_role_prefix", "")).strip()
+    if file_role and file_role_prefix:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: 'file_role' and 'file_role_prefix' "
+            "are mutually exclusive"
+        )
+    if file_role_prefix and any(char in file_role_prefix for char in "%*?"):
+        raise ValidationError(
+            f"analysis {analysis_name!r}: file_role_prefix {file_role_prefix!r} "
+            "must not contain wildcard characters (% * ?); matching is an "
+            "exact role or a prefix at a ':' boundary, not a pattern"
+        )
+    input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
+    output_kind = str(raw.get("output_kind", "file")).strip()
+    if input_kind not in {"file", "directory"}:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: input_kind must be 'file' or 'directory'"
+        )
+    if output_kind not in {"file", "directory"}:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: output_kind must be 'file' or 'directory'"
+        )
+    _validate_recipe_environment_policy(analysis_name, raw)
+    if fmt == "directory" and input_kind != "directory":
+        raise ValidationError(
+            f"analysis {analysis_name!r}: format=directory requires input_kind=directory"
+        )
+    default_suffix = "" if output_kind == "directory" else ".tsv"
+    output_suffix = str(raw["output_suffix"]) if "output_suffix" in raw else default_suffix
+    return fmt, file_role, file_role_prefix, input_kind, output_kind, output_suffix
+
+
+def _normalize_recipe_parameters(
+    analysis_name: str, raw: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    raw_parameters = raw.get("parameters", {}) or {}
+    if not isinstance(raw_parameters, dict):
+        raise ValidationError(f"analysis {analysis_name!r}: parameters must be a mapping")
+    parameters: dict[str, dict[str, Any]] = {}
+    for parameter_name, parameter_spec in raw_parameters.items():
+        name = str(parameter_name)
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            raise ValidationError(
+                f"analysis {analysis_name!r}: invalid parameter name {name!r}"
+            )
+        if parameter_spec is None:
+            parameter_spec = {}
+        if not isinstance(parameter_spec, dict):
+            raise ValidationError(
+                f"analysis {analysis_name!r}: parameter {name!r} must be a mapping"
+            )
+        parameters[name] = dict(parameter_spec)
+    return parameters
+
+
+def _normalize_recipe_commands(
+    analysis_name: str, raw: dict[str, Any], raw_tool: dict[str, Any], tool_name: str
+) -> list[RecipeCommand]:
+    raw_commands = raw.get("commands")
+    commands: list[RecipeCommand] = []
+    if raw_commands is None:
+        return commands
+    if raw.get("arguments"):
+        raise ValidationError(
+            f"analysis {analysis_name!r}: 'commands' and 'arguments' are mutually exclusive"
+        )
+    if not isinstance(raw_commands, list) or not raw_commands:
+        raise ValidationError(
+            f"analysis {analysis_name!r}: commands must be a non-empty list of command blocks"
+        )
+    for block_index, block in enumerate(raw_commands, start=1):
+        if (
+            not isinstance(block, dict)
+            or not isinstance(block.get("arguments"), list)
+            or not block["arguments"]
+        ):
+            raise ValidationError(
+                f"analysis {analysis_name!r}: each commands block requires "
+                "a non-empty 'arguments' list"
+            )
+        unknown_keys = sorted(
+            set(block) - {"arguments", "version_args", "version_pattern"}
+        )
+        if unknown_keys:
+            raise ValidationError(
+                f"analysis {analysis_name!r}: commands block {block_index} "
+                f"has unsupported key(s): {', '.join(unknown_keys)}; every step "
+                "of a chain runs in the parent tool's single run_method "
+                "environment by deliberate limitation — per-step environments "
+                "are not supported (use an external workflow engine such as "
+                "Snakemake/Nextflow and 'adopt' for multi-environment pipelines)"
+            )
+        raw_version_args = block.get("version_args")
+        if raw_version_args is not None and (
+            not isinstance(raw_version_args, list) or not raw_version_args
+        ):
+            raise ValidationError(
+                f"analysis {analysis_name!r}: commands block {block_index} "
+                "version_args must be a non-empty list when configured"
+            )
+        raw_version_pattern = block.get("version_pattern", "")
+        if not isinstance(raw_version_pattern, str):
+            raise ValidationError(
+                f"analysis {analysis_name!r}: commands block {block_index} "
+                "version_pattern must be a string"
+            )
+        if raw_version_pattern and raw_version_args is None:
+            raise ValidationError(
+                f"analysis {analysis_name!r}: commands block {block_index} "
+                "version_pattern requires version_args"
+            )
+        commands.append(RecipeCommand(
+            arguments=[str(x) for x in block["arguments"]],
+            version_args=(
+                [str(x) for x in raw_version_args]
+                if raw_version_args is not None else None
+            ),
+            version_pattern=raw_version_pattern,
+        ))
+    # The first command is the recipe's logical owner: the job's
+    # recorded tool_version and the version component of cache
+    # identity describe its program. Without its own probe that
+    # program must be the tool's executable, otherwise the
+    # tool-level probe would silently describe a different binary.
+    if commands and commands[0].version_args is None:
+        tool_executable = str(raw_tool.get("executable", tool_name))
+        first_executable = commands[0].arguments[0]
+        if first_executable != tool_executable:
+            raise ValidationError(
+                f"analysis {analysis_name!r}: the first command "
+                f"({first_executable!r}) is the recipe's logical owner but "
+                f"does not match the tool's executable ({tool_executable!r}); "
+                "declare version_args/version_pattern on the first command "
+                "block, or point the tool's executable at it"
+            )
+    return commands
+
+
+def _build_recipe(
+    analysis_name: str,
+    tool_name: str,
+    raw_version: int,
+    raw: dict[str, Any],
+    kinds: tuple[str, str, str, str, str, str],
+    commands: list[RecipeCommand],
+    parameters: dict[str, dict[str, Any]],
+) -> Recipe:
+    fmt, file_role, file_role_prefix, input_kind, output_kind, output_suffix = kinds
+    return Recipe(
+        name=analysis_name,
+        tool_name=tool_name,
+        version=raw_version,
+        description=str(raw.get("description", "")),
+        entity_type=str(raw.get("entity_type", "")).strip(),
+        file_role=file_role,
+        file_role_prefix=file_role_prefix,
+        fmt=fmt,
+        input_kind=input_kind,
+        database=str(raw.get("database", "") or ""),
+        database_version=str(raw.get("database_version", "") or ""),
+        output_subdir=str(raw.get("output_subdir", analysis_name) or analysis_name),
+        output_kind=output_kind,
+        output_name_template=str(raw.get("output_name", "") or ""),
+        output_suffix=output_suffix,
+        arguments=[str(x) for x in raw.get("arguments", [])],
+        commands=commands,
+        parameters=parameters,
+        result_parser=str(raw.get("result_parser", "none") or "none"),
+        max_hits_per_query=int(raw.get("max_hits_per_query", 5) or 5),
+        raw=raw,
     )
 
 
