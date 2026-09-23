@@ -59,7 +59,7 @@ class TestRemoteConfig(PytestAssertions):
         with self.assertRaisesRegex(ValidationError, "unsafe path component"):
             fetch_url_to_temp(self.project, "remote://missing/../escape.fa")
 
-    def test_ssh_host_keys_are_rejected_by_default_and_insecure_mode_is_explicit(self, monkeypatch):
+    def test_ssh_host_keys_are_rejected_by_default_and_insecure_mode_is_explicit(self, monkeypatch, capsys):
         class MissingHostKeyPolicy:
             pass
 
@@ -108,8 +108,10 @@ class TestRemoteConfig(PytestAssertions):
 
         connect_ssh("hpc.example.org")
         self.assertTrue(isinstance(created[-1].policy, RejectPolicy))
+        assert capsys.readouterr().err == ""
         connect_ssh("hpc.example.org", insecure_accept_unknown_host=True)
         self.assertTrue(isinstance(created[-1].policy, AutoAddPolicy))
+        assert "host-key verification is disabled for hpc.example.org:22" in capsys.readouterr().err
 
     def test_ssh_client_is_closed_when_authentication_fails(self, monkeypatch):
         class MissingHostKeyPolicy:

@@ -1048,7 +1048,7 @@ defects:
     (ids, sha256, size_bytes) that can never begin with a trigger character, and
     provenance hashes are computed over the escaped bytes at write time; no operon
     import path feeds write_tsv output back into the database.'
-  fix_commit: null
+  fix_commit: 220cd0256ba09782b3188509b2a80bfc81bb229c
   fixed_in: null
   regression_tests:
   - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv
