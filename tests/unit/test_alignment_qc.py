@@ -105,6 +105,51 @@ def random_alignment(rng: random.Random, n_sequences: int, n_columns: int):
     ]
 
 
+@pytest.mark.bug("ODR-0040")
+def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
+    result = compute_alignment_qc(iter([
+        ("=1+1", "A"),
+        ("+2", "C"),
+        ("-3", "G"),
+        ("@4", "T"),
+        ("plain", "N"),
+    ]))
+    write_alignment_qc(result, tmp_path / "out")
+    expected = (
+        "safe_id\talignment_length\tnon_gap_sites\tcoverage\tgap_fraction\r\n"
+        "'=1+1\t1\t1\t1.000000\t0.000000\r\n"
+        "'+2\t1\t1\t1.000000\t0.000000\r\n"
+        "'-3\t1\t1\t1.000000\t0.000000\r\n"
+        "'@4\t1\t1\t1.000000\t0.000000\r\n"
+        "plain\t1\t1\t1.000000\t0.000000\r\n"
+    )
+    assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode("utf-8")
+
+
+@pytest.mark.bug("ODR-0040")
+def test_formula_trigger_headers_match_across_backends():
+    from operon.qc import _alignment as cy_alignment
+    from operon.qc import alignment as py_alignment
+
+    records = [
+        ("=1+1", "AC-T"),
+        ("+2", "AC.A"),
+        ("-3", "AC-T"),
+        ("@4", "AC.A"),
+        ("\tlead", "AC-T"),
+        ("\rlead", "AC.A"),
+        ("'=already-escaped", "AC-T"),
+        ("plain", "AC.A"),
+    ]
+    py_result = py_alignment.compute_alignment_qc(iter(records))
+    cy_result = cy_alignment.compute_alignment_qc(iter(records))
+    assert py_result == cy_result
+    assert [row["safe_id"] for row in cy_result.sequence_rows] == [
+        "'=1+1", "'+2", "'-3", "'@4", "'\tlead", "'\rlead",
+        "'=already-escaped", "plain",
+    ]
+
+
 class TestNaiveParity:
     # Corpora already covered by tests/regression/test_cython_alignment_parity.py
     # (dot gaps, single sequence, all-gap column, consensus tie) are deliberately

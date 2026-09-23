@@ -386,3 +386,43 @@ def test_schema_row_duplicates_unknown_fields_and_tsv_edges(tmp_path):
     output = tmp_path / "out.tsv"
     write_tsv(output, ["a", "b"], [{"a": None, "b": 1}, [2, None]])
     assert read_tsv(output) == [{"a": "", "b": "1"}, {"a": "2", "b": ""}]
+
+
+@pytest.mark.bug("ODR-0040")
+def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
+    output = tmp_path / "escaped.tsv"
+    write_tsv(output, ["text", "number"], [
+        {"text": "=1+1", "number": 1},
+        {"text": "+2", "number": -2},
+        {"text": "-3", "number": 3.5},
+        {"text": "@4", "number": 4},
+        {"text": "in=x", "number": 5},
+        {"text": "", "number": None},
+        ["'=already-escaped", 9],
+    ])
+    assert output.read_text(encoding="utf-8") == (
+        "text\tnumber\n"
+        "'=1+1\t1\n"
+        "'+2\t-2\n"
+        "'-3\t3.5\n"
+        "'@4\t4\n"
+        "in=x\t5\n"
+        "\t\n"
+        "'=already-escaped\t9\n"
+    )
+    # Numeric values keep their exact bytes and escape is idempotent on
+    # already-escaped text. The whitespace-only row is dropped by read_tsv's
+    # blank-line rule, which predates the escape.
+    assert read_tsv(output) == [
+        {"text": "'=1+1", "number": "1"},
+        {"text": "'+2", "number": "-2"},
+        {"text": "'-3", "number": "3.5"},
+        {"text": "'@4", "number": "4"},
+        {"text": "in=x", "number": "5"},
+        {"text": "'=already-escaped", "number": "9"},
+    ]
+    tab_cr = tmp_path / "tab_cr.tsv"
+    write_tsv(tab_cr, ["text"], [{"text": "\t5"}, {"text": "\r6"}])
+    # TAB/CR still trigger the escape; csv quoting keeps such cells intact,
+    # though values containing the delimiter itself are not TSV round-trippable.
+    assert tab_cr.read_bytes() == b'text\n"\'\t5"\n"\'\r6"\n'

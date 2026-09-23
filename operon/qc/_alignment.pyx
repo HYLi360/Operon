@@ -24,6 +24,7 @@ from operon.qc.alignment import (
     _format_coverage,
     _format_occupancy,
 )
+from operon.utils import escape_formula_text
 
 # GAP_CHARACTERS in the reference is exactly {"-", "."}.
 _GAP_DASH = 45  # ord("-")
@@ -104,7 +105,8 @@ def compute_alignment_qc(records):
                     encoded, counts, first_seen, column_nongap,
                     aln_len_c, sequence_index)
             sequence_rows.append({
-                "safe_id": header,
+                # ODR-0040: keep byte parity with the reference escape.
+                "safe_id": escape_formula_text(header),
                 "alignment_length": aln_len,
                 "non_gap_sites": nongap,
                 "coverage": nongap / aln_len if aln_len else 0.0,

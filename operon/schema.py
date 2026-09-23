@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from operon.errors import ValidationError
+from operon.utils import escape_formula_text
 
 # Entity table -> prefix and id column.  These prefixes are deliberately
 # independent from any external accession namespace.
@@ -450,6 +451,17 @@ def read_tsv(path: str | Path, required_header: list[str] | None = None) -> list
 
 
 def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any] | list[Any]]) -> None:
+    """Write rows as TSV, escaping spreadsheet formula triggers in text cells.
+
+    A string cell beginning with ``=``, ``+``, ``-``, ``@``, TAB or CR is
+    prefixed with an apostrophe so report files cannot execute as formulas
+    when opened in a spreadsheet application (ODR-0040).  Non-string values
+    are written verbatim.  This is safe for the release re-ingestion path:
+    release-scope coverage reads back only generated identity/join columns
+    (entity ids, sha256, size_bytes) that can never begin with a trigger
+    character, and provenance hashes are computed over the escaped bytes at
+    write time, so they still match on re-read.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as handle:
@@ -457,6 +469,6 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
         writer.writerow(columns)
         for row in rows:
             if isinstance(row, dict):
-                writer.writerow(["" if row.get(c) is None else row.get(c) for c in columns])
+                writer.writerow(["" if row.get(c) is None else escape_formula_text(row.get(c)) for c in columns])
             else:
-                writer.writerow(["" if v is None else v for v in row])
+                writer.writerow(["" if v is None else escape_formula_text(v) for v in row])
