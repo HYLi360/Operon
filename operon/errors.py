@@ -44,3 +44,7 @@ class RemoteUnavailableError(RemoteError):
     connection, a closed socket or an expired session says nothing about
     whether an artifact still exists on the remote.
     """
+
+
+class SecretError(OperonError):
+    """A user-scoped secret backend is unavailable or a secret operation failed."""
