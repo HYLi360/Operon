@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -156,118 +157,159 @@ def _evalue_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def extract_domains(
-        db: Database, project: Project, *,
-        file_id: str,
-        out: str | Path,
-        command: str,
-        analysis: str | None = None,
-        regions_tsv: str | Path | None = None,
-        flank: int = 5,
-        min_length: int = 30,
-        best_only: bool = True,
-        subject_like: str | None = None,
-        evalue_max: float | None = None,
-        manifest: str | Path | None = None,
-) -> dict[str, Any]:
-    """Extract flanked query regions from a manifest FASTA as a new FASTA."""
-    if (analysis is None) == (regions_tsv is None):
+@dataclass
+class _ExtractContext:
+    """Per-call state for ``extract_domains`` and its staged helpers.
+
+    Carries the extraction inputs verbatim plus the pipeline intermediates
+    each stage fills in order.  Constructed fresh for every call; never shared.
+    """
+
+    db: Database
+    project: Project
+    file_id: str
+    out: str | Path
+    command: str
+    analysis: str | None
+    regions_tsv: str | Path | None
+    flank: int
+    min_length: int
+    best_only: bool
+    subject_like: str | None
+    evalue_max: float | None
+    manifest: str | Path | None
+
+    record: dict[str, Any] = field(default_factory=dict)
+    path: Path | None = None
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    usable: list[dict[str, Any]] = field(default_factory=list)
+    excluded: list[dict[str, Any]] = field(default_factory=list)
+    selected: list[dict[str, Any]] = field(default_factory=list)
+    sequences: dict[str, str] = field(default_factory=dict)
+    records: list[tuple[str, str]] = field(default_factory=list)
+    manifest_rows: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _validate_region_source(ctx: _ExtractContext) -> None:
+    if (ctx.analysis is None) == (ctx.regions_tsv is None):
         raise ValidationError("exactly one of --analysis or --regions-tsv is required")
-    if regions_tsv is not None and (subject_like is not None or evalue_max is not None):
+    if ctx.regions_tsv is not None and (ctx.subject_like is not None or ctx.evalue_max is not None):
         raise ValidationError("--subject-like/--evalue-max only apply to --analysis regions")
-    record, path = _source_fasta(db, project, file_id)
 
+
+def _resolve_source_fasta(ctx: _ExtractContext) -> None:
+    ctx.record, ctx.path = _source_fasta(ctx.db, ctx.project, ctx.file_id)
+
+
+def _collect_analysis_candidates(ctx: _ExtractContext) -> None:
     candidates: list[dict[str, Any]] = []
-    if analysis is not None:
-        for row in _alignment_rows(db, file_id, analyses=[analysis], evalue_max=evalue_max):
-            if not _subject_matches(row, subject_like):
-                continue
-            candidates.append({
-                "seqid": str(row["query_id"]).split()[0],
-                "start": row["query_start"],
-                "end": row["query_end"],
-                "subject_id": row["subject_id"],
-                "evalue": row["evalue"],
-                "analysis_name": row["analysis_name"],
-                "hit_rank": row["hit_rank"],
-            })
-    else:
-        for line_number, row in enumerate(
-                read_tsv(regions_tsv, required_header=["seqid", "start", "end"]), start=2):
-            seqid = str(row.get("seqid") or "").strip()
-            if not seqid:
-                raise ValidationError(f"{regions_tsv}: line {line_number}: empty seqid")
-            try:
-                start = int(str(row.get("start") or ""))
-                end = int(str(row.get("end") or ""))
-            except ValueError as exc:
-                raise ValidationError(
-                    f"{regions_tsv}: line {line_number}: start/end must be integers"
-                ) from exc
-            if start < 1 or end < start:
-                raise ValidationError(
-                    f"{regions_tsv}: line {line_number}: require 1 <= start <= end"
-                )
-            evalue_raw = str(row.get("evalue") or "").strip()
-            try:
-                evalue = float(evalue_raw) if evalue_raw else None
-            except ValueError as exc:
-                raise ValidationError(
-                    f"{regions_tsv}: line {line_number}: evalue must be numeric"
-                ) from exc
-            candidates.append({
-                "seqid": seqid,
-                "start": start,
-                "end": end,
-                "subject_id": str(row.get("subject") or "").strip() or None,
-                "evalue": evalue,
-                "analysis_name": None,
-                "hit_rank": 0,
-            })
+    for row in _alignment_rows(
+            ctx.db, ctx.file_id, analyses=[ctx.analysis], evalue_max=ctx.evalue_max):
+        if not _subject_matches(row, ctx.subject_like):
+            continue
+        candidates.append({
+            "seqid": str(row["query_id"]).split()[0],
+            "start": row["query_start"],
+            "end": row["query_end"],
+            "subject_id": row["subject_id"],
+            "evalue": row["evalue"],
+            "analysis_name": row["analysis_name"],
+            "hit_rank": row["hit_rank"],
+        })
+    ctx.candidates = candidates
 
+
+def _collect_tsv_candidates(ctx: _ExtractContext) -> None:
+    candidates: list[dict[str, Any]] = []
+    for line_number, row in enumerate(
+            read_tsv(ctx.regions_tsv, required_header=["seqid", "start", "end"]), start=2):
+        seqid = str(row.get("seqid") or "").strip()
+        if not seqid:
+            raise ValidationError(f"{ctx.regions_tsv}: line {line_number}: empty seqid")
+        try:
+            start = int(str(row.get("start") or ""))
+            end = int(str(row.get("end") or ""))
+        except ValueError as exc:
+            raise ValidationError(
+                f"{ctx.regions_tsv}: line {line_number}: start/end must be integers"
+            ) from exc
+        if start < 1 or end < start:
+            raise ValidationError(
+                f"{ctx.regions_tsv}: line {line_number}: require 1 <= start <= end"
+            )
+        evalue_raw = str(row.get("evalue") or "").strip()
+        try:
+            evalue = float(evalue_raw) if evalue_raw else None
+        except ValueError as exc:
+            raise ValidationError(
+                f"{ctx.regions_tsv}: line {line_number}: evalue must be numeric"
+            ) from exc
+        candidates.append({
+            "seqid": seqid,
+            "start": start,
+            "end": end,
+            "subject_id": str(row.get("subject") or "").strip() or None,
+            "evalue": evalue,
+            "analysis_name": None,
+            "hit_rank": 0,
+        })
+    ctx.candidates = candidates
+
+
+def _split_region_candidates(ctx: _ExtractContext) -> None:
     usable: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
-    for candidate in candidates:
+    for candidate in ctx.candidates:
         if candidate["start"] is None or candidate["end"] is None:
             candidate["excluded_reason"] = "missing_coordinates"
             excluded.append(candidate)
-        elif int(candidate["end"]) - int(candidate["start"]) + 1 < min_length:
+        elif int(candidate["end"]) - int(candidate["start"]) + 1 < ctx.min_length:
             candidate["excluded_reason"] = "below_min_length"
             excluded.append(candidate)
         else:
             usable.append(candidate)
+    ctx.usable = usable
+    ctx.excluded = excluded
 
-    if best_only:
+
+def _region_sort_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        candidate["seqid"],
+        int(candidate["start"]),
+        int(candidate["end"]),
+        str(candidate.get("subject_id") or ""),
+    )
+
+
+def _select_region_candidates(ctx: _ExtractContext) -> None:
+    if ctx.best_only:
         chosen: dict[str, dict[str, Any]] = {}
-        for candidate in usable:
+        for candidate in ctx.usable:
             current = chosen.get(candidate["seqid"])
             if current is None or _evalue_sort_key(candidate) < _evalue_sort_key(current):
                 chosen[candidate["seqid"]] = candidate
-        selected = sorted(
-            chosen.values(),
-            key=lambda c: (c["seqid"], int(c["start"]), int(c["end"]),
-                           str(c.get("subject_id") or "")),
-        )
+        ctx.selected = sorted(chosen.values(), key=_region_sort_key)
     else:
-        selected = sorted(
-            usable,
-            key=lambda c: (c["seqid"], int(c["start"]), int(c["end"]),
-                           str(c.get("subject_id") or "")),
-        )
+        ctx.selected = sorted(ctx.usable, key=_region_sort_key)
 
-    needed = {candidate["seqid"] for candidate in selected}
+
+def _load_region_sequences(ctx: _ExtractContext) -> None:
+    needed = {candidate["seqid"] for candidate in ctx.selected}
     sequences: dict[str, str] = {}
-    for seqid, sequence in iter_fasta(path):
+    for seqid, sequence in iter_fasta(ctx.path):
         if seqid in needed and seqid not in sequences:
             sequences[seqid] = sequence
+    ctx.sequences = sequences
 
+
+def _build_region_records(ctx: _ExtractContext) -> None:
     records: list[tuple[str, str]] = []
     manifest_rows: list[dict[str, Any]] = []
-    for candidate in selected:
-        sequence = sequences.get(candidate["seqid"])
+    for candidate in ctx.selected:
+        sequence = ctx.sequences.get(candidate["seqid"])
         manifest_row = {
             "seqid": candidate["seqid"],
-            "source_file_id": file_id,
+            "source_file_id": ctx.file_id,
             "analysis_name": candidate["analysis_name"],
             "subject_id": candidate.get("subject_id"),
             "region_start": candidate["start"],
@@ -283,24 +325,24 @@ def extract_domains(
         elif int(candidate["start"]) > len(sequence):
             manifest_row["excluded_reason"] = "region_outside_sequence"
         else:
-            extracted_start = max(1, int(candidate["start"]) - flank)
-            extracted_end = min(len(sequence), int(candidate["end"]) + flank)
+            extracted_start = max(1, int(candidate["start"]) - ctx.flank)
+            extracted_end = min(len(sequence), int(candidate["end"]) + ctx.flank)
             subsequence = sequence[extracted_start - 1:extracted_end]
             manifest_row.update(
                 extracted_start=extracted_start,
                 extracted_end=extracted_end,
                 length=len(subsequence),
             )
-            if best_only:
+            if ctx.best_only:
                 header = candidate["seqid"]
             else:
                 header = f"{candidate['seqid']}|region:{extracted_start}-{extracted_end}"
             records.append((header, subsequence))
         manifest_rows.append(manifest_row)
-    for candidate in excluded:
+    for candidate in ctx.excluded:
         manifest_rows.append({
             "seqid": candidate["seqid"],
-            "source_file_id": file_id,
+            "source_file_id": ctx.file_id,
             "analysis_name": candidate["analysis_name"],
             "subject_id": candidate.get("subject_id"),
             "region_start": candidate["start"],
@@ -317,43 +359,80 @@ def extract_domains(
         r["region_end"] if r["region_end"] is not None else -1,
         str(r.get("subject_id") or ""),
     ))
+    ctx.records = records
+    ctx.manifest_rows = manifest_rows
 
-    atomic_write_text(out, _format_fasta(records))
-    if manifest is not None:
-        atomic_write_text(manifest, _format_manifest(EXTRACT_MANIFEST_COLUMNS, manifest_rows))
 
-    extracted_count = sum(1 for row in manifest_rows if not row["excluded_reason"])
-    excluded_count = len(manifest_rows) - extracted_count
-    log_run(db, project, {
-        "entity_type": record["entity_type"],
-        "entity_id": record["entity_id"],
+def _log_extraction_run(ctx: _ExtractContext) -> dict[str, Any]:
+    extracted_count = sum(1 for row in ctx.manifest_rows if not row["excluded_reason"])
+    excluded_count = len(ctx.manifest_rows) - extracted_count
+    log_run(ctx.db, ctx.project, {
+        "entity_type": ctx.record["entity_type"],
+        "entity_id": ctx.record["entity_id"],
         "step": "extract-domains",
         "status": "completed",
-        "command": command,
+        "command": ctx.command,
         "tool": "operon",
-        "input_sha256": record["sha256"],
-        "output_sha256": sha256_file(out),
+        "input_sha256": ctx.record["sha256"],
+        "output_sha256": sha256_file(ctx.out),
         "execution_details": json.dumps({
-            "file_id": file_id,
-            "analysis": analysis,
-            "regions_tsv": str(regions_tsv) if regions_tsv is not None else None,
-            "flank": flank,
-            "min_length": min_length,
-            "mode": "best-only" if best_only else "all-regions",
-            "subject_like": subject_like,
-            "evalue_max": evalue_max,
+            "file_id": ctx.file_id,
+            "analysis": ctx.analysis,
+            "regions_tsv": str(ctx.regions_tsv) if ctx.regions_tsv is not None else None,
+            "flank": ctx.flank,
+            "min_length": ctx.min_length,
+            "mode": "best-only" if ctx.best_only else "all-regions",
+            "subject_like": ctx.subject_like,
+            "evalue_max": ctx.evalue_max,
             "extracted": extracted_count,
             "excluded": excluded_count,
-            "output": str(out),
-            "manifest": str(manifest) if manifest is not None else None,
+            "output": str(ctx.out),
+            "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
         }, ensure_ascii=False, sort_keys=True),
     })
     return {
         "extracted": extracted_count,
         "excluded": excluded_count,
-        "output": str(out),
-        "manifest": str(manifest) if manifest is not None else None,
+        "output": str(ctx.out),
+        "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
     }
+
+
+def extract_domains(
+        db: Database, project: Project, *,
+        file_id: str,
+        out: str | Path,
+        command: str,
+        analysis: str | None = None,
+        regions_tsv: str | Path | None = None,
+        flank: int = 5,
+        min_length: int = 30,
+        best_only: bool = True,
+        subject_like: str | None = None,
+        evalue_max: float | None = None,
+        manifest: str | Path | None = None,
+) -> dict[str, Any]:
+    """Extract flanked query regions from a manifest FASTA as a new FASTA."""
+    ctx = _ExtractContext(
+        db=db, project=project, file_id=file_id, out=out, command=command,
+        analysis=analysis, regions_tsv=regions_tsv, flank=flank,
+        min_length=min_length, best_only=best_only, subject_like=subject_like,
+        evalue_max=evalue_max, manifest=manifest,
+    )
+    _validate_region_source(ctx)
+    _resolve_source_fasta(ctx)
+    if analysis is not None:
+        _collect_analysis_candidates(ctx)
+    else:
+        _collect_tsv_candidates(ctx)
+    _split_region_candidates(ctx)
+    _select_region_candidates(ctx)
+    _load_region_sequences(ctx)
+    _build_region_records(ctx)
+    atomic_write_text(ctx.out, _format_fasta(ctx.records))
+    if ctx.manifest is not None:
+        atomic_write_text(ctx.manifest, _format_manifest(EXTRACT_MANIFEST_COLUMNS, ctx.manifest_rows))
+    return _log_extraction_run(ctx)
 
 
 def select_sequences(
