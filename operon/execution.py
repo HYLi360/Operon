@@ -1218,7 +1218,7 @@ class SSHExecutor:
         for _, backup in backups:
             try:
                 _remove_remote_tree(sftp, backup)
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort cleanup on the success path; an orphaned backup dir is harmless  # pylint: disable=broad-exception-caught
                 pass
 
     def _restore_output_backups(self, sftp: Any, backups: list[tuple[str, str]]) -> None:
