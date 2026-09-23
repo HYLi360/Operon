@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 from typing import Any
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import ConflictError
 from operon.files import canonical_filename
@@ -323,7 +323,7 @@ def apply_ncbi_reconciliation(
         raise ConflictError(
             "NCBI reconciliation has alternate-role byte conflicts; review the dry-run plan first"
         )
-    actor = actor or os.environ.get("USER")
+    actor = actor or resolve_actor()
     _adapter_schema(project, persist=True)
     run_id = new_run_id()
     plan_sha256 = hashlib.sha256(

@@ -18,6 +18,7 @@ from textual.css.query import NoMatches
 from textual.pilot import OutOfBounds
 from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tree
 
+from operon import config as config_module
 from operon.config import Project
 from operon.database import Database
 from operon.demo import init_demo
@@ -224,10 +225,38 @@ def test_evaluate_single_entity(project: Project) -> None:
     assert results[0]["profile"] == "assembly_production_v1"
 
 
-def test_lifecycle_actor_required(project: Project, monkeypatch) -> None:
-    monkeypatch.delenv("USER", raising=False)
+def _without_any_identity(monkeypatch, tmp_path) -> None:
+    """Clear every identity source the actor resolver consults, in order."""
+    for variable in ("OPERON_ACTOR", "USER", "LOGNAME", "USERNAME"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    def _no_account() -> str:
+        raise KeyError("USER")
+
+    monkeypatch.setattr(config_module.getpass, "getuser", _no_account)
+    config_module.reset_user_config()
+
+
+def test_lifecycle_actor_required(project: Project, monkeypatch, tmp_path) -> None:
+    _without_any_identity(monkeypatch, tmp_path)
     with pytest.raises(ValidationError, match="--actor is required"):
         actions.lifecycle_apply(project, "ASM_000001", "RETIRE", reason="x", actor="")
+
+
+def test_lifecycle_actor_falls_back_to_the_user_configuration(
+        project: Project, monkeypatch, tmp_path) -> None:
+    _without_any_identity(monkeypatch, tmp_path)
+    target = config_module.user_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("identity:\n  actor: config-actor\n", encoding="utf-8")
+    config_module.reset_user_config()
+    result = actions.lifecycle_apply(
+        project, "ASM_000001", "RETIRE", reason="x", actor="", reason_code="other",
+    )
+    assert result["applied"] is True
+    rows = _query(project, "SELECT actor FROM entity_lifecycle_events ORDER BY event_id DESC LIMIT 1")
+    assert rows[0]["actor"] == "config-actor"
 
 
 def test_lifecycle_bad_action(project: Project) -> None:

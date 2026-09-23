@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
 from collections.abc import Iterable
 from typing import Any
@@ -13,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Input, Select, Static
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     Panel,
@@ -116,7 +115,7 @@ class CurateModal(WriteModal):
         preview = f"{current} → {'?' if initial is Select.NULL else current}"
         yield Static(preview, id="curate-preview", classes="modal-info")
         yield Input(
-            value=os.environ.get("USER", ""), placeholder="reviewer (required)",
+            value=resolve_actor() or "", placeholder="reviewer (required)",
             id="curate-reviewer",
         )
         yield Input(placeholder="reason (required)", id="curate-reason")

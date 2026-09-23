@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from operon import __version__
+from operon.config import resolve_splash
 from operon.tui.splash_terminal import (
     kitty_delete,
     kitty_place,
@@ -94,7 +95,11 @@ class LakeArt(Static):
 
     def __init__(self) -> None:
         super().__init__()
-        self.mode = splash_mode(os.environ)
+        environment = dict(os.environ)  # env-audit: terminal capability detection
+        override = resolve_splash(environ=environment)
+        if override != "auto":
+            environment["OPERON_SPLASH"] = override
+        self.mode = splash_mode(environment)
         self._image_id = secrets.randbelow(2**31 - 1) + 1
         self._uploaded = False
         self._placement = None

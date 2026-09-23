@@ -16,7 +16,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-from operon.config import Project, project_rel
+from operon.config import Project, project_rel, resolve_actor
 from operon.database import Database
 from operon.errors import (
     ChecksumError,
@@ -546,7 +546,7 @@ def _resolve_occupied_target(db: Database, project: Project, target: Path, targe
         db.record_change(
             "files", claimant["file_id"], "relative_path", rel, new_rel,
             "relocate file left at a stale canonical path after a role rename",
-            actor=os.environ.get("USER"),
+            actor=resolve_actor(),
         )
         return
     quarantine = target.with_name(f"{target.name}.orphan-{target_sha[:12]}")
@@ -554,7 +554,7 @@ def _resolve_occupied_target(db: Database, project: Project, target: Path, targe
     db.record_change(
         "raw_file", rel, "quarantined", None, project_rel(project, quarantine),
         "untracked leftover (interrupted run) moved aside to archive new content",
-        evidence=target_sha, actor=os.environ.get("USER"),
+        evidence=target_sha, actor=resolve_actor(),
     )
 
 

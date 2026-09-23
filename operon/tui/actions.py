@@ -17,7 +17,6 @@ import contextlib
 import hashlib
 import io
 import json
-import os
 import shlex
 import shutil
 import threading
@@ -28,7 +27,7 @@ from typing import Any
 
 import yaml
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import ValidationError
 from operon.utils import atomic_write_text
@@ -117,9 +116,9 @@ def lifecycle_apply(
     action = action.upper()
     if action not in {"RETIRE", "RESTORE"}:
         raise ValidationError(f"unsupported lifecycle action {action!r}")
-    actor = (actor or os.environ.get("USER") or "").strip()
+    actor = (resolve_actor(actor) or "").strip()
     if not actor:
-        raise ValidationError("--actor is required when USER is not set")
+        raise ValidationError("--actor is required when no user identity is available")
     with _open_writable(project) as db:
         plan = lifecycle_plan(db, identifier, action=action)
         if not plan["will_change"]:
@@ -720,7 +719,7 @@ def adopt(
                 sha or "",
             ) if sha else None
         reused_flags.append(existing is not None)
-    resolved_actor = (actor or os.environ.get("USER") or "adopt").strip()
+    resolved_actor = (resolve_actor(actor) or "adopt").strip()
     with _open_writable(project) as db:
         results = adopt_files(db, project, items=items, actor=resolved_actor)
     for reused, result in zip(reused_flags, results):
@@ -771,7 +770,7 @@ def fanout(
         parts += ["--parent-run-id", parent_run_id]
     if dry_run:
         parts.append("--dry-run")
-    resolved_actor = (actor or os.environ.get("USER") or "fanout").strip()
+    resolved_actor = (resolve_actor(actor) or "fanout").strip()
     with _open_writable(project) as db:
         return fanout_units(
             db, project,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shlex
 import shutil
 import sqlite3
@@ -16,7 +15,7 @@ from typing import Any
 
 from operon import __version__
 from operon.backup import create_backup, verify_backup
-from operon.config import Project, load_project
+from operon.config import Project, load_project, resolve_actor, resolve_ncbi_email
 from operon.coverage import report_coverage
 from operon.database import Database
 from operon.entity_view import entity_graph, sequence_hits
@@ -42,6 +41,7 @@ from operon.schema import (
     Schema,
     read_tsv,
 )
+from operon.secrets import resolve_secret
 from operon.table_import import (
     IMPORTABLE_TABLES,
     apply_table_import,
@@ -1023,7 +1023,7 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
     db.insert_row(table, row)
     db.set_entity_state(entity_type, record_id, "METADATA_VALIDATED", "record added via CLI and schema-validated")
     db.record_change(entity_type, record_id, None, None, json.dumps({k: str(v) for k, v in row.items()}),
-                     "record added", actor=os.environ.get("USER"))
+                     "record added", actor=resolve_actor())
     print(f"added {entity_type} {record_id}")
     return 0
 
@@ -1055,7 +1055,7 @@ def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database)
     db.record_change(
         "accession", f"{args.namespace}:{args.accession}", None, None,
         json.dumps(row, ensure_ascii=False, sort_keys=True), "accession added",
-        actor=os.environ.get("USER"),
+        actor=resolve_actor(),
     )
     print(f"mapped {args.namespace}:{args.accession} -> {args.internal_type} {args.internal_id}")
     return 0
@@ -1080,8 +1080,8 @@ def _cmd_ncbi_datasets(args: argparse.Namespace, project: Project, db: Database)
             standardize=args.standardize,
             dry_run=args.dry_run,
             preserve_sources=not args.no_preserve_source,
-            email=args.email or os.environ.get("NCBI_EMAIL"),
-            api_key=args.api_key or os.environ.get("NCBI_API_KEY"),
+            email=resolve_ncbi_email(args.email),
+            api_key=resolve_secret("ncbi.api_key", args.api_key),
             timeout=args.timeout,
             batch_size=args.batch_size,
             download_workers=args.download_workers,
@@ -1929,7 +1929,7 @@ def _cmd_adopt(args: argparse.Namespace, project: Project, db: Database) -> int:
             "derived_from": args.derived_from,
             "workflow_run_id": args.workflow_run_id,
         }]
-    actor = (args.actor or os.environ.get("USER") or "adopt").strip()
+    actor = resolve_actor(args.actor) or "adopt"
     results = adopt_files(db, project, items=items, actor=actor)
     print(json.dumps({
         "registered": len(results),
@@ -1941,7 +1941,7 @@ def _cmd_adopt(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 def _cmd_fanout(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.fanout import fanout_units
-    actor = (args.actor or os.environ.get("USER") or "fanout").strip()
+    actor = resolve_actor(args.actor) or "fanout"
     command_parts = [
         "operon", "fanout",
         "--assignments-file", args.assignments_file,
@@ -2308,7 +2308,7 @@ def _cmd_import(args: argparse.Namespace, project: Project, db: Database) -> int
             print("Import cancelled; no rows were changed.")
             return 0
     result = apply_table_import(
-        db, schema, preview, on_conflict=on_conflict, actor=os.environ.get("USER")
+        db, schema, preview, on_conflict=on_conflict, actor=resolve_actor()
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
@@ -2408,9 +2408,12 @@ def _cmd_lifecycle(args: argparse.Namespace, project: Project, db: Database) -> 
         if not confirmed:
             print(f"{args.command.capitalize()} cancelled; no rows were changed.")
             return 0
-    actor = (args.actor or os.environ.get("USER") or "").strip()
+    actor = resolve_actor(args.actor) or ""
     if not actor:
-        raise ValidationError("--actor is required when USER is not set")
+        raise ValidationError(
+            "--actor is required when no user identity is available (--actor, "
+            "OPERON_ACTOR, USER, or identity.actor in the user configuration)"
+        )
     target = plan["target"]
     run_id = new_run_id()
     started_at = now_iso()
@@ -2516,7 +2519,7 @@ def _cmd_query(args: argparse.Namespace, db: Database) -> int:
 def _cmd_set_state(args: argparse.Namespace, db: Database) -> int:
     db.require_active_entity(args.entity_type, args.entity_id)
     set_state(db, args.entity_type, args.entity_id, args.state, message=args.message, force=args.force,
-              actor=os.environ.get("USER"))
+              actor=resolve_actor())
     print(f"{args.entity_type} {args.entity_id} -> {args.state.upper()}")
     return 0
 

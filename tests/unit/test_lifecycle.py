@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from operon import cli, qc, reports
+from operon import cli, config as config_module, qc, reports
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -571,11 +571,46 @@ def test_lifecycle_apply_requires_yes_outside_terminal(lifecycle_project):
         cli._cmd_lifecycle(_lifecycle_args(yes=False), project, db)
 
 
-def test_lifecycle_apply_requires_actor_without_user_env(lifecycle_project, monkeypatch):
+def _without_any_identity(monkeypatch, tmp_path) -> None:
+    """Clear every identity source the actor resolver consults, in order."""
+    for variable in ("OPERON_ACTOR", "USER", "LOGNAME", "USERNAME"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    def _no_account() -> str:
+        raise KeyError("USER")
+
+    monkeypatch.setattr(config_module.getpass, "getuser", _no_account)
+    config_module.reset_user_config()
+
+
+def test_lifecycle_apply_requires_actor_without_any_identity(
+        lifecycle_project, monkeypatch, tmp_path):
     project, db = lifecycle_project
-    monkeypatch.delenv("USER", raising=False)
+    _without_any_identity(monkeypatch, tmp_path)
     with pytest.raises(ValidationError, match="--actor is required"):
         cli._cmd_lifecycle(_lifecycle_args(actor=None), project, db)
+
+
+def test_lifecycle_apply_takes_the_actor_from_the_environment(
+        lifecycle_project, monkeypatch, tmp_path):
+    project, db = lifecycle_project
+    _without_any_identity(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPERON_ACTOR", "env-actor")
+    assert cli._cmd_lifecycle(_lifecycle_args(actor=None), project, db) == 0
+    assert db.current_lifecycle_event("assembly", "ASM_000001")["actor"] == "env-actor"
+
+
+def test_lifecycle_apply_falls_back_to_the_user_configuration(
+        lifecycle_project, monkeypatch, tmp_path):
+    project, db = lifecycle_project
+    _without_any_identity(monkeypatch, tmp_path)
+    target = config_module.user_config_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("identity:\n  actor: config-actor\n", encoding="utf-8")
+    config_module.reset_user_config()
+    assert cli._cmd_lifecycle(_lifecycle_args(actor=None), project, db) == 0
+    assert db.current_lifecycle_event("assembly", "ASM_000001")["actor"] == "config-actor"
 
 
 def _fake_terminal(monkeypatch, confirmed):

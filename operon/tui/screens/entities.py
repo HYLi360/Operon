@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shlex
 from collections.abc import Iterable
 from typing import Any
@@ -14,7 +13,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Input, Select, Static, Tree
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.lifecycle import RETIRE_REASON_CODES
 from operon.tui import actions, data
 from operon.tui.screens.common import (
@@ -95,7 +94,7 @@ class LifecycleModal(WriteModal):
             )
         yield Input(placeholder="reason (required)", id="lifecycle-reason")
         yield Input(
-            value=os.environ.get("USER", ""), placeholder="actor (required)",
+            value=resolve_actor() or "", placeholder="actor (required)",
             id="lifecycle-actor",
         )
         yield Input(placeholder="evidence (optional)", id="lifecycle-evidence")

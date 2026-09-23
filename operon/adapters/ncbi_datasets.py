@@ -35,7 +35,7 @@ from urllib.parse import quote
 import yaml
 
 from operon import __version__
-from operon.config import Project, project_rel
+from operon.config import Project, project_rel, resolve_actor, resolve_ncbi_email
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.files import ingest_file, raw_bucket, standardize_file
@@ -48,6 +48,7 @@ from operon.schema import (
     Schema,
     default_schemas,
 )
+from operon.secrets import resolve_secret
 from operon.sql import quote_identifier
 from operon.utils import atomic_copy, atomic_write_text, now_iso, sha256_file
 from operon.workflow import finish_run, new_run_id, start_run
@@ -891,11 +892,12 @@ def _process_source(
             bundle.root,
             direct_file=bundle.source if bundle.source.is_file() else None,
         )
-        if not bundle_reports and requested_batch and (ctx.email or os.environ.get("NCBI_EMAIL")):
+        contact_email = ctx.email or resolve_ncbi_email()
+        if not bundle_reports and requested_batch and contact_email:
             bundle_reports.extend(fetch_entrez_assembly_reports(
                 requested_batch,
-                email=ctx.email or os.environ.get("NCBI_EMAIL"),
-                api_key=ctx.api_key or os.environ.get("NCBI_API_KEY"),
+                email=contact_email,
+                api_key=ctx.api_key or resolve_secret("ncbi.api_key"),
             ))
         bundle_assets = discover_dataset_assets(bundle.root, bundle_reports, bundle.label)
         source_summary = {
@@ -1159,7 +1161,7 @@ def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> d
         json.dumps(summary, ensure_ascii=False, sort_keys=True),
         "NCBI Datasets import",
         evidence=evidence,
-        actor=os.environ.get("USER"),
+        actor=resolve_actor(),
         workflow_run_id=ctx.run_id,
     )
     if download_failures:
@@ -2279,7 +2281,7 @@ def _apply_plan(
                             table, object_id, column,
                             str(old_value) if old_value is not None else None,
                             str(new_value) if new_value is not None else None,
-                            "NCBI Datasets metadata import", None, os.environ.get("USER"),
+                            "NCBI Datasets metadata import", None, resolve_actor(),
                             now_iso(), workflow_run_id,
                         ),
                     )
@@ -2481,7 +2483,7 @@ def _ingest_dataset_asset(
             source_url=asset.source_url,
             move=move,
             run_id=run_id,
-            actor=os.environ.get("USER"),
+            actor=resolve_actor(),
         )
         result = dict(row)
         if standardize:

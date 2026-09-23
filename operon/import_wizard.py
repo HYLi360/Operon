@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 from collections.abc import Callable
@@ -12,7 +11,7 @@ from typing import Any
 
 import questionary
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.files import (
@@ -466,7 +465,7 @@ def _preflight(db: Database, project: Project, draft: dict[str, Any]) -> list[tu
 
 def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, Any]:
     rows = _preflight(db, project, draft)
-    actor = os.environ.get("USER")
+    actor = resolve_actor()
     run_id = new_run_id()
     started_at = now_iso()
     provenance_buffer: list[dict[str, Any]] = []

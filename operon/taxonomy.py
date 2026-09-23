@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import math
-import os
 import re
 import tarfile
 import zipfile
@@ -19,7 +18,7 @@ from typing import Any, TextIO
 import yaml
 
 from operon import __version__
-from operon.config import Project, project_rel
+from operon.config import Project, project_rel, resolve_actor
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.profiles import load_profile
@@ -622,7 +621,7 @@ def import_ncbi_taxonomy(
                         "node_count": node_count,
                     }, sort_keys=True),
                     "explicit NCBI Taxonomy import", project_rel(project, target),
-                    os.environ.get("USER"), imported_at,
+                    resolve_actor(), imported_at,
                 ),
             )
         log_run(db, project, {
@@ -1042,7 +1041,7 @@ def _compile_reference_set_impl(
                     "profile_sha256": profile_sha, **counts,
                 }, sort_keys=True),
                 "explicit taxonomy reference-set compilation", project_rel(project, sidecar),
-                os.environ.get("USER"), compiled_at,
+                resolve_actor(), compiled_at,
             ),
         )
     log_run(db, project, {
