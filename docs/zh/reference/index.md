@@ -13,6 +13,7 @@
 
 ## 配置与数据模型
 
+- [用户配置](cli-config.md)
 - [Recipe 配置模型](recipe-overview.md)
 - [Recipe 字段参考](recipe-fields.md)
 - [结果解析器与示例](recipe-parsers-examples.md)
@@ -31,6 +32,7 @@ cli-decisions-reports
 cli-workflow
 cli-tui
 cli-taxonomy-lifecycle-admin
+cli-config
 recipe-overview
 recipe-fields
 recipe-parsers-examples

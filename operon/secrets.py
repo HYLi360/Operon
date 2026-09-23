@@ -28,6 +28,7 @@ import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from operon.config import user_config_dir
 from operon.errors import SecretError
@@ -299,7 +300,7 @@ def resolve_secret(secret_name: str, explicit: str | None = None, *,
 
 
 def secret_status(*, environ: Mapping[str, str] | None = None,
-                  config_dir: Path | None = None) -> dict[str, object]:
+                  config_dir: Path | None = None) -> dict[str, Any]:
     """Backend availability and which secrets are set, never their values."""
     env = os.environ if environ is None else environ  # env-audit: secret status report
     active = active_backend(config_dir=config_dir)

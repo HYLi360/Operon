@@ -294,7 +294,7 @@ _SECRET_LIKE_KEY_RE = re.compile(r"(?i)(api[_-]?key|token|secret|password|passwd
 
 
 def _environ(environ: Mapping[str, str] | None) -> Mapping[str, str]:
-    """The environment to read settings from (``os.environ`` by default)."""
+    """The environment to read settings from (the process environment by default)."""
     return os.environ if environ is None else environ  # env-audit: user-level settings
 
 
@@ -373,8 +373,11 @@ def normalize_user_value(key: str, value: Any) -> Any:
     elif not isinstance(value, expected):
         raise ConfigError(f"{key} expects {expected.__name__}, got {type(value).__name__}")
     choices = USER_CONFIG_CHOICES.get(key)
-    if choices and value not in choices:
-        raise ConfigError(f"{key} must be one of {', '.join(choices)}; got {value!r}")
+    if choices:
+        if isinstance(value, str):
+            value = value.strip().lower()
+        if value not in choices:
+            raise ConfigError(f"{key} must be one of {', '.join(choices)}; got {value!r}")
     return value
 
 

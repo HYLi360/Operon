@@ -137,7 +137,7 @@ def resolve_modal(entry: ParityEntry) -> type:
 
 def strict_mode() -> bool:
     """True when ``OPERON_PARITY_STRICT`` demands zero planned gaps."""
-    return os.environ.get("OPERON_PARITY_STRICT", "").lower() in {
+    return os.environ.get("OPERON_PARITY_STRICT", "").lower() in {  # env-audit: developer switch
         "1",
         "true",
         "yes",
@@ -157,6 +157,12 @@ _M2B = "milestone M2b (remote execution and run introspection)"
 _M3 = "milestone M3 (classification and derived-artifact loop)"
 _M4 = "milestone M4 (import, QC and coverage self-service)"
 _M5 = "milestone M5 (storage, administration and remaining alignment)"
+
+_CONFIG_CLI_ONLY = (
+    "user-level configuration is a per-user file edited outside the TUI "
+    "(`operon config`, XDG config.yml); the TUI deliberately holds no user "
+    "settings of its own"
+)
 
 REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
@@ -525,6 +531,19 @@ REGISTRY: tuple[ParityEntry, ...] = (
         note="project-independent measurement command; no project is open "
         "in the TUI context",
     ),
+    # The user configuration is a per-user file, not project state; the TUI
+    # reads it through the same resolvers but exposes no editor for it.
+    ParityEntry(("config", "path"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "show"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "get"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "set"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "unset"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "check"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "init"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "secret", "list"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "secret", "get"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "secret", "set"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
+    ParityEntry(("config", "secret", "clear"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
     # -- planned gaps (milestone attribution per HPC/cli_tui_gaps.md 九) -----
     ParityEntry(("import", "table"), STATUS_PLANNED, note=_M4),
     ParityEntry(("add",), STATUS_PLANNED, note=_M4),

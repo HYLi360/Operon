@@ -105,7 +105,9 @@ adopt 回注册输出侧 manifest。
 - 谱系边写入 `file_lineage(derived_file_id, input_file_id, workflow_run_id,
   created_at)`；重复 adopt 是 no-op。
 - 每次 adopt 写入一行 `workflow_runs`（step 为 `adopt`，`execution_details` 含
-  actor 与 items 摘要）；`--actor` 缺省取 `$USER` 或 `adopt`。
+  actor 与 items 摘要）；`--actor` 缺省取解析后的审计 actor
+  （`--actor` > `OPERON_ACTOR` > `USER`/`LOGNAME`/`USERNAME` > 本机账户 > `identity.actor`，
+  见[用户配置](cli-config.md)）或 `adopt`。
 - 派生 role 由产生它的工作流自由命名，不受 `schemas.yaml` 内置 role 清单限制
   （该清单只在导入路径生效）。
 

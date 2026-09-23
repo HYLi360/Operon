@@ -59,6 +59,9 @@ OPERON_SPLASH=kitty operon --project PATH tui
 仅在终端及中间转发层支持协议时强制选择 `kitty`；此显式选择也会覆盖
 `NO_COLOR`。未知取值按自动模式处理。最短显示时间与加载完成条件保持不变。
 
+[用户配置](cli-config.md)中的 `ui.splash` 可在不设置环境变量的情况下给出同样的
+选择；两者同时存在时 `OPERON_SPLASH` 仍然优先。
+
 ## 界面
 
 左侧边栏（或数字键）在八个界面之间切换：

@@ -185,7 +185,7 @@ operon ncbi-datasets --accession-file accessions.txt \
 operon ncbi-datasets --input ncbi_dataset.zip --standardize
 ```
 
-`--email` and `--api-key` can also be provided through `NCBI_EMAIL` and `NCBI_API_KEY`. Biopython Entrez is used only as a metadata fallback for rare packages without an assembly report; normal downloads use the NCBI Datasets API, streamed ZIP writes, and integrity checks.
+`--email` and `--api-key` are resolved as flag > `NCBI_EMAIL` / `NCBI_API_KEY` > stored secret; the persistent forms are `operon config set ncbi.email` and `operon config secret set ncbi.api_key` ([user configuration](cli-config.md)). Biopython Entrez is used only as a metadata fallback for rare packages without an assembly report; normal downloads use the NCBI Datasets API, streamed ZIP writes, and integrity checks.
 
 `--batch-size` defaults to 10 (range 1–100). `--download-workers` defaults to 3 (range 1–10) and downloads multiple batches concurrently with aiohttp. Each completed batch is imported, archived, and cleaned immediately. Before downloading, the planner checks manifest/file status and calculates the missing include set for each accession. Accessions with the same missing set are grouped. For example, if GFF/CDS/protein exist and only genome/sequence-report are missing, the request contains only `genome,sequence-report`. Annotation roles must all belong to one non-superseded `ANN_`; Operon does not assemble a false complete set from multiple annotations. With `--standardize`, the standardized copy must also exist. Fully satisfied accessions are reported as `skipped_existing`.
 

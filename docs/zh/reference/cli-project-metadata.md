@@ -196,7 +196,9 @@ operon ncbi-datasets --accession-file accessions.txt \
 operon ncbi-datasets --input ncbi_dataset.zip --standardize
 ```
 
-`--email`/`--api-key` 也可通过 `NCBI_EMAIL`/`NCBI_API_KEY` 环境变量提供。
+`--email`/`--api-key` 按 参数 > `NCBI_EMAIL`/`NCBI_API_KEY` > 已存储机密 的顺序解析；
+持久化方式为 `operon config set ncbi.email` 与 `operon config secret set ncbi.api_key`
+（见[用户配置](cli-config.md)）。
 Biopython Entrez 只在少数 package 缺少 assembly report 时作为元数据回退；正常下载
 使用 NCBI Datasets API，ZIP 采用流式写入和完整性检查。
 

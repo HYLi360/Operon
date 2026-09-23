@@ -74,6 +74,9 @@ Use `kitty` only when the terminal and any intermediary support the protocol;
 this explicit override also bypasses `NO_COLOR`. An unknown value uses auto
 selection. The minimum startup duration and data-readiness gate are unchanged.
 
+`ui.splash` in the [user configuration](cli-config.md) sets the same override
+without an environment variable; `OPERON_SPLASH` still wins when both are set.
+
 ## Screens
 
 The left sidebar (or the number keys) switches between eight screens:

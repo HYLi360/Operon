@@ -13,6 +13,7 @@
 
 ## Configuration and data model
 
+- [User Configuration](cli-config.md)
 - [Recipe Configuration Model](recipe-overview.md)
 - [Recipe Field Reference](recipe-fields.md)
 - [Result Parsers and Examples](recipe-parsers-examples.md)
@@ -31,6 +32,7 @@ cli-decisions-reports
 cli-workflow
 cli-tui
 cli-taxonomy-lifecycle-admin
+cli-config
 recipe-overview
 recipe-fields
 recipe-parsers-examples

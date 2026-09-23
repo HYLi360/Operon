@@ -81,7 +81,7 @@ Registers derived artifacts produced by external analyses/workflows back into th
 - Every `derived_from` file_id must already be registered, and the target entity must be active. Preflight checks the entire batch for invalid paths, formats, and conflicting content (including two items with the same entity/role). An occupied adoption target with different content is rejected without relocation or quarantine.
 - Manifest rows, lineage, entity state, and workflow records commit in one transaction. Failures before commit, including handled interruptions, roll back those rows and remove only archive targets newly created by this batch; existing artifacts remain intact. Completed JSONL records are flushed after commit. An OS-level crash can still leave unregistered files for recovery.
 - Lineage edges are written to `file_lineage(derived_file_id, input_file_id, workflow_run_id, created_at)`; repeating the same adopt is a no-op.
-- Every adopt writes one `workflow_runs` row (step `adopt`, `execution_details` containing the actor and an items summary); `--actor` defaults to `$USER` or `adopt`.
+- Every adopt writes one `workflow_runs` row (step `adopt`, `execution_details` containing the actor and an items summary); `--actor` defaults to the resolved audit actor (`--actor` > `OPERON_ACTOR` > `USER`/`LOGNAME`/`USERNAME` > local account > `identity.actor`, see [user configuration](cli-config.md)) or `adopt`.
 - Derived roles are freely named by the producing workflow and are not restricted to the built-in role list in `schemas.yaml` (that list only applies to the import path).
 
 ## fanout

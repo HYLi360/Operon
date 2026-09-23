@@ -90,7 +90,7 @@ def _local_home() -> str:
     try:
         return str(Path.home())
     except RuntimeError:  # home directory cannot be resolved
-        return os.environ.get("HOME", "")
+        return os.environ.get("HOME", "")  # env-audit: captured in environment_id
 
 
 def local_environment() -> dict[str, Any]:
@@ -105,7 +105,7 @@ def local_environment() -> dict[str, Any]:
         "dockerenv": Path("/.dockerenv").exists(),
     }
     for name in PROBE_ENV_VARS:
-        value = os.environ.get(name)
+        value = os.environ.get(name)  # env-audit: captured in environment_id
         if value:
             env[name.lower()] = value
     return _redact(env, _local_home())
