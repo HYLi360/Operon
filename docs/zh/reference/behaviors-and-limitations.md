@@ -247,7 +247,7 @@
 - **只有部分符号链接会被重定位。** `standardized/` 下指向项目内部的绝对符号链接会在创建备份时改写为相对目标；相对链接、树中其他位置的链接以及指向项目外部的绝对目标保留原文，而且没有 restore 命令（`backup.py`）。
 - **`backup verify` 拒绝多余的意外文件**，而不只是缺失或被改动的文件（`backup.py`）。
 - **向导在哈希与复制期间持有写锁。** ingest 发生在一个大事务中；失败时数据库回滚、缓冲的 JSONL 记录被丢弃、仅删除新创建的 `raw/` 目标——已存在的目标保留（`import_wizard.py`）。
-- **向导会重复哈希、烧掉 ID，且依赖用户名。** 每个输入被哈希两到三次，第一遍还在写锁之外；`db.next_id()` 在提示仍打开时就预留并提交 ID，因此取消向导会永久烧掉 ID；actor 取自 `os.environ.get("USER")`，因此容器或 cron 运行会记录 NULL actor；新实体被强制为 `METADATA_VALIDATED`（`import_wizard.py`、`database.py`）。
+- **向导会重复哈希、烧掉 ID，且依赖用户名。** 每个输入被哈希两到三次，第一遍还在写锁之外；`db.next_id()` 在提示仍打开时就预留并提交 ID，因此取消向导会永久烧掉 ID；actor 取自解析后的审计 actor（见[用户配置](cli-config.md)），因此既无 `USER`、又无本机账户条目、也没有 `identity.actor` 的容器或 cron 运行会记录 NULL actor；新实体被强制为 `METADATA_VALIDATED`（`import_wizard.py`、`database.py`）。
 - **向导需要 TTY 且只接受常规文件**（不支持目录产物）。若展示过的 ID 被其他进程占用，preflight 会报错，向导必须重启（`import_wizard.py`）。
 - **已知问题：草稿生命周期长于数据库状态时向导会中断。** 重新填充页面时会把草稿记住的 ID 赋给选择控件；若实体在向导打开期间被退役或删除，该 `Select` 值已不在新加载的选项中，于是在 worker 回调中的 UI 线程上抛出 `InvalidSelectValueError`——页面永远不会渲染，也不会显示内联错误。同理，启动失败后导航仍然可用而 reserved-ID 映射为空，此时输入 organism 名称并按 Next 会抛出未捕获的 `KeyError`。离开 sequencing/annotation 页面时只清除启用复选框而不清除其输入，重新启用该段时旧文本会再次出现（`import_wizard.py`，TUI）。
 - **demo 项目是字节确定的，且刻意包含损坏数据。** 该合成项目使用固定种子（20260816）、固定 contig 长度和 400×100 bp reads，ID 硬编码（`ANN_000002` 处留有空缺），release 为 `2026.08.demo`，项目为 `PRJ_DEMO_001`；它刻意带有损坏的注释（601 nt CDS、悬空的 mRNA parent）、恒为 `'I'` 的 read 质量和与 R1 无关的随机 DNA（而非反向互补）的 R2；其来源位于 `examples/synthetic_source`，`full` 备份会复制它（`demo.py`、`backup.py`）。
