@@ -61,6 +61,7 @@ Materializes database entities into a directory by file identity for consumption
   - `checksums.sha256`: checksums of the exported bytes;
   - `taxa.tsv`: one row per exported file recording `file_id`, `organism_id`, `scientific_name`, `taxon_id`, `taxonomy_source`, and `taxonomy_version`;
   - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the `manifest_sha256` and `taxa_sha256` identities.
+- Every TSV cell a spreadsheet would execute is escaped with a leading apostrophe (a text value beginning with `=`, `+`, `-`, `@`, TAB or CR); the `manifest_sha256`/`taxa_sha256` identities in `provenance.json` are computed over the escaped bytes, so a re-read matches (ODR-0040).
 - Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
 - Semantically complementary to release: release targets publication (QC-gated, immutable snapshot), while export targets analysis inputs (arbitrary selection criteria, materialized on demand).
 

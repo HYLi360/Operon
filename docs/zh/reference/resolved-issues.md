@@ -31,6 +31,7 @@
 | ODR-0016 | Analysis tools | 工具版本与数据库身份缓存现在带 300 秒 TTL，不再是进程生命周期缓存：一个批次仍只付一次探测开销，但长期运行的进程（TUI）会在过期后重新探测，因此就地升级的工具或在原路径替换的参考数据库会被察觉，而不是继续按陈旧身份规划。 |
 | ODR-0017 | Tests | 版本单一来源测试不再与并发的 sdist 构建竞争：它在持有机器级 sdist 构建锁的同时通过 `importlib.reload()` 重读 `operon.__version__`，因此在兄弟 worker 就地重写 `OperonDBS.egg-info` 期间导入 `operon` 的 xdist worker 不会把陈旧或缺失的版本冻结进断言。 |
 | ODR-0018 | Analysis tools | 在 Slurm array 路径上由分析 `progress_callback` 抛出的取消（TUI 的 `AnalysisCancelled`）不再被吞成逐文件失败：回调异常现在会中止整个批次——已写出 exit-code 文件的 task 按执行器中断路径完全相同的方式落为 completed/failed，其余计划标记为 `interrupted`，原始异常继续向调用方传播。KeyboardInterrupt 子类仍走既有的外层中断路径。 |
+| ODR-0040 | QC / 报告 | 会被电子表格当作公式执行的文本单元格现在加前导撇号转义——即以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的值。覆盖两个对齐后端产出的 `sequence_qc.tsv`（逐字节 parity 不变）以及所有 `write_tsv` 消费者（release 与 export 的 manifest、report TSV、TimeTree 候选表）。非字符串单元格保持原有字节，已转义的值不会二次转义，provenance 哈希按转义后的字节计算，因此再读回 release 仍然一致。 |
 
 ## K 系列（历史）
 

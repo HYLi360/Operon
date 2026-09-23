@@ -71,6 +71,7 @@ operon export --output DIR \
     `taxon_id`、`taxonomy_source`、`taxonomy_version`；
   - `provenance.json`：记录全部选择条件、`created_at`、`file_count`、`operon` 版本、
     `link_kind`、`manifest_sha256` 与 `taxa_sha256` 身份。
+- 会被电子表格当作公式执行的 TSV 单元格都会加前导撇号转义（以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的文本值）；`provenance.json` 中的 `manifest_sha256`/`taxa_sha256` 身份按转义后的字节计算，因此再读回一致（ODR-0040）。
 - 每次导出写入一行 `workflow_runs`（step 为 `export`，`output_sha256` 为 manifest
   哈希，`execution_details` 包含选择条件）。
 - 语义上与 release 互补：release 面向发布（QC 准入、不可变快照），export 面向分析
