@@ -674,22 +674,50 @@ def import_ncbi_taxonomy(
 
 
 def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> dict[str, Any]:
+    _validate_profile_version(profile)
+    _validate_profile_name(profile, profile_name)
+    _validate_profile_taxonomy(profile)
+    root_taxids = _normalize_profile_roots(profile)
+    ranks = _normalize_profile_ranks(profile)
+    excluded_taxids, exclude_extinct, patterns, compiled_patterns = _normalize_profile_filters(profile)
+    normalized_thresholds = _normalize_profile_thresholds(profile, ranks)
+    return {
+        "root_taxids": root_taxids,
+        "ranks": ranks,
+        "exclude_extinct": exclude_extinct,
+        "exclude_subtrees": excluded_taxids,
+        "exclude_name_patterns": patterns,
+        "compiled_name_patterns": compiled_patterns,
+        "thresholds": normalized_thresholds,
+    }
+
+
+def _validate_profile_version(profile: dict[str, Any]) -> None:
     try:
         profile_version = int(profile.get("version"))
     except (TypeError, ValueError) as exc:
         raise ValidationError("coverage profile version must be a positive integer") from exc
     if profile_version < 1:
         raise ValidationError("coverage profile version must be a positive integer")
+
+
+def _validate_profile_name(profile: dict[str, Any], profile_name: str) -> None:
     declared_name = profile.get("name")
     if declared_name is not None and str(declared_name) != profile_name:
         raise ValidationError(
             f"coverage profile name {declared_name!r} does not match filename {profile_name!r}"
         )
+
+
+def _validate_profile_taxonomy(profile: dict[str, Any]) -> None:
     taxonomy = profile.get("taxonomy") or {}
     if not isinstance(taxonomy, dict):
         raise ValidationError("coverage profile taxonomy must be a mapping")
     if taxonomy.get("source") != "NCBI":
         raise ValidationError("taxonomy coverage profiles currently require taxonomy.source: NCBI")
+
+
+def _normalize_profile_roots(profile: dict[str, Any]) -> list[int]:
     scope = profile.get("scope") or {}
     if not isinstance(scope, dict):
         raise ValidationError("coverage profile scope must be a mapping")
@@ -702,6 +730,10 @@ def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> di
         raise ValidationError("coverage profile root_taxids must be integers") from exc
     if any(taxid <= 0 for taxid in root_taxids):
         raise ValidationError("coverage profile root_taxids must be positive integers")
+    return root_taxids
+
+
+def _normalize_profile_ranks(profile: dict[str, Any]) -> list[str]:
     targets = profile.get("targets") or {}
     if not isinstance(targets, dict):
         raise ValidationError("coverage profile targets must be a mapping")
@@ -711,7 +743,12 @@ def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> di
     ranks = [str(rank).lower() for rank in ranks]
     if len(ranks) != len(set(ranks)) or not set(ranks).issubset(TARGET_RANK_ORDER):
         raise ValidationError("coverage profile target ranks must be unique values from: family, genus")
-    ranks = sorted(ranks, key=TARGET_RANK_ORDER.__getitem__)
+    return sorted(ranks, key=TARGET_RANK_ORDER.__getitem__)
+
+
+def _normalize_profile_filters(
+        profile: dict[str, Any],
+) -> tuple[list[int], bool, list[str], list[re.Pattern[str]]]:
     filters = profile.get("filters") or {}
     if not isinstance(filters, dict):
         raise ValidationError("coverage profile filters must be a mapping")
@@ -731,6 +768,12 @@ def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> di
         compiled_patterns = [re.compile(item) for item in patterns]
     except re.error as exc:
         raise ValidationError(f"invalid coverage exclusion regular expression: {exc}") from exc
+    return excluded_taxids, exclude_extinct, patterns, compiled_patterns
+
+
+def _normalize_profile_thresholds(
+        profile: dict[str, Any], ranks: list[str],
+) -> dict[str, float]:
     thresholds = profile.get("thresholds") or {}
     if not isinstance(thresholds, dict):
         raise ValidationError("coverage profile thresholds must be a mapping")
@@ -749,15 +792,7 @@ def _validate_coverage_profile(profile_name: str, profile: dict[str, Any]) -> di
         if not math.isfinite(value) or value < 0 or value > 100:
             raise ValidationError(f"thresholds.{rank}.min_coverage_percent must be between 0 and 100")
         normalized_thresholds[rank] = value
-    return {
-        "root_taxids": root_taxids,
-        "ranks": ranks,
-        "exclude_extinct": exclude_extinct,
-        "exclude_subtrees": excluded_taxids,
-        "exclude_name_patterns": patterns,
-        "compiled_name_patterns": compiled_patterns,
-        "thresholds": normalized_thresholds,
-    }
+    return normalized_thresholds
 
 
 def _descendant_targets(
