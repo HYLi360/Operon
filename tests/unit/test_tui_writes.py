@@ -89,8 +89,16 @@ async def _await_detail_text(app, needle: str) -> str:
     return _detail_text(app)
 
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 def _run(coroutine) -> None:
@@ -1699,9 +1707,11 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
                                                               monkeypatch) -> None:
     """A running external command has no cooperative cancel: the modal stays."""
     released = threading.Event()
+    started = threading.Event()
     dismissed: list = []
 
     def blocking_run(project_arg, step, command_line, **kwargs):
+        started.set()
         if not released.wait(10):
             raise AssertionError("test never released the run stub")
         return {"run_id": "WF_STUB", "step": step, "status": "completed",
@@ -1726,6 +1736,8 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
                 modal.query_one("#external-status", Static)) for _ in [0])
 
             # Cancel and escape must not dismiss the modal mid-run.
+            await _wait_until(started.is_set, "running external command to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
@@ -1748,13 +1760,16 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
 
 
 @pytest.mark.bug("ODR-0043")
+@pytest.mark.bug("ODR-0046")
 def test_qc_modal_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch) -> None:
     """A real Cancel click cancels the worker but must not dismiss the modal."""
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_run_qc(*args, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return [{"file_id": "FIL_000001", "ok": True}]
 
     monkeypatch.setattr(actions, "run_qc", blocking_run_qc)
@@ -1770,6 +1785,8 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
             modal.confirm()
             await _wait_until(lambda: modal.running, "qc run to start")
 
+            await _wait_until(started.is_set, "qc run to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
@@ -1777,8 +1794,9 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
             assert modal._worker.is_cancelled
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "qc modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "qc modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())
@@ -1788,13 +1806,16 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
 
 
 @pytest.mark.bug("ODR-0043")
+@pytest.mark.bug("ODR-0046")
 def test_run_external_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run."""
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_run(*args, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"run_id": "WF_STUB", "step": "marker_step", "status": "completed",
                 "exit_code": 0, "finished_at": None, "error": None,
                 "stdout_file": "", "stderr_file": "", "messages": ""}
@@ -1815,14 +1836,17 @@ def test_run_external_real_cancel_click_stays_open_while_running(
             modal.confirm()
             await _wait_until(lambda: modal.running, "external run to start")
 
+            await _wait_until(started.is_set, "external run to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "external modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "external modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())

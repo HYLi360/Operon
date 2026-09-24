@@ -33,8 +33,16 @@ from operon.tui.app import OperonApp
 from operon.tui.screens.coverage import CoveragePanel
 from operon.tui.screens.taxonomy import CompileReferenceSetModal, TaxonomyImportModal
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 @pytest.fixture
@@ -425,11 +433,13 @@ def test_import_modal_error_stays_open(project: Project, tmp_path: Path) -> None
 def test_import_modal_refuses_cancel_while_running(
         project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     released = threading.Event()
+    started = threading.Event()
     calls: list[tuple] = []
 
     def blocking_import(*args, **kwargs):
         calls.append((args, kwargs))
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
                 "node_count": 3, "reused": False}
 
@@ -455,6 +465,8 @@ def test_import_modal_refuses_cancel_while_running(
             assert len(calls) == 1
 
             # Cancel and escape must not dismiss the modal mid-run.
+            await _wait_until(started.is_set, "taxonomy import to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
@@ -465,8 +477,9 @@ def test_import_modal_refuses_cancel_while_running(
             assert all(widget.disabled for widget in modal.query("Input"))
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "import modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "import modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())
@@ -756,11 +769,13 @@ def test_compile_modal_refuses_cancel_while_running(
         project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _seed_taxonomy(project, tmp_path)
     released = threading.Event()
+    started = threading.Event()
     calls: list[tuple] = []
 
     def blocking_compile(*args, **kwargs):
         calls.append((args, kwargs))
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"reference_set_id": "cov@cov.1", "profile_name": "cov",
                 "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
                 "reused": False}
@@ -787,6 +802,8 @@ def test_compile_modal_refuses_cancel_while_running(
             assert len(calls) == 1
 
             # Cancel and escape must not dismiss the modal mid-run.
+            await _wait_until(started.is_set, "reference set compile to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
@@ -797,8 +814,9 @@ def test_compile_modal_refuses_cancel_while_running(
             assert all(widget.disabled for widget in modal.query("Select"))
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "compile modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "compile modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())
@@ -850,13 +868,16 @@ def test_compile_modal_empty_project_shows_hints(
 
 
 @pytest.mark.bug("ODR-0043")
+@pytest.mark.bug("ODR-0046")
 def test_import_modal_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_import(*args, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
                 "node_count": 3, "reused": False}
 
@@ -878,14 +899,17 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
 
             # Button.press() posts Button.Pressed through the real pump; before
             # ODR-0043 the base WriteModal handler dismissed the modal here.
+            await _wait_until(started.is_set, "taxonomy import to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "import modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "import modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())
@@ -894,14 +918,17 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
 
 
 @pytest.mark.bug("ODR-0043")
+@pytest.mark.bug("ODR-0046")
 def test_compile_modal_real_cancel_click_stays_open_while_running(
         project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
     _seed_taxonomy(project, tmp_path)
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_compile(*args, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"reference_set_id": "cov@cov.1", "profile_name": "cov",
                 "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
                 "reused": False}
@@ -922,14 +949,17 @@ def test_compile_modal_real_cancel_click_stays_open_while_running(
             modal.confirm()
             await _wait_until(lambda: modal.running, "reference set compile to start")
 
+            await _wait_until(started.is_set, "reference set compile to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "compile modal dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "compile modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())

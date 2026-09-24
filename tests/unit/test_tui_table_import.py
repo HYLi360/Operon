@@ -34,8 +34,16 @@ from operon.tui.screens.home import HomePanel
 from operon.tui.screens.table_import import ImportTableModal
 from tests import helpers
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 @pytest.fixture(scope="module")
@@ -368,7 +376,8 @@ def test_template_mode_command_text_and_confirm(
             assert ns.file is None and ns.on_conflict is None
 
             await _click(pilot, "#confirm")
-            await _wait_until(lambda: bool(dismissed), "template modal dismissal")
+            await _wait_until(lambda: bool(dismissed), "template modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
             assert any("template written to" in message
                        for _severity, message in _notifications(app))
 
@@ -597,9 +606,11 @@ def test_on_conflict_gate_then_conflict_error_then_retry(
 
 def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> None:
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_import(*args, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         return {"inserted": 2, "updated": 0, "unchanged": 0, "skipped": 0,
                 "table": "organisms", "source": kwargs["path"]}
 
@@ -623,6 +634,8 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
 
             # A real Cancel click is refused while the import runs (ODR-0043
             # guard): the modal stays open, the worker keeps running.
+            await _wait_until(started.is_set, "import to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             await _click(pilot, "#cancel")
             await _wait_until(
                 lambda: any(severity == "warning" and "cannot be interrupted" in m
@@ -631,7 +644,8 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
             assert app.screen is modal
 
             released.set()
-            await _wait_until(lambda: app.screen is not modal, "modal to close")
+            await _wait_until(lambda: app.screen is not modal, "modal to close",
+                              timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())
@@ -643,7 +657,7 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
     released = threading.Event()
 
     def blocking_import(*args, **kwargs):
-        released.wait(30)
+        released.wait(HANDOFF_TIMEOUT)
         return {"inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
                 "table": "organisms", "source": kwargs["path"]}
 

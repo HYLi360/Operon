@@ -59,8 +59,16 @@ from operon.tui.screens.files_ops import IngestModal, QcModal, VerifyModal
 from operon.tui.screens.home import HomePanel
 from operon.tui.screens.runs import RunDetailScreen, RunsPanel
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 @pytest.fixture(scope="module")
@@ -1128,9 +1136,11 @@ def test_ingest_modal_command_and_failed_action(project: Project, monkeypatch) -
 def test_qc_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> None:
     """Cancelling a running batch reports partial progress; crashes stay inline."""
     released = threading.Event()
+    started = threading.Event()
     cancelled_payloads: list[Any] = []
 
     def blocking_run_qc(project_arg, *, file_id=None, progress=None, **options):
+        started.set()
         if not released.wait(10):
             raise AssertionError("test never released the QC stub")
         progress(1, 2, {"ok": True, "file_id": "FIL_000001"})
@@ -1152,12 +1162,15 @@ def test_qc_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> Non
             assert modal.running
             assert modal.query_one("#qc-progress").display is True
 
+            await _wait_until(started.is_set, "the run to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             assert modal._worker.is_cancelled
             modal.action_cancel()  # a queued escape cancels again without dismissing
             assert app.screen is modal
             released.set()
-            await _wait_until(lambda: cancelled_payloads, "cancelled QC dismissal")
+            await _wait_until(lambda: cancelled_payloads, "cancelled QC dismissal",
+                              timeout=HANDOFF_TIMEOUT)
             assert cancelled_payloads == [{"cancelled": True, "done": 0, "total": 2}]
             assert any("QC cancelled after 0/2 file(s)" in message
                        for _severity, message in _notifications(app))
@@ -1307,7 +1320,7 @@ def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkey
             armed["on"] = False
             rows = original(project_arg, **kwargs)
             held.append(rows)
-            released.wait(SETTLE_TIMEOUT)
+            released.wait(HANDOFF_TIMEOUT)
             return rows
         return original(project_arg, **kwargs)
 

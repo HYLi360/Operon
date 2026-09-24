@@ -55,8 +55,16 @@ def project(tmp_path: Path, demo_template: Project) -> Project:
     return Project.find(target)
 
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 def _run(coroutine) -> None:
@@ -549,9 +557,11 @@ def test_analyze_modal_dry_run_no_candidates(project: Project, tmp_path: Path) -
 def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> None:
     """Cancelling a running batch reports partial progress; crashes stay inline."""
     released = threading.Event()
+    started = threading.Event()
     dismissed: list[Any] = []
 
     def blocking_run(project_arg, analysis, *, progress=None, **kwargs):
+        started.set()
         if not released.wait(10):
             raise AssertionError("test never released the analysis stub")
         progress(1, 2, "FIL_000001", "start")
@@ -576,12 +586,15 @@ def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -
             modal.confirm()  # a second confirm while running is a no-op
             assert modal.running
 
+            await _wait_until(started.is_set, "the run to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             assert modal._worker.is_cancelled
             modal.action_cancel()  # a queued escape cancels again without dismissing
             assert app.screen is modal
             released.set()
-            await _wait_until(lambda: dismissed, "cancelled analysis dismissal")
+            await _wait_until(lambda: dismissed, "cancelled analysis dismissal",
+                              timeout=HANDOFF_TIMEOUT)
             assert dismissed == [{"cancelled": True, "done": 0, "total": 0}]
             assert any("analysis cancelled after 0/0 file(s)" in message
                        for _severity, message in _notifications(app))
@@ -988,13 +1001,16 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
 
 
 @pytest.mark.bug("ODR-0043")
+@pytest.mark.bug("ODR-0046")
 def test_analyze_modal_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run."""
     released = threading.Event()
+    started = threading.Event()
 
     def blocking_run(project_arg, analysis, *, progress=None, **kwargs):
-        released.wait(30)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
         raise actions.AnalysisCancelled()
 
     monkeypatch.setattr(actions, "run_analysis", blocking_run)
@@ -1012,14 +1028,17 @@ def test_analyze_modal_real_cancel_click_stays_open_while_running(
 
             # Button.press() posts Button.Pressed through the real pump; before
             # ODR-0043 the base WriteModal handler dismissed the modal here.
+            await _wait_until(started.is_set, "analysis to have reached the core",
+                              timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "cancelled analysis dismissal")
-            await _settled(app)
+            await _wait_until(lambda: bool(dismissed), "cancelled analysis dismissal",
+                              timeout=HANDOFF_TIMEOUT)
+            await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
         _run(scenario())

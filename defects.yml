@@ -1213,35 +1213,51 @@ defects:
   regression_tests:
   - tests/unit/test_tui_screens_more.py::test_stale_load_does_not_restore_rows_a_newer_filter_removed
 - id: ODR-0046
-  title: The Cancel-click regression tests of ODR-0043 wait on a wall-clock budget
-    and can time out under load, turning a busy machine into a red suite with no
-    product fault behind it
-  reported: '2026-09-24'
+  title: The Cancel-click regression tests of ODR-0043 press Cancel before the run starts, and can hang the wait - a busy machine turns into a red suite with no product fault behind it
+  reported: 2026-09-24
   introduced_in: null
-  affected: 'tests/unit/test_tui_writes.py: the five cancel-while-running tests wait
-    for an observable UI result through _wait_until(...), whose budget is
-    SETTLE_TIMEOUT = 30 s, so how long a busy machine needs to hand a worker result
-    back decides the outcome. Observed three times on 2026-09-24: on master under
-    load (1 failed, 2086 passed), and on the merged branch in a 3.10-3.15 matrix wave
-    where a two-version run failed it on 3.13, 3.14 and 3.15 (1 failed / 2173 passed
-    each). Python 3.15 is the most sensitive: one version alone at -n 8 still failed
-    it, while 3.13 and 3.14 passed their own full suite under the same settings.'
+  affected: |
+    The cancel-while-running tests of five TUI test modules (tests/unit/test_tui_writes.py,
+    tests/unit/test_tui_analyze.py, tests/unit/test_tui_taxonomy.py,
+    tests/unit/test_tui_table_import.py, tests/unit/test_tui_screens_more.py): twelve
+    waits for a worker result crossing back to the UI, plus the stub holds that gate
+    them, all measured by wall-clock budgets.  Observed on 2026-09-24: on master under
+    load (1 failed, 2086 passed); on the merged branch in a 3.10-3.15 matrix wave where a
+    two-version run failed it on 3.13, 3.14 and 3.15 (1 failed / 2173 passed each);
+    and twice on 3.15 alone at -n 8 (1 failed / 2173 passed), where the wait burned a
+    raised 120 s budget to the second.  Python 3.15 is the most sensitive version.
   severity: low
   component: tests
-  status: confirmed
-  reproduction: 'Run the full suite (python -m pytest, the project default addopts)
-    on a busy machine, or two versions at once through scripts/run-test-matrix.sh.
-    The failure is test_qc_modal_real_cancel_click_stays_open_while_running timing
-    out on "qc modal dismissal" (tests/unit/test_tui_writes.py:125) after the stubbed
-    run was released. The same test passes alone, with -n0 and with --dist loadfile,
-    so the trigger is scheduling pressure rather than the distribution mode by
-    itself.'
-  disposition: 'Registered on the maintainer decision of 2026-09-24 so a red CI has
-    a name to point at. The condition those tests wait for is not load-bounded, and
-    they check it against the clock; the fix is to stop measuring wall-clock time
-    (expose the budget through a fixture or an environment variable, or wait on the
-    deferred dismissal itself) and to carry the bug marker on the tests it makes
-    deterministic. Deliberately left open for now.'
+  status: fixed
+  reproduction: |
+    Run the full suite (python -m pytest, the project default addopts) on a busy machine,
+    or two versions at once through scripts/run-test-matrix.sh: the failure is
+    test_qc_modal_real_cancel_click_stays_open_while_running timing out on "qc modal
+    dismissal" (tests/unit/test_tui_writes.py) after the stubbed run was released.  It
+    passes alone, with -n0 and with --dist loadfile, so the trigger is scheduling
+    pressure, not the distribution mode by itself.
+  root_cause: |
+    These tests pressed Cancel immediately after Confirm, and asked the UI to be running
+    already through a flag set synchronously in the same call - so the click could land
+    before the worker's task took its first step.  Textual cancels a worker by cancelling
+    that task, and a task cancelled before its first step never runs the threaded body at
+    all: nothing executes, nothing posts a result, and the modal can never dismiss.  A
+    30-line probe on 3.15 shows it directly (state RUNNING, is_cancelled True, body ran
+    False, no thread left); the modal then waits forever, which is why a raised budget
+    only delayed the failure.  A human cannot hit the window (the worker starts on the
+    loop's next tick), but a test clicking Confirm and Cancel in the same tick can.
+  disposition: |
+    Fixed test-side, without touching the product: every cancel test now waits for a
+    `started` event that the stub sets right before it blocks, so Cancel always cancels
+    a run that is provably running.  The waits that span a worker->UI handoff got their
+    own HANDOFF_TIMEOUT of 120 s with the scenario cap raised to 180 s (a loaded runner
+    really did hold a result for 33 s in the same session), so a slow machine no longer
+    reddens them while a genuine hang still fails at the harder wall.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running

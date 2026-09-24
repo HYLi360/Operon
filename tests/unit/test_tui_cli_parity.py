@@ -339,8 +339,16 @@ def parse_command_text(text: str):
 # Headless scaffolding, copied from test_tui_analyze.py / test_tui_writes.py
 # (per-file copies are the established convention for the TUI test suite).
 
-SCENARIO_TIMEOUT = 60.0
+SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
+#: Budget for a worker result crossing back from its thread to the UI, and for
+#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: bound a loaded machine cannot exceed: a busy runner once left the dismissal
+#: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
+#: no product fault behind it.  The scenario cap above is three times this
+#: budget so a wait may legitimately use all of it, and a real hang still fails
+#: here instead of at a red suite on a busy CI runner.
+HANDOFF_TIMEOUT = 120.0
 
 
 def _run(coroutine) -> None:
@@ -700,7 +708,8 @@ def test_run_external_modal_command_text_matches_action_kwargs(
             assert ns.backend == "slurm"
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "run-external modal dismissed")
+            await _wait_until(lambda: bool(dismissed), "run-external modal dismissed",
+                              timeout=HANDOFF_TIMEOUT)
 
     _run(scenario())
     assert dismissed == [payload]
@@ -767,7 +776,8 @@ def test_add_modal_command_text_matches_action_kwargs(
             assert ns.field == ["organism_id=ORG_000001", "note=from the TUI"]
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "add modal dismissed")
+            await _wait_until(lambda: bool(dismissed), "add modal dismissed",
+                              timeout=HANDOFF_TIMEOUT)
 
     _run(scenario())
     assert dismissed == [payload]
@@ -821,7 +831,8 @@ def test_add_accession_modal_command_text_matches_action_kwargs(
             assert ns.primary is True
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "add-accession modal dismissed")
+            await _wait_until(lambda: bool(dismissed), "add-accession modal dismissed",
+                              timeout=HANDOFF_TIMEOUT)
 
     _run(scenario())
     assert dismissed == [payload]
@@ -1612,7 +1623,8 @@ def test_import_table_modal_command_text_matches_action_kwargs(
 
             modal.confirm()
             await _wait_until(lambda: len(run_calls) == 1, "table import call")
-            await _wait_until(lambda: bool(dismissed), "modal dismissal")
+            await _wait_until(lambda: bool(dismissed), "modal dismissal",
+                              timeout=HANDOFF_TIMEOUT)
 
     _run(scenario())
     assert calls[0][0] == (project, "organisms", "/tmp/organisms.csv")
