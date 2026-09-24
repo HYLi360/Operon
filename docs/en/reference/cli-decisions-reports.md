@@ -115,7 +115,7 @@ operon run-pipeline \
   [--profile NAME] [--yes]
 ```
 
-Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs.
+Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs. `--source` also accepts the `sftp://` and `remote://` URLs that `operon ingest` takes: the URL is fetched to a temporary file for the ingest stage and the temporary copy is removed once the stage returns, while `source_url` records the original URL.
 
 ## report
 

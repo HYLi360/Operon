@@ -175,6 +175,36 @@ def test_run_pipeline_stops_before_evaluation_when_qc_fails(
     assert not any(line.startswith("[4/4]") for line in lines), lines
 
 
+@pytest.mark.bug("ODR-0042")
+def test_run_pipeline_fetches_remote_sources_like_ingest(
+        project: Project, tmp_path: Path, monkeypatch) -> None:
+    """`sftp://`/`remote://` sources are pre-fetched and the temporary copy removed."""
+    staged = _source_fasta(tmp_path, "fetched.fasta")
+    calls: list[str] = []
+
+    def fake_fetch(_project, url):
+        calls.append(url)
+        return staged
+
+    monkeypatch.setattr("operon.remotes.fetch_url_to_temp", fake_fetch)
+    _fresh_assembly(project, "ASM_000902")
+    lines: list[str] = []
+    db = Database(project.db_path)
+    try:
+        result = run_pipeline(db, project, source="sftp://host/incoming.fasta",
+                              entity_type="assembly", entity_id="ASM_000902",
+                              role="genome_fasta", progress=lines.append)
+        file_row = dict(db.conn.execute(
+            "SELECT * FROM files WHERE file_id=?", (result["file_id"],)).fetchone())
+    finally:
+        db.close()
+
+    assert calls == ["sftp://host/incoming.fasta"]
+    assert lines[0] == "[1/4] ingest sftp://host/incoming.fasta"
+    assert file_row["source_url"] == "sftp://host/incoming.fasta"
+    assert not staged.exists()  # the temporary fetch is gone
+
+
 def test_reason_list_normalizes_decision_payloads() -> None:
     assert reason_list(["a", "b"]) == ["a", "b"]
     assert reason_list('["a", "b"]') == ["a", "b"]

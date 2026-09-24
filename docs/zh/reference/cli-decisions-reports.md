@@ -168,7 +168,9 @@ operon run-pipeline \
 ```
 
 依次执行 `ingest -> standardize -> qc -> evaluate`。任一阶段失败返回非零。当判定会复用已有
-curated 决定时，命令会先询问一次；`--yes` 在非交互运行时跳过该确认。
+curated 决定时，命令会先询问一次；`--yes` 在非交互运行时跳过该确认。`--source` 同样接受
+`operon ingest` 支持的 `sftp://` / `remote://` URL：该 URL 会先抓取到临时文件供 ingest
+阶段使用，阶段返回后临时副本即被删除，而 `source_url` 记录原始 URL。
 
 ## report
 

@@ -141,8 +141,31 @@ def run_pipeline(
     profile_name = resolve_profile(project, profile)
 
     emit(f"[1/4] ingest {source}")
-    import_row = ingest_file(db, project, str(source), entity_type, entity_id, role,
-                             fmt=fmt, compression=compression, source_url=source_url)
+    source_text = str(source)
+    temp_path: Path | None = None
+    if source_text.startswith(("sftp://", "remote://")):
+        # The standalone `operon ingest` accepts remote URLs; the pipeline's
+        # ingest stage routes them through the same fetch-and-clean-up path so
+        # `run-pipeline --source sftp://...` behaves like the commands it
+        # replaces (ODR-0042).
+        from operon.remotes import fetch_url_to_temp
+
+        temp_path = fetch_url_to_temp(project, source_text)
+        local_source = str(temp_path)
+        source_url = source_url or source_text
+    else:
+        local_source = source_text
+    try:
+        import_row = ingest_file(db, project, local_source, entity_type, entity_id, role,
+                                 fmt=fmt, compression=compression, source_url=source_url)
+    finally:
+        if temp_path is not None:
+            if temp_path.is_dir() and not temp_path.is_symlink():
+                import shutil
+
+                shutil.rmtree(temp_path, ignore_errors=True)
+            else:
+                temp_path.unlink(missing_ok=True)
     file_id = import_row["file_id"]
     emit(f"       -> {file_id} {import_row['sha256'][:16]}...")
 
