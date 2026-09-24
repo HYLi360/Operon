@@ -40,7 +40,6 @@ from operon.schema import (
     Schema,
     add_accession_record,
     add_metadata_record,
-    read_tsv,
 )
 from operon.secrets import resolve_secret
 from operon.table_import import (
@@ -1264,185 +1263,16 @@ def _cmd_alignment_qc(args: argparse.Namespace) -> int:
     return 0
 
 
-def _log_import_qc_run(project: Project, db: Database, source: str, *,                       started_at: str, metric_count: int, payload_format: str,
-                       entities: list[tuple[str, str]]) -> None:
-    entity_type, entity_id = entities[0] if len(entities) == 1 else (None, None)
-    log_run(db, project, {
-        "entity_type": entity_type,
-        "entity_id": entity_id,
-        "step": "import-qc",
-        "status": "completed",
-        "started_at": started_at,
-        "finished_at": _now_for_cli(),
-        "command": f"operon import-qc --file {source}",
-        "tool": "operon",
-        "execution_details": json.dumps({
-            "source": str(source),
-            "format": payload_format,
-            "metric_count": metric_count,
-            "entities": [f"{kind}:{ident}" for kind, ident in entities],
-        }, ensure_ascii=False, sort_keys=True),
-    })
-
-
-def _recompute_imported_qc_states(db: Database, entities: list[tuple[str, str]]) -> None:
-    from operon.qc import _recompute_entity_qc_state
-    for entity_type, entity_id in entities:
-        _recompute_entity_qc_state(db, entity_type, entity_id)
-
-
-def _is_qc_json_payload(path: Path) -> bool:
-    if path.suffix.lower() == ".json":
-        return True
-    with open(path, "rb") as handle:
-        return handle.read(4096).lstrip().startswith(b"{")
-
-
-def _import_qc_json(args: argparse.Namespace, project: Project, db: Database,
-                    started_at: str) -> int:
-    from operon.qc import MEASURE_SCHEMA_VERSION, TOOL_NAME, _sync_sequences
-    source = Path(args.tsv_file)
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"{source}: invalid qc-measure JSON payload: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != MEASURE_SCHEMA_VERSION:
-        raise ValidationError(
-            f"{source}: unsupported qc-measure payload schema_version "
-            f"{payload.get('schema_version') if isinstance(payload, dict) else None!r}; "
-            f"expected {MEASURE_SCHEMA_VERSION}"
-        )
-    if payload.get("tool") != TOOL_NAME:
-        raise ValidationError(
-            f"{source}: payload tool {payload.get('tool')!r} is not {TOOL_NAME!r}"
-        )
-    file_info = payload.get("file")
-    if not isinstance(file_info, dict) or not file_info.get("sha256") or file_info.get("size_bytes") is None:
-        raise ValidationError(f"{source}: payload is missing file identity (file.sha256/size_bytes)")
-    payload_sha256 = str(file_info["sha256"]).lower()
-    file_id = (str(file_info["file_id"]).strip() if file_info.get("file_id") else None) or None
-    if file_id:
-        file_row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
-        if not file_row:
-            raise ValidationError(f"{source}: file_id {file_id} does not exist")
-    else:
-        matches = db.conn.execute(
-            "SELECT * FROM files WHERE LOWER(sha256)=?", (payload_sha256,),
-        ).fetchall()
-        if not matches:
-            raise ValidationError(f"{source}: no manifest file matches sha256 {payload_sha256}")
-        if len(matches) > 1:
-            raise ValidationError(
-                f"{source}: sha256 {payload_sha256} matches {len(matches)} manifest files; "
-                f"re-run qc-measure with --file-id"
-            )
-        file_row = matches[0]
-    if payload_sha256 != str(file_row["sha256"]).lower():
-        raise ValidationError(f"{source}: payload sha256 does not match manifest for {file_row['file_id']}")
-    if int(file_info["size_bytes"]) != int(file_row["size_bytes"]):
-        raise ValidationError(f"{source}: payload size_bytes does not match manifest for {file_row['file_id']}")
-    tool_version = str(payload.get("tool_version") or "")
-    if tool_version != __version__:
-        print(
-            f"warning: payload was measured by {TOOL_NAME} {tool_version or 'unknown'} but this "
-            f"installation is {__version__}; importing anyway",
-            file=sys.stderr,
-        )
-    metrics = payload.get("metrics")
-    if not isinstance(metrics, list):
-        raise ValidationError(f"{source}: payload metrics must be a list")
-    db.require_active_entity(file_row["entity_type"], file_row["entity_id"])
-    evaluated_at = _now_for_cli()
-    count = 0
-    for item in metrics:
-        db.insert_qc_result({
-            "entity_type": file_row["entity_type"],
-            "entity_id": file_row["entity_id"],
-            "file_id": file_row["file_id"],
-            "file_sha256": file_row["sha256"],
-            "input_identity": f"file:{file_row['file_id']}:{file_row['sha256']}",
-            "qc_stage": item["qc_stage"],
-            "metric_name": item["metric_name"],
-            "metric_value": item.get("metric_value"),
-            "metric_numeric": item.get("metric_numeric"),
-            "metric_unit": item.get("metric_unit"),
-            "tool": TOOL_NAME,
-            "tool_version": tool_version,
-            "parameter_set": item.get("parameter_set") or payload.get("parameter_set") or "external",
-            "evaluated_at": evaluated_at,
-        })
-        count += 1
-    sequences = payload.get("sequences")
-    if isinstance(sequences, dict):
-        _sync_sequences(db, dict(file_row), {str(seqid): int(length) for seqid, length in sequences.items()})
-    entities = [(file_row["entity_type"], file_row["entity_id"])]
-    _recompute_imported_qc_states(db, entities)
-    _log_import_qc_run(project, db, str(args.tsv_file), started_at=started_at,
-                       metric_count=count, payload_format="json", entities=entities)
-    print(f"imported {count} built-in QC metric(s) for {file_row['file_id']}")
-    return 0
-
-
 def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
-    started_at = _now_for_cli()
-    if _is_qc_json_payload(Path(args.tsv_file)):
-        return _import_qc_json(args, project, db, started_at)
-    rows = read_tsv(args.tsv_file)
-    required = ["entity_type", "entity_id", "qc_stage", "metric_name", "metric_value", "tool", "tool_version",
-                "parameter_set"]
-    missing = [c for c in required if not rows or c not in rows[0]]
-    if missing:
-        raise ValidationError(f"{args.tsv_file}: missing columns {missing}")
-    count = 0
-    entities: list[tuple[str, str]] = []
-    for row in rows:
-        db.require_active_entity(row["entity_type"], row["entity_id"])
-        file_id = (row.get("file_id") or "").strip() or None
-        file_sha256 = (row.get("file_sha256") or "").strip() or None
-        if file_id:
-            file_row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
-            if not file_row:
-                raise ValidationError(f"{args.tsv_file}: file_id {file_id} does not exist")
-            if file_row["entity_type"] != row["entity_type"] or file_row["entity_id"] != row["entity_id"]:
-                raise ValidationError(
-                    f"{args.tsv_file}: file_id {file_id} belongs to "
-                    f"{file_row['entity_type']} {file_row['entity_id']}, not {row['entity_type']} {row['entity_id']}"
-                )
-            if file_sha256 and file_sha256.lower() != str(file_row["sha256"]).lower():
-                raise ValidationError(f"{args.tsv_file}: file_sha256 does not match manifest for {file_id}")
-            file_sha256 = str(file_row["sha256"])
-        try:
-            numeric = float(row["metric_value"])
-        except (TypeError, ValueError):
-            numeric = None
-        record = {
-            "entity_type": row["entity_type"],
-            "entity_id": row["entity_id"],
-            "file_id": file_id,
-            "file_sha256": file_sha256,
-            "input_identity": (
-                f"file:{file_id}:{file_sha256}" if file_id
-                else f"entity:{row['entity_type']}:{row['entity_id']}"
-            ),
-            "qc_stage": row["qc_stage"],
-            "metric_name": row["metric_name"],
-            "metric_value": row["metric_value"],
-            "metric_numeric": numeric,
-            "metric_unit": row.get("metric_unit"),
-            "tool": row["tool"],
-            "tool_version": row["tool_version"],
-            "parameter_set": row.get("parameter_set") or "external",
-            "evaluated_at": row.get("evaluated_at") or _now_for_cli(),
-        }
-        db.insert_qc_result(record)
-        entity = (row["entity_type"], row["entity_id"])
-        if entity not in entities:
-            entities.append(entity)
-        count += 1
-    _recompute_imported_qc_states(db, entities)
-    _log_import_qc_run(project, db, str(args.tsv_file), started_at=started_at,
-                       metric_count=count, payload_format="tsv", entities=entities)
-    print(f"imported {count} external QC metric(s)")
+    from operon.qc.imports import import_qc
+    result = import_qc(db, project, Path(args.tsv_file), started_at=_now_for_cli())
+    warning = result.get("warning")
+    if warning:
+        print(f"warning: {warning}", file=sys.stderr)
+    if result["format"] == "json":
+        print(f"imported {result['metric_count']} built-in QC metric(s) for {result['file_id']}")
+    else:
+        print(f"imported {result['metric_count']} external QC metric(s)")
     return 0
 
 
