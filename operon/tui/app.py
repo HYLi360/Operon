@@ -84,6 +84,7 @@ class HelpScreen(DismissOnce, ModalScreen):
             "  q  run QC (Files screen)\n"
             "  I  import QC metrics (Files screen)\n"
             "  S  standardize files (Files screen)\n"
+            "  P  run the pipeline for one source (Files screen)\n"
             "  e  evaluate decisions (Decisions screen)\n"
             "  c  curate selected decision (Decisions screen)\n"
             "  enter  open selected run (Tasks screen)\n"

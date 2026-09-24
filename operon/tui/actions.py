@@ -1554,6 +1554,64 @@ def import_qc(project: Project, path: str) -> dict[str, Any]:
         return import_qc_core(db, project, path)
 
 
+def pipeline_preview(
+        project: Project,
+        *,
+        source: str,
+        entity_type: str,
+        entity_id: str,
+        role: str,
+        profile: str | None = None,
+        fmt: str | None = None,
+        compression: str | None = None,
+        source_url: str | None = None,
+) -> dict[str, Any]:
+    """Preview a ``run-pipeline`` run like the CLI's preflight step.
+
+    Read-only (like :func:`lifecycle_preview`): it resolves the profile, checks
+    the entity and reports whether evaluation would re-use a curated decision —
+    without writing anything.  The stages keep their own deeper validation
+    (ingest checks the source for real); this is what unlocks the dialog's
+    Confirm.
+    """
+    from operon.pipeline import plan_pipeline
+
+    db = Database(project.db_path, read_only=True)
+    try:
+        return plan_pipeline(db, project, source=source, entity_type=entity_type,
+                             entity_id=entity_id, role=role, profile=profile,
+                             fmt=fmt, compression=compression, source_url=source_url)
+    finally:
+        db.close()
+
+
+def run_pipeline(
+        project: Project,
+        *,
+        source: str,
+        entity_type: str,
+        entity_id: str,
+        role: str,
+        profile: str | None = None,
+        fmt: str | None = None,
+        compression: str | None = None,
+        source_url: str | None = None,
+) -> dict[str, Any]:
+    """Run the four pipeline stages like ``operon run-pipeline``.
+
+    The same core the CLI drives, so the manifest row, the staged target, the
+    QC results and the decision carry identical provenance.  The
+    curated-decision gate is the caller's: the dialog's explicit checkbox
+    stands in for the CLI's ``--yes``.
+    """
+    from operon.pipeline import run_pipeline as run_pipeline_core
+
+    with _open_writable(project) as db:
+        return run_pipeline_core(db, project, source=source, entity_type=entity_type,
+                                 entity_id=entity_id, role=role, profile=profile,
+                                 fmt=fmt, compression=compression, source_url=source_url)
+
+
 def add_accession(
         project: Project,
         *,

@@ -21,6 +21,11 @@ LINK_KIND_OPTIONS = [("copy (independent copy)", "copy"),
                      ("hardlink", "hardlink"),
                      ("symlink", "symlink")]
 
+#: `operon run-pipeline --entity-type` choices (narrower than ingest's).
+PIPELINE_ENTITY_TYPE_OPTIONS = [("assembly", "assembly"),
+                                ("annotation", "annotation"),
+                                ("run", "run")]
+
 
 class IngestModal(WriteModal):
     """Form + confirm for `operon ingest`.  ConflictError stays inline."""
@@ -286,6 +291,183 @@ class ImportQcModal(WriteModal):
             self.show_error("run the preview first")
             return
         self.run_action(lambda: actions.import_qc(self.project, path))
+
+
+class PipelineModal(WriteModal):
+    """Form + mandatory preview + confirm for `operon run-pipeline`.
+
+    One source file goes through ingest → standardize → QC → evaluate.  The
+    preview is the preflight (the table-import dialog's shape): it resolves the
+    profile, checks the entity and reports whether evaluation would re-use a
+    curated decision — without writing anything.  When it would, Confirm also
+    requires the explicit re-evaluation checkbox: this dialog's stand-in for
+    the CLI's ``--yes`` (a non-tty CLI run refuses instead).
+    """
+
+    def __init__(self, project: Project, selected: dict[str, Any] | None = None) -> None:
+        super().__init__("Run pipeline")
+        self.project = project
+        self.selected = selected or {}
+        self.preview: dict[str, Any] | None = None
+        self.preview_running = False
+
+    def _default_profile(self) -> str:
+        return str(self.project.config["qc"]["default_profile"])
+
+    def _profile_options(self) -> list[tuple[str, str]]:
+        from operon.tui.data import list_profiles
+
+        names = sorted({self._default_profile(), *list_profiles(self.project)})
+        return [
+            (f"{name} (project default)" if name == self._default_profile() else name, name)
+            for name in names
+        ]
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Input(placeholder="source path or sftp:// / remote:// URL (required)",
+                    id="pipeline-source")
+        yield Static("Entity type", classes="modal-label")
+        yield Select(PIPELINE_ENTITY_TYPE_OPTIONS,
+                     value=self.selected.get("entity_type") or "assembly",
+                     id="pipeline-entity-type", allow_blank=False)
+        yield Input(value=str(self.selected.get("entity_id") or ""),
+                    placeholder="entity id (required)", id="pipeline-entity-id")
+        yield Input(value=str(self.selected.get("file_role") or ""),
+                    placeholder="role (required)", id="pipeline-role")
+        yield Static("QC profile", classes="modal-label")
+        yield Select(self._profile_options(), value=self._default_profile(),
+                     id="pipeline-profile", allow_blank=False)
+        yield Input(placeholder="format (auto-detect)", id="pipeline-format")
+        yield Input(placeholder="compression (auto-detect)", id="pipeline-compression")
+        yield Input(placeholder="source url (optional)", id="pipeline-source-url")
+        yield Checkbox("Re-run evaluation over a curated decision (--yes)", id="pipeline-yes")
+        yield Button("Preview pipeline", id="pipeline-preview-button")
+        yield Static("", id="pipeline-status", classes="modal-info")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.set_confirm_enabled(False)
+
+    def _values(self) -> dict[str, Any]:
+        entity_type = self.query_one("#pipeline-entity-type", Select).value
+        profile = self.query_one("#pipeline-profile", Select).value
+        return {
+            "source": self.query_one("#pipeline-source", Input).value.strip(),
+            "entity_type": "assembly" if entity_type is Select.NULL else str(entity_type),
+            "entity_id": self.query_one("#pipeline-entity-id", Input).value.strip(),
+            "role": self.query_one("#pipeline-role", Input).value.strip(),
+            "profile": None if profile is Select.NULL else str(profile),
+            "fmt": self.query_one("#pipeline-format", Input).value.strip() or None,
+            "compression": self.query_one("#pipeline-compression", Input).value.strip() or None,
+            "source_url": self.query_one("#pipeline-source-url", Input).value.strip() or None,
+        }
+
+    def command_text(self) -> str:
+        values = self._values()
+        parts = ["operon", "run-pipeline", "--source", shlex.quote(values["source"] or "…")]
+        for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
+                            ("role", "--role"), ("profile", "--profile"), ("fmt", "--format"),
+                            ("compression", "--compression"), ("source_url", "--source-url")):
+            if values[field]:
+                parts += [flag, shlex.quote(str(values[field]))]
+        if self.query_one("#pipeline-yes", Checkbox).value:
+            parts.append("--yes")
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id and event.input.id.startswith("pipeline-"):
+            self._invalidate_preview()
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id and event.select.id.startswith("pipeline-"):
+            self._invalidate_preview()
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "pipeline-yes":
+            self.refresh_command()
+
+    def _invalidate_preview(self) -> None:
+        if self.preview is None:
+            return
+        self.preview = None
+        self.set_confirm_enabled(False)
+        self.query_one("#pipeline-status", Static).update(
+            Text("form changed — run the preview again", style="yellow"))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "pipeline-preview-button":
+            event.stop()
+            event.prevent_default()
+            self.run_preview()
+            return
+        # Textual dispatches a message to every MRO class defining the handler
+        # (ODR-0043), so without prevent_default WriteModal's own handler would
+        # run the Confirm a second time.
+        event.prevent_default()
+        super().on_button_pressed(event)
+
+    # -- preview (mandatory preflight) ----------------------------------------
+
+    def run_preview(self) -> None:
+        values = self._values()
+        for field, label in (("source", "source"), ("entity_id", "entity id"), ("role", "role")):
+            if not values[field]:
+                self.show_error(f"{label} is required")
+                return
+        self.clear_error()
+        self.preview_running = True
+        self.set_confirm_enabled(False)
+        self.query_one("#pipeline-preview-button", Button).disabled = True
+        self.query_one("#pipeline-status", Static).update("preview running…")
+        self._preview(values)
+
+    @work(thread=True)
+    def _preview(self, values: dict[str, Any]) -> None:
+        try:
+            payload: Any = actions.pipeline_preview(self.project, **values)
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+            payload = exc
+        self.post_to_ui(self._preview_done, payload)
+
+    def _preview_done(self, payload: Any) -> None:
+        self.preview_running = False
+        self.query_one("#pipeline-preview-button", Button).disabled = False
+        if isinstance(payload, BaseException):
+            self.preview = None
+            self.show_error(payload)
+            self.query_one("#pipeline-status", Static).update("")
+            self.set_confirm_enabled(False)
+            return
+        self.preview = payload
+        self.query_one("#pipeline-status", Static).update(self._preview_text(payload))
+        self.set_confirm_enabled(True)
+
+    @staticmethod
+    def _preview_text(payload: dict[str, Any]) -> Text:
+        lines = [
+            f"profile: {payload['profile']}",
+            "steps: " + " → ".join(payload["steps"]),
+            f"entity: {payload['entity_type']} {payload['entity_id']}",
+        ]
+        if payload["source_exists"] is False:
+            lines.append("warning: the source path does not exist yet")
+        if payload["curated_targets"]:
+            lines.append(
+                "warning: evaluation will re-use a curated decision — "
+                "tick the re-run box to confirm")
+        return Text("\n".join(lines))
+
+    def confirm(self) -> None:
+        if self.preview is None:
+            self.show_error("run the preview first")
+            return
+        values = self._values()
+        if self.preview["curated_targets"] and not self.query_one("#pipeline-yes", Checkbox).value:
+            self.show_error("evaluation will re-use a curated decision; tick the re-run box")
+            return
+        self.run_action(lambda: actions.run_pipeline(self.project, **values))
 
 
 class QcCancelled(Exception):

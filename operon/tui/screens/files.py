@@ -25,6 +25,7 @@ from operon.tui.screens.files_ops import (
     HEALTHY_VERIFY_STATUSES,
     ImportQcModal,
     IngestModal,
+    PipelineModal,
     QcModal,
     StandardizeModal,
     VerifyModal,
@@ -47,6 +48,7 @@ class FilesPanel(Panel):
         Binding("q", "qc", "Run QC"),
         Binding("I", "import_qc", "Import QC"),
         Binding("S", "standardize", "Standardize"),
+        Binding("P", "pipeline", "Run pipeline"),
         Binding("l", "labels", "Labels"),
         Binding("e", "extract", "Extract domains"),
         Binding("s", "select", "Select sequences"),
@@ -229,6 +231,10 @@ class FilesPanel(Panel):
     def action_import_qc(self) -> None:
         self.app.push_screen(ImportQcModal(self.project), self._after_import_qc)
 
+    def action_pipeline(self) -> None:
+        selected = self._selected_record()
+        self.app.push_screen(PipelineModal(self.project, selected), self._after_pipeline)
+
     def action_standardize(self) -> None:
         selected = self._selected_record()
         file_id = str(selected["file_id"]) if selected else None
@@ -284,6 +290,23 @@ class FilesPanel(Panel):
             message = f"imported {result['metric_count']} external QC metric(s)"
         if result.get("warning"):
             message += f" ({result['warning']})"
+        self.app.notify(message)
+        self.app.reload_after_write()
+
+    def _after_pipeline(self, result: Any) -> None:
+        if not result:
+            return
+        if not result.get("qc_ok"):
+            self.app.push_screen(ErrorDialog(
+                f"pipeline stopped: QC failed for {result['file_id']}",
+                str(result.get("qc_error") or "QC failed"),
+            ))
+            self.app.reload_after_write()
+            return
+        message = f"pipeline complete: {result['file_id']} -> {result['decision']}"
+        reasons = result.get("reason_codes") or []
+        if reasons:
+            message += f" ({', '.join(reasons)})"
         self.app.notify(message)
         self.app.reload_after_write()
 

@@ -155,7 +155,6 @@ def strict_violations(registry: tuple[ParityEntry, ...] = ()) -> list[str]:
 
 _M2B = "milestone M2b (remote execution and run introspection)"
 _M3 = "milestone M3 (classification and derived-artifact loop)"
-_M4 = "milestone M4 (import, QC and coverage self-service)"
 _M5 = "milestone M5 (storage, administration and remaining alignment)"
 
 _CONFIG_CLI_ONLY = (
@@ -649,7 +648,23 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "tsv_file": "qc-import-path",
         },
     ),
-    ParityEntry(("run-pipeline",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("run-pipeline",),
+        STATUS_IMPLEMENTED,
+        actions="actions.run_pipeline",
+        modal="operon.tui.screens.files_ops::PipelineModal",
+        params={
+            "source": "pipeline-source",
+            "entity_type": "pipeline-entity-type",
+            "entity_id": "pipeline-entity-id",
+            "role": "pipeline-role",
+            "profile": "pipeline-profile",
+            "fmt": "pipeline-format",
+            "compression": "pipeline-compression",
+            "source_url": "pipeline-source-url",
+            "yes": "pipeline-yes",
+        },
+    ),
     ParityEntry(
         ("taxonomy", "import"),
         STATUS_IMPLEMENTED,
