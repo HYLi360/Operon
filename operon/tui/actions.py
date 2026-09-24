@@ -1415,7 +1415,7 @@ def add_record(
     with _open_writable(project) as db:
         return add_metadata_record(
             db, project, entity_type, fields,
-            record_id=record_id, actor=os.environ.get("USER"),
+            record_id=record_id, actor=resolve_actor(),
         )
 
 
@@ -1494,7 +1494,7 @@ def import_table(
                 "existing rows would change; pass --on-conflict error, skip or update")
         result = apply_table_import(
             db, schema, preview, on_conflict=on_conflict or "error",
-            actor=actor if actor is not None else os.environ.get("USER"),
+            actor=actor if actor is not None else resolve_actor(),
         )
     return {**result, "table": table, "source": str(path)}
 
@@ -1529,7 +1529,7 @@ def add_accession(
             accession=accession.strip(),
             version=version.strip() if version else None,
             primary=primary,
-            actor=os.environ.get("USER"),
+            actor=resolve_actor(),
         )
 
 
