@@ -180,6 +180,8 @@ class ImportTableModal(WriteModal):
             event.prevent_default()
             self.action_cancel()
             return
+        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        event.prevent_default()
         super().on_button_pressed(event)
 
     def run_preview(self) -> None:

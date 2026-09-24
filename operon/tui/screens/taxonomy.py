@@ -121,6 +121,8 @@ class TaxonomyImportModal(WriteModal):
             event.prevent_default()
             self.action_cancel()
             return
+        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        event.prevent_default()
         super().on_button_pressed(event)
 
     def action_cancel(self) -> None:
@@ -253,6 +255,8 @@ class CompileReferenceSetModal(WriteModal):
             event.prevent_default()
             self.action_cancel()
             return
+        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        event.prevent_default()
         super().on_button_pressed(event)
 
     def action_cancel(self) -> None:

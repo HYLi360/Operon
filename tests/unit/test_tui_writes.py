@@ -855,6 +855,55 @@ def test_add_record_modal_end_to_end(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-0047")
+def test_add_record_confirm_runs_the_action_once(project: Project, monkeypatch) -> None:
+    """One Confirm click must reach the action once, not twice (ODR-0047).
+
+    Textual dispatches ``Button.Pressed`` to every class in the MRO that defines
+    ``on_button_pressed``, so a subclass handler that delegates with ``super()``
+    without ``event.prevent_default()`` runs ``WriteModal``'s handler — and with
+    it ``confirm()`` — a second time for the same click.  The seeded record makes
+    the write idempotent, which hides the duplicate from every render assertion
+    (the row count and both notifications look the same), so count the
+    invocations instead.
+    """
+    calls: list[tuple[str, dict, str | None]] = []
+
+    def _spy(target, entity_type, fields, *, record_id=None):
+        calls.append((entity_type, fields, record_id))
+        return {"entity_type": entity_type, "entity_id": record_id or "ORG_000910",
+                "warnings": []}
+
+    monkeypatch.setattr(actions, "add_record", _spy)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            panel.query_one("#entities-tree", Tree).focus()
+
+            await pilot.press("a")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddRecordModal)
+            modal.query_one("#add-record-id", Input).value = "ORG_000910"
+            rows = await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            rows[0].query_one(".field-key", Input).value = "scientific_name"
+            rows[0].query_one(".field-value", Input).value = "Modal Added"
+            await pilot.pause()
+
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    assert len(calls) == 1, f"one Confirm click ran actions.add_record {len(calls)} times"
+
+
 def test_add_record_modal_shows_reference_errors_inline(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)

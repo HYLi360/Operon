@@ -1265,32 +1265,40 @@ defects:
   title: A TUI modal Confirm runs its action twice when the subclass delegates to super() unguarded
   reported: '2026-09-24'
   introduced_in: null
-  affected: 'Nine handlers in seven screens — operon/tui/screens/analyze.py
+  affected: 'Ten handlers in eight screens — operon/tui/screens/analyze.py
     (AnalyzeModal), derived_ops.py (AdoptModal, FanoutModal), entities.py
-    (AddRecordModal), run_external.py, table_import.py, taxonomy.py (taxonomy import
-    and reference-set compilation) and ncbi_datasets.py. Every Confirm click there
+    (AddRecordModal), files_ops.py (QcModal — the tenth site, found by the
+    source-level guard test added with this fix), run_external.py,
+    table_import.py, taxonomy.py (taxonomy import and reference-set compilation)
+    and ncbi_datasets.py. Every Confirm click there
     runs its write action twice: two audit rows and two workflow runs, two adopted
     files, or two executions of the external command behind the run-external dialog.
-    Measured on the import-qc dialog this session — one click, two import-qc runs in
-    workflow_runs before the guard, one after it.'
+    Measured twice: on the import-qc dialog this session (one click, two import-qc
+    runs in workflow_runs before the guard, one after it) and by reverting the
+    AddRecordModal guard, where the new regression reports one Confirm click
+    running actions.add_record 2 times.'
   severity: medium
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: 'Textual dispatches a button message to every class in the MRO that
     defines on_button_pressed, and these handlers also call super().on_button_pressed.
     The base WriteModal handler therefore runs twice per click — once through the
     explicit super() call, once through the dispatch — and with it self.confirm().
     Reproduce by counting action invocations or run rows around a single Confirm
-    click on any of the nine dialogs; an idempotent action hides the duplicate from
+    click on any of the ten dialogs; an idempotent action hides the duplicate from
     every render assertion.'
   disposition: 'Registered with the ODR-0048 and ODR-0049 round on 2026-09-24. The
-    fix adds event.prevent_default() before every super().on_button_pressed(event)
-    in these screens, the same guard the tree already carries for the ODR-0043
-    cancel branch, with a source-level guard test plus one end-to-end count
-    regression.'
+    fix is one event.prevent_default() on each delegating path, the same guard the
+    tree already carries for the ODR-0043 cancel branch, plus two regressions: a
+    source-level scan over operon/tui/screens that fails any handler reaching
+    super().on_button_pressed(event) without the guard above it, and an end-to-end
+    count on the add-record dialog. The scan immediately found the tenth site
+    (QcModal), which a file-by-file audit had missed.'
   fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fixed_in: 0.9.0
+  regression_tests:
+    - tests/unit/test_tui_button_dispatch.py::test_every_delegating_button_handler_guards_the_mro_dispatch
+    - tests/unit/test_tui_writes.py::test_add_record_confirm_runs_the_action_once
 - id: ODR-0048
   title: The no-backend secret tests assume a Linux host and go red on every macOS leg
   reported: '2026-09-24'
