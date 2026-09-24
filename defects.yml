@@ -1096,22 +1096,25 @@ defects:
     standalone `operon ingest` accepts the same URL'
   severity: low
   component: cli
-  status: confirmed
+  status: fixed
   reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
     `_cmd_ingest` (operon/cli.py:1120-1140) wraps `ingest_file` with a
     `fetch_url_to_temp` pre-fetch for sources starting with sftp:// or remote://,
     but `_cmd_run_pipeline` (operon/cli.py:2126-2158) passes `args.source` straight
     to `ingest_file`, bypassing that wrapper, so a remote URL reaches the local
     file probe and fails.'
-  disposition: 'Confirmed, no fix planned for now (user decision 2026-09-24);
-    registered so the gap is tracked. A fix would route the pipeline ingest stage
-    through the same fetch_url_to_temp wrapper as `_cmd_ingest` (including the
-    temporary-file cleanup in its finally block). The M4 TUI pipeline modal
-    explicitly does not add an sftp branch on the TUI side either, so the CLI and
-    TUI stay at parity.'
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  disposition: 'Fixed 2026-09-25: `run_pipeline` (operon/pipeline.py, the shared
+    core behind the CLI and the TUI modal) now pre-fetches sources starting with
+    sftp:// or remote:// through `remotes.fetch_url_to_temp`, passes the temporary
+    path to `ingest_file` with `source_url` recording the original URL, and removes
+    the temporary copy in a `finally` block -- the same path `_cmd_ingest` has
+    taken. Because the fix sits in the shared core, the TUI pipeline modal (whose
+    source field already documents the URL forms) inherits it without a TUI-side
+    branch, so CLI and TUI stay at parity.'
+  fix_commit: 81f00f8231ec592d6e7d24ba1687a654a96aa330
+  fixed_in: 0.9.0
+  regression_tests:
+  - tests/unit/test_pipeline.py::test_run_pipeline_fetches_remote_sources_like_ingest
 - id: ODR-0043
   title: Real Cancel clicks dismissed WriteModal subclasses during a run (MRO
     double dispatch)
