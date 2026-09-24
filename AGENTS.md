@@ -66,7 +66,9 @@ Current version markers (must stay consistent across code and docs):
     monitor, a Decisions screen, a Config screen, a Publish screen (nav key
     `7`; release builder + selective export builder with read-only previews),
     a Coverage screen (nav key `8`; taxonomy snapshots, reference sets,
-    coverage report generation and `COV_*` report browsing), and the import
+    coverage report generation and `COV_*` report browsing, plus *Import
+    taxonomy…* / *Compile reference set…* write entries mirroring
+    `operon taxonomy import`/`operon taxonomy compile`), and the import
     dataset wizard (`operon/tui/screens/import_wizard.py`; Home button or
     global `i`, except on the Files screen where `i` stays ingest). Read
     access lives in
