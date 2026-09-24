@@ -568,7 +568,13 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(("standardize",), STATUS_PLANNED, note=_M4),
     ParityEntry(("import-qc",), STATUS_PLANNED, note=_M4),
     ParityEntry(("run-pipeline",), STATUS_PLANNED, note=_M4),
-    ParityEntry(("taxonomy", "import"), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("taxonomy", "import"),
+        STATUS_IMPLEMENTED,
+        actions="actions.import_taxonomy",
+        modal="operon.tui.screens.taxonomy::TaxonomyImportModal",
+        params={"input": "taxonomy-import-input", "version": "taxonomy-import-version"},
+    ),
     ParityEntry(("taxonomy", "compile"), STATUS_PLANNED, note=_M4),
     ParityEntry(
         ("run-external",),

@@ -110,6 +110,9 @@ operon taxonomy list
 同一 `--version` 与相同字节重复导入会复用已有快照；同一版本标签对应不同字节会以
 冲突退出，不能静默改写历史 taxonomy 身份。
 
+TUI 在 Coverage 屏提供同一导入入口（*Import taxonomy…* 按钮），并显示等价的
+命令预览；运行中的导入无法从 TUI 中断。
+
 ## 编译不可变分母
 
 ```bash

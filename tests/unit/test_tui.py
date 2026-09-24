@@ -2347,7 +2347,7 @@ def test_filter_rows_keep_their_controls_inside_the_row(
         app = OperonApp(demo_project)
         async with app.run_test(size=(160, 55)) as pilot:
             await _settled(app)
-            for screen in ("files", "runs"):
+            for screen in ("files", "runs", "coverage"):
                 app.action_switch_screen(screen)
                 await pilot.pause()
                 await _settled(app)

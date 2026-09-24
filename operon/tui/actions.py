@@ -1363,3 +1363,20 @@ def run_coverage(
 
     with _open_writable(project) as db:
         return report_coverage(db, project, reference_set_id, release_version=release_version)
+
+
+def import_taxonomy(
+        project: Project,
+        source: str,
+        taxonomy_version: str,
+) -> dict[str, Any]:
+    """Import an NCBI taxonomy package like ``operon taxonomy import``.
+
+    The core archives the content-addressed source, imports nodes/aliases in
+    one transaction, and records the same audit and run rows as the CLI;
+    identical version and bytes reuse the existing snapshot (``reused``).
+    """
+    from operon.taxonomy import import_ncbi_taxonomy
+
+    with _open_writable(project) as db:
+        return import_ncbi_taxonomy(db, project, source, taxonomy_version)

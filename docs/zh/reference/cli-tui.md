@@ -102,6 +102,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
+| — | Coverage | 导入 NCBI Taxonomy 包（*Import taxonomy…* 按钮）：归档并导入 `taxonomy_report.jsonl` / Datasets 包 / taxdump 压缩包，并指定不可变的版本标签；版本与字节都相同时复用已有快照。运行中的导入无法从 TUI 中断。 | `operon taxonomy import --input … --version …` |
 | — | Config / Tasks | 对匹配的清单文件运行分析 recipe（Config 屏选中 recipe 后的 *Run analysis*，或 Tasks 屏 *New analysis* 内选择 recipe）。运行时参数按 recipe 声明的 spec 渲染并与 CLI 完全相同的校验；支持 entity-type/entity-id/limit/threads 过滤、执行后端（项目默认 / local / slurm / ssh；worker 启动前预检，缺少 `sbatch` 或 `execution.ssh` 配置不全都会内联报错）、dry-run（在对话框内显示只读计划）、force 与 keep-partial，带实时进度条与协作取消。Cancel 在下一个文件/规划/收集边界停止批处理，并把已提交的工作整体取消（Slurm 作业或 job array 一次 `scancel`；直连 SSH 载荷在远端主机上终止）；已完成文件的结果保留。逐文件失败在错误对话框中列出；运行结束后跳转到 Tasks 屏。 | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--backend {local,slurm,ssh}] [--dry-run] [--force] [--keep-partial]` |
 | — | Tasks | 运行一条带结构化溯源的外部命令（*Run external*）：step、按 shlex 解析的命令行（shell 引号语义；不支持管道与重定向）、可选 entity/tool/parameter-set、逗号分隔的声明 inputs（与 CLI 一样做哈希与暂存）与 expected outputs、threads、工作目录、超时与执行后端（与分析对话框相同的预检）。预览显示等效 CLI 命令，并说明提交时会分配新的 run id；"跑失败"也是已记录的结果，因此无论成败都会在 Tasks 屏打开完整 run 记录（命令、退出码、错误、日志路径）。运行中的命令无法从 TUI 中断——CLI 的 Ctrl+C 可以。 | `operon run-external --step … --command … [--entity-type … --entity-id … --parameter-set … --tool … --input … --threads … --expected-output … --cwd … --timeout … --backend {local,slurm,ssh}]` |
 
@@ -194,7 +195,9 @@ ID 即可构成有效筛选条件，并按 CLI 的规则与其他过滤条件组
 ## Coverage 界面
 
 上半部分列出已导入的 NCBI Taxonomy 快照（`taxonomy list` 数据）与已编译的
-reference set（`taxonomy reference-sets` 数据）。**Generate report** 表单选择
+reference set（`taxonomy reference-sets` 数据），并提供 **Import taxonomy…** 按钮，
+通过 `operon taxonomy import` 同一核心归档并导入 NCBI taxonomy 包（版本与字节都相同时复用已有快照；
+运行中的导入无法从 TUI 中断）。**Generate report** 表单选择
 reference set 与范围——项目元数据或冻结的 release（release 范围会额外显示
 release 选择器）——并显示等价的 `operon report coverage` 命令以供确认。输入
 相同时复用已缓存的不可变报告；当某个 rank 低于阈值时，结果为带各 rank 覆盖度

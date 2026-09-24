@@ -1230,3 +1230,45 @@ def test_fanout_modal_command_text_matches_action_kwargs(
     assert run_kwargs == expected
     assert {key: value for key, value in preview_kwargs.items() if key != "dry_run"} == \
         {key: value for key, value in expected.items() if key != "dry_run"}
+
+
+def test_taxonomy_import_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.taxonomy import TaxonomyImportModal
+
+    payload = {
+        "taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
+        "node_count": 3, "reused": False,
+    }
+    calls = spy_action(monkeypatch, "import_taxonomy", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = TaxonomyImportModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#taxonomy-import-input")
+            (await _q(modal, "#taxonomy-import-input", Input)).value = "/tmp/taxonomy.jsonl"
+            (await _q(modal, "#taxonomy-import-version", Input)).value = "cov.1"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.input == "/tmp/taxonomy.jsonl"
+            assert ns.version == "cov.1"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "taxonomy import call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "/tmp/taxonomy.jsonl", "cov.1")
+    assert kwargs == {}
+    assert dismissed == [payload]

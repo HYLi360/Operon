@@ -94,6 +94,10 @@ After import:
 
 Repeating an import with the same version and bytes reuses the snapshot. The same version label with different bytes is a conflict and is rejected.
 
+The TUI offers the same import on the Coverage screen (*Import taxonomy…*
+button) with the equivalent command preview; a running import cannot be
+interrupted from the TUI.
+
 ## Compile the immutable denominator
 
 ```bash
