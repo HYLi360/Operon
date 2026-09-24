@@ -54,7 +54,10 @@ Current version markers (must stay consistent across code and docs):
     `tests/regression/test_cython_parser_parity.py`). `measure.py` backs
     `operon qc-measure`, a project-independent measurement-only path whose
     JSON payload can be imported back through `operon import-qc` (the remote
-    built-in QC workflow).
+    built-in QC workflow; `imports.py` is the shared core of that import —
+    payload/TSV detection, manifest validation, metric insertion, QC-state
+    recomputation and the run record — and `plan_qc_import` its write-free
+    preview).
   - `operon/execution.py` — execution backends for external commands:
     `local` subprocess, `slurm` (sbatch submit + squeue poll), and `ssh`
     (Paramiko; HPC head nodes and cloud VMs, optionally through remote
@@ -140,7 +143,9 @@ Current version markers (must stay consistent across code and docs):
     `config.py` (project configuration and directory layout), `files.py`
     (immutable manifest archival and verification), `profiles.py` +
     `rules.py` (versioned QC profiles and the decision engine),
-    `workflow.py` (state machine and run logs), `tools.py` (external-tool
+    `workflow.py` (state machine and run logs), `pipeline.py` (the
+    four-stage ingest → standardize → QC → evaluate runner shared by
+    `run-pipeline`'s CLI and TUI), `tools.py` (external-tool
     recipes from `config/tools.yaml`), `taxonomy.py` + `coverage.py` (frozen
     NCBI Taxonomy snapshots and coverage denominators), `release.py` +
     `export.py` (immutable releases and selective exports), `lifecycle.py`
