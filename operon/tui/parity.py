@@ -528,8 +528,34 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "in the TUI context",
     ),
     # -- planned gaps (milestone attribution per HPC/cli_tui_gaps.md 九) -----
-    ParityEntry(("import", "table"), STATUS_PLANNED, note=_M4),
-    ParityEntry(("add",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("import", "table"),
+        STATUS_IMPLEMENTED,
+        note="template mode writes directly; import mode gates Confirm behind "
+             "the mandatory preview (the CLI's tty --on-conflict prompt is an "
+             "explicit Select; actions.import_table re-runs the preview inside "
+             "the apply, like the fanout dry_run=False path)",
+        actions="actions.import_table",
+        modal="operon.tui.screens.table_import::ImportTableModal",
+        params={
+            "table": "table-table",
+            "template": "table-template-out (template mode)",
+            "file": "table-file (import mode)",
+            "on_conflict": "table-on-conflict (blank = the CLI default)",
+        },
+        waived={"yes": "the explicit Confirm step replaces --yes"},
+    ),
+    ParityEntry(
+        ("add",),
+        STATUS_IMPLEMENTED,
+        actions="actions.add_record",
+        modal="operon.tui.screens.entities::AddRecordModal",
+        params={
+            "record_id": "add-record-id (blank = allocate the next ID on confirm)",
+            "field": "add-fields .field-key/.field-value rows "
+                     "(repeatable -> repeated --field)",
+        },
+    ),
     ParityEntry(("add-accession",), STATUS_PLANNED, note=_M4),
     ParityEntry(
         ("next-id",),

@@ -21,12 +21,17 @@ from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tre
 from operon.config import Project
 from operon.database import Database
 from operon.demo import init_demo
-from operon.errors import ConflictError, ValidationError
+from operon.errors import ConflictError, EntityNotFoundError, ValidationError
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
-from operon.tui.screens.common import ErrorDialog
+from operon.tui.screens.common import ErrorDialog, MountTracked
 from operon.tui.screens.decisions import CurateModal, DecisionsPanel, EvaluateModal
-from operon.tui.screens.entities import EntitiesPanel, LifecycleModal
+from operon.tui.screens.entities import (
+    AddRecordModal,
+    EntitiesPanel,
+    FieldRow,
+    LifecycleModal,
+)
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.files_ops import IngestModal, QcModal, VerifyModal
 from operon.tui.screens.run_external import RunExternalModal
@@ -156,6 +161,28 @@ async def _click(pilot, selector: str) -> None:
         await pilot.pause()
         await asyncio.sleep(0.02)
 
+
+async def _await_rows(pilot, root, selector: str, count: int, child: str) -> list:
+    """Wait until ``root`` holds ``count`` ``selector`` rows whose ``child`` exists.
+
+    Mounting a row subtree takes more than one message-loop turn, so a single
+    ``pilot.pause()`` can observe a row that has not composed yet.  The budget is
+    this file's wall-clock settle timeout rather than a fixed number of cycles: a
+    loaded CI runner needs seconds to deliver the click and mount the row it
+    produces, and a cycle count that is generous on a fast machine runs out there
+    (ODR-0027).
+    """
+    def composed() -> list:
+        return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
+
+    try:
+        await _wait_until(lambda: len(composed()) >= count,
+                          f"{count} {selector} rows with {child}")
+    except TimeoutError as error:
+        raise AssertionError(
+            f"{selector} rows with {child}: saw {len(composed())}, wanted {count}"
+        ) from error
+    return composed()
 
 
 def _find_tree_node(tree: Tree, entity_type: str, entity_id: str):
@@ -559,6 +586,63 @@ def test_evaluate_modal_end_to_end(project: Project) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Data layer: add record
+# ---------------------------------------------------------------------------
+
+def test_add_record_action_adds_state_and_audit_rows(project: Project) -> None:
+    result = actions.add_record(
+        project, "organism", {"scientific_name": "TUI added species"},
+        record_id="ORG_000901",
+    )
+    assert result["entity_type"] == "organism"
+    assert result["entity_id"] == "ORG_000901"
+    assert result["warnings"] == []
+    rows = _query(project, "SELECT scientific_name FROM organisms WHERE organism_id=?",
+                  ("ORG_000901",))
+    assert rows == [{"scientific_name": "TUI added species"}]
+    state = _query(
+        project,
+        "SELECT state FROM entity_state WHERE entity_type='organism' AND entity_id=?",
+        ("ORG_000901",),
+    )
+    assert state[0]["state"] == "METADATA_VALIDATED"
+    changes = _query(
+        project,
+        "SELECT reason FROM changes WHERE object_type='organism' AND object_id=?",
+        ("ORG_000901",),
+    )
+    assert changes == [{"reason": "record added"}]
+
+
+def test_add_record_action_allocates_next_id_when_blank(project: Project) -> None:
+    result = actions.add_record(project, "run", {"sample_id": "SMP_000001"})
+    assert result["entity_id"].startswith("RUN_")
+    rows = _query(project, "SELECT COUNT(*) AS n FROM runs WHERE run_id=?",
+                  (result["entity_id"],))
+    assert rows == [{"n": 1}]
+
+
+def test_add_record_action_rolls_back_id_reservation_on_failure(project: Project) -> None:
+    before = _query(project, "SELECT next_number FROM id_counters WHERE entity_type='sample'")
+    before_n = before[0]["next_number"] if before else None
+    # ORG_000099 matches the schema's ID pattern but references no organism,
+    # so the failure surfaces at the foreign-key check, after ID reservation.
+    with pytest.raises(EntityNotFoundError, match="ORG_000099"):
+        actions.add_record(project, "sample", {"organism_id": "ORG_000099"})
+    after = _query(project, "SELECT next_number FROM id_counters WHERE entity_type='sample'")
+    after_n = after[0]["next_number"] if after else None
+    assert after_n == before_n
+    assert not _query(project, "SELECT 1 FROM samples WHERE organism_id=?", ("ORG_000099",))
+
+
+def test_add_record_action_rejects_unknown_fields(project: Project) -> None:
+    with pytest.raises(ValidationError, match="unknown field"):
+        actions.add_record(project, "organism", {"no_such_field": "x"},
+                           record_id="ORG_000902")
+    assert not _query(project, "SELECT 1 FROM organisms WHERE organism_id=?", ("ORG_000902",))
+
+
+# ---------------------------------------------------------------------------
 # Headless UI: lifecycle modal
 # ---------------------------------------------------------------------------
 
@@ -628,6 +712,212 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
 
             retired = _query(project, "SELECT entity_id FROM effective_retired_entities")
             assert "ASM_000001" not in {row["entity_id"] for row in retired}
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Headless UI: add record modal
+# ---------------------------------------------------------------------------
+
+def test_add_record_modal_end_to_end(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            tree = panel.query_one("#entities-tree", Tree)
+            tree.focus()
+
+            await pilot.press("a")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddRecordModal)
+            select = modal.query_one("#add-entity-type", Select)
+            assert select.value == "organism"  # Select starts at NULL unless told
+            assert "operon add organism" in _static_text(
+                modal.query_one("#modal-command", Static)
+            )
+
+            modal.query_one("#add-record-id", Input).value = "ORG_000910"
+            rows = await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            rows[0].query_one(".field-key", Input).value = "scientific_name"
+            rows[0].query_one(".field-value", Input).value = "Modal Added"
+            await pilot.pause()
+            await _click(pilot, "#add-field-row")
+            rows = await _await_rows(
+                pilot, modal.query_one("#add-fields", MountTracked),
+                ".field-row", 2, ".field-key",
+            )
+            rows[1].query_one(".field-key", Input).value = "taxonomy_source"
+            rows[1].query_one(".field-value", Input).value = "other"
+            await pilot.pause()
+            command = _static_text(modal.query_one("#modal-command", Static))
+            assert "operon add organism --id ORG_000910" in command
+            assert "--field scientific_name='Modal Added'" in command
+            assert "--field taxonomy_source=other" in command
+
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, AddRecordModal)
+
+            rows = _query(
+                project,
+                "SELECT scientific_name, taxonomy_source FROM organisms WHERE organism_id=?",
+                ("ORG_000910",),
+            )
+            assert rows == [{"scientific_name": "Modal Added", "taxonomy_source": "other"}]
+            assert _find_tree_node(tree, "organism", "ORG_000910") is not None
+
+    _run(scenario())
+
+
+def test_add_record_modal_shows_reference_errors_inline(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            panel.query_one("#entities-tree", Tree).focus()
+
+            await pilot.press("a")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddRecordModal)
+            rows = await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            modal.query_one("#add-entity-type", Select).value = "sample"
+            rows[0].query_one(".field-key", Input).value = "organism_id"
+            rows[0].query_one(".field-value", Input).value = "ORG_000099"
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert isinstance(app.screen, AddRecordModal)
+            assert "ORG_000099" in _static_text(modal.query_one("#modal-error", Static))
+
+    _run(scenario())
+
+
+def test_add_record_modal_rejects_duplicate_fields_inline(project: Project,
+                                                          monkeypatch) -> None:
+    called: list = []
+    monkeypatch.setattr(
+        actions, "add_record",
+        lambda *args, **kwargs: called.append((args, kwargs)) or {},
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            panel.query_one("#entities-tree", Tree).focus()
+
+            await pilot.press("a")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddRecordModal)
+            rows = await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            rows[0].query_one(".field-key", Input).value = "scientific_name"
+            await pilot.pause()
+            await _click(pilot, "#add-field-row")
+            rows = await _await_rows(
+                pilot, modal.query_one("#add-fields", MountTracked),
+                ".field-row", 2, ".field-key",
+            )
+            rows[1].query_one(".field-key", Input).value = "scientific_name"
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            assert isinstance(app.screen, AddRecordModal)
+            assert "duplicate field" in _static_text(modal.query_one("#modal-error", Static))
+
+    _run(scenario())
+    assert called == []
+
+
+def test_add_record_modal_refuses_confirm_while_rows_mount(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            modal = AddRecordModal(project)
+            app.push_screen(modal)
+            await pilot.pause()  # compose + the seeded row land
+            row = modal.query_one("#add-fields", MountTracked).query_one(FieldRow)
+            # ``pilot.pause()`` drains the whole deferred-mount chain, so the
+            # gate's mid-mount window cannot be caught by real timing; force
+            # the one signal it reads — a row whose on_mount has not run (the
+            # same hand-set shape as the ODR-0039 regression; the latch is
+            # one-way, so nothing else can re-create this state).
+            row._form_ready = False
+            modal.confirm()
+            assert "still loading" in _static_text(modal.query_one("#modal-error", Static))
+            row.mark_form_ready()
+            row.query_one(".field-key", Input).value = "scientific_name"
+            row.query_one(".field-value", Input).value = "Gated Add"
+            await pilot.pause()
+            modal.query_one("#add-record-id", Input).value = "ORG_000911"
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, AddRecordModal)
+            assert _query(project, "SELECT 1 FROM organisms WHERE organism_id=?",
+                          ("ORG_000911",))
+
+    _run(scenario())
+
+
+def test_add_record_modal_skips_a_row_being_removed(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            panel.query_one("#entities-tree", Tree).focus()
+
+            await pilot.press("a")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddRecordModal)
+            rows = await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            rows[0].query_one(".field-key", Input).value = "scientific_name"
+            rows[0].query_one(".field-value", Input).value = "Kept Row"
+            await pilot.pause()
+            await _click(pilot, "#add-field-row")
+            rows = await _await_rows(
+                pilot, modal.query_one("#add-fields", MountTracked),
+                ".field-row", 2, ".field-key",
+            )
+            rows[1].query_one(".field-key", Input).value = "taxonomy_source"
+            rows[1].query_one(".field-value", Input).value = "SHOULD-BE-DROPPED"
+            await pilot.pause()
+            rows[1].query_one(".field-remove", Button).press()
+            await pilot.pause()  # remove() marks the row _pruning synchronously
+            modal.confirm()      # ...and readers skip it (ODR-0036)
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, AddRecordModal)
+            saved = _query(
+                project,
+                "SELECT taxonomy_source FROM organisms WHERE scientific_name=?",
+                ("Kept Row",),
+            )
+            assert saved == [{"taxonomy_source": None}]
 
     _run(scenario())
 

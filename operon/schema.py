@@ -9,17 +9,22 @@ extend them without changing code.
 from __future__ import annotations
 
 import csv
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from operon.errors import ValidationError
 from operon.utils import escape_formula_text
+
+if TYPE_CHECKING:
+    from operon.config import Project
+    from operon.database import Database
 
 # Entity table -> prefix and id column.  These prefixes are deliberately
 # independent from any external accession namespace.
@@ -472,3 +477,104 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
                 writer.writerow(["" if row.get(c) is None else escape_formula_text(row.get(c)) for c in columns])
             else:
                 writer.writerow(["" if v is None else escape_formula_text(v) for v in row])
+
+
+def check_row_references(db: Database, entity_type: str, row: dict[str, Any]) -> None:
+    """Validate the foreign keys one metadata row carries (``operon add`` time).
+
+    The historical ``operon.cli._check_fks_for_row`` logic, shared by the CLI
+    and the TUI so both reject the same dangling references.
+    """
+    if entity_type == "sample" and row.get("organism_id"):
+        db.require_active_entity("organism", row["organism_id"])
+    elif (entity_type in {"run", "assembly"}) and row.get("sample_id"):
+        db.require_active_entity("sample", row["sample_id"])
+    elif entity_type == "annotation" and row.get("assembly_id"):
+        db.require_active_entity("assembly", row["assembly_id"])
+    for field in ("fasta_file_id", "gff_file_id", "cds_file_id", "protein_file_id"):
+        if row.get(field) and db.conn.execute(
+                "SELECT 1 FROM files WHERE file_id=?", (row[field],)).fetchone() is None:
+            raise ValidationError(
+                f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: "
+                f"{field} {row[field]} does not exist")
+
+
+def add_metadata_record(
+        db: Database,
+        project: Project,
+        entity_type: str,
+        fields: dict[str, Any],
+        *,
+        record_id: str | None = None,
+        actor: str | None = None,
+) -> dict[str, Any]:
+    """Add one schema-validated metadata record — the core behind ``operon add``.
+
+    The whole sequence (ID reservation when no explicit ID is given, column
+    reconciliation, normalization, reference checks, the row insert, the
+    initial entity state and the audit row) runs in one transaction, so a
+    failed add no longer consumes a reserved ID.  Returns
+    ``{"entity_type", "entity_id", "warnings"}``; callers surface the warnings
+    (the CLI prints them to stderr) because ``validate_and_normalize`` rejects
+    unknown fields right after.
+    """
+    table = ENTITY_TABLES[entity_type]
+    id_col = ENTITY_ID_COLUMNS[entity_type]
+    schema = Schema.from_file(project.schema_path)
+    warnings: list[str] = []
+    with db.transaction():
+        resolved_id = record_id or db.next_id(entity_type)
+        row = dict(fields)
+        row[id_col] = resolved_id
+        db.ensure_metadata_columns(schema)
+        for extra in list(row.keys()):
+            if extra not in schema.columns(table):
+                warnings.append(
+                    f"unknown field {extra!r} for {entity_type}; add it to "
+                    f"{project.schema_path} to remove this warning")
+        normalized, _ = schema.validate_and_normalize(table, [row])
+        row = normalized[0]
+        check_row_references(db, entity_type, row)
+        db.insert_row(table, row)
+        # Historical wording, kept byte-identical for both entry points.
+        db.set_entity_state(entity_type, resolved_id, "METADATA_VALIDATED",
+                            "record added via CLI and schema-validated")
+        db.record_change(entity_type, resolved_id, None, None,
+                         json.dumps({k: str(v) for k, v in row.items()}),
+                         "record added", actor=actor)
+    return {"entity_type": entity_type, "entity_id": resolved_id, "warnings": warnings}
+
+
+def add_accession_record(
+        db: Database,
+        *,
+        internal_type: str,
+        internal_id: str,
+        namespace: str,
+        accession: str,
+        version: str | None = None,
+        primary: bool = False,
+        actor: str | None = None,
+) -> dict[str, Any]:
+    """Map an external accession to an internal stable ID — ``operon add-accession``.
+
+    The target entity must exist and be active.  The mapping row and its audit
+    record commit in one transaction; the inserted row is returned.
+    """
+    db.require_active_entity(internal_type, internal_id)
+    row = {
+        "internal_type": internal_type,
+        "internal_id": internal_id,
+        "namespace": namespace,
+        "accession": accession,
+        "version": version,
+        "is_primary": 1 if primary else None,
+    }
+    with db.transaction():
+        db.insert_row("accessions", row)
+        db.record_change(
+            "accession", f"{namespace}:{accession}", None, None,
+            json.dumps(row, ensure_ascii=False, sort_keys=True), "accession added",
+            actor=actor,
+        )
+    return row

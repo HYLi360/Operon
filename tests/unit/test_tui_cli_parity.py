@@ -294,6 +294,29 @@ async def _q(modal, selector: str, *types):
     return modal.query_one(selector, *types)
 
 
+async def _await_rows(pilot, root, selector: str, count: int, child: str) -> list:
+    """Wait until ``root`` holds ``count`` ``selector`` rows whose ``child`` exists.
+
+    Mounting a row subtree takes more than one message-loop turn, so a single
+    ``pilot.pause()`` can observe a row that has not composed yet.  The budget is
+    this file's wall-clock settle timeout rather than a fixed number of cycles: a
+    loaded CI runner needs seconds to deliver the click and mount the row it
+    produces, and a cycle count that is generous on a fast machine runs out there
+    (ODR-0027).
+    """
+    def composed() -> list:
+        return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
+
+    try:
+        await _wait_until(lambda: len(composed()) >= count,
+                          f"{count} {selector} rows with {child}")
+    except TimeoutError as error:
+        raise AssertionError(
+            f"{selector} rows with {child}: saw {len(composed())}, wanted {count}"
+        ) from error
+    return composed()
+
+
 def _static_text(widget) -> str:
     renderable = widget.render()
     return renderable.plain if isinstance(renderable, Text) else str(renderable)
@@ -701,6 +724,60 @@ def test_run_external_modal_command_text_matches_action_kwargs(
     assert preflights == ["slurm"]
 
 
+def test_add_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Input, Select  # noqa: F401
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import AddRecordModal, FieldRow
+
+    payload = {"entity_type": "sample", "entity_id": "SMP_000771", "warnings": []}
+    calls = spy_action(monkeypatch, "add_record", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AddRecordModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#add-entity-type")
+            await _await_rows(pilot, modal, ".field-row", 1, ".field-key")
+            assert modal.command_text() == "operon add organism"
+
+            modal.query_one("#add-entity-type", Select).value = "sample"
+            modal.query_one("#add-record-id", Input).value = "SMP_000771"
+            first = modal.query(FieldRow).first()
+            first.query_one(".field-key", Input).value = "organism_id"
+            first.query_one(".field-value", Input).value = "ORG_000001"
+            await pilot.pause()
+            modal.query_one("#add-field-row", Button).press()
+            await _await_rows(pilot, modal, ".field-row", 2, ".field-key")
+            second = modal.query(FieldRow)[1]
+            second.query_one(".field-key", Input).value = "note"
+            second.query_one(".field-value", Input).value = "from the TUI"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.entity_type == "sample"
+            assert ns.record_id == "SMP_000771"
+            assert ns.field == ["organism_id=ORG_000001", "note=from the TUI"]
+
+            modal.confirm()
+            await _wait_until(lambda: bool(dismissed), "add modal dismissed")
+
+    _run(scenario())
+    assert dismissed == [payload]
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[1] == "sample"
+    assert args[2] == {"organism_id": "ORG_000001", "note": "from the TUI"}
+    assert kwargs == {"record_id": "SMP_000771"}
+
+
 # ---------------------------------------------------------------------------
 # Layer 4: audit-trail equivalence (CLI vs TUI actions)
 # ---------------------------------------------------------------------------
@@ -784,7 +861,12 @@ def _table_rows(project: Project, table: str) -> list[tuple]:
     finally:
         db.close()
     columns = [column for column in rows[0] if column not in drop] if rows else []
-    return sorted(tuple(row[column] for column in columns) for row in rows)
+    # NULLs sort with the empty string: insert audit rows carry NULL
+    # field/old_value columns, and sorting None against a string crashes.
+    return sorted(
+        (tuple(row[column] for column in columns) for row in rows),
+        key=lambda values: tuple("" if value is None else value for value in values),
+    )
 
 
 def _assert_audit_equal(
@@ -1353,3 +1435,137 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
     assert args == (project, "cov", "cov.1")
     assert kwargs == {}
     assert dismissed == [payload]
+
+
+def test_audit_parity_add(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    rc = cli_main([
+        "--project", str(cli_project.root), "add", "organism",
+        "--id", "ORG_000881",
+        "--field", "scientific_name=Audit Parity",
+        "--field", "taxonomy_source=NCBI",
+    ])
+    capsys.readouterr()
+    assert rc == 0
+    result = actions.add_record(
+        tui_project, "organism",
+        {"scientific_name": "Audit Parity", "taxonomy_source": "NCBI"},
+        record_id="ORG_000881",
+    )
+    assert result["entity_id"] == "ORG_000881"
+    _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
+
+
+def test_import_table_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.table_import import ImportTableModal
+
+    preview = {
+        "table": "organisms", "source": "/tmp/organisms.csv",
+        "columns": ["organism_id", "scientific_name"],
+        "items": [{
+            "key": ("ORG_000010",), "action": "insert", "differences": [],
+            "row": {"organism_id": "ORG_000010", "scientific_name": "Gamma"},
+            "current": None,
+            "supplied_columns": ["organism_id", "scientific_name"],
+        }],
+        "insert": 1, "update": 0, "unchanged": 0,
+    }
+    calls = spy_action(monkeypatch, "table_import_preview", preview)
+    run_calls = spy_action(monkeypatch, "import_table", {
+        "inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
+        "table": "organisms", "source": "/tmp/organisms.csv"})
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ImportTableModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#table-file")
+            (await _q(modal, "#table-file", Input)).value = "/tmp/organisms.csv"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.table == "organisms"
+            assert ns.file == "/tmp/organisms.csv"
+            assert ns.template is None
+            assert ns.on_conflict is None
+
+            modal.run_preview()
+            await _wait_until(lambda: len(calls) == 1, "table preview call")
+            await _wait_until(lambda: modal.preview is not None, "preview to land")
+            (await _q(modal, "#table-on-conflict", Select)).value = "update"
+            await pilot.pause()
+            ns = parse_command_text(modal.command_text())
+            assert ns.on_conflict == "update"
+
+            modal.confirm()
+            await _wait_until(lambda: len(run_calls) == 1, "table import call")
+            await _wait_until(lambda: bool(dismissed), "modal dismissal")
+
+    _run(scenario())
+    assert calls[0][0] == (project, "organisms", "/tmp/organisms.csv")
+    assert run_calls[0][0] == (project,)
+    assert run_calls[0][1] == {"table": "organisms", "path": "/tmp/organisms.csv",
+                               "on_conflict": "update"}
+    assert dismissed == [run_calls[0][1] and {
+        "inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
+        "table": "organisms", "source": "/tmp/organisms.csv"}]
+
+
+def test_audit_parity_import_table(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    # One shared CSV path: changes.evidence embeds it verbatim (like ingest).
+    source = tmp_path / "organisms.csv"
+    source.write_text(
+        "organism_id,scientific_name,taxon_id,taxonomic_rank,taxonomy_source,"
+        "taxonomy_version\n"
+        "ORG_000010,Tableius gamma,100010,species,NCBI,demo.1\n",
+        encoding="utf-8",
+    )
+    rc = cli_main([
+        "--project", str(cli_project.root),
+        "import", "table", "--table", "organisms",
+        "--file", str(source), "--yes", "--on-conflict", "update",
+    ])
+    capsys.readouterr()
+    assert rc == 0
+    result = actions.import_table(
+        tui_project, table="organisms", path=str(source), on_conflict="update")
+    assert result["inserted"] == 1
+
+    # Second leg: an audited update of the row both sides now hold.
+    update = tmp_path / "organisms-update.csv"
+    update.write_text(
+        "organism_id,scientific_name\n"
+        "ORG_000010,Tableius gamma updated\n",
+        encoding="utf-8",
+    )
+    rc = cli_main([
+        "--project", str(cli_project.root),
+        "import", "table", "--table", "organisms",
+        "--file", str(update), "--yes", "--on-conflict", "update",
+    ])
+    capsys.readouterr()
+    assert rc == 0
+    result = actions.import_table(
+        tui_project, table="organisms", path=str(update), on_conflict="update")
+    assert result["updated"] == 1
+
+    _assert_audit_equal(cli_project, tui_project, "organisms", "entity_state")

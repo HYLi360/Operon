@@ -37,9 +37,8 @@ from operon.rules import (
     evaluate_entity,
 )
 from operon.schema import (
-    ENTITY_ID_COLUMNS,
-    ENTITY_TABLES,
     Schema,
+    add_metadata_record,
     read_tsv,
 )
 from operon.table_import import (
@@ -1003,42 +1002,15 @@ def _cmd_migrate(db: Database) -> int:
 
 
 def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
-    entity_type = args.entity_type
-    table = ENTITY_TABLES[entity_type]
-    id_col = ENTITY_ID_COLUMNS[entity_type]
     fields = parse_key_values(args.field)
-    schema = Schema.from_file(project.schema_path)
-    record_id = args.record_id or db.next_id(entity_type)
-    row = dict(fields)
-    row[id_col] = record_id
-    db.ensure_metadata_columns(schema)
-    for extra in list(row.keys()):
-        if extra not in schema.columns(table):
-            print(
-                f"warning: unknown field {extra!r} for {entity_type}; add it to {project.schema_path} to remove this warning",
-                file=sys.stderr)
-    normalized, _ = schema.validate_and_normalize(table, [row])
-    row = normalized[0]
-    _check_fks_for_row(db, entity_type, row, require_target=True)
-    db.insert_row(table, row)
-    db.set_entity_state(entity_type, record_id, "METADATA_VALIDATED", "record added via CLI and schema-validated")
-    db.record_change(entity_type, record_id, None, None, json.dumps({k: str(v) for k, v in row.items()}),
-                     "record added", actor=os.environ.get("USER"))
-    print(f"added {entity_type} {record_id}")
+    result = add_metadata_record(
+        db, project, args.entity_type, fields,
+        record_id=args.record_id, actor=os.environ.get("USER"),
+    )
+    for warning in result["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
+    print(f"added {result['entity_type']} {result['entity_id']}")
     return 0
-
-
-def _check_fks_for_row(db: Database, entity_type: str, row: dict[str, Any], require_target: bool) -> None:
-    if entity_type == "sample" and row.get("organism_id"):
-        db.require_active_entity("organism", row["organism_id"])
-    elif entity_type == "run" and row.get("sample_id") or entity_type == "assembly" and row.get("sample_id"):
-        db.require_active_entity("sample", row["sample_id"])
-    elif entity_type == "annotation" and row.get("assembly_id"):
-        db.require_active_entity("assembly", row["assembly_id"])
-    for field in ("fasta_file_id", "gff_file_id", "cds_file_id", "protein_file_id"):
-        if row.get(field) and db.conn.execute("SELECT 1 FROM files WHERE file_id=?", (row[field],)).fetchone() is None:
-            raise ValidationError(
-                f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: {field} {row[field]} does not exist")
 
 
 def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database) -> int:

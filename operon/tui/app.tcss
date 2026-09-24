@@ -224,6 +224,10 @@ HelpScreen {
     height: 6;
 }
 
+#table-preview-table {
+    height: 10;
+}
+
 /* NCBI Datasets import modal: fixed-height preflight log so the button row
    stays visible; the form itself scrolls inside #modal-form. */
 
@@ -446,6 +450,32 @@ SelectCurrent Static#label {
 
 #recipe-arguments, #recipe-parameters {
     height: 6;
+}
+
+/* -- add-record dialog (Entities screen) ---------------------------------- */
+
+#add-fields {
+    /* Same clipping hazard as the profile rule containers. */
+    height: auto;
+}
+
+.field-row {
+    height: auto;
+}
+
+.field-key {
+    width: 26;
+}
+
+.field-value {
+    width: 1fr;
+}
+
+.field-remove {
+    min-width: 3;
+    width: 3;
+    height: 1;
+    border: none;
 }
 
 /* -- coverage profile editor (kind: taxonomy_coverage) --------------------- */

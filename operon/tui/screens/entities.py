@@ -12,18 +12,25 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Input, Select, Static, Tree
+from textual.css.query import NoMatches
+from textual.message import Message
+from textual.widgets import Button, Checkbox, Input, Select, Static, Tree
 
 from operon.config import Project
 from operon.lifecycle import RETIRE_REASON_CODES
+from operon.schema import ENTITY_PREFIXES
 from operon.tui import actions, data
 from operon.tui.screens.common import (
+    ComposedRows,
+    MountTracked,
     Panel,
     WriteModal,
     human_size,
     styled_file_status,
     styled_scientific_name,
 )
+
+NEXT_ID_TYPES = list(ENTITY_PREFIXES)
 
 
 def _node_label(node: dict[str, Any]) -> Text:
@@ -210,12 +217,169 @@ class LifecycleModal(WriteModal):
         self.dismiss(payload)
 
 
+class FieldRow(ComposedRows, Horizontal):
+    """One ``--field KEY=VALUE`` row in the add-record dialog."""
+
+    class RemoveRequested(Message):
+        def __init__(self, row: "FieldRow") -> None:
+            super().__init__()
+            self.row = row
+
+        @property
+        def control(self) -> "FieldRow":
+            return self.row
+
+    def __init__(self, field: str = "", value: str = "") -> None:
+        super().__init__(classes="field-row")
+        self._initial = (field, value)
+
+    def compose(self) -> ComposeResult:
+        field, value = self._initial
+        yield Input(value=field, placeholder="field", classes="field-key")
+        yield Input(value=value, placeholder="value", classes="field-value")
+        yield Button("✕", classes="field-remove")
+
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.has_class("field-remove"):
+            event.stop()
+            self.post_message(self.RemoveRequested(self))
+
+    def pair(self) -> tuple[str, str]:
+        """The row's ``(key, value)`` with the CLI's ``parse_key_values`` key rules."""
+        key = self.query_one(".field-key", Input).value
+        value = self.query_one(".field-value", Input).value
+        return key.strip().strip("-"), value
+
+
+class AddRecordModal(WriteModal):
+    """Add one metadata record (``operon add``): type, optional ID, KEY=VALUE rows."""
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Add metadata record")
+        self.project = project
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static("entity type", classes="modal-label")
+        yield Select(
+            [(name, name) for name in data.ENTITY_TYPES],
+            value=data.ENTITY_TYPES[0], id="add-entity-type", allow_blank=False,
+        )
+        yield Static("internal ID (blank = allocate the next ID)", classes="modal-label")
+        yield Input(placeholder="auto-allocate", id="add-record-id")
+        yield Static("fields (repeatable, like --field KEY=VALUE)", classes="modal-label")
+        yield MountTracked(id="add-fields")
+        with Horizontal(classes="config-buttons"):
+            yield Button("Add field", id="add-field-row")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.query_one("#add-fields", MountTracked).mount_later(
+            FieldRow(), when_present=".field-row",
+        )
+
+    def _field_container(self) -> MountTracked:
+        return self.query_one("#add-fields", MountTracked)
+
+    def _all_field_rows(self) -> list[FieldRow]:
+        # A row on its way out answers NoMatches or blank (ODR-0036): skip it.
+        return [row for row in self._field_container().query(FieldRow).results(FieldRow)
+                if not row._pruning]
+
+    def _field_rows(self) -> list[FieldRow]:
+        """Rows a reader may compose: a half-mounted row cannot be read (ODR-0023).
+
+        ``WriteModal.on_mount`` runs a second time through Textual's MRO message
+        dispatch right after ``mount_later`` registered the seeded row, while
+        that row is in the tree without its composed inputs.
+        """
+        return [row for row in self._all_field_rows() if row.form_ready]
+
+    def _fields_ready(self) -> bool:
+        try:
+            container = self._field_container()
+        except NoMatches:
+            return False
+        if not container.mounts_settled:
+            return False
+        return all(row.form_ready for row in self._all_field_rows())
+
+    def _entity_type(self) -> str:
+        return str(self.query_one("#add-entity-type", Select).value)
+
+    def _field_pairs(self) -> list[tuple[str, str]]:
+        return [row.pair() for row in self._field_rows()]
+
+    def command_text(self) -> str:
+        parts = ["operon", "add", self._entity_type()]
+        record_id = self.query_one("#add-record-id", Input).value.strip()
+        if record_id:
+            parts += ["--id", shlex.quote(record_id)]
+        for key, value in self._field_pairs():
+            if key:
+                parts += ["--field", f"{key}={shlex.quote(value)}"]
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "add-record-id" or event.input.has_class("field-key") \
+                or event.input.has_class("field-value"):
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "add-entity-type":
+            self.refresh_command()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "add-field-row":
+            event.stop()
+            self._field_container().mount_later(FieldRow(), when_present=".field-row")
+        else:
+            super().on_button_pressed(event)
+
+    def on_field_row_remove_requested(self, event: FieldRow.RemoveRequested) -> None:
+        event.stop()
+        event.row.remove()
+        self.refresh_command()
+
+    def confirm(self) -> None:
+        if not self._fields_ready():
+            self.show_error("the form is still loading — confirm again in a moment")
+            return
+        entity_type = self._entity_type()
+        record_id = self.query_one("#add-record-id", Input).value.strip() or None
+        fields: dict[str, str] = {}
+        for key, value in self._field_pairs():
+            if not key and value:
+                self.show_error(f"field name is required for value {value!r}")
+                return
+            if not key:
+                continue
+            if key in fields:
+                self.show_error(f"duplicate field {key!r}")
+                return
+            fields[key] = value
+        self.run_action(
+            lambda: actions.add_record(
+                self.project, entity_type, fields, record_id=record_id,
+            )
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        self.app.notify(f"added {payload['entity_type']} {payload['entity_id']}")
+        for warning in payload.get("warnings") or []:
+            self.app.notify(warning, severity="warning")
+        self.dismiss(payload)
+
+
 class EntitiesPanel(Panel):
     """Organisms → samples → runs/assemblies → annotations with details."""
 
     BINDINGS = [
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
+        Binding("a", "add_record", "Add record"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -273,6 +437,13 @@ class EntitiesPanel(Panel):
         )
 
     def _after_lifecycle(self, result: Any) -> None:
+        if result:
+            self.app.reload_after_write()
+
+    def action_add_record(self) -> None:
+        self.app.push_screen(AddRecordModal(self.project), self._after_add)
+
+    def _after_add(self, result: Any) -> None:
         if result:
             self.app.reload_after_write()
 

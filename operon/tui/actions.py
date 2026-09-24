@@ -7,8 +7,8 @@ opens its own short-lived *writable* ``Database`` connection, does the work,
 closes it, and returns plain dicts.  Writable connections are only ever
 opened inside this module — the UI layer never holds one.
 
-``lifecycle_preview`` is the single exception: it is a read-only plan
-preview, so it uses a read-only connection like :mod:`operon.tui.data`.
+``lifecycle_preview`` and ``table_import_preview`` are the read-only
+exceptions: previews use a read-only connection like :mod:`operon.tui.data`.
 """
 
 from __future__ import annotations
@@ -1398,3 +1398,103 @@ def compile_reference_set(
 
     with _open_writable(project) as db:
         return _compile(db, project, profile_name, taxonomy_version)
+
+
+def add_record(
+        project: Project,
+        entity_type: str,
+        fields: dict[str, Any],
+        record_id: str | None = None,
+) -> dict[str, Any]:
+    """Add one metadata record like ``operon add`` (same core, same audit rows)."""
+    from operon.schema import add_metadata_record
+
+    if entity_type not in ENTITY_TYPE_NAMES:
+        raise ValidationError(
+            f"unknown entity type {entity_type!r}; "
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
+    with _open_writable(project) as db:
+        return add_metadata_record(
+            db, project, entity_type, fields,
+            record_id=record_id, actor=os.environ.get("USER"),
+        )
+
+
+def table_template(project: Project, table: str, output: str) -> dict[str, Any]:
+    """Write an empty CSV/XLSX template like ``operon import table --template``.
+
+    The output suffix selects the format (.csv header row, .xlsx data +
+    schema-guide sheets); validation errors come from the core unchanged.
+    """
+    from operon.schema import Schema
+    from operon.table_import import write_table_template
+
+    if not str(output).strip():
+        raise ValidationError("a template output path is required (--template)")
+    schema = Schema.from_file(project.schema_path)
+    path = write_table_template(schema, table, output)
+    return {"table": table, "path": str(path)}
+
+
+def table_import_preview(project: Project, table: str, path: str) -> dict[str, Any]:
+    """Preview a metadata-table import like the CLI's preview step.
+
+    Read-only (like :func:`lifecycle_preview`): the preview compares incoming
+    rows against the current table, normalizes them against the project
+    schema and reports insert/update/unchanged actions — it writes nothing,
+    so a short-lived read-only connection is enough.
+    """
+    from operon.schema import Schema
+    from operon.table_import import preview_table_import
+
+    if not str(path).strip():
+        raise ValidationError("a table input path is required (--file)")
+    db = Database(project.db_path, read_only=True)
+    try:
+        return preview_table_import(
+            db, Schema.from_file(project.schema_path), table, path)
+    finally:
+        db.close()
+
+
+def import_table(
+        project: Project,
+        *,
+        table: str,
+        path: str,
+        on_conflict: str | None = None,
+        actor: str | None = None,
+) -> dict[str, Any]:
+    """Apply a metadata-table import like ``operon import table --yes``.
+
+    The writable session re-runs the preview and applies it in the core's
+    single transaction (the fanout ``dry_run=False`` shape), so the plan is
+    computed against the current database even if the project changed between
+    the dialog's preview and the Confirm.  ``on_conflict`` mirrors the CLI
+    flag: ``None`` keeps the CLI default (``error``) and reproduces the CLI's
+    own gate message when existing rows would change; ``actor`` defaults to
+    ``$USER`` exactly like the CLI handler.  Every inserted/changed field is
+    recorded in ``changes`` with the source path as evidence, and inserted
+    entities enter ``METADATA_VALIDATED`` — identical provenance to the CLI.
+    """
+    from operon.schema import Schema
+    from operon.table_import import apply_table_import, preview_table_import
+
+    if on_conflict is not None and on_conflict not in {"error", "skip", "update"}:
+        raise ValidationError("on_conflict must be error, skip or update")
+    if not str(path).strip():
+        raise ValidationError("a table input path is required (--file)")
+    schema = Schema.from_file(project.schema_path)
+    with _open_writable(project) as db:
+        preview = preview_table_import(db, schema, table, path)
+        # The CLI's non-interactive gate (cli.py): without --on-conflict,
+        # rows that would change are an error; the TUI has no tty prompt, so
+        # the explicit Select choice replaces it.
+        if preview["update"] and on_conflict is None:
+            raise ValidationError(
+                "existing rows would change; pass --on-conflict error, skip or update")
+        result = apply_table_import(
+            db, schema, preview, on_conflict=on_conflict or "error",
+            actor=actor if actor is not None else os.environ.get("USER"),
+        )
+    return {**result, "table": table, "source": str(path)}

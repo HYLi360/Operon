@@ -121,6 +121,7 @@ operon add {organism|sample|run|assembly|annotation} \
 - If `--id` is omitted, the next stable internal ID is assigned.
 - Data is written to SQLite and audited. No second writable TSV mirror is maintained.
 - Example: `operon add organism --field scientific_name="Escherichia coli" --field taxonomy_source=NCBI`.
+- The TUI entry point is the Entities screen's `a` binding — the same form, validation, and audit rows.
 
 ## add-accession
 
