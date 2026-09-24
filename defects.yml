@@ -1268,7 +1268,7 @@ defects:
     really did hold a result for 33 s in the same session), so a slow machine no longer
     reddens them while a genuine hang still fails at the harder wall.
   fix_commit: ab54dc49ded903d6a5c5ac2248bf8e3e74ce92ad
-  fixed_in: null
+  fixed_in: 0.9.0
   regression_tests:
     - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
     - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running

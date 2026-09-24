@@ -54,9 +54,14 @@
 | ODR-0039 | TUI | `Select` 挂载重试耗尽不再让 `options_ready` 永久为 `False`、使表单闸门无限等待：`FittingSelect` 新增 `options_gave_up`（与 `options_ready` 并列的第二信号），并在重试预算耗尽时打一条点名控件的警告。`ConfigPanel` 通过 `_blocked_save_message` 回应该被阻断的保存：一旦有控件放弃，它会点名卡住的控件并提示重载 profile，否则仍沿用“仍在加载”的措辞。 |
 | ODR-0040 | QC / 报告 | 会被电子表格当作公式执行的文本单元格现在加前导撇号转义——即以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的值。覆盖两个对齐后端产出的 `sequence_qc.tsv`（逐字节 parity 不变）以及所有 `write_tsv` 消费者（release 与 export 的 manifest、report TSV、TimeTree 候选表）。非字符串单元格保持原有字节，已转义的值不会二次转义，provenance 哈希按转义后的字节计算，因此再读回 release 仍然一致。 |
 | ODR-0041 | TUI | 配置界面的 History 按钮不再以仅 QC 使用的 profile 字段为闸门：`_open_profile_history()` 通过 `_active_profile_name()` 解析 profile 名——分类编辑器在前台时给出分类编辑器自己的名字，否则给出 `current_profile`——因此 History 打开的是用户当前正在编辑的那个 profile 的快照历史。由测试固定：从全新界面（从未选择过 qc profile）点击 `#classification-history`，断言模态标题点名分类 profile，且陈旧的 qc 选择不会渗入其中。 |
+| ODR-0042 | CLI / TUI | `run-pipeline` 的 ingest 阶段现在与 `operon ingest` 完全一样，先经 `remotes.fetch_url_to_temp` 抓取 `sftp://` / `remote://` 源：阶段返回后临时副本即被删除，`source_url` 记录原始 URL。由于修复位于共享核心，TUI 管道模态（其 source 字段本就写明支持这些 URL 形式）无需任何 TUI 侧分支即可继承，CLI 与 TUI 保持一致。 |
 | ODR-0043 | TUI | 运行中真实点击 Cancel 不再把 `WriteModal` 子类连同其 worker 一并关掉：Textual 的 `MessagePump` 会沿整条 MRO 调用每个 `on_button_pressed`，因此 `QcModal`、`AnalyzeModal`、`RunExternalModal`、`TaxonomyImportModal`、`CompileReferenceSetModal` 的“运行中取消”分支现在先调用 `event.prevent_default()`（沿用 `NcbiDatasetsModal` 的做法），在 `WriteModal.on_button_pressed` 之前终止这次分发。回归测试在桩动作阻塞时通过 `Button.press()` 派发真实 `Button.Pressed`，断言模态保持打开且运行仍能完成。 |
 | ODR-0044 | Export / 报告 | `write_tsv` 改为自己决定单元格引号，不再委托 `csv`：含 TAB、CR、LF 或 `"` 的单元格加引号并双写内部引号，其余原样写出。CPython 3.11 改变了 csv 对 CR/LF 单元格的引号规则，导致 3.10 上同一行写出不同字节——按 provenance 哈希的产物（release manifest、export 身份）因此随解释器漂移。现在 3.10–3.15 字节一致，且与此前 3.11+ 的输出完全相同。 |
 | ODR-0045 | TUI | 面板加载现在带世代戳：`reload()` 把在 UI 线程打上的世代交给 worker，被更新加载取代的 payload 会丢弃而不是渲染。此前已经在读的线程可能晚于新加载落地，把刚输入的过滤条件移除的行又恢复出来——即 macOS/Python 3.15 CI 上实体过滤始终未生效的形态。 |
+| ODR-0046 | Tests | 取消点击回归测试不再在运行可证明已在运行之前按下 Cancel：每个取消测试都等待桩在阻塞前设置的 `started` 事件，且跨越 worker→UI 交接的等待各自获得 120 s 的 HANDOFF_TIMEOUT、场景上限提到 180 s，因此负载高的运行机不再把它们判红，而真正的挂死仍会在更硬的墙前失败。仅测试侧修复，未改动产品代码。 |
+| ODR-0047 | TUI | 模态 Confirm 的动作只执行一次：`operon/tui/screens` 中每个委托型的 `on_button_pressed` 都在 `super()` 之前调用 `event.prevent_default()`，让 Textual 的 MRO 分发止于子类——这正是该树为 ODR-0043 取消分支早已携带的同一道守卫。两条回归锁定它：一条源码级扫描，凡有处理器在未加守卫的情况下抵达 `super().on_button_pressed(event)` 即失败（它当场找出了第十处 `QcModal`）；另一条对 add-record 对话框做端到端点击计数。 |
+| ODR-0048 | Tests | no-backend 机密测试不再假定 Linux 主机：`scratch` fixture 在既有的 PATH 剥离（钉住其余两个探测）旁，再钉住第三个探测（`MacKeychainBackend.binary` 指向不存在的路径），需要同一前提的 config-cli 测试则就地钉住——因此包括 macOS 在内的每条腿都解析不出后端。回归在任何主机上复现 Darwin 状态；`test_mac_keychain_round_trip` 从 `scratch` 改到 `tmp_path`，因为它驱动真实二进制字符串，不应继承该钉住。 |
+| ODR-0049 | Tests | 两个机密后端桩都改为 Python 脚本，其 shebang 是运行测试套件的解释器的绝对 `sys.executable`，因此完全不触达任何系统工具、也不从 PATH 继承任何东西。两条回归锁定其形态：一条扫描桩文本中的绝对 `/usr/bin` 或 `/bin` 工具路径（修复前有五处），一条断言写出的桩以绝对 shebang 开头且不含占位符。 |
 
 ## K 系列（历史）
 
