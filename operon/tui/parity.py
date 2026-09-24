@@ -574,8 +574,13 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ),
     ParityEntry(
         ("next-id",),
-        STATUS_PLANNED,
-        note=f"{_M4}; id reservation already happens inside the import wizard",
+        STATUS_IMPLEMENTED,
+        note="reserving an ID consumes it (unused reservations become gaps), so "
+             "the modal stays open after success to show the reserved ID and "
+             "Confirm is disabled; id reservation also happens inside the "
+             "import wizard",
+        actions="actions.reserve_next_id",
+        modal="operon.tui.screens.entities::NextIdModal",
     ),
     ParityEntry(
         ("ncbi-datasets",),

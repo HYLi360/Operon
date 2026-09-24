@@ -2340,6 +2340,12 @@ def test_filter_rows_keep_their_controls_inside_the_row(
     from operon.tui.screens.hits import AnalysisHitsModal
     from operon.tui.screens.runs import AnalysisJobsModal
 
+    from operon.tui.screens.entities import (
+        AddAccessionModal,
+        AddRecordModal,
+        NextIdModal,
+    )
+
     hits_project = Project.init(tmp_path / "filter-row-project")
     _seed_hits(hits_project)
 
@@ -2357,6 +2363,22 @@ def test_filter_rows_keep_their_controls_inside_the_row(
                 await pilot.pause()
                 await _wait_until(
                     lambda target=modal: not target._loading, f"{type(modal).__name__} load",
+                )
+                assert not _overflowing_controls(modal), type(modal).__name__
+                app.pop_screen()
+                await pilot.pause()
+            # WriteModal subclasses carry no _loading gate: compose is the wait.
+            for modal in (
+                AddRecordModal(demo_project),
+                AddAccessionModal(demo_project, "assembly", "ASM_000001"),
+                NextIdModal(demo_project),
+            ):
+                app.push_screen(modal)
+                await pilot.pause()
+                await _wait_until(
+                    lambda target=modal: len(target.query("#confirm")) > 0,
+                    f"{type(modal).__name__} to compose",
+                    timeout=10.0,
                 )
                 assert not _overflowing_controls(modal), type(modal).__name__
                 app.pop_screen()

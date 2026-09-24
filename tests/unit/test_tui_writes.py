@@ -32,6 +32,7 @@ from operon.tui.screens.entities import (
     EntitiesPanel,
     FieldRow,
     LifecycleModal,
+    NextIdModal,
 )
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.files_ops import IngestModal, QcModal, VerifyModal
@@ -671,6 +672,19 @@ def test_add_accession_action_requires_active_target(project: Project) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Data layer: reserve next ID
+# ---------------------------------------------------------------------------
+
+def test_reserve_next_id_consumes_ids(project: Project) -> None:
+    first = actions.reserve_next_id(project, "organism")
+    second = actions.reserve_next_id(project, "organism")
+    assert first["entity_type"] == "organism"
+    assert first["entity_id"].startswith("ORG_")
+    assert second["entity_id"] > first["entity_id"]
+    assert actions.reserve_next_id(project, "file")["entity_id"].startswith("FIL_")
+
+
+# ---------------------------------------------------------------------------
 # Headless UI: lifecycle modal
 # ---------------------------------------------------------------------------
 
@@ -1019,6 +1033,44 @@ def test_add_accession_modal_requires_fields_inline(project: Project,
 
     _run(scenario())
     assert called == []
+
+
+# ---------------------------------------------------------------------------
+# Headless UI: next-id modal
+# ---------------------------------------------------------------------------
+
+def test_next_id_modal_reserves_and_stays_open(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            panel.query_one("#entities-tree", Tree).focus()
+
+            await pilot.press("n")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, NextIdModal)
+            assert modal.query_one("#nextid-entity-type", Select).value == "organism"
+            modal.query_one("#nextid-entity-type", Select).value = "assembly"
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            # The modal stays open so the ID can be read and copied.
+            assert isinstance(app.screen, NextIdModal)
+            text = _static_text(modal.query_one("#nextid-result", Static))
+            assert "reserved assembly ID: ASM_" in text
+            assert modal.query_one("#confirm", Button).disabled
+            assert str(modal.query_one("#cancel", Button).label) == "Close"
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, NextIdModal)
+
+    _run(scenario())
 
 
 # ---------------------------------------------------------------------------

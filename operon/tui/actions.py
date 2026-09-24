@@ -1532,3 +1532,20 @@ def add_accession(
             primary=primary,
             actor=os.environ.get("USER"),
         )
+
+
+def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
+    """Reserve the next stable internal ID like ``operon next-id``.
+
+    The reservation consumes the ID immediately (``Database.next_id`` commits
+    its own immediate transaction), so an unused reservation becomes a gap —
+    exactly the CLI contract the id_counters docstring documents.
+    """
+    from operon.schema import ENTITY_PREFIXES
+
+    if entity_type not in ENTITY_PREFIXES:
+        raise ValidationError(
+            f"unknown entity type {entity_type!r}; choose from {', '.join(ENTITY_PREFIXES)}")
+    with _open_writable(project) as db:
+        entity_id = db.next_id(entity_type)
+    return {"entity_type": entity_type, "entity_id": entity_id}

@@ -459,6 +459,60 @@ class AddAccessionModal(WriteModal):
         self.dismiss(payload)
 
 
+class NextIdModal(WriteModal):
+    """Reserve the next stable internal ID (``operon next-id``).
+
+    The reservation consumes the ID immediately, so the modal stays open after
+    a successful reservation to show the ID, and Confirm is disabled — a second
+    reservation would burn another ID.  Close with *Close*/``esc`` (the
+    reservation is not undoable, exactly like the CLI).
+    """
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Reserve next internal ID")
+        self.project = project
+        self._reserved = False
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(
+            "Reserving an ID consumes it; an unused reservation becomes a gap, "
+            "exactly like the CLI.",
+            classes="modal-info",
+        )
+        yield Static("entity type", classes="modal-label")
+        yield Select(
+            [(name, name) for name in NEXT_ID_TYPES],
+            value=NEXT_ID_TYPES[0], id="nextid-entity-type", allow_blank=False,
+        )
+        yield Static("", id="nextid-result")
+
+    def command_text(self) -> str:
+        return f"operon next-id {self.query_one('#nextid-entity-type', Select).value}"
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "nextid-entity-type" and not self._reserved:
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        if self._reserved:
+            return
+        self.run_action(lambda: actions.reserve_next_id(
+            self.project, str(self.query_one("#nextid-entity-type", Select).value)))
+
+    def on_action_success(self, payload: Any) -> None:
+        self._reserved = True
+        self.query_one("#nextid-result", Static).update(Text(
+            f"reserved {payload['entity_type']} ID: {payload['entity_id']}",
+            style="bold",
+        ))
+        self.set_confirm_enabled(False)
+        self.query_one("#cancel", Button).label = "Close"
+        self.app.notify(
+            f"reserved {payload['entity_type']} {payload['entity_id']} "
+            "(unused reservations become gaps)"
+        )
+
+
 class EntitiesPanel(Panel):
     """Organisms → samples → runs/assemblies → annotations with details."""
 
@@ -467,6 +521,7 @@ class EntitiesPanel(Panel):
         Binding("x", "lifecycle", "Retire/restore"),
         Binding("a", "add_record", "Add record"),
         Binding("A", "add_accession", "Add accession"),
+        Binding("n", "next_id", "Next ID"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -539,6 +594,9 @@ class EntitiesPanel(Panel):
             AddAccessionModal(self.project, entity_type, entity_id),
             self._after_add,
         )
+
+    def action_next_id(self) -> None:
+        self.app.push_screen(NextIdModal(self.project))
 
     def _after_add(self, result: Any) -> None:
         if result:

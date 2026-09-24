@@ -257,3 +257,6 @@ operon ncbi-reconcile --apply [--actor NAME]
 ```bash
 operon next-id {organism|sample|run|assembly|annotation|file}
 ```
+
+- 预留立即消耗该 ID；未使用的预留会成为 gap。
+- TUI 入口为 Entities 屏的 `n` 键；对话框显示预留 ID 且不可重复执行，与 gap 语义一致。

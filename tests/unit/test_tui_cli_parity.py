@@ -838,6 +838,45 @@ def test_add_accession_modal_command_text_matches_action_kwargs(
     }
 
 
+def test_next_id_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Select, Static  # noqa: F401
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import NextIdModal
+
+    payload = {"entity_type": "file", "entity_id": "FIL_000123"}
+    calls = spy_action(monkeypatch, "reserve_next_id", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = NextIdModal(project)
+            app.push_screen(modal)
+            await _push(pilot, modal, "#nextid-entity-type")
+            assert modal.command_text() == "operon next-id organism"
+            modal.query_one("#nextid-entity-type", Select).value = "file"
+            await pilot.pause()
+            ns = parse_command_text(modal.command_text())
+            assert ns.entity_type == "file"
+            modal.confirm()
+            await _wait_until(
+                lambda: "FIL_000123" in _static_text(modal.query_one("#nextid-result", Static)),
+                "reserved ID to render",
+            )
+            assert modal.query_one("#confirm").disabled
+
+    _run(scenario())
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[1] == "file"
+    assert kwargs == {}
+
+
 # ---------------------------------------------------------------------------
 # Layer 4: audit-trail equivalence (CLI vs TUI actions)
 # ---------------------------------------------------------------------------
@@ -1649,3 +1688,16 @@ def test_audit_parity_add_accession(
         namespace="AUDIT", accession="A-7", version="4", primary=True,
     )
     _assert_audit_equal(cli_project, tui_project, "accessions")
+
+
+def test_audit_parity_next_id(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    rc = cli_main(["--project", str(cli_project.root), "next-id", "file"])
+    capsys.readouterr()
+    assert rc == 0
+    actions.reserve_next_id(tui_project, "file")
+    _assert_audit_equal(cli_project, tui_project, "id_counters")

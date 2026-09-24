@@ -96,6 +96,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | `x` | Entities | 退休（对已退休实体则为恢复）选中实体。对话框先加载只读影响计划（受影响实体/文件/引用，物理变更——逻辑退休恒为零），计划显示无变化时阻止 Confirm；RETIRE 必须提供 reason code。 | `operon retire\|restore <id> --reason … [--reason-code …] --apply --yes` |
 | `a` | Entities | 添加一条元数据记录：选择实体类型，可指定内部 ID（留空则自动分配下一个），并填写可重复的 `KEY=VALUE` 字段行（*Add field* 追加一行，✕ 删除）。schema 与外键违规以内联错误显示，对话框不关闭。 | `operon add <type> [--id …] --field KEY=VALUE …` |
 | `A` | Entities | 为选中实体登记外部 accession（internal type/id 已预填）：namespace、accession、可选 version 与 *primary* 复选框；目标实体必须存在且未退休。必填缺失时内联显示。 | `operon add-accession --internal-type … --internal-id … --namespace … --accession … [--version …] [--primary]` |
+| `n` | Entities | 预留下一个稳定内部 ID（全部六类，含 `file`）。预留即消耗——对话框保持打开显示结果，Confirm 被禁用，*Close* 后 gap 保留，与 CLI 一致。 | `operon next-id <type>` |
 | `i` | Files | 将文件（本地路径或 `sftp://`/`remote://` URL）归档到 `raw/`，表单根据选中行预填。format/compression 留空时自动检测。校验和冲突（同一实体+角色的字节不同）以红色内联显示，绝不覆盖。 | `operon ingest --source … --entity-type … --entity-id … --role …` |
 | `v` | Files | 校验选中文件，或在"verify all N files?"确认后校验全部文件。失败项（`MISSING`、`CHECKSUM_FAILED` 等）会在错误对话框中列出。 | `operon verify [--file-id …]` |
 | `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |

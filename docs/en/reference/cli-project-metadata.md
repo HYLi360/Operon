@@ -219,3 +219,6 @@ If a target source role already has a different SHA-256, `--apply` refuses to ru
 ```bash
 operon next-id {organism|sample|run|assembly|annotation|file}
 ```
+
+- The reservation consumes the ID immediately; an unused reservation becomes a gap.
+- The TUI entry point is the Entities screen's `n` binding; the dialog shows the reserved ID and cannot re-run, mirroring the gap contract.
