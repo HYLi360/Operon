@@ -1253,7 +1253,7 @@ defects:
     own HANDOFF_TIMEOUT of 120 s with the scenario cap raised to 180 s (a loaded runner
     really did hold a result for 33 s in the same session), so a slow machine no longer
     reddens them while a genuine hang still fails at the harder wall.
-  fix_commit: null
+  fix_commit: ab54dc49ded903d6a5c5ac2248bf8e3e74ce92ad
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
