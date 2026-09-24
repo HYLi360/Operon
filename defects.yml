@@ -1176,7 +1176,7 @@ defects:
     interpreter. Formula-trigger escaping (ODR-0040) is unchanged; the alignment
     reporter keeps csv (its CRLF lineterminator already makes its quoting
     version-stable) and the taxonomy reference-set writer stays frozen by decision.'
-  fix_commit: null
+  fix_commit: 8cc64cf9377beea6b4d694c22de680813147cb5a
   fixed_in: null
   regression_tests:
   - tests/unit/test_rules_schema_edges.py::test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter
@@ -1208,7 +1208,7 @@ defects:
     lands, so the initial-load latch still completes on every path. FilesPanel''s
     detail-pane read and PublishPanel''s release preview keep their own begin_request
     key: the load generation is a separate slot on purpose.'
-  fix_commit: null
+  fix_commit: dcf0be922ee914e1caa8f807cc9705100ed3ac2f
   fixed_in: null
   regression_tests:
   - tests/unit/test_tui_screens_more.py::test_stale_load_does_not_restore_rows_a_newer_filter_removed
