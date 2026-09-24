@@ -9,7 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from operon import cli, config as config_module, qc, reports
+from operon import cli, qc, reports
+from operon import config as config_module
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database

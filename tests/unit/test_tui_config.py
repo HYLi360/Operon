@@ -3145,7 +3145,6 @@ VIRIDIPLANTAE_COVERAGE = {
 def test_coverage_ranks_match_the_core() -> None:
     """The form's rank list is the core grammar's (module comment)."""
     from operon.taxonomy import TARGET_RANK_ORDER
-
     from operon.tui.screens.config_coverage import COVERAGE_RANKS
 
     assert set(COVERAGE_RANKS) == set(TARGET_RANK_ORDER)

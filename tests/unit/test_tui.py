@@ -2337,14 +2337,13 @@ def test_filter_rows_keep_their_controls_inside_the_row(
     Analysis jobs modal lost its status and limit filters that way.  Mount the
     screens and modals that own filter rows and check each identified control.
     """
-    from operon.tui.screens.hits import AnalysisHitsModal
-    from operon.tui.screens.runs import AnalysisJobsModal
-
     from operon.tui.screens.entities import (
         AddAccessionModal,
         AddRecordModal,
         NextIdModal,
     )
+    from operon.tui.screens.hits import AnalysisHitsModal
+    from operon.tui.screens.runs import AnalysisJobsModal
 
     hits_project = Project.init(tmp_path / "filter-row-project")
     _seed_hits(hits_project)

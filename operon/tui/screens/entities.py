@@ -220,12 +220,12 @@ class FieldRow(ComposedRows, Horizontal):
     """One ``--field KEY=VALUE`` row in the add-record dialog."""
 
     class RemoveRequested(Message):
-        def __init__(self, row: "FieldRow") -> None:
+        def __init__(self, row: FieldRow) -> None:
             super().__init__()
             self.row = row
 
         @property
-        def control(self) -> "FieldRow":
+        def control(self) -> FieldRow:
             return self.row
 
     def __init__(self, field: str = "", value: str = "") -> None:
