@@ -3071,3 +3071,41 @@ def test_classification_editor_composes_while_a_nested_row_is_being_removed(
             assert reads[-1] == {"any": [{"field": "", "operator": "==", "value": ""}]}
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-0041")
+def test_config_screen_classification_history_opens_the_selected_profile(
+        project: Project) -> None:
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            # Fresh screen: no qc profile was ever selected, so the qc-only
+            # gate used to swallow the click (ODR-0041).
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _click(pilot, "#classification-history")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, HistoryModal)
+            assert "bhlh_tiers" in _static_text(modal.query_one("#modal-title", Static))
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+
+            # A stale qc selection must not leak into the classification
+            # profile's history either.
+            panel._load_profile("assembly_production_v1")
+            await pilot.pause()
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _click(pilot, "#classification-history")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, HistoryModal)
+            title = _static_text(modal.query_one("#modal-title", Static))
+            assert "bhlh_tiers" in title
+            assert "assembly_production_v1" not in title
+
+    _run(scenario())

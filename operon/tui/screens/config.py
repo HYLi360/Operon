@@ -1351,10 +1351,21 @@ class ConfigPanel(Panel):
             self._on_profile_saved,
         )
 
+    def _active_profile_name(self) -> str | None:
+        """The profile loaded in the editor currently on display.
+
+        ``current_profile`` is maintained only by the qc editor path; the
+        classification editor keeps its own name, so a History request must
+        resolve the name from the visible editor instead (ODR-0041).
+        """
+        if self.query_one("#classification-editor").display:
+            return self.classification_profile
+        return self.current_profile
+
     def _open_profile_history(self) -> None:
-        if not self.current_profile:
+        name = self._active_profile_name()
+        if not name:
             return
-        name = self.current_profile
         rows = data.profile_history(self.project, name)
 
         def restore(document: dict[str, Any]) -> None:
