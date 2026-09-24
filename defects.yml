@@ -1066,18 +1066,22 @@ defects:
     profile''s snapshot history. No test ever clicked `#classification-history`.'
   severity: low
   component: tui
-  status: confirmed
+  status: fixed
   reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
     `_open_profile_history` (operon/tui/screens/config.py:1354-1355) disables the
     History action unless `self.current_profile` is set, but that field is only
     maintained by the qc editor path; the classification editor never updates it.
     A grep of the test tree shows `#profile-history` exercised but
     `#classification-history` never clicked, so the gate failure went unnoticed.'
-  disposition: 'Confirmed; the fix is scheduled ahead of the M4 coverage-profile
-    editor item (same screen, same gate), with the defect commit landing before the
-    feature commit per the defect-tracking flow. The fix should resolve the profile
-    name from the currently active editor (qc / classification / coverage) instead
-    of the qc-only `current_profile` field.'
+  disposition: 'Fixed in operon/tui/screens/config.py: `_open_profile_history()`
+    resolves the profile name through the new `_active_profile_name()`, which answers
+    with the classification editor''s own name while that editor is on display and
+    with `current_profile` otherwise, so History opens the snapshot history of the
+    profile the user is actually editing. Pinned by
+    tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile,
+    which clicks `#classification-history` from a fresh screen (no qc profile ever
+    selected) and asserts the modal title names the classification profile — and that
+    a stale qc selection does not leak into it.'
   fix_commit: 1362854dd13e4c3656eb7a3ee6b5c8480a7b5cbe
   fixed_in: 0.8.5
   regression_tests:
