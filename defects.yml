@@ -1054,3 +1054,56 @@ defects:
   - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv
   - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_match_across_backends
   - tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells
+- id: ODR-0041
+  title: Config screen History button gates on the QC-only profile field, so a
+    classification profile's history is unreachable or shows the wrong profile
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: '0.8.5; the Config screen''s *History* button for sequence_classification
+    profiles (operon/tui/screens/config.py `_open_profile_history`). Selecting a
+    classification profile leaves `current_profile` None or holding the previously
+    selected qc profile name, so the button either does nothing or opens the qc
+    profile''s snapshot history. No test ever clicked `#classification-history`.'
+  severity: low
+  component: tui
+  status: confirmed
+  reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
+    `_open_profile_history` (operon/tui/screens/config.py:1354-1355) disables the
+    History action unless `self.current_profile` is set, but that field is only
+    maintained by the qc editor path; the classification editor never updates it.
+    A grep of the test tree shows `#profile-history` exercised but
+    `#classification-history` never clicked, so the gate failure went unnoticed.'
+  disposition: 'Confirmed; the fix is scheduled ahead of the M4 coverage-profile
+    editor item (same screen, same gate), with the defect commit landing before the
+    feature commit per the defect-tracking flow. The fix should resolve the profile
+    name from the currently active editor (qc / classification / coverage) instead
+    of the qc-only `current_profile` field.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0042
+  title: run-pipeline does not support sftp:// or remote:// sources for its ingest
+    stage
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'all releases with run-pipeline; `operon run-pipeline --source
+    sftp://...` (or remote://) treats the URL as a local path and fails, while the
+    standalone `operon ingest` accepts the same URL'
+  severity: low
+  component: cli
+  status: confirmed
+  reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
+    `_cmd_ingest` (operon/cli.py:1120-1140) wraps `ingest_file` with a
+    `fetch_url_to_temp` pre-fetch for sources starting with sftp:// or remote://,
+    but `_cmd_run_pipeline` (operon/cli.py:2126-2158) passes `args.source` straight
+    to `ingest_file`, bypassing that wrapper, so a remote URL reaches the local
+    file probe and fails.'
+  disposition: 'Confirmed, no fix planned for now (user decision 2026-09-24);
+    registered so the gap is tracked. A fix would route the pipeline ingest stage
+    through the same fetch_url_to_temp wrapper as `_cmd_ingest` (including the
+    temporary-file cleanup in its finally block). The M4 TUI pipeline modal
+    explicitly does not add an sftp branch on the TUI side either, so the CLI and
+    TUI stay at parity.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
