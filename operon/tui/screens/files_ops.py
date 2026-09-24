@@ -125,6 +125,47 @@ class VerifyModal(WriteModal):
         self.dismiss(payload)
 
 
+class StandardizeModal(WriteModal):
+    """Link-kind choice + confirm for `operon standardize` (one file or all)."""
+
+    LINK_KIND_OPTIONS = [("copy (independent copy)", "copy"),
+                         ("hardlink", "hardlink"),
+                         ("symlink", "symlink")]
+
+    def __init__(self, project: Project, file_id: str | None, link_kind: str = "copy") -> None:
+        super().__init__("Standardize files")
+        self.project = project
+        self.file_id = file_id
+        self.link_kind = link_kind
+
+    def compose_form(self) -> Iterable[Any]:
+        if self.file_id:
+            text = (f"Stage {self.file_id} into standardized/?  raw/ stays immutable; "
+                    "the source checksum is verified first.")
+        else:
+            text = ("Stage every verified file into standardized/?  raw/ stays immutable; "
+                    "each source checksum is verified first.")
+        yield Static(text, classes="modal-info")
+        yield Static("Link kind", classes="modal-label")
+        yield Select(self.LINK_KIND_OPTIONS, value=self.link_kind,
+                     id="standardize-link", allow_blank=False)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "standardize-link":
+            self.link_kind = str(event.value)
+            self.refresh_command()
+
+    def command_text(self) -> str:
+        scope = f" --file-id {self.file_id}" if self.file_id else ""
+        return f"operon standardize{scope} --link {self.link_kind}"
+
+    def confirm(self) -> None:
+        self.run_action(lambda: actions.standardize(self.project, self.file_id, self.link_kind))
+
+    def on_action_success(self, payload: Any) -> None:
+        self.dismiss(payload)
+
+
 class QcCancelled(Exception):
     """Raised between files when the QC worker is cancelled."""
 

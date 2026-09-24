@@ -630,7 +630,16 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "plan_only": "ncbi-plan-only",
         },
     ),
-    ParityEntry(("standardize",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("standardize",),
+        STATUS_IMPLEMENTED,
+        actions="actions.standardize",
+        modal="operon.tui.screens.files_ops::StandardizeModal",
+        params={
+            "file_id": "context: Files screen selection (blank = every file)",
+            "link": "standardize-link",
+        },
+    ),
     ParityEntry(("import-qc",), STATUS_PLANNED, note=_M4),
     ParityEntry(("run-pipeline",), STATUS_PLANNED, note=_M4),
     ParityEntry(

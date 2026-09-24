@@ -25,6 +25,7 @@ from operon.tui.screens.files_ops import (
     HEALTHY_VERIFY_STATUSES,
     IngestModal,
     QcModal,
+    StandardizeModal,
     VerifyModal,
 )
 
@@ -43,6 +44,7 @@ class FilesPanel(Panel):
         Binding("i", "ingest", "Ingest"),
         Binding("v", "verify", "Verify"),
         Binding("q", "qc", "Run QC"),
+        Binding("S", "standardize", "Standardize"),
         Binding("l", "labels", "Labels"),
         Binding("e", "extract", "Extract domains"),
         Binding("s", "select", "Select sequences"),
@@ -222,6 +224,13 @@ class FilesPanel(Panel):
             QcModal(self.project, file_id, len(self.files)), self._after_qc,
         )
 
+    def action_standardize(self) -> None:
+        selected = self._selected_record()
+        file_id = str(selected["file_id"]) if selected else None
+        self.app.push_screen(
+            StandardizeModal(self.project, file_id), self._after_standardize,
+        )
+
     def action_labels(self) -> None:
         """Browse ``sequence_labels``: the project summary plus the selected file."""
         from operon.tui.screens.labels import SequenceLabelsModal
@@ -239,6 +248,25 @@ class FilesPanel(Panel):
             self.app.push_screen(ErrorDialog(
                 f"{len(failures)} of {result['total']} file(s) failed QC", lines,
             ))
+        self.app.reload_after_write()
+
+    def _after_standardize(self, result: Any) -> None:
+        if not result:
+            return
+        errors = result.get("errors") or []
+        if errors:
+            lines = "\n".join(
+                f"{item.get('file_id', '?')}: {item.get('error')}" for item in errors[:20])
+            self.app.push_screen(ErrorDialog(
+                f"{len(errors)} of {result['total']} file(s) failed to standardize", lines,
+            ))
+        else:
+            staged = sum(1 for item in result["results"] if item.get("action") != "skipped")
+            skipped = result["total"] - staged
+            message = f"standardized {staged} file(s)"
+            if skipped:
+                message += f"; {skipped} already staged"
+            self.app.notify(message)
         self.app.reload_after_write()
 
     def on_input_changed(self, event: Input.Changed) -> None:

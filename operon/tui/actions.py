@@ -221,6 +221,27 @@ def verify(project: Project, file_ids: list[str] | None = None) -> list[dict[str
         return verify_files(db, project, file_ids)
 
 
+def standardize(project: Project, file_id: str | None = None,
+                link_kind: str = "copy") -> dict[str, Any]:
+    """Stage verified files into ``standardized/`` like ``operon standardize``.
+
+    One file when ``file_id`` is given — there the core raises, so the modal can
+    show the reason inline — otherwise every file: the bulk form walks the whole
+    manifest and reports per-file errors instead of stopping at the first one.
+    """
+    from operon.files import standardize_all, standardize_file
+
+    with _open_writable(project) as db:
+        if file_id:
+            result = standardize_file(db, project, file_id, link_kind=link_kind)
+            return {"file_id": file_id, "link_kind": link_kind, "total": 1,
+                    "results": [result], "errors": []}
+        results = standardize_all(db, project, link_kind=link_kind)
+        return {"file_id": None, "link_kind": link_kind, "total": len(results),
+                "results": results,
+                "errors": [item for item in results if "error" in item]}
+
+
 def run_qc(
         project: Project,
         entity_type: str | None = None,
