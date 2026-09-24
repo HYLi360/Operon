@@ -80,7 +80,7 @@ The left sidebar (or the number keys) switches between eight screens:
 
 | Screen | Key | Contents |
 |--------|-----|----------|
-| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). The *NCBI Datasets import* and *Import dataset* buttons open the NCBI Datasets dialog (see below) and the import wizard; the wizard also opens with `i`. |
+| Home | `1` | Project identity, entity counts, file count and total size, decision distribution, latest release, the 10 most recent workflow runs, and an "Attention needed" section (failed/interrupted runs, REVIEW/FAIL current decisions, files whose status is not healthy). The *NCBI Datasets import*, *Import dataset* and *Import table* buttons open the NCBI Datasets dialog (see below), the import wizard and the controlled metadata-table dialog (see below); the wizard also opens with `i`. |
 | Entities | `2` | Hierarchy tree (organisms → samples → runs and assemblies → annotations) with the current state of each entity. Selecting a node shows its metadata fields, accessions, state, files, and the latest built-in QC and external-analysis (e.g. BUSCO/QUAST) metrics. Logically retired entities are shown by default, dimmed and struck-through; press `t` to hide them. Press `x` for the lifecycle dialog (see below). Press `a` to add a metadata record (see below). |
 | Files | `3` | Filterable manifest table (substring filter plus status selector). Moving the cursor shows the full file record, its `file_locations` residency list, and a *Sequence labels* section (the `classify-sequences` output aggregated per label and profile). Statuses are color-coded: verified green, `REMOTE_ONLY` blue, `MISSING`/`CHECKSUM_FAILED` red. Press `i`/`v`/`q`/`l` for ingest, verify, QC, and the label browser, and `e`/`s`/`a`/`f` for extract-domains, select-sequences, adopt, and fanout (see below). |
 | Tasks | `4` | Workflow-run monitor (processing tasks, not sequencing runs) fed by the same read-only query as `operon workflow list`. One compact filter strip holds status/step/entity/limit; the rest of the CLI's filters — `--from`/`--to` (ISO-8601; an invalid value or `--from` ≥ `--to` is an inline error inside the dialog), `--run-id`, `--parent-run-id`, `--tool`, `--executor`, `--offset` and `--oldest-first` — live behind the *More…* button, which opens an advanced-filter dialog and shows how many filters are active (its *Clear* empties them; `--resumes-run-id` and machine formats stay CLI-only). The table loads on entry and refreshes on demand with `r` (no background polling); the cursor and scroll position survive each refresh. Press `enter` on a row for the full run record (the same sections as `operon workflow show`); press `esc` to go back. On a *running* run's detail screen, *Follow logs* appends the local `logs/<run_id>.stdout.log`/`.stderr.log` tails once per second until the run leaves `running`, then reports the final status — it only observes and never cancels (with the SSH backend logs are pulled back at completion, so nothing streams until then). The *Analysis jobs* button opens a read-only `analysis_jobs` browser (analysis/status/limit filters, with the selected row's full error and artifact paths) that also lists tasks interrupted inside a job array — rows that never get a `workflow_runs` row. The *Environments* button browses captured execution environments (the same list as `operon environments list`) and renders *View JSON*, *Export explicit* and *Export yaml* read-only — writing a conda spec to a file stays a CLI redirection (errors such as a snapshot without a package inventory are shown inline). The *New analysis* and *Run external* buttons open the analysis and external-command dialogs; the *Analysis hits* button opens the alignment-hit browser (`report analysis --hits` columns and filters, with *Export* matching the CLI's `--out` byte for byte) (see below). |
@@ -117,6 +117,7 @@ you type, and records exactly what that command would record.
 | `q` | Files | Run built-in QC for the selected file or all files, with a live progress bar ("k/n · current file_id"). The completion notification mirrors the CLI text ("QC complete: ok/total file(s) passed built-in stages"); failures are listed in an error dialog. Cancel stops the batch cooperatively *between* files — results for files already processed are kept. | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | global | Open the import dataset wizard (also via the Home button; on the Files screen `i` stays ingest). | `operon import dataset` |
 | — | Home | Import from NCBI Datasets (*NCBI Datasets import* button): offline inputs (report JSON/JSONL, Datasets ZIP, unpacked directory) and/or accession downloads, with all of the CLI's flags. The *Dry run (preflight)* button is mandatory before Confirm — offline inputs are parsed with `--dry-run` (nothing written), accession-only requests run `--plan-only` (the download plan, no downloads, no run rows) — and any form change locks Confirm again. Cancel during a download is cooperative: the run stops at the next batch boundary, is recorded as `interrupted`, and stays resumable with `--resume-run`. | `operon ncbi-datasets [--input … …] [--accession … …] [--accession-file …] [--include … …] [--no-archive-files] [--standardize] [--dry-run] [--no-preserve-source] [--email …] [--api-key …] [--timeout …] [--batch-size …] [--download-workers …] [--retries …] [--retry-backoff …] [--resume-run …] [--plan-only]` |
+| — | Home | Import a controlled metadata table (*Import table* button): choose one of the six importable tables, then either generate an empty CSV/XLSX template or preview and import a file. *Preview import* is the mandatory preflight — it writes nothing and fills the key/action/changed-fields table; any edit to the table, mode or file path locks Confirm again. Confirm applies the same plan the CLI would, with the same `changes` audit rows. Rows that would change an existing record need an explicit on-conflict choice (blank reproduces the CLI's "existing rows would change" error). A running import cannot be interrupted and refuses to close. | `operon import table --table … (--template … \| --file … [--on-conflict …])` |
 | — | Publish | Create an immutable release after a members/exclusions preview; a duplicate version is rejected inline. | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | Materialize a selective export after a count/bytes preview; a non-empty output directory is rejected inline. | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | Generate a taxonomy coverage report; a result below the profile thresholds is a warning notification (FAIL), never a crash. | `operon report coverage --reference-set … [--release …]` |
@@ -202,6 +203,28 @@ bookkeeping as a SIGINT — the run row is recorded as `interrupted`
 field. After a cancellation the dialog stays open with the controls
 unlocked; after a failure the error is shown inline; on success a
 notification reports the assembly-record count and the run id.
+
+## Import table
+
+The dialog (opened with the *Import table* button on the Home screen) mirrors
+`operon import table`. Pick one of the six importable tables (`organisms`,
+`samples`, `runs`, `assemblies`, `annotations`, `accessions`) and a mode:
+
+- *Generate template* writes an empty `.csv`/`.xlsx` template with the table's
+  columns (the XLSX template also carries a schema guide sheet), like
+  `--template`.
+- *Import file* previews an existing `.csv`/`.xlsx` file like the CLI's
+  preview table (key, action, changed fields). The *Preview import* button is
+  mandatory before Confirm: the preview writes nothing, and any edit to the
+  table, mode or file path locks Confirm again. Confirm applies the same plan
+  the CLI would — inserts enter `METADATA_VALIDATED` and every inserted or
+  changed field is recorded in `changes` with the source file as evidence,
+  exactly like `--yes`.
+
+When existing rows would change, pick an on-conflict policy explicitly; the
+blank choice reproduces the CLI's "existing rows would change" error instead
+of writing. A running import is a single short transaction: it cannot be
+interrupted, and the dialog refuses to close until it finishes.
 
 ## Publish screen
 

@@ -34,6 +34,7 @@ class HomePanel(Panel):
         with Horizontal(id="home-actions"):
             yield Button("NCBI Datasets import", id="home-ncbi-datasets")
             yield Button("Import dataset", id="home-import-wizard")
+            yield Button("Import table", id="home-import-table")
         yield Static("loading…", id="home-body", classes="body")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -45,6 +46,10 @@ class HomePanel(Panel):
             from operon.tui.screens.import_wizard import ImportWizardScreen
 
             self.app.push_screen(ImportWizardScreen(self.project), self._after_write)
+        elif event.button.id == "home-import-table":
+            from operon.tui.screens.table_import import ImportTableModal
+
+            self.app.push_screen(ImportTableModal(self.project), self._after_write)
 
     def _after_write(self, payload: Any) -> None:
         if payload:
