@@ -1339,17 +1339,22 @@ defects:
     failed" with the stub line naming /usr/bin/mkdir and No such file or directory.'
   severity: low
   component: tests
-  status: confirmed
+  status: fixed
   reproduction: 'Run the four tests on a macOS host, or read SECRET_TOOL_FAKE — the
     stub creates its state directory through /usr/bin/mkdir, prints through
     /usr/bin/cat and removes through /usr/bin/rm. macOS keeps mkdir, cat and rm in
     /bin, so the stub dies at its first store call and every assertion sees
     SecretError instead of a value. SYSTEMD_CREDS_FAKE carries the same shape around
     /usr/bin/base64, which does exist on macOS and hid the pattern.'
-  disposition: 'Registered with ODR-0048 on 2026-09-24. The fix is test-side — write
-    both stubs as Python scripts with an absolute sys.executable shebang so they
-    depend on no system tool at all, and guard the shape with a test that scans the
-    stub text for absolute system-tool paths.'
+  disposition: 'Registered with ODR-0048 on 2026-09-24 and fixed in the same
+    round. Both stubs are now Python scripts whose shebang is the absolute
+    sys.executable of the interpreter running the suite, so they reach no system
+    tool at all and inherit PATH from nothing. Two regressions pin the shape —
+    one scans the stub text for absolute /usr/bin or /bin tool paths (five
+    offending lines in the pre-fix constants), one asserts the written stubs
+    start with an absolute shebang and carry no placeholder.'
   fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fixed_in: 0.9.0
+  regression_tests:
+    - tests/unit/test_secrets.py::test_the_fake_backends_call_no_absolute_system_tool
+    - tests/unit/test_secrets.py::test_fake_backends_are_pinned_to_this_interpreter

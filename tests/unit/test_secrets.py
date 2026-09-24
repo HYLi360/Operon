@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -26,47 +27,80 @@ from operon.secrets import (
     store_secret,
 )
 
-SECRET_TOOL_FAKE = """#!/bin/bash
-set -eu
-state="${FAKE_SECRET_STATE:?}"
-command="$1"; shift
-name=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --label) shift 2 ;;
-    service) shift 2 ;;
-    key) name="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-[ -n "$name" ] || exit 2
-case "$command" in
-  store) /usr/bin/mkdir -p "$state"; /usr/bin/cat > "$state/$name" ;;
-  lookup) [ -f "$state/$name" ] && /usr/bin/cat "$state/$name" || exit 1 ;;
-  clear) /usr/bin/rm -f "$state/$name" ;;
-  *) exit 2 ;;
-esac
+SECRET_TOOL_FAKE = """#!__PYTHON__
+import os
+import sys
+from pathlib import Path
+
+state = Path(os.environ["FAKE_SECRET_STATE"])
+args = sys.argv[1:]
+command, args = args[0], args[1:]
+name = ""
+while args:
+    token = args[0]
+    if token in ("--label", "service"):
+        args = args[2:]
+    elif token == "key":
+        name = args[1]
+        args = args[2:]
+    else:
+        args = args[1:]
+if not name:
+    sys.exit(2)
+target = state / name
+if command == "store":
+    state.mkdir(parents=True, exist_ok=True)
+    target.write_text(sys.stdin.read())
+elif command == "lookup":
+    if not target.is_file():
+        sys.exit(1)
+    sys.stdout.write(target.read_text())
+elif command == "clear":
+    target.unlink(missing_ok=True)
+else:
+    sys.exit(2)
 """
 
-SYSTEMD_CREDS_FAKE = """#!/bin/bash
-set -eu
-command="$1"; shift
-[ "$1" = "--user" ] || exit 2
-shift
-[ "$1" = "--name" ] || exit 2
-name="$2"; shift 2
-input="$1"; output="${2:-}"
-if [ "${FAKE_CREDS_FAIL:-0}" = "1" ]; then echo "cannot decrypt: different machine" >&2; exit 1; fi
-case "$command" in
-  encrypt) /usr/bin/base64 -w0 > "$output" ;;
-  decrypt) /usr/bin/base64 -d < "$input" ;;
-  *) exit 2 ;;
-esac
+SYSTEMD_CREDS_FAKE = """#!__PYTHON__
+import base64
+import os
+import sys
+
+args = sys.argv[1:]
+command, args = args[0], args[1:]
+if args[0] != "--user":
+    sys.exit(2)
+args = args[1:]
+if args[0] != "--name":
+    sys.exit(2)
+name, args = args[1], args[2:]
+source = args[0]
+target = args[1] if len(args) > 1 else ""
+if os.environ.get("FAKE_CREDS_FAIL") == "1":
+    sys.stderr.write("cannot decrypt: different machine\\n")
+    sys.exit(1)
+if command == "encrypt":
+    with open(target, "wb") as handle:
+        handle.write(base64.b64encode(sys.stdin.buffer.read()))
+elif command == "decrypt":
+    with open(source, "rb") as handle:
+        sys.stdout.buffer.write(base64.b64decode(handle.read()))
+else:
+    sys.exit(2)
 """
 
 
 def _write_executable(path: Path, text: str) -> None:
-    path.write_text(text, encoding="utf-8")
+    """Write one fake backend, pinned to the interpreter running the suite.
+
+    ODR-0049: the stubs used to be shell scripts calling ``/usr/bin/mkdir``,
+    ``/usr/bin/cat``, ``/usr/bin/rm`` and ``/usr/bin/base64``.  macOS keeps the
+    first three in ``/bin``, so there the stub died on its first call and every
+    assertion saw a ``SecretError`` instead.  ``sys.executable`` is an absolute
+    path in every environment the suite runs in, so a stub written against it
+    needs neither PATH nor a system tool.
+    """
+    path.write_text(text.replace("__PYTHON__", sys.executable), encoding="utf-8")
     path.chmod(0o755)
 
 
@@ -272,3 +306,27 @@ def test_secret_status_without_backend(scratch: Path) -> None:
     status = secret_status(environ={}, config_dir=scratch)
     assert status["active_backend"] is None
     assert status["secrets"][0]["stored"] is None
+
+
+# --- the fake backends stay portless (ODR-0049) ------------------------------
+
+_SYSTEM_TOOL = re.compile(r"(?<![\w/.])/(?:usr/)?(?:bin|sbin)/(?:mkdir|cat|rm|base64|sh)\b")
+
+
+@pytest.mark.bug("ODR-0049")
+def test_the_fake_backends_call_no_absolute_system_tool() -> None:
+    """A stub must run wherever Python runs, not only where /usr/bin has the tools."""
+    for name, text in (("secret-tool", SECRET_TOOL_FAKE), ("systemd-creds", SYSTEMD_CREDS_FAKE)):
+        offenders = [line.strip() for line in text.splitlines() if _SYSTEM_TOOL.search(line)]
+        assert offenders == [], f"{name} stub hard-codes a system tool: {offenders}"
+
+
+@pytest.mark.bug("ODR-0049")
+def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
+    """The written stubs start with an absolute shebang, so they need no PATH."""
+    _write_executable(scratch / "bin" / "secret-tool", SECRET_TOOL_FAKE)
+    _write_executable(scratch / "bin" / "systemd-creds", SYSTEMD_CREDS_FAKE)
+    for name in ("secret-tool", "systemd-creds"):
+        stub = (scratch / "bin" / name).read_text(encoding="utf-8")
+        assert stub.startswith(f"#!{sys.executable}\n")
+        assert "__PYTHON__" not in stub
