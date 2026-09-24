@@ -1643,19 +1643,9 @@ def _print_sync_results(action: str, remote: str, results: list[dict[str, Any]])
     return 1 if errors else 0
 
 
-def _reason_list(reason_codes: Any) -> list[str]:
-    if isinstance(reason_codes, list):
-        return [str(x) for x in reason_codes]
-    if isinstance(reason_codes, str):
-        try:
-            value = json.loads(reason_codes)
-            return [str(x) for x in value] if isinstance(value, list) else [reason_codes]
-        except json.JSONDecodeError:
-            return [reason_codes]
-    return []
-
-
 def _cmd_evaluate(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.pipeline import reason_list
+
     profile_name = args.profile or project.config["qc"]["default_profile"]
     if args.entity_id:
         if not args.entity_type:
@@ -1684,7 +1674,7 @@ def _cmd_evaluate(args: argparse.Namespace, project: Project, db: Database) -> i
         results = evaluate_all(db, project, args.profile, args.entity_type)
     print(format_table(["entity_type", "entity_id", "profile", "decision", "reasons"], (
         [r["entity_type"], r["entity_id"], r["profile"], r["decision"],
-         ", ".join(_reason_list(r["reason_codes"])) or "-"] for r in results
+         ", ".join(reason_list(r["reason_codes"])) or "-"] for r in results
     )))
     return 0
 
@@ -1958,36 +1948,21 @@ def _cmd_profiles(args: argparse.Namespace, project: Project, db: Database) -> i
 
 
 def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) -> int:
-    profile_name = args.profile or project.config["qc"]["default_profile"]
-    current = db.conn.execute(
-        "SELECT curated_decision FROM current_decisions "
-        "WHERE entity_type=? AND entity_id=? AND profile=?",
-        (args.entity_type, args.entity_id, profile_name),
-    ).fetchone()
-    curated_targets = (
-        [(args.entity_type, args.entity_id)]
-        if current is not None and current["curated_decision"] is not None else []
-    )
-    if not _confirm_curated_evaluation(curated_targets, getattr(args, "yes", False), label="pipeline"):
+    from operon.pipeline import curated_targets, resolve_profile, run_pipeline
+
+    profile_name = resolve_profile(project, args.profile)
+    targets = curated_targets(db, args.entity_type, args.entity_id, profile_name)
+    if not _confirm_curated_evaluation(targets, getattr(args, "yes", False), label="pipeline"):
         return 0
-    print(f"[1/4] ingest {args.source}")
-    row = ingest_file(db, project, args.source, args.entity_type, args.entity_id, args.role,
-                      fmt=args.fmt, compression=args.compression, source_url=args.source_url)
-    print(f"       -> {row['file_id']} {row['sha256'][:16]}...")
-    print(f"[2/4] standardize {row['file_id']}")
-    result = standardize_file(db, project, row["file_id"])
-    print(f"       -> {result['target']}")
-    print(f"[3/4] QC {row['file_id']}")
-    from operon.qc import qc_file
-    qc_result = qc_file(db, project, row["file_id"])
-    if not qc_result["ok"]:
-        print(f"       -> QC FAILED: {qc_result['error']}", file=sys.stderr)
+    result = run_pipeline(
+        db, project, source=args.source, entity_type=args.entity_type,
+        entity_id=args.entity_id, role=args.role, profile=args.profile,
+        fmt=args.fmt, compression=args.compression, source_url=args.source_url,
+        progress=print,
+    )
+    if not result["qc_ok"]:
+        print(f"       -> QC FAILED: {result['qc_error']}", file=sys.stderr)
         return 1
-    print("       -> metrics written to qc_results")
-    print(f"[4/4] evaluate with profile {args.profile or project.config['qc']['default_profile']}")
-    decision = evaluate_entity(db, project, args.entity_type, args.entity_id, args.profile)
-    reasons = ", ".join(_reason_list(decision["reason_codes"]))
-    print(f"       -> {decision['decision']}: {reasons or 'no issues'}")
     return 0
 
 

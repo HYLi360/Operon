@@ -396,11 +396,13 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkey
     })
     assert cli._cmd_remotes(ns(), project) == 1
 
-    assert cli._reason_list([1, "x"]) == ["1", "x"]
-    assert cli._reason_list('["a"]') == ["a"]
-    assert cli._reason_list('"a"') == ['"a"']
-    assert cli._reason_list("not-json") == ["not-json"]
-    assert cli._reason_list(3) == []
+    from operon.pipeline import reason_list
+
+    assert reason_list([1, "x"]) == ["1", "x"]
+    assert reason_list('["a"]') == ["a"]
+    assert reason_list('"a"') == ['"a"']
+    assert reason_list("not-json") == ["not-json"]
+    assert reason_list(3) == []
     with pytest.raises(ValidationError, match="entity-type is required"):
         cli._cmd_evaluate(ns(entity_id="X", entity_type=None, profile="p"), project, db)
     monkeypatch.setattr(cli, "evaluate_entity", lambda *_a: {
@@ -411,14 +413,16 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkey
     monkeypatch.setattr(cli, "evaluate_all", lambda *_a: [])
     assert cli._cmd_evaluate(ns(entity_id=None, entity_type=None, profile="p"), project, db) == 0
 
-    monkeypatch.setattr(cli, "ingest_file", lambda *_a, **_k: {"file_id": "F1", "sha256": "abcdef"})
-    monkeypatch.setattr(cli, "standardize_file", lambda *_a, **_k: {"target": "std"})
-    monkeypatch.setattr("operon.qc.qc_file", lambda *_a: {"ok": False, "error": "bad"})
+    monkeypatch.setattr("operon.pipeline.ingest_file",
+                        lambda *_a, **_k: {"file_id": "F1", "sha256": "abcdef"})
+    monkeypatch.setattr("operon.pipeline.standardize_file", lambda *_a, **_k: {"target": "std"})
+    monkeypatch.setattr("operon.pipeline.qc_file", lambda *_a: {"ok": False, "error": "bad"})
     pipeline = ns(source="x", entity_type="assembly", entity_id="A", role="genome_fasta",
                   fmt=None, compression=None, source_url=None, profile=None)
     assert cli._cmd_run_pipeline(pipeline, project, db) == 1
-    monkeypatch.setattr("operon.qc.qc_file", lambda *_a: {"ok": True})
-    monkeypatch.setattr(cli, "evaluate_entity", lambda *_a: {"decision": "PASS", "reason_codes": []})
+    monkeypatch.setattr("operon.pipeline.qc_file", lambda *_a: {"ok": True})
+    monkeypatch.setattr("operon.pipeline.evaluate_entity",
+                        lambda *_a: {"decision": "PASS", "reason_codes": []})
     assert cli._cmd_run_pipeline(pipeline, project, db) == 0
 
 
