@@ -999,15 +999,16 @@ def test_files_write_callbacks_report_outcomes(demo_template: Project) -> None:
                 {"file_id": "FIL_1", "status": "CHECKSUM_FAILED", "error": "digest mismatch"},
                 {"file_id": "FIL_2", "status": "CHECKSUM_VERIFIED"},
             ])
-            # Wait on the dialog content, not just its type: a pushed screen
-            # mounts its children a few frames later.
+            # Wait on the body — the leaf this assertion reads.  A pushed screen
+            # mounts its children a few frames later, and the title it composes
+            # first says nothing about the body being rendered yet.
             await _wait_until(
-                lambda: "1 of 2 file(s) failed verification"
-                in _screen_text(app.screen, "#modal-title"),
-                "verify error dialog",
+                lambda: "FIL_1: CHECKSUM_FAILED — digest mismatch"
+                in _screen_text(app.screen, "#error-dialog-body"),
+                "verify error dialog body",
             )
-            body = _screen_text(app.screen, "#error-dialog-body")
-            assert "FIL_1: CHECKSUM_FAILED — digest mismatch" in body
+            assert "1 of 2 file(s) failed verification" in _screen_text(app.screen, "#modal-title")
+            assert "FIL_1: CHECKSUM_FAILED — digest mismatch" in _screen_text(app.screen, "#error-dialog-body")
             assert isinstance(app.screen, ErrorDialog)
             await pilot.press("escape")
             await _wait_until(
@@ -1019,11 +1020,11 @@ def test_files_write_callbacks_report_outcomes(demo_template: Project) -> None:
 
             panel._after_qc({"ok": 1, "total": 2, "failures": [{"file_id": "FIL_9"}]})
             await _wait_until(
-                lambda: "1 of 2 file(s) failed QC" in _screen_text(app.screen, "#modal-title"),
-                "QC error dialog",
+                lambda: "FIL_9: failed" in _screen_text(app.screen, "#error-dialog-body"),
+                "QC error dialog body",
             )
-            body = _screen_text(app.screen, "#error-dialog-body")
-            assert "FIL_9: failed" in body
+            assert "1 of 2 file(s) failed QC" in _screen_text(app.screen, "#modal-title")
+            assert "FIL_9: failed" in _screen_text(app.screen, "#error-dialog-body")
             await pilot.press("escape")
             await _wait_until(
                 lambda: not isinstance(app.screen, ErrorDialog), "QC dialog closed")
@@ -1282,6 +1283,66 @@ def test_decisions_profile_filter_survives_new_profiles(project: Project) -> Non
             assert all(row["entity_id"] == entity_id for row in panel.decisions)
             panel.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
             assert all(row["entity_id"] == entity_id for row in panel.decisions)
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-0045")
+def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkeypatch) -> None:
+    """An earlier, slower load must not overwrite a newer, filtered one.
+
+    Panel reads run in worker threads: ``reload()`` starts a new one while the
+    thread already inside a read keeps running and still posts its payload.  The
+    gate below holds the *unfiltered* payload back until the filtered one has
+    been rendered, which is the macOS/Python 3.15 CI shape where the entity
+    filter never latched.
+    """
+    released = threading.Event()
+    held: list[list[dict[str, Any]]] = []
+    armed = {"on": False}
+    original = data.list_decisions
+
+    def gated(project_arg, **kwargs):
+        if armed["on"]:
+            armed["on"] = False
+            rows = original(project_arg, **kwargs)
+            held.append(rows)
+            released.wait(SETTLE_TIMEOUT)
+            return rows
+        return original(project_arg, **kwargs)
+
+    monkeypatch.setattr(data, "list_decisions", gated)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("decisions")
+            await _settled(app)
+            panel = app.query_one(DecisionsPanel)
+            assert len(panel.decisions) > 1, "the demo project must have several decisions"
+            try:
+                armed["on"] = True
+                panel.reload()  # an unfiltered read, held at the gate
+                await _wait_until(lambda: bool(held), "the earlier read to reach the gate")
+
+                entity_id = panel.decisions[0]["entity_id"]
+                panel.query_one("#decisions-filter", Input).value = entity_id
+                await _wait_until(
+                    lambda: bool(panel.decisions)
+                    and all(row["entity_id"] == entity_id for row in panel.decisions),
+                    "entity filter applied",
+                )
+                filtered = [row["entity_id"] for row in panel.decisions]
+
+                released.set()
+                await _wait_until(lambda: released.is_set(), "the held read to return")
+                for _ in range(10):  # let its payload reach the UI thread
+                    await pilot.pause()
+                    await asyncio.sleep(0.02)
+                assert len(held[0]) > len(filtered), "the held payload must be the unfiltered one"
+                assert [row["entity_id"] for row in panel.decisions] == filtered
+            finally:
+                released.set()
 
     _run(scenario())
 

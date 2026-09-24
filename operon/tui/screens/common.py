@@ -577,19 +577,39 @@ class Panel(WorkerResults, VerticalScroll):
     initial_load_complete = False
     initial_load_failed = False
 
+    #: Generation of this panel's newest load; a payload from an older one is
+    #: dropped instead of rendered (ODR-0045).
+    _load_generation = 0
+
     def on_mount(self) -> None:
         self.reload()
 
     def reload(self) -> None:
-        self._load()
+        """Start a load, superseding every earlier one still in flight.
+
+        The read runs in a worker thread that keeps running after a newer
+        ``reload()`` has started, so an *earlier* payload can land last — and,
+        for a filter the user has just typed, restore the very rows the filter
+        removed.  The generation is stamped here, on the UI thread, and travels
+        into the worker with the call: a payload that a newer load superseded is
+        dropped instead of rendered (ODR-0045).
+        """
+        self._load_generation += 1
+        self._load(self._load_generation)
 
     @work(thread=True)
-    def _load(self) -> None:
+    def _load(self, generation: int) -> None:
         try:
             payload = self._fetch()
         except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught
             payload = exc
-        self.post_to_ui(self._apply, payload)
+        self.post_to_ui(self._apply_load, payload, generation)
+
+    def _apply_load(self, payload: Any, generation: int) -> None:
+        """Render a load result unless a newer load superseded it (ODR-0045)."""
+        if generation != self._load_generation:
+            return
+        self._apply(payload)
 
     def _apply(self, payload: Any) -> None:
         # The result can arrive while the panel is being torn down (the user

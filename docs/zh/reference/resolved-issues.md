@@ -33,6 +33,7 @@
 | ODR-0018 | Analysis tools | 在 Slurm array 路径上由分析 `progress_callback` 抛出的取消（TUI 的 `AnalysisCancelled`）不再被吞成逐文件失败：回调异常现在会中止整个批次——已写出 exit-code 文件的 task 按执行器中断路径完全相同的方式落为 completed/failed，其余计划标记为 `interrupted`，原始异常继续向调用方传播。KeyboardInterrupt 子类仍走既有的外层中断路径。 |
 | ODR-0040 | QC / 报告 | 会被电子表格当作公式执行的文本单元格现在加前导撇号转义——即以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的值。覆盖两个对齐后端产出的 `sequence_qc.tsv`（逐字节 parity 不变）以及所有 `write_tsv` 消费者（release 与 export 的 manifest、report TSV、TimeTree 候选表）。非字符串单元格保持原有字节，已转义的值不会二次转义，provenance 哈希按转义后的字节计算，因此再读回 release 仍然一致。 |
 | ODR-0044 | Export / 报告 | `write_tsv` 改为自己决定单元格引号，不再委托 `csv`：含 TAB、CR、LF 或 `"` 的单元格加引号并双写内部引号，其余原样写出。CPython 3.11 改变了 csv 对 CR/LF 单元格的引号规则，导致 3.10 上同一行写出不同字节——按 provenance 哈希的产物（release manifest、export 身份）因此随解释器漂移。现在 3.10–3.15 字节一致，且与此前 3.11+ 的输出完全相同。 |
+| ODR-0045 | TUI | 面板加载现在带世代戳：`reload()` 把在 UI 线程打上的世代交给 worker，被更新加载取代的 payload 会丢弃而不是渲染。此前已经在读的线程可能晚于新加载落地，把刚输入的过滤条件移除的行又恢复出来——即 macOS/Python 3.15 CI 上实体过滤始终未生效的形态。 |
 
 ## K 系列（历史）
 

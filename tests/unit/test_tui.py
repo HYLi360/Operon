@@ -1432,7 +1432,7 @@ def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
 
     clock = [0.0]
     monkeypatch.setattr(app_module, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(HomePanel, "_load", lambda panel: None)  # never delivers
+    monkeypatch.setattr(HomePanel, "_load", lambda panel, generation: None)  # never delivers
 
     async def scenario():
         app = OperonApp(demo_project)

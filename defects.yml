@@ -1086,3 +1086,35 @@ defects:
   fixed_in: null
   regression_tests:
   - tests/unit/test_rules_schema_edges.py::test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter
+- id: ODR-0045
+  title: A panel load that finished after a newer one overwrote it, so a filter typed
+    while an earlier read was still running could come back with the rows it removed
+    (macOS/Python 3.15 CI, where the entity filter never latched)
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'Every Panel read: reload() started a worker thread without cancelling the
+    thread already inside a read, and the payload carried no identity, so the rendered
+    answer was whichever read happened to finish last. Seen in CI as
+    tests/unit/test_tui_screens_more.py::test_decisions_profile_filter_survives_new_profiles
+    timing out on "entity filter applied" (pytest (macos-latest, 3.15)), and reproduced
+    deterministically by holding an unfiltered read at a gate until a filtered one has
+    been rendered.'
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'hold the earlier read: patch operon.tui.data.list_decisions so one
+    call blocks on a threading.Event after it has read its rows, call panel.reload(),
+    set an entity id in #decisions-filter so a second, fast read renders the filtered
+    rows, then release the gate. Before the fix the held payload lands last and the
+    table shows every row again (the assertion expecting a single filtered entity id
+    sees six rows), which is the CI timeout.'
+  disposition: 'reload() stamps a monotonic generation on the UI thread and passes it
+    into the worker; post_to_ui hands it to _apply_load, which drops a payload whose
+    generation is no longer the newest load of that panel. The newest load always
+    lands, so the initial-load latch still completes on every path. FilesPanel''s
+    detail-pane read and PublishPanel''s release preview keep their own begin_request
+    key: the load generation is a separate slot on purpose.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+  - tests/unit/test_tui_screens_more.py::test_stale_load_does_not_restore_rows_a_newer_filter_removed
