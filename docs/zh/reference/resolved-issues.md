@@ -32,6 +32,7 @@
 | ODR-0017 | Tests | 版本单一来源测试不再与并发的 sdist 构建竞争：它在持有机器级 sdist 构建锁的同时通过 `importlib.reload()` 重读 `operon.__version__`，因此在兄弟 worker 就地重写 `OperonDBS.egg-info` 期间导入 `operon` 的 xdist worker 不会把陈旧或缺失的版本冻结进断言。 |
 | ODR-0018 | Analysis tools | 在 Slurm array 路径上由分析 `progress_callback` 抛出的取消（TUI 的 `AnalysisCancelled`）不再被吞成逐文件失败：回调异常现在会中止整个批次——已写出 exit-code 文件的 task 按执行器中断路径完全相同的方式落为 completed/failed，其余计划标记为 `interrupted`，原始异常继续向调用方传播。KeyboardInterrupt 子类仍走既有的外层中断路径。 |
 | ODR-0040 | QC / 报告 | 会被电子表格当作公式执行的文本单元格现在加前导撇号转义——即以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的值。覆盖两个对齐后端产出的 `sequence_qc.tsv`（逐字节 parity 不变）以及所有 `write_tsv` 消费者（release 与 export 的 manifest、report TSV、TimeTree 候选表）。非字符串单元格保持原有字节，已转义的值不会二次转义，provenance 哈希按转义后的字节计算，因此再读回 release 仍然一致。 |
+| ODR-0044 | Export / 报告 | `write_tsv` 改为自己决定单元格引号，不再委托 `csv`：含 TAB、CR、LF 或 `"` 的单元格加引号并双写内部引号，其余原样写出。CPython 3.11 改变了 csv 对 CR/LF 单元格的引号规则，导致 3.10 上同一行写出不同字节——按 provenance 哈希的产物（release manifest、export 身份）因此随解释器漂移。现在 3.10–3.15 字节一致，且与此前 3.11+ 的输出完全相同。 |
 
 ## K 系列（历史）
 

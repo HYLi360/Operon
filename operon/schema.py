@@ -8,7 +8,6 @@ extend them without changing code.
 
 from __future__ import annotations
 
-import csv
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -450,13 +449,37 @@ def read_tsv(path: str | Path, required_header: list[str] | None = None) -> list
     return rows
 
 
+_TSV_QUOTE_CHARS = ("\t", '"', "\r", "\n")
+
+
+def _tsv_cell(value: Any) -> str:
+    """Render one TSV cell: escape spreadsheet triggers, then quote if needed.
+
+    Quoting is decided here rather than by ``csv.writer`` because the csv
+    module quotes a field only when it contains a character of *its*
+    ``lineterminator``, and CPython 3.11 additionally started quoting every
+    field containing CR or LF.  Deriving the decision from the cell itself
+    keeps the bytes identical on every supported interpreter, which matters
+    because these files are hashed for provenance (ODR-0044).
+    """
+    text = escape_formula_text(value)
+    if not isinstance(text, str):
+        text = str(text)
+    if any(char in text for char in _TSV_QUOTE_CHARS):
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
 def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any] | list[Any]]) -> None:
     """Write rows as TSV, escaping spreadsheet formula triggers in text cells.
 
     A string cell beginning with ``=``, ``+``, ``-``, ``@``, TAB or CR is
     prefixed with an apostrophe so report files cannot execute as formulas
     when opened in a spreadsheet application (ODR-0040).  Non-string values
-    are written verbatim.  This is safe for the release re-ingestion path:
+    are written verbatim.  A cell containing TAB, CR, LF or ``"`` is written
+    quoted with its own quotes doubled; that decision is made here and not by
+    ``csv.writer``, so a given row produces the same bytes on every supported
+    interpreter (ODR-0044).  This is safe for the release re-ingestion path:
     release-scope coverage reads back only generated identity/join columns
     (entity ids, sha256, size_bytes) that can never begin with a trigger
     character, and provenance hashes are computed over the escaped bytes at
@@ -465,10 +488,10 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(columns)
+        handle.write("\t".join(_tsv_cell(column) for column in columns) + "\n")
         for row in rows:
             if isinstance(row, dict):
-                writer.writerow(["" if row.get(c) is None else escape_formula_text(row.get(c)) for c in columns])
+                cells = ["" if row.get(c) is None else _tsv_cell(row.get(c)) for c in columns]
             else:
-                writer.writerow(["" if v is None else escape_formula_text(v) for v in row])
+                cells = ["" if v is None else _tsv_cell(v) for v in row]
+            handle.write("\t".join(cells) + "\n")

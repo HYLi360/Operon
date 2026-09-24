@@ -423,6 +423,33 @@ def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
     ]
     tab_cr = tmp_path / "tab_cr.tsv"
     write_tsv(tab_cr, ["text"], [{"text": "\t5"}, {"text": "\r6"}])
-    # TAB/CR still trigger the escape; csv quoting keeps such cells intact,
-    # though values containing the delimiter itself are not TSV round-trippable.
+    # TAB/CR still trigger the escape, and a cell containing TAB, CR, LF or the
+    # quote character is quoted by write_tsv itself rather than by csv (whose
+    # rule changed in 3.11; ODR-0044).  Values containing the delimiter itself
+    # are still not round-trippable through read_tsv's plain split.
     assert tab_cr.read_bytes() == b'text\n"\'\t5"\n"\'\r6"\n'
+
+
+@pytest.mark.bug("ODR-0044")
+@pytest.mark.parametrize(("value", "expected"), [
+    ("\t5", b'"\'\t5"'),
+    ("\r6", b'"\'\r6"'),
+    ("\n7", b'"\n7"'),
+    ('say "hi"', b'"say ""hi"""'),
+    ("plain", b"plain"),
+    ("=1+1", b"'=1+1"),
+    ("in=x", b"in=x"),
+    (7, b"7"),
+    (-3.5, b"-3.5"),
+    (None, b""),
+])
+def test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter(tmp_path, value, expected):
+    """A row must serialize to the same bytes on every supported Python.
+
+    Guards ODR-0044: csv quotes a CR cell only from 3.11 on, so the writer
+    decides quoting itself.  With ``csv.writer`` the ``\r6`` cell was written
+    unquoted on 3.10 — bytes no CSV reader could parse — and quoted from 3.11.
+    """
+    output = tmp_path / "cell.tsv"
+    write_tsv(output, ["text"], [{"text": value}])
+    assert output.read_bytes() == b"text\n" + expected + b"\n"
