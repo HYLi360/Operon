@@ -628,7 +628,7 @@ defects:
     a deployment being preflighted with `--dry-run`'
   severity: low
   component: tools
-  status: confirmed
+  status: fixed
   reproduction: 'Reproduced on 2026-09-20 against a real OpenSSH + Slurm cluster and in
     an isolated `operon init-demo` project. (1) Remote reference database
     absent: after the pre-provisioned remote copy of the recipe database
@@ -653,17 +653,28 @@ defects:
     always reports `not probed (backend=...)`, because the probe itself
     runs through the backend; the remote `database_checksum` rule is the
     one database check that does fire in a dry run.'
-  disposition: 'Confirmed, no fix yet: registered 2026-09-20 during the remote-first
-    smoke test, with the fix deliberately deferred. The gap is documented
-    as a pitfall in `docs/*/guides/remote-execution.md` and
-    `docs/*/reference/recipe-fields.md`. A fix would either make
-    `--dry-run` perform the validations that need no command execution
-    (local database existence, remote `reference` provisioning over SFTP,
-    and the backend version probe) or align the `--dry-run` promise in
-    `docs/*/reference/cli-analysis.md` with the current behaviour.'
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  disposition: 'Fixed 2026-09-25, taking the record''s first option where it needs no
+    command execution and the second where it would. `_prepare_plan_database`
+    (operon/tools.py) runs the local reference-database existence check under
+    `--dry-run` too, and for a remote-only run it verifies a `reference` database
+    over the backend with the read-only provisioning stat (`prepare_database`
+    resolves the remote path with a stat; a `mutable_cache` is created by the run
+    itself and is still skipped). A preview therefore reports `reference database
+    not found: <path>; edit config/tools.yaml` or `remote reference database is
+    not provisioned at <path>` exactly like a real run, and `_cmd_analyze` returns
+    1 for the error row. The backend version probe is deliberately left unprobed
+    because it would execute a command, and the promise in
+    `docs/{en,zh}/reference/cli-analysis.md` now says so; the pitfalls in
+    `docs/{en,zh}/guides/remote-execution.md` and
+    `docs/{en,zh}/reference/recipe-fields.md` were rewritten to match. Two
+    regressions: a local missing database fails the dry run with the real run''s
+    error, and an unprovisioned remote reference raises `RemoteError` while a
+    provisioned one still plans.'
+  fix_commit: 15e1089bd6affa4648891261d7e0c2e275b01ffb
+  fixed_in: 0.9.0
+  regression_tests:
+    - tests/unit/test_tools_execution_more.py::test_dry_run_reports_a_missing_local_database_like_the_real_run
+    - tests/unit/test_tools_execution_more.py::test_dry_run_verifies_a_remote_reference_database
 - id: ODR-0029
   title: Run detail tests treat an empty worker set as completed screen loading
   reported: '2026-09-20'
