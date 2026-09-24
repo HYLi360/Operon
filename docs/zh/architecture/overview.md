@@ -106,6 +106,8 @@
 | `operon/profiles.py` | 加载并校验规则引擎与 taxonomy coverage 共用的版本化 YAML profile |
 | `operon/metadata_files.py` | 已退役的实时 metadata TSV 目录的兼容提示；SQLite 是唯一可写元数据源 |
 | `operon/qc/measure.py` | 与项目无关的 `operon qc-measure` 测量路径，其 JSON 载荷可由 `operon import-qc` 导回 |
+| `operon/qc/imports.py` | `operon import-qc` 的共享核心：JSON 载荷/TSV 判别、对照 manifest 的校验、指标写入、QC 状态重算与运行记录；`plan_qc_import` 是 TUI 预览所用的不写入路径 |
+| `operon/pipeline.py` | `operon run-pipeline` 的共享核心：ingest → standardize → QC → evaluate 四阶段、`plan_pipeline` 的不写入预检（解析 profile、实体检查、curated 决策闸门），以及 CLI 用于打印进度的 `progress` 回调 |
 | `operon/classify.py` | `sequence_classification` profile：依据已存比对命中为每条序列打标并写入 `sequence_labels` |
 | `operon/sequence_tools.py` | `extract-domains` / `select-sequences`：按已存比对区间物化 FASTA 子集 |
 | `operon/fanout.py` | 数据驱动 fan-out：把已登记的序列文件拆成 `analysis/derived/` 下的按单元 FASTA 并写 `file_lineage` 边 |

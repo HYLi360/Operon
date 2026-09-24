@@ -120,6 +120,8 @@ How the principles map to implementations:
 | `operon/profiles.py` | Loads and validates the versioned YAML profiles shared by the rule engine and taxonomy coverage |
 | `operon/metadata_files.py` | Compatibility notice for the retired live metadata TSV directory; SQLite is the only writable metadata source |
 | `operon/qc/measure.py` | Project-independent `operon qc-measure` measurement path whose JSON payload is imported back through `operon import-qc` |
+| `operon/qc/imports.py` | The shared `operon import-qc` core: JSON-payload/TSV detection, validation against the manifest, metric insertion, QC-state recomputation and the run record; `plan_qc_import` is the write-free preview the TUI shows |
+| `operon/pipeline.py` | The shared `operon run-pipeline` core: the ingest → standardize → QC → evaluate stages, `plan_pipeline`'s write-free preflight (resolved profile, entity checks, the curated-decision gate) and a `progress` callback the CLI prints |
 | `operon/classify.py` | `sequence_classification` profiles: labels per sequence from stored alignment hits into `sequence_labels` |
 | `operon/sequence_tools.py` | `extract-domains` / `select-sequences`: materializes FASTA subsets from stored alignment intervals |
 | `operon/fanout.py` | Data-derived fan-out of registered sequence files into per-unit FASTAs under `analysis/derived/` with `file_lineage` edges |
