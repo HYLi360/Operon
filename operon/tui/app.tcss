@@ -448,6 +448,30 @@ SelectCurrent Static#label {
     height: 6;
 }
 
+/* -- coverage profile editor (kind: taxonomy_coverage) --------------------- */
+
+#coverage-editor {
+    display: none;
+    width: 1fr;
+    padding: 0 2;
+}
+
+#coverage-taxonomy-source {
+    width: 24;
+}
+
+#coverage-root-taxids, #coverage-exclude-subtrees {
+    width: 1fr;
+}
+
+#coverage-exclude-patterns {
+    height: 6;
+}
+
+#coverage-threshold-family, #coverage-threshold-genus {
+    width: 16;
+}
+
 #snapshot-view-scroll {
     height: 1fr;
     max-height: 24;

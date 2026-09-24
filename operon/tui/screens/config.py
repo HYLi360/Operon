@@ -2,7 +2,8 @@
 
 Two tabs:
 
-* **QC Profiles** — edit ``kind: qc`` profiles under ``config/profiles/`` with
+* **QC Profiles** — edit ``kind: qc``, ``kind: sequence_classification`` and
+  ``kind: taxonomy_coverage`` profiles under ``config/profiles/`` with
   structured forms (no free-text YAML).  Every save bumps the version and
   records a content-addressed snapshot, exactly like ``operon evaluate``.
 * **Tools & Recipes** — inspect tools, run the equivalent of
@@ -65,6 +66,14 @@ from operon.tui.screens.config_classification import (
     ClassificationSaveModal,
     SourceRow,
     classification_form_supported,
+)
+from operon.tui.screens.config_coverage import (
+    COVERAGE_MODELED_KEYS,
+    COVERAGE_RANKS,
+    SECTION_MODELED_KEYS,
+    THRESHOLD_MODELED_KEYS,
+    CoverageSaveModal,
+    coverage_form_supported,
 )
 
 ENTITY_TYPE_NAMES = list(actions.ENTITY_TYPE_NAMES)
@@ -319,7 +328,8 @@ class NewProfileModal(DismissOnce, ModalScreen):
             yield Static("Kind", classes="modal-label")
             yield FittingSelect(
                 [("qc (decision thresholds)", "qc"),
-                 ("sequence_classification (label sequences)", actions.CLASSIFICATION_KIND)],
+                 ("sequence_classification (label sequences)", actions.CLASSIFICATION_KIND),
+                 ("taxonomy_coverage (coverage denominators)", actions.COVERAGE_KIND)],
                 value="qc", id="new-profile-kind", allow_blank=False,
             )
             yield Static("", id="history-error")
@@ -431,7 +441,7 @@ class RecipeSaveModal(WriteModal):
 
 
 class ConfigPanel(Panel):
-    """Config screen: profile editors (qc + classification) + tools/recipes editor."""
+    """Config screen: profile editors (qc + classification + coverage) + tools/recipes editor."""
 
     def __init__(self, project: Project) -> None:
         super().__init__(id="config")
@@ -443,6 +453,8 @@ class ConfigPanel(Panel):
         self.profile_doc: dict[str, Any] | None = None
         self.classification_profile: str | None = None
         self.classification_doc: dict[str, Any] | None = None
+        self.coverage_profile: str | None = None
+        self.coverage_doc: dict[str, Any] | None = None
         self._known_versions: dict[tuple[str, str], int] = {}
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
@@ -454,7 +466,7 @@ class ConfigPanel(Panel):
     def compose(self) -> ComposeResult:
         # ``# pragma: no branch`` marks below: CPython 3.14's default
         # ``sys.monitoring`` coverage core never reports the with-statement
-        # entry/exit arcs of these five blocks, although every line inside them
+        # entry/exit arcs of these blocks, although every line inside them
         # executes in the headless UI tests (the same code reports 100% branch
         # coverage under COVERAGE_CORE=ctrace).  The pragma suppresses only
         # those unmeasurable arcs; no line is excluded from measurement.
@@ -508,6 +520,44 @@ class ConfigPanel(Panel):
                             yield Button("Save profile", id="classification-save",
                                          variant="primary", disabled=True)
                             yield Button("History", id="classification-history", disabled=True)
+                    with VerticalScroll(id="coverage-editor"):  # pragma: no branch
+                        yield Static("select a profile", id="coverage-heading")
+                        yield Static("", id="coverage-readonly-note")
+                        yield Static("Description", classes="modal-label")
+                        yield Input(id="coverage-description")
+                        yield Static("Taxonomy source", classes="modal-label")
+                        yield FittingSelect(
+                            [(source, source) for source in ("NCBI",)],
+                            value="NCBI", id="coverage-taxonomy-source",
+                            allow_blank=False,
+                        )
+                        yield Static("Root TaxIDs (comma separated)",
+                                     classes="modal-label")
+                        yield Input(placeholder="e.g. 33090", id="coverage-root-taxids")
+                        yield Static("Target ranks", classes="modal-label")
+                        yield Checkbox("family", id="coverage-rank-family")
+                        yield Checkbox("genus", id="coverage-rank-genus")
+                        yield Static("Filters", classes="modal-label")
+                        yield Checkbox("exclude extinct taxa",
+                                       id="coverage-exclude-extinct")
+                        yield Static("Excluded subtrees (comma separated TaxIDs)",
+                                     classes="modal-label")
+                        yield Input(placeholder="blank = none",
+                                    id="coverage-exclude-subtrees")
+                        yield Static("Excluded name patterns (one regular expression "
+                                     "per line)", classes="modal-label")
+                        yield TextArea(id="coverage-exclude-patterns")
+                        yield Static("Minimum coverage percent per checked target rank",
+                                     classes="modal-label")
+                        yield Input(placeholder="family %", id="coverage-threshold-family")
+                        yield Input(placeholder="genus %", id="coverage-threshold-genus")
+                        yield Static("", id="coverage-version-note")
+                        yield Static("", id="coverage-extras-note")
+                        yield Static("", id="coverage-save-error")
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
+                            yield Button("Save profile", id="coverage-save",
+                                         variant="primary", disabled=True)
+                            yield Button("History", id="coverage-history", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
                     with Horizontal(classes="config-buttons"):
@@ -599,6 +649,7 @@ class ConfigPanel(Panel):
             "profiles": (
                 data.list_qc_profiles(self.project)
                 + data.list_classification_profiles(self.project)
+                + data.list_coverage_profiles(self.project)
             ),
             "tools": data.list_tools(self.project),
             "recipes": data.list_recipes(self.project),
@@ -611,9 +662,14 @@ class ConfigPanel(Panel):
 
         list_view = self.query_one("#profiles-list", ListView)
         list_view.clear()
+        tags = {
+            actions.CLASSIFICATION_KIND: "classification",
+            actions.COVERAGE_KIND: "coverage",
+        }
         for profile in self.profiles:
-            tag = "  · classification" if profile.get("kind") == actions.CLASSIFICATION_KIND else ""
-            list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{tag}")))
+            tag = tags.get(str(profile.get("kind") or "qc"), "")
+            suffix = f"  · {tag}" if tag else ""
+            list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}")))
 
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
@@ -689,20 +745,25 @@ class ConfigPanel(Panel):
 
     def _render_profile_document(self, name: str, document: dict[str, Any],
                                  note: str = "") -> None:
-        """Route a document to the editor its kind needs (qc vs classification)."""
-        if str(document.get("kind", "qc")) == actions.CLASSIFICATION_KIND:
+        """Route a document to the editor its kind needs."""
+        document_kind = str(document.get("kind", "qc"))
+        if document_kind == actions.CLASSIFICATION_KIND:
             self.classification_profile = name
             self.classification_doc = dict(document)
             self._render_classification_form(name, dict(document), note)
+        elif document_kind == actions.COVERAGE_KIND:
+            self.coverage_profile = name
+            self.coverage_doc = dict(document)
+            self._render_coverage_form(name, dict(document), note)
         else:
             self.current_profile = name
             self.profile_doc = dict(document)
             self._render_profile_form(name, document, note)
 
     def _show_editor(self, kind: str) -> None:
-        classification = kind == actions.CLASSIFICATION_KIND
-        self.query_one("#profile-editor").display = not classification
-        self.query_one("#classification-editor").display = classification
+        self.query_one("#profile-editor").display = kind == "qc"
+        self.query_one("#classification-editor").display = kind == actions.CLASSIFICATION_KIND
+        self.query_one("#coverage-editor").display = kind == actions.COVERAGE_KIND
 
     def _remember_version(self, kind: str, name: str, document: dict[str, Any]) -> None:
         key = (kind, name)
@@ -871,6 +932,232 @@ class ConfigPanel(Panel):
             return
         self.reload()
         name = self.classification_profile
+        if name:
+            self._load_profile(name)
+
+    # -- coverage-profile editor ---------------------------------------------
+
+    def _render_coverage_form(self, name: str, document: dict[str, Any],
+                              note: str = "") -> None:
+        self._show_editor(actions.COVERAGE_KIND)
+        self.query_one("#profile-run", Button).disabled = True
+        supported, reason = coverage_form_supported(document)
+        self.query_one("#coverage-heading", Static).update(
+            f"{name}" + (f"  —  {note}" if note else "")
+        )
+        self.query_one("#coverage-readonly-note", Static).update(
+            Text(
+                f"structure exceeds the manual form: {reason} — edit the YAML file; "
+                "saving from here is disabled and the file is never rewritten by the form",
+                style="yellow",
+            ) if not supported else ""
+        )
+        self.query_one("#coverage-description", Input).value = str(
+            document.get("description", ""))
+        taxonomy = document.get("taxonomy")
+        taxonomy = taxonomy if isinstance(taxonomy, dict) else {}
+        source = str(taxonomy.get("source") or "NCBI")
+        source_select = self.query_one("#coverage-taxonomy-source", Select)
+        if source != "NCBI":
+            source_select.set_options(
+                [("NCBI", "NCBI"), (f"{source} (preserved)", source)]
+            )
+        source_select.value = source
+        scope = document.get("scope")
+        scope = scope if isinstance(scope, dict) else {}
+        roots = scope.get("root_taxids")
+        roots = [str(item) for item in roots] if isinstance(roots, list) else []
+        self.query_one("#coverage-root-taxids", Input).value = ", ".join(roots)
+        targets = document.get("targets")
+        targets = targets if isinstance(targets, dict) else {}
+        ranks = {str(rank).lower() for rank in targets.get("ranks") or []}
+        for rank in COVERAGE_RANKS:
+            checkbox = self.query_one(f"#coverage-rank-{rank}", Checkbox)
+            checkbox.value = rank in ranks
+            self.query_one(f"#coverage-threshold-{rank}", Input).disabled = (
+                rank not in ranks)
+        filters = document.get("filters")
+        filters = filters if isinstance(filters, dict) else {}
+        self.query_one("#coverage-exclude-extinct", Checkbox).value = bool(
+            filters.get("exclude_extinct", False))
+        subtrees = filters.get("exclude_subtrees")
+        subtrees = [str(item) for item in subtrees] if isinstance(subtrees, list) else []
+        self.query_one("#coverage-exclude-subtrees", Input).value = ", ".join(subtrees)
+        patterns = filters.get("exclude_name_patterns")
+        patterns = [str(item) for item in patterns] if isinstance(patterns, list) else []
+        self.query_one("#coverage-exclude-patterns", TextArea).text = "\n".join(patterns)
+        thresholds = document.get("thresholds")
+        thresholds = thresholds if isinstance(thresholds, dict) else {}
+        for rank in COVERAGE_RANKS:
+            entry = thresholds.get(rank)
+            entry = entry if isinstance(entry, dict) else {}
+            value = entry.get("min_coverage_percent")
+            self.query_one(f"#coverage-threshold-{rank}", Input).value = (
+                "" if value is None else str(value))
+        version = int(document.get("version", 1))
+        self.query_one("#coverage-version-note", Static).update(Text(
+            f"version {version} — saving writes the next version and records a "
+            "snapshot that a taxonomy compile consumes",
+            style="dim",
+        ))
+        extras = {key: value for key, value in document.items()
+                  if key not in COVERAGE_MODELED_KEYS}
+        self.query_one("#coverage-extras-note", Static).update(
+            Text(_extras_note(extras), style="dim") if extras else ""
+        )
+        self.query_one("#coverage-save-error", Static).update("")
+        self.query_one("#coverage-save", Button).disabled = not supported
+        self.query_one("#coverage-history", Button).disabled = False
+
+    def _sync_coverage_thresholds(self) -> None:
+        for rank in COVERAGE_RANKS:
+            self.query_one(f"#coverage-threshold-{rank}", Input).disabled = (
+                not self.query_one(f"#coverage-rank-{rank}", Checkbox).value)
+
+    def _compose_coverage_document(self) -> dict[str, Any]:
+        original = self.coverage_doc or {}
+        document: dict[str, Any] = {
+            "kind": actions.COVERAGE_KIND,
+            "version": int(original.get("version", 1)),
+            "description": self.query_one("#coverage-description", Input).value.strip(),
+        }
+
+        def section(name: str) -> dict[str, Any]:
+            value = original.get(name)
+            if not isinstance(value, dict):
+                return {}
+            return {
+                key: val for key, val in value.items()
+                if key not in SECTION_MODELED_KEYS[name]
+            }
+
+        original_filters = original.get("filters")
+        original_filters = original_filters if isinstance(original_filters, dict) else {}
+
+        taxonomy = section("taxonomy")
+        source_value = self.query_one("#coverage-taxonomy-source", Select).value
+        taxonomy["source"] = "NCBI" if source_value is Select.NULL else str(source_value)
+        document["taxonomy"] = taxonomy
+
+        scope = section("scope")
+        roots = [
+            actions.coerce_scalar(part)
+            for part in self.query_one("#coverage-root-taxids", Input).value.split(",")
+            if part.strip()
+        ]
+        original_scope = original.get("scope")
+        if roots or (isinstance(original_scope, dict) and "root_taxids" in original_scope):
+            scope["root_taxids"] = roots
+        document["scope"] = scope
+
+        ranks = [
+            rank for rank in COVERAGE_RANKS
+            if self.query_one(f"#coverage-rank-{rank}", Checkbox).value
+        ]
+        targets = section("targets")
+        original_targets = original.get("targets")
+        if ranks or (isinstance(original_targets, dict)
+                     and "ranks" in original_targets):
+            targets["ranks"] = ranks
+        document["targets"] = targets
+
+        filters = section("filters")
+        exclude_extinct = self.query_one("#coverage-exclude-extinct", Checkbox).value
+        if exclude_extinct or "exclude_extinct" in original_filters:
+            filters["exclude_extinct"] = exclude_extinct
+        subtrees = [
+            actions.coerce_scalar(part)
+            for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(",")
+            if part.strip()
+        ]
+        if subtrees or "exclude_subtrees" in original_filters:
+            filters["exclude_subtrees"] = subtrees
+        patterns = [
+            line.strip()
+            for line in self.query_one("#coverage-exclude-patterns", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        if patterns or "exclude_name_patterns" in original_filters:
+            filters["exclude_name_patterns"] = patterns
+        document["filters"] = filters
+
+        original_thresholds = original.get("thresholds")
+        original_thresholds = (
+            original_thresholds if isinstance(original_thresholds, dict) else {})
+        thresholds: dict[str, Any] = {}
+        for rank in COVERAGE_RANKS:
+            if rank not in ranks:
+                continue
+            entry: dict[str, Any] = {}
+            original_entry = original_thresholds.get(rank)
+            if isinstance(original_entry, dict):
+                entry.update({
+                    key: value for key, value in original_entry.items()
+                    if key not in THRESHOLD_MODELED_KEYS
+                })
+            text = self.query_one(f"#coverage-threshold-{rank}", Input).value.strip()
+            if text:
+                entry["min_coverage_percent"] = actions.coerce_scalar(text)
+            thresholds[rank] = entry
+        document["thresholds"] = thresholds
+
+        for key, value in original.items():
+            if key not in document:
+                document[key] = value
+        return document
+
+    def _start_coverage_save(self) -> None:
+        if not self.coverage_profile or self.coverage_doc is None:
+            return
+        error = self.query_one("#coverage-save-error", Static)
+        ranks = [
+            rank for rank in COVERAGE_RANKS
+            if self.query_one(f"#coverage-rank-{rank}", Checkbox).value
+        ]
+        if not ranks:
+            error.update(Text("at least one target rank is required", style="red"))
+            return
+        missing = [
+            rank for rank in ranks
+            if not self.query_one(f"#coverage-threshold-{rank}", Input).value.strip()
+        ]
+        if missing:
+            error.update(Text(
+                f"missing minimum coverage for target rank(s): {', '.join(missing)}",
+                style="red",
+            ))
+            return
+        for part in self.query_one("#coverage-root-taxids", Input).value.split(","):
+            part = part.strip()
+            if part and not part.isdigit():
+                error.update(Text(
+                    f"root TaxIDs must be positive integers; got {part!r}", style="red"))
+                return
+        for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(","):
+            part = part.strip()
+            if part and not part.isdigit():
+                error.update(Text(
+                    f"excluded subtrees must be positive integers; got {part!r}",
+                    style="red",
+                ))
+                return
+        error.update("")
+        name = self.coverage_profile
+        document = self._form_document(self._compose_coverage_document, error)
+        if document is None:
+            return
+        file_version = self._profile_file_version(name, actions.COVERAGE_KIND)
+        new_version = 1 if file_version is None else file_version + 1
+        self.app.push_screen(
+            CoverageSaveModal(self.project, name, document, new_version),
+            self._on_coverage_saved,
+        )
+
+    def _on_coverage_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+        name = self.coverage_profile
         if name:
             self._load_profile(name)
 
@@ -1180,6 +1467,10 @@ class ConfigPanel(Panel):
             # Rule rows pick their source from the declared names.
             self._refresh_rule_sources()
 
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id in {"coverage-rank-family", "coverage-rank-genus"}:
+            self._sync_coverage_thresholds()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
         if button_id == "profile-add-required":
@@ -1211,6 +1502,10 @@ class ConfigPanel(Panel):
         elif button_id == "classification-save":
             self._start_classification_save()
         elif button_id == "classification-history":
+            self._open_profile_history()
+        elif button_id == "coverage-save":
+            self._start_coverage_save()
+        elif button_id == "coverage-history":
             self._open_profile_history()
         elif button_id == "profile-run":
             self._open_classify()
@@ -1330,6 +1625,22 @@ class ConfigPanel(Panel):
             self._render_classification_form(
                 name, dict(self.classification_doc), note="new profile (not saved yet)")
             return
+        if kind == actions.COVERAGE_KIND:
+            self.coverage_profile = name
+            self.coverage_doc = {
+                "kind": actions.COVERAGE_KIND, "version": 1, "description": "",
+                "taxonomy": {"source": "NCBI"},
+                "scope": {"root_taxids": [1]},
+                "targets": {"ranks": ["family", "genus"]},
+                "filters": {"exclude_extinct": False},
+                "thresholds": {
+                    "family": {"min_coverage_percent": 80},
+                    "genus": {"min_coverage_percent": 80},
+                },
+            }
+            self._render_coverage_form(
+                name, dict(self.coverage_doc), note="new profile (not saved yet)")
+            return
         self.current_profile = name
         self.profile_doc = {
             "kind": "qc", "version": 1, "description": "",
@@ -1360,6 +1671,8 @@ class ConfigPanel(Panel):
         """
         if self.query_one("#classification-editor").display:
             return self.classification_profile
+        if self.query_one("#coverage-editor").display:
+            return self.coverage_profile
         return self.current_profile
 
     def _open_profile_history(self) -> None:

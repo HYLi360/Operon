@@ -300,13 +300,13 @@ table, labels written/removed with the run id — and re-labels the button
 0 changes. The two warnings the CLI prints (ignored completed jobs, target
 files without registered sequences) are shown in yellow inside the dialog.
 
-**QC Profiles tab.** Left: every `kind: qc` and
-`kind: sequence_classification` profile found in `config/profiles/` (name +
-version; classification entries carry a tag). Right: the editor for the
-selected profile's kind — the qc and classification editors are swapped based
-on the document's own `kind`, never merged. *New profile* prompts for a name
-**and a kind** and starts from a minimal skeleton of that kind.
-`taxonomy_coverage` profiles are not editable here.
+**QC Profiles tab.** Left: every `kind: qc`,
+`kind: sequence_classification` and `kind: taxonomy_coverage` profile found in
+`config/profiles/` (name + version; classification and coverage entries carry
+a tag). Right: the editor for the selected profile's kind — the qc,
+classification and coverage editors are swapped based on the document's own
+`kind`, never merged. *New profile* prompts for a name **and a kind** and
+starts from a minimal skeleton of that kind.
 
 **Classification profiles** (`kind: sequence_classification`). The editor
 mirrors `classify.py`'s grammar: `applies_to` as an `entity_type` +
@@ -329,6 +329,16 @@ Structure the manual form cannot represent (conditions nested deeper than one
 rewrites the file — edit the YAML instead. Keys the form does not model are
 preserved verbatim at every level (document, source, rule, condition and
 `best_by` entry).
+
+**Coverage profiles** (`kind: taxonomy_coverage`). The editor models the flat
+coverage grammar: taxonomy source (`NCBI`), root TaxIDs, family/genus target
+ranks, the extinct / excluded-subtree / name-regex filters, and one minimum
+coverage percent per checked target rank. A profile whose structure exceeds
+the form (for example a threshold for a rank that is not a target) opens
+**read-only**: the reason is printed, *Save profile* is disabled, and the file
+is never rewritten. Unknown keys (including the optional `name`) are
+preserved verbatim at the document and section level. Saving records the same
+content-addressed snapshot a later `operon taxonomy compile` consumes.
 
 **Tools & Recipes tab.** A tools table (name, executable, run method) with a
 *Check tools* button — the equivalent of `operon tools-check`, run in a

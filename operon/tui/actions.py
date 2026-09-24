@@ -500,10 +500,11 @@ def run_external(
 
 PROFILE_OPERATORS = (">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in", "exists")
 ENTITY_TYPE_NAMES = ("organism", "sample", "run", "assembly", "annotation")
-# The TUI's profile editor saves two kinds; taxonomy_coverage profiles stay
-# hand-edited (their editors are not modeled as forms).
+# The TUI's profile editor saves three kinds; each kind has its own form,
+# dispatched by the document's own kind (see operon/tui/screens/config*.py).
 CLASSIFICATION_KIND = "sequence_classification"
-PROFILE_KINDS = ("qc", CLASSIFICATION_KIND)
+COVERAGE_KIND = "taxonomy_coverage"
+PROFILE_KINDS = ("qc", CLASSIFICATION_KIND, COVERAGE_KIND)
 
 
 def write_analysis_report(
@@ -853,17 +854,29 @@ def _validate_classification_document(name: str, document: dict[str, Any]) -> No
     validate_classification_profile(document, name)
 
 
+def _validate_coverage_document(name: str, document: dict[str, Any]) -> None:
+    """Validate a ``kind: taxonomy_coverage`` document with the core rules."""
+    from operon.taxonomy import _validate_coverage_profile
+
+    if "version" not in document:
+        raise ValidationError(f"profile {name!r}: 'version' is required")
+    _validate_coverage_profile(name, document)
+
+
 def _validate_profile_document(name: str, document: dict[str, Any], *,
                                kind: str = "qc") -> None:
     if not isinstance(document, dict):
         raise ValidationError(f"profile {name!r}: document must be a mapping")
     if str(document.get("kind", "")) != kind:
         raise ValidationError(
-            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
-            f"(taxonomy_coverage profiles are edited by hand); got {document.get('kind')!r}"
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI; "
+            f"got {document.get('kind')!r}"
         )
     if kind == CLASSIFICATION_KIND:
         _validate_classification_document(name, document)
+        return
+    if kind == COVERAGE_KIND:
+        _validate_coverage_document(name, document)
         return
     if "version" not in document:
         raise ValidationError(f"profile {name!r}: 'version' is required")
@@ -916,9 +929,10 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
                  known_version: int = 0, kind: str = "qc") -> dict[str, Any]:
     """Validate and save a profile of ``kind`` as a new version.
 
-    The composed document is validated (``qc`` rules or the core's
+    The composed document is validated (``qc`` rules, the core's
     :func:`operon.classify.validate_classification_profile` for
-    ``sequence_classification``), written to ``config/profiles/<name>.yaml``
+    ``sequence_classification``, or the core's coverage-profile validator for
+    ``taxonomy_coverage``), written to ``config/profiles/<name>.yaml``
     with the same header style as :func:`operon.profiles.write_default_profiles`,
     round-trip verified through :func:`operon.profiles.load_profile`, and
     recorded as a content-addressed snapshot with the exact canonical document
@@ -939,8 +953,8 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
         raise ValidationError(f"profile {name!r}: unknown kind {kind!r}")
     if not isinstance(document, dict) or str(document.get("kind", kind)) != kind:
         raise ValidationError(
-            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
-            "(taxonomy_coverage profiles are edited by hand)"
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI; "
+            f"got {document.get('kind')!r}"
         )
     document = {str(key): value for key, value in document.items()}
     path = project.profiles_dir / f"{name}.yaml"
@@ -969,6 +983,8 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
     ) + 1
     if kind == CLASSIFICATION_KIND:
         _coerce_classification_values(document)
+    elif kind == COVERAGE_KIND:
+        pass  # the coverage form composes typed values; nothing to coerce
     else:
         for section in ("required", "warnings"):
             for rule in document.get(section, []) or []:
@@ -1000,6 +1016,13 @@ def save_classification_profile(project: Project, name: str, document: dict[str,
     """Save a ``kind: sequence_classification`` profile (see :func:`save_profile`)."""
     return save_profile(project, name, document, known_version=known_version,
                         kind=CLASSIFICATION_KIND)
+
+
+def save_coverage_profile(project: Project, name: str, document: dict[str, Any], *,
+                          known_version: int = 0) -> dict[str, Any]:
+    """Save a ``kind: taxonomy_coverage`` profile (see :func:`save_profile`)."""
+    return save_profile(project, name, document, known_version=known_version,
+                        kind=COVERAGE_KIND)
 
 
 def save_recipe(

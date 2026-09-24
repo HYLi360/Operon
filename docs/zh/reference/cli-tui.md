@@ -247,14 +247,15 @@ Config 界面以结构化表单编辑两个带版本的配置文件，表单值�
 未变的 profile 与输入重跑会显示 0 变更。CLI 会打印的两条警告（忽略的已完成
 作业、没有注册序列的目标文件）也会以黄色显示在对话框内。
 
-**QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc` 与
-`kind: sequence_classification` profile（名称 + 版本；分类类带标签）。右侧：
-按所选 profile 自身的 `kind` 切换（不是合并）到对应编辑器。*New profile*
+**QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc`、
+`kind: sequence_classification` 与 `kind: taxonomy_coverage` profile（名称 +
+版本；分类类与 coverage 类带标签）。右侧：按所选 profile 自身的 `kind` 切换
+（不是合并）到对应编辑器——qc、分类、coverage 三个编辑器互斥显示。*New profile*
 提示输入名称**与 kind**，并从该 kind 的最小骨架开始。qc 编辑器包含：
 description、五个 `applies_to` 复选框、只读版本提示，以及两个规则小节
 （required / warnings）；每条规则是一行 metric、operator（覆盖规则引擎全部
 操作符的 Select）、value、code 输入加删除按钮，"add rule" 按小节追加行。
-看似数字的值会存为数字。`taxonomy_coverage` profile 不在此处编辑。
+看似数字的值会存为数字。
 
 **分类 profile**（`kind: sequence_classification`）。编辑器对应
 `classify.py` 的语法：`applies_to` 是 `entity_type` + `file_role` 一对输入；
@@ -272,6 +273,14 @@ description、五个 `applies_to` 复选框、只读版本提示，以及两个�
 映射）会以**只读**方式打开：编辑器说明原因、禁用保存、绝不改写文件——请直接
 编辑 YAML。表单未建模的键在每一层（document、source、rule、condition 与
 `best_by` 条目）都原样保留。
+
+**Coverage profile**（`kind: taxonomy_coverage`）。编辑器对应
+`taxonomy.py` 的扁平 coverage 语法：taxonomy source（`NCBI`）、root TaxIDs、
+family/genus 目标 rank、extinct / 排除子树 / 名称正则过滤器，以及每个勾选
+rank 一个最低覆盖百分比。结构超出表单的 profile（例如 thresholds 含有非目标
+rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用、文件绝不被表单
+改写。未建模的键（含可选 `name`）在文档层与分节层逐字保留。保存记录的内容
+寻址快照与后续 `operon taxonomy compile` 消费的一致。
 
 **Tools & Recipes 标签页。** 工具表（名称、可执行文件、启动方式）加
 *Check tools* 按钮——等价于 `operon tools-check`，在后台 worker 中运行并逐行

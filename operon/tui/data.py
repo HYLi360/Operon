@@ -538,6 +538,11 @@ def list_classification_profiles(project: Project) -> list[dict[str, Any]]:
     return _profile_rows(project, "sequence_classification")
 
 
+def list_coverage_profiles(project: Project) -> list[dict[str, Any]]:
+    """Return the on-disk ``kind: taxonomy_coverage`` profiles."""
+    return _profile_rows(project, "taxonomy_coverage")
+
+
 def get_profile_document(project: Project, name: str, *, kind: str = "qc") -> dict[str, Any]:
     """Return the current on-disk profile document for the editor."""
     from operon.profiles import load_profile

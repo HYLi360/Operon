@@ -28,7 +28,7 @@ Import, compilation, and reporting are explicit commands. Imported source files 
 
 ## Prepare a coverage profile
 
-`operon init` creates `config/profiles/coverage_viridiplantae_v1.yaml` as an example. It is a template, not a universal standard. Before production use, review the clade, exclusion rules, and thresholds, and save the result under a filename that reflects the study scope. QC and coverage profiles share the directory but are distinguished by the required `kind` field.
+`operon init` creates `config/profiles/coverage_viridiplantae_v1.yaml` as an example. It is a template, not a universal standard. Before production use, review the clade, exclusion rules, and thresholds, and save the result under a filename that reflects the study scope. QC and coverage profiles share the directory but are distinguished by the required `kind` field. The TUI's Config screen (`operon tui`, key `6`, QC Profiles tab) edits coverage profiles with the same version bump and content-addressed snapshot recording as the CLI; a profile whose structure exceeds the form opens read-only there. Hand-editing the YAML file remains fully supported.
 
 ```yaml
 kind: taxonomy_coverage

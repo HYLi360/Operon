@@ -113,12 +113,15 @@ Current version markers (must stay consistent across code and docs):
     the project-wide label summary behind the Files screen's `l` binding), which
     has no CLI reader at all. The
     Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
-    `config/profiles/*.yaml` (kind `qc` and kind `sequence_classification` —
-    each kind has its own form, dispatched by the document's own kind, with the
-    classification widgets in `operon/tui/screens/config_classification.py`
-    and `actions.save_classification_profile` sharing `save_profile`'s version,
-    snapshot and rollback machinery; a profile whose conditions nest deeper
-    than one `any:`/`not:` level opens read-only) and single recipes inside
+    `config/profiles/*.yaml` (kinds `qc`, `sequence_classification` and
+    `taxonomy_coverage` — each kind has its own form, dispatched by the document's
+    own kind, with the classification widgets in `operon/tui/screens/config_classification.py`,
+    the coverage widgets in `operon/tui/screens/config_coverage.py`, and
+    `actions.save_classification_profile` / `actions.save_coverage_profile`
+    sharing `save_profile`'s version, snapshot and rollback machinery; a
+    classification profile whose conditions nest deeper than one `any:`/`not:`
+    level, or a coverage profile whose structure exceeds the flat grammar, opens
+    read-only) and single recipes inside
     `config/tools.yaml` through structured control-based forms (no free-text
     YAML): every save bumps the `version`, records the same content-addressed
     snapshot the CLI records (`qc_profiles` / `recipe_snapshots`), and

@@ -55,6 +55,10 @@ from operon.tui.screens.config_classification import (
     ClassificationSaveModal,
     classification_form_supported,
 )
+from operon.tui.screens.config_coverage import (
+    CoverageSaveModal,
+    coverage_form_supported,
+)
 
 
 @pytest.fixture(scope="module")
@@ -544,7 +548,7 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
         async with app.run_test(size=(160, 50)) as pilot:
             panel = await _open_config(app, pilot)
             list_view = panel.query_one("#profiles-list", ListView)
-            assert len(list_view.children) == 5
+            assert len(list_view.children) == 6
 
             _select_profile(panel, "assembly_production_v1")
             await pilot.pause()
@@ -2100,8 +2104,6 @@ def test_save_classification_profile_versions_and_validation(project: Project) -
         actions.save_classification_profile(project, "assembly_production_v1", fresh())
     with pytest.raises(ValidationError, match="only kind 'qc'"):
         actions.save_profile(project, "bhlh_saved", fresh())
-    with pytest.raises(ValidationError, match="unknown kind"):
-        actions.save_profile(project, "x", {"kind": "qc"}, kind="taxonomy_coverage")
 
     coerced = fresh()
     coerced["rules"][0]["when"] = [{"field": "evalue", "operator": "<=", "value": "1e-5"}]
@@ -3109,3 +3111,348 @@ def test_config_screen_classification_history_opens_the_selected_profile(
             assert "assembly_production_v1" not in title
 
     _run(scenario())
+
+
+# --- coverage profile editor (kind: taxonomy_coverage) -----------------------
+
+
+def _write_coverage_profile(project: Project, name: str, document: dict) -> Path:
+    path = project.profiles_dir / f"{name}.yaml"
+    path.write_text("# hand-written comment\n" + yaml.safe_dump(document, sort_keys=False),
+                    encoding="utf-8")
+    return path
+
+
+VIRIDIPLANTAE_COVERAGE = {
+    "kind": "taxonomy_coverage",
+    "version": 1,
+    "description": "editor probe",
+    "taxonomy": {"source": "NCBI"},
+    "scope": {"root_taxids": [33090]},
+    "targets": {"ranks": ["family", "genus"]},
+    "filters": {
+        "exclude_extinct": True,
+        "exclude_subtrees": [9903],
+        "exclude_name_patterns": [r"(?i)^unclassified(?:\s|$)"],
+    },
+    "thresholds": {
+        "family": {"min_coverage_percent": 80},
+        "genus": {"min_coverage_percent": 70},
+    },
+}
+
+
+def test_coverage_ranks_match_the_core() -> None:
+    """The form's rank list is the core grammar's (module comment)."""
+    from operon.taxonomy import TARGET_RANK_ORDER
+
+    from operon.tui.screens.config_coverage import COVERAGE_RANKS
+
+    assert set(COVERAGE_RANKS) == set(TARGET_RANK_ORDER)
+
+
+def test_coverage_form_supported_accepts_the_flat_grammar() -> None:
+    document = json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+    assert coverage_form_supported(document)[0]
+
+    document["taxonomy"]["extra_key"] = {"kept": True}  # unknown keys preserved
+    assert coverage_form_supported(document)[0]
+    del document["filters"]                             # optional section absent
+    assert coverage_form_supported(document)[0]
+    document["targets"]["ranks"] = ["genus"]            # a single rank
+    del document["thresholds"]["family"]
+    assert coverage_form_supported(document)[0]
+
+
+@pytest.mark.parametrize("mutate,fragment", [
+    (lambda d: d.__setitem__("taxonomy", "NCBI"), "taxonomy is not a mapping"),
+    (lambda d: d.__setitem__("scope", []), "scope is not a mapping"),
+    (lambda d: d["scope"].__setitem__("root_taxids", "33090"),
+     "root_taxids is not a list"),
+    (lambda d: d.__setitem__("targets", []), "targets is not a mapping"),
+    (lambda d: d["targets"].__setitem__("ranks", ["species"]), "family/genus"),
+    (lambda d: d.__setitem__("filters", []), "filters is not a mapping"),
+    (lambda d: d["filters"].__setitem__("exclude_subtrees", 9903),
+     "exclude_subtrees is not a list"),
+    (lambda d: d["thresholds"].__setitem__("species", {"min_coverage_percent": 50}),
+     "not a configured target rank"),
+    (lambda d: d.__setitem__("thresholds", []), "thresholds is not a mapping"),
+    (lambda d: d["thresholds"].__setitem__("family", 80), "not a mapping"),
+    (lambda d: d["filters"].__setitem__("exclude_name_patterns", "[x]"),
+     "list of strings"),
+    (lambda d: d["filters"].__setitem__("exclude_name_patterns", ["x", 1]),
+     "list of strings"),
+])
+def test_coverage_form_supported_refuses_what_it_cannot_represent(
+        mutate, fragment: str) -> None:
+    document = json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+    mutate(document)
+    supported, reason = coverage_form_supported(document)
+    assert not supported
+    assert fragment in reason
+
+
+def test_coverage_profile_data_layer(project: Project) -> None:
+    _write_coverage_profile(project, "cov_editor_probe", VIRIDIPLANTAE_COVERAGE)
+
+    assert "cov_editor_probe" not in [
+        row["name"] for row in data.list_qc_profiles(project)]
+    listed = {row["name"]: row for row in data.list_coverage_profiles(project)}
+    # The demo project already ships the coverage_viridiplantae_v1 example.
+    assert listed["cov_editor_probe"]["kind"] == "taxonomy_coverage"
+    assert listed["cov_editor_probe"]["version"] == 1
+    document = data.get_profile_document(project, "cov_editor_probe",
+                                         kind="taxonomy_coverage")
+    assert document["scope"]["root_taxids"] == [33090]
+    with pytest.raises(ValidationError):
+        data.get_profile_document(project, "cov_editor_probe")  # qc is the default
+
+
+def test_save_coverage_profile_versions_and_validation(project: Project) -> None:
+    def fresh() -> dict:
+        return json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+
+    result = actions.save_coverage_profile(project, "cov_saved", fresh())
+    assert result["version"] == 1 and result["snapshot_id"] is not None
+    text = (project.profiles_dir / "cov_saved.yaml").read_text(encoding="utf-8")
+    assert text.startswith("# Operon taxonomy_coverage profile cov_saved")
+    load_profile(project.profiles_dir, "cov_saved", expected_kind="taxonomy_coverage")
+    snapshot = _query(
+        project,
+        "SELECT profile_document FROM qc_profiles WHERE profile_name='cov_saved'",
+    )
+    assert json.loads(snapshot[0]["profile_document"])["kind"] == "taxonomy_coverage"
+
+    unchanged = actions.save_coverage_profile(project, "cov_saved", fresh())
+    assert unchanged["unchanged"] is True and unchanged["version"] == 1
+    changed = fresh()
+    changed["description"] = "changed"
+    assert actions.save_coverage_profile(project, "cov_saved", changed)["version"] == 2
+
+    broken = fresh()
+    broken["scope"]["root_taxids"] = []
+    with pytest.raises(ValidationError, match="root_taxids must be a non-empty list"):
+        actions.save_coverage_profile(project, "broken", broken)
+    broken = fresh()
+    broken["thresholds"]["family"]["min_coverage_percent"] = 101
+    with pytest.raises(ValidationError, match="between 0 and 100"):
+        actions.save_coverage_profile(project, "broken", broken)
+    broken = fresh()
+    broken["targets"]["ranks"] = ["species"]
+    with pytest.raises(ValidationError, match="family, genus"):
+        actions.save_coverage_profile(project, "broken", broken)
+    broken = fresh()
+    broken["name"] = "someone_else"
+    with pytest.raises(ValidationError, match="does not match filename"):
+        actions.save_coverage_profile(project, "broken", broken)
+    broken = fresh()
+    broken["filters"]["exclude_name_patterns"] = ["(["]
+    with pytest.raises(ValidationError, match="invalid coverage exclusion"):
+        actions.save_coverage_profile(project, "broken", broken)
+
+    with pytest.raises(ValidationError, match="only kind 'qc'"):
+        actions.save_profile(project, "cov_saved", fresh())
+    with pytest.raises(ValidationError, match="on-disk kind"):
+        actions.save_coverage_profile(project, "assembly_production_v1", fresh())
+
+    # The M4 refusal is gone: the kind is accepted and validated by the core.
+    accepted = actions.save_profile(
+        project, "cov_via_generic", fresh(), kind="taxonomy_coverage")
+    assert accepted["version"] == 1
+
+
+def test_config_coverage_editor_end_to_end(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            list_view = panel.query_one("#profiles-list", ListView)
+            labels = [item.query_one(Label).render().plain for item in list_view.children]
+            assert any("coverage_viridiplantae_v1" in label and "coverage" in label
+                       for label in labels)
+
+            panel._load_profile("coverage_viridiplantae_v1")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            assert panel.query_one("#coverage-editor").display
+            assert not panel.query_one("#profile-editor").display
+            assert not panel.query_one("#classification-editor").display
+            assert panel.coverage_profile == "coverage_viridiplantae_v1"
+            assert _static_text(panel.query_one("#coverage-readonly-note", Static)) == ""
+            assert panel.query_one("#coverage-root-taxids", Input).value == "33090"
+            assert panel.query_one("#coverage-rank-family", Checkbox).value is True
+            assert panel.query_one("#coverage-rank-genus", Checkbox).value is True
+            assert panel.query_one("#coverage-exclude-extinct", Checkbox).value is True
+            assert panel.query_one("#coverage-threshold-family", Input).value == "80"
+            assert panel.query_one("#coverage-taxonomy-source", Select).value == "NCBI"
+
+            panel.query_one("#coverage-threshold-genus", Input).value = "75"
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, CoverageSaveModal)
+            assert "version 2" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, CoverageSaveModal)
+            await _await_notification(pilot, app, "saved coverage_viridiplantae_v1 version 2")
+
+    _run(scenario())
+    loaded = load_profile(project.profiles_dir, "coverage_viridiplantae_v1",
+                          expected_kind="taxonomy_coverage")
+    assert loaded["version"] == 2
+    assert loaded["thresholds"]["genus"]["min_coverage_percent"] == 75
+    rows = _query(
+        project,
+        "SELECT profile_version FROM qc_profiles "
+        "WHERE profile_name='coverage_viridiplantae_v1'",
+    )
+    assert [row["profile_version"] for row in rows] == [2]
+
+
+def test_config_coverage_save_of_an_unchanged_document_keeps_the_version(
+    project: Project,
+) -> None:
+    """Saving a form that composes the file it came from keeps the version."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("coverage_viridiplantae_v1")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert isinstance(app.screen, CoverageSaveModal)
+            await _click(pilot, "#confirm")
+            await _await_notification(
+                pilot, app, "coverage_viridiplantae_v1: unchanged — version 1 kept"
+            )
+            assert data.get_profile_document(
+                project, "coverage_viridiplantae_v1", kind="taxonomy_coverage"
+            )["version"] == 1
+
+    _run(scenario())
+
+
+def test_config_coverage_editor_guards_and_readonly(project: Project) -> None:
+    document = json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+    document["thresholds"]["species"] = {"min_coverage_percent": 50}
+    path = _write_coverage_profile(project, "cov_unsupported", document)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("cov_unsupported")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            note = _static_text(panel.query_one("#coverage-readonly-note", Static))
+            assert "species" in note and "edit the YAML file" in note
+            assert panel.query_one("#coverage-save", Button).disabled
+
+    _run(scenario())
+    # The visit must not rewrite a profile the form cannot represent.
+    assert "hand-written comment" in path.read_text(encoding="utf-8")
+
+
+def test_config_coverage_editor_inline_value_guards(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("coverage_viridiplantae_v1")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            panel.query_one("#coverage-threshold-family", Input).value = ""
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert "missing minimum coverage" in _static_text(
+                panel.query_one("#coverage-save-error", Static))
+            assert not isinstance(app.screen, CoverageSaveModal)
+
+            panel.query_one("#coverage-threshold-family", Input).value = "80"
+            panel.query_one("#coverage-root-taxids", Input).value = "33090, abc"
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert "must be positive integers" in _static_text(
+                panel.query_one("#coverage-save-error", Static))
+
+    _run(scenario())
+
+
+def test_config_screen_new_coverage_profile(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _click(pilot, "#profile-new")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, NewProfileModal)
+            modal.query_one("#new-profile-name", Input).value = "cov_new_v1"
+            modal.query_one("#new-profile-kind", Select).value = actions.COVERAGE_KIND
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            assert panel.query_one("#coverage-editor").display
+            heading = _static_text(panel.query_one("#coverage-heading", Static))
+            assert "cov_new_v1" in heading and "new profile (not saved yet)" in heading
+            assert panel.query_one("#coverage-root-taxids", Input).value == "1"
+            assert panel.query_one("#coverage-threshold-family", Input).value == "80"
+
+            panel.query_one("#coverage-root-taxids", Input).value = "33090"
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert isinstance(app.screen, CoverageSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved cov_new_v1 version 1")
+
+    _run(scenario())
+    loaded = load_profile(project.profiles_dir, "cov_new_v1",
+                          expected_kind="taxonomy_coverage")
+    assert loaded["version"] == 1
+    assert loaded["scope"]["root_taxids"] == [33090]
+
+
+def test_config_coverage_history_restore_into_editor(project: Project) -> None:
+    document = json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+    actions.save_coverage_profile(project, "cov_hist", document)
+    document["description"] = "second version"
+    actions.save_coverage_profile(project, "cov_hist", document)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("cov_hist")
+            await pilot.pause()
+            await _click(pilot, "#coverage-history")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, HistoryModal)
+            assert "cov_hist" in _static_text(modal.query_one("#modal-title", Static))
+            table = modal.query_one("#history-table", DataTable)
+            assert table.row_count == 2
+            table.move_cursor(row=0, animate=False)
+            await pilot.pause()
+            await _click(pilot, "#restore")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            assert panel.query_one("#coverage-description", Input).value == "editor probe"
+            heading = _static_text(panel.query_one("#coverage-heading", Static))
+            assert "restored from snapshot" in heading
+
+    _run(scenario())
+    # Restore only loads the editor; nothing is written until Save.
+    assert load_profile(project.profiles_dir, "cov_hist",
+                        expected_kind="taxonomy_coverage")["description"] == \
+        "second version"

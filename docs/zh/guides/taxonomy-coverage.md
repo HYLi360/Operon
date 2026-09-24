@@ -32,7 +32,9 @@ coverage YAML profile ── operon taxonomy compile
 `operon init` 会在 `config/profiles/coverage_viridiplantae_v1.yaml` 生成一个示例。
 它是模板而不是适用于所有研究的通用标准；正式使用前应核对 clade、排除规则和阈值，
 并用反映研究口径的新文件名保存。QC 与 coverage profile 共用目录，但由必填的
-`kind` 字段严格区分。
+`kind` 字段严格区分。TUI 的 Config 屏（`operon tui`，按键 `6`，QC Profiles 标签页）
+可以编辑 coverage profile，版本升级与内容寻址快照记录与 CLI 完全一致；结构超出
+表单的 profile 在该处以只读打开。直接手工编辑 YAML 文件同样完全受支持。
 
 ```yaml
 kind: taxonomy_coverage
