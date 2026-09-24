@@ -1275,3 +1275,87 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
     finally:
         released.set()
     assert dismissed[0]["run_id"] == "WF_STUB"
+
+
+@pytest.mark.bug("ODR-0043")
+def test_qc_modal_real_cancel_click_stays_open_while_running(
+        project: Project, monkeypatch) -> None:
+    """A real Cancel click cancels the worker but must not dismiss the modal."""
+    released = threading.Event()
+
+    def blocking_run_qc(*args, **kwargs):
+        released.wait(30)
+        return [{"file_id": "FIL_000001", "ok": True}]
+
+    monkeypatch.setattr(actions, "run_qc", blocking_run_qc)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            modal = QcModal(project, "FIL_000001", 1)
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "qc run to start")
+
+            modal.query_one("#cancel", Button).press()
+            await pilot.pause()
+            assert app.screen is modal
+            assert dismissed == []
+            assert modal._worker.is_cancelled
+
+            released.set()
+            await _wait_until(lambda: bool(dismissed), "qc modal dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert dismissed[0]["ok"] == 1
+
+
+@pytest.mark.bug("ODR-0043")
+def test_run_external_real_cancel_click_stays_open_while_running(
+        project: Project, monkeypatch) -> None:
+    """A real Cancel click must not dismiss the modal mid-run."""
+    released = threading.Event()
+
+    def blocking_run(*args, **kwargs):
+        released.wait(30)
+        return {"run_id": "WF_STUB", "step": "marker_step", "status": "completed",
+                "exit_code": 0, "finished_at": None, "error": None,
+                "stdout_file": "", "stderr_file": "", "messages": ""}
+
+    monkeypatch.setattr(actions, "run_external", blocking_run)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            modal = RunExternalModal(project)
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            modal.query_one("#external-step", Input).value = "marker_step"
+            modal.query_one("#external-command", Input).value = "true"
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "external run to start")
+
+            modal.query_one("#cancel", Button).press()
+            await pilot.pause()
+            assert app.screen is modal
+            assert dismissed == []
+
+            released.set()
+            await _wait_until(lambda: bool(dismissed), "external modal dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert dismissed[0]["run_id"] == "WF_STUB"

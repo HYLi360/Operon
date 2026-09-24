@@ -847,3 +847,91 @@ def test_compile_modal_empty_project_shows_hints(
             assert calls == []
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-0043")
+def test_import_modal_real_cancel_click_stays_open_while_running(
+        project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
+    released = threading.Event()
+
+    def blocking_import(*args, **kwargs):
+        released.wait(30)
+        return {"taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
+                "node_count": 3, "reused": False}
+
+    monkeypatch.setattr(actions, "import_taxonomy", blocking_import)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = TaxonomyImportModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#taxonomy-import-input")
+            (await _q(modal, "#taxonomy-import-input", Input)).value = "taxonomy.jsonl"
+            (await _q(modal, "#taxonomy-import-version", Input)).value = "cov.1"
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "taxonomy import to start")
+
+            # Button.press() posts Button.Pressed through the real pump; before
+            # ODR-0043 the base WriteModal handler dismissed the modal here.
+            modal.query_one("#cancel", Button).press()
+            await pilot.pause()
+            assert app.screen is modal
+            assert dismissed == []
+
+            released.set()
+            await _wait_until(lambda: bool(dismissed), "import modal dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+
+
+@pytest.mark.bug("ODR-0043")
+def test_compile_modal_real_cancel_click_stays_open_while_running(
+        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
+    _seed_taxonomy(project, tmp_path)
+    released = threading.Event()
+
+    def blocking_compile(*args, **kwargs):
+        released.wait(30)
+        return {"reference_set_id": "cov@cov.1", "profile_name": "cov",
+                "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
+                "reused": False}
+
+    monkeypatch.setattr(actions, "compile_reference_set", blocking_compile)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = CompileReferenceSetModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#taxonomy-compile-profile")
+            (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
+            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "reference set compile to start")
+
+            modal.query_one("#cancel", Button).press()
+            await pilot.pause()
+            assert app.screen is modal
+            assert dismissed == []
+
+            released.set()
+            await _wait_until(lambda: bool(dismissed), "compile modal dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
