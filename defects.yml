@@ -1136,7 +1136,7 @@ defects:
     NcbiDatasetsModal pattern). Regression tests dispatch a real Button.Pressed
     via Button.press() while a stubbed action blocks, and assert the modal
     stays open and the run still completes.'
-  fix_commit: null
+  fix_commit: c349718530be2c2b9679cd8aa6f1e8f49b0b183c
   fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
