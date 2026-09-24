@@ -1151,6 +1151,50 @@ def test_run_analysis_for_file_remote_only_dry_run_skips_verification(
     assert not (project.root / record["relative_path"]).exists()
 
 
+@pytest.mark.bug("ODR-0028")
+def test_dry_run_reports_a_missing_local_database_like_the_real_run(operon_project):
+    project, db = operon_project
+    ingest_assembly(project, db, 1)
+    write_tool_config(
+        project, recipe_document=base_recipe(database="/nonexistent/operon-refdb"),
+    )
+    tools._VERSION_CACHE.clear()
+
+    # The real run's failure is the baseline the plan must match.
+    real = run_analysis(project, db, "fake_recipe")
+    assert real[0]["status"] == "error"
+    assert "reference database not found" in real[0]["error"]
+
+    dry = run_analysis(project, db, "fake_recipe", dry_run=True)
+    assert dry[0]["status"] == "error"
+    assert "reference database not found" in dry[0]["error"]
+    assert db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"] == 0
+
+
+@pytest.mark.bug("ODR-0028")
+def test_dry_run_verifies_a_remote_reference_database(operon_project, tmp_path):
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    remote_root = tmp_path / "mirror"
+    remote_root.mkdir()
+    executor = _ssh_executor(project, remote_root)
+    analysis = recipe(tool_name="faketool", database="refdb", database_version="v1",
+                      output_subdir="fake", output_suffix=".out.tsv",
+                      raw={"database_checksum": "sha256:" + "0" * 64})
+    tool = tool_spec(name="faketool", executable="faketool")
+
+    # Unprovisioned remote reference: the dry run fails exactly like a real run.
+    with pytest.raises(RemoteError, match="not provisioned"):
+        run_analysis_for_file(project, db, analysis, tool, {}, record,
+                              dry_run=True, executor=executor)
+
+    # Provisioned: the read-only stat passes and the plan stands.
+    (remote_root / "refdb").mkdir()
+    planned = run_analysis_for_file(project, db, analysis, tool, {}, record,
+                                    dry_run=True, executor=executor)
+    assert planned["status"] == "planned"
+
+
 def test_run_analysis_for_file_remote_reference_database_requires_checksum(
         operon_project, tmp_path):
     project, db = operon_project

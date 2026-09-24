@@ -351,10 +351,10 @@ database_mode: mutable_cache
 - 不同 SSH 主机/root 不共享分析缓存身份，避免在内容位置不明时跨集群复用结果；
 - 项目根之外的路径——包括展开后的 `~/...`——原样传给远端命令，因此计算端必须在同一路径
   存在该文件；`database` 写成项目相对路径才会映射进 `remote_root`，多数 recipe 应当如此；
-- 这两项检查都不会在 `--dry-run` 下执行：预览会对根本不存在于任何位置的数据库给出
-  `planned`，只有首次真实运行才会报 `reference database not found: <path>; edit
-  config/tools.yaml`（本地）或 `remote reference database is not provisioned at <path>`
-  （远端）；
+- 这两项数据库检查在 `--dry-run` 下同样执行：预览会直接给出真实运行会遇到的错误——
+  本地 `reference database not found: <path>; edit config/tools.yaml`，远端
+  `remote reference database is not provisioned at <path>`——而不是对根本不存在于任何
+  位置的数据库给出 `planned`。仅工具版本在非本地后端下保持未探测；
 - 数据库不是 manifest 文件：`push`、`evict`、`pull` 都不会搬运它，`operon remotes`
   也不统计它，镜像换到新 root 后需要重新部署。
 

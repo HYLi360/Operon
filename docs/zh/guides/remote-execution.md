@@ -191,11 +191,12 @@ operon pull --remote mycluster --file-id FIL_000001                     # 取回
   传给远端命令，因此计算端必须存在同一路径。本地用 `/data/db/Pfam-A.hmm` 或
   `~/resources/hmm/PF00010.hmm` 能跑通的 recipe，在远端会失败。项目相对路径才会被
   映射进 `remote_root`，这也是多数 recipe 想要的形式。
-- **`--dry-run` 既不校验数据库，也不校验远端。** 本地存在性检查与远端预置检查都会被
-  跳过，且非 `local` 后端下工具版本显示为 `not probed (backend=…)`。因此预览会对一个
-  根本不在磁盘上的数据库给出 `planned`；真正的报错只出现在首次真实运行：本地为
-  `reference database not found: <path>; edit config/tools.yaml`，远端为
-  `remote reference database is not provisioned at <path>`。验证部署请用真实文件，
+- **`--dry-run` 会校验无需命令执行的部分。** 本地数据库存在性检查照常执行；远端
+  `reference` 数据库也会做一次 provisioning stat。因此根本不存在于任何位置的数据库会
+  在预览阶段就以与真实运行相同的消息失败——本地为 `reference database not found:
+  <path>; edit config/tools.yaml`，远端为 `remote reference database is not provisioned
+  at <path>`——且命令以非零退出。远端 `mutable_cache` 此时尚无物可校验；工具版本仍显示
+  为 `not probed (backend=…)`，因为探测它需要执行命令。验证部署请用真实文件，
   不要用 `--dry-run`。
 - **远端 `reference` 数据库必须声明 `database_checksum`。** 缺少时在提交任何作业之前
   即被拒绝：`remote reference databases require database_checksum so cache identity

@@ -102,7 +102,11 @@ scheduler job ID 记为 `<array_id>_<task_index>`。缓存行为不变：是否�
 
 `--dry-run` 只列出计划不执行：表格的 status 列为 `cached`（命中完成缓存）、
 `adoptable`（将收养已验证的旧输出）或 `planned`（将实际执行），output 列为
-计划输出路径，tool_version 为探测到的版本。
+计划输出路径，tool_version 在本地后端为探测到的版本；非本地后端会报
+`not probed (backend=…)`，因为探测本身需要建立连接。dry-run 仍会执行无需命令执行的
+校验——recipe 数据库的本地存在性、远端 reference 库的 provisioning（经后端做一次
+stat）、以及 `database_checksum` 规则——因此无法执行的计划会报出与真实运行相同的错误，
+命令以非零退出。
 
 `--param` 只能设置 recipe 明确声明的参数。缺少 required 参数、未知参数、重复参数或不
 满足 recipe 的 `pattern`/`choices` 时返回配置错误。默认 `busco_lineage` 用法：
