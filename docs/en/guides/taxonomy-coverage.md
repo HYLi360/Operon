@@ -116,6 +116,11 @@ taxonomy/reference_sets/
 └── coverage_viridiplantae_v1@2026-08-01.provenance.json
 ```
 
+The TUI offers the same compilation on the Coverage screen (*Compile
+reference set…* button): the profile and the taxonomy version are picked
+from dropdowns that list only READY snapshots; a running compile cannot be
+interrupted from the TUI.
+
 Each TSV row is a target taxon with fixed columns:
 
 ```text

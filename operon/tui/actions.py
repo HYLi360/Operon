@@ -1380,3 +1380,21 @@ def import_taxonomy(
 
     with _open_writable(project) as db:
         return import_ncbi_taxonomy(db, project, source, taxonomy_version)
+
+
+def compile_reference_set(
+        project: Project,
+        profile_name: str,
+        taxonomy_version: str,
+) -> dict[str, Any]:
+    """Compile a coverage denominator like ``operon taxonomy compile``.
+
+    The core freezes taxonomy/reference_sets/<profile>@<version>.tsv plus its
+    provenance sidecar in one transaction with the same audit/run rows as the
+    CLI; failed attempts are recorded as ``failed`` workflow runs, and
+    identical profile/snapshot/bytes reuse the existing reference set.
+    """
+    from operon.taxonomy import compile_reference_set as _compile
+
+    with _open_writable(project) as db:
+        return _compile(db, project, profile_name, taxonomy_version)

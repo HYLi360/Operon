@@ -42,6 +42,7 @@ import pytest
 import yaml
 from rich.text import Text
 
+from operon import taxonomy
 from operon.cli import main as cli_main
 from operon.config import Project
 from operon.database import Database
@@ -1270,5 +1271,85 @@ def test_taxonomy_import_modal_command_text_matches_action_kwargs(
     _run(scenario())
     args, kwargs = calls[0]
     assert args == (project, "/tmp/taxonomy.jsonl", "cov.1")
+    assert kwargs == {}
+    assert dismissed == [payload]
+
+
+def _seed_taxonomy(project: Project, tmp_path: Path) -> None:
+    """One READY NCBI snapshot (cov.1) plus the ``cov`` coverage profile."""
+    import yaml
+
+    source = tmp_path / "taxonomy.jsonl"
+    records = [
+        {"taxId": 1, "rank": "no rank", "taxName": "root"},
+        {"taxId": 10, "parents": [1], "rank": "family", "taxName": "Fam"},
+        {"taxId": 20, "parents": [10], "rank": "genus", "taxName": "Gen"},
+    ]
+    source.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
+    db = Database(project.db_path)
+    try:
+        taxonomy.import_ncbi_taxonomy(db, project, source, "cov.1")
+    finally:
+        db.close()
+    profile = {
+        "kind": "taxonomy_coverage",
+        "version": 1,
+        "name": "cov",
+        "taxonomy": {"source": "NCBI"},
+        "scope": {"root_taxids": [1]},
+        "targets": {"ranks": ["family", "genus"]},
+        "thresholds": {
+            "family": {"min_coverage_percent": 0},
+            "genus": {"min_coverage_percent": 0},
+        },
+    }
+    (project.profiles_dir / "cov.yaml").write_text(
+        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+    )
+
+
+def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.taxonomy import CompileReferenceSetModal
+
+    _seed_taxonomy(project, tmp_path)
+    payload = {
+        "reference_set_id": "cov@cov.1", "profile_name": "cov",
+        "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
+        "reused": False,
+    }
+    calls = spy_action(monkeypatch, "compile_reference_set", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = CompileReferenceSetModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#taxonomy-compile-profile")
+            (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
+            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.profile == "cov"
+            assert ns.taxonomy_version == "cov.1"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "reference set compile call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "cov", "cov.1")
     assert kwargs == {}
     assert dismissed == [payload]

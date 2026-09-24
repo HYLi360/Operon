@@ -575,7 +575,14 @@ REGISTRY: tuple[ParityEntry, ...] = (
         modal="operon.tui.screens.taxonomy::TaxonomyImportModal",
         params={"input": "taxonomy-import-input", "version": "taxonomy-import-version"},
     ),
-    ParityEntry(("taxonomy", "compile"), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("taxonomy", "compile"),
+        STATUS_IMPLEMENTED,
+        actions="actions.compile_reference_set",
+        modal="operon.tui.screens.taxonomy::CompileReferenceSetModal",
+        params={"profile": "taxonomy-compile-profile",
+                "taxonomy_version": "taxonomy-compile-taxonomy-version"},
+    ),
     ParityEntry(
         ("run-external",),
         STATUS_IMPLEMENTED,

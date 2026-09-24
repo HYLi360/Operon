@@ -29,7 +29,7 @@ from textual.widgets import (
 from operon.config import Project
 from operon.tui import actions, data
 from operon.tui.screens.common import Panel, WriteModal, styled_decision
-from operon.tui.screens.taxonomy import TaxonomyImportModal
+from operon.tui.screens.taxonomy import CompileReferenceSetModal, TaxonomyImportModal
 
 SCOPE_OPTIONS = [("project metadata", "metadata"), ("frozen release", "release")]
 
@@ -116,6 +116,7 @@ class CoveragePanel(Panel):
             yield DataTable(id="reference-sets-table", cursor_type="row")
             with Horizontal(classes="config-buttons"):
                 yield Button("Import taxonomy…", id="coverage-import-taxonomy")
+                yield Button("Compile reference set…", id="coverage-compile-reference-set")
             yield Static("Generate report", classes="modal-label")
             with Horizontal(id="coverage-form"):
                 yield Select([], id="coverage-reference-set", allow_blank=True)
@@ -291,6 +292,10 @@ class CoveragePanel(Panel):
         elif event.button.id == "coverage-import-taxonomy":
             self.app.push_screen(
                 TaxonomyImportModal(self.project), self._after_generate,
+            )
+        elif event.button.id == "coverage-compile-reference-set":
+            self.app.push_screen(
+                CompileReferenceSetModal(self.project), self._after_generate,
             )
 
     def on_select_changed(self, event: Select.Changed) -> None:

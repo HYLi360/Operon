@@ -1,9 +1,11 @@
-"""Taxonomy modals: import frozen NCBI Taxonomy snapshots (Coverage screen).
+"""Taxonomy modals: import frozen NCBI Taxonomy snapshots and compile
+coverage denominators (Coverage screen).
 
-Mirrors ``operon taxonomy import``: the run goes through the same core
-function, so archiving, transactions, audit rows and workflow provenance are
-identical to the CLI.  The core has no cooperative cancel, so a running form
-refuses to close (the RunExternalModal pattern) instead of pretending.
+Mirrors ``operon taxonomy import``/``operon taxonomy compile``: the runs go
+through the same core functions, so archiving, transactions, audit rows and
+workflow provenance are identical to the CLI.  The core has no cooperative
+cancel, so a running form refuses to close (the RunExternalModal pattern)
+instead of pretending.
 """
 
 from __future__ import annotations
@@ -13,10 +15,10 @@ from collections.abc import Iterable
 from typing import Any
 
 from textual.css.query import NoMatches
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
-from operon.tui import actions
+from operon.tui import actions, data
 from operon.tui.screens.common import WriteModal
 
 
@@ -121,6 +123,134 @@ class TaxonomyImportModal(WriteModal):
         if self.running:
             self.app.notify(
                 "a running taxonomy import cannot be interrupted from the TUI",
+                severity="warning",
+            )
+            return
+        self.dismiss(None)
+
+
+class CompileReferenceSetModal(WriteModal):
+    """Form + confirm for ``operon taxonomy compile``."""
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Compile reference set")
+        self.project = project
+        self.running = False
+        self.profiles = data.list_coverage_profiles(project)
+        # Same READY condition the core enforces for ``taxonomy compile``.
+        self.snapshots = [
+            row for row in data.list_taxonomy_snapshots(project)
+            if row["source"] == "NCBI" and row["status"] == "READY"
+        ]
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(
+            "compile a taxonomy_coverage profile against a READY NCBI Taxonomy "
+            "snapshot into an immutable reference-set denominator: "
+            "taxonomy/reference_sets/<profile>@<version>.tsv plus its provenance "
+            "sidecar.  Identical profile, snapshot and bytes reuse the existing "
+            "reference set.",
+            classes="modal-info",
+        )
+        if not self.profiles:
+            yield Static(
+                "no taxonomy_coverage profiles in config/profiles/ yet — create "
+                "one from the Config screen or by hand before compiling",
+                classes="modal-info",
+            )
+        yield Select(
+            [(f"{row['name']} (v{row['version']})", row["name"])
+             for row in self.profiles],
+            prompt="select a coverage profile",
+            id="taxonomy-compile-profile",
+            allow_blank=True,
+        )
+        if not self.snapshots:
+            yield Static(
+                "no READY NCBI taxonomy snapshots yet — import one with the "
+                "Import taxonomy… button first",
+                classes="modal-info",
+            )
+        yield Select(
+            [(row["taxonomy_version"], row["taxonomy_version"]) for row in self.snapshots],
+            prompt="select a taxonomy version",
+            id="taxonomy-compile-taxonomy-version",
+            allow_blank=True,
+        )
+        yield Static("", id="taxonomy-compile-status", classes="modal-info")
+
+    def _selection(self) -> tuple[Any, Any]:
+        profile = self.query_one("#taxonomy-compile-profile", Select).value
+        version = self.query_one("#taxonomy-compile-taxonomy-version", Select).value
+        return profile, version
+
+    def command_text(self) -> str:
+        profile, version = self._selection()
+        parts = ["operon", "taxonomy", "compile"]
+        if profile is not Select.NULL:
+            parts += ["--profile", shlex.quote(str(profile))]
+        if version is not Select.NULL:
+            parts += ["--taxonomy-version", shlex.quote(str(version))]
+        return " ".join(parts)
+
+    def confirm(self) -> None:
+        if self.running:
+            return
+        profile, version = self._selection()
+        if profile is Select.NULL:
+            self.show_error("select a coverage profile first")
+            return
+        if version is Select.NULL:
+            self.show_error("select a taxonomy version first")
+            return
+        self.running = True
+        self._set_controls_disabled(True)
+        self.clear_error()
+        self.query_one("#taxonomy-compile-status", Static).update(
+            "compiling… (a running compile cannot be interrupted)"
+        )
+        self.run_action(lambda: actions.compile_reference_set(
+            self.project, str(profile), str(version)))
+
+    def _set_controls_disabled(self, disabled: bool) -> None:
+        for widget in self.query("Select"):
+            widget.disabled = disabled
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id and event.select.id.startswith("taxonomy-compile-"):
+            self.refresh_command()
+
+    def _action_done(self, payload: Any) -> None:
+        self.running = False
+        self._set_controls_disabled(False)
+        try:
+            self.query_one("#taxonomy-compile-status", Static).update("")
+        except NoMatches:  # pragma: no cover - modal teardown race
+            pass
+        super()._action_done(payload)
+
+    def on_action_success(self, payload: dict[str, Any]) -> None:
+        counts = (f"family {payload['family_count']} / genus "
+                  f"{payload['genus_count']} row(s)")
+        if payload.get("reused"):
+            self.app.notify(
+                f"reference set {payload['reference_set_id']}: {counts} "
+                "(reused existing reference set)"
+            )
+        else:
+            self.app.notify(f"reference set {payload['reference_set_id']}: {counts}")
+        self.dismiss(payload)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel" and self.running:
+            self.action_cancel()
+            return
+        super().on_button_pressed(event)
+
+    def action_cancel(self) -> None:
+        if self.running:
+            self.app.notify(
+                "a running taxonomy compile cannot be interrupted from the TUI",
                 severity="warning",
             )
             return

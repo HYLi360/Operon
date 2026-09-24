@@ -131,6 +131,10 @@ taxonomy/reference_sets/
 └── coverage_viridiplantae_v1@2026-08-01.provenance.json
 ```
 
+TUI 在 Coverage 屏提供同一编译入口（*Compile reference set…* 按钮）：
+profile 与 taxonomy 版本通过下拉选择，且只列出 READY 快照；运行中的编译无法从
+TUI 中断。
+
 TSV 每行是一个应覆盖的分类单元，固定三列：
 
 ```text
