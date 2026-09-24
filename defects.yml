@@ -1079,8 +1079,9 @@ defects:
     name from the currently active editor (qc / classification / coverage) instead
     of the qc-only `current_profile` field.'
   fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fixed_in: 0.8.5
+  regression_tests:
+  - tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile
 - id: ODR-0042
   title: run-pipeline does not support sftp:// or remote:// sources for its ingest
     stage
