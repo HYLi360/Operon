@@ -1078,7 +1078,7 @@ defects:
     feature commit per the defect-tracking flow. The fix should resolve the profile
     name from the currently active editor (qc / classification / coverage) instead
     of the qc-only `current_profile` field.'
-  fix_commit: null
+  fix_commit: 1362854dd13e4c3656eb7a3ee6b5c8480a7b5cbe
   fixed_in: 0.8.5
   regression_tests:
   - tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile
