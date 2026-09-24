@@ -1261,3 +1261,87 @@ defects:
     - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
     - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
     - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
+- id: ODR-0047
+  title: A TUI modal Confirm runs its action twice when the subclass delegates to super() unguarded
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'Nine handlers in seven screens — operon/tui/screens/analyze.py
+    (AnalyzeModal), derived_ops.py (AdoptModal, FanoutModal), entities.py
+    (AddRecordModal), run_external.py, table_import.py, taxonomy.py (taxonomy import
+    and reference-set compilation) and ncbi_datasets.py. Every Confirm click there
+    runs its write action twice: two audit rows and two workflow runs, two adopted
+    files, or two executions of the external command behind the run-external dialog.
+    Measured on the import-qc dialog this session — one click, two import-qc runs in
+    workflow_runs before the guard, one after it.'
+  severity: medium
+  component: tui
+  status: confirmed
+  reproduction: 'Textual dispatches a button message to every class in the MRO that
+    defines on_button_pressed, and these handlers also call super().on_button_pressed.
+    The base WriteModal handler therefore runs twice per click — once through the
+    explicit super() call, once through the dispatch — and with it self.confirm().
+    Reproduce by counting action invocations or run rows around a single Confirm
+    click on any of the nine dialogs; an idempotent action hides the duplicate from
+    every render assertion.'
+  disposition: 'Registered with the ODR-0048 and ODR-0049 round on 2026-09-24. The
+    fix adds event.prevent_default() before every super().on_button_pressed(event)
+    in these screens, the same guard the tree already carries for the ODR-0043
+    cancel branch, with a source-level guard test plus one end-to-end count
+    regression.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0048
+  title: The no-backend secret tests assume a Linux host and go red on every macOS leg
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'Four tests that assert a machine with no usable secret backend —
+    tests/unit/test_secrets.py::test_backend_order_and_detection,
+    ::test_no_backend_is_an_actionable_error, ::test_secret_status_without_backend,
+    and tests/unit/test_config_cli.py::test_config_secret_list_without_a_backend.
+    Observed on 2026-09-24 on the pushed master (a7cdd44), CI run 36002523976 — all
+    four macOS legs red, 8 failed / 2166 passed each, every ubuntu leg green.'
+  severity: low
+  component: tests
+  status: confirmed
+  reproduction: 'Run the four tests on a Darwin host, or read the probe —
+    MacKeychainBackend.available() asks sys.platform and /usr/bin/security, never
+    PATH, so the scratch fixture''s PATH strip (PATH is set to an empty bin
+    directory) still leaves "keychain: available" on a macOS runner. The four
+    assertions then read active_backend(...) as the keychain instead of None,
+    require_backend() stops raising, and the CLI prints "active backend: keychain"
+    where the test expects "none available".'
+  disposition: 'Registered on the maintainer instruction of 2026-09-24 so the macOS
+    red shares the ODR-0047 round. The fix is test-side — pin the macOS probe inside
+    the fixture the way the other two backends are already pinned by the PATH strip,
+    and add a regression that reproduces the Darwin state (platform darwin plus an
+    existing security binary) on any host.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-0049
+  title: The fake secret backends hard-code Linux tool paths and die on macOS
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'Four tests that drive the fake secret-tool — test_secret_tool_round_trip,
+    test_store_read_resolve_through_helpers,
+    test_resolve_precedence_flag_then_environment_then_backend and
+    test_secret_status_reports_without_values in tests/unit/test_secrets.py. Same CI
+    run as ODR-0048 (36002523976); each macOS leg reports SecretError "secret-tool
+    failed" with the stub line naming /usr/bin/mkdir and No such file or directory.'
+  severity: low
+  component: tests
+  status: confirmed
+  reproduction: 'Run the four tests on a macOS host, or read SECRET_TOOL_FAKE — the
+    stub creates its state directory through /usr/bin/mkdir, prints through
+    /usr/bin/cat and removes through /usr/bin/rm. macOS keeps mkdir, cat and rm in
+    /bin, so the stub dies at its first store call and every assertion sees
+    SecretError instead of a value. SYSTEMD_CREDS_FAKE carries the same shape around
+    /usr/bin/base64, which does exist on macOS and hid the pattern.'
+  disposition: 'Registered with ODR-0048 on 2026-09-24. The fix is test-side — write
+    both stubs as Python scripts with an absolute sys.executable shebang so they
+    depend on no system tool at all, and guard the shape with a test that scans the
+    stub text for absolute system-tool paths.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
