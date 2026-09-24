@@ -32,7 +32,9 @@ coverage YAML profile ── operon taxonomy compile
 `operon init` 会在 `config/profiles/coverage_viridiplantae_v1.yaml` 生成一个示例。
 它是模板而不是适用于所有研究的通用标准；正式使用前应核对 clade、排除规则和阈值，
 并用反映研究口径的新文件名保存。QC 与 coverage profile 共用目录，但由必填的
-`kind` 字段严格区分。
+`kind` 字段严格区分。TUI 的 Config 屏（`operon tui`，按键 `6`，QC Profiles 标签页）
+可以编辑 coverage profile，版本升级与内容寻址快照记录与 CLI 完全一致；结构超出
+表单的 profile 在该处以只读打开。直接手工编辑 YAML 文件同样完全受支持。
 
 ```yaml
 kind: taxonomy_coverage
@@ -108,6 +110,9 @@ operon taxonomy list
 同一 `--version` 与相同字节重复导入会复用已有快照；同一版本标签对应不同字节会以
 冲突退出，不能静默改写历史 taxonomy 身份。
 
+TUI 在 Coverage 屏提供同一导入入口（*Import taxonomy…* 按钮），并显示等价的
+命令预览；运行中的导入无法从 TUI 中断。
+
 ## 编译不可变分母
 
 ```bash
@@ -125,6 +130,10 @@ taxonomy/reference_sets/
 ├── coverage_viridiplantae_v1@2026-08-01.tsv
 └── coverage_viridiplantae_v1@2026-08-01.provenance.json
 ```
+
+TUI 在 Coverage 屏提供同一编译入口（*Compile reference set…* 按钮）：
+profile 与 taxonomy 版本通过下拉选择，且只列出 READY 快照；运行中的编译无法从
+TUI 中断。
 
 TSV 每行是一个应覆盖的分类单元，固定三列：
 

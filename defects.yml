@@ -1112,6 +1112,42 @@ defects:
   fix_commit: null
   fixed_in: null
   regression_tests: []
+- id: ODR-0043
+  title: Real Cancel clicks dismissed WriteModal subclasses during a run (MRO
+    double dispatch)
+  reported: '2026-09-24'
+  introduced_in: null
+  affected: 'QcModal (screens/files_ops.py), AnalyzeModal (screens/analyze.py),
+    RunExternalModal (screens/run_external.py), TaxonomyImportModal and
+    CompileReferenceSetModal (screens/taxonomy.py): clicking the Cancel button
+    while a run was in flight invoked the subclass handler and then
+    WriteModal.on_button_pressed, dismissing the modal underneath the running
+    worker; the cancelled/summary notification and result payload were lost'
+  severity: medium
+  component: tui
+  status: fixed
+  reproduction: 'Confirmed by code reading against Textual 8.2.8 on 2026-09-24.
+    MessagePump._get_dispatch_methods walks the whole MRO and yields every
+    on_button_pressed definition, and only Message._no_default_action (set by
+    prevent_default) breaks the walk. The five cancel-while-running branches
+    returned without prevent_default, so the base WriteModal handler dismissed
+    the modal right after the refusal or worker.cancel ran. The existing
+    refuse-cancel tests called the handlers directly and never went through
+    the message pump, so they stayed green while a real pilot click on #cancel
+    dismissed the modal (the NcbiDatasetsModal comment describes the hazard).'
+  disposition: 'Each cancel-while-running branch now calls event.prevent_default()
+    first, stopping the MRO walk before WriteModal.on_button_pressed (the
+    NcbiDatasetsModal pattern). Regression tests dispatch a real Button.Pressed
+    via Button.press() while a stubbed action blocks, and assert the modal
+    stays open and the run still completes.'
+  fix_commit: c349718530be2c2b9679cd8aa6f1e8f49b0b183c
+  fixed_in: 0.8.5
+  regression_tests:
+  - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
+  - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
+  - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
+  - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
+  - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
 - id: ODR-0044
   title: write_tsv delegated cell quoting to the csv module, whose CR/LF rule changed
     in CPython 3.11, so identical rows serialized to different bytes on 3.10 and the

@@ -220,6 +220,8 @@ class QcModal(WriteModal):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
+            # ODR-0043: stop the MRO walk so WriteModal cannot dismiss mid-run.
+            event.prevent_default()
             if self._worker is not None:
                 self._worker.cancel()
             return

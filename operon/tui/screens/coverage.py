@@ -29,6 +29,7 @@ from textual.widgets import (
 from operon.config import Project
 from operon.tui import actions, data
 from operon.tui.screens.common import Panel, WriteModal, styled_decision
+from operon.tui.screens.taxonomy import CompileReferenceSetModal, TaxonomyImportModal
 
 SCOPE_OPTIONS = [("project metadata", "metadata"), ("frozen release", "release")]
 
@@ -113,6 +114,9 @@ class CoveragePanel(Panel):
             yield DataTable(id="taxonomy-snapshots-table", cursor_type="row")
             yield Static("Reference sets", classes="modal-label")
             yield DataTable(id="reference-sets-table", cursor_type="row")
+            with Horizontal(classes="config-buttons"):
+                yield Button("Import taxonomy…", id="coverage-import-taxonomy")
+                yield Button("Compile reference set…", id="coverage-compile-reference-set")
             yield Static("Generate report", classes="modal-label")
             with Horizontal(id="coverage-form"):
                 yield Select([], id="coverage-reference-set", allow_blank=True)
@@ -197,7 +201,8 @@ class CoveragePanel(Panel):
             )
         if not self.reference_sets:
             self.query_one("#coverage-error", Static).update(
-                Text("no reference sets compiled yet — use `operon taxonomy compile`",
+                Text("no reference sets compiled yet — import a taxonomy snapshot "
+                     "and compile a reference set with the buttons above",
                      style="dim"))
 
     def show_error(self, exc: BaseException) -> None:
@@ -284,6 +289,14 @@ class CoveragePanel(Panel):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "coverage-generate":
             self._generate()
+        elif event.button.id == "coverage-import-taxonomy":
+            self.app.push_screen(
+                TaxonomyImportModal(self.project), self._after_generate,
+            )
+        elif event.button.id == "coverage-compile-reference-set":
+            self.app.push_screen(
+                CompileReferenceSetModal(self.project), self._after_generate,
+            )
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "coverage-scope":

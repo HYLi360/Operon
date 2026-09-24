@@ -11,18 +11,25 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Input, Select, Static, Tree
+from textual.css.query import NoMatches
+from textual.message import Message
+from textual.widgets import Button, Checkbox, Input, Select, Static, Tree
 
 from operon.config import Project, resolve_actor
 from operon.lifecycle import RETIRE_REASON_CODES
+from operon.schema import ENTITY_PREFIXES
 from operon.tui import actions, data
 from operon.tui.screens.common import (
+    ComposedRows,
+    MountTracked,
     Panel,
     WriteModal,
     human_size,
     styled_file_status,
     styled_scientific_name,
 )
+
+NEXT_ID_TYPES = list(ENTITY_PREFIXES)
 
 
 def _node_label(node: dict[str, Any]) -> Text:
@@ -209,12 +216,311 @@ class LifecycleModal(WriteModal):
         self.dismiss(payload)
 
 
+class FieldRow(ComposedRows, Horizontal):
+    """One ``--field KEY=VALUE`` row in the add-record dialog."""
+
+    class RemoveRequested(Message):
+        def __init__(self, row: "FieldRow") -> None:
+            super().__init__()
+            self.row = row
+
+        @property
+        def control(self) -> "FieldRow":
+            return self.row
+
+    def __init__(self, field: str = "", value: str = "") -> None:
+        super().__init__(classes="field-row")
+        self._initial = (field, value)
+
+    def compose(self) -> ComposeResult:
+        field, value = self._initial
+        yield Input(value=field, placeholder="field", classes="field-key")
+        yield Input(value=value, placeholder="value", classes="field-value")
+        yield Button("✕", classes="field-remove")
+
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.has_class("field-remove"):
+            event.stop()
+            self.post_message(self.RemoveRequested(self))
+
+    def pair(self) -> tuple[str, str]:
+        """The row's ``(key, value)`` with the CLI's ``parse_key_values`` key rules."""
+        key = self.query_one(".field-key", Input).value
+        value = self.query_one(".field-value", Input).value
+        return key.strip().strip("-"), value
+
+
+class AddRecordModal(WriteModal):
+    """Add one metadata record (``operon add``): type, optional ID, KEY=VALUE rows."""
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Add metadata record")
+        self.project = project
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static("entity type", classes="modal-label")
+        yield Select(
+            [(name, name) for name in data.ENTITY_TYPES],
+            value=data.ENTITY_TYPES[0], id="add-entity-type", allow_blank=False,
+        )
+        yield Static("internal ID (blank = allocate the next ID)", classes="modal-label")
+        yield Input(placeholder="auto-allocate", id="add-record-id")
+        yield Static("fields (repeatable, like --field KEY=VALUE)", classes="modal-label")
+        yield MountTracked(id="add-fields")
+        with Horizontal(classes="config-buttons"):
+            yield Button("Add field", id="add-field-row")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.query_one("#add-fields", MountTracked).mount_later(
+            FieldRow(), when_present=".field-row",
+        )
+
+    def _field_container(self) -> MountTracked:
+        return self.query_one("#add-fields", MountTracked)
+
+    def _all_field_rows(self) -> list[FieldRow]:
+        # A row on its way out answers NoMatches or blank (ODR-0036): skip it.
+        return [row for row in self._field_container().query(FieldRow).results(FieldRow)
+                if not row._pruning]
+
+    def _field_rows(self) -> list[FieldRow]:
+        """Rows a reader may compose: a half-mounted row cannot be read (ODR-0023).
+
+        ``WriteModal.on_mount`` runs a second time through Textual's MRO message
+        dispatch right after ``mount_later`` registered the seeded row, while
+        that row is in the tree without its composed inputs.
+        """
+        return [row for row in self._all_field_rows() if row.form_ready]
+
+    def _fields_ready(self) -> bool:
+        try:
+            container = self._field_container()
+        except NoMatches:
+            return False
+        if not container.mounts_settled:
+            return False
+        return all(row.form_ready for row in self._all_field_rows())
+
+    def _entity_type(self) -> str:
+        return str(self.query_one("#add-entity-type", Select).value)
+
+    def _field_pairs(self) -> list[tuple[str, str]]:
+        return [row.pair() for row in self._field_rows()]
+
+    def command_text(self) -> str:
+        parts = ["operon", "add", self._entity_type()]
+        record_id = self.query_one("#add-record-id", Input).value.strip()
+        if record_id:
+            parts += ["--id", shlex.quote(record_id)]
+        for key, value in self._field_pairs():
+            if key:
+                parts += ["--field", f"{key}={shlex.quote(value)}"]
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "add-record-id" or event.input.has_class("field-key") \
+                or event.input.has_class("field-value"):
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "add-entity-type":
+            self.refresh_command()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "add-field-row":
+            event.stop()
+            self._field_container().mount_later(FieldRow(), when_present=".field-row")
+        else:
+            super().on_button_pressed(event)
+
+    def on_field_row_remove_requested(self, event: FieldRow.RemoveRequested) -> None:
+        event.stop()
+        event.row.remove()
+        self.refresh_command()
+
+    def confirm(self) -> None:
+        if not self._fields_ready():
+            self.show_error("the form is still loading — confirm again in a moment")
+            return
+        entity_type = self._entity_type()
+        record_id = self.query_one("#add-record-id", Input).value.strip() or None
+        fields: dict[str, str] = {}
+        for key, value in self._field_pairs():
+            if not key and value:
+                self.show_error(f"field name is required for value {value!r}")
+                return
+            if not key:
+                continue
+            if key in fields:
+                self.show_error(f"duplicate field {key!r}")
+                return
+            fields[key] = value
+        self.run_action(
+            lambda: actions.add_record(
+                self.project, entity_type, fields, record_id=record_id,
+            )
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        self.app.notify(f"added {payload['entity_type']} {payload['entity_id']}")
+        for warning in payload.get("warnings") or []:
+            self.app.notify(warning, severity="warning")
+        self.dismiss(payload)
+
+
+class AddAccessionModal(WriteModal):
+    """Map an external accession to an internal stable ID (``operon add-accession``)."""
+
+    def __init__(self, project: Project, entity_type: str | None = None,
+                 entity_id: str | None = None) -> None:
+        super().__init__("Add accession mapping")
+        self.project = project
+        self._prefill_type = entity_type
+        self._prefill_id = entity_id
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static("internal entity (must be active)", classes="modal-label")
+        yield Select(
+            [(name, name) for name in data.ENTITY_TYPES],
+            value=self._prefill_type if self._prefill_type in data.ENTITY_TYPES
+            else data.ENTITY_TYPES[0],
+            id="acc-internal-type", allow_blank=False,
+        )
+        yield Input(
+            value=self._prefill_id or "",
+            placeholder="internal id (e.g. ASM_000001)", id="acc-internal-id",
+        )
+        yield Input(placeholder="namespace (e.g. NCBI_Assembly)", id="acc-namespace")
+        yield Input(placeholder="accession", id="acc-accession")
+        yield Input(placeholder="version (optional)", id="acc-version")
+        yield Checkbox("primary mapping", id="acc-primary")
+
+    def command_text(self) -> str:
+        def quoted(value: str) -> str:
+            return shlex.quote(value) if value.strip() else shlex.quote("…")
+
+        parts = [
+            "operon", "add-accession",
+            "--internal-type", str(self.query_one("#acc-internal-type", Select).value),
+            "--internal-id", quoted(self.query_one("#acc-internal-id", Input).value),
+            "--namespace", quoted(self.query_one("#acc-namespace", Input).value),
+            "--accession", quoted(self.query_one("#acc-accession", Input).value),
+        ]
+        version = self.query_one("#acc-version", Input).value
+        if version.strip():
+            parts += ["--version", shlex.quote(version.strip())]
+        if self.query_one("#acc-primary", Checkbox).value:
+            parts.append("--primary")
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id and event.input.id.startswith("acc-"):
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "acc-internal-type":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "acc-primary":
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        internal_type = str(self.query_one("#acc-internal-type", Select).value)
+        internal_id = self.query_one("#acc-internal-id", Input).value.strip()
+        namespace = self.query_one("#acc-namespace", Input).value.strip()
+        accession = self.query_one("#acc-accession", Input).value.strip()
+        version = self.query_one("#acc-version", Input).value.strip() or None
+        primary = self.query_one("#acc-primary", Checkbox).value
+        missing = [
+            label for label, value in (
+                ("--internal-id", internal_id), ("--namespace", namespace),
+                ("--accession", accession))
+            if not value
+        ]
+        if missing:
+            self.show_error(f"required: {', '.join(missing)}")
+            return
+        self.run_action(lambda: actions.add_accession(
+            self.project, internal_type=internal_type, internal_id=internal_id,
+            namespace=namespace, accession=accession, version=version, primary=primary,
+        ))
+
+    def on_action_success(self, payload: Any) -> None:
+        self.app.notify(
+            f"mapped {payload['namespace']}:{payload['accession']} -> "
+            f"{payload['internal_type']} {payload['internal_id']}"
+        )
+        self.dismiss(payload)
+
+
+class NextIdModal(WriteModal):
+    """Reserve the next stable internal ID (``operon next-id``).
+
+    The reservation consumes the ID immediately, so the modal stays open after
+    a successful reservation to show the ID, and Confirm is disabled — a second
+    reservation would burn another ID.  Close with *Close*/``esc`` (the
+    reservation is not undoable, exactly like the CLI).
+    """
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Reserve next internal ID")
+        self.project = project
+        self._reserved = False
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(
+            "Reserving an ID consumes it; an unused reservation becomes a gap, "
+            "exactly like the CLI.",
+            classes="modal-info",
+        )
+        yield Static("entity type", classes="modal-label")
+        yield Select(
+            [(name, name) for name in NEXT_ID_TYPES],
+            value=NEXT_ID_TYPES[0], id="nextid-entity-type", allow_blank=False,
+        )
+        yield Static("", id="nextid-result")
+
+    def command_text(self) -> str:
+        return f"operon next-id {self.query_one('#nextid-entity-type', Select).value}"
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "nextid-entity-type" and not self._reserved:
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        if self._reserved:
+            return
+        self.run_action(lambda: actions.reserve_next_id(
+            self.project, str(self.query_one("#nextid-entity-type", Select).value)))
+
+    def on_action_success(self, payload: Any) -> None:
+        self._reserved = True
+        self.query_one("#nextid-result", Static).update(Text(
+            f"reserved {payload['entity_type']} ID: {payload['entity_id']}",
+            style="bold",
+        ))
+        self.set_confirm_enabled(False)
+        self.query_one("#cancel", Button).label = "Close"
+        self.app.notify(
+            f"reserved {payload['entity_type']} {payload['entity_id']} "
+            "(unused reservations become gaps)"
+        )
+
+
 class EntitiesPanel(Panel):
     """Organisms → samples → runs/assemblies → annotations with details."""
 
     BINDINGS = [
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
+        Binding("a", "add_record", "Add record"),
+        Binding("A", "add_accession", "Add accession"),
+        Binding("n", "next_id", "Next ID"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -272,6 +578,26 @@ class EntitiesPanel(Panel):
         )
 
     def _after_lifecycle(self, result: Any) -> None:
+        if result:
+            self.app.reload_after_write()
+
+    def action_add_record(self) -> None:
+        self.app.push_screen(AddRecordModal(self.project), self._after_add)
+
+    def action_add_accession(self) -> None:
+        entity_type = entity_id = None
+        if self.detail:
+            entity_type = self.detail["entity_type"]
+            entity_id = self.detail["entity_id"]
+        self.app.push_screen(
+            AddAccessionModal(self.project, entity_type, entity_id),
+            self._after_add,
+        )
+
+    def action_next_id(self) -> None:
+        self.app.push_screen(NextIdModal(self.project))
+
+    def _after_add(self, result: Any) -> None:
         if result:
             self.app.reload_after_write()
 

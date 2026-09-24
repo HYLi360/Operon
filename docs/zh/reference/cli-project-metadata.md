@@ -130,6 +130,7 @@ operon add {organism|sample|run|assembly|annotation} \
 - 不指定 `--id` 时自动分配下一个内部稳定 ID。
 - 写入 SQLite 并记录审计；不会维护第二份可写 TSV 镜像。
 - 示例：`operon add organism --field scientific_name="Escherichia coli" --field taxonomy_source=NCBI`。
+- TUI 入口为 Entities 屏的 `a` 键——表单、校验与审计行完全一致。
 
 ## add-accession
 
@@ -141,6 +142,7 @@ operon add-accession \
 ```
 
 例如 `--namespace NCBI_Assembly --accession GCA_000000001`。
+- TUI 入口为 Entities 屏的 `A` 键，打开时预填选中实体。
 
 ## ncbi-datasets
 
@@ -257,3 +259,6 @@ operon ncbi-reconcile --apply [--actor NAME]
 ```bash
 operon next-id {organism|sample|run|assembly|annotation|file}
 ```
+
+- 预留立即消耗该 ID；未使用的预留会成为 gap。
+- TUI 入口为 Entities 屏的 `n` 键；对话框显示预留 ID 且不可重复执行，与 gap 语义一致。

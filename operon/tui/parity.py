@@ -346,16 +346,18 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("profiles", "history"),
         STATUS_IMPLEMENTED,
-        note="qc and sequence_classification profiles share one snapshot table "
-        f"(qc_profiles); taxonomy_coverage profiles are {_M4}",
+        note="qc, sequence_classification and taxonomy_coverage profiles share "
+        "one snapshot table (qc_profiles); the Config screen dispatches each "
+        "document to the form its own kind models",
         actions="data.profile_history",
         modal="operon.tui.screens.config::HistoryModal",
     ),
     ParityEntry(
         ("profiles", "show"),
         STATUS_IMPLEMENTED,
-        note="qc and sequence_classification profiles share one snapshot table "
-        f"(qc_profiles); taxonomy_coverage profiles are {_M4}",
+        note="qc, sequence_classification and taxonomy_coverage profiles share "
+        "one snapshot table (qc_profiles); the Config screen dispatches each "
+        "document to the form its own kind models",
         actions="data.get_profile_document",
         modal="operon.tui.screens.config::SnapshotViewModal",
         params={"snapshot_id": "context: HistoryModal snapshot selection"},
@@ -545,13 +547,59 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(("config", "secret", "set"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
     ParityEntry(("config", "secret", "clear"), STATUS_CLI_ONLY, note=_CONFIG_CLI_ONLY),
     # -- planned gaps (milestone attribution per HPC/cli_tui_gaps.md 九) -----
-    ParityEntry(("import", "table"), STATUS_PLANNED, note=_M4),
-    ParityEntry(("add",), STATUS_PLANNED, note=_M4),
-    ParityEntry(("add-accession",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("import", "table"),
+        STATUS_IMPLEMENTED,
+        note="template mode writes directly; import mode gates Confirm behind "
+             "the mandatory preview (the CLI's tty --on-conflict prompt is an "
+             "explicit Select; actions.import_table re-runs the preview inside "
+             "the apply, like the fanout dry_run=False path)",
+        actions="actions.import_table",
+        modal="operon.tui.screens.table_import::ImportTableModal",
+        params={
+            "table": "table-table",
+            "template": "table-template-out (template mode)",
+            "file": "table-file (import mode)",
+            "on_conflict": "table-on-conflict (blank = the CLI default)",
+        },
+        waived={"yes": "the explicit Confirm step replaces --yes"},
+    ),
+    ParityEntry(
+        ("add",),
+        STATUS_IMPLEMENTED,
+        actions="actions.add_record",
+        modal="operon.tui.screens.entities::AddRecordModal",
+        params={
+            "record_id": "add-record-id (blank = allocate the next ID on confirm)",
+            "field": "add-fields .field-key/.field-value rows "
+                     "(repeatable -> repeated --field)",
+        },
+    ),
+    ParityEntry(
+        ("add-accession",),
+        STATUS_IMPLEMENTED,
+        note="opened from the Entities screen; the selected entity prefills "
+             "--internal-type/--internal-id",
+        actions="actions.add_accession",
+        modal="operon.tui.screens.entities::AddAccessionModal",
+        params={
+            "internal_type": "acc-internal-type (prefilled from the selected entity)",
+            "internal_id": "acc-internal-id (prefilled from the selected entity)",
+            "namespace": "acc-namespace",
+            "accession": "acc-accession",
+            "acc_version": "acc-version",
+            "primary": "acc-primary",
+        },
+    ),
     ParityEntry(
         ("next-id",),
-        STATUS_PLANNED,
-        note=f"{_M4}; id reservation already happens inside the import wizard",
+        STATUS_IMPLEMENTED,
+        note="reserving an ID consumes it (unused reservations become gaps), so "
+             "the modal stays open after success to show the reserved ID and "
+             "Confirm is disabled; id reservation also happens inside the "
+             "import wizard",
+        actions="actions.reserve_next_id",
+        modal="operon.tui.screens.entities::NextIdModal",
     ),
     ParityEntry(
         ("ncbi-datasets",),
@@ -585,8 +633,21 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(("standardize",), STATUS_PLANNED, note=_M4),
     ParityEntry(("import-qc",), STATUS_PLANNED, note=_M4),
     ParityEntry(("run-pipeline",), STATUS_PLANNED, note=_M4),
-    ParityEntry(("taxonomy", "import"), STATUS_PLANNED, note=_M4),
-    ParityEntry(("taxonomy", "compile"), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("taxonomy", "import"),
+        STATUS_IMPLEMENTED,
+        actions="actions.import_taxonomy",
+        modal="operon.tui.screens.taxonomy::TaxonomyImportModal",
+        params={"input": "taxonomy-import-input", "version": "taxonomy-import-version"},
+    ),
+    ParityEntry(
+        ("taxonomy", "compile"),
+        STATUS_IMPLEMENTED,
+        actions="actions.compile_reference_set",
+        modal="operon.tui.screens.taxonomy::CompileReferenceSetModal",
+        params={"profile": "taxonomy-compile-profile",
+                "taxonomy_version": "taxonomy-compile-taxonomy-version"},
+    ),
     ParityEntry(
         ("run-external",),
         STATUS_IMPLEMENTED,

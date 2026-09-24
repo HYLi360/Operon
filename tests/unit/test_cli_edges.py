@@ -16,6 +16,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import EntityNotFoundError, ExternalToolError, ValidationError
+from operon.schema import check_row_references
 from operon.utils import sha256_file
 
 
@@ -104,10 +105,10 @@ def test_add_entities_accession_and_fk_validation(project_db, capsys):
         ("annotation", {"assembly_id": "ASM_MISSING"}),
     ]:
         with pytest.raises(EntityNotFoundError, match="does not exist"):
-            cli._check_fks_for_row(db, entity_type, row, True)
+            check_row_references(db, entity_type, row)
     with pytest.raises(ValidationError, match="fasta_file_id"):
-        cli._check_fks_for_row(
-            db, "assembly", {"assembly_id": "ASM_000001", "fasta_file_id": "FIL_MISSING"}, True
+        check_row_references(
+            db, "assembly", {"assembly_id": "ASM_000001", "fasta_file_id": "FIL_MISSING"}
         )
 
 

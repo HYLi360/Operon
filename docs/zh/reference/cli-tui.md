@@ -68,8 +68,8 @@ OPERON_SPLASH=kitty operon --project PATH tui
 
 | 界面 | 按键 | 内容 |
 |------|------|------|
-| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。*NCBI Datasets import* 与 *Import dataset* 按钮分别打开 NCBI Datasets 对话框（见下文）与导入向导；向导也可用 `i` 键打开。 |
-| Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。 |
+| Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。*NCBI Datasets import*、*Import dataset* 与 *Import table* 按钮分别打开 NCBI Datasets 对话框（见下文）、导入向导与受控 metadata 表格对话框（见下文）；向导也可用 `i` 键打开。 |
+| Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。按 `a` 添加一条元数据记录（见下文）。 |
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器，按 `e`/`s`/`a`/`f` 分别进行 extract-domains、select-sequences、adopt 与 fanout（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询。一行紧凑过滤条放 状态/step/entity/数量上限；CLI 其余过滤——`--from`/`--to`（ISO-8601；非法值或 `--from` ≥ `--to` 在对话框内内联报错）、`--run-id`、`--parent-run-id`、`--tool`、`--executor`、`--offset` 与 `--oldest-first`——收在 *More…* 按钮后的进阶过滤对话框里，按钮上显示当前生效的过滤项数（*Clear* 清空；`--resumes-run-id` 与机器格式仍只在 CLI）。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。对*运行中*的 run，详情屏的 *Follow logs* 每秒追加一次本地 `logs/<run_id>.stdout.log`/`.stderr.log` 的增量，直到 run 离开 `running` 并报告最终状态——它只观察、从不取消（SSH 后端的日志在结束时才拉回，因此在此之前没有内容）。*Analysis jobs* 按钮打开只读的 `analysis_jobs` 浏览器（analysis/status/limit 过滤，并显示选中行的完整错误与产物路径），其中也包括在 job array 中被中断的任务——这类行永远不会有 `workflow_runs` 行。*Environments* 按钮浏览已捕获的执行环境（与 `operon environments list` 相同的列表），并以只读方式渲染 *View JSON*、*Export explicit* 与 *Export yaml*——把 conda spec 落盘仍是 CLI 重定向（缺少包清单等错误内联显示）。*New analysis* 与 *Run external* 按钮分别打开分析对话框与外部命令对话框；*Analysis hits* 按钮打开比对命中浏览器（`report analysis --hits` 的列与过滤，*Export* 写出的文件与 CLI `--out` 逐字节一致）（见下文）。 |
 | Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
@@ -97,14 +97,20 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | `f` | Files | 把已注册 FASTA 拆分为按 unit 的文件（*Fan out units*）：assignments file id、逗号分隔的 source file id、所属实体、role 前缀、unit/seqid 列名与可选 parent run id。*Dry run (preflight)* 按钮执行真正的预检——源校验和与注册表新鲜度、unit 身份、冲突/占用检查——并把每个计划中的 unit 标为 `would_create`/`would_reuse`；只有干净的 dry run 之后 Confirm 才可用（输入一旦改动又会被禁用），真跑完成后报告 created/reused 数量。 | `operon fanout --assignments-file … --source-file … … --entity-type … --entity-id … --role-prefix … [--unit-column …] [--seqid-column …] [--parent-run-id …] [--actor …] [--dry-run]` |
 | — | Tasks | 浏览比对命中（即 `report analysis --hits` 视图）：analysis/entity/query/subject/evalue-max/limit 过滤，使用相同的只读查询与列顺序。*Export* 用 CLI 自己的渲染器写出当前查询结果，因此 text/tsv/json 文件与 CLI 逐字节一致；不带 `--hits` 的作业汇总视图仍只在 CLI。 | `operon report analysis --hits [--analysis … --entity-type … --entity-id … --query-id … --subject-id … --evalue-max … --limit … --include-retired --format {text,tsv,json} --out PATH]` |
 | `x` | Entities | 退休（对已退休实体则为恢复）选中实体。对话框先加载只读影响计划（受影响实体/文件/引用，物理变更——逻辑退休恒为零），计划显示无变化时阻止 Confirm；RETIRE 必须提供 reason code。 | `operon retire\|restore <id> --reason … [--reason-code …] --apply --yes` |
+| `a` | Entities | 添加一条元数据记录：选择实体类型，可指定内部 ID（留空则自动分配下一个），并填写可重复的 `KEY=VALUE` 字段行（*Add field* 追加一行，✕ 删除）。schema 与外键违规以内联错误显示，对话框不关闭。 | `operon add <type> [--id …] --field KEY=VALUE …` |
+| `A` | Entities | 为选中实体登记外部 accession（internal type/id 已预填）：namespace、accession、可选 version 与 *primary* 复选框；目标实体必须存在且未退休。必填缺失时内联显示。 | `operon add-accession --internal-type … --internal-id … --namespace … --accession … [--version …] [--primary]` |
+| `n` | Entities | 预留下一个稳定内部 ID（全部六类，含 `file`）。预留即消耗——对话框保持打开显示结果，Confirm 被禁用，*Close* 后 gap 保留，与 CLI 一致。 | `operon next-id <type>` |
 | `i` | Files | 将文件（本地路径或 `sftp://`/`remote://` URL）归档到 `raw/`，表单根据选中行预填。format/compression 留空时自动检测。校验和冲突（同一实体+角色的字节不同）以红色内联显示，绝不覆盖。 | `operon ingest --source … --entity-type … --entity-id … --role …` |
 | `v` | Files | 校验选中文件，或在"verify all N files?"确认后校验全部文件。失败项（`MISSING`、`CHECKSUM_FAILED` 等）会在错误对话框中列出。 | `operon verify [--file-id …]` |
 | `q` | Files | 对选中文件或全部文件运行内置 QC，带实时进度条（"k/n · 当前 file_id"）。完成通知与 CLI 文本一致（"QC complete: ok/total file(s) passed built-in stages"）；失败项在错误对话框中列出。Cancel 在文件之间协作式地停止批处理——已完成文件的结果保留。 | `operon qc [--file-id …] [--sample-size …] [--phred-offset …] [--rehash]` |
 | `i` | 全局 | 打开数据集导入向导（也可通过 Home 按钮；在 Files 界面 `i` 仍为归档 ingest）。 | `operon import dataset` |
 | — | Home | 从 NCBI Datasets 导入（*NCBI Datasets import* 按钮）：离线输入（report JSON/JSONL、Datasets ZIP、已解包目录）和/或按 accession 在线下载，覆盖 CLI 的全部参数。*Dry run (preflight)* 按钮是 Confirm 前的强制预检——离线输入以 `--dry-run` 解析（不写入任何内容），纯 accession 请求以 `--plan-only` 运行（只给出下载计划，不下载、不写 run 行）——任何表单改动都会重新锁定 Confirm。下载过程中 Cancel 为协作式取消：运行在下一个批次边界停止，记录为 `interrupted`，并可用 `--resume-run` 续跑。 | `operon ncbi-datasets [--input … …] [--accession … …] [--accession-file …] [--include … …] [--no-archive-files] [--standardize] [--dry-run] [--no-preserve-source] [--email …] [--api-key …] [--timeout …] [--batch-size …] [--download-workers …] [--retries …] [--retry-backoff …] [--resume-run …] [--plan-only]` |
+| — | Home | 导入受控 metadata 表格（*Import table* 按钮）：选择六张可导入表之一，然后生成空 CSV/XLSX 模板，或预览并导入已有文件。*Preview import* 是 Confirm 前的强制预检——不写入任何内容，并填充 key/action/changed-fields 预览表；对表、模式或文件路径的任何修改都会重新锁定 Confirm。Confirm 应用与 CLI 相同的计划，写出相同的 `changes` 审计行。会修改已有行的导入必须显式选择 on-conflict 策略（留空则复现 CLI 的 "existing rows would change" 错误）。运行中的导入不可中断，并拒绝关闭。 | `operon import table --table … (--template … \| --file … [--on-conflict …])` |
 | — | Publish | 在成员/排除预览之后创建不可变 release；版本重复时内联报错。 | `operon release --version … --profile … [--copy-files\|--link hardlink]` |
 | — | Publish | 在数量/字节预览之后执行选择性导出；输出目录非空时内联报错。 | `operon export --output … [--entity-type … --entity-id … --file-id … --file-role … --format … --state … --decision … --profile …] [--link …] [--no-qc]` |
 | — | Coverage | 生成分类覆盖度报告；低于 profile 阈值的结果是警告通知（FAIL），而不是崩溃。 | `operon report coverage --reference-set … [--release …]` |
+| — | Coverage | 导入 NCBI Taxonomy 包（*Import taxonomy…* 按钮）：归档并导入 `taxonomy_report.jsonl` / Datasets 包 / taxdump 压缩包，并指定不可变的版本标签；版本与字节都相同时复用已有快照。运行中的导入无法从 TUI 中断。 | `operon taxonomy import --input … --version …` |
+| — | Coverage | 将 taxonomy_coverage profile 对照 READY 快照编译为不可变 reference set（*Compile reference set…* 按钮）：profile 与 taxonomy 版本通过下拉选择（仅列出 READY 快照）；profile/快照/字节都相同时复用已有 reference set。运行中的编译无法从 TUI 中断。 | `operon taxonomy compile --profile … --taxonomy-version …` |
 | — | Config / Tasks | 对匹配的清单文件运行分析 recipe（Config 屏选中 recipe 后的 *Run analysis*，或 Tasks 屏 *New analysis* 内选择 recipe）。运行时参数按 recipe 声明的 spec 渲染并与 CLI 完全相同的校验；支持 entity-type/entity-id/limit/threads 过滤、执行后端（项目默认 / local / slurm / ssh；worker 启动前预检，缺少 `sbatch` 或 `execution.ssh` 配置不全都会内联报错）、dry-run（在对话框内显示只读计划）、force 与 keep-partial，带实时进度条与协作取消。Cancel 在下一个文件/规划/收集边界停止批处理，并把已提交的工作整体取消（Slurm 作业或 job array 一次 `scancel`；直连 SSH 载荷在远端主机上终止）；已完成文件的结果保留。逐文件失败在错误对话框中列出；运行结束后跳转到 Tasks 屏。 | `operon analyze --analysis … [--param NAME=VALUE …] [--entity-type …] [--entity-id …] [--limit …] [--threads …] [--backend {local,slurm,ssh}] [--dry-run] [--force] [--keep-partial]` |
 | — | Tasks | 运行一条带结构化溯源的外部命令（*Run external*）：step、按 shlex 解析的命令行（shell 引号语义；不支持管道与重定向）、可选 entity/tool/parameter-set、逗号分隔的声明 inputs（与 CLI 一样做哈希与暂存）与 expected outputs、threads、工作目录、超时与执行后端（与分析对话框相同的预检）。预览显示等效 CLI 命令，并说明提交时会分配新的 run id；"跑失败"也是已记录的结果，因此无论成败都会在 Tasks 屏打开完整 run 记录（命令、退出码、错误、日志路径）。运行中的命令无法从 TUI 中断——CLI 的 Ctrl+C 可以。 | `operon run-external --step … --command … [--entity-type … --entity-id … --parameter-set … --tool … --input … --threads … --expected-output … --cwd … --timeout … --backend {local,slurm,ssh}]` |
 
@@ -170,6 +176,24 @@ Confirm 在后台 worker 中真实运行适配器，并显示实时计时状态�
 保持打开且控件恢复可编辑；失败时错误内联显示；成功时通知报告 assembly 记录数与
 run id。
 
+## 表格导入
+
+该对话框（通过 Home 界面的 *Import table* 按钮打开）对应 `operon import
+table`。选择六张可导入表之一（`organisms`、`samples`、`runs`、
+`assemblies`、`annotations`、`accessions`）与模式：
+
+- *Generate template* 写出带该表列名的空 `.csv`/`.xlsx` 模板（XLSX 模板
+  附带 schema 指南页），等价于 `--template`。
+- *Import file* 像 CLI 的预览表（key、action、changed fields）一样预览已有
+  `.csv`/`.xlsx` 文件。*Preview import* 按钮是 Confirm 前的强制预检：预览不
+  写入任何内容，对表、模式或文件路径的任何修改都会重新锁定 Confirm。Confirm
+  应用与 CLI 相同的计划——插入的行进入 `METADATA_VALIDATED`，每个插入或修改的
+  字段都会以源文件为 evidence 记入 `changes`，与 `--yes` 完全一致。
+
+当会修改已有行时，请显式选择 on-conflict 策略；留空则复现 CLI 的
+"existing rows would change" 错误而不是写入。运行中的导入是单条短事务：不可
+中断，对话框会拒绝关闭直至完成。
+
 ## Publish 界面
 
 **Release 标签页。** 上方是已有 release 表（版本、创建时间、profile、
@@ -197,7 +221,12 @@ ID 即可构成有效筛选条件，并按 CLI 的规则与其他过滤条件组
 ## Coverage 界面
 
 上半部分列出已导入的 NCBI Taxonomy 快照（`taxonomy list` 数据）与已编译的
-reference set（`taxonomy reference-sets` 数据）。**Generate report** 表单选择
+reference set（`taxonomy reference-sets` 数据），并提供 **Import taxonomy…** 按钮，
+通过 `operon taxonomy import` 同一核心归档并导入 NCBI taxonomy 包（版本与字节都相同时复用已有快照；
+运行中的导入无法从 TUI 中断），以及 **Compile reference set…** 按钮，
+通过 `operon taxonomy compile` 同一核心将 taxonomy_coverage profile
+对照 READY 快照冻结为 reference set（profile/快照/字节都相同时复用已有
+reference set；运行中的编译无法从 TUI 中断）。**Generate report** 表单选择
 reference set 与范围——项目元数据或冻结的 release（release 范围会额外显示
 release 选择器）——并显示等价的 `operon report coverage` 命令以供确认。输入
 相同时复用已缓存的不可变报告；当某个 rank 低于阈值时，结果为带各 rank 覆盖度
@@ -250,14 +279,15 @@ Config 界面以结构化表单编辑两个带版本的配置文件，表单值�
 未变的 profile 与输入重跑会显示 0 变更。CLI 会打印的两条警告（忽略的已完成
 作业、没有注册序列的目标文件）也会以黄色显示在对话框内。
 
-**QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc` 与
-`kind: sequence_classification` profile（名称 + 版本；分类类带标签）。右侧：
-按所选 profile 自身的 `kind` 切换（不是合并）到对应编辑器。*New profile*
+**QC Profiles 标签页。** 左侧：`config/profiles/` 中的全部 `kind: qc`、
+`kind: sequence_classification` 与 `kind: taxonomy_coverage` profile（名称 +
+版本；分类类与 coverage 类带标签）。右侧：按所选 profile 自身的 `kind` 切换
+（不是合并）到对应编辑器——qc、分类、coverage 三个编辑器互斥显示。*New profile*
 提示输入名称**与 kind**，并从该 kind 的最小骨架开始。qc 编辑器包含：
 description、五个 `applies_to` 复选框、只读版本提示，以及两个规则小节
 （required / warnings）；每条规则是一行 metric、operator（覆盖规则引擎全部
 操作符的 Select）、value、code 输入加删除按钮，"add rule" 按小节追加行。
-看似数字的值会存为数字。`taxonomy_coverage` profile 不在此处编辑。
+看似数字的值会存为数字。
 
 **分类 profile**（`kind: sequence_classification`）。编辑器对应
 `classify.py` 的语法：`applies_to` 是 `entity_type` + `file_role` 一对输入；
@@ -275,6 +305,14 @@ description、五个 `applies_to` 复选框、只读版本提示，以及两个�
 映射）会以**只读**方式打开：编辑器说明原因、禁用保存、绝不改写文件——请直接
 编辑 YAML。表单未建模的键在每一层（document、source、rule、condition 与
 `best_by` 条目）都原样保留。
+
+**Coverage profile**（`kind: taxonomy_coverage`）。编辑器对应
+`taxonomy.py` 的扁平 coverage 语法：taxonomy source（`NCBI`）、root TaxIDs、
+family/genus 目标 rank、extinct / 排除子树 / 名称正则过滤器，以及每个勾选
+rank 一个最低覆盖百分比。结构超出表单的 profile（例如 thresholds 含有非目标
+rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用、文件绝不被表单
+改写。未建模的键（含可选 `name`）在文档层与分节层逐字保留。保存记录的内容
+寻址快照与后续 `operon taxonomy compile` 消费的一致。
 
 **Tools & Recipes 标签页。** 工具表（名称、可执行文件、启动方式）加
 *Check tools* 按钮——等价于 `operon tools-check`，在后台 worker 中运行并逐行

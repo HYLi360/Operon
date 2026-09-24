@@ -985,3 +985,44 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
     jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
     assert [job["status"] for job in jobs] == ["interrupted"] * 3
     assert _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'") == []
+
+
+@pytest.mark.bug("ODR-0043")
+def test_analyze_modal_real_cancel_click_stays_open_while_running(
+        project: Project, monkeypatch) -> None:
+    """A real Cancel click must not dismiss the modal mid-run."""
+    released = threading.Event()
+
+    def blocking_run(project_arg, analysis, *, progress=None, **kwargs):
+        released.wait(30)
+        raise actions.AnalysisCancelled()
+
+    monkeypatch.setattr(actions, "run_analysis", blocking_run)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AnalyzeModal(project, recipe_name="blastn_nt")
+            app.push_screen(modal, dismissed.append)
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(lambda: modal.running, "analysis to start")
+
+            # Button.press() posts Button.Pressed through the real pump; before
+            # ODR-0043 the base WriteModal handler dismissed the modal here.
+            modal.query_one("#cancel", Button).press()
+            await pilot.pause()
+            assert app.screen is modal
+            assert dismissed == []
+
+            released.set()
+            await _wait_until(lambda: bool(dismissed), "cancelled analysis dismissal")
+            await _settled(app)
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert dismissed == [{"cancelled": True, "done": 0, "total": 0}]

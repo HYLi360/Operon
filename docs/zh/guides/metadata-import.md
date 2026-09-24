@@ -19,6 +19,9 @@ operon import table --table organisms --file organisms.csv \
   --on-conflict update --yes
 ```
 
+同样的模板/预览流程也可在 TUI 中完成：Home 界面的 *Import table* 对话框可
+生成模板，并在 Confirm 前执行强制预览（见参考文档的"表格导入"一节）。
+
 导入行为：
 
 - 只允许人工管理的 entity/accession 表；`files`、QC、decision 等系统表不可覆盖。

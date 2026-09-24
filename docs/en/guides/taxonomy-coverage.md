@@ -28,7 +28,7 @@ Import, compilation, and reporting are explicit commands. Imported source files 
 
 ## Prepare a coverage profile
 
-`operon init` creates `config/profiles/coverage_viridiplantae_v1.yaml` as an example. It is a template, not a universal standard. Before production use, review the clade, exclusion rules, and thresholds, and save the result under a filename that reflects the study scope. QC and coverage profiles share the directory but are distinguished by the required `kind` field.
+`operon init` creates `config/profiles/coverage_viridiplantae_v1.yaml` as an example. It is a template, not a universal standard. Before production use, review the clade, exclusion rules, and thresholds, and save the result under a filename that reflects the study scope. QC and coverage profiles share the directory but are distinguished by the required `kind` field. The TUI's Config screen (`operon tui`, key `6`, QC Profiles tab) edits coverage profiles with the same version bump and content-addressed snapshot recording as the CLI; a profile whose structure exceeds the form opens read-only there. Hand-editing the YAML file remains fully supported.
 
 ```yaml
 kind: taxonomy_coverage
@@ -94,6 +94,10 @@ After import:
 
 Repeating an import with the same version and bytes reuses the snapshot. The same version label with different bytes is a conflict and is rejected.
 
+The TUI offers the same import on the Coverage screen (*Import taxonomy…*
+button) with the equivalent command preview; a running import cannot be
+interrupted from the TUI.
+
 ## Compile the immutable denominator
 
 ```bash
@@ -111,6 +115,11 @@ taxonomy/reference_sets/
 ├── coverage_viridiplantae_v1@2026-08-01.tsv
 └── coverage_viridiplantae_v1@2026-08-01.provenance.json
 ```
+
+The TUI offers the same compilation on the Coverage screen (*Compile
+reference set…* button): the profile and the taxonomy version are picked
+from dropdowns that list only READY snapshots; a running compile cannot be
+interrupted from the TUI.
 
 Each TSV row is a target taxon with fixed columns:
 

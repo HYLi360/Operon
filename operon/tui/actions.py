@@ -7,8 +7,8 @@ opens its own short-lived *writable* ``Database`` connection, does the work,
 closes it, and returns plain dicts.  Writable connections are only ever
 opened inside this module — the UI layer never holds one.
 
-``lifecycle_preview`` is the single exception: it is a read-only plan
-preview, so it uses a read-only connection like :mod:`operon.tui.data`.
+``lifecycle_preview`` and ``table_import_preview`` are the read-only
+exceptions: previews use a read-only connection like :mod:`operon.tui.data`.
 """
 
 from __future__ import annotations
@@ -499,10 +499,11 @@ def run_external(
 
 PROFILE_OPERATORS = (">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in", "exists")
 ENTITY_TYPE_NAMES = ("organism", "sample", "run", "assembly", "annotation")
-# The TUI's profile editor saves two kinds; taxonomy_coverage profiles stay
-# hand-edited (their editors are not modeled as forms).
+# The TUI's profile editor saves three kinds; each kind has its own form,
+# dispatched by the document's own kind (see operon/tui/screens/config*.py).
 CLASSIFICATION_KIND = "sequence_classification"
-PROFILE_KINDS = ("qc", CLASSIFICATION_KIND)
+COVERAGE_KIND = "taxonomy_coverage"
+PROFILE_KINDS = ("qc", CLASSIFICATION_KIND, COVERAGE_KIND)
 
 
 def write_analysis_report(
@@ -852,17 +853,29 @@ def _validate_classification_document(name: str, document: dict[str, Any]) -> No
     validate_classification_profile(document, name)
 
 
+def _validate_coverage_document(name: str, document: dict[str, Any]) -> None:
+    """Validate a ``kind: taxonomy_coverage`` document with the core rules."""
+    from operon.taxonomy import _validate_coverage_profile
+
+    if "version" not in document:
+        raise ValidationError(f"profile {name!r}: 'version' is required")
+    _validate_coverage_profile(name, document)
+
+
 def _validate_profile_document(name: str, document: dict[str, Any], *,
                                kind: str = "qc") -> None:
     if not isinstance(document, dict):
         raise ValidationError(f"profile {name!r}: document must be a mapping")
     if str(document.get("kind", "")) != kind:
         raise ValidationError(
-            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
-            f"(taxonomy_coverage profiles are edited by hand); got {document.get('kind')!r}"
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI; "
+            f"got {document.get('kind')!r}"
         )
     if kind == CLASSIFICATION_KIND:
         _validate_classification_document(name, document)
+        return
+    if kind == COVERAGE_KIND:
+        _validate_coverage_document(name, document)
         return
     if "version" not in document:
         raise ValidationError(f"profile {name!r}: 'version' is required")
@@ -915,9 +928,10 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
                  known_version: int = 0, kind: str = "qc") -> dict[str, Any]:
     """Validate and save a profile of ``kind`` as a new version.
 
-    The composed document is validated (``qc`` rules or the core's
+    The composed document is validated (``qc`` rules, the core's
     :func:`operon.classify.validate_classification_profile` for
-    ``sequence_classification``), written to ``config/profiles/<name>.yaml``
+    ``sequence_classification``, or the core's coverage-profile validator for
+    ``taxonomy_coverage``), written to ``config/profiles/<name>.yaml``
     with the same header style as :func:`operon.profiles.write_default_profiles`,
     round-trip verified through :func:`operon.profiles.load_profile`, and
     recorded as a content-addressed snapshot with the exact canonical document
@@ -938,8 +952,8 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
         raise ValidationError(f"profile {name!r}: unknown kind {kind!r}")
     if not isinstance(document, dict) or str(document.get("kind", kind)) != kind:
         raise ValidationError(
-            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI "
-            "(taxonomy_coverage profiles are edited by hand)"
+            f"profile {name!r}: only kind {kind!r} profiles can be saved from the TUI; "
+            f"got {document.get('kind')!r}"
         )
     document = {str(key): value for key, value in document.items()}
     path = project.profiles_dir / f"{name}.yaml"
@@ -968,6 +982,8 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
     ) + 1
     if kind == CLASSIFICATION_KIND:
         _coerce_classification_values(document)
+    elif kind == COVERAGE_KIND:
+        pass  # the coverage form composes typed values; nothing to coerce
     else:
         for section in ("required", "warnings"):
             for rule in document.get(section, []) or []:
@@ -999,6 +1015,13 @@ def save_classification_profile(project: Project, name: str, document: dict[str,
     """Save a ``kind: sequence_classification`` profile (see :func:`save_profile`)."""
     return save_profile(project, name, document, known_version=known_version,
                         kind=CLASSIFICATION_KIND)
+
+
+def save_coverage_profile(project: Project, name: str, document: dict[str, Any], *,
+                          known_version: int = 0) -> dict[str, Any]:
+    """Save a ``kind: taxonomy_coverage`` profile (see :func:`save_profile`)."""
+    return save_profile(project, name, document, known_version=known_version,
+                        kind=COVERAGE_KIND)
 
 
 def save_recipe(
@@ -1339,3 +1362,189 @@ def run_coverage(
 
     with _open_writable(project) as db:
         return report_coverage(db, project, reference_set_id, release_version=release_version)
+
+
+def import_taxonomy(
+        project: Project,
+        source: str,
+        taxonomy_version: str,
+) -> dict[str, Any]:
+    """Import an NCBI taxonomy package like ``operon taxonomy import``.
+
+    The core archives the content-addressed source, imports nodes/aliases in
+    one transaction, and records the same audit and run rows as the CLI;
+    identical version and bytes reuse the existing snapshot (``reused``).
+    """
+    from operon.taxonomy import import_ncbi_taxonomy
+
+    with _open_writable(project) as db:
+        return import_ncbi_taxonomy(db, project, source, taxonomy_version)
+
+
+def compile_reference_set(
+        project: Project,
+        profile_name: str,
+        taxonomy_version: str,
+) -> dict[str, Any]:
+    """Compile a coverage denominator like ``operon taxonomy compile``.
+
+    The core freezes taxonomy/reference_sets/<profile>@<version>.tsv plus its
+    provenance sidecar in one transaction with the same audit/run rows as the
+    CLI; failed attempts are recorded as ``failed`` workflow runs, and
+    identical profile/snapshot/bytes reuse the existing reference set.
+    """
+    from operon.taxonomy import compile_reference_set as _compile
+
+    with _open_writable(project) as db:
+        return _compile(db, project, profile_name, taxonomy_version)
+
+
+def add_record(
+        project: Project,
+        entity_type: str,
+        fields: dict[str, Any],
+        record_id: str | None = None,
+) -> dict[str, Any]:
+    """Add one metadata record like ``operon add`` (same core, same audit rows)."""
+    from operon.schema import add_metadata_record
+
+    if entity_type not in ENTITY_TYPE_NAMES:
+        raise ValidationError(
+            f"unknown entity type {entity_type!r}; "
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
+    with _open_writable(project) as db:
+        return add_metadata_record(
+            db, project, entity_type, fields,
+            record_id=record_id, actor=os.environ.get("USER"),
+        )
+
+
+def table_template(project: Project, table: str, output: str) -> dict[str, Any]:
+    """Write an empty CSV/XLSX template like ``operon import table --template``.
+
+    The output suffix selects the format (.csv header row, .xlsx data +
+    schema-guide sheets); validation errors come from the core unchanged.
+    """
+    from operon.schema import Schema
+    from operon.table_import import write_table_template
+
+    if not str(output).strip():
+        raise ValidationError("a template output path is required (--template)")
+    schema = Schema.from_file(project.schema_path)
+    path = write_table_template(schema, table, output)
+    return {"table": table, "path": str(path)}
+
+
+def table_import_preview(project: Project, table: str, path: str) -> dict[str, Any]:
+    """Preview a metadata-table import like the CLI's preview step.
+
+    Read-only (like :func:`lifecycle_preview`): the preview compares incoming
+    rows against the current table, normalizes them against the project
+    schema and reports insert/update/unchanged actions — it writes nothing,
+    so a short-lived read-only connection is enough.
+    """
+    from operon.schema import Schema
+    from operon.table_import import preview_table_import
+
+    if not str(path).strip():
+        raise ValidationError("a table input path is required (--file)")
+    db = Database(project.db_path, read_only=True)
+    try:
+        return preview_table_import(
+            db, Schema.from_file(project.schema_path), table, path)
+    finally:
+        db.close()
+
+
+def import_table(
+        project: Project,
+        *,
+        table: str,
+        path: str,
+        on_conflict: str | None = None,
+        actor: str | None = None,
+) -> dict[str, Any]:
+    """Apply a metadata-table import like ``operon import table --yes``.
+
+    The writable session re-runs the preview and applies it in the core's
+    single transaction (the fanout ``dry_run=False`` shape), so the plan is
+    computed against the current database even if the project changed between
+    the dialog's preview and the Confirm.  ``on_conflict`` mirrors the CLI
+    flag: ``None`` keeps the CLI default (``error``) and reproduces the CLI's
+    own gate message when existing rows would change; ``actor`` defaults to
+    ``$USER`` exactly like the CLI handler.  Every inserted/changed field is
+    recorded in ``changes`` with the source path as evidence, and inserted
+    entities enter ``METADATA_VALIDATED`` — identical provenance to the CLI.
+    """
+    from operon.schema import Schema
+    from operon.table_import import apply_table_import, preview_table_import
+
+    if on_conflict is not None and on_conflict not in {"error", "skip", "update"}:
+        raise ValidationError("on_conflict must be error, skip or update")
+    if not str(path).strip():
+        raise ValidationError("a table input path is required (--file)")
+    schema = Schema.from_file(project.schema_path)
+    with _open_writable(project) as db:
+        preview = preview_table_import(db, schema, table, path)
+        # The CLI's non-interactive gate (cli.py): without --on-conflict,
+        # rows that would change are an error; the TUI has no tty prompt, so
+        # the explicit Select choice replaces it.
+        if preview["update"] and on_conflict is None:
+            raise ValidationError(
+                "existing rows would change; pass --on-conflict error, skip or update")
+        result = apply_table_import(
+            db, schema, preview, on_conflict=on_conflict or "error",
+            actor=actor if actor is not None else os.environ.get("USER"),
+        )
+    return {**result, "table": table, "source": str(path)}
+
+
+def add_accession(
+        project: Project,
+        *,
+        internal_type: str,
+        internal_id: str,
+        namespace: str,
+        accession: str,
+        version: str | None = None,
+        primary: bool = False,
+) -> dict[str, Any]:
+    """Map an accession like ``operon add-accession``; the target must be active."""
+    from operon.schema import add_accession_record
+
+    if internal_type not in ENTITY_TYPE_NAMES:
+        raise ValidationError(
+            f"unknown entity type {internal_type!r}; "
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
+    for label, value in (("--internal-id", internal_id), ("--namespace", namespace),
+                         ("--accession", accession)):
+        if not str(value).strip():
+            raise ValidationError(f"{label} is required")
+    with _open_writable(project) as db:
+        return add_accession_record(
+            db,
+            internal_type=internal_type,
+            internal_id=internal_id.strip(),
+            namespace=namespace.strip(),
+            accession=accession.strip(),
+            version=version.strip() if version else None,
+            primary=primary,
+            actor=os.environ.get("USER"),
+        )
+
+
+def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
+    """Reserve the next stable internal ID like ``operon next-id``.
+
+    The reservation consumes the ID immediately (``Database.next_id`` commits
+    its own immediate transaction), so an unused reservation becomes a gap —
+    exactly the CLI contract the id_counters docstring documents.
+    """
+    from operon.schema import ENTITY_PREFIXES
+
+    if entity_type not in ENTITY_PREFIXES:
+        raise ValidationError(
+            f"unknown entity type {entity_type!r}; choose from {', '.join(ENTITY_PREFIXES)}")
+    with _open_writable(project) as db:
+        entity_id = db.next_id(entity_type)
+    return {"entity_type": entity_type, "entity_id": entity_id}

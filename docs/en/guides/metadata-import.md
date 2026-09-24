@@ -19,6 +19,10 @@ operon import table --table organisms --file organisms.csv \
   --on-conflict update --yes
 ```
 
+The same template/preview flow is available in the TUI: the Home screen's
+*Import table* dialog generates templates and runs the mandatory preview
+before Confirm (see the reference's Import table section).
+
 Import behavior:
 
 - Only manually managed entity/accession tables are accepted. System-managed tables such as `files`, QC results, and decisions cannot be overwritten by table import.

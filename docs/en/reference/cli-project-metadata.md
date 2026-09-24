@@ -121,6 +121,7 @@ operon add {organism|sample|run|assembly|annotation} \
 - If `--id` is omitted, the next stable internal ID is assigned.
 - Data is written to SQLite and audited. No second writable TSV mirror is maintained.
 - Example: `operon add organism --field scientific_name="Escherichia coli" --field taxonomy_source=NCBI`.
+- The TUI entry point is the Entities screen's `a` binding — the same form, validation, and audit rows.
 
 ## add-accession
 
@@ -132,6 +133,7 @@ operon add-accession \
 ```
 
 Example: `--namespace NCBI_Assembly --accession GCA_000000001`.
+- The TUI entry point is the Entities screen's `A` binding, opened with the selected entity prefilled.
 
 ## ncbi-datasets
 
@@ -217,3 +219,6 @@ If a target source role already has a different SHA-256, `--apply` refuses to ru
 ```bash
 operon next-id {organism|sample|run|assembly|annotation|file}
 ```
+
+- The reservation consumes the ID immediately; an unused reservation becomes a gap.
+- The TUI entry point is the Entities screen's `n` binding; the dialog shows the reserved ID and cannot re-run, mirroring the gap contract.
