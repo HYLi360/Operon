@@ -1311,7 +1311,7 @@ defects:
     four macOS legs red, 8 failed / 2166 passed each, every ubuntu leg green.'
   severity: low
   component: tests
-  status: confirmed
+  status: fixed
   reproduction: 'Run the four tests on a Darwin host, or read the probe —
     MacKeychainBackend.available() asks sys.platform and /usr/bin/security, never
     PATH, so the scratch fixture''s PATH strip (PATH is set to an empty bin
@@ -1320,13 +1320,19 @@ defects:
     require_backend() stops raising, and the CLI prints "active backend: keychain"
     where the test expects "none available".'
   disposition: 'Registered on the maintainer instruction of 2026-09-24 so the macOS
-    red shares the ODR-0047 round. The fix is test-side — pin the macOS probe inside
-    the fixture the way the other two backends are already pinned by the PATH strip,
-    and add a regression that reproduces the Darwin state (platform darwin plus an
-    existing security binary) on any host.'
+    red shares the ODR-0047 round, and fixed in that round. The scratch fixture now
+    pins the third probe (MacKeychainBackend.binary pointed at a path that does not
+    exist) beside the PATH strip that already pins the other two, and the
+    config-cli test that needs the same premise pins it inline. The regression
+    reproduces the Darwin state on any host — platform darwin plus a Path whose
+    /usr/bin/security exists — and fails with active_backend() returning the
+    MacKeychainBackend when the pin is reverted, the same assertion every macOS leg
+    produced. test_mac_keychain_round_trip moved from scratch to tmp_path: it drives
+    the real binary string and must not inherit the no-backend pin.'
   fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fixed_in: 0.9.0
+  regression_tests:
+    - tests/unit/test_secrets.py::test_no_backend_premise_holds_where_the_keychain_exists
 - id: ODR-0049
   title: The fake secret backends hard-code Linux tool paths and die on macOS
   reported: '2026-09-24'

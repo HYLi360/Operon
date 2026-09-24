@@ -198,6 +198,11 @@ def test_config_secret_list_without_a_backend(monkeypatch, tmp_path, capsys) -> 
     empty_bin = tmp_path / "empty-bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
+    # ODR-0048: the macOS keychain probe ignores PATH — it asks sys.platform and
+    # /usr/bin/security — so a Darwin runner would report "keychain: available"
+    # here unless the probe is pinned as well.
+    monkeypatch.setattr(secrets_module.MacKeychainBackend, "binary",
+                        str(tmp_path / "missing-security"))
     assert main(["config", "secret", "list"]) == 0
     captured = capsys.readouterr()
     assert "active backend: none available" in captured.out

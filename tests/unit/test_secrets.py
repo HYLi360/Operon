@@ -109,6 +109,13 @@ def scratch(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("FAKE_SECRET_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     (tmp_path / "bin").mkdir()
+    # ODR-0048: the PATH strip covers the two PATH-discovered backends, but the
+    # macOS keychain probe asks sys.platform and /usr/bin/security and never
+    # consults PATH — so on a Darwin runner "no backend" was not true and the
+    # no-backend assertions went red on every macOS CI leg.  Pin the third probe
+    # here, the same way the other two are pinned by the PATH strip above.
+    monkeypatch.setattr(secret_module.MacKeychainBackend, "binary",
+                        str(tmp_path / "missing-security"))
     return tmp_path
 
 
@@ -208,8 +215,10 @@ def test_systemd_creds_decrypt_failure_is_actionable(
 # --- macOS keychain backend --------------------------------------------------
 
 
-def test_mac_keychain_round_trip(scratch: Path, monkeypatch) -> None:
-    log = scratch / "keychain.log"
+def test_mac_keychain_round_trip(tmp_path: Path, monkeypatch) -> None:
+    # tmp_path, not the scratch fixture: this test drives the real binary string,
+    # while scratch pins the keychain probe off for the no-backend tests (ODR-0048).
+    log = tmp_path / "keychain.log"
 
     def _run(command, *, stdin=None, check=False):
         with open(log, "a", encoding="utf-8") as handle:
@@ -330,3 +339,31 @@ def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
         stub = (scratch / "bin" / name).read_text(encoding="utf-8")
         assert stub.startswith(f"#!{sys.executable}\n")
         assert "__PYTHON__" not in stub
+
+
+# --- the no-backend premise survives a Darwin keychain (ODR-0048) -------------
+
+class _SecurityExists(type(Path("/"))):
+    """A ``pathlib.Path`` that reports only the macOS keychain binary as present."""
+
+    def exists(self) -> bool:
+        return str(self) == "/usr/bin/security"
+
+
+@pytest.mark.bug("ODR-0048")
+def test_no_backend_premise_holds_where_the_keychain_exists(
+        scratch: Path, monkeypatch) -> None:
+    """A macOS runner has /usr/bin/security and must still read as backend-less.
+
+    Reproduces the Darwin state on any host: the platform answers darwin and the
+    security binary exists.  With the fixture's pin removed, active_backend()
+    finds the keychain and this test fails — exactly how the no-backend tests
+    failed on every macOS leg of CI run 36002523976, this module's three plus
+    tests/unit/test_config_cli.py::test_config_secret_list_without_a_backend.
+    """
+    monkeypatch.setattr(secret_module.sys, "platform", "darwin")
+    monkeypatch.setattr(secret_module, "Path", _SecurityExists)
+    assert active_backend(config_dir=scratch) is None
+    with pytest.raises(SecretError, match="no user-scoped secret backend"):
+        require_backend(config_dir=scratch)
+    assert secret_status(environ={}, config_dir=scratch)["active_backend"] is None
