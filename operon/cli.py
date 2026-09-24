@@ -37,6 +37,7 @@ from operon.rules import (
     evaluate_entity,
 )
 from operon.schema import (
+    MetadataRecordError,
     Schema,
     add_accession_record,
     add_metadata_record,
@@ -1004,10 +1005,17 @@ def _cmd_migrate(db: Database) -> int:
 
 def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
     fields = parse_key_values(args.field)
-    result = add_metadata_record(
-        db, project, args.entity_type, fields,
-        record_id=args.record_id, actor=os.environ.get("USER"),
-    )
+    try:
+        result = add_metadata_record(
+            db, project, args.entity_type, fields,
+            record_id=args.record_id, actor=os.environ.get("USER"),
+        )
+    except MetadataRecordError as exc:
+        # The core collected the unknown-field warnings before refusing the
+        # row; keep the historical "warn, then refuse" stderr shape.
+        for warning in exc.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        raise
     for warning in result["warnings"]:
         print(f"warning: {warning}", file=sys.stderr)
     print(f"added {result['entity_type']} {result['entity_id']}")

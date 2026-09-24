@@ -479,6 +479,20 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
                 writer.writerow(["" if v is None else escape_formula_text(v) for v in row])
 
 
+class MetadataRecordError(ValidationError):
+    """A rejected metadata record that already collected field warnings.
+
+    ``operon add`` historically warned about unknown fields on stderr and then
+    refused to store the row; after the CLI/TUI core extraction the refusal
+    raises inside the shared core, so the collected warnings ride the exception
+    and the CLI prints them before the error, keeping the stderr shape.
+    """
+
+    def __init__(self, message: str, warnings: Iterable[str] = ()) -> None:
+        super().__init__(message)
+        self.warnings = list(warnings)
+
+
 def check_row_references(db: Database, entity_type: str, row: dict[str, Any]) -> None:
     """Validate the foreign keys one metadata row carries (``operon add`` time).
 
@@ -532,7 +546,12 @@ def add_metadata_record(
                 warnings.append(
                     f"unknown field {extra!r} for {entity_type}; add it to "
                     f"{project.schema_path} to remove this warning")
-        normalized, _ = schema.validate_and_normalize(table, [row])
+        try:
+            normalized, _ = schema.validate_and_normalize(table, [row])
+        except ValidationError as exc:
+            # Warn-then-refuse: the collected field warnings ride the error so
+            # the CLI can print them before the refusal (its historical shape).
+            raise MetadataRecordError(str(exc), warnings) from exc
         row = normalized[0]
         check_row_references(db, entity_type, row)
         db.insert_row(table, row)
