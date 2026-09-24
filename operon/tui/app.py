@@ -82,6 +82,7 @@ class HelpScreen(DismissOnce, ModalScreen):
             "  i  ingest file (Files screen)\n"
             "  v  verify files (Files screen)\n"
             "  q  run QC (Files screen)\n"
+            "  I  import QC metrics (Files screen)\n"
             "  S  standardize files (Files screen)\n"
             "  e  evaluate decisions (Decisions screen)\n"
             "  c  curate selected decision (Decisions screen)\n"

@@ -1520,6 +1520,40 @@ def import_table(
     return {**result, "table": table, "source": str(path)}
 
 
+def qc_import_preview(project: Project, path: str) -> dict[str, Any]:
+    """Preview an ``import-qc`` input like the CLI's validation step.
+
+    Read-only (like :func:`lifecycle_preview`): it parses the payload or
+    table, validates it against the manifest and reports what would be
+    written, so a short-lived read-only connection is enough.
+    """
+    from operon.qc.imports import plan_qc_import
+
+    if not str(path).strip():
+        raise ValidationError("an input path is required (--file)")
+    db = Database(project.db_path, read_only=True)
+    try:
+        return plan_qc_import(db, path)
+    finally:
+        db.close()
+
+
+def import_qc(project: Project, path: str) -> dict[str, Any]:
+    """Import QC metrics like ``operon import-qc``.
+
+    :mod:`operon.qc.imports` owns validation, insertion and provenance; this
+    action only supplies the short-lived writable session, so the written
+    rows, the recomputed QC states and the ``import-qc`` run record are
+    identical to the CLI's.
+    """
+    from operon.qc.imports import import_qc as import_qc_core
+
+    if not str(path).strip():
+        raise ValidationError("an input path is required (--file)")
+    with _open_writable(project) as db:
+        return import_qc_core(db, project, path)
+
+
 def add_accession(
         project: Project,
         *,

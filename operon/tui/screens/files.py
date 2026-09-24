@@ -23,6 +23,7 @@ from operon.tui.screens.common import (
 )
 from operon.tui.screens.files_ops import (
     HEALTHY_VERIFY_STATUSES,
+    ImportQcModal,
     IngestModal,
     QcModal,
     StandardizeModal,
@@ -44,6 +45,7 @@ class FilesPanel(Panel):
         Binding("i", "ingest", "Ingest"),
         Binding("v", "verify", "Verify"),
         Binding("q", "qc", "Run QC"),
+        Binding("I", "import_qc", "Import QC"),
         Binding("S", "standardize", "Standardize"),
         Binding("l", "labels", "Labels"),
         Binding("e", "extract", "Extract domains"),
@@ -224,6 +226,9 @@ class FilesPanel(Panel):
             QcModal(self.project, file_id, len(self.files)), self._after_qc,
         )
 
+    def action_import_qc(self) -> None:
+        self.app.push_screen(ImportQcModal(self.project), self._after_import_qc)
+
     def action_standardize(self) -> None:
         selected = self._selected_record()
         file_id = str(selected["file_id"]) if selected else None
@@ -267,6 +272,19 @@ class FilesPanel(Panel):
             if skipped:
                 message += f"; {skipped} already staged"
             self.app.notify(message)
+        self.app.reload_after_write()
+
+    def _after_import_qc(self, result: Any) -> None:
+        if not result:
+            return
+        if result["format"] == "json":
+            message = (f"imported {result['metric_count']} built-in QC metric(s) "
+                       f"for {result['file_id']}")
+        else:
+            message = f"imported {result['metric_count']} external QC metric(s)"
+        if result.get("warning"):
+            message += f" ({result['warning']})"
+        self.app.notify(message)
         self.app.reload_after_write()
 
     def on_input_changed(self, event: Input.Changed) -> None:

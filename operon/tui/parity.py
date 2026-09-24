@@ -640,7 +640,15 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "link": "standardize-link",
         },
     ),
-    ParityEntry(("import-qc",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("import-qc",),
+        STATUS_IMPLEMENTED,
+        actions="actions.import_qc",
+        modal="operon.tui.screens.files_ops::ImportQcModal",
+        params={
+            "tsv_file": "qc-import-path",
+        },
+    ),
     ParityEntry(("run-pipeline",), STATUS_PLANNED, note=_M4),
     ParityEntry(
         ("taxonomy", "import"),

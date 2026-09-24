@@ -6,6 +6,7 @@ import shlex
 from collections.abc import Iterable
 from typing import Any
 
+from rich.text import Text
 from textual import work
 from textual.widgets import Button, Checkbox, Input, ProgressBar, Select, Static
 
@@ -14,6 +15,11 @@ from operon.tui import actions
 from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, WriteModal
 
 HEALTHY_VERIFY_STATUSES = frozenset({"CHECKSUM_VERIFIED", "REMOTE_ONLY"})
+
+#: The `operon standardize --link` choices, shown by :class:`StandardizeModal`.
+LINK_KIND_OPTIONS = [("copy (independent copy)", "copy"),
+                     ("hardlink", "hardlink"),
+                     ("symlink", "symlink")]
 
 
 class IngestModal(WriteModal):
@@ -128,10 +134,6 @@ class VerifyModal(WriteModal):
 class StandardizeModal(WriteModal):
     """Link-kind choice + confirm for `operon standardize` (one file or all)."""
 
-    LINK_KIND_OPTIONS = [("copy (independent copy)", "copy"),
-                         ("hardlink", "hardlink"),
-                         ("symlink", "symlink")]
-
     def __init__(self, project: Project, file_id: str | None, link_kind: str = "copy") -> None:
         super().__init__("Standardize files")
         self.project = project
@@ -147,7 +149,7 @@ class StandardizeModal(WriteModal):
                     "each source checksum is verified first.")
         yield Static(text, classes="modal-info")
         yield Static("Link kind", classes="modal-label")
-        yield Select(self.LINK_KIND_OPTIONS, value=self.link_kind,
+        yield Select(LINK_KIND_OPTIONS, value=self.link_kind,
                      id="standardize-link", allow_blank=False)
 
     def on_select_changed(self, event: Select.Changed) -> None:
@@ -164,6 +166,126 @@ class StandardizeModal(WriteModal):
 
     def on_action_success(self, payload: Any) -> None:
         self.dismiss(payload)
+
+
+class ImportQcModal(WriteModal):
+    """Form + mandatory preview + confirm for `operon import-qc`.
+
+    The preview is the preflight (the table-import dialog's shape): it parses
+    the input — a ``qc-measure`` JSON payload or an external TSV table, told
+    apart by content — and validates it against the manifest without writing,
+    so Confirm only unlocks once the input has been read end to end and any
+    problem stays inline.  Importing appends metrics; it never replaces
+    earlier ones, so a repeated import is a new set of rows, exactly like the
+    CLI.
+    """
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Import QC metrics")
+        self.project = project
+        self.preview: dict[str, Any] | None = None
+        self.preview_running = False
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Input(placeholder="qc-measure JSON payload or external TSV (required)",
+                    id="qc-import-path")
+        yield Button("Preview import", id="qc-import-preview-button")
+        yield Static("", id="qc-import-status", classes="modal-info")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.set_confirm_enabled(False)
+
+    def _path(self) -> str:
+        return self.query_one("#qc-import-path", Input).value.strip()
+
+    def command_text(self) -> str:
+        return f"operon import-qc --file {shlex.quote(self._path() or '…')}"
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "qc-import-path":
+            self._invalidate_preview()
+            self.refresh_command()
+
+    def _invalidate_preview(self) -> None:
+        if self.preview is None:
+            return
+        self.preview = None
+        self.set_confirm_enabled(False)
+        self.query_one("#qc-import-status", Static).update(
+            Text("path changed — run the preview again", style="yellow"))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "qc-import-preview-button":
+            event.stop()
+            event.prevent_default()
+            self.run_preview()
+            return
+        # Textual dispatches a message to every MRO class defining the handler
+        # (ODR-0043), so without prevent_default WriteModal's own handler
+        # would run the Confirm a second time.
+        event.prevent_default()
+        super().on_button_pressed(event)
+
+    # -- preview (mandatory preflight) ----------------------------------------
+
+    def run_preview(self) -> None:
+        path = self._path()
+        if not path:
+            self.show_error("an input path is required (--file)")
+            return
+        self.clear_error()
+        self.preview_running = True
+        self.set_confirm_enabled(False)
+        self.query_one("#qc-import-preview-button", Button).disabled = True
+        self.query_one("#qc-import-status", Static).update("preview running…")
+        self._preview(path)
+
+    @work(thread=True)
+    def _preview(self, path: str) -> None:
+        try:
+            payload: Any = actions.qc_import_preview(self.project, path)
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+            payload = exc
+        self.post_to_ui(self._preview_done, payload)
+
+    def _preview_done(self, payload: Any) -> None:
+        self.preview_running = False
+        self.query_one("#qc-import-preview-button", Button).disabled = False
+        if isinstance(payload, BaseException):
+            self.preview = None
+            self.show_error(payload)
+            self.query_one("#qc-import-status", Static).update("")
+            self.set_confirm_enabled(False)
+            return
+        self.preview = payload
+        self.query_one("#qc-import-status", Static).update(self._preview_text(payload))
+        self.set_confirm_enabled(True)
+
+    @staticmethod
+    def _preview_text(payload: dict[str, Any]) -> Text:
+        lines = [f"format: {payload['format']}", f"metrics: {payload['metric_count']}"]
+        if payload["format"] == "json":
+            lines.append(
+                f"file: {payload['file_id']} "
+                f"({payload['entity_type']} {payload['entity_id']})")
+        else:
+            lines.append("entities: " + ", ".join(
+                f"{kind} {ident}" for kind, ident in payload["entities"]))
+        lines.append("stages: " + ", ".join(payload["stages"]))
+        if payload.get("warning"):
+            lines.append(f"warning: {payload['warning']}")
+        return Text("\n".join(lines))
+
+    def confirm(self) -> None:
+        path = self._path()
+        if not path:
+            self.show_error("an input path is required (--file)")
+            return
+        if self.preview is None:
+            self.show_error("run the preview first")
+            return
+        self.run_action(lambda: actions.import_qc(self.project, path))
 
 
 class QcCancelled(Exception):
