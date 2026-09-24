@@ -1294,7 +1294,7 @@ defects:
     super().on_button_pressed(event) without the guard above it, and an end-to-end
     count on the add-record dialog. The scan immediately found the tenth site
     (QcModal), which a file-by-file audit had missed.'
-  fix_commit: null
+  fix_commit: 5f083cbbaff90bee017b2dc7039f695ba2df4067
   fixed_in: 0.9.0
   regression_tests:
     - tests/unit/test_tui_button_dispatch.py::test_every_delegating_button_handler_guards_the_mro_dispatch
@@ -1329,7 +1329,7 @@ defects:
     MacKeychainBackend when the pin is reverted, the same assertion every macOS leg
     produced. test_mac_keychain_round_trip moved from scratch to tmp_path: it drives
     the real binary string and must not inherit the no-backend pin.'
-  fix_commit: null
+  fix_commit: 378f3cf23bb40c8f9a0f8e5a0205e3b5e9a8c7ef
   fixed_in: 0.9.0
   regression_tests:
     - tests/unit/test_secrets.py::test_no_backend_premise_holds_where_the_keychain_exists
@@ -1359,7 +1359,7 @@ defects:
     one scans the stub text for absolute /usr/bin or /bin tool paths (five
     offending lines in the pre-fix constants), one asserts the written stubs
     start with an absolute shebang and carry no placeholder.'
-  fix_commit: null
+  fix_commit: cf4477e437b7c16da1c85c8354a1c365e481823a
   fixed_in: 0.9.0
   regression_tests:
     - tests/unit/test_secrets.py::test_the_fake_backends_call_no_absolute_system_tool
