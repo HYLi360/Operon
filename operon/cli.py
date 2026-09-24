@@ -38,6 +38,7 @@ from operon.rules import (
 )
 from operon.schema import (
     Schema,
+    add_accession_record,
     add_metadata_record,
     read_tsv,
 )
@@ -1014,22 +1015,18 @@ def _cmd_add(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 
 def _cmd_add_accession(args: argparse.Namespace, project: Project, db: Database) -> int:
-    db.require_active_entity(args.internal_type, args.internal_id)
-    row = {
-        "internal_type": args.internal_type,
-        "internal_id": args.internal_id,
-        "namespace": args.namespace,
-        "accession": args.accession,
-        "version": args.acc_version,
-        "is_primary": 1 if args.primary else None,
-    }
-    db.insert_row("accessions", row)
-    db.record_change(
-        "accession", f"{args.namespace}:{args.accession}", None, None,
-        json.dumps(row, ensure_ascii=False, sort_keys=True), "accession added",
+    row = add_accession_record(
+        db,
+        internal_type=args.internal_type,
+        internal_id=args.internal_id,
+        namespace=args.namespace,
+        accession=args.accession,
+        version=args.acc_version,
+        primary=args.primary,
         actor=os.environ.get("USER"),
     )
-    print(f"mapped {args.namespace}:{args.accession} -> {args.internal_type} {args.internal_id}")
+    print(f"mapped {row['namespace']}:{row['accession']} -> "
+          f"{row['internal_type']} {row['internal_id']}")
     return 0
 
 

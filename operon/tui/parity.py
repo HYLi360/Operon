@@ -556,7 +556,22 @@ REGISTRY: tuple[ParityEntry, ...] = (
                      "(repeatable -> repeated --field)",
         },
     ),
-    ParityEntry(("add-accession",), STATUS_PLANNED, note=_M4),
+    ParityEntry(
+        ("add-accession",),
+        STATUS_IMPLEMENTED,
+        note="opened from the Entities screen; the selected entity prefills "
+             "--internal-type/--internal-id",
+        actions="actions.add_accession",
+        modal="operon.tui.screens.entities::AddAccessionModal",
+        params={
+            "internal_type": "acc-internal-type (prefilled from the selected entity)",
+            "internal_id": "acc-internal-id (prefilled from the selected entity)",
+            "namespace": "acc-namespace",
+            "accession": "acc-accession",
+            "acc_version": "acc-version",
+            "primary": "acc-primary",
+        },
+    ),
     ParityEntry(
         ("next-id",),
         STATUS_PLANNED,

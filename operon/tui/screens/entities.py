@@ -373,6 +373,92 @@ class AddRecordModal(WriteModal):
         self.dismiss(payload)
 
 
+class AddAccessionModal(WriteModal):
+    """Map an external accession to an internal stable ID (``operon add-accession``)."""
+
+    def __init__(self, project: Project, entity_type: str | None = None,
+                 entity_id: str | None = None) -> None:
+        super().__init__("Add accession mapping")
+        self.project = project
+        self._prefill_type = entity_type
+        self._prefill_id = entity_id
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static("internal entity (must be active)", classes="modal-label")
+        yield Select(
+            [(name, name) for name in data.ENTITY_TYPES],
+            value=self._prefill_type if self._prefill_type in data.ENTITY_TYPES
+            else data.ENTITY_TYPES[0],
+            id="acc-internal-type", allow_blank=False,
+        )
+        yield Input(
+            value=self._prefill_id or "",
+            placeholder="internal id (e.g. ASM_000001)", id="acc-internal-id",
+        )
+        yield Input(placeholder="namespace (e.g. NCBI_Assembly)", id="acc-namespace")
+        yield Input(placeholder="accession", id="acc-accession")
+        yield Input(placeholder="version (optional)", id="acc-version")
+        yield Checkbox("primary mapping", id="acc-primary")
+
+    def command_text(self) -> str:
+        def quoted(value: str) -> str:
+            return shlex.quote(value) if value.strip() else shlex.quote("…")
+
+        parts = [
+            "operon", "add-accession",
+            "--internal-type", str(self.query_one("#acc-internal-type", Select).value),
+            "--internal-id", quoted(self.query_one("#acc-internal-id", Input).value),
+            "--namespace", quoted(self.query_one("#acc-namespace", Input).value),
+            "--accession", quoted(self.query_one("#acc-accession", Input).value),
+        ]
+        version = self.query_one("#acc-version", Input).value
+        if version.strip():
+            parts += ["--version", shlex.quote(version.strip())]
+        if self.query_one("#acc-primary", Checkbox).value:
+            parts.append("--primary")
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id and event.input.id.startswith("acc-"):
+            self.refresh_command()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "acc-internal-type":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "acc-primary":
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        internal_type = str(self.query_one("#acc-internal-type", Select).value)
+        internal_id = self.query_one("#acc-internal-id", Input).value.strip()
+        namespace = self.query_one("#acc-namespace", Input).value.strip()
+        accession = self.query_one("#acc-accession", Input).value.strip()
+        version = self.query_one("#acc-version", Input).value.strip() or None
+        primary = self.query_one("#acc-primary", Checkbox).value
+        missing = [
+            label for label, value in (
+                ("--internal-id", internal_id), ("--namespace", namespace),
+                ("--accession", accession))
+            if not value
+        ]
+        if missing:
+            self.show_error(f"required: {', '.join(missing)}")
+            return
+        self.run_action(lambda: actions.add_accession(
+            self.project, internal_type=internal_type, internal_id=internal_id,
+            namespace=namespace, accession=accession, version=version, primary=primary,
+        ))
+
+    def on_action_success(self, payload: Any) -> None:
+        self.app.notify(
+            f"mapped {payload['namespace']}:{payload['accession']} -> "
+            f"{payload['internal_type']} {payload['internal_id']}"
+        )
+        self.dismiss(payload)
+
+
 class EntitiesPanel(Panel):
     """Organisms → samples → runs/assemblies → annotations with details."""
 
@@ -380,6 +466,7 @@ class EntitiesPanel(Panel):
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
         Binding("a", "add_record", "Add record"),
+        Binding("A", "add_accession", "Add accession"),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -442,6 +529,16 @@ class EntitiesPanel(Panel):
 
     def action_add_record(self) -> None:
         self.app.push_screen(AddRecordModal(self.project), self._after_add)
+
+    def action_add_accession(self) -> None:
+        entity_type = entity_id = None
+        if self.detail:
+            entity_type = self.detail["entity_type"]
+            entity_id = self.detail["entity_id"]
+        self.app.push_screen(
+            AddAccessionModal(self.project, entity_type, entity_id),
+            self._after_add,
+        )
 
     def _after_add(self, result: Any) -> None:
         if result:

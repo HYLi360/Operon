@@ -778,6 +778,66 @@ def test_add_modal_command_text_matches_action_kwargs(
     assert kwargs == {"record_id": "SMP_000771"}
 
 
+def test_add_accession_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select  # noqa: F401
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import AddAccessionModal
+
+    payload = {
+        "internal_type": "assembly", "internal_id": "ASM_000001",
+        "namespace": "LAB", "accession": "A-9", "version": "3", "is_primary": 1,
+    }
+    calls = spy_action(monkeypatch, "add_accession", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AddAccessionModal(project, "assembly", "ASM_000001")
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#acc-internal-type")
+            assert modal.command_text() == (
+                "operon add-accession --internal-type assembly "
+                "--internal-id ASM_000001 --namespace '…' --accession '…'"
+            )
+            modal.query_one("#acc-namespace", Input).value = "LAB"
+            modal.query_one("#acc-accession", Input).value = "A-9"
+            modal.query_one("#acc-version", Input).value = "3"
+            modal.query_one("#acc-primary", Checkbox).value = True
+            await pilot.pause()
+
+            ns = parse_command_text(modal.command_text())
+            assert ns.internal_type == "assembly"
+            assert ns.internal_id == "ASM_000001"
+            assert ns.namespace == "LAB"
+            assert ns.accession == "A-9"
+            assert ns.acc_version == "3"
+            assert ns.primary is True
+
+            modal.confirm()
+            await _wait_until(lambda: bool(dismissed), "add-accession modal dismissed")
+
+    _run(scenario())
+    assert dismissed == [payload]
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    assert args[0] is project
+    assert kwargs == {
+        "internal_type": "assembly",
+        "internal_id": "ASM_000001",
+        "namespace": "LAB",
+        "accession": "A-9",
+        "version": "3",
+        "primary": True,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Layer 4: audit-trail equivalence (CLI vs TUI actions)
 # ---------------------------------------------------------------------------
@@ -1569,3 +1629,23 @@ def test_audit_parity_import_table(
     assert result["updated"] == 1
 
     _assert_audit_equal(cli_project, tui_project, "organisms", "entity_state")
+
+
+def test_audit_parity_add_accession(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    rc = cli_main([
+        "--project", str(cli_project.root), "add-accession",
+        "--internal-type", "assembly", "--internal-id", "ASM_000001",
+        "--namespace", "AUDIT", "--accession", "A-7", "--version", "4", "--primary",
+    ])
+    capsys.readouterr()
+    assert rc == 0
+    actions.add_accession(
+        tui_project, internal_type="assembly", internal_id="ASM_000001",
+        namespace="AUDIT", accession="A-7", version="4", primary=True,
+    )
+    _assert_audit_equal(cli_project, tui_project, "accessions")

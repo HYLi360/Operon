@@ -142,6 +142,7 @@ operon add-accession \
 ```
 
 例如 `--namespace NCBI_Assembly --accession GCA_000000001`。
+- TUI 入口为 Entities 屏的 `A` 键，打开时预填选中实体。
 
 ## ncbi-datasets
 

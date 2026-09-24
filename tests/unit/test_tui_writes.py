@@ -27,6 +27,7 @@ from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog, MountTracked
 from operon.tui.screens.decisions import CurateModal, DecisionsPanel, EvaluateModal
 from operon.tui.screens.entities import (
+    AddAccessionModal,
     AddRecordModal,
     EntitiesPanel,
     FieldRow,
@@ -643,6 +644,33 @@ def test_add_record_action_rejects_unknown_fields(project: Project) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Data layer: add accession
+# ---------------------------------------------------------------------------
+
+def test_add_accession_action_maps_and_audits(project: Project) -> None:
+    row = actions.add_accession(
+        project, internal_type="assembly", internal_id="ASM_000001",
+        namespace="TUI", accession="ASM-MAP-1", version="2", primary=True,
+    )
+    assert row["is_primary"] == 1
+    rows = _query(project, "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
+                  ("TUI", "ASM-MAP-1"))
+    assert rows == [{"internal_id": "ASM_000001"}]
+    changes = _query(
+        project,
+        "SELECT reason FROM changes WHERE object_type='accession' AND object_id=?",
+        ("TUI:ASM-MAP-1",),
+    )
+    assert changes == [{"reason": "accession added"}]
+
+
+def test_add_accession_action_requires_active_target(project: Project) -> None:
+    with pytest.raises(EntityNotFoundError, match="ASM_MISSING"):
+        actions.add_accession(project, internal_type="assembly",
+                              internal_id="ASM_MISSING", namespace="TUI", accession="X-1")
+
+
+# ---------------------------------------------------------------------------
 # Headless UI: lifecycle modal
 # ---------------------------------------------------------------------------
 
@@ -920,6 +948,77 @@ def test_add_record_modal_skips_a_row_being_removed(project: Project) -> None:
             assert saved == [{"taxonomy_source": None}]
 
     _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Headless UI: add accession modal
+# ---------------------------------------------------------------------------
+
+def test_add_accession_modal_end_to_end(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(EntitiesPanel)
+            tree = panel.query_one("#entities-tree", Tree)
+            node = _find_tree_node(tree, "assembly", "ASM_000001")
+            assert node is not None
+            tree.select_node(node)
+            await pilot.pause()
+            await _settled(app)
+            tree.focus()
+
+            await pilot.press("A")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, AddAccessionModal)
+            assert modal.query_one("#acc-internal-type", Select).value == "assembly"
+            assert modal.query_one("#acc-internal-id", Input).value == "ASM_000001"
+            modal.query_one("#acc-namespace", Input).value = "TUI"
+            modal.query_one("#acc-accession", Input).value = "ASM-MAP-UI-1"
+            await pilot.pause()
+            command = _static_text(modal.query_one("#modal-command", Static))
+            assert "operon add-accession --internal-type assembly" in command
+            assert "--internal-id ASM_000001" in command
+            assert "--namespace TUI" in command
+
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, AddAccessionModal)
+            rows = _query(project,
+                          "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
+                          ("TUI", "ASM-MAP-UI-1"))
+            assert rows == [{"internal_id": "ASM_000001"}]
+
+    _run(scenario())
+
+
+def test_add_accession_modal_requires_fields_inline(project: Project,
+                                                    monkeypatch) -> None:
+    called: list = []
+    monkeypatch.setattr(
+        actions, "add_accession",
+        lambda *args, **kwargs: called.append((args, kwargs)) or {},
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _settled(app)
+            modal = AddAccessionModal(project)
+            app.push_screen(modal)
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            assert isinstance(app.screen, AddAccessionModal)
+            assert "required:" in _static_text(modal.query_one("#modal-error", Static))
+
+    _run(scenario())
+    assert called == []
 
 
 # ---------------------------------------------------------------------------

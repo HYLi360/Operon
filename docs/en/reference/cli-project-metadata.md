@@ -133,6 +133,7 @@ operon add-accession \
 ```
 
 Example: `--namespace NCBI_Assembly --accession GCA_000000001`.
+- The TUI entry point is the Entities screen's `A` binding, opened with the selected entity prefilled.
 
 ## ncbi-datasets
 

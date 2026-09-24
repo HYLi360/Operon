@@ -1498,3 +1498,37 @@ def import_table(
             actor=actor if actor is not None else os.environ.get("USER"),
         )
     return {**result, "table": table, "source": str(path)}
+
+
+def add_accession(
+        project: Project,
+        *,
+        internal_type: str,
+        internal_id: str,
+        namespace: str,
+        accession: str,
+        version: str | None = None,
+        primary: bool = False,
+) -> dict[str, Any]:
+    """Map an accession like ``operon add-accession``; the target must be active."""
+    from operon.schema import add_accession_record
+
+    if internal_type not in ENTITY_TYPE_NAMES:
+        raise ValidationError(
+            f"unknown entity type {internal_type!r}; "
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
+    for label, value in (("--internal-id", internal_id), ("--namespace", namespace),
+                         ("--accession", accession)):
+        if not str(value).strip():
+            raise ValidationError(f"{label} is required")
+    with _open_writable(project) as db:
+        return add_accession_record(
+            db,
+            internal_type=internal_type,
+            internal_id=internal_id.strip(),
+            namespace=namespace.strip(),
+            accession=accession.strip(),
+            version=version.strip() if version else None,
+            primary=primary,
+            actor=os.environ.get("USER"),
+        )
