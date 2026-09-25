@@ -628,7 +628,7 @@ defects:
     a deployment being preflighted with `--dry-run`'
   severity: low
   component: tools
-  status: fixed
+  status: verified
   reproduction: 'Reproduced on 2026-09-20 against a real OpenSSH + Slurm cluster and in
     an isolated `operon init-demo` project. (1) Remote reference database
     absent: after the pre-provisioned remote copy of the recipe database
@@ -1042,7 +1042,7 @@ defects:
     candidates) writes string cells verbatim.'
   severity: low
   component: qc
-  status: fixed
+  status: verified
   reproduction: 'compute_alignment_qc stores the FASTA header verbatim in safe_id
     (operon/qc/alignment.py and the Cython twin operon/qc/_alignment.pyx) and
     _render_sequence_qc writes it unescaped, so a header like ''=1+1'' lands in
@@ -1077,7 +1077,7 @@ defects:
     profile''s snapshot history. No test ever clicked `#classification-history`.'
   severity: low
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
     `_open_profile_history` (operon/tui/screens/config.py:1354-1355) disables the
     History action unless `self.current_profile` is set, but that field is only
@@ -1107,7 +1107,7 @@ defects:
     standalone `operon ingest` accepts the same URL'
   severity: low
   component: cli
-  status: fixed
+  status: verified
   reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23:
     `_cmd_ingest` (operon/cli.py:1120-1140) wraps `ingest_file` with a
     `fetch_url_to_temp` pre-fetch for sources starting with sftp:// or remote://,
@@ -1139,7 +1139,7 @@ defects:
     worker; the cancelled/summary notification and result payload were lost'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Confirmed by code reading against Textual 8.2.8 on 2026-09-24.
     MessagePump._get_dispatch_methods walks the whole MRO and yields every
     on_button_pressed definition, and only Message._no_default_action (set by
@@ -1175,7 +1175,7 @@ defects:
     field" — while the ODR-0040 test pinned the 3.11+ quoted form'
   severity: low
   component: export
-  status: fixed
+  status: verified
   reproduction: 'on 3.10 csv.writer(delimiter="\t", lineterminator="\n") writes the
     cell chr(13)+"6" unquoted, while 3.11+ quotes it; the 3.10 matrix row failed the
     tab_cr byte assertion of
@@ -1209,7 +1209,7 @@ defects:
     been rendered.'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'hold the earlier read: patch operon.tui.data.list_decisions so one
     call blocks on a threading.Event after it has read its rows, call panel.reload(),
     set an entity id in #decisions-filter so a second, fast read renders the filtered
@@ -1242,7 +1242,7 @@ defects:
     raised 120 s budget to the second.  Python 3.15 is the most sensitive version.
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: |
     Run the full suite (python -m pytest, the project default addopts) on a busy machine,
     or two versions at once through scripts/run-test-matrix.sh: the failure is
@@ -1293,7 +1293,7 @@ defects:
     running actions.add_record 2 times.'
   severity: medium
   component: tui
-  status: fixed
+  status: verified
   reproduction: 'Textual dispatches a button message to every class in the MRO that
     defines on_button_pressed, and these handlers also call super().on_button_pressed.
     The base WriteModal handler therefore runs twice per click — once through the
@@ -1325,7 +1325,7 @@ defects:
     four macOS legs red, 8 failed / 2166 passed each, every ubuntu leg green.'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'Run the four tests on a Darwin host, or read the probe —
     MacKeychainBackend.available() asks sys.platform and /usr/bin/security, never
     PATH, so the scratch fixture''s PATH strip (PATH is set to an empty bin
@@ -1359,7 +1359,7 @@ defects:
     failed" with the stub line naming /usr/bin/mkdir and No such file or directory.'
   severity: low
   component: tests
-  status: fixed
+  status: verified
   reproduction: 'Run the four tests on a macOS host, or read SECRET_TOOL_FAKE — the
     stub creates its state directory through /usr/bin/mkdir, prints through
     /usr/bin/cat and removes through /usr/bin/rm. macOS keeps mkdir, cat and rm in
