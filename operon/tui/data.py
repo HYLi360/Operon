@@ -279,9 +279,22 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
             (entity_type, entity_id),
         )
         metrics = _entity_metrics(db, entity_type, entity_id)
+        supersessions = (
+            _rows(
+                db,
+                "SELECT object_type, object_id, superseded_by_type, superseded_by_id, "
+                "reason, evidence, superseded_at FROM entity_supersessions "
+                "WHERE (object_type=? AND object_id=?) "
+                "OR (superseded_by_type=? AND superseded_by_id=?) "
+                "ORDER BY superseded_at, object_type, object_id",
+                (entity_type, entity_id, entity_type, entity_id),
+            )
+            if db.lifecycle_schema_available() else []
+        )
     return {
         "entity_type": entity_type,
         "entity_id": entity_id,
+        "supersessions": supersessions,
         "fields": fields,
         "accessions": accessions,
         "state": state,
@@ -468,12 +481,15 @@ def list_decisions(
         decision: str | None = None,
         text: str = "",
         limit: int = 500,
+        include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     """Return rows from the ``current_decisions`` view.
 
     The effective decision is ``COALESCE(curated_decision, decision)``; the
     ``decision`` filter matches that effective value.  ``text`` is a
-    case-insensitive substring over entity_type/entity_id.
+    case-insensitive substring over entity_type/entity_id.  ``include_retired``
+    mirrors ``report decisions --include-retired``, with the same predicate and
+    the same lifecycle gating as the core's ``reports.print_decisions``.
     """
     conditions: list[str] = []
     params: list[Any] = []
@@ -491,13 +507,20 @@ def list_decisions(
         "curated_by, curated_reason, curated_at, reason_codes, evaluated_at "
         "FROM current_decisions"
     )
-    if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY entity_type, entity_id, profile"
-    if limit:
-        sql += " LIMIT ?"
-        params.append(limit)
     with _open(project) as db:
+        if not include_retired and db.lifecycle_schema_available():
+            # Appended last so the positional parameters above keep their order.
+            conditions.append(
+                "NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type=current_decisions.entity_type "
+                "AND r.entity_id=current_decisions.entity_id)"
+            )
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY entity_type, entity_id, profile"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
         return _rows(db, sql, params)
 
 
@@ -1168,3 +1191,90 @@ def read_coverage_report(project: Project, report_id: str) -> dict[str, Any]:
             "total": total,
         }
     return {"report_id": report_id, "path": str(path), "provenance": provenance, "tables": tables}
+
+
+# ---------------------------------------------------------------------------
+# Remotes screen: configured mirrors, connectivity, file residency
+# ---------------------------------------------------------------------------
+
+#: Row cap for the project-wide residency listing (``operon locations``); the
+#: CLI prints every row, the screen shows the first slice and says so.
+LOCATIONS_LIMIT = 2000
+
+
+def list_remotes(project: Project) -> list[dict[str, Any]]:
+    """Return the configured remotes with their parsed endpoint (unchecked).
+
+    Rows use the same keys as ``operon check_remote`` (name/type/address/root/
+    files/status/error) so the screen can render the CLI's table before — and
+    after — the on-demand connectivity check.  A malformed ``remotes:`` entry
+    is reported in its own row instead of failing the whole listing.
+    """
+    from operon.remotes import get_remote
+    from operon.remotes import list_remotes as _list
+
+    rows: list[dict[str, Any]] = []
+    for name in sorted(_list(project)):
+        row: dict[str, Any] = {
+            "name": name, "type": "sftp", "address": "", "root": "",
+            "files": "", "status": "not checked", "error": "",
+        }
+        try:
+            spec = get_remote(project, name)
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not hide the rest
+            row.update(status="invalid", error=f"{type(exc).__name__}: {exc}")
+        else:
+            row.update(address=spec.address, root=spec.root)
+        rows.append(row)
+    return rows
+
+
+def list_locations(project: Project, *, file_ids: Iterable[str] | None = None,
+                   limit: int = LOCATIONS_LIMIT) -> list[dict[str, Any]]:
+    """Return local/remote residency rows (CLI ``locations``)."""
+    from operon.remotes import list_locations as _list
+
+    with _open(project) as db:
+        return _list(db, file_ids, limit=limit)
+
+
+def sync_preview(project: Project, *, file_ids: Iterable[str] | None = None) -> dict[str, Any]:
+    """Describe the local side of a push/pull selection without transferring.
+
+    Uses the core's own ``_select_files`` selection, so the count, the bytes
+    and the unknown-file-id error are exactly what ``push``/``pull`` see.
+    """
+    from operon.remotes import _select_files
+
+    with _open(project) as db:
+        rows = _select_files(db, list(file_ids) if file_ids else None)
+    return {
+        "count": len(rows),
+        "bytes": sum(int(row.get("size_bytes") or 0) for row in rows),
+        "files": [
+            {
+                "file_id": row["file_id"],
+                "entity_type": row["entity_type"],
+                "entity_id": row["entity_id"],
+                "file_role": row["file_role"],
+                "size_bytes": row["size_bytes"],
+                "status": row["status"],
+                "relative_path": row["relative_path"],
+            }
+            for row in rows
+        ],
+    }
+
+
+def list_retired(project: Project, *, direct_only: bool = False) -> list[dict[str, Any]]:
+    """Return current retirements, like ``operon retired``.
+
+    The core ``lifecycle.list_retired_entities`` is the single source, so the
+    rows and the ``--direct-only`` semantics are the CLI's own: ``True`` lists
+    the direct retirement events, ``False`` the effective set where
+    ``retired_by_*`` names the ancestor that caused an inherited retirement.
+    """
+    from operon.lifecycle import list_retired_entities
+
+    with _open(project) as db:
+        return list_retired_entities(db, direct_only=direct_only)

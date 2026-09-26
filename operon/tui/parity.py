@@ -153,9 +153,36 @@ def strict_violations(registry: tuple[ParityEntry, ...] = ()) -> list[str]:
     return [entry.command_text for entry in entries if entry.status == STATUS_PLANNED]
 
 
-_M2B = "milestone M2b (remote execution and run introspection)"
 _M3 = "milestone M3 (classification and derived-artifact loop)"
-_M5 = "milestone M5 (storage, administration and remaining alignment)"
+
+#: TimeTree is a verbatim query-cache integration whose terms forbid mirroring
+#: or redistribution, and the M5 decision of record keeps it out of the TUI
+#: entirely: it is expected to move into an analysis add-on, so the TUI gains
+#: no screen, dialog or request surface for it — and cannot widen the request
+#: surface by accident.
+#: Machine-readable reports have no consumer inside a TUI: the interactive
+#: view is the deliverable, the document is the CLI's.
+_MACHINE_OUTPUT_CLI_ONLY = (
+    "machine-readable output stays in the CLI: the TUI renders interactive "
+    "views, so a JSON/JSONL document has no consumer inside it, and the CLI's "
+    "own export path is the honest way to get one"
+)
+
+#: `show --scope organism` is a wide query (every descendant of the owning
+#: organism) while the TUI detail answers for one selected entity.
+_ORGANISM_SCOPE_CLI_ONLY = (
+    "`show --scope organism` returns every descendant of the owning organism — "
+    "thousands of rows in a real project — while the entity detail answers for "
+    "the selected entity only, so the wide graph stays a CLI query"
+)
+
+_TIMETREE_CLI_ONLY = (
+    "TimeTree stays CLI-only by decision (M5): it is not a feature the Operon "
+    "TUI should build in — the integration is a verbatim query cache that is "
+    "expected to move into an analysis add-on — so the TUI adds no screen, "
+    "dialog or request surface for it and cannot widen the cached-query "
+    "boundary; `operon timetree …` remains the supported path"
+)
 
 _CONFIG_CLI_ONLY = (
     "user-level configuration is a per-user file edited outside the TUI "
@@ -225,13 +252,17 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("retired",),
         STATUS_IMPLEMENTED,
-        note="partial: the Entities screen `t` toggle shows retired entities "
-        "inline; a standalone retired list is not modeled",
-        actions="data.entity_tree",
-        waived={
-            "direct_only": f"no standalone retired list in the TUI ({_M5})",
-            "json": f"the TUI renders views, not JSON output ({_M5})",
-        },
+        note="the Entities screen `t` toggle shows retired entities inline, and "
+        "the *Retired…* button opens a read-only list of the retirement records "
+        "themselves (`data.list_retired` → core `lifecycle.list_retired_entities`) "
+        "with the CLI's columns and the *direct retirements only* checkbox "
+        "mirroring `--direct-only` (checked = direct events, unchecked = the "
+        "effective set where `retired_by_*` names the ancestor that caused the "
+        "inherited retirement)",
+        actions="data.list_retired",
+        modal="operon.tui.screens.entities::RetiredModal",
+        params={"direct_only": "entities-retired → retired-direct-only"},
+        waived={"json": _MACHINE_OUTPUT_CLI_ONLY},
     ),
     ParityEntry(
         ("ingest",),
@@ -378,49 +409,48 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "started_to": "runs-more → runs-filter-to (ISO-8601)",
             "run_id": "runs-more → runs-filter-run-id",
             "parent_run_id": "runs-more → runs-filter-parent-run-id",
+            "resumes_run_id": "runs-more → runs-filter-resumes-run-id",
             "tool": "runs-more → runs-filter-tool",
             "executor": "runs-more → runs-filter-executor",
             "offset": "runs-more → runs-filter-offset",
             "oldest_first": "runs-more → runs-filter-oldest-first",
         },
-        waived={
-            "resumes_run_id": f"no lineage filters in the Runs screen ({_M2B})",
-            "format": f"the TUI renders a table, not machine formats ({_M2B})",
-        },
+        waived={"format": _MACHINE_OUTPUT_CLI_ONLY},
     ),
     ParityEntry(
         ("workflow", "show"),
         STATUS_IMPLEMENTED,
-        note="partial: RunDetailScreen with log follow; no JSON output",
+        note="RunDetailScreen with log follow: the run row, stage timeline, "
+        "environment and log tail for the selected run",
         actions="data.workflow_run_detail",
         params={
             "follow": "run-follow (switch on the run detail screen, enabled while running)",
         },
-        waived={
-            "format": f"the TUI renders a detail view, not JSON ({_M2B})",
-        },
+        waived={"format": _MACHINE_OUTPUT_CLI_ONLY},
     ),
     ParityEntry(
         ("report", "decisions"),
         STATUS_IMPLEMENTED,
         actions="data.list_decisions",
-        params={"profile": "decisions-profile"},
-        waived={
-            "include_retired": "the Decisions screen shows effective decisions "
-            f"without a retired filter ({_M5})",
-        },
+        params={"profile": "decisions-profile",
+                "include_retired": "decisions-include-retired"},
     ),
     ParityEntry(
         ("report", "qc"),
         STATUS_IMPLEMENTED,
-        note="partial: QC metrics are embedded in the entity detail view",
+        note="read-only: the Entities screen (nav `2`) entity detail renders the "
+        "same long-form QC metrics, and the *Export QC…* button writes the CLI's "
+        "`qc/aggregate` TSV pair through the core exporter "
+        "(`actions.export_qc_report` → `reports.export_qc_tsv`, byte-identical, "
+        "no provenance rows). The export's type filter mirrors `--entity-type` "
+        "and defaults to the selected entity's type",
         actions="data.entity_metrics",
         params={
             "entity_type": "context: Entities screen selection",
             "entity_id": "context: Entities screen selection",
             "include_retired": "context: Entities screen `t` toggle",
+            "export": "entities-export-qc (Export button; writes qc/aggregate)",
         },
-        waived={"export": f"no TSV export from the TUI ({_M5})"},
     ),
     ParityEntry(
         ("status",),
@@ -436,23 +466,30 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("show",),
         STATUS_IMPLEMENTED,
-        note="partial: entity detail view; no accession/NAMESPACE:ACC lookup "
-        "and no organism-scope graph",
+        note="entity detail view: `data.entity_detail` reads the entity row, "
+        "accessions, state, files and metrics, and renders a `Supersessions` "
+        "section from `entity_supersessions` (both directions: `superseded by` "
+        "and `supersedes`), so the browser lists the links instead of dropping "
+        "the entities the CLI's default graph view omits",
         actions="data.entity_detail",
-        params={"include_retired": "context: Entities screen `t` toggle"},
+        params={
+            "include_retired": "context: Entities screen `t` toggle",
+            "include_superseded": "context: entity detail `Supersessions` section",
+        },
         waived={
-            "json": f"the TUI renders a detail view, not JSON ({_M5})",
-            "scope": f"no organism-scope graph view ({_M5})",
-            "include_superseded": f"the detail view shows current records ({_M5})",
+            "json": _MACHINE_OUTPUT_CLI_ONLY,
+            "scope": _ORGANISM_SCOPE_CLI_ONLY,
         },
     ),
     ParityEntry(
         ("locations",),
         STATUS_IMPLEMENTED,
-        note="partial: file locations are embedded in the Files detail view; "
-        "no project-wide location listing",
-        actions="data.file_detail",
-        params={"file_id": "context: Files screen selection"},
+        note="Remotes screen (nav `9`) section *File locations*: the "
+        "project-wide residency listing (one row per file/remote pair) with "
+        "the CLI's columns and ordering, sharing the same core query; the "
+        "filter maps the repeated --file-id",
+        actions="data.list_locations",
+        params={"file_id": "locations-filter"},
     ),
     ParityEntry(
         ("taxonomy", "list"),
@@ -838,19 +875,125 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "hits": "the dialog always browses the --hits view; job summaries stay CLI-only",
         },
     ),
-    ParityEntry(("remotes",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("push",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("evict",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("pull",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("backup", "create"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("backup", "verify"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("set-state",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("report", "metadata"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "fetch"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "calibrate"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "taxon"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "pairwise"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "mrca"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "timeline"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "calibrations"), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("remotes",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`): the configured mirrors are listed "
+        "without connecting; *Check connectivity* runs the same core "
+        "`check_remote` per remote (status/error/files columns) and follows "
+        "the CLI's exit semantics as a warning notification, not a blocked "
+        "screen",
+        actions="data.list_remotes",
+    ),
+    ParityEntry(
+        ("push",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Push…* button: remote picker "
+        "(pre-filled from the selected mirror), repeated --file-id filter, a "
+        "local-knowledge preview (count and bytes; what the mirror already "
+        "holds is decided during the transfer and reported per file), then "
+        "Confirm. Results render the CLI's table and a failing file stays "
+        "inline; a running push cannot be interrupted (the core has no "
+        "cooperative cancel) and the button follows the CLI's exit code 1 as "
+        "an error notification",
+        actions="actions.push",
+        modal="operon.tui.screens.remotes::PushModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
+    ParityEntry(
+        ("pull",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Pull…* button: remote picker, repeated "
+        "--file-id filter (empty = every entry in the remote manifest, read "
+        "from the mirror when the transfer starts), the CLI's per-file result "
+        "table after Confirm, and the same file-status bookkeeping "
+        "(CHECKSUM_VERIFIED plus the residency row); a running pull cannot be "
+        "interrupted",
+        actions="actions.pull",
+        modal="operon.tui.screens.remotes::PullModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
+    ParityEntry(
+        ("evict",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Evict…* button: remote picker plus the "
+        "repeated --file-id filter, then a *Verify remote copies* pre-flight "
+        "that runs the same per-file mirror verification the run performs "
+        "(read-only, `evict_plan`) and lists eligible/blocked with reasons. "
+        "Confirm stays disabled while any file is unverified — the CLI's "
+        "'verify before evict' guarantee is visible up front — and the "
+        "dialog re-arms the gate whenever the selection or the mirror changes "
+        "and after a run. Results render the CLI's table; a running evict "
+        "cannot be interrupted",
+        actions="actions.evict",
+        modal="operon.tui.screens.remotes::EvictModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
+    ParityEntry(
+        ("backup", "create"),
+        STATUS_IMPLEMENTED,
+        note="Home screen *Create backup* button; the destination must not "
+        "exist and must stay outside the project root, and a running backup "
+        "refuses to close",
+        actions="actions.create_backup",
+        modal="operon.tui.screens.backup::BackupModal",
+        params={
+            "output": "backup-output",
+            "scope": "backup-scope",
+        },
+    ),
+    ParityEntry(
+        ("backup", "verify"),
+        STATUS_IMPLEMENTED,
+        note="Home screen *Verify backup* button; read-only (a backup "
+        "directory is authenticated in place and no project session is "
+        "opened), the result and failure list stay on screen",
+        actions="actions.verify_backup",
+        modal="operon.tui.screens.backup::VerifyBackupModal",
+        params={"input": "backup-verify-input"},
+    ),
+    ParityEntry(
+        ("set-state",),
+        STATUS_IMPLEMENTED,
+        note="Entities screen (nav `2`) selection: `s` opens a form over the "
+        "selected entity — current state and its standard transitions are "
+        "read from the core `workflow.TRANSITIONS`, the target state comes "
+        "from a Select over `VALID_STATES`, the message (the audit reason) is "
+        "required where the CLI defaults it, and `--force` is a default-off "
+        "checkbox. An illegal transition surfaces the core's own "
+        "`ConflictError` inline and keeps the form open, so `--force` stays a "
+        "deliberate second step; the run records the same `changes` row "
+        "(old → new state, the message as reason, the resolved actor) as the CLI",
+        actions="actions.set_state",
+        modal="operon.tui.screens.entities::SetStateModal",
+        params={
+            "entity_type": "context: Entities screen selection",
+            "entity_id": "context: Entities screen selection",
+            "state": "set-state-state",
+            "message": "set-state-message",
+            "force": "set-state-force",
+        },
+    ),
+    ParityEntry(
+        ("report", "metadata"),
+        STATUS_IMPLEMENTED,
+        note="Entities screen (nav `2`) *Export metadata…* button: output "
+        "directory plus the `--include-retired` checkbox, echoed back as the "
+        "equivalent command. The run goes through the core exporter "
+        "(`reports.export_metadata_report`) on a read-only session, so the TSVs "
+        "are byte-identical to a CLI export of the same project and no "
+        "`changes`/`workflow_runs` rows are recorded; a blank path uses the "
+        "CLI's default `reports/metadata`, and the summary reports the tables "
+        "and rows the manifest lists",
+        actions="actions.export_metadata_report",
+        modal="operon.tui.screens.entities::ExportMetadataModal",
+        params={"output": "metadata-output", "include_retired": "metadata-include-retired"},
+    ),
+    ParityEntry(("timetree", "fetch"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "calibrate"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "taxon"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "pairwise"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "mrca"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "timeline"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "calibrations"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
 )

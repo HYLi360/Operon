@@ -26,6 +26,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -1097,6 +1098,33 @@ def evict_local(db: Database, project: Project, name: str,
             results.append(result)
             _sync_log(db, project, f"evict:{name}", record, result["status"])
     return results
+
+
+def list_locations(db: Database, file_ids: Iterable[str] | None = None,
+                   limit: int = 0) -> list[dict[str, Any]]:
+    """Local/remote residency rows for manifest files (``operon locations``).
+
+    One row per (file, remote) pair; a file with no remote copy keeps its
+    single left-joined row with empty location columns.  ``limit=0`` means no
+    row limit.
+    """
+    ids = list(file_ids or [])
+    params: list[Any] = []
+    where = ""
+    if ids:
+        where = f"WHERE f.file_id IN ({', '.join('?' for _ in ids)})"
+        params.extend(ids)
+    sql = (
+        "SELECT f.file_id, f.relative_path, f.status AS local_status, "
+        "COALESCE(l.location_name, '') AS remote, COALESCE(l.status, '') AS remote_status, "
+        "COALESCE(l.verified_at, '') AS verified_at "
+        "FROM files f LEFT JOIN file_locations l ON l.file_id=f.file_id "
+        f"{where} ORDER BY f.file_id, l.location_name"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
+    )
+    if limit:
+        sql += " LIMIT ?"
+        params.append(int(limit))
+    return [dict(row) for row in db.query(sql, params)]
 
 
 def check_remote(project: Project, name: str) -> dict[str, Any]:

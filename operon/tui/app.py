@@ -39,10 +39,12 @@ from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.home import HomePanel
 from operon.tui.screens.import_wizard import ImportWizardScreen
 from operon.tui.screens.publish import PublishPanel
+from operon.tui.screens.remotes import RemotesPanel
 from operon.tui.screens.runs import RunsPanel
 from operon.tui.splash import SplashScreen
 
-SCREENS = ("home", "entities", "files", "runs", "decisions", "config", "publish", "coverage")
+SCREENS = ("home", "entities", "files", "runs", "decisions", "config", "publish",
+           "coverage", "remotes")
 NAV_LABELS = {
     "home": "1  Home",
     "entities": "2  Entities",
@@ -52,6 +54,7 @@ NAV_LABELS = {
     "config": "6  Config",
     "publish": "7  Publish",
     "coverage": "8  Coverage",
+    "remotes": "9  Remotes",
 }
 
 
@@ -75,6 +78,7 @@ class HelpScreen(DismissOnce, ModalScreen):
             "  6  Config — QC profiles and tools/recipes editors\n"
             "  7  Publish — release builder and selective export builder\n"
             "  8  Coverage — taxonomy snapshots, reference sets, coverage reports\n"
+            "  9  Remotes — configured mirrors, connectivity, file residency\n"
             "  r  refresh current screen\n"
             "  i  import dataset wizard (except on the Files screen, where it ingests)\n"
             "  t  show/hide retired entities (Entities screen; shown dimmed by default)\n"
@@ -113,6 +117,7 @@ class OperonApp(App):
         Binding("6", "switch_screen('config')", "Config"),
         Binding("7", "switch_screen('publish')", "Publish"),
         Binding("8", "switch_screen('coverage')", "Coverage"),
+        Binding("9", "switch_screen('remotes')", "Remotes"),
         Binding("i", "import_dataset", "Import dataset"),
         Binding("r", "refresh", "Refresh"),
         Binding("question_mark", "help", "Help"),
@@ -141,6 +146,7 @@ class OperonApp(App):
                 yield ConfigPanel(self.project)
                 yield PublishPanel(self.project)
                 yield CoveragePanel(self.project)
+                yield RemotesPanel(self.project)
         yield Footer()
 
     async def on_mount(self) -> None:

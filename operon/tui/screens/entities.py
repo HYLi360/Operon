@@ -10,24 +10,30 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
-from textual.widgets import Button, Checkbox, Input, Select, Static, Tree
+from textual.screen import ModalScreen
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, Tree
 
 from operon.config import Project, resolve_actor
 from operon.lifecycle import RETIRE_REASON_CODES
-from operon.schema import ENTITY_PREFIXES
+from operon.schema import ENTITY_PREFIXES, ENTITY_TABLES
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     ComposedRows,
+    DismissOnce,
     MountTracked,
     Panel,
+    WorkerResults,
     WriteModal,
+    capture_table_view,
     human_size,
+    restore_table_view,
     styled_file_status,
     styled_scientific_name,
 )
+from operon.workflow import TRANSITIONS, VALID_STATES
 
 NEXT_ID_TYPES = list(ENTITY_PREFIXES)
 
@@ -213,6 +219,357 @@ class LifecycleModal(WriteModal):
             self.app.notify(f"{self.action} applied to {self.entity_type} {self.entity_id}")
         else:
             self.app.notify(f"no change: {self.entity_type} {self.entity_id}")
+        self.dismiss(payload)
+
+
+class SetStateModal(WriteModal):
+    """Form + confirm for `operon set-state` (manual, audited transition).
+
+    Two deliberate departures from the CLI flags, both on the side of the
+    audit trail: the message is required here (the CLI defaults it to
+    "forced transition"), and ``--force`` is an explicit, default-off
+    checkbox — the dialog shows the standard transitions from the current
+    state and lets the core's own ``ConflictError`` explain a non-standard
+    one instead of pre-empting it.
+    """
+
+    def __init__(self, project: Project, entity_type: str, entity_id: str,
+                 current_state: str) -> None:
+        super().__init__(f"Set state: {entity_type} {entity_id}")
+        self.project = project
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.current_state = (current_state or "").upper()
+
+    def compose_form(self) -> Iterable[Any]:
+        allowed = sorted(TRANSITIONS.get(self.current_state, set()))
+        current = self.current_state or "(none recorded)"
+        info = Text()
+        info.append(f"current state: {current}\n")
+        if self.current_state:
+            info.append("standard transitions: " + (", ".join(allowed) if allowed else "(none)") + "\n")
+        info.append(
+            "a manual change is recorded in `changes` with your message as its "
+            "reason and the actor as its author"
+        )
+        yield Static(info, id="set-state-info", classes="modal-info")
+        yield Select(
+            [(state, state) for state in sorted(VALID_STATES)],
+            prompt="target state", id="set-state-state", allow_blank=True,
+        )
+        yield Input(placeholder="message (required: the audit reason)", id="set-state-message")
+        yield Checkbox(
+            "force a non-standard transition (--force; recorded as forced)",
+            id="set-state-force",
+        )
+        yield Static("", id="set-state-hint", classes="modal-info")
+
+    def _selected_state(self) -> str:
+        value = self.query_one("#set-state-state", Select).value
+        return "" if value is Select.NULL else str(value)
+
+    def _forced(self) -> bool:
+        return bool(self.query_one("#set-state-force", Checkbox).value)
+
+    def refresh_hint(self) -> None:
+        """Explain the current choice: legal transition, forced, or refused."""
+        state = self._selected_state()
+        hint = self.query_one("#set-state-hint", Static)
+        if not state or not self.current_state:
+            hint.update("")
+            return
+        allowed = TRANSITIONS.get(self.current_state, set())
+        if state == self.current_state:
+            hint.update(f"{state} is already the current state — nothing to record")
+        elif state in allowed:
+            hint.update(f"{self.current_state} → {state} is a standard transition")
+        elif self._forced():
+            hint.update(
+                f"{self.current_state} → {state} is NOT a standard transition; "
+                "the forced change is recorded in the audit trail"
+            )
+        else:
+            hint.update(
+                f"{self.current_state} → {state} is not a standard transition — "
+                "tick the force box to make it anyway (audited as forced)"
+            )
+
+    def command_text(self) -> str:
+        parts = [
+            "operon", "set-state",
+            "--entity-type", self.entity_type,
+            "--entity-id", self.entity_id,
+            "--state", self._selected_state() or "…",
+        ]
+        message = self.query_one("#set-state-message", Input).value.strip()
+        if message:
+            parts += ["--message", shlex.quote(message)]
+        if self._forced():
+            parts.append("--force")
+        return " ".join(parts)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "set-state-state":
+            self.refresh_hint()
+            self.refresh_command()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "set-state-message":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "set-state-force":
+            self.refresh_hint()
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        state = self._selected_state()
+        message = self.query_one("#set-state-message", Input).value.strip()
+        if not state:
+            self.show_error("select the target state")
+            return
+        if not message:
+            self.show_error("message is required: a manual state change is audited with its reason")
+            return
+        self.run_action(
+            lambda: actions.set_state(
+                self.project, self.entity_type, self.entity_id, state, message,
+                force=self._forced(),
+            )
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        previous = payload.get("previous_state") or "(none)"
+        suffix = " (forced)" if payload.get("forced") else ""
+        self.app.notify(
+            f"{payload['entity_type']} {payload['entity_id']}: "
+            f"{previous} → {payload['state']}{suffix}"
+        )
+        self.dismiss(payload)
+
+
+class ExportMetadataModal(WriteModal):
+    """Form + confirm for `operon report metadata` (read-only export).
+
+    The export runs through the core exporter with the CLI's own flags, on a
+    read-only session: it writes files, never provenance rows.
+    """
+
+    def __init__(self, project: Project) -> None:
+        super().__init__("Export metadata report")
+        self.project = project
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(
+            "write one TSV per table plus manifest.json into the output "
+            "directory; the files are byte-identical to a CLI export of the "
+            "same project. Read-only: no `changes` or `workflow_runs` rows are "
+            "recorded.",
+            id="metadata-info", classes="modal-info",
+        )
+        yield Input(
+            placeholder="output directory (blank = reports/metadata)",
+            id="metadata-output",
+        )
+        yield Checkbox(
+            "include retired entities (--include-retired)",
+            id="metadata-include-retired",
+        )
+
+    def command_text(self) -> str:
+        parts = ["operon", "report", "metadata"]
+        output = self.query_one("#metadata-output", Input).value.strip()
+        if output:
+            parts += ["--output", shlex.quote(output)]
+        if self.query_one("#metadata-include-retired", Checkbox).value:
+            parts.append("--include-retired")
+        return " ".join(parts)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "metadata-output":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "metadata-include-retired":
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.export_metadata_report(
+                self.project,
+                output=self.query_one("#metadata-output", Input).value.strip() or None,
+                include_retired=self.query_one("#metadata-include-retired", Checkbox).value,
+            )
+        )
+
+    def on_action_success(self, payload: dict[str, Any]) -> None:
+        self.app.notify(
+            f"metadata report written to {payload['path']} "
+            f"({payload['tables']} table(s), {payload['rows']} row(s)"
+            + (", retired included" if payload["include_retired"] else "") + ")"
+        )
+        self.dismiss(payload)
+
+
+RETIREMENT_COLUMNS = [
+    "entity_type", "entity_id", "retired_by_type", "retired_by_id",
+    "reason_code", "reason", "actor", "retired_at",
+]
+
+
+class RetiredModal(DismissOnce, WorkerResults, ModalScreen):
+    """Read-only ``operon retired`` browser.
+
+    The CLI prints the same rows; the checkbox is the ``--direct-only`` flag.
+    Nothing is written: the modal only reads the lifecycle views.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+    ]
+
+    def __init__(self, project: Project) -> None:
+        super().__init__()
+        self.project = project
+        self.rows: list[dict[str, Any]] = []
+        self._loading = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-box", classes="wide"):
+            yield Label("Retired entities", id="modal-title")
+            yield Static("", id="retired-command", classes="modal-info")
+            yield Checkbox(
+                "direct retirements only (--direct-only)",
+                id="retired-direct-only",
+            )
+            yield DataTable(id="retired-table", cursor_type="row")
+            yield Static("", id="retired-status")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Close", id="cancel", variant="primary")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#retired-table", DataTable)
+        table.add_columns(*RETIREMENT_COLUMNS)
+        self._refresh_command()
+        self._load()
+
+    def _refresh_command(self) -> None:
+        parts = ["operon", "retired"]
+        if self.query_one("#retired-direct-only", Checkbox).value:
+            parts.append("--direct-only")
+        self.query_one("#retired-command", Static).update(" ".join(parts))
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "retired-direct-only":
+            self._refresh_command()
+            self._load()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "cancel":
+            self.dismiss(None)
+
+    @work(thread=True)
+    def _load(self) -> None:
+        try:
+            payload: Any = data.list_retired(
+                self.project,
+                direct_only=self.query_one("#retired-direct-only", Checkbox).value,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
+            payload = exc
+        self.post_to_ui(self._apply, payload)
+
+    def _apply(self, payload: Any) -> None:
+        status = self.query_one("#retired-status", Static)
+        if isinstance(payload, BaseException):
+            status.update(Text(f"error: {payload}", style="red"))
+            return
+        self.rows = payload
+        table = self.query_one("#retired-table", DataTable)
+        view = capture_table_view(table)
+        table.clear()
+        for row in self.rows:
+            table.add_row(*[
+                "" if row.get(column) is None else str(row.get(column, ""))
+                for column in RETIREMENT_COLUMNS
+            ])
+        restore_table_view(table, view, len(self.rows))
+        status.update(
+            f"{len(self.rows)} retirement(s)" if self.rows else "no retired entities"
+        )
+
+
+class ExportQcModal(WriteModal):
+    """Form + confirm for `operon report qc --export` (read-only export).
+
+    The entity-type filter mirrors the CLI flag; the export itself is the
+    core's own, so the TSVs are byte-identical to a CLI run with the same
+    filter.
+    """
+
+    def __init__(self, project: Project, entity_type: str = "") -> None:
+        super().__init__("Export QC results")
+        self.project = project
+        self.initial_entity_type = entity_type or ""
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(
+            "write qc/aggregate/qc_results.tsv (long form) and "
+            "qc_results.wide.tsv (one row per entity/file) — the files are "
+            "byte-identical to a CLI export with the same filter. Read-only: "
+            "no `changes` or `workflow_runs` rows are recorded.",
+            id="qc-export-info", classes="modal-info",
+        )
+        options = [("all entity types", "")] + [
+            (kind, kind) for kind in sorted(ENTITY_TABLES)
+        ]
+        yield Select(
+            options, value=self.initial_entity_type, id="qc-export-type",
+            allow_blank=False,
+        )
+        yield Checkbox(
+            "include retired entities (--include-retired)",
+            id="qc-export-include-retired",
+        )
+
+    def _entity_type(self) -> str:
+        value = self.query_one("#qc-export-type", Select).value
+        return "" if value is Select.NULL else str(value)
+
+    def command_text(self) -> str:
+        parts = ["operon", "report", "qc"]
+        entity_type = self._entity_type()
+        if entity_type:
+            parts += ["--entity-type", entity_type]
+        parts.append("--export")
+        if self.query_one("#qc-export-include-retired", Checkbox).value:
+            parts.append("--include-retired")
+        return " ".join(parts)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "qc-export-type":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "qc-export-include-retired":
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.export_qc_report(
+                self.project,
+                entity_type=self._entity_type() or None,
+                include_retired=self.query_one("#qc-export-include-retired", Checkbox).value,
+            )
+        )
+
+    def on_action_success(self, payload: dict[str, Any]) -> None:
+        self.app.notify(
+            f"QC report written to {payload['directory']} "
+            f"({payload['rows']} row(s)"
+            + (f", entity type {payload['entity_type']}" if payload["entity_type"] else "")
+            + (", retired included" if payload["include_retired"] else "") + ")"
+        )
         self.dismiss(payload)
 
 
@@ -521,6 +878,7 @@ class EntitiesPanel(Panel):
     BINDINGS = [
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
+        Binding("s", "set_state", "Set state"),
         Binding("a", "add_record", "Add record"),
         Binding("A", "add_accession", "Add accession"),
         Binding("n", "next_id", "Next ID"),
@@ -539,6 +897,11 @@ class EntitiesPanel(Panel):
             yield Tree("entities", id="entities-tree")
             with VerticalScroll(id="entity-detail-scroll"):
                 yield Static("select an entity", id="entity-detail", classes="body")
+        with Horizontal(id="entities-actions"):
+            yield Button("Set state", id="entities-set-state")
+            yield Button("Export metadata…", id="entities-export-metadata")
+            yield Button("Export QC…", id="entities-export-qc")
+            yield Button("Retired…", id="entities-retired")
 
     def _fetch(self) -> list[dict[str, Any]]:
         return data.entity_tree(self.project, include_retired=self.include_retired)
@@ -581,6 +944,33 @@ class EntitiesPanel(Panel):
         )
 
     def _after_lifecycle(self, result: Any) -> None:
+        if result:
+            self.app.reload_after_write()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "entities-set-state":
+            self.action_set_state()
+        elif event.button.id == "entities-export-metadata":
+            self.app.push_screen(ExportMetadataModal(self.project))
+        elif event.button.id == "entities-export-qc":
+            entity_type = self.detail["entity_type"] if self.detail else ""
+            self.app.push_screen(ExportQcModal(self.project, entity_type))
+        elif event.button.id == "entities-retired":
+            self.app.push_screen(RetiredModal(self.project))
+
+    def action_set_state(self) -> None:
+        if not self.detail:
+            self.app.notify("select an entity first", severity="warning")
+            return
+        entity_type = self.detail["entity_type"]
+        entity_id = self.detail["entity_id"]
+        state = self.detail.get("state") or {}
+        self.app.push_screen(
+            SetStateModal(self.project, entity_type, entity_id, state.get("state", "")),
+            self._after_set_state,
+        )
+
+    def _after_set_state(self, result: Any) -> None:
         if result:
             self.app.reload_after_write()
 
@@ -651,6 +1041,24 @@ class EntitiesPanel(Panel):
                     text.append("\n")
                 else:
                     text.append(f"{value}\n")
+        supersessions = detail.get("supersessions") or []
+        if supersessions:
+            # The browser lists the links instead of hiding the entities the
+            # CLI's default graph view drops; each row names both ends so the
+            # chain reads in either direction.
+            text.append("\nSupersessions\n", style="bold")
+            for row in supersessions:
+                if (row["object_type"], row["object_id"]) == (
+                    detail["entity_type"], detail["entity_id"],
+                ):
+                    line = (f"  superseded by {row['superseded_by_type']} "
+                            f"{row['superseded_by_id']}")
+                else:
+                    line = (f"  supersedes {row['object_type']} "
+                            f"{row['object_id']}")
+                if row.get("reason"):
+                    line += f"  — {row['reason']}"
+                text.append(line + f"  ({row['superseded_at']})\n")
         state = detail.get("state")
         text.append("\nState\n", style="bold")
         if state:

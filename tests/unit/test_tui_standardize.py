@@ -27,7 +27,7 @@ import pytest
 pytest.importorskip("textual")
 
 from rich.text import Text
-from textual.widgets import Button, DataTable, Select, Static
+from textual.widgets import DataTable, Select, Static
 
 from operon.config import Project
 from operon.database import Database
@@ -38,6 +38,7 @@ from operon.tui import actions
 from operon.tui.app import OperonApp
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.files_ops import StandardizeModal
+from tests.tui_helpers import click as _click
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
@@ -81,21 +82,6 @@ async def _wait_until(predicate: Callable[[], bool], description: str,
         if loop.time() > deadline:
             raise TimeoutError(f"UI did not {description} within {timeout}s")
         await asyncio.sleep(0.05)
-
-
-async def _click(pilot, selector: str) -> None:
-    """Click a widget, clearing a lingering press effect first (ODR-0024).
-
-    A ``Button`` keeps its ``-active`` press effect for about 0.2 s and Textual
-    drops a ``Button.Pressed`` raised inside that window, so a rapid second
-    click would report ``landed=True`` and do nothing.
-    """
-    widget = pilot.app.screen.query_one(selector)
-    widget.scroll_visible(animate=False)
-    await pilot.pause()
-    if isinstance(widget, Button) and widget.has_class("-active"):
-        await _wait_until(lambda: not widget.has_class("-active"), f"{selector} to settle")
-    await pilot.click(selector)
 
 
 def _static_text(widget: Static) -> str:
