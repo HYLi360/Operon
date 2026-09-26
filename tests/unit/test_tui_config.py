@@ -43,8 +43,6 @@ from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
     CommandRow,
-    _format_parameter_line,
-    _parse_parameter_line,
     ConfigPanel,
     HistoryModal,
     NewProfileModal,
@@ -52,6 +50,8 @@ from operon.tui.screens.config import (
     RecipeSaveModal,
     RuleRow,
     SnapshotViewModal,
+    _format_parameter_line,
+    _parse_parameter_line,
 )
 from operon.tui.screens.config_classification import (
     BestByRow,
