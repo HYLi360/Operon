@@ -1859,3 +1859,59 @@ def set_state(project: Project, entity_type: str, entity_id: str, state: str,
             "message": str(message).strip(),
             "actor": actor,
         }
+
+
+def export_metadata_report(project: Project, output: str | None = None,
+                           include_retired: bool = False) -> dict[str, Any]:
+    """Write ``operon report metadata``, through the core's own exporter.
+
+    Read-only like the CLI's ``report`` group (the session cannot write), so no
+    ``changes`` or ``workflow_runs`` rows are recorded; the TSVs come from the
+    core function with the same flags, which makes them byte-identical to a CLI
+    export of the same project — only the manifest's volatile ``created_at``
+    differs between runs.  The return value reports what the manifest says was
+    written.
+    """
+    from operon.reports import export_metadata_report as core_export
+
+    with _open_read_only(project) as db:
+        path = core_export(db, project, output or None, include_retired=include_retired)
+    manifest = json.loads((Path(path) / "manifest.json").read_text(encoding="utf-8"))
+    tables = manifest.get("tables", {})
+    return {
+        "path": str(path),
+        "include_retired": include_retired,
+        "tables": len(tables),
+        "rows": sum(int(entry.get("row_count", 0)) for entry in tables.values()),
+        "names": sorted(tables),
+    }
+
+
+def export_qc_report(project: Project, entity_type: str | None = None,
+                     include_retired: bool = False) -> dict[str, Any]:
+    """Write ``operon report qc --export``, through the core's own exporter.
+
+    Read-only like the CLI's ``report`` group (no ``changes`` or
+    ``workflow_runs`` rows), and the long-form and wide TSVs come from
+    ``reports.export_qc_tsv`` with the same flags — so they are byte-identical
+    to a CLI export of the same project, entity-type filter included.
+    """
+    from operon.reports import export_qc_tsv
+
+    with _open_read_only(project) as db:
+        wide = export_qc_tsv(
+            db, project, entity_type or None, include_retired=include_retired,
+        )
+    files = []
+    for name in ("qc_results.tsv", "qc_results.wide.tsv"):
+        path = wide.parent / name
+        rows = max(0, len(path.read_text(encoding="utf-8").splitlines()) - 1)
+        files.append({"name": name, "path": str(path), "rows": rows})
+    return {
+        "path": str(wide),
+        "directory": str(wide.parent),
+        "entity_type": entity_type or "",
+        "include_retired": bool(include_retired),
+        "files": files,
+        "rows": sum(entry["rows"] for entry in files),
+    }

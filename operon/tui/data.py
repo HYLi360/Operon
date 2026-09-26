@@ -279,9 +279,22 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
             (entity_type, entity_id),
         )
         metrics = _entity_metrics(db, entity_type, entity_id)
+        supersessions = (
+            _rows(
+                db,
+                "SELECT object_type, object_id, superseded_by_type, superseded_by_id, "
+                "reason, evidence, superseded_at FROM entity_supersessions "
+                "WHERE (object_type=? AND object_id=?) "
+                "OR (superseded_by_type=? AND superseded_by_id=?) "
+                "ORDER BY superseded_at, object_type, object_id",
+                (entity_type, entity_id, entity_type, entity_id),
+            )
+            if db.lifecycle_schema_available() else []
+        )
     return {
         "entity_type": entity_type,
         "entity_id": entity_id,
+        "supersessions": supersessions,
         "fields": fields,
         "accessions": accessions,
         "state": state,
@@ -468,12 +481,15 @@ def list_decisions(
         decision: str | None = None,
         text: str = "",
         limit: int = 500,
+        include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     """Return rows from the ``current_decisions`` view.
 
     The effective decision is ``COALESCE(curated_decision, decision)``; the
     ``decision`` filter matches that effective value.  ``text`` is a
-    case-insensitive substring over entity_type/entity_id.
+    case-insensitive substring over entity_type/entity_id.  ``include_retired``
+    mirrors ``report decisions --include-retired``, with the same predicate and
+    the same lifecycle gating as the core's ``reports.print_decisions``.
     """
     conditions: list[str] = []
     params: list[Any] = []
@@ -491,13 +507,20 @@ def list_decisions(
         "curated_by, curated_reason, curated_at, reason_codes, evaluated_at "
         "FROM current_decisions"
     )
-    if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
-    sql += " ORDER BY entity_type, entity_id, profile"
-    if limit:
-        sql += " LIMIT ?"
-        params.append(limit)
     with _open(project) as db:
+        if not include_retired and db.lifecycle_schema_available():
+            # Appended last so the positional parameters above keep their order.
+            conditions.append(
+                "NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type=current_decisions.entity_type "
+                "AND r.entity_id=current_decisions.entity_id)"
+            )
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY entity_type, entity_id, profile"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
         return _rows(db, sql, params)
 
 
@@ -1241,3 +1264,17 @@ def sync_preview(project: Project, *, file_ids: Iterable[str] | None = None) -> 
             for row in rows
         ],
     }
+
+
+def list_retired(project: Project, *, direct_only: bool = False) -> list[dict[str, Any]]:
+    """Return current retirements, like ``operon retired``.
+
+    The core ``lifecycle.list_retired_entities`` is the single source, so the
+    rows and the ``--direct-only`` semantics are the CLI's own: ``True`` lists
+    the direct retirement events, ``False`` the effective set where
+    ``retired_by_*`` names the ancestor that caused an inherited retirement.
+    """
+    from operon.lifecycle import list_retired_entities
+
+    with _open(project) as db:
+        return list_retired_entities(db, direct_only=direct_only)

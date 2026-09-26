@@ -69,10 +69,10 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | 界面 | 按键 | 内容 |
 |------|------|------|
 | Home | `1` | 项目标识、各类实体计数、文件数量与总大小、判定分布、最新 release、最近 10 条 workflow 运行记录，以及"Attention needed"（需要关注）小节（failed/interrupted 运行、当前判定为 REVIEW/FAIL 的实体、状态不健康的文件）。*NCBI Datasets import*、*Import dataset* 与 *Import table* 按钮分别打开 NCBI Datasets 对话框（见下文）、导入向导与受控 metadata 表格对话框（见下文）；向导也可用 `i` 键打开。*Create backup* 与 *Verify backup* 按钮分别打开备份对话框（见下文）。 |
-| Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。按 `s` 手工设置所选实体的工作流状态（见下文）。按 `a` 添加一条元数据记录（见下文）。 |
+| Entities | `2` | 层级树（organisms → samples → runs 与 assemblies → annotations），并显示每个实体的当前状态。选中节点时显示其元数据字段、accession、状态、关联文件，以及最新的内置 QC 与外部分析（如 BUSCO/QUAST）指标。已逻辑退休的实体默认显示（暗淡加删除线）；按 `t` 可隐藏它们。按 `x` 打开生命周期对话框（见下文）。按 `s` 手工设置所选实体的工作流状态（见下文）。树下方按钮条包含 *Set state*、*Export metadata…*、*Export QC…* 与 *Retired…*（见下文）。按 `a` 添加一条元数据记录（见下文）。 |
 | Files | `3` | 可过滤的文件清单表格（子串过滤加状态选择器）。移动光标即可查看完整文件记录、其 `file_locations` 驻留列表，以及 *Sequence labels* 小节（`classify-sequences` 的结果按 label 与 profile 聚合）。状态带有颜色标记：已验证为绿色，`REMOTE_ONLY` 为蓝色，`MISSING`/`CHECKSUM_FAILED` 为红色。按 `i`/`v`/`q`/`l` 分别进行归档、校验、QC 与 label 浏览器，按 `e`/`s`/`a`/`f` 分别进行 extract-domains、select-sequences、adopt 与 fanout（见下文）。 |
 | Tasks | `4` | Workflow 运行监控（指处理任务，而非测序 run），数据源与 `operon workflow list` 使用相同的只读查询。一行紧凑过滤条放 状态/step/entity/数量上限；CLI 其余过滤——`--from`/`--to`（ISO-8601；非法值或 `--from` ≥ `--to` 在对话框内内联报错）、`--run-id`、`--parent-run-id`、`--tool`、`--executor`、`--offset` 与 `--oldest-first`——收在 *More…* 按钮后的进阶过滤对话框里，按钮上显示当前生效的过滤项数（*Clear* 清空；`--resumes-run-id` 与机器格式仍只在 CLI）。表格在进入时加载、按 `r` 手动刷新（无后台轮询），光标与滚动位置在刷新间保持不变。在某一行按 `enter` 查看完整运行记录（与 `operon workflow show` 相同的小节）；按 `esc` 返回。对*运行中*的 run，详情屏的 *Follow logs* 每秒追加一次本地 `logs/<run_id>.stdout.log`/`.stderr.log` 的增量，直到 run 离开 `running` 并报告最终状态——它只观察、从不取消（SSH 后端的日志在结束时才拉回，因此在此之前没有内容）。*Analysis jobs* 按钮打开只读的 `analysis_jobs` 浏览器（analysis/status/limit 过滤，并显示选中行的完整错误与产物路径），其中也包括在 job array 中被中断的任务——这类行永远不会有 `workflow_runs` 行。*Environments* 按钮浏览已捕获的执行环境（与 `operon environments list` 相同的列表），并以只读方式渲染 *View JSON*、*Export explicit* 与 *Export yaml*——把 conda spec 落盘仍是 CLI 重定向（缺少包清单等错误内联显示）。*New analysis* 与 *Run external* 按钮分别打开分析对话框与外部命令对话框；*Analysis hits* 按钮打开比对命中浏览器（`report analysis --hits` 的列与过滤，*Export* 写出的文件与 CLI `--out` 逐字节一致）（见下文）。 |
-| Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。 |
+| Decisions | `5` | 来自 `current_decisions` 视图的当前判定（有效判定 = 存在人工裁定时的裁定值，标记 `✎curated`），支持 profile/判定/文本过滤。按 `e` 评估，按 `c` 裁定选中行（见下文）。  *include retired* 勾选框对应 `report decisions --include-retired`（默认关闭，与 CLI 一致）。 |
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles**（含 `kind: qc` 与 `kind: sequence_classification` 两类 profile，各自独立的表单）与 **Tools & Recipes**。详见下文。 |
 | Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
 | Coverage | `8` | 已导入的 NCBI Taxonomy 快照、已编译的 reference set、覆盖度报告生成（`operon report coverage`），以及已有 `reports/coverage/COV_*` 报告的浏览器。详见下文。 |
@@ -120,6 +120,10 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | — | Home | 创建带校验清单的备份（*Create backup* 按钮）：选择范围（`control`、`results` 或 `full`）与目标目录，Confirm 后在与 CLI 相同的只读会话上调用 `operon.backup.create_backup`。目标必须不存在且位于项目根目录之外（两者均为内联错误）；每个被复制的文件都会带 sha256 记录进 `backup-manifest.json`。运行中的备份无法从 TUI 中断。 | `operon backup create --output … [--scope {control,results,full}]` |
 | — | Home | 校验已有备份（*Verify backup* 按钮）：逐条重新计算清单条目的哈希、比对符号链接目标，并把清单之外的文件报告为 unexpected。该对话框是只读的——不写任何内容——结果保留在屏幕上：`OK` 加已校验数量，或 `FAILED` 加失败明细列表；失败同时以错误通知呈现（对应 CLI 的退出码 1）。 | `operon backup verify --input …` |
 | — | Entities | 手工设置所选实体的工作流状态（按 `s`，或详情面板上的 *Set state*）：表单显示当前状态与从核心 `workflow.TRANSITIONS` 读取的标准迁移，目标状态来自基于 `VALID_STATES` 的选择框，并且 message 为必填——CLI 在此会回退为 `forced transition`，这里必须写明审计原因。`--force` 是默认关闭的勾选框：非法迁移会抵达核心，核心以自己的 `ConflictError` 内联拒绝，而表单保持打开，因此强制迁移始终是有意的第二步。运行会写入与 CLI 相同的 `changes` 行（旧状态 → 新状态、message 作为原因、解析出的 actor）。 | `operon set-state --entity-type … --entity-id … --state … [--message …] [--force]` |
+| — | Entities | 导出派生的元数据快照（*Export metadata…* 按钮）：向所选目录写入每表一个 TSV 加 `manifest.json`（留空 = `reports/metadata`），并有对应 `--include-retired` 的 *include retired* 勾选框。导出在只读会话上调用核心导出器，因此 TSV 与 `operon report metadata` 逐字节一致，且不写任何 `changes`/`workflow_runs` 行。 | `operon report metadata [--output …] [--include-retired]` |
+| — | Entities | 导出 QC 结果（*Export QC…* 按钮）：长表 `qc/aggregate/qc_results.tsv` 与宽表 `qc_results.wide.tsv`，与 `operon report qc --export` 在相同 entity-type 过滤下逐字节一致（选择框默认取所选实体的类型；选择 *all entity types* 即不带该参数）。与 CLI 的 `report` 组一样为只读。 | `operon report qc [--entity-type …] --export [--include-retired]` |
+| — | Entities | 浏览退休记录（*Retired…* 按钮）：与 `operon retired` 相同的行，并用 *direct retirements only* 勾选框对应 `--direct-only`——勾选时列出直接退休事件，未勾选时为生效集合，其中 `retired_by_*` 指出导致继承退休的祖先实体。只读。 | `operon retired [--direct-only]` |
+| — | Entities | 实体详情新增 `Supersessions` 小节，双向列出该实体的替代关系（`superseded by …` / `supersedes …`）及原因与日期，因此浏览器展示的是 `show --include-superseded` 所包含的内容，而不是隐藏这些实体。 | `operon show … --include-superseded` |
 | — | Remotes | 把清单文件上传到已配置的镜像（*Push…* 按钮，默认预选表格中选中的镜像）：remote 选择、重复的 `--file-id` 过滤（留空 = 全部清单文件）、本地选择预览（数量与字节数；远端是否已有副本要等传输逐文件判定并记为 `skipped`），随后 Confirm。传输期间显示活动指示——核心不上报逐文件进度，且运行中的 push 无法从 TUI 中断。结束后渲染并保留 CLI 的结果表（`file_id`、`relative_path`、`status`、`error`，并以 `push <remote>: <状态>: <数量>, …` 收尾）；有失败的批次会保留失败明细，同时发出错误通知（对应 CLI 的退出码 1）。 | `operon push --remote … [--file-id …]` |
 | — | Remotes | 从已配置的镜像恢复文件（*Pull…* 按钮）：remote 选择、重复的 `--file-id` 过滤（留空 = *远端*清单中的每一条，清单在传输开始时从镜像读取）。逐字节校验且幂等：`skipped` 表示本地字节已一致，本地存在但字节不同的文件绝不覆盖；下载完成的文件被记录为 `CHECKSUM_VERIFIED`（不会把 `STANDARDIZED` 降级）并写入驻留行。结果表与错误通知同上，运行中的 pull 无法中断。 | `operon pull --remote … [--file-id …]` |
 | — | Remotes | 在证明镜像副本存在后删除本地字节（*Evict…* 按钮）：remote 选择与重复的 `--file-id` 过滤，随后是只读的 *Verify remote copies* 预检（`actions.evict_plan` 执行与正式运行相同的逐文件校验，且不改动 `file_locations`），逐行列出 eligible 或 blocked 及原因。只要存在 blocked 文件，Confirm 即保持禁用——CLI 的“先校验后 evict”规则在事前可见，而不是运行中途才报错——当镜像或 file-id 过滤改变、以及每次运行结束后，门禁都会重新武装。正式运行会自行重新校验每个文件（预检之后镜像发生变化只会让该文件失败，而不会删除字节），把状态置为 `REMOTE_ONLY`、写入 `.operon/placeholders` 指针与驻留行，并渲染 CLI 的结果表。运行中的 evict 无法中断。 | `operon evict --remote … [--file-id …]` |
@@ -351,3 +355,16 @@ result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtbl
 > 保存在 `recipe_snapshots` 表中（`operon recipes history` /
 > `operon recipes show`）。手工编辑该文件仍然完全受支持——TUI 是带审计的
 > 替代途径。
+
+## 有意保留在 CLI 的界面
+
+以下界面留在 CLI 是明确决定而非遗漏；parity 注册表（`operon/tui/parity.py`）把它们逐条登记为
+`cli-only` 并写明理由，`tests/unit/test_tui_cli_parity.py` 负责保证这一点不被悄悄放宽。
+
+- **TimeTree**（`operon timetree …` 全部七个子命令）——该集成为逐字查询缓存，其条款禁止镜像或再
+  分发，且预期迁往分析插件；TUI 有意不为它增加屏幕、对话框或请求面，因此不会意外扩大缓存查询边界。
+- **机器可读输出**（`retired`、`show`、`workflow list`、`workflow show` 上的 `--json` /
+  `--format json|jsonl`）——TUI 渲染交互视图；JSON 文档在其中没有消费者，而 CLI 自身的导出路径才是
+  获取它的正途。
+- **`show --scope organism`**——该查询返回所属 organism 的全部后代（真实项目里可达数千行），而实体
+  详情只回答被选中的实体；这种宽图查询留在 CLI。

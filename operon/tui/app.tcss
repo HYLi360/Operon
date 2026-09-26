@@ -20,6 +20,11 @@
     border-right: solid $primary;
 }
 
+#entities-actions {
+    height: 3;
+    align-horizontal: left;
+}
+
 #entity-detail-scroll {
     width: 1fr;
 }

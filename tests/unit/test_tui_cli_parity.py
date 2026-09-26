@@ -145,8 +145,6 @@ def test_strict_mode_flags_planned_entries(monkeypatch: pytest.MonkeyPatch) -> N
     planned = [
         entry.command_text for entry in REGISTRY if entry.status == STATUS_PLANNED
     ]
-    assert planned, "registry sanity check: expected at least one planned entry"
-
     monkeypatch.delenv("OPERON_PARITY_STRICT", raising=False)
     assert parity.strict_violations() == []
 
@@ -168,6 +166,29 @@ def test_strict_mode_flags_planned_entries(monkeypatch: pytest.MonkeyPatch) -> N
 
 def _implemented_entries() -> list[parity.ParityEntry]:
     return [entry for entry in REGISTRY if entry.status == STATUS_IMPLEMENTED]
+
+
+def test_no_registry_entry_is_still_attributed_to_m5() -> None:
+    """M5's close-out: no gap and no waiver is left waiting on the milestone.
+
+    The milestone attribution lives in the free-text note/reason, so this is
+    the machine check the plan's close-out asks for: after M5 every entry is
+    either implemented, deliberately ``cli-only``, or waived with a standing
+    reason that stands on its own.
+    """
+    planned = [
+        entry.command_text
+        for entry in REGISTRY
+        if entry.status == STATUS_PLANNED and "M5" in entry.note
+    ]
+    waived = [
+        f"{entry.command_text}:{dest}"
+        for entry in REGISTRY
+        for dest, reason in entry.waived.items()
+        if "M5" in reason
+    ]
+    assert planned == []
+    assert waived == []
 
 
 def test_implemented_entries_cover_every_cli_flag() -> None:
@@ -1653,6 +1674,201 @@ def test_audit_parity_add(
     )
     assert result["entity_id"] == "ORG_000881"
     _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
+
+
+def test_export_qc_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportQcModal
+
+    payload = {"path": "/tmp/qc_results.wide.tsv", "directory": "/tmp",
+               "entity_type": "organism", "include_retired": True,
+               "files": [], "rows": 7}
+    calls = spy_action(monkeypatch, "export_qc_report", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ExportQcModal(project, "organism")
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#qc-export-type")
+            # The entity type the screen was opened on prefills the filter and
+            # --export is what the dialog is for; the checkbox starts off.
+            assert modal.command_text() == "operon report qc --entity-type organism --export"
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.entity_type == "organism"
+            assert namespace.export is True
+            assert namespace.include_retired is False
+
+            (await _q(modal, "#qc-export-include-retired", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.include_retired is True
+
+            # "all entity types" drops the filter, like the CLI's default.
+            (await _q(modal, "#qc-export-type", Select)).value = ""
+            await pilot.pause()
+            assert modal.command_text() == "operon report qc --export --include-retired"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "qc export call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {"entity_type": None, "include_retired": True}
+    assert dismissed == [payload]
+
+
+def test_export_qc_report_matches_the_cli_bytes(
+    project: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The export writes the CLI's own files: same names, same bytes."""
+    aggregate = project.qc_root / "aggregate"
+    assert cli_main(["--project", str(project.root), "report", "qc", "--export"]) == 0
+    capsys.readouterr()
+    cli_bytes = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    assert set(cli_bytes) == {"qc_results.tsv", "qc_results.wide.tsv"}
+
+    shutil.rmtree(aggregate)
+    result = actions.export_qc_report(project)
+    assert result["directory"] == str(aggregate)
+    assert {entry["name"] for entry in result["files"]} == set(cli_bytes)
+    assert result["rows"] == sum(entry["rows"] for entry in result["files"])
+    for name, blob in cli_bytes.items():
+        assert (aggregate / name).read_bytes() == blob, name
+
+    # The entity-type filter is the CLI flag: same bytes again, filtered.
+    assert cli_main([
+        "--project", str(project.root), "report", "qc", "--export",
+        "--entity-type", "organism",
+    ]) == 0
+    capsys.readouterr()
+    filtered = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    shutil.rmtree(aggregate)
+    assert actions.export_qc_report(project, entity_type="organism")["entity_type"] == "organism"
+    for name, blob in filtered.items():
+        assert (aggregate / name).read_bytes() == blob, name
+    assert filtered["qc_results.tsv"] != cli_bytes["qc_results.tsv"], (
+        "the entity-type filter must actually narrow the export"
+    )
+
+
+def test_export_metadata_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportMetadataModal
+
+    payload = {"path": str(tmp_path / "meta"), "include_retired": True,
+               "tables": 5, "rows": 9, "names": ["organisms.tsv"]}
+    calls = spy_action(monkeypatch, "export_metadata_report", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ExportMetadataModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#metadata-output")
+            # A blank path keeps the flag off: the core default applies.
+            assert modal.command_text() == "operon report metadata"
+            assert parse_command_text(modal.command_text()).output is None
+
+            (await _q(modal, "#metadata-output", Input)).value = str(tmp_path / "meta")
+            (await _q(modal, "#metadata-include-retired", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.output == str(tmp_path / "meta")
+            assert namespace.include_retired is True
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "metadata export call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {"output": str(tmp_path / "meta"), "include_retired": True}
+    assert dismissed == [payload]
+
+
+def test_entities_export_button_opens_the_metadata_dialog(project: Project) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Button
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportMetadataModal
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _wait_until(
+                lambda: app.screen.query("#entities-export-metadata"), "export button"
+            )
+            app.screen.query_one("#entities-export-metadata", Button).press()
+            await _wait_until(
+                lambda: isinstance(app.screen, ExportMetadataModal), "export dialog"
+            )
+
+    _run(scenario())
+
+
+def test_export_metadata_report_matches_the_cli_bytes(
+    project: Project,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The export is the CLI's own: same file set, same bytes per file."""
+    cli_out = tmp_path / "cli"
+    tui_out = tmp_path / "tui"
+    assert cli_main([
+        "--project", str(project.root), "report", "metadata", "--output", str(cli_out),
+    ]) == 0
+    capsys.readouterr()
+    result = actions.export_metadata_report(project, output=str(tui_out))
+    assert result["tables"] > 0
+    assert result["rows"] > 0
+    assert result["names"] == sorted(entry.name for entry in cli_out.glob("*.tsv"))
+
+    cli_names = sorted(entry.name for entry in cli_out.iterdir())
+    assert cli_names == sorted(entry.name for entry in tui_out.iterdir())
+    for name in cli_names:
+        assert (cli_out / name).read_bytes() == (tui_out / name).read_bytes(), name
+    cli_manifest = json.loads((cli_out / "manifest.json").read_text(encoding="utf-8"))
+    tui_manifest = json.loads((tui_out / "manifest.json").read_text(encoding="utf-8"))
+    cli_manifest.pop("created_at")
+    tui_manifest.pop("created_at")
+    assert cli_manifest == tui_manifest
+
+    cli_all = tmp_path / "cli-all"
+    tui_all = tmp_path / "tui-all"
+    assert cli_main([
+        "--project", str(project.root), "report", "metadata",
+        "--output", str(cli_all), "--include-retired",
+    ]) == 0
+    capsys.readouterr()
+    result_all = actions.export_metadata_report(
+        project, output=str(tui_all), include_retired=True)
+    assert result_all["include_retired"] is True
+    for name in sorted(entry.name for entry in cli_all.iterdir()):
+        assert (cli_all / name).read_bytes() == (tui_all / name).read_bytes(), name
 
 
 def test_set_state_modal_command_text_matches_action_kwargs(
