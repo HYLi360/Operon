@@ -1411,7 +1411,7 @@ defects:
     Selects of the import wizard and the filter bars keep that distance too. Two
     regressions pin the fix: one removes the label from a mounted control and asserts
     the assignment survives and the retry paints it, one pins the give-up warning.'
-  fix_commit: null
+  fix_commit: e959c70937f70489fb1e36b20e66d7f6679981fb
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_config.py::test_fitting_select_survives_a_paint_whose_label_has_not_composed
