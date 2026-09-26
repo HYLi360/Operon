@@ -406,7 +406,12 @@ version, database mode (Select over `reference`/`mutable_cache`, blank =
 the core default `reference`; `mutable_cache` without an explicit database
 version is rejected inline), an optional `database_checksum` (sha256 hex),
 environment policy (Select over `ignore`/`warn`/`strict`, blank =
-the core default `warn`), output
+the core default `warn`), the per-recipe `slurm` overrides (`partition`,
+`time`, `mem_gb`, `poll_interval`, an `array` Select whose blank means the key
+is absent, `array_concurrency`, and `extra_sbatch`/`setup_commands` as
+one-per-line lists; they merge over `execution.slurm` at run time, a number
+that does not parse is refused inline, and any override key the form does not
+model is carried through verbatim and listed under the fields), output
 subdirectory, suffix and `output_name` template inputs (`${file_id}` and
 the other placeholders stay visible), `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as

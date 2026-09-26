@@ -462,6 +462,10 @@ SelectCurrent Static#label {
     height: 6;
 }
 
+#recipe-slurm-extra-sbatch, #recipe-slurm-setup-commands {
+    height: 4;
+}
+
 .command-row {
     height: auto;
 }

@@ -338,7 +338,11 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 键不存在）、database、database version、database mode（Select：
 `reference`/`mutable_cache`，留空 = 核心默认值 `reference`；`mutable_cache`
 未显式给出 database version 会被内联拒绝）、可选的 `database_checksum`
-（sha256 十六进制）、environment policy（Select：
+（sha256 十六进制）、per-recipe 的 `slurm` 覆盖（`partition`、`time`、`mem_gb`、
+`poll_interval`、`array` Select（留空 = 键不存在）、`array_concurrency`，以及
+`extra_sbatch` / `setup_commands` 两个每行一项的列表；它们在运行期合并到
+`execution.slurm` 之上，无法解析的数字会被内联拒绝，表单未建模的覆盖键逐字保留
+并在字段下方列出）、environment policy（Select：
 `ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
 子目录、后缀与 `output_name` 模板输入框（`${file_id}` 等占位符保持可见），
 `arguments` 为每行一个参数的文本框（`${input}` 等占位符

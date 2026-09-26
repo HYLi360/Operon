@@ -3717,3 +3717,74 @@ def test_config_screen_recipe_database_mode_and_checksum(project: Project) -> No
     assert saved["database_mode"] == "reference"
     assert saved["database_checksum"] == "deadbeef"
     assert get_recipe(project, "cache_probe").version == 2
+
+
+def test_config_screen_recipe_slurm_overrides_roundtrip(project: Project) -> None:
+    """Slurm overrides: modeled keys edit, unmodeled ones survive verbatim."""
+    path = project.tools_config_path
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["tools"]["blastn"]["recipes"]["slurm_probe"] = {
+        "description": "slurm override probe",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "arguments": ["-query", "${input}"],
+        "slurm": {
+            "partition": "long",
+            "mem_gb": 32,
+            "array": True,
+            "array_concurrency": 4,
+            "extra_sbatch": ["--gres=gpu:1"],
+            "future_key": {"nested": True},   # a key this form does not model
+        },
+    }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("slurm_probe")
+            await pilot.pause()
+            assert panel.query_one("#recipe-slurm-partition", Input).value == "long"
+            assert panel.query_one("#recipe-slurm-mem-gb", Input).value == "32"
+            assert panel.query_one("#recipe-slurm-array", Select).value == "true"
+            assert panel.query_one("#recipe-slurm-array-concurrency", Input).value == "4"
+            assert panel.query_one("#recipe-slurm-extra-sbatch", TextArea).text == "--gres=gpu:1"
+            assert panel.query_one("#recipe-slurm-time", Input).value == ""
+            assert "future_key" in _static_text(panel.query_one("#recipe-slurm-note", Static))
+
+            # A non-numeric mem_gb is refused inline, with the core's wording.
+            panel.query_one("#recipe-slurm-mem-gb", Input).value = "lots"
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "slurm mem_gb must be an integer >= 0" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # Fix it, add a time limit, drop the array flag (blank = key absent).
+            panel.query_one("#recipe-slurm-mem-gb", Input).value = "64"
+            panel.query_one("#recipe-slurm-time", Input).value = "12:00:00"
+            panel.query_one("#recipe-slurm-array", Select).value = Select.NULL
+            panel.query_one("#recipe-slurm-array-concurrency", Input).value = ""
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    raw = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    saved = raw["tools"]["blastn"]["recipes"]["slurm_probe"]["slurm"]
+    assert saved["partition"] == "long"
+    assert saved["mem_gb"] == 64
+    assert saved["time"] == "12:00:00"
+    assert saved["extra_sbatch"] == ["--gres=gpu:1"]
+    assert "array" not in saved and "array_concurrency" not in saved
+    assert saved["future_key"] == {"nested": True}

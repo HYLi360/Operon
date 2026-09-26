@@ -88,6 +88,19 @@ ARTIFACT_KINDS = ("file", "directory")
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
 HMMER_MODES = ("hmmsearch", "hmmscan")
 DATABASE_MODES = ("reference", "mutable_cache")
+#: The `slurm` override keys the per-recipe form models, in the order
+#: `execution.slurm` documents them; anything else a recipe carries survives
+#: the round-trip untouched (a future core key must not be dropped here).
+RECIPE_SLURM_FIELDS = (
+    ("partition", "#recipe-slurm-partition", "input"),
+    ("time", "#recipe-slurm-time", "input"),
+    ("mem_gb", "#recipe-slurm-mem-gb", "int"),
+    ("poll_interval", "#recipe-slurm-poll-interval", "float"),
+    ("array", "#recipe-slurm-array", "tri"),
+    ("array_concurrency", "#recipe-slurm-array-concurrency", "int"),
+    ("extra_sbatch", "#recipe-slurm-extra-sbatch", "lines"),
+    ("setup_commands", "#recipe-slurm-setup-commands", "lines"),
+)
 
 PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
@@ -96,7 +109,7 @@ RECIPE_MODELED_ORDER = (
     "input_kind", "output_kind", "database", "database_version",
     "database_mode", "database_checksum",
     "environment_policy", "output_subdir", "output_suffix", "output_name", "arguments",
-    "commands", "parameters", "result_parser", "result_glob", "hmmer_mode",
+    "commands", "parameters", "slurm", "result_parser", "result_glob", "hmmer_mode",
     "result_columns", "hit_metric_columns", "query_column", "subject_column",
     "numeric_columns", "qstart_column", "qend_column", "sstart_column",
     "send_column", "evalue_column", "bitscore_column", "pident_column",
@@ -566,6 +579,8 @@ class ConfigPanel(Panel):
         # The chain the form currently holds.  Rows mount a turn late, so this
         # is the panel's own count and never read back from the DOM.
         self._command_row_count = 0
+        # `slurm` keys the form does not model, carried verbatim into the save.
+        self._slurm_extras: dict[str, Any] = {}
         self.checking_tools = False
 
     # -- layout -----------------------------------------------------------
@@ -701,6 +716,27 @@ class ConfigPanel(Panel):
                                      "'warn')", classes="modal-label")
                         yield Select([(policy, policy) for policy in ENVIRONMENT_POLICIES],
                                      id="recipe-environment-policy", allow_blank=True)
+                        yield Static("Slurm overrides (optional; merges over "
+                                     "execution.slurm — unknown keys preserved)",
+                                     classes="modal-label")
+                        yield Input(placeholder="slurm partition",
+                                    id="recipe-slurm-partition")
+                        yield Input(placeholder="slurm time (e.g. 24:00:00)",
+                                    id="recipe-slurm-time")
+                        yield Input(placeholder="slurm mem_gb", id="recipe-slurm-mem-gb")
+                        yield Input(placeholder="slurm poll_interval (seconds)",
+                                    id="recipe-slurm-poll-interval")
+                        yield Select([("true", "true"), ("false", "false")],
+                                     id="recipe-slurm-array", allow_blank=True)
+                        yield Input(placeholder="slurm array_concurrency",
+                                    id="recipe-slurm-array-concurrency")
+                        yield Static("slurm extra_sbatch (one sbatch flag per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="recipe-slurm-extra-sbatch")
+                        yield Static("slurm setup_commands (one command per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="recipe-slurm-setup-commands")
+                        yield Static("", id="recipe-slurm-note")
                         yield Input(placeholder="output_subdir", id="recipe-output-subdir")
                         yield Input(placeholder="output_suffix", id="recipe-output-suffix")
                         yield Input(placeholder="output_name (template, e.g. "
@@ -1343,6 +1379,7 @@ class ConfigPanel(Panel):
             if preserved_specs else ""
         )
         self._render_command_rows(document.get("commands"))
+        self._render_slurm_fields(document.get("slurm"))
         parser = str(document.get("result_parser", "none") or "none")
         parser_select = self.query_one("#recipe-result-parser", Select)
         if parser not in RESULT_PARSERS:
@@ -1376,6 +1413,66 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-save", Button).disabled = False
         self.query_one("#recipe-history", Button).disabled = False
         self.query_one("#recipe-run", Button).disabled = False
+
+    def _render_slurm_fields(self, slurm: Any) -> None:
+        """Fill the slurm overrides, keeping every key the form does not model."""
+        data = slurm if isinstance(slurm, dict) else {}
+        modeled = {name for name, _, _ in RECIPE_SLURM_FIELDS}
+        self._slurm_extras = {key: value for key, value in data.items()
+                             if key not in modeled}
+        for key, widget_id, kind in RECIPE_SLURM_FIELDS:
+            value = data.get(key)
+            if kind == "lines":
+                self.query_one(widget_id, TextArea).text = (
+                    "\n".join(str(item) for item in value)
+                    if isinstance(value, list) else "")
+            elif kind == "tri":
+                self.query_one(widget_id, Select).value = (
+                    Select.NULL if value is None else ("true" if value else "false"))
+            else:
+                self.query_one(widget_id, Input).value = (
+                    "" if value is None else str(value))
+        note = self.query_one("#recipe-slurm-note", Static)
+        note.update(
+            Text("preserved slurm keys — " + ", ".join(sorted(self._slurm_extras)),
+                 style="dim")
+            if self._slurm_extras else ""
+        )
+
+    def _compose_slurm_document(self) -> dict[str, Any]:
+        """The `slurm` block: modeled keys when set, unmodeled keys verbatim.
+
+        A number the widget cannot parse is handed over as text on purpose —
+        `_start_recipe_save` refuses it inline with the core's own wording
+        rather than letting `load_slurm_config` trip over it at run time.
+        """
+        document: dict[str, Any] = dict(self._slurm_extras)
+        for key, widget_id, kind in RECIPE_SLURM_FIELDS:
+            if kind == "lines":
+                lines = [line.strip()
+                         for line in self.query_one(widget_id, TextArea).text.splitlines()
+                         if line.strip()]
+                if lines:
+                    document[key] = lines
+                continue
+            if kind == "tri":
+                value = self.query_one(widget_id, Select).value
+                if value is not Select.NULL:
+                    document[key] = str(value) == "true"
+                continue
+            text = self.query_one(widget_id, Input).value.strip()
+            if not text:
+                continue
+            for kind_type, convert in (("int", int), ("float", float)):
+                if kind == kind_type:
+                    try:
+                        document[key] = convert(text)
+                    except ValueError:
+                        document[key] = text
+                    break
+            else:
+                document[key] = text
+        return document
 
     def _render_command_rows(self, blocks: Any) -> None:
         """Rebuild the commands rows from a document (a new recipe, a snapshot)."""
@@ -1514,6 +1611,10 @@ class ConfigPanel(Panel):
         new_values["arguments"] = arguments if arguments or "arguments" in original else _OMIT
         commands = [row.command_document() for row in self.query(CommandRow).results(CommandRow)]
         new_values["commands"] = commands if commands or "commands" in original else _OMIT
+        slurm_values = self._compose_slurm_document()
+        new_values["slurm"] = (
+            slurm_values if slurm_values or "slurm" in original else _OMIT
+        )
         new_values["parameters"] = parameters if parameters or "parameters" in original else _OMIT
         new_values["result_parser"] = parser
         new_values["result_columns"] = (
@@ -1935,6 +2036,22 @@ class ConfigPanel(Panel):
                     "version_pattern requires version_args",
                     style="red",
                 ))
+                return
+        slurm = document.get("slurm") or {}
+        for key, kind, message in (
+                ("mem_gb", int, "slurm mem_gb must be an integer >= 0"),
+                ("poll_interval", float, "slurm poll_interval must be a number > 0"),
+                ("array_concurrency", int,
+                 "slurm array_concurrency must be a positive integer")):
+            value = slurm.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, kind):
+                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
+                return
+            if (key == "mem_gb" and value < 0) or (key == "array_concurrency" and value < 1) \
+                    or (key == "poll_interval" and value <= 0):
+                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
                 return
         if (str(document.get("database_mode", "")).strip() == "mutable_cache"
                 and not str(document.get("database_version", "")).strip()):
