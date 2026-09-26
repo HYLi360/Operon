@@ -16,6 +16,7 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
+from textual.app import App
 from textual.containers import VerticalScroll
 from textual.pilot import OutOfBounds
 from textual.widgets import (
@@ -30,6 +31,7 @@ from textual.widgets import (
     TabbedContent,
     TextArea,
 )
+from textual.widgets._select import SelectCurrent
 
 from operon.config import Project
 from operon.database import Database
@@ -3879,3 +3881,41 @@ def test_config_screen_recipe_parameter_flags_and_bad_pattern(project: Project) 
         "default": "bacteria",
     }
     assert parameters["threads"] == {"default": 8}
+
+
+# The classification source control (ODR-0050)
+
+
+@pytest.mark.bug("ODR-0050")
+def test_fitting_select_survives_a_paint_whose_label_has_not_composed() -> None:
+    """A value assigned while the Select's label is missing must still stick.
+
+    ``Select._watch_value`` stores the value and only then reaches for the
+    ``SelectCurrent``'s ``#label`` to paint it.  ``ClassificationRuleRow.on_mount``
+    assigns ``source`` while that subtree is still being composed, so the paint
+    raised ``NoMatches`` straight out of the assignment and took the row's mount
+    with it — the ``macos-latest, 3.10`` leg failed this way inside
+    ``test_classification_save_of_an_unchanged_document_keeps_the_version``.
+    The value is stored before the paint, so a paint that has to wait is only a
+    paint that has to wait.
+    """
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(120, 40)) as pilot:
+            select = FittingSelect([("core", "core"), ("other", "other")], allow_blank=True)
+            await app.screen.mount(select)
+            await pilot.pause()
+            current = select.query_one(SelectCurrent)
+            await current.query_one("#label", Static).remove()  # composed, but not yet the label
+            await pilot.pause()
+
+            select.value = "core"  # pre-fix this raised NoMatches out of the assignment
+            assert str(select.value) == "core", "the value is stored before the paint"
+
+            await current.mount(Static("core", id="label"))  # the compose lands late
+            await _wait_until(
+                lambda: _static_text(current.query_one("#label", Static)) == "core",
+                "the retried paint to reach the label",
+            )
+
+    _run(scenario())

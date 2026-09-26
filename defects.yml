@@ -1378,3 +1378,41 @@ defects:
   regression_tests:
     - tests/unit/test_secrets.py::test_the_fake_backends_call_no_absolute_system_tool
     - tests/unit/test_secrets.py::test_fake_backends_are_pinned_to_this_interpreter
+- id: ODR-0050
+  title: A Select value assigned while its label composes raises NoMatches out of the assignment
+  reported: '2026-09-26'
+  introduced_in: null
+  affected: 'One job of the test workflow for feat/m5-storage-admin (commit d994c3c,
+    run 36253650213): the macos-latest / 3.10 leg failed
+    tests/unit/test_tui_config.py::test_classification_save_of_an_unchanged_document_keeps_the_version
+    with textual.css.query.NoMatches: No nodes match ''#label'' on SelectCurrent(classes=''-has-value'').
+    The other five macOS legs, all six ubuntu legs, the local suite and the local
+    3.10-3.15 matrix were green, which places it in the mount-timing family of
+    ODR-0023 / ODR-0026 / ODR-0038 / ODR-0039 rather than in interpreter sensitivity.'
+  severity: low
+  component: tui
+  status: fixed
+  reproduction: 'Run the pinning test, or open the classification editor so a rule row
+    carrying a `source` is mounted. Textual stores the value in `Select._watch_value`
+    and only then looks up the `SelectCurrent` label to paint the collapsed control,
+    so a row whose `on_mount` assigns `value` while that subtree is still composing
+    gets NoMatches out of the assignment and dies with it. The macOS 3.10 log carries
+    the path: ClassificationRuleRow.on_mount (config_classification.py:551) ->
+    Select._watch_value -> SelectCurrent.update -> query_one("#label") raising at
+    textual/dom.py:1505.'
+  disposition: 'Registered and fixed in the same round. `FittingSelect`, the control
+    these rows already use, now overrides `_watch_value`: the stored value is kept and
+    Textual paint is retried a refresh at a time until the label is in the tree,
+    bounded by the class existing retry budget and reported by name when it runs out,
+    in the shape ODR-0039 established. Textual posts `Changed` only after a successful
+    paint, so a retried paint still reports the value exactly once. A sweep of the TUI
+    found this to be the only Select assignment inside an `on_mount`; the others run
+    from render/load handlers against controls composed with their panel, and the plain
+    Selects of the import wizard and the filter bars keep that distance too. Two
+    regressions pin the fix: one removes the label from a mounted control and asserts
+    the assignment survives and the retry paints it, one pins the give-up warning.'
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_fitting_select_survives_a_paint_whose_label_has_not_composed
+    - tests/unit/test_tui_common_guard.py::test_fitting_select_paint_gives_up_by_name

@@ -23,6 +23,7 @@ from textual.app import App
 from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.widgets import Select, Static
+from textual.widgets._select import SelectCurrent
 
 from operon.tui.screens.common import (
     FittingSelect,
@@ -190,6 +191,37 @@ class _Recorder:
 
     def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.messages.append(message)
+
+
+@pytest.mark.bug("ODR-0050")
+def test_fitting_select_paint_gives_up_by_name() -> None:
+    """A label that never composes is reported once, not raised every refresh."""
+    recorder = _Recorder()
+
+    async def scenario() -> None:
+        app = App()
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(FittingSelect, "log", property(lambda self: recorder))
+            async with app.run_test(size=(80, 24)) as pilot:
+                select = FittingSelect([("core", "core")], id="paint-probe")
+                select._mount_retry_limit = 2
+                await app.screen.mount(select)
+                await wait_until(lambda: select.is_mounted, "the control to mount")
+                current = select.query_one(SelectCurrent)
+                await current.query_one("#label", Static).remove()  # never comes back
+                select.value = "core"
+                # Every retry rides on a refresh, and nothing else in this
+                # headless app moves — pump it the way a live UI would.
+                for _ in range(20):
+                    await pilot.pause()
+                    if recorder.messages:
+                        break
+                assert recorder.messages, "the give-up path must report itself"
+                assert select.is_mounted, "the control outlives the failed paint"
+                assert "paint-probe" in recorder.messages[0]
+                assert str(select.value) == "core", "the value stands"
+
+    _run(scenario())
 
 
 # -- classification rows route their own messages -----------------------------
