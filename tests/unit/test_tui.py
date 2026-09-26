@@ -2471,7 +2471,7 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
 
     async def scenario() -> None:
         app = OperonApp(demo_project)
-        async with app.run_test(size=(120, 40)) as pilot:
+        async with app.run_test(size=(120, 40)):
             await _settled(app)
             monkeypatch.setattr(Select, "compose", without_overlay)
             probe = FittingSelect([("short", "x"), ("longer", "y")], value="y", id="odr-0038")
@@ -2522,7 +2522,7 @@ def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
 
     async def scenario() -> None:
         app = OperonApp(demo_project)
-        async with app.run_test(size=(120, 40)) as pilot:
+        async with app.run_test(size=(120, 40)):
             await _settled(app)
             monkeypatch.setattr(FittingSelect, "log", property(lambda self: Recorder()))
             monkeypatch.setattr(Select, "compose", without_overlay)
