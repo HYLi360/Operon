@@ -402,7 +402,10 @@ role, format); selecting a recipe opens its editor: description, entity type
 (Select, blank = `*`), file role or file role prefix (mutually exclusive —
 setting both is rejected inline), format, input/output artifact kind
 (Selects over file/directory, blank = key absent), database, database
-version, environment policy (Select over `ignore`/`warn`/`strict`, blank =
+version, database mode (Select over `reference`/`mutable_cache`, blank =
+the core default `reference`; `mutable_cache` without an explicit database
+version is rejected inline), an optional `database_checksum` (sha256 hex),
+environment policy (Select over `ignore`/`warn`/`strict`, blank =
 the core default `warn`), output
 subdirectory, suffix and `output_name` template inputs (`${file_id}` and
 the other placeholders stay visible), `arguments` as one-per-line text

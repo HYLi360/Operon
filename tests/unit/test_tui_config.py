@@ -3652,3 +3652,62 @@ def test_config_screen_recipe_output_name_roundtrip(project: Project) -> None:
     raw = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
     assert raw["tools"]["blastn"]["recipes"]["blastn_nt"]["output_name"] == ""
     assert [row["version"] for row in data.recipe_history(project, "blastn_nt")] == [2, 3]
+
+
+def test_config_screen_recipe_database_mode_and_checksum(project: Project) -> None:
+    """`database_mode`/`database_checksum` are editable, with the core's own gate."""
+    path = project.tools_config_path
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["tools"]["blastn"]["recipes"]["cache_probe"] = {
+        "description": "mutable cache probe",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "database": "refs/nt",
+        "database_version": "2026-01",
+        "database_mode": "mutable_cache",
+        "database_checksum": "abc123",
+        "arguments": ["-db", "${database}"],
+    }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("cache_probe")
+            await pilot.pause()
+            assert panel.query_one("#recipe-database-mode", Select).value == "mutable_cache"
+            assert panel.query_one("#recipe-database-checksum", Input).value == "abc123"
+
+            # mutable_cache without a version is refused before the modal opens.
+            panel.query_one("#recipe-database-version", Input).value = ""
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "mutable_cache requires an explicit database_version" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # Put the version back and switch the mode to the default: the mode
+            # key stays (it was declared) and the checksum edits through.
+            panel.query_one("#recipe-database-version", Input).value = "2026-01"
+            panel.query_one("#recipe-database-mode", Select).value = "reference"
+            panel.query_one("#recipe-database-checksum", Input).value = "deadbeef"
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    raw = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    saved = raw["tools"]["blastn"]["recipes"]["cache_probe"]
+    assert saved["database_mode"] == "reference"
+    assert saved["database_checksum"] == "deadbeef"
+    assert get_recipe(project, "cache_probe").version == 2

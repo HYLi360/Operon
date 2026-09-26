@@ -87,12 +87,14 @@ ARTIFACT_KINDS = ("file", "directory")
 # core default ("warn") applies.
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
 HMMER_MODES = ("hmmsearch", "hmmscan")
+DATABASE_MODES = ("reference", "mutable_cache")
 
 PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
 RECIPE_MODELED_ORDER = (
     "description", "entity_type", "file_role", "file_role_prefix", "format",
     "input_kind", "output_kind", "database", "database_version",
+    "database_mode", "database_checksum",
     "environment_policy", "output_subdir", "output_suffix", "output_name", "arguments",
     "commands", "parameters", "result_parser", "result_glob", "hmmer_mode",
     "result_columns", "hit_metric_columns", "query_column", "subject_column",
@@ -690,6 +692,10 @@ class ConfigPanel(Panel):
                                      id="recipe-output-kind", allow_blank=True)
                         yield Input(placeholder="database", id="recipe-database")
                         yield Input(placeholder="database_version", id="recipe-database-version")
+                        yield Select([(mode, mode) for mode in DATABASE_MODES],
+                                     id="recipe-database-mode", allow_blank=True)
+                        yield Input(placeholder="database_checksum (sha256 hex; optional)",
+                                    id="recipe-database-checksum")
                         yield Static("Environment policy (blank = key absent; core default "
                                      "'warn')", classes="modal-label")
                         yield Select([(policy, policy) for policy in ENVIRONMENT_POLICIES],
@@ -1297,6 +1303,7 @@ class ConfigPanel(Panel):
                 ("output_kind", "#recipe-output-kind", ARTIFACT_KINDS),
                 ("environment_policy", "#recipe-environment-policy", ENVIRONMENT_POLICIES),
                 ("hmmer_mode", "#recipe-hmmer-mode", HMMER_MODES),
+                ("database_mode", "#recipe-database-mode", DATABASE_MODES),
         ):
             value = str(document.get(key, "") or "")
             select = self.query_one(widget_id, Select)
@@ -1309,6 +1316,8 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-database", Input).value = str(document.get("database", "") or "")
         self.query_one("#recipe-database-version", Input).value = str(
             document.get("database_version", "") or "")
+        self.query_one("#recipe-database-checksum", Input).value = str(
+            document.get("database_checksum", "") or "")
         self.query_one("#recipe-output-subdir", Input).value = str(
             document.get("output_subdir", "") or "")
         self.query_one("#recipe-output-suffix", Input).value = str(
@@ -1474,6 +1483,7 @@ class ConfigPanel(Panel):
                                ("format", "#recipe-format"),
                                ("database", "#recipe-database"),
                                ("database_version", "#recipe-database-version"),
+                               ("database_checksum", "#recipe-database-checksum"),
                                ("output_subdir", "#recipe-output-subdir"),
                                ("output_suffix", "#recipe-output-suffix"),
                                ("output_name", "#recipe-output-name"),
@@ -1492,7 +1502,8 @@ class ConfigPanel(Panel):
         for key, widget_id in (("input_kind", "#recipe-input-kind"),
                                ("output_kind", "#recipe-output-kind"),
                                ("environment_policy", "#recipe-environment-policy"),
-                               ("hmmer_mode", "#recipe-hmmer-mode")):
+                               ("hmmer_mode", "#recipe-hmmer-mode"),
+                               ("database_mode", "#recipe-database-mode")):
             select_value = self.query_one(widget_id, Select).value
             text = "" if select_value is Select.NULL else str(select_value)
             new_values[key] = text if text or key in original else _OMIT
@@ -1924,6 +1935,14 @@ class ConfigPanel(Panel):
                     style="red",
                 ))
                 return
+        if (str(document.get("database_mode", "")).strip() == "mutable_cache"
+                and not str(document.get("database_version", "")).strip()):
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: mutable_cache requires an "
+                "explicit database_version",
+                style="red",
+            ))
+            return
         if (str(document.get("file_role", "")).strip()
                 and str(document.get("file_role_prefix", "")).strip()):
             error.update(Text(

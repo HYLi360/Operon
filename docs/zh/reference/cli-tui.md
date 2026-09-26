@@ -335,7 +335,10 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 角色、格式）；选中某个 recipe 打开其编辑器：description、entity type
 （Select，留空 = `*`）、file role 或 file role prefix（二者互斥——同时设置
 会被内联拒绝）、format、输入/输出产物类型（Select：file/directory，留空 =
-键不存在）、database、database version、environment policy（Select：
+键不存在）、database、database version、database mode（Select：
+`reference`/`mutable_cache`，留空 = 核心默认值 `reference`；`mutable_cache`
+未显式给出 database version 会被内联拒绝）、可选的 `database_checksum`
+（sha256 十六进制）、environment policy（Select：
 `ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
 子目录、后缀与 `output_name` 模板输入框（`${file_id}` 等占位符保持可见），
 `arguments` 为每行一个参数的文本框（`${input}` 等占位符
