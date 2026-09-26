@@ -1349,6 +1349,10 @@ def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkey
 
                 released.set()
                 await _wait_until(lambda: released.is_set(), "the held read to return")
+                # Deliberately a bounded sample rather than a condition wait: the
+                # assertion below is that the held payload does *not* reach the UI
+                # thread, so there is no state to wait for — just give it room to
+                # arrive if the guard under test is broken.
                 for _ in range(10):  # let its payload reach the UI thread
                     await pilot.pause()
                     await asyncio.sleep(0.02)
@@ -2054,12 +2058,12 @@ def test_runs_more_filters_accept_resumes_run_id(project: Project, monkeypatch) 
             )
             modal = app.screen
             modal.query_one("#runs-filter-resumes-run-id", Input).value = runs[0]["run_id"]
-            for _ in range(20):
-                if modal.query("#runs-filter-resumes-run-id") and (
-                    modal.query_one("#runs-filter-resumes-run-id", Input).value
-                ):
-                    break
-                await pilot.pause()
+            await _wait_until(
+                lambda: (bool(modal.query("#runs-filter-resumes-run-id"))
+                         and bool(modal.query_one(
+                             "#runs-filter-resumes-run-id", Input).value)),
+                "the resumes-run-id field to hold its value",
+            )
             modal.query_one("#runs-filter-apply", Button).press()
             await _wait_until(
                 lambda: any(call.get("resumes_run_id") for call in calls),

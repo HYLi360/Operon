@@ -3025,6 +3025,9 @@ def test_classification_editor_composes_while_a_nested_row_is_being_removed(
 
             reads: list[Any] = []
             victim.query_one(".condition-remove", Button).press()
+            # Deliberately a bounded sample: the point is to read the document
+            # *while* the removal lands (ODR-0023's deferred rebuild), so the
+            # loop must not wait for a settled form first.
             for _ in range(40):
                 try:
                     reads.append(editor.editor_document())

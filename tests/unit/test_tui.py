@@ -1312,10 +1312,11 @@ def test_splash_waits_for_first_paint_and_initial_reads(demo_project, monkeypatc
                 await pilot.resize_terminal(80, 24)
                 gate.set()
                 if release_at < 1:
-                    for _ in range(100):
-                        if app.query_one(HomePanel).initial_load_complete:
-                            break
-                        await asyncio.sleep(0.02)
+                    await _wait_until(
+                        lambda: (bool(app.query(HomePanel))
+                                 and app.query_one(HomePanel).initial_load_complete),
+                        "the deferred Home load to finish",
+                    )
                     await pilot.pause(0.1)
                     assert isinstance(app.screen, SplashScreen)
                     assert "Ready" in _static_text(app.screen.query_one("#splash-status", Static))
@@ -2479,8 +2480,8 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
 
             # The retry budget runs out with the overlay still missing, and the app
             # is still there to be asked about it.
-            for _ in range(60):
-                await pilot.pause()
+            await _wait_until(lambda: probe.options_gave_up,
+                              "the mount retries to run out")
             assert probe.is_mounted
             assert not probe.options_ready
             assert probe.value == "y"
@@ -2531,8 +2532,8 @@ def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
             # Out of retries, with the overlay still missing.  The patches stay for
             # the whole run: the recorder above has to be the widget's logger while
             # the retries give up, and the compose patch only matters at mount time.
-            for _ in range(60):
-                await pilot.pause()
+            await _wait_until(lambda: probe.options_gave_up,
+                              "the mount retries to run out")
             assert probe.is_mounted
             assert not probe.options_ready
             assert probe.options_gave_up
