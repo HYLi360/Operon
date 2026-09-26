@@ -268,7 +268,8 @@ class CommandRow(ComposedRows, Vertical):
     def set_index(self, index: int) -> None:
         """Renumber after a removal, so the owner label follows the first row."""
         self.index = index
-        self.query_one(".command-title", Static).update(self._title())
+        if self.form_ready:  # a row still composing has no title to update yet
+            self.query_one(".command-title", Static).update(self._title())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("command-remove"):

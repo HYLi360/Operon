@@ -3484,7 +3484,13 @@ def _add_commands_recipe_probe(project: Project) -> None:
 
 
 def _command_rows(panel: ConfigPanel) -> list[CommandRow]:
-    return list(panel.query(CommandRow).results(CommandRow))
+    """The chain rows the form can be read through.
+
+    A row lands in the DOM a turn before its composed subtree exists, so both
+    the waits and the reads below count only rows that report ``form_ready``
+    (ODR-0023) — otherwise a step's inputs are missing on a busy event loop.
+    """
+    return [row for row in panel.query(CommandRow).results(CommandRow) if row.form_ready]
 
 
 def test_config_screen_commands_chain_loads_and_saves(project: Project) -> None:
