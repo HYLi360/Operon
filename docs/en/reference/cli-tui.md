@@ -406,7 +406,13 @@ version, environment policy (Select over `ignore`/`warn`/`strict`, blank =
 the core default `warn`), output
 subdirectory and suffix inputs, `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as
-`name=default` lines (other spec keys are preserved), the result parser
+`name=default` lines (other spec keys are preserved), a `commands` chain
+editor (one row per step — its own one-per-line `arguments` plus optional
+`version_args` and `version_pattern`; *Add step* appends a row and ✕ removes
+one, with the rows renumbering so the first keeps the logical-owner label;
+`commands` and the recipe-level `arguments` are mutually exclusive, and a
+step with no arguments or a `version_pattern` without `version_args` is
+rejected inline), the result parser
 Select (`none`, `blast_tabular`, `hmmer_tblout`, `hmmer_domtblout`,
 `rpsbproc_tabular`, `busco_json`), `result_glob`, the HMMER mode Select
 (`hmmsearch`/`hmmscan`, blank = key absent),

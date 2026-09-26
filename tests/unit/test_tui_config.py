@@ -42,6 +42,7 @@ from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
+    CommandRow,
     ConfigPanel,
     HistoryModal,
     NewProfileModal,
@@ -3455,3 +3456,152 @@ def test_config_coverage_history_restore_into_editor(project: Project) -> None:
     assert load_profile(project.profiles_dir, "cov_hist",
                         expected_kind="taxonomy_coverage")["description"] == \
         "second version"
+
+
+# ---------------------------------------------------------------------------
+# Recipe `commands` chains (P9a): structured steps, mutual exclusion
+# ---------------------------------------------------------------------------
+
+
+def _add_commands_recipe_probe(project: Project) -> None:
+    """Install a hand-written recipe whose steps are a commands chain."""
+    path = project.tools_config_path
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["tools"]["blastn"]["recipes"]["chain_probe"] = {
+        "description": "two-step chain",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "commands": [
+            {
+                "arguments": ["blastn", "-query", "${input}"],
+                "version_args": ["-version"],
+                "version_pattern": r"blastn\s+([^\s]+)",
+            },
+            {"arguments": ["makeblastdb", "-in", "${output}"]},
+        ],
+    }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+
+def _command_rows(panel: ConfigPanel) -> list[CommandRow]:
+    return list(panel.query(CommandRow).results(CommandRow))
+
+
+def test_config_screen_commands_chain_loads_and_saves(project: Project) -> None:
+    _add_commands_recipe_probe(project)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("chain_probe")
+            await _wait_until(lambda: len(_command_rows(panel)) == 2, "the two steps")
+
+            first, second = _command_rows(panel)
+            assert "step 1  (logical owner)" == _static_text(
+                first.query_one(".command-title", Static))
+            assert "step 2" == _static_text(second.query_one(".command-title", Static))
+            assert first.query_one(".command-arguments", TextArea).text.splitlines() == [
+                "blastn", "-query", "${input}",
+            ]
+            assert first.query_one(".command-version-args", Input).value == "-version"
+            assert first.query_one(".command-version-pattern", Input).value == r"blastn\s+([^\s]+)"
+            assert second.query_one(".command-version-args", Input).value == ""
+            note = _static_text(panel.query_one("#recipe-command-note", Static))
+            assert "2 step(s)" in note and "mutually exclusive" not in note
+
+            second.query_one(".command-arguments", TextArea).text = (
+                "makeblastdb\n-in\n${output}\n-out\n${output}.db"
+            )
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+    _run(scenario())
+    recipe = get_recipe(project, "chain_probe")
+    assert recipe.version == 2
+    assert [list(step.arguments) for step in recipe.commands] == [
+        ["blastn", "-query", "${input}"],
+        ["makeblastdb", "-in", "${output}", "-out", "${output}.db"],
+    ]
+    assert recipe.commands[0].version_args == ["-version"]
+    assert recipe.commands[1].version_args is None
+    assert recipe.arguments == []
+
+
+def test_config_screen_commands_chain_validation_and_step_rows(project: Project) -> None:
+    _add_commands_recipe_probe(project)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("chain_probe")
+            await _wait_until(lambda: len(_command_rows(panel)) == 2, "the two steps")
+
+            # A new step starts empty: the save refuses with the core's wording.
+            await _click(pilot, "#recipe-add-command")
+            await _wait_until(lambda: len(_command_rows(panel)) == 3, "the third step")
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "commands block 3 requires a non-empty 'arguments' list" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # Fill it in, then combine the chain with `arguments`: refused, and
+            # the note says so before the save is even attempted.
+            _command_rows(panel)[2].query_one(".command-arguments", TextArea).text = "samtools\nview"
+            panel.query_one("#recipe-arguments", TextArea).text = "-out\nx"
+            await pilot.pause()
+            assert "mutually exclusive" in _static_text(
+                panel.query_one("#recipe-command-note", Static))
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "'commands' and 'arguments' are mutually exclusive" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # A version_pattern without version_args is refused too.
+            panel.query_one("#recipe-arguments", TextArea).text = ""
+            _command_rows(panel)[2].query_one(".command-version-pattern", Input).value = "v([0-9.]+)"
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "commands block 3 version_pattern requires version_args" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+            _command_rows(panel)[2].query_one(".command-version-pattern", Input).value = ""
+
+            # Loading a chainless recipe clears the previous chain's rows.
+            panel._load_recipe("blastn_nt")
+            await _wait_until(lambda: len(_command_rows(panel)) == 0, "the chain to clear")
+            assert _static_text(panel.query_one("#recipe-command-note", Static)) == ""
+            panel._load_recipe("chain_probe")
+            await _wait_until(lambda: len(_command_rows(panel)) == 2, "the chain back")
+
+            # Drop the first step: the survivor is renumbered and inherits the
+            # owner label, and the note follows the chain the form now holds.
+            await pilot.pause()
+            _command_rows(panel)[0].query_one(".command-remove", Button).press()
+            await _wait_until(lambda: len(_command_rows(panel)) == 1, "the step to go")
+            rows = _command_rows(panel)
+            assert "step 1  (logical owner)" == _static_text(
+                rows[0].query_one(".command-title", Static))
+            assert "makeblastdb" in rows[0].query_one(".command-arguments", TextArea).text
+            assert "1 step(s)" in _static_text(panel.query_one("#recipe-command-note", Static))
+
+    _run(scenario())
+    # Nothing was written: every refusal left the file at version 1.
+    assert get_recipe(project, "chain_probe").version == 1

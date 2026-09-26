@@ -339,7 +339,11 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 `ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
 子目录与后缀输入框，`arguments` 为每行一个参数的文本框（`${input}` 等占位符
 保持可见），运行时 `parameters` 为 `name=default` 行（其余 spec 键保留），
-result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、
+`commands` 链编辑器（每个步骤一行——各自的每行一个 `arguments` 文本框，外加可选的
+`version_args` 与 `version_pattern`；*Add step* 追加一行，✕ 删除一行，删除后各行
+重新编号，因此逻辑属主标签始终落在第一行；`commands` 与 recipe 级 `arguments`
+互斥，缺少 arguments 的步骤、以及没有 `version_args` 的 `version_pattern`
+都会被内联拒绝），result parser Select（`none`、`blast_tabular`、`hmmer_tblout`、`hmmer_domtblout`、
 `rpsbproc_tabular`、`busco_json`）、`result_glob`、HMMER 模式 Select
 （`hmmsearch`/`hmmscan`，留空 = 键不存在），
 `result_columns` / `hit_metric_columns` / `numeric_columns` 为逗号分隔输入框，

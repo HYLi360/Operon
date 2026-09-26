@@ -462,6 +462,38 @@ SelectCurrent Static#label {
     height: 6;
 }
 
+.command-row {
+    height: auto;
+}
+
+#recipe-command-list {
+    /* Same clipping hazard as the profile rule containers. */
+    height: auto;
+}
+
+.command-inputs {
+    height: 3;
+}
+
+.command-title {
+    width: 1fr;
+    padding: 1 0;
+}
+
+.command-arguments {
+    height: 4;
+}
+
+.command-remove {
+    min-width: 3;
+    width: 3;
+    height: 1;
+}
+
+#recipe-command-note {
+    padding-left: 2;
+}
+
 /* -- add-record dialog (Entities screen) ---------------------------------- */
 
 #add-fields {

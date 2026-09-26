@@ -94,7 +94,7 @@ RECIPE_MODELED_ORDER = (
     "description", "entity_type", "file_role", "file_role_prefix", "format",
     "input_kind", "output_kind", "database", "database_version",
     "environment_policy", "output_subdir", "output_suffix", "arguments",
-    "parameters", "result_parser", "result_glob", "hmmer_mode",
+    "commands", "parameters", "result_parser", "result_glob", "hmmer_mode",
     "result_columns", "hit_metric_columns", "query_column", "subject_column",
     "numeric_columns", "qstart_column", "qend_column", "sstart_column",
     "send_column", "evalue_column", "bitscore_column", "pident_column",
@@ -200,6 +200,107 @@ class RuleRow(ComposedRows, Vertical):
             document["value"] = actions.coerce_scalar(value_text)
         if "code" not in document:
             document["code"] = code
+        return document
+
+
+class CommandRow(ComposedRows, Vertical):
+    """One step of a recipe ``commands`` chain.
+
+    A block's whole vocabulary is ``arguments`` (required, non-empty),
+    ``version_args`` and ``version_pattern``: the row starts from a copy of the
+    block it was built from and only overwrites what it models, so any key a
+    future core adds survives the round-trip untouched.  ``arguments`` is one
+    argument per line, mirroring the recipe-level editor.
+
+    The first row is the recipe's *logical owner*: the core requires its program
+    to be the tool's executable unless the block declares its own
+    ``version_args`` (the recorded tool version and the cache identity's version
+    component describe that program).  The title says so.
+    """
+
+    class RemoveRequested(Message):
+        def __init__(self, row: CommandRow) -> None:
+            super().__init__()
+            self.row = row
+
+        @property
+        def control(self) -> CommandRow:
+            return self.row
+
+    def __init__(self, block: dict[str, Any] | None = None, index: int = 1) -> None:
+        super().__init__(classes="command-row")
+        self.original = dict(block or {})
+        self.index = index
+
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
+    def compose(self) -> ComposeResult:
+        version_args = self.original.get("version_args")
+        with Horizontal(classes="command-inputs"):
+            yield Static(self._title(), classes="command-title")
+            yield Button("✕", classes="command-remove")
+        yield Static("arguments (one per line; required)", classes="modal-label")
+        yield TextArea(
+            "\n".join(str(arg) for arg in self.original.get("arguments") or []),
+            classes="command-arguments",
+        )
+        yield Input(
+            value=(
+                ", ".join(str(item) for item in version_args)
+                if isinstance(version_args, list) else ""
+            ),
+            placeholder="version_args (comma separated; blank = inherit the tool's probe)",
+            classes="command-version-args",
+        )
+        yield Input(
+            value=str(self.original.get("version_pattern", "") or ""),
+            placeholder="version_pattern (regex; requires version_args)",
+            classes="command-version-pattern",
+        )
+
+    def _title(self) -> str:
+        owner = "  (logical owner)" if self.index == 1 else ""
+        return f"step {self.index}{owner}"
+
+    def set_index(self, index: int) -> None:
+        """Renumber after a removal, so the owner label follows the first row."""
+        self.index = index
+        self.query_one(".command-title", Static).update(self._title())
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.has_class("command-remove"):
+            event.stop()
+            self.post_message(self.RemoveRequested(self))
+
+    def command_document(self) -> dict[str, Any]:
+        """Compose the block, preserving original key order and unknown keys."""
+        arguments = [
+            line.strip()
+            for line in self.query_one(".command-arguments", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        version_text = self.query_one(".command-version-args", Input).value.strip()
+        version_args = [part.strip() for part in version_text.split(",") if part.strip()]
+        version_pattern = self.query_one(".command-version-pattern", Input).value.strip()
+        document: dict[str, Any] = {}
+        for key, original_value in self.original.items():
+            if key == "arguments":
+                document[key] = arguments
+            elif key == "version_args":
+                if version_args:
+                    document[key] = version_args
+            elif key == "version_pattern":
+                if version_pattern:
+                    document[key] = version_pattern
+            else:
+                document[key] = original_value
+        if "arguments" not in document:
+            document["arguments"] = arguments
+        if version_args and "version_args" not in document:
+            document["version_args"] = version_args
+        if version_pattern and "version_pattern" not in document:
+            document["version_pattern"] = version_pattern
         return document
 
 
@@ -459,6 +560,9 @@ class ConfigPanel(Panel):
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
         self.recipe_doc: dict[str, Any] | None = None
+        # The chain the form currently holds.  Rows mount a turn late, so this
+        # is the panel's own count and never read back from the DOM.
+        self._command_row_count = 0
         self.checking_tools = False
 
     # -- layout -----------------------------------------------------------
@@ -599,6 +703,13 @@ class ConfigPanel(Panel):
                                      "keys preserved)", classes="modal-label")
                         yield TextArea(id="recipe-parameters")
                         yield Static("", id="recipe-parameters-note")
+                        yield Static("Commands chain (optional; mutually exclusive with "
+                                     "arguments — every step runs in the parent tool's single "
+                                     "run_method environment)", classes="modal-label")
+                        yield MountTracked(id="recipe-command-list")
+                        with Horizontal(classes="config-buttons"):
+                            yield Button("Add step", id="recipe-add-command")
+                        yield Static("", id="recipe-command-note")
                         yield Static("Result parser", classes="modal-label")
                         yield Select([(parser, parser) for parser in RESULT_PARSERS],
                                      value="none", id="recipe-result-parser", allow_blank=False)
@@ -1217,6 +1328,7 @@ class ConfigPanel(Panel):
             Text("preserved spec keys — " + "; ".join(preserved_specs), style="dim")
             if preserved_specs else ""
         )
+        self._render_command_rows(document.get("commands"))
         parser = str(document.get("result_parser", "none") or "none")
         parser_select = self.query_one("#recipe-result-parser", Select)
         if parser not in RESULT_PARSERS:
@@ -1250,6 +1362,44 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-save", Button).disabled = False
         self.query_one("#recipe-history", Button).disabled = False
         self.query_one("#recipe-run", Button).disabled = False
+
+    def _render_command_rows(self, blocks: Any) -> None:
+        """Rebuild the commands rows from a document (a new recipe, a snapshot)."""
+        rows = [
+            CommandRow(block, index)
+            for index, block in enumerate(blocks if isinstance(blocks, list) else [], start=1)
+            if isinstance(block, dict)
+        ]
+        remount(self.query_one("#recipe-command-list", MountTracked), *rows)
+        # The panel counts the chain itself: the replacement lands a turn later,
+        # so neither the note nor a reader may trust the DOM for it.
+        self._command_row_count = len(rows)
+        self._refresh_command_note()
+
+    def _renumber_command_rows(self) -> None:
+        for index, row in enumerate(self.query(CommandRow).results(CommandRow), start=1):
+            row.set_index(index)
+
+    def _refresh_command_note(self) -> None:
+        """Say what the chain means, and shout when ``arguments`` is also set."""
+        row_count = self._command_row_count
+        arguments = self.query_one("#recipe-arguments", TextArea).text.strip()
+        note_view = self.query_one("#recipe-command-note", Static)
+        if not row_count:
+            note_view.update("")
+            return
+        if arguments:
+            note_view.update(Text(
+                f"'commands' and 'arguments' are mutually exclusive — clear one "
+                f"before saving ({row_count} step(s) defined)",
+                style="yellow",
+            ))
+            return
+        note_view.update(Text(
+            f"{row_count} step(s); every step runs in the parent tool's single "
+            "run_method environment",
+            style="dim",
+        ))
 
     def _load_recipe(self, name: str) -> None:
         try:
@@ -1345,6 +1495,8 @@ class ConfigPanel(Panel):
             entity_type if entity_type or "entity_type" in original else _OMIT
         )
         new_values["arguments"] = arguments if arguments or "arguments" in original else _OMIT
+        commands = [row.command_document() for row in self.query(CommandRow).results(CommandRow)]
+        new_values["commands"] = commands if commands or "commands" in original else _OMIT
         new_values["parameters"] = parameters if parameters or "parameters" in original else _OMIT
         new_values["result_parser"] = parser
         new_values["result_columns"] = (
@@ -1452,6 +1604,14 @@ class ConfigPanel(Panel):
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
 
+    async def on_command_row_remove_requested(self, event: CommandRow.RemoveRequested) -> None:
+        event.stop()
+        # Removal is deferred, so renumber and re-count only once it has landed.
+        await event.row.remove()
+        self._command_row_count = max(0, self._command_row_count - 1)
+        self._renumber_command_rows()
+        self._refresh_command_note()
+
     def on_source_row_remove_requested(self, event: SourceRow.RemoveRequested) -> None:
         event.stop()
         event.row.remove()
@@ -1461,6 +1621,10 @@ class ConfigPanel(Panel):
             self, event: ClassificationRuleRow.RemoveRequested) -> None:
         event.stop()
         event.row.remove()
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id == "recipe-arguments":
+            self._refresh_command_note()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.has_class("source-name"):
@@ -1483,6 +1647,13 @@ class ConfigPanel(Panel):
                 RuleRow({"metric": "", "operator": ">", "value": "", "code": ""}),
                 when_present=".rule-row",
             )
+        elif button_id == "recipe-add-command":
+            container = self.query_one("#recipe-command-list", MountTracked)
+            index = self._command_row_count + 1
+            container.mount_later(CommandRow({"arguments": []}, index),
+                                  when_present=".command-row")
+            self._command_row_count = index
+            self._refresh_command_note()
         elif button_id == "profile-save":
             self._start_profile_save()
         elif button_id == "profile-history":
@@ -1532,7 +1703,7 @@ class ConfigPanel(Panel):
     #: Rows whose own composed subtree must be in the tree before a read.
     EDITOR_ROW_SELECTORS = (
         ".rule-row, .source-row, .classrule-row, .bestby-row, .condition-row, "
-        ".condition-editor"
+        ".condition-editor, .command-row"
     )
 
     def _form_mounting(self) -> bool:
@@ -1718,11 +1889,36 @@ class ConfigPanel(Panel):
     def _start_recipe_save(self) -> None:
         if not self.current_recipe or not self.recipe_tool or self.recipe_doc is None:
             return
-        document = self._compose_recipe_document()
         error = self.query_one("#recipe-save-error", Static)
-        # Mirror the mutual-exclusion check of tools.get_recipe inline, before
+        document = self._form_document(self._compose_recipe_document, error)
+        if document is None:
+            return
+        # Mirror the mutual-exclusion checks of tools.get_recipe inline, before
         # the confirmation modal opens; the save_recipe round-trip still
         # re-validates everything else against the core loader.
+        commands = document.get("commands") or []
+        if commands and document.get("arguments"):
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: 'commands' and 'arguments' "
+                "are mutually exclusive",
+                style="red",
+            ))
+            return
+        for index, block in enumerate(commands, start=1):
+            if not block.get("arguments"):
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: commands block {index} "
+                    "requires a non-empty 'arguments' list",
+                    style="red",
+                ))
+                return
+            if block.get("version_pattern") and not block.get("version_args"):
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: commands block {index} "
+                    "version_pattern requires version_args",
+                    style="red",
+                ))
+                return
         if (str(document.get("file_role", "")).strip()
                 and str(document.get("file_role_prefix", "")).strip()):
             error.update(Text(
