@@ -1547,6 +1547,91 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
     assert dismissed == [payload]
 
 
+def test_backup_create_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.backup import BackupModal
+
+    payload = {"path": str(tmp_path / "backup"), "scope": "results", "file_count": 3}
+    calls = spy_action(monkeypatch, "create_backup", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = BackupModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#backup-output")
+            # An empty form keeps the required flag with a placeholder, and the
+            # parser's default scope is what the form starts on.
+            assert modal.command_text() == "operon backup create --output '…'"
+            assert parse_command_text(modal.command_text()).scope == "control"
+
+            (await _q(modal, "#backup-output", Input)).value = str(tmp_path / "backup")
+            (await _q(modal, "#backup-scope", Select)).value = "results"
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.output == str(tmp_path / "backup")
+            assert namespace.scope == "results"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "backup create call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, str(tmp_path / "backup"))
+    assert kwargs == {"scope": "results"}
+    assert dismissed == [payload]
+
+
+def test_backup_verify_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.backup import VerifyBackupModal
+
+    payload = {
+        "path": str(tmp_path / "backup"), "scope": "control", "checked": 2,
+        "unexpected": 0, "ok": True, "failures": [],
+    }
+    calls = spy_action(monkeypatch, "verify_backup", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = VerifyBackupModal()
+            app.push_screen(modal)
+            await _push(pilot, modal, "#backup-verify-input")
+            assert modal.command_text() == "operon backup verify --input '…'"
+            (await _q(modal, "#backup-verify-input", Input)).value = str(tmp_path / "backup")
+            await pilot.pause()
+            assert parse_command_text(modal.command_text()).input == str(tmp_path / "backup")
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "backup verify call")
+            # Nothing was written: the dialog stays open with the result.
+            await pilot.pause()
+            assert app.screen is modal
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (str(tmp_path / "backup"),)
+    assert kwargs == {}
+
+
 def test_audit_parity_add(
     tmp_path: Path,
     demo_template: Project,

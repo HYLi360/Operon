@@ -251,6 +251,11 @@ HelpScreen {
     margin-right: 2;
 }
 
+#backup-verify-results {
+    height: auto;
+    padding-top: 1;
+}
+
 #classify-summary {
     padding-top: 1;
 }

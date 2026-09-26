@@ -1661,3 +1661,41 @@ def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
     with _open_writable(project) as db:
         entity_id = db.next_id(entity_type)
     return {"entity_type": entity_type, "entity_id": entity_id}
+
+
+# -- storage and administration (M5) -----------------------------------------
+
+
+def create_backup(project: Project, output: str, scope: str = "control") -> dict[str, Any]:
+    """Create a checksum-manifested backup like ``operon backup create``.
+
+    The CLI opens this command on a *read-only* session (a backup does not
+    write to the project database; the consistent snapshot comes from
+    SQLite's own backup API), so the TUI does the same.  The destination must
+    not exist and must stay outside the project root — the core raises for
+    both, exactly as it does for the CLI.
+    """
+    from operon.backup import create_backup as create_backup_core
+
+    if not str(output).strip():
+        raise ValidationError("an output path is required (--output)")
+    db = Database(project.db_path, read_only=True)
+    try:
+        return create_backup_core(db, project, str(output).strip(), scope=scope)
+    finally:
+        db.close()
+
+
+def verify_backup(path: str) -> dict[str, Any]:
+    """Verify a backup directory like ``operon backup verify``.
+
+    ``verify`` authenticates an existing backup directory against its own
+    manifest: no project database is involved, so this action opens no
+    session at all.  The returned payload carries the CLI's exit semantics —
+    ``ok`` false with a per-file ``failures`` list.
+    """
+    from operon.backup import verify_backup as verify_backup_core
+
+    if not str(path).strip():
+        raise ValidationError("a backup path is required (--input)")
+    return verify_backup_core(str(path).strip())

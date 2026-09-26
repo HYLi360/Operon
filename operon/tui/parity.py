@@ -842,8 +842,29 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(("push",), STATUS_PLANNED, note=_M5),
     ParityEntry(("evict",), STATUS_PLANNED, note=_M5),
     ParityEntry(("pull",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("backup", "create"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("backup", "verify"), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("backup", "create"),
+        STATUS_IMPLEMENTED,
+        note="Home screen *Create backup* button; the destination must not "
+        "exist and must stay outside the project root, and a running backup "
+        "refuses to close",
+        actions="actions.create_backup",
+        modal="operon.tui.screens.backup::BackupModal",
+        params={
+            "output": "backup-output",
+            "scope": "backup-scope",
+        },
+    ),
+    ParityEntry(
+        ("backup", "verify"),
+        STATUS_IMPLEMENTED,
+        note="Home screen *Verify backup* button; read-only (a backup "
+        "directory is authenticated in place and no project session is "
+        "opened), the result and failure list stay on screen",
+        actions="actions.verify_backup",
+        modal="operon.tui.screens.backup::VerifyBackupModal",
+        params={"input": "backup-verify-input"},
+    ),
     ParityEntry(("set-state",), STATUS_PLANNED, note=_M5),
     ParityEntry(("report", "metadata"), STATUS_PLANNED, note=_M5),
     ParityEntry(("timetree", "fetch"), STATUS_PLANNED, note=_M5),
