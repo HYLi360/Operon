@@ -21,7 +21,6 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
-from textual.pilot import OutOfBounds
 from textual.widgets import Button, DataTable, Input, Select, Static
 
 from operon import taxonomy
@@ -32,6 +31,7 @@ from operon.tui import actions, data
 from operon.tui.app import OperonApp
 from operon.tui.screens.coverage import CoveragePanel
 from operon.tui.screens.taxonomy import CompileReferenceSetModal, TaxonomyImportModal
+from tests.tui_helpers import click as _click
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
@@ -106,33 +106,6 @@ async def _wait_until(predicate: Callable[[], bool], description: str,
         if loop.time() > deadline:
             raise TimeoutError(f"UI did not {description} within {timeout}s")
         await asyncio.sleep(0.05)
-
-
-async def _click(pilot, selector: str) -> None:
-    """Activate a widget, tolerating clipping and a lingering press effect."""
-    widget = pilot.app.screen.query_one(selector)
-    widget.scroll_visible(animate=False)
-    await pilot.pause()
-    if isinstance(widget, Button) and widget.has_class("-active"):
-        await _wait_until(lambda: not widget.has_class("-active"),
-                          f"{selector} to settle")
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + SETTLE_TIMEOUT
-    while True:
-        try:
-            landed = await pilot.click(selector)
-        except OutOfBounds:
-            landed = False
-        if landed:
-            return
-        if isinstance(widget, Button) and not widget.disabled:
-            widget.press()
-            await pilot.pause()
-            return
-        if loop.time() > deadline:
-            raise AssertionError(f"click did not land on {selector}")
-        await pilot.pause()
-        await asyncio.sleep(0.02)
 
 
 async def _push(pilot, modal, selector: str | None = None) -> None:

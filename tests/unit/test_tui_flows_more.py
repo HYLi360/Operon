@@ -21,7 +21,6 @@ pytest.importorskip("textual")
 
 import yaml
 from rich.text import Text
-from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
     Checkbox,
@@ -44,6 +43,7 @@ from operon.tui.screens import import_wizard as wizard_screen
 from operon.tui.screens import publish as publish_screen
 from operon.tui.screens.import_wizard import CREATE_NEW, ImportWizardScreen
 from operon.tui.screens.publish import CreateReleaseModal, ExportModal, PublishPanel
+from tests.tui_helpers import click as _click
 
 
 @pytest.fixture(scope="module")
@@ -115,46 +115,6 @@ async def _wait_until(
         if loop.time() > deadline:
             raise TimeoutError(f"UI did not {description} within {timeout}s")
         await asyncio.sleep(0.05)
-
-
-async def _click(pilot, selector: str) -> None:
-    """Activate a widget, tolerating a rebuilt layout and a lingering press effect.
-
-    ``Pilot.click`` returns False when the target is clipped or obscured and
-    *raises* ``OutOfBounds`` when the target's centre is still outside the screen
-    region, which is what a deferred editor rebuild produces (ODR-0023).  A
-    ``Button`` also keeps its ``-active`` press effect for about 0.2 s and
-    Textual drops a ``Button.Pressed`` raised inside that window, so a rapid
-    second click reported ``landed=True`` and did nothing (ODR-0024): wait for
-    the effect to clear first.  An enabled button is then pressed directly when
-    the positional click cannot land — the same activation a landed click
-    produces — and anything else is retried until it lands or the budget runs
-    out, so a rebuilt layout fails loudly instead of silently.
-    """
-    widget = pilot.app.screen.query_one(selector)
-    widget.scroll_visible(animate=False)
-    await pilot.pause()
-    if isinstance(widget, Button) and widget.has_class("-active"):
-        await _wait_until(lambda: not widget.has_class("-active"),
-                          f"{selector} to settle")
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + SETTLE_TIMEOUT
-    while True:
-        try:
-            landed = await pilot.click(selector)
-        except OutOfBounds:
-            landed = False
-        if landed:
-            return
-        if isinstance(widget, Button) and not widget.disabled:
-            widget.press()
-            await pilot.pause()
-            return
-        if loop.time() > deadline:
-            raise AssertionError(f"click did not land on {selector}")
-        await pilot.pause()
-        await asyncio.sleep(0.02)
-
 
 
 async def _button_click(pilot, app, selector: str) -> None:

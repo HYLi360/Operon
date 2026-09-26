@@ -25,6 +25,7 @@ from operon.errors import ConflictError
 from operon.files import ingest_file
 from operon.tui import actions, data
 from operon.utils import format_table
+from tests.tui_helpers import click as _click
 
 #: Wall-clock budget for the waits below (the tree-wide settle budget).
 SETTLE_TIMEOUT = 30.0
@@ -101,23 +102,6 @@ async def _pilot_push(pilot: Any, modal: Any, selector: str | None = None) -> No
         await pilot.pause()
         return
     raise AssertionError(f"{type(modal).__name__} never composed")
-
-
-async def _click(pilot: Any, selector: str) -> None:
-    """Click a widget, working around the press-effect and OutOfBounds traps."""
-    from textual.widgets import Button
-
-    widget = pilot.app.screen.query_one(selector)
-    for _ in range(20):
-        if not getattr(widget, "has_class", lambda _c: False)("-active"):
-            break
-        await pilot.pause()
-    try:
-        result = await pilot.click(selector)
-    except Exception:  # noqa: BLE001 - the layout moved under the click
-        result = False
-    if not result and isinstance(widget, Button):
-        widget.press()
 
 
 async def _q(screen: Any, selector: str, *types: Any) -> Any:
