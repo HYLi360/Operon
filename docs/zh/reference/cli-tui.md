@@ -76,7 +76,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles**（含 `kind: qc` 与 `kind: sequence_classification` 两类 profile，各自独立的表单）与 **Tools & Recipes**。详见下文。 |
 | Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
 | Coverage | `8` | 已导入的 NCBI Taxonomy 快照、已编译的 reference set、覆盖度报告生成（`operon report coverage`），以及已有 `reports/coverage/COV_*` 报告的浏览器。详见下文。 |
-| Remotes | `9` | 列出 `project.yaml` 中 `remotes:` 配置的镜像及其解析后的端点（名称、类型、地址、根路径）——加载时**不建立任何连接**——并提供按需的 *Check connectivity* 按钮：逐镜像调用与 CLI 相同的核心 `check_remote`（`files`/`status`/`error` 列；失败的镜像以警告通知呈现，对应 CLI 的退出码 1）。进入界面、刷新或写入后的重载都不会触发连通性检查。*File locations* 小节是 `operon locations` 背后的项目级驻留列表（每个 file/remote 组合一行，列与排序同 CLI；最多显示前 2000 行并给出提示，过滤映射重复的 `--file-id`）。两个小节都回显各自的等价命令。 |
+| Remotes | `9` | 列出 `project.yaml` 中 `remotes:` 配置的镜像及其解析后的端点（名称、类型、地址、根路径）——加载时**不建立任何连接**——并提供按需的 *Check connectivity* 按钮：逐镜像调用与 CLI 相同的核心 `check_remote`（`files`/`status`/`error` 列；失败的镜像以警告通知呈现，对应 CLI 的退出码 1）。进入界面、刷新或写入后的重载都不会触发连通性检查。*File locations* 小节是 `operon locations` 背后的项目级驻留列表（每个 file/remote 组合一行，列与排序同 CLI；最多显示前 2000 行并给出提示，过滤映射重复的 `--file-id`）。两个小节都回显各自的等价命令；*Push…* / *Pull…* 按钮打开传输对话框（见下文）。 |
 
 全局按键：`1`–`9` 切换界面，`r` 刷新当前界面，`i` 打开数据集导入向导
 （焦点位于 Files 界面时除外，此时 `i` 为归档 ingest），`?` 显示按键帮助，
@@ -119,6 +119,8 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | — | Tasks | 运行一条带结构化溯源的外部命令（*Run external*）：step、按 shlex 解析的命令行（shell 引号语义；不支持管道与重定向）、可选 entity/tool/parameter-set、逗号分隔的声明 inputs（与 CLI 一样做哈希与暂存）与 expected outputs、threads、工作目录、超时与执行后端（与分析对话框相同的预检）。预览显示等效 CLI 命令，并说明提交时会分配新的 run id；"跑失败"也是已记录的结果，因此无论成败都会在 Tasks 屏打开完整 run 记录（命令、退出码、错误、日志路径）。运行中的命令无法从 TUI 中断——CLI 的 Ctrl+C 可以。 | `operon run-external --step … --command … [--entity-type … --entity-id … --parameter-set … --tool … --input … --threads … --expected-output … --cwd … --timeout … --backend {local,slurm,ssh}]` |
 | — | Home | 创建带校验清单的备份（*Create backup* 按钮）：选择范围（`control`、`results` 或 `full`）与目标目录，Confirm 后在与 CLI 相同的只读会话上调用 `operon.backup.create_backup`。目标必须不存在且位于项目根目录之外（两者均为内联错误）；每个被复制的文件都会带 sha256 记录进 `backup-manifest.json`。运行中的备份无法从 TUI 中断。 | `operon backup create --output … [--scope {control,results,full}]` |
 | — | Home | 校验已有备份（*Verify backup* 按钮）：逐条重新计算清单条目的哈希、比对符号链接目标，并把清单之外的文件报告为 unexpected。该对话框是只读的——不写任何内容——结果保留在屏幕上：`OK` 加已校验数量，或 `FAILED` 加失败明细列表；失败同时以错误通知呈现（对应 CLI 的退出码 1）。 | `operon backup verify --input …` |
+| — | Remotes | 把清单文件上传到已配置的镜像（*Push…* 按钮，默认预选表格中选中的镜像）：remote 选择、重复的 `--file-id` 过滤（留空 = 全部清单文件）、本地选择预览（数量与字节数；远端是否已有副本要等传输逐文件判定并记为 `skipped`），随后 Confirm。传输期间显示活动指示——核心不上报逐文件进度，且运行中的 push 无法从 TUI 中断。结束后渲染并保留 CLI 的结果表（`file_id`、`relative_path`、`status`、`error`，并以 `push <remote>: <状态>: <数量>, …` 收尾）；有失败的批次会保留失败明细，同时发出错误通知（对应 CLI 的退出码 1）。 | `operon push --remote … [--file-id …]` |
+| — | Remotes | 从已配置的镜像恢复文件（*Pull…* 按钮）：remote 选择、重复的 `--file-id` 过滤（留空 = *远端*清单中的每一条，清单在传输开始时从镜像读取）。逐字节校验且幂等：`skipped` 表示本地字节已一致，本地存在但字节不同的文件绝不覆盖；下载完成的文件被记录为 `CHECKSUM_VERIFIED`（不会把 `STANDARDIZED` 降级）并写入驻留行。结果表与错误通知同上，运行中的 pull 无法中断。 | `operon pull --remote … [--file-id …]` |
 
 以上所有操作都会追加与 CLI 相同的 `changes` 审计行和 `workflow_runs` 溯源
 记录，因此在报告与导出中，通过 TUI 执行的操作与命令行操作无法区分。

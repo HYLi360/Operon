@@ -1725,3 +1725,33 @@ def check_remotes(project: Project) -> list[dict[str, Any]]:
             rows.append({**row, "status": "error",
                          "error": f"{type(exc).__name__}: {exc}", "files": ""})
     return rows
+
+
+def push(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Upload manifest files to a mirror like ``operon push``.
+
+    ``file_ids=None`` selects every manifest file (the CLI's default).  The
+    core has no cooperative cancel: transfers are per-file atomic and the
+    remote manifest is published last, so an interrupted push leaves no
+    half-claimed entry, but it cannot be aborted between files either.
+    """
+    from operon.remotes import push as core_push
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return core_push(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def pull(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Restore manifest files from a mirror like ``operon pull``.
+
+    Like the CLI, ``file_ids=None`` restores every entry in the *remote*
+    manifest (the list is read from the mirror when the transfer starts).
+    """
+    from operon.remotes import pull as core_pull
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return core_pull(db, project, str(remote).strip(), file_ids=file_ids or None)

@@ -10,6 +10,7 @@ module pins both layers (pure data/action layer plus headless UI).
 from __future__ import annotations
 
 import asyncio
+import shlex
 import time
 from pathlib import Path
 from typing import Any
@@ -24,12 +25,14 @@ from operon.files import ingest_file
 from operon.tui import actions, data
 from operon.utils import format_table
 
-#: Wall-clock budget for the waits below (one budget for the whole file).
-SETTLE_TIMEOUT = 20.0
+#: Wall-clock budget for the waits below (the tree-wide settle budget).
+SETTLE_TIMEOUT = 30.0
+#: Cap for one scenario, above the settle budget.
+SCENARIO_TIMEOUT = 180.0
 
 
 def _run(coro: Any) -> Any:
-    return asyncio.run(coro)
+    return asyncio.run(asyncio.wait_for(coro, timeout=SCENARIO_TIMEOUT))
 
 
 async def _settled(app: Any) -> None:
@@ -42,13 +45,61 @@ async def _settled(app: Any) -> None:
     raise AssertionError("app never settled")
 
 
-async def _wait_until(predicate: Any, what: str) -> None:
-    deadline = time.monotonic() + SETTLE_TIMEOUT
+async def _wait_until(predicate: Any, what: str, timeout: float | None = None) -> None:
+    deadline = time.monotonic() + (SETTLE_TIMEOUT if timeout is None else timeout)
     while time.monotonic() < deadline:
         if predicate():
             return
         await asyncio.sleep(0.05)
     raise AssertionError(f"timed out waiting for {what}")
+
+
+def parse_command_text(text: str) -> Any:
+    """Parse a modal's equivalent-command preview with the real CLI parser."""
+    from operon.cli import _parser
+
+    argv = shlex.split(text)
+    assert argv and argv[0] == "operon", f"unexpected command preview: {text!r}"
+    return _parser().parse_args(argv[1:])
+
+
+def spy_action(
+    monkeypatch: pytest.MonkeyPatch, name: str, result: Any,
+) -> list[tuple[tuple, dict]]:
+    """Replace ``operon.tui.actions.<name>`` with a recording stub."""
+    calls: list[tuple[tuple, dict]] = []
+
+    def stub(*args: Any, **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        return result
+
+    monkeypatch.setattr(actions, name, stub)
+    return calls
+
+
+async def _pilot_push(pilot: Any, modal: Any, selector: str | None = None) -> None:
+    """Push a modal and wait until its form and buttons have composed."""
+    for attempt in range(2):
+        if pilot.app.screen is not modal:
+            pilot.app.push_screen(modal)
+
+        def ready() -> bool:
+            if len(modal.query("#confirm")) == 0:
+                return False
+            if selector is None:
+                return bool(modal.query("#modal-form > *"))
+            return len(modal.query(selector)) > 0
+
+        try:
+            await _wait_until(ready, f"{type(modal).__name__} to compose", timeout=10.0)
+        except AssertionError:
+            if attempt:
+                raise
+            await pilot.pause()
+            continue
+        await pilot.pause()
+        return
+    raise AssertionError(f"{type(modal).__name__} never composed")
 
 
 async def _click(pilot: Any, selector: str) -> None:
@@ -374,5 +425,298 @@ def test_remotes_filter_row_stays_inside_its_parent(tmp_path: Path) -> None:
             assert row.region.contains_region(button.region), (row.region, button.region)
             assert field.region.width >= 10
             assert button.region.width >= 8
+
+    _run(scenario())
+
+
+# -- push / pull: the action layer calls the core exactly like the CLI ---------
+
+
+def _sync_args(calls: list[tuple[tuple, dict]]) -> list[tuple[str, Any, bool]]:
+    """Reduce recorded core calls to (remote name, file_ids, writable session)."""
+    reduced: list[tuple[str, Any, bool]] = []
+    for args, _kwargs in calls:
+        db, _project, name = args[0], args[1], args[2]
+        reduced.append((name, kwargs_file_ids(_kwargs, args), not db.read_only))
+    return reduced
+
+
+def kwargs_file_ids(kwargs: dict[str, Any], args: tuple = ()) -> Any:
+    if "file_ids" in kwargs:
+        return kwargs["file_ids"]
+    return args[3] if len(args) > 3 else None
+
+
+def test_actions_push_and_pull_pass_the_cli_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Both paths hand the core the same remote name and file ids."""
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    file_row = _ingest(project, "one.fa")
+    capsys.readouterr()  # discard the ``init`` banner
+
+    push_calls: list[tuple[tuple, dict]] = []
+    pull_calls: list[tuple[tuple, dict]] = []
+
+    def spy_push(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        push_calls.append((args, kwargs))
+        return [{"file_id": "FIL_000001", "relative_path": "raw/x.fa",
+                 "status": "uploaded", "error": None}]
+
+    def spy_pull(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        pull_calls.append((args, kwargs))
+        return []
+
+    monkeypatch.setattr("operon.remotes.push", spy_push)
+    monkeypatch.setattr("operon.remotes.pull", spy_pull)
+
+    actions.push(project, "mirror", [file_row["file_id"]])
+    tui_push = _sync_args(push_calls)[-1]
+    actions.pull(project, "mirror")
+    tui_pull = _sync_args(pull_calls)[-1]
+
+    assert cli_main(["--project", str(project.root), "push", "--remote", "mirror",
+                     "--file-id", file_row["file_id"]]) == 0
+    cli_push = _sync_args(push_calls)[-1]
+    assert cli_main(["--project", str(project.root), "pull", "--remote", "mirror"]) == 0
+    cli_pull = _sync_args(pull_calls)[-1]
+    capsys.readouterr()
+
+    assert tui_push == cli_push, "push: the TUI and the CLI must call the core alike"
+    assert tui_pull == cli_pull, "pull: the TUI and the CLI must call the core alike"
+    # …and both open a writable session, which push/pull require.
+    assert all(entry[2] for entry in (tui_push, tui_pull, cli_push, cli_pull))
+
+
+def test_actions_push_requires_a_remote(tmp_path: Path) -> None:
+    from operon.errors import ValidationError
+
+    project = _project_with_remotes(tmp_path, {})
+    for action in (actions.push, actions.pull):
+        with pytest.raises(ValidationError):
+            action(project, "  ")
+
+
+# -- push / pull: the modals ---------------------------------------------------
+
+
+def test_push_modal_command_text_matches_action_kwargs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PushModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    file_row = _ingest(project, "one.fa")
+    results = [{"file_id": file_row["file_id"], "relative_path": "raw/one.fa",
+                "status": "uploaded", "error": None}]
+    calls = spy_action(monkeypatch, "push", results)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = PushModal(project)
+            app.push_screen(modal)
+            await _pilot_push(pilot, modal, "#sync-remote")
+            # Defaults: no remote selected yet, so the preview keeps --remote
+            # with a placeholder (the parser needs the required flag).
+            assert modal.command_text() == "operon push --remote '…'"
+
+            (await _q(modal, "#sync-remote", Select)).value = "mirror"
+            (await _q(modal, "#sync-file-ids", Input)).value = file_row["file_id"]
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.remote == "mirror"
+            assert namespace.file_id == [file_row["file_id"]]
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "push call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "mirror", [file_row["file_id"]])
+    assert kwargs == {}
+
+
+def test_pull_modal_command_text_matches_action_kwargs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PullModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    calls = spy_action(monkeypatch, "pull", [])
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = PullModal(project, remote="mirror")
+            app.push_screen(modal)
+            await _pilot_push(pilot, modal, "#sync-remote")
+            # The CLI parser has no default for --remote: an unselected state
+            # keeps the placeholder, and the prefilled remote is what runs.
+            assert modal.command_text() == "operon pull --remote mirror"
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.remote == "mirror" and namespace.file_id == []
+
+            (await _q(modal, "#sync-remote", Select)).value = "mirror"
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "pull call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "mirror", None)
+    assert kwargs == {}
+
+
+def test_push_modal_shows_plan_results_and_stays_open_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import DataTable, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PushModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    good = _ingest(project, "one.fa")
+    bad = _ingest(project, "two.fa", 2)
+    results = [
+        {"file_id": good["file_id"], "relative_path": good["relative_path"],
+         "status": "uploaded", "error": None},
+        {"file_id": bad["file_id"], "relative_path": bad["relative_path"],
+         "status": "error", "error": "RemoteError: connection reset"},
+    ]
+    calls = spy_action(monkeypatch, "push", results)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = PushModal(project, remote="mirror")
+            app.push_screen(modal, dismissed.append)
+            await _pilot_push(pilot, modal, "#sync-plan")
+            plan = _static_text(await _q(modal, "#sync-plan", Static))
+            # The preview names the local selection (count, bytes) — decided
+            # file by file only during the transfer.
+            assert "2 selected file(s)" in plan or "every manifest file" in plan
+            assert "skipped" in plan
+
+            modal.confirm()
+            table = await _q(modal, "#sync-results", DataTable)
+            await _wait_until(
+                lambda: table.row_count == 2, "result rows")
+            assert app.screen is modal, "a failed file must keep the dialog open"
+            status = _static_text(await _q(modal, "#sync-status", Static))
+            assert "uploaded: 1" in status and "error: 1" in status
+            severities = [n.severity for n in app._notifications]
+            assert "error" in severities, severities
+            # Closing hands the results back so the screen can reload.
+            modal.action_cancel()
+            await _wait_until(lambda: bool(dismissed), "modal dismissed")
+
+    _run(scenario())
+    assert calls and calls[0][0][1] == "mirror"
+    assert dismissed == [results]
+
+
+def test_sync_modal_refuses_to_close_while_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    import threading
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PushModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    release = threading.Event()
+    started = threading.Event()
+
+    def blocking(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        started.set()
+        assert release.wait(SETTLE_TIMEOUT)
+        return []
+
+    monkeypatch.setattr(actions, "push", blocking)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = PushModal(project, remote="mirror")
+            app.push_screen(modal)
+            await _pilot_push(pilot, modal, "#sync-remote")
+            modal.confirm()
+            await _wait_until(started.is_set, "the transfer to start")
+            modal.action_cancel()
+            await pilot.pause()
+            assert app.screen is modal, "a running push must not close"
+            assert "cannot be interrupted" in " ".join(
+                n.message for n in app._notifications)
+            release.set()
+            await _settled(app)
+
+    _run(scenario())
+
+
+def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import DataTable, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PullModal, PushModal
+
+    project = _project_with_remotes(tmp_path, {
+        "archive": {"type": "sftp", "host": "archive.example.org", "root": "/data"},
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            table = await _q(app.screen, "#remotes-table", DataTable)
+            await _wait_until(lambda: table.row_count == 2, "remote rows")
+            table.move_cursor(row=1)  # the second mirror, "mirror"
+            await pilot.pause()
+
+            await _click(pilot, "#remotes-push")
+            await _wait_until(lambda: isinstance(app.screen, PushModal), "push dialog")
+            modal = app.screen
+            assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
+            assert modal.command_text() == "operon push --remote mirror"
+            modal.action_cancel()
+            await _wait_until(lambda: not isinstance(app.screen, PushModal), "push closed")
+
+            await _click(pilot, "#remotes-pull")
+            await _wait_until(lambda: isinstance(app.screen, PullModal), "pull dialog")
+            modal = app.screen
+            assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
+            assert modal.command_text() == "operon pull --remote mirror"
+            modal.action_cancel()
 
     _run(scenario())

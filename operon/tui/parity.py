@@ -850,9 +850,35 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "screen",
         actions="data.list_remotes",
     ),
-    ParityEntry(("push",), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("push",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Push…* button: remote picker "
+        "(pre-filled from the selected mirror), repeated --file-id filter, a "
+        "local-knowledge preview (count and bytes; what the mirror already "
+        "holds is decided during the transfer and reported per file), then "
+        "Confirm. Results render the CLI's table and a failing file stays "
+        "inline; a running push cannot be interrupted (the core has no "
+        "cooperative cancel) and the button follows the CLI's exit code 1 as "
+        "an error notification",
+        actions="actions.push",
+        modal="operon.tui.screens.remotes::PushModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
+    ParityEntry(
+        ("pull",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Pull…* button: remote picker, repeated "
+        "--file-id filter (empty = every entry in the remote manifest, read "
+        "from the mirror when the transfer starts), the CLI's per-file result "
+        "table after Confirm, and the same file-status bookkeeping "
+        "(CHECKSUM_VERIFIED plus the residency row); a running pull cannot be "
+        "interrupted",
+        actions="actions.pull",
+        modal="operon.tui.screens.remotes::PullModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
     ParityEntry(("evict",), STATUS_PLANNED, note=_M5),
-    ParityEntry(("pull",), STATUS_PLANNED, note=_M5),
     ParityEntry(
         ("backup", "create"),
         STATUS_IMPLEMENTED,

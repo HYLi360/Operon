@@ -596,6 +596,31 @@ SelectCurrent Static#label {
     color: $error;
 }
 
+#sync-form {
+    height: auto;
+}
+
+#sync-remote {
+    width: 34;
+}
+
+#sync-file-ids {
+    width: 1fr;
+}
+
+#sync-plan, #sync-status {
+    height: auto;
+}
+
+#sync-progress {
+    height: 1;
+    margin-top: 1;
+}
+
+#sync-results {
+    height: 8;
+}
+
 #releases-table {
     height: 8;
 }

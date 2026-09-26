@@ -1213,3 +1213,31 @@ def list_locations(project: Project, *, file_ids: Iterable[str] | None = None,
 
     with _open(project) as db:
         return _list(db, file_ids, limit=limit)
+
+
+def sync_preview(project: Project, *, file_ids: Iterable[str] | None = None) -> dict[str, Any]:
+    """Describe the local side of a push/pull selection without transferring.
+
+    Uses the core's own ``_select_files`` selection, so the count, the bytes
+    and the unknown-file-id error are exactly what ``push``/``pull`` see.
+    """
+    from operon.remotes import _select_files
+
+    with _open(project) as db:
+        rows = _select_files(db, list(file_ids) if file_ids else None)
+    return {
+        "count": len(rows),
+        "bytes": sum(int(row.get("size_bytes") or 0) for row in rows),
+        "files": [
+            {
+                "file_id": row["file_id"],
+                "entity_type": row["entity_type"],
+                "entity_id": row["entity_id"],
+                "file_role": row["file_role"],
+                "size_bytes": row["size_bytes"],
+                "status": row["status"],
+                "relative_path": row["relative_path"],
+            }
+            for row in rows
+        ],
+    }
