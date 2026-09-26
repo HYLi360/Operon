@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   verify-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -48,7 +48,7 @@ jobs:
 
   source-distribution:
     needs: verify-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -75,7 +75,7 @@ jobs:
 
   documentation:
     needs: verify-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -95,7 +95,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             architecture: x86_64
             artifact: linux-x86_64
           - os: macos-15-intel
@@ -130,7 +130,7 @@ jobs:
 
   pypi-publish:
     needs: [verify-release, source-distribution, wheels]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: pypi
       url: https://pypi.org/project/operondbs/
