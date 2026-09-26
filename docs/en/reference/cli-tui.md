@@ -415,7 +415,10 @@ model is carried through verbatim and listed under the fields), output
 subdirectory, suffix and `output_name` template inputs (`${file_id}` and
 the other placeholders stay visible), `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as
-`name=default` lines (other spec keys are preserved), a `commands` chain
+`name=default` lines followed by optional `; required`, `; choices=a,b` and
+`; pattern=<regex>` flags (a regex takes the rest of the line because it may
+contain `;`, and a misspelled flag is refused instead of being written into the
+default value; every other spec key is preserved), a `commands` chain
 editor (one row per step — its own one-per-line `arguments` plus optional
 `version_args` and `version_pattern`; *Add step* appends a row and ✕ removes
 one, with the rows renumbering so the first keeps the logical-owner label;

@@ -43,6 +43,8 @@ from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
     CommandRow,
+    _format_parameter_line,
+    _parse_parameter_line,
     ConfigPanel,
     HistoryModal,
     NewProfileModal,
@@ -1260,18 +1262,22 @@ def test_config_screen_recipe_unmodeled_keys_and_parameters_roundtrip(project: P
             assert panel.current_recipe == "custom_probe"
             assert panel.query_one("#recipe-entity-type", Select).value == "project"
             note = _static_text(panel.query_one("#recipe-parameters-note", Static))
-            assert "alpha: description, required" in note
+            # `required`/`choices`/`pattern` are modeled on the line now, so the
+            # note lists only what the grammar does not read.
+            assert "alpha: description" in note
+            assert "required" not in note
             assert "beta" not in note
-            assert panel.query_one("#recipe-parameters", TextArea).text == "alpha=\nbeta=3\ngamma="
+            assert panel.query_one("#recipe-parameters", TextArea).text == (
+                "alpha=; required\nbeta=3\ngamma=")
             assert panel.query_one("#recipe-result-parser", Select).value == "none"
 
             panel.query_one("#recipe-arguments", TextArea).text = "-query\n${input}\n-outfmt\n6"
             panel.query_one("#recipe-parameters", TextArea).text = (
-                "alpha=fabales\n"
+                "alpha=fabales; required\n"
                 "\n"
                 "beta=9\n"
                 "gamma=\n"
-                "new_param=5\n"
+                "new_param=5; choices=5,7; pattern=[0-9]+\n"
                 "=5\n"
             )
             panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
@@ -1300,7 +1306,9 @@ def test_config_screen_recipe_unmodeled_keys_and_parameters_roundtrip(project: P
     }
     assert parameters["beta"] == {"default": 9}
     assert parameters["gamma"] == {}
-    assert parameters["new_param"] == {"default": 5}
+    assert parameters["new_param"] == {
+        "default": 5, "choices": ["5", "7"], "pattern": "[0-9]+",
+    }
     assert "=5" not in parameters
     # sibling recipes and unmodeled recipe keys are untouched
     assert get_recipe(project, "blastn_nt").arguments[1] == "${database}"
@@ -3788,3 +3796,122 @@ def test_config_screen_recipe_slurm_overrides_roundtrip(project: Project) -> Non
     assert saved["extra_sbatch"] == ["--gres=gpu:1"]
     assert "array" not in saved and "array_concurrency" not in saved
     assert saved["future_key"] == {"nested": True}
+
+
+@pytest.mark.parametrize(("name", "spec", "line"), [
+    ("alpha", {}, "alpha="),
+    ("alpha", {"default": 5}, "alpha=5"),
+    ("alpha", {"default": "x y"}, "alpha=x y"),
+    ("alpha", {"default": "chr1;chr2"}, "alpha=chr1;chr2"),
+    ("alpha", {"required": True}, "alpha=; required"),
+    ("alpha", {"default": 5, "required": True, "choices": ["5", "7"]},
+     "alpha=5; required; choices=5,7"),
+    ("alpha", {"pattern": r"[0-9]+;x"}, "alpha=; pattern=[0-9]+;x"),
+    ("alpha", {"required": True, "choices": ["a"], "pattern": r"a|b"},
+     "alpha=; required; choices=a; pattern=a|b"),
+])
+def test_parameter_line_grammar_roundtrips(name, spec, line) -> None:
+    """One line carries what it says, and a `;` stays out of the way when it should."""
+    assert _format_parameter_line(name, spec) == line
+    assert _parse_parameter_line(line) == (name, spec, [])
+
+
+def test_parameter_line_grammar_drops_flags_and_keeps_unknown_spec_keys() -> None:
+    originals = {"alpha": {"description": "first", "required": True, "pattern": "x"}}
+    # A modeled flag the line no longer carries is dropped, an unmodeled key stays.
+    assert _parse_parameter_line("alpha=7", originals) == (
+        "alpha", {"description": "first", "default": 7}, [],
+    )
+    assert _parse_parameter_line("alpha=; required=false", originals) == (
+        "alpha", {"description": "first", "required": False}, [],
+    )
+    # A semicolon that does not open a flag section is part of the value, and
+    # the modeled flags go away with the section that carried them.
+    assert _parse_parameter_line("alpha=chr1;chr2", originals) == (
+        "alpha", {"description": "first", "default": "chr1;chr2"}, [],
+    )
+    assert _parse_parameter_line("   ", originals) is None
+    assert _parse_parameter_line("=5", originals) is None
+
+
+def test_parameter_line_grammar_reports_a_typo_instead_of_eating_it() -> None:
+    """A flag-shaped section with an unknown segment is a problem, not data."""
+    originals = {"alpha": {"required": True, "choices": ["a", "b"]}}
+    name, spec, problems = _parse_parameter_line("alpha=x; choices=a,b; desciption=y",
+                                                 originals)
+    assert name == "alpha"
+    assert problems == ["unrecognized parameter flag 'desciption=y'"]
+    # Nothing is silently dropped while it is refused: the flags stay as they were.
+    assert spec == {"required": True, "choices": ["a", "b"], "default": "x"}
+
+
+def test_config_screen_recipe_parameter_flags_and_bad_pattern(project: Project) -> None:
+    path = project.tools_config_path
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["tools"]["blastn"]["recipes"]["param_probe"] = {
+        "description": "parameter spec probe",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "arguments": ["-query", "${input}"],
+        "parameters": {
+            "lineage": {"required": True, "choices": ["bacteria", "fungi"],
+                        "pattern": "[a-z]+", "description": "kept verbatim"},
+            "threads": {"default": 4},
+        },
+    }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("param_probe")
+            await pilot.pause()
+            assert panel.query_one("#recipe-parameters", TextArea).text == (
+                "lineage=; required; choices=bacteria,fungi; pattern=[a-z]+\nthreads=4")
+            assert "lineage: description" in _static_text(
+                panel.query_one("#recipe-parameters-note", Static))
+
+            # A pattern the regex engine cannot compile never reaches the loader.
+            panel.query_one("#recipe-parameters", TextArea).text = (
+                "lineage=; required; pattern=([a-z+\nthreads=4")
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "pattern is not a valid regular expression" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # A misspelled flag is refused, never written as part of a default.
+            panel.query_one("#recipe-parameters", TextArea).text = (
+                "lineage=bacteria; choices=bacteria,fungi; pattren=[a-z]+\nthreads=8")
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "unrecognized parameter flag 'pattren=[a-z]+'" in _static_text(
+                panel.query_one("#recipe-save-error", Static))
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # The line without `required`/`pattern` drops those keys and keeps
+            # the unmodeled `description`, like every other modeled key.
+            panel.query_one("#recipe-parameters", TextArea).text = (
+                "lineage=bacteria; choices=bacteria,fungi\nthreads=8")
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    parameters = get_recipe(project, "param_probe").raw["parameters"]
+    assert parameters["lineage"] == {
+        "description": "kept verbatim", "choices": ["bacteria", "fungi"],
+        "default": "bacteria",
+    }
+    assert parameters["threads"] == {"default": 8}

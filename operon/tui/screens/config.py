@@ -19,6 +19,7 @@ silently dropped.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -116,12 +117,111 @@ RECIPE_MODELED_ORDER = (
     "max_hits_per_query",
 )
 RECIPE_MODELED_KEYS = frozenset(RECIPE_MODELED_ORDER) | {"version"}
+#: The spec keys a single parameter line models; every other key a spec carries
+#: is preserved verbatim (and listed under the editor).
+PARAMETER_MODELED_KEYS = frozenset({"default", "required", "choices", "pattern"})
 
 _OMIT = object()
 
 
 def _extras_note(extras: dict[str, Any]) -> str:
     return "preserved as-is: " + ", ".join(str(key) for key in extras)
+
+
+#: A trailing `;`-segment of a parameter line that the form understands.  A
+#: line whose trailing segments do not all match is read as a plain
+#: `name=default` (so a default value may contain `;`), and `pattern=` swallows
+#: the rest of the line, because a regex may contain any separator.
+_PARAM_FLAG_RE = re.compile(
+    r"^(required(\s*=\s*(true|false|yes|no))?|choices\s*=|pattern\s*=)",
+    re.IGNORECASE,
+)
+_PARAM_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _format_parameter_line(name: str, spec: dict[str, Any]) -> str:
+    """One parameter as the editor's line: `name=default; required; …`."""
+    default = spec.get("default")
+    line = f"{name}={'' if default is None else default}"
+    if bool(spec.get("required", False)):
+        line += "; required"
+    choices = spec.get("choices")
+    if isinstance(choices, list) and choices:
+        line += "; choices=" + ",".join(str(choice) for choice in choices)
+    pattern = str(spec.get("pattern", "") or "")
+    if pattern:
+        line += "; pattern=" + pattern
+    return line
+
+
+def _parse_parameter_line(
+    line: str, originals: dict[str, Any] | None = None
+) -> tuple[str, dict[str, Any], list[str]] | None:
+    """Read one editor line back into ``(name, spec, problems)``.
+
+    ``None`` means a blank line.  *originals* is the recipe's whole parameters
+    mapping: every spec key the line does not model is carried over from that
+    parameter's own spec, while the modeled ones (`default`, `required`,
+    `choices`, `pattern`) are authoritative — the line shows exactly what will
+    be written, so deleting a flag deletes the key.
+
+    The flag section is everything after the first ``;``, and it must open with a
+    flag.  A later segment the grammar does not know is reported in *problems*
+    (the form refuses to save rather than write it) so a typo can never turn into
+    part of a default value; a ``;`` in a default value stays a default value as
+    long as the segment after it is not flag-shaped.  ``pattern=`` owns the rest
+    of the line, because a regex may contain ``;``.
+    """
+    line = line.strip()
+    if not line:
+        return None
+    segments = [segment.strip() for segment in line.split(";")]
+    head = segments[0]
+    flags: list[str] = []
+    problems: list[str] = []
+    if len(segments) > 1:
+        if _PARAM_FLAG_RE.match(segments[1]):
+            for segment in segments[1:]:
+                if not _PARAM_FLAG_RE.match(segment):
+                    problems.append(f"unrecognized parameter flag {segment!r}")
+                    break
+                flags.append(segment)
+                if segment.lower().startswith("pattern"):
+                    break  # the regex owns the rest of the line
+        else:
+            head = line  # the `;` belongs to the default value
+    param_name, separator, default_text = head.partition("=")
+    param_name = param_name.strip()
+    if not param_name:
+        return None
+    spec = dict((originals or {}).get(param_name) or {})
+    if separator and default_text.strip():
+        spec["default"] = actions.coerce_scalar(default_text)
+    else:
+        spec.pop("default", None)
+    if problems:
+        return param_name, spec, problems
+    spec.pop("required", None)
+    spec.pop("choices", None)
+    spec.pop("pattern", None)
+    for segment in flags:
+        lowered = segment.lower()
+        if lowered.startswith("required"):
+            _, _, flag_value = segment.partition("=")
+            spec["required"] = (flag_value.strip().lower() not in {"false", "no"}
+                               if flag_value.strip() else True)
+        elif lowered.startswith("choices"):
+            _, _, listed = segment.partition("=")
+            choices = [choice.strip() for choice in listed.split(",") if choice.strip()]
+            if choices:
+                spec["choices"] = choices
+    if flags:
+        marker = re.search(r"(?:^|;)\s*pattern\s*=", line[len(head):], re.IGNORECASE)
+        if marker is not None:
+            pattern = line[len(head):][marker.end():].strip()
+            if pattern:
+                spec["pattern"] = pattern
+    return param_name, spec, problems
 
 
 class RuleRow(ComposedRows, Vertical):
@@ -581,6 +681,8 @@ class ConfigPanel(Panel):
         self._command_row_count = 0
         # `slurm` keys the form does not model, carried verbatim into the save.
         self._slurm_extras: dict[str, Any] = {}
+        # Parameter lines the grammar could not read, reported on save.
+        self._parameter_problems: list[str] = []
         self.checking_tools = False
 
     # -- layout -----------------------------------------------------------
@@ -744,8 +846,11 @@ class ConfigPanel(Panel):
                         yield Static("Arguments (one per line; ${placeholders} stay as-is)",
                                      classes="modal-label")
                         yield TextArea(id="recipe-arguments")
-                        yield Static("Runtime parameters (name=default per line; other spec "
-                                     "keys preserved)", classes="modal-label")
+                        yield Static("Runtime parameters (name=default per line, then "
+                                     "optional `; required`, `; choices=a,b` and "
+                                     "`; pattern=<regex>` — pattern takes the rest of the "
+                                     "line; other spec keys preserved)",
+                                     classes="modal-label")
                         yield TextArea(id="recipe-parameters")
                         yield Static("", id="recipe-parameters-note")
                         yield Static("Commands chain (optional; mutually exclusive with "
@@ -1368,9 +1473,8 @@ class ConfigPanel(Panel):
         preserved_specs = []
         for param_name, spec in parameters.items():
             spec = spec if isinstance(spec, dict) else {}
-            default = spec.get("default")
-            lines.append(f"{param_name}={'' if default is None else default}")
-            extra_keys = sorted(set(spec) - {"default"})
+            lines.append(_format_parameter_line(param_name, spec))
+            extra_keys = sorted(set(spec) - PARAMETER_MODELED_KEYS)
             if extra_keys:
                 preserved_specs.append(f"{param_name}: {', '.join(extra_keys)}")
         self.query_one("#recipe-parameters", TextArea).text = "\n".join(lines)
@@ -1537,20 +1641,15 @@ class ConfigPanel(Panel):
         ]
         original_parameters = original.get("parameters", {}) or {}
         parameters: dict[str, Any] = {}
-        for line in self.query_one("#recipe-parameters", TextArea).text.splitlines():
-            line = line.strip()
-            if not line:
+        self._parameter_problems = []
+        for index, line in enumerate(
+                self.query_one("#recipe-parameters", TextArea).text.splitlines(), start=1):
+            parsed = _parse_parameter_line(line, original_parameters)
+            if parsed is None:
                 continue
-            param_name, separator, default_text = line.partition("=")
-            param_name = param_name.strip()
-            if not param_name:
-                continue
-            spec = dict(original_parameters.get(param_name) or {})
-            if separator and default_text.strip():
-                spec["default"] = actions.coerce_scalar(default_text)
-            else:
-                spec.pop("default", None)
-            parameters[param_name] = spec
+            parameters[parsed[0]] = parsed[1]
+            self._parameter_problems.extend(
+                f"line {index}: {problem}" for problem in parsed[2])
         columns = [
             column.strip()
             for column in self.query_one("#recipe-result-columns", Input).value.split(",")
@@ -2037,6 +2136,31 @@ class ConfigPanel(Panel):
                     style="red",
                 ))
                 return
+        if self._parameter_problems:
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: "
+                + "; ".join(self._parameter_problems),
+                style="red",
+            ))
+            return
+        for name, spec in (document.get("parameters") or {}).items():
+            if _PARAM_NAME_RE.fullmatch(name) is None:
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: invalid parameter name {name!r}",
+                    style="red",
+                ))
+                return
+            pattern = str(spec.get("pattern", "") or "")
+            if pattern:
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    error.update(Text(
+                        f"analysis {self.current_recipe!r}: parameter {name!r} pattern "
+                        f"is not a valid regular expression ({exc})",
+                        style="red",
+                    ))
+                    return
         slurm = document.get("slurm") or {}
         for key, kind, message in (
                 ("mem_gb", int, "slurm mem_gb must be an integer >= 0"),

@@ -346,7 +346,10 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 `ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
 子目录、后缀与 `output_name` 模板输入框（`${file_id}` 等占位符保持可见），
 `arguments` 为每行一个参数的文本框（`${input}` 等占位符
-保持可见），运行时 `parameters` 为 `name=default` 行（其余 spec 键保留），
+保持可见），运行时 `parameters` 为 `name=default` 行，其后可跟可选的
+`; required`、`; choices=a,b`、`; pattern=<regex>` 标志（正则可能含 `;`，故
+`pattern=` 吞掉行尾全部内容；拼错的标志会被拒绝，而不会写进默认值；其余 spec 键
+逐字保留），
 `commands` 链编辑器（每个步骤一行——各自的每行一个 `arguments` 文本框，外加可选的
 `version_args` 与 `version_pattern`；*Add step* 追加一行，✕ 删除一行，删除后各行
 重新编号，因此逻辑属主标签始终落在第一行；`commands` 与 recipe 级 `arguments`
