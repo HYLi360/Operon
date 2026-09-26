@@ -1830,6 +1830,26 @@ def test_entities_export_button_opens_the_metadata_dialog(project: Project) -> N
     _run(scenario())
 
 
+def _assert_same_export(cli_dir: Path, tui_dir: Path) -> None:
+    """The two export directories must agree file by file.
+
+    Every TSV is compared as bytes; ``manifest.json`` is compared with its
+    volatile ``created_at`` dropped, which is the only field a CLI run and a
+    TUI run of the same project may legitimately disagree on.
+    """
+    cli_names = sorted(entry.name for entry in cli_dir.iterdir())
+    assert cli_names == sorted(entry.name for entry in tui_dir.iterdir())
+    for name in cli_names:
+        if name == "manifest.json":
+            continue
+        assert (cli_dir / name).read_bytes() == (tui_dir / name).read_bytes(), name
+    cli_manifest = json.loads((cli_dir / "manifest.json").read_text(encoding="utf-8"))
+    tui_manifest = json.loads((tui_dir / "manifest.json").read_text(encoding="utf-8"))
+    cli_manifest.pop("created_at")
+    tui_manifest.pop("created_at")
+    assert cli_manifest == tui_manifest
+
+
 def test_export_metadata_report_matches_the_cli_bytes(
     project: Project,
     tmp_path: Path,
@@ -1846,16 +1866,7 @@ def test_export_metadata_report_matches_the_cli_bytes(
     assert result["tables"] > 0
     assert result["rows"] > 0
     assert result["names"] == sorted(entry.name for entry in cli_out.glob("*.tsv"))
-
-    cli_names = sorted(entry.name for entry in cli_out.iterdir())
-    assert cli_names == sorted(entry.name for entry in tui_out.iterdir())
-    for name in cli_names:
-        assert (cli_out / name).read_bytes() == (tui_out / name).read_bytes(), name
-    cli_manifest = json.loads((cli_out / "manifest.json").read_text(encoding="utf-8"))
-    tui_manifest = json.loads((tui_out / "manifest.json").read_text(encoding="utf-8"))
-    cli_manifest.pop("created_at")
-    tui_manifest.pop("created_at")
-    assert cli_manifest == tui_manifest
+    _assert_same_export(cli_out, tui_out)
 
     cli_all = tmp_path / "cli-all"
     tui_all = tmp_path / "tui-all"
@@ -1867,8 +1878,7 @@ def test_export_metadata_report_matches_the_cli_bytes(
     result_all = actions.export_metadata_report(
         project, output=str(tui_all), include_retired=True)
     assert result_all["include_retired"] is True
-    for name in sorted(entry.name for entry in cli_all.iterdir()):
-        assert (cli_all / name).read_bytes() == (tui_all / name).read_bytes(), name
+    _assert_same_export(cli_all, tui_all)
 
 
 def test_set_state_modal_command_text_matches_action_kwargs(
