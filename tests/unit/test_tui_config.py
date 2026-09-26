@@ -3605,3 +3605,50 @@ def test_config_screen_commands_chain_validation_and_step_rows(project: Project)
     _run(scenario())
     # Nothing was written: every refusal left the file at version 1.
     assert get_recipe(project, "chain_probe").version == 1
+
+
+def test_config_screen_recipe_output_name_roundtrip(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            assert panel.query_one("#recipe-output-name", Input).value == ""
+
+            panel.query_one("#recipe-output-name", Input).value = "${file_id}.blast.tsv"
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+            # Clearing it keeps the key with an empty value: a key the recipe
+            # declared is never silently dropped (unlike `max_hits_per_query`,
+            # which is documented to restore the core default).
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            assert panel.query_one("#recipe-output-name", Input).value == "${file_id}.blast.tsv"
+            panel.query_one("#recipe-output-name", Input).value = ""
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert isinstance(app.screen, RecipeSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+    _run(scenario())
+    recipe = get_recipe(project, "blastn_nt")
+    assert recipe.version == 3
+    assert recipe.output_name_template == ""
+    raw = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    assert raw["tools"]["blastn"]["recipes"]["blastn_nt"]["output_name"] == ""
+    assert [row["version"] for row in data.recipe_history(project, "blastn_nt")] == [2, 3]

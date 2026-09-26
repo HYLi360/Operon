@@ -404,7 +404,8 @@ setting both is rejected inline), format, input/output artifact kind
 (Selects over file/directory, blank = key absent), database, database
 version, environment policy (Select over `ignore`/`warn`/`strict`, blank =
 the core default `warn`), output
-subdirectory and suffix inputs, `arguments` as one-per-line text
+subdirectory, suffix and `output_name` template inputs (`${file_id}` and
+the other placeholders stay visible), `arguments` as one-per-line text
 (placeholders like `${input}` stay visible), runtime `parameters` as
 `name=default` lines (other spec keys are preserved), a `commands` chain
 editor (one row per step — its own one-per-line `arguments` plus optional

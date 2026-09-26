@@ -93,7 +93,7 @@ RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
 RECIPE_MODELED_ORDER = (
     "description", "entity_type", "file_role", "file_role_prefix", "format",
     "input_kind", "output_kind", "database", "database_version",
-    "environment_policy", "output_subdir", "output_suffix", "arguments",
+    "environment_policy", "output_subdir", "output_suffix", "output_name", "arguments",
     "commands", "parameters", "result_parser", "result_glob", "hmmer_mode",
     "result_columns", "hit_metric_columns", "query_column", "subject_column",
     "numeric_columns", "qstart_column", "qend_column", "sstart_column",
@@ -696,6 +696,8 @@ class ConfigPanel(Panel):
                                      id="recipe-environment-policy", allow_blank=True)
                         yield Input(placeholder="output_subdir", id="recipe-output-subdir")
                         yield Input(placeholder="output_suffix", id="recipe-output-suffix")
+                        yield Input(placeholder="output_name (template, e.g. "
+                                               "${file_id}.out)", id="recipe-output-name")
                         yield Static("Arguments (one per line; ${placeholders} stay as-is)",
                                      classes="modal-label")
                         yield TextArea(id="recipe-arguments")
@@ -1311,6 +1313,8 @@ class ConfigPanel(Panel):
             document.get("output_subdir", "") or "")
         self.query_one("#recipe-output-suffix", Input).value = str(
             document.get("output_suffix", "") or "")
+        self.query_one("#recipe-output-name", Input).value = str(
+            document.get("output_name", "") or "")
         arguments = document.get("arguments", []) or []
         self.query_one("#recipe-arguments", TextArea).text = "\n".join(str(a) for a in arguments)
         parameters = document.get("parameters", {}) or {}
@@ -1472,6 +1476,7 @@ class ConfigPanel(Panel):
                                ("database_version", "#recipe-database-version"),
                                ("output_subdir", "#recipe-output-subdir"),
                                ("output_suffix", "#recipe-output-suffix"),
+                               ("output_name", "#recipe-output-name"),
                                ("result_glob", "#recipe-result-glob"),
                                ("query_column", "#recipe-query-column"),
                                ("subject_column", "#recipe-subject-column"),

@@ -337,7 +337,8 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 会被内联拒绝）、format、输入/输出产物类型（Select：file/directory，留空 =
 键不存在）、database、database version、environment policy（Select：
 `ignore`/`warn`/`strict`，留空 = 核心默认值 `warn`）、输出
-子目录与后缀输入框，`arguments` 为每行一个参数的文本框（`${input}` 等占位符
+子目录、后缀与 `output_name` 模板输入框（`${file_id}` 等占位符保持可见），
+`arguments` 为每行一个参数的文本框（`${input}` 等占位符
 保持可见），运行时 `parameters` 为 `name=default` 行（其余 spec 键保留），
 `commands` 链编辑器（每个步骤一行——各自的每行一个 `arguments` 文本框，外加可选的
 `version_args` 与 `version_pattern`；*Add step* 追加一行，✕ 删除一行，删除后各行
