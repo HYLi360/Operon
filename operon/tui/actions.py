@@ -1755,3 +1755,72 @@ def pull(project: Project, remote: str, file_ids: list[str] | None = None) -> li
         raise ValidationError("a remote name is required (--remote)")
     with _open_writable(project) as db:
         return core_pull(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def _open_read_only(project: Project) -> Any:
+    """Context manager for a short-lived read-only session (previews)."""
+    return contextlib.closing(Database(project.db_path, read_only=True))
+
+
+def evict_plan(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Check which selected files may be evicted; writes nothing.
+
+    Runs the same per-file remote verification ``operon evict`` performs
+    before it removes bytes (the core's ``verify_remote_record``, with no
+    session), so a file that passes here is exactly one ``evict`` accepts.
+    ``file_locations`` statuses are left untouched: this is a probe, not a
+    state change.  A remote that cannot be reached raises, and the caller
+    must not offer Confirm.
+    """
+    from operon.remotes import (
+        SFTPStore,
+        _require_project_manifest,
+        _select_files,
+        get_remote,
+        verify_remote_record,
+    )
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    name = str(remote).strip()
+    spec = get_remote(project, name)
+    with _open_read_only(project) as db:
+        records = _select_files(db, file_ids)
+    rows: list[dict[str, Any]] = []
+    with SFTPStore(spec) as store:
+        doc = store.read_manifest()
+        # A mirror belonging to another project is a configuration error, not
+        # a per-file verdict.
+        _require_project_manifest(project, name, doc)
+        for record in records:
+            row = {
+                "file_id": record["file_id"],
+                "relative_path": record["relative_path"],
+                "size_bytes": record["size_bytes"],
+                "eligible": False,
+                "reason": "",
+            }
+            try:
+                verify_remote_record(project, name, record, store=store, manifest=doc)
+            except Exception as exc:  # noqa: BLE001 - every failure is a verdict for this row
+                row["reason"] = f"{type(exc).__name__}: {exc}"
+            else:
+                row["eligible"] = True
+            rows.append(row)
+    return rows
+
+
+def evict(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Remove verified local bytes like ``operon evict``.
+
+    The core re-verifies every file against the mirror inside the run, so the
+    TUI's verification gate (:func:`evict_plan`) is a pre-flight, not the
+    guarantee — a mirror that changed in the meantime still fails the run
+    instead of dropping bytes.
+    """
+    from operon.remotes import evict_local
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return evict_local(db, project, str(remote).strip(), file_ids=file_ids or None)

@@ -621,6 +621,15 @@ SelectCurrent Static#label {
     height: 8;
 }
 
+#evict-plan {
+    height: 8;
+    display: none;
+}
+
+#evict-gate {
+    height: auto;
+}
+
 #releases-table {
     height: 8;
 }

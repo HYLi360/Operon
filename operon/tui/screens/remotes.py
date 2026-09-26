@@ -57,6 +57,7 @@ class RemotesPanel(Panel):
                 yield Button("Check connectivity", id="remotes-check")
                 yield Button("Push…", id="remotes-push")
                 yield Button("Pull…", id="remotes-pull")
+                yield Button("Evict…", id="remotes-evict")
             yield Static("", id="remotes-status", classes="modal-info")
             yield Static("File locations", classes="modal-label")
             yield Static("", id="locations-command", classes="modal-info")
@@ -220,6 +221,8 @@ class RemotesPanel(Panel):
             self._open_sync(PushModal)
         elif event.button.id == "remotes-pull":
             self._open_sync(PullModal)
+        elif event.button.id == "remotes-evict":
+            self._open_sync(EvictModal)
 
     # -- push / pull (write entries) ------------------------------------------
 
@@ -253,23 +256,31 @@ class RemotesPanel(Panel):
 
 
 class SyncModal(WriteModal):
-    """Confirm + results for ``operon push`` / ``operon pull``.
+    """Confirm + results for ``operon push`` / ``pull`` / ``evict``.
 
-    Both commands transfer file by file and report per-file outcomes (one
+    All three commands work file by file and report per-file outcomes (one
     failed file does not stop the batch), so the dialog shows the selection
-    before Confirm, an activity indicator while the transfer runs, and the
+    before Confirm, an activity indicator while the run goes on, and the
     CLI's result table afterwards — a run that ends with errors stays open
     with the failures listed.  The core has no cooperative cancel (per-file
     transfers are atomic and the remote manifest is published last), so a
     running transfer refuses to close instead of pretending.
     """
 
-    #: ``push`` or ``pull``; set by the subclasses.
+    #: ``push``, ``pull`` or ``evict``; set by the subclasses.
     verb = "push"
+    #: The ``operon.tui.actions`` entry point this dialog runs.
+    action_name = "push"
 
     def __init__(self, project: Project, remote: str = "",
                  file_ids: Iterable[str] = ()) -> None:
-        super().__init__(f"{self.verb.title()} {'to' if self.verb == 'push' else 'from'} a remote")
+        if self.verb == "push":
+            title = "Push to a remote"
+        elif self.verb == "pull":
+            title = "Pull from a remote"
+        else:
+            title = "Evict local bytes"
+        super().__init__(title)
         self.project = project
         self.initial_remote = remote
         self.initial_file_ids = list(file_ids)
@@ -277,21 +288,35 @@ class SyncModal(WriteModal):
         self.results: list[dict[str, Any]] | None = None
         self.running = False
 
-    def compose_form(self) -> Iterable[Any]:
-        yield Static(
-            "upload the selected manifest files to a configured SFTP mirror "
-            "(checksum-verified, idempotent: a remote copy that already matches "
-            "is reported ``skipped``, a diverging copy is never overwritten). "
-            "The remote manifest is published last, so an interrupted transfer "
-            "claims nothing."
-            if self.verb == "push" else
-            "restore the selected files from a configured SFTP mirror "
-            "(checksum-verified; a local copy that already matches is reported "
-            "``skipped``, a local file with different bytes is never "
-            "overwritten). With no file ids every entry in the remote manifest "
-            "is restored.",
-            classes="modal-info",
+    def info_text(self) -> str:
+        if self.verb == "push":
+            return (
+                "upload the selected manifest files to a configured SFTP mirror "
+                "(checksum-verified, idempotent: a remote copy that already matches "
+                "is reported ``skipped``, a diverging copy is never overwritten). "
+                "The remote manifest is published last, so an interrupted transfer "
+                "claims nothing."
+            )
+        if self.verb == "pull":
+            return (
+                "restore the selected files from a configured SFTP mirror "
+                "(checksum-verified; a local copy that already matches is reported "
+                "``skipped``, a local file with different bytes is never "
+                "overwritten). With no file ids every entry in the remote manifest "
+                "is restored."
+            )
+        return (
+            "remove the local bytes of files whose exact copy has been verified on "
+            "a configured SFTP mirror: the file stays in the manifest, its status "
+            "becomes ``REMOTE_ONLY`` and a pointer is written under "
+            "``.operon/placeholders``. The core re-verifies every file against the "
+            "mirror before deleting it, and refuses to delete anything that does "
+            "not match — a mirror that changed since the pre-flight fails the run "
+            "instead of dropping bytes."
         )
+
+    def compose_form(self) -> Iterable[Any]:
+        yield Static(self.info_text(), classes="modal-info")
         with Horizontal(id="sync-form"):
             yield Select(
                 [(name, name) for name in self.remotes],
@@ -397,7 +422,7 @@ class SyncModal(WriteModal):
             f"{self.verb}ing… (a running {self.verb} cannot be interrupted from the TUI)"
         )
         self.query_one("#sync-progress", ProgressBar).display = True
-        self.run_action(lambda: (actions.push if self.verb == "push" else actions.pull)(
+        self.run_action(lambda: getattr(actions, self.action_name)(
             self.project, values["remote"], values["file_ids"] or None,
         ))
 
@@ -467,9 +492,142 @@ class PushModal(SyncModal):
     """``operon push``."""
 
     verb = "push"
+    action_name = "push"
 
 
 class PullModal(SyncModal):
     """``operon pull``."""
 
     verb = "pull"
+    action_name = "pull"
+
+
+class EvictModal(SyncModal):
+    """``operon evict`` behind a mandatory verification gate.
+
+    The CLI verifies every file against the mirror inside the run; the dialog
+    adds a read-only pre-flight (``actions.evict_plan``) so the user can see
+    *why* a file would be refused before anything is deleted.  Confirm stays
+    disabled until a check has passed for every selected file — changing the
+    mirror or the file ids re-arms the gate, because the previous verdict no
+    longer describes the new selection.
+    """
+
+    verb = "evict"
+    action_name = "evict"
+
+    def __init__(self, project: Project, remote: str = "",
+                 file_ids: Iterable[str] = ()) -> None:
+        super().__init__(project, remote, file_ids)
+        self.plan: list[dict[str, Any]] | None = None
+        self.checking = False
+
+    def compose_form(self) -> Iterable[Any]:
+        yield from super().compose_form()
+        with Horizontal(classes="config-buttons"):
+            yield Button("Verify remote copies", id="evict-check")
+        yield DataTable(id="evict-plan")
+        yield Static("", id="evict-gate", classes="modal-info")
+
+    def on_mount(self) -> None:
+        self.query_one("#evict-plan", DataTable).display = False
+        super().on_mount()
+        self._arm_gate("press *Verify remote copies* to check the mirror first")
+
+    def _arm_gate(self, message: str) -> None:
+        """Drop any earlier verdict and block Confirm until a check passes."""
+        self.plan = None
+        self.query_one("#evict-plan", DataTable).display = False
+        self.query_one("#evict-gate", Static).update(Text(message, style="dim"))
+        self.set_confirm_enabled(False)
+
+    def _refresh_plan(self) -> None:
+        # Any edit invalidates the verdict the gate was armed with.
+        self._arm_gate("selection changed — press *Verify remote copies* again")
+        super()._refresh_plan()
+
+    def _check(self) -> None:
+        values = self._values()
+        if self.checking:
+            return
+        if not values["remote"]:
+            self.show_error("select a remote first (--remote is required)")
+            return
+        self.checking = True
+        self.clear_error()
+        self.query_one("#evict-check", Button).disabled = True
+        self.query_one("#evict-gate", Static).update(
+            "checking every file against the mirror… (SFTP reads can block)")
+        self._run_check(values)
+
+    @work(thread=True, exclusive=True, group="evict-check")
+    def _run_check(self, values: dict[str, Any]) -> None:
+        try:
+            payload: Any = actions.evict_plan(
+                self.project, values["remote"], values["file_ids"] or None)
+        except Exception as exc:  # noqa: BLE001 - surfaced in the dialog
+            payload = exc
+        self.post_to_ui(self._apply_check, payload)
+
+    def _apply_check(self, payload: Any) -> None:
+        self.checking = False
+        self.query_one("#evict-check", Button).disabled = False
+        if isinstance(payload, BaseException):
+            self._arm_gate("verification failed — nothing can be evicted")
+            self.show_error(payload)
+            return
+        self.plan = payload
+        table = self.query_one("#evict-plan", DataTable)
+        table.clear(columns=True)
+        table.display = True
+        table.add_columns("file_id", "relative_path", "eligible", "reason")
+        for row in payload:
+            table.add_row(
+                str(row["file_id"]), str(row["relative_path"]),
+                Text("yes", style="green") if row["eligible"] else Text("no", style="red"),
+                str(row["reason"]),
+            )
+        blocked = [row for row in payload if not row["eligible"]]
+        if not payload:
+            self._arm_gate("nothing selected — no manifest files to evict")
+            return
+        if blocked:
+            self.query_one("#evict-gate", Static).update(Text(
+                f"{len(blocked)} of {len(payload)} file(s) cannot be evicted — "
+                "Confirm stays disabled; push the missing or diverging files first",
+                style="red"))
+            self.set_confirm_enabled(False)
+            return
+        self.query_one("#evict-gate", Static).update(Text(
+            f"all {len(payload)} file(s) verified on the mirror — Confirm removes "
+            "the local bytes", style="green"))
+        self.set_confirm_enabled(True)
+
+    def confirm(self) -> None:
+        if self.running or self.checking:
+            return
+        if not self.plan:
+            self.show_error(
+                "verify the remote copies first — evict removes local bytes only "
+                "after the mirror copy is proved")
+            return
+        blocked = [row for row in self.plan if not row["eligible"]]
+        if blocked:
+            self.show_error(
+                f"{len(blocked)} file(s) are not verified on the mirror; "
+                "nothing will be evicted")
+            return
+        super().confirm()
+
+    def _action_done(self, payload: Any) -> None:
+        super()._action_done(payload)
+        # The selection's state changed with the run: re-verify before another.
+        self._arm_gate("run finished — press *Verify remote copies* before evicting again")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "evict-check":
+            self._check()
+            return
+        # ODR-0047: the MRO dispatch would run the base handler a second time.
+        event.prevent_default()
+        super().on_button_pressed(event)

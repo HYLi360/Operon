@@ -21,6 +21,7 @@ import yaml
 from operon.cli import main as cli_main
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ConflictError
 from operon.files import ingest_file
 from operon.tui import actions, data
 from operon.utils import format_table
@@ -587,7 +588,7 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
-    from textual.widgets import DataTable, Select, Static
+    from textual.widgets import DataTable, Static
 
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PushModal
@@ -718,5 +719,185 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
             assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
             assert modal.command_text() == "operon pull --remote mirror"
             modal.action_cancel()
+
+    _run(scenario())
+
+
+# -- evict: the verification gate ----------------------------------------------
+
+
+def test_evict_plan_reports_eligible_and_blocked_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pre-flight is read-only and explains every refusal."""
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    good = _ingest(project, "one.fa")
+    bad = _ingest(project, "two.fa", 2)
+    calls: list[str] = []
+
+    class _Store:
+        def __init__(self, spec: Any) -> None:
+            self.spec = spec
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def read_manifest(self) -> dict[str, Any]:
+            return {"files": {}}
+
+    def fake_verify(project_arg: Project, name: str, record: dict[str, Any],
+                    db: Any = None, **kwargs: Any) -> str:
+        assert db is None, "the pre-flight must not touch file_locations"
+        calls.append(record["file_id"])
+        if record["file_id"] == bad["file_id"]:
+            raise ConflictError("remote 'mirror' artifact diverges from its manifest: x.fa")
+        return "/data/x.fa"
+
+    monkeypatch.setattr("operon.remotes.SFTPStore", _Store)
+    monkeypatch.setattr("operon.remotes.verify_remote_record", fake_verify)
+
+    rows = actions.evict_plan(project, "mirror")
+    assert [row["file_id"] for row in rows] == sorted([good["file_id"], bad["file_id"]])
+    assert calls == [row["file_id"] for row in rows]
+    by_id = {row["file_id"]: row for row in rows}
+    assert by_id[good["file_id"]]["eligible"] is True
+    assert by_id[good["file_id"]]["reason"] == ""
+    assert by_id[bad["file_id"]]["eligible"] is False
+    assert "diverges" in by_id[bad["file_id"]]["reason"]
+
+    # Nothing was recorded: the probe leaves the residency cache alone.
+    assert _query_locations(project) == []
+
+
+def _query_locations(project: Project) -> list[dict[str, Any]]:
+    db = Database(project.db_path, read_only=True)
+    try:
+        return [dict(row) for row in db.query("SELECT * FROM file_locations")]
+    finally:
+        db.close()
+
+
+def test_evict_modal_gates_confirm_on_the_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Button, DataTable, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+    })
+    good = _ingest(project, "one.fa")
+    bad = _ingest(project, "two.fa", 2)
+    rows = [
+        {"file_id": good["file_id"], "relative_path": good["relative_path"],
+         "size_bytes": 123, "eligible": True, "reason": ""},
+        {"file_id": bad["file_id"], "relative_path": bad["relative_path"],
+         "size_bytes": 456, "eligible": False,
+         "reason": "RemoteError: remote 'mirror' has no manifest entry"},
+    ]
+    plan_calls = spy_action(monkeypatch, "evict_plan", rows)
+    evict_calls = spy_action(monkeypatch, "evict", [{"file_id": good["file_id"],
+                                                     "relative_path": good["relative_path"],
+                                                     "status": "evicted", "error": None}])
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = EvictModal(project, remote="mirror")
+            app.push_screen(modal)
+            await _pilot_push(pilot, modal, "#evict-check")
+            confirm = await _q(modal, "#confirm", Button)
+            # Nothing verified yet: Confirm is refused, also on the direct path.
+            assert confirm.disabled
+            modal.confirm()
+            await pilot.pause()
+            assert evict_calls == []
+            assert "verify the remote copies first" in _static_text(
+                await _q(modal, "#modal-error", Static))
+
+            await _click(pilot, "#evict-check")
+            table = await _q(modal, "#evict-plan", DataTable)
+            await _wait_until(lambda: table.row_count == 2, "plan rows")
+            assert plan_calls and plan_calls[0][0][1] == "mirror"
+            gate = _static_text(await _q(modal, "#evict-gate", Static))
+            assert "1 of 2 file(s) cannot be evicted" in gate
+            assert confirm.disabled, "a blocked file must keep Confirm disabled"
+
+            # A blocked file cannot be evicted even by calling confirm().
+            modal.confirm()
+            await pilot.pause()
+            assert evict_calls == []
+            assert "not verified on the mirror" in _static_text(
+                await _q(modal, "#modal-error", Static))
+
+            # Fix the verdict: every file eligible → Confirm opens and runs.
+            plan_calls[0][1].update(rows[1])  # the stub returns the same list
+            rows[1].update(eligible=True, reason="")
+            await _click(pilot, "#evict-check")
+            await _wait_until(lambda: not confirm.disabled, "Confirm to open")
+            assert "all 2 file(s) verified" in _static_text(
+                await _q(modal, "#evict-gate", Static))
+
+            await _click(pilot, "#confirm")
+            await _wait_until(lambda: len(evict_calls) == 1, "evict call")
+            await _wait_until(lambda: confirm.disabled, "gate re-armed after the run")
+
+    _run(scenario())
+    args, kwargs = evict_calls[0]
+    assert args == (project, "mirror", None)
+    assert kwargs == {}
+
+
+def test_evict_modal_rearms_the_gate_when_the_selection_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Input, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal
+
+    project = _project_with_remotes(tmp_path, {
+        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        "other": {"type": "sftp", "host": "other.example.org", "root": "/data"},
+    })
+    file_row = _ingest(project, "one.fa")
+    rows = [{"file_id": file_row["file_id"], "relative_path": file_row["relative_path"],
+             "size_bytes": 1, "eligible": True, "reason": ""}]
+    spy_action(monkeypatch, "evict_plan", rows)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = EvictModal(project, remote="mirror")
+            app.push_screen(modal)
+            await _pilot_push(pilot, modal, "#evict-check")
+            confirm = await _q(modal, "#confirm", Button)
+            await _click(pilot, "#evict-check")
+            await _wait_until(lambda: not confirm.disabled, "Confirm to open")
+
+            # Changing the mirror invalidates the earlier verdict.
+            (await _q(modal, "#sync-remote", Select)).value = "other"
+            await pilot.pause()
+            assert confirm.disabled
+            assert "selection changed" in _static_text(
+                await _q(modal, "#evict-gate", Static))
+
+            # So does editing the file-id filter.
+            await _click(pilot, "#evict-check")
+            await _wait_until(lambda: not confirm.disabled, "Confirm to open again")
+            (await _q(modal, "#sync-file-ids", Input)).value = file_row["file_id"]
+            await pilot.pause()
+            assert confirm.disabled
 
     _run(scenario())

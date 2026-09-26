@@ -878,7 +878,22 @@ REGISTRY: tuple[ParityEntry, ...] = (
         modal="operon.tui.screens.remotes::PullModal",
         params={"remote": "sync-remote", "file_id": "sync-file-ids"},
     ),
-    ParityEntry(("evict",), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("evict",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`) *Evict…* button: remote picker plus the "
+        "repeated --file-id filter, then a *Verify remote copies* pre-flight "
+        "that runs the same per-file mirror verification the run performs "
+        "(read-only, `evict_plan`) and lists eligible/blocked with reasons. "
+        "Confirm stays disabled while any file is unverified — the CLI's "
+        "'verify before evict' guarantee is visible up front — and the "
+        "dialog re-arms the gate whenever the selection or the mirror changes "
+        "and after a run. Results render the CLI's table; a running evict "
+        "cannot be interrupted",
+        actions="actions.evict",
+        modal="operon.tui.screens.remotes::EvictModal",
+        params={"remote": "sync-remote", "file_id": "sync-file-ids"},
+    ),
     ParityEntry(
         ("backup", "create"),
         STATUS_IMPLEMENTED,
