@@ -1168,3 +1168,48 @@ def read_coverage_report(project: Project, report_id: str) -> dict[str, Any]:
             "total": total,
         }
     return {"report_id": report_id, "path": str(path), "provenance": provenance, "tables": tables}
+
+
+# ---------------------------------------------------------------------------
+# Remotes screen: configured mirrors, connectivity, file residency
+# ---------------------------------------------------------------------------
+
+#: Row cap for the project-wide residency listing (``operon locations``); the
+#: CLI prints every row, the screen shows the first slice and says so.
+LOCATIONS_LIMIT = 2000
+
+
+def list_remotes(project: Project) -> list[dict[str, Any]]:
+    """Return the configured remotes with their parsed endpoint (unchecked).
+
+    Rows use the same keys as ``operon check_remote`` (name/type/address/root/
+    files/status/error) so the screen can render the CLI's table before — and
+    after — the on-demand connectivity check.  A malformed ``remotes:`` entry
+    is reported in its own row instead of failing the whole listing.
+    """
+    from operon.remotes import get_remote
+    from operon.remotes import list_remotes as _list
+
+    rows: list[dict[str, Any]] = []
+    for name in sorted(_list(project)):
+        row: dict[str, Any] = {
+            "name": name, "type": "sftp", "address": "", "root": "",
+            "files": "", "status": "not checked", "error": "",
+        }
+        try:
+            spec = get_remote(project, name)
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not hide the rest
+            row.update(status="invalid", error=f"{type(exc).__name__}: {exc}")
+        else:
+            row.update(address=spec.address, root=spec.root)
+        rows.append(row)
+    return rows
+
+
+def list_locations(project: Project, *, file_ids: Iterable[str] | None = None,
+                   limit: int = LOCATIONS_LIMIT) -> list[dict[str, Any]]:
+    """Return local/remote residency rows (CLI ``locations``)."""
+    from operon.remotes import list_locations as _list
+
+    with _open(project) as db:
+        return _list(db, file_ids, limit=limit)

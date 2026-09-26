@@ -566,8 +566,34 @@ SelectCurrent Static#label {
     padding: 1 2 0 2;
 }
 
-#publish-tabs, #coverage-layout {
+#publish-tabs, #coverage-layout, #remotes-layout {
     height: 1fr;
+}
+
+#remotes-table {
+    height: auto;
+    max-height: 12;
+}
+
+#remotes-status, #locations-note {
+    height: auto;
+}
+
+#locations-form {
+    height: auto;
+    padding: 0 1;
+}
+
+#locations-filter {
+    width: 1fr;
+}
+
+#locations-table {
+    height: 1fr;
+}
+
+#remotes-error {
+    color: $error;
 }
 
 #releases-table {

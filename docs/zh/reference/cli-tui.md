@@ -64,7 +64,7 @@ OPERON_SPLASH=kitty operon --project PATH tui
 
 ## 界面
 
-左侧边栏（或数字键）在八个界面之间切换：
+左侧边栏（或数字键）在九个界面之间切换：
 
 | 界面 | 按键 | 内容 |
 |------|------|------|
@@ -76,8 +76,9 @@ OPERON_SPLASH=kitty operon --project PATH tui
 | Config | `6` | 项目配置文件的结构化、基于控件的编辑器（不提供自由文本 YAML 编辑）：**QC Profiles**（含 `kind: qc` 与 `kind: sequence_classification` 两类 profile，各自独立的表单）与 **Tools & Recipes**。详见下文。 |
 | Publish | `7` | 不可变 release 构建器与选择性导出构建器（两个标签页），写入前均提供只读预览。详见下文。 |
 | Coverage | `8` | 已导入的 NCBI Taxonomy 快照、已编译的 reference set、覆盖度报告生成（`operon report coverage`），以及已有 `reports/coverage/COV_*` 报告的浏览器。详见下文。 |
+| Remotes | `9` | 列出 `project.yaml` 中 `remotes:` 配置的镜像及其解析后的端点（名称、类型、地址、根路径）——加载时**不建立任何连接**——并提供按需的 *Check connectivity* 按钮：逐镜像调用与 CLI 相同的核心 `check_remote`（`files`/`status`/`error` 列；失败的镜像以警告通知呈现，对应 CLI 的退出码 1）。进入界面、刷新或写入后的重载都不会触发连通性检查。*File locations* 小节是 `operon locations` 背后的项目级驻留列表（每个 file/remote 组合一行，列与排序同 CLI；最多显示前 2000 行并给出提示，过滤映射重复的 `--file-id`）。两个小节都回显各自的等价命令。 |
 
-全局按键：`1`–`8` 切换界面，`r` 刷新当前界面，`i` 打开数据集导入向导
+全局按键：`1`–`9` 切换界面，`r` 刷新当前界面，`i` 打开数据集导入向导
 （焦点位于 Files 界面时除外，此时 `i` 为归档 ingest），`?` 显示按键帮助，
 `ctrl+q` 退出。
 

@@ -449,10 +449,12 @@ REGISTRY: tuple[ParityEntry, ...] = (
     ParityEntry(
         ("locations",),
         STATUS_IMPLEMENTED,
-        note="partial: file locations are embedded in the Files detail view; "
-        "no project-wide location listing",
-        actions="data.file_detail",
-        params={"file_id": "context: Files screen selection"},
+        note="Remotes screen (nav `9`) section *File locations*: the "
+        "project-wide residency listing (one row per file/remote pair) with "
+        "the CLI's columns and ordering, sharing the same core query; the "
+        "filter maps the repeated --file-id",
+        actions="data.list_locations",
+        params={"file_id": "locations-filter"},
     ),
     ParityEntry(
         ("taxonomy", "list"),
@@ -838,7 +840,16 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "hits": "the dialog always browses the --hits view; job summaries stay CLI-only",
         },
     ),
-    ParityEntry(("remotes",), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("remotes",),
+        STATUS_IMPLEMENTED,
+        note="Remotes screen (nav `9`): the configured mirrors are listed "
+        "without connecting; *Check connectivity* runs the same core "
+        "`check_remote` per remote (status/error/files columns) and follows "
+        "the CLI's exit semantics as a warning notification, not a blocked "
+        "screen",
+        actions="data.list_remotes",
+    ),
     ParityEntry(("push",), STATUS_PLANNED, note=_M5),
     ParityEntry(("evict",), STATUS_PLANNED, note=_M5),
     ParityEntry(("pull",), STATUS_PLANNED, note=_M5),

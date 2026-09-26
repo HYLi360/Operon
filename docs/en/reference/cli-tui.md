@@ -79,7 +79,7 @@ without an environment variable; `OPERON_SPLASH` still wins when both are set.
 
 ## Screens
 
-The left sidebar (or the number keys) switches between eight screens:
+The left sidebar (or the number keys) switches between nine screens:
 
 | Screen | Key | Contents |
 |--------|-----|----------|
@@ -91,8 +91,9 @@ The left sidebar (or the number keys) switches between eight screens:
 | Config | `6` | Structured, control-based editors for the project's configuration files (no free-text YAML editing): **QC Profiles** (both `kind: qc` and `kind: sequence_classification` profiles, each with its own form) and **Tools & Recipes**. See below. |
 | Publish | `7` | Immutable release builder and selective export builder (two tabs), each with a read-only preview before anything is written. See below. |
 | Coverage | `8` | Imported NCBI Taxonomy snapshots, compiled reference sets, coverage report generation (`operon report coverage`), and a browser for existing `reports/coverage/COV_*` reports. See below. |
+| Remotes | `9` | The `remotes:` mirrors from `project.yaml` with their parsed endpoint (name, type, address, root) — listed **without connecting** — plus an on-demand *Check connectivity* button that probes each mirror through the same core `check_remote` the CLI uses (`files`/`status`/`error` columns; a failing mirror is a warning notification, mirroring the CLI's exit code 1). No connectivity check runs on load, on refresh, or on a write-triggered reload. The *File locations* section is the project-wide residency listing behind `operon locations` (one row per file/remote pair, the CLI's columns and ordering, the first 2000 rows with a note; the filter maps the repeated `--file-id`). Both sections echo their equivalent command. |
 
-Global keys: `1`–`8` switch screens, `r` refreshes the current screen, `i`
+Global keys: `1`–`9` switch screens, `r` refreshes the current screen, `i`
 opens the import dataset wizard (except when focus is inside the Files
 screen, where `i` is ingest), `?` shows the key help, `ctrl+q` quits.
 

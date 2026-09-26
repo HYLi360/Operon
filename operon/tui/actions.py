@@ -1699,3 +1699,29 @@ def verify_backup(path: str) -> dict[str, Any]:
     if not str(path).strip():
         raise ValidationError("a backup path is required (--input)")
     return verify_backup_core(str(path).strip())
+
+
+def check_remotes(project: Project) -> list[dict[str, Any]]:
+    """Probe every configured remote like ``operon remotes``.
+
+    A read-only action: it opens no session and writes nothing (the CLI opens
+    a read-only connection for the same command).  Each remote is checked on
+    its own and a failure — including a malformed ``remotes:`` entry — is
+    returned as that row's ``status``/``error``, mirroring the CLI's table
+    rather than failing the whole listing.  SFTP connects can block, so the
+    screen runs this in a worker.
+    """
+    from operon.remotes import check_remote
+    from operon.tui import data
+
+    rows: list[dict[str, Any]] = []
+    for row in data.list_remotes(project):
+        if row["status"] == "invalid":
+            rows.append(row)
+            continue
+        try:
+            rows.append(check_remote(project, str(row["name"])))
+        except Exception as exc:  # noqa: BLE001 - one unreachable remote must not hide the rest
+            rows.append({**row, "status": "error",
+                         "error": f"{type(exc).__name__}: {exc}", "files": ""})
+    return rows
