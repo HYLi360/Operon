@@ -1824,3 +1824,38 @@ def evict(project: Project, remote: str, file_ids: list[str] | None = None) -> l
         raise ValidationError("a remote name is required (--remote)")
     with _open_writable(project) as db:
         return evict_local(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def set_state(project: Project, entity_type: str, entity_id: str, state: str,
+              message: str, force: bool = False) -> dict[str, Any]:
+    """Manually set an entity's workflow state, like ``operon set-state``.
+
+    The transition is always audited: the core records it in ``changes`` with
+    the message as its reason, and the TUI requires one — a manual state
+    change without a stated reason is the thing the audit trail exists to
+    prevent.  ``force`` is the CLI's ``--force`` (a non-standard transition),
+    an explicit, default-off opt-in in the dialog; without it the core raises
+    ``ConflictError`` for an illegal transition and the dialog keeps the form
+    open so the operator can tick the box deliberately.
+    """
+    from operon.workflow import set_state as core_set_state
+
+    if not str(message).strip():
+        raise ValidationError("a message is required: a manual state change is audited with its reason")
+    if not str(state).strip():
+        raise ValidationError("a state is required")
+    actor = resolve_actor()
+    with _open_writable(project) as db:
+        db.require_active_entity(entity_type, entity_id)
+        previous = db.get_entity_state(entity_type, entity_id)
+        core_set_state(db, entity_type, entity_id, state, message=str(message).strip(),
+                       force=force, actor=actor)
+        return {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "state": str(state).upper(),
+            "previous_state": previous or "",
+            "forced": bool(force) and previous != str(state).upper(),
+            "message": str(message).strip(),
+            "actor": actor,
+        }

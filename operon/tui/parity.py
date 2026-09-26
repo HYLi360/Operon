@@ -157,6 +157,19 @@ _M2B = "milestone M2b (remote execution and run introspection)"
 _M3 = "milestone M3 (classification and derived-artifact loop)"
 _M5 = "milestone M5 (storage, administration and remaining alignment)"
 
+#: TimeTree is a verbatim query-cache integration whose terms forbid mirroring
+#: or redistribution, and the M5 decision of record keeps it out of the TUI
+#: entirely: it is expected to move into an analysis add-on, so the TUI gains
+#: no screen, dialog or request surface for it — and cannot widen the request
+#: surface by accident.
+_TIMETREE_CLI_ONLY = (
+    "TimeTree stays CLI-only by decision (M5): it is not a feature the Operon "
+    "TUI should build in — the integration is a verbatim query cache that is "
+    "expected to move into an analysis add-on — so the TUI adds no screen, "
+    "dialog or request surface for it and cannot widen the cached-query "
+    "boundary; `operon timetree …` remains the supported path"
+)
+
 _CONFIG_CLI_ONLY = (
     "user-level configuration is a per-user file edited outside the TUI "
     "(`operon config`, XDG config.yml); the TUI deliberately holds no user "
@@ -917,13 +930,34 @@ REGISTRY: tuple[ParityEntry, ...] = (
         modal="operon.tui.screens.backup::VerifyBackupModal",
         params={"input": "backup-verify-input"},
     ),
-    ParityEntry(("set-state",), STATUS_PLANNED, note=_M5),
+    ParityEntry(
+        ("set-state",),
+        STATUS_IMPLEMENTED,
+        note="Entities screen (nav `2`) selection: `s` opens a form over the "
+        "selected entity — current state and its standard transitions are "
+        "read from the core `workflow.TRANSITIONS`, the target state comes "
+        "from a Select over `VALID_STATES`, the message (the audit reason) is "
+        "required where the CLI defaults it, and `--force` is a default-off "
+        "checkbox. An illegal transition surfaces the core's own "
+        "`ConflictError` inline and keeps the form open, so `--force` stays a "
+        "deliberate second step; the run records the same `changes` row "
+        "(old → new state, the message as reason, the resolved actor) as the CLI",
+        actions="actions.set_state",
+        modal="operon.tui.screens.entities::SetStateModal",
+        params={
+            "entity_type": "context: Entities screen selection",
+            "entity_id": "context: Entities screen selection",
+            "state": "set-state-state",
+            "message": "set-state-message",
+            "force": "set-state-force",
+        },
+    ),
     ParityEntry(("report", "metadata"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "fetch"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "calibrate"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "taxon"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "pairwise"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "mrca"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "timeline"), STATUS_PLANNED, note=_M5),
-    ParityEntry(("timetree", "calibrations"), STATUS_PLANNED, note=_M5),
+    ParityEntry(("timetree", "fetch"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "calibrate"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "taxon"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "pairwise"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "mrca"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "timeline"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
+    ParityEntry(("timetree", "calibrations"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
 )

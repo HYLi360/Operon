@@ -1655,6 +1655,199 @@ def test_audit_parity_add(
     _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
 
 
+def test_set_state_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    payload = {"entity_type": "organism", "entity_id": "ORG_000001",
+               "state": "DISCOVERED", "previous_state": "", "forced": False}
+    calls = spy_action(monkeypatch, "set_state", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000001", "ACCEPTED")
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#set-state-state")
+            # Unselected state and empty message stay as placeholders, and the
+            # force checkbox defaults to off — the CLI's default for --force.
+            assert modal.command_text() == (
+                "operon set-state --entity-type organism --entity-id ORG_000001 "
+                "--state …"
+            )
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.entity_type == "organism"
+            assert namespace.state == "…"
+            assert namespace.force is False
+
+            # A non-standard transition is called out before Confirm, and the
+            # force box is what turns it into an audited deliberate act.
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            (await _q(modal, "#set-state-message", Input)).value = "audit parity"
+            await pilot.pause()
+            assert "not a standard transition" in _static_text(
+                await _q(modal, "#set-state-hint", Static))
+
+            (await _q(modal, "#set-state-force", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.state == "DISCOVERED"
+            assert namespace.message == "audit parity"
+            assert namespace.force is True
+            assert "recorded in the audit trail" in _static_text(
+                await _q(modal, "#set-state-hint", Static))
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "set-state call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "organism", "ORG_000001", "DISCOVERED", "audit parity")
+    assert kwargs == {"force": True}
+    assert dismissed == [payload]
+
+
+def test_set_state_modal_reports_an_illegal_transition_inline(
+    project: Project,
+) -> None:
+    """The core's own ConflictError is surfaced inline; --force is a second step."""
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    actions.add_record(
+        project, "organism",
+        {"scientific_name": "Illegal State", "taxonomy_source": "NCBI"},
+        record_id="ORG_000884",
+    )
+    actions.set_state(project, "organism", "ORG_000884", "ACCEPTED", "fixture", force=True)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000884", "ACCEPTED")
+            app.push_screen(modal)
+            await _push(pilot, modal, "#set-state-state")
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            (await _q(modal, "#set-state-message", Input)).value = "second attempt"
+            error = await _q(modal, "#modal-error", Static)
+
+            # Without force the run reaches the core, which refuses the
+            # transition; the message lands inline and the form stays open.
+            modal.confirm()
+            await _wait_until(lambda: "use --force" in _static_text(error), "core refusal")
+            assert _entity_state(project, "ORG_000884") == "ACCEPTED"
+
+            # The deliberate second step: tick force and the same form goes through.
+            (await _q(modal, "#set-state-force", Checkbox)).value = True
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(
+                lambda: _entity_state(project, "ORG_000884") == "DISCOVERED",
+                "forced transition",
+            )
+
+    _run(scenario())
+    assert _last_change_reason(project, "organism:ORG_000884") == "second attempt"
+
+
+def _entity_state(project: Project, entity_id: str) -> str:
+    db = Database(project.db_path, read_only=True)
+    try:
+        return db.get_entity_state("organism", entity_id) or ""
+    finally:
+        db.close()
+
+
+def _last_change_reason(project: Project, object_id: str) -> str:
+    db = Database(project.db_path, read_only=True)
+    try:
+        row = db.query(
+            "SELECT reason FROM changes WHERE object_id=? ORDER BY change_id DESC LIMIT 1",
+            (object_id,),
+        )
+        return str(row[0]["reason"]) if row else ""
+    finally:
+        db.close()
+
+
+def test_set_state_modal_requires_the_message(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The audit reason is required where the CLI would default it."""
+    pytest.importorskip("textual")
+    from textual.widgets import Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    calls = spy_action(monkeypatch, "set_state", {})
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000001", "")
+            app.push_screen(modal)
+            await _push(pilot, modal, "#set-state-state")
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            await pilot.pause()
+            modal.confirm()
+            await pilot.pause()
+            assert calls == []
+            assert "message is required" in _static_text(
+                await _q(modal, "#modal-error", Static))
+
+    _run(scenario())
+
+
+def test_audit_parity_set_state(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    fields = ["scientific_name=State Parity", "taxonomy_source=NCBI"]
+    rc = cli_main([
+        "--project", str(cli_project.root), "add", "organism", "--id", "ORG_000882",
+        *[part for field in fields for part in ("--field", field)],
+    ])
+    assert rc == 0
+    capsys.readouterr()
+    rc = cli_main([
+        "--project", str(cli_project.root), "set-state",
+        "--entity-type", "organism", "--entity-id", "ORG_000882",
+        "--state", "DISCOVERED", "--message", "audit parity",
+    ])
+    assert rc == 0
+    capsys.readouterr()
+
+    actions.add_record(
+        tui_project, "organism",
+        {"scientific_name": "State Parity", "taxonomy_source": "NCBI"},
+        record_id="ORG_000882",
+    )
+    result = actions.set_state(
+        tui_project, "organism", "ORG_000882", "DISCOVERED", "audit parity",
+    )
+    assert result["state"] == "DISCOVERED"
+    assert result["previous_state"] == "METADATA_VALIDATED"
+    assert result["forced"] is False
+    _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
+
+
 def test_import_table_modal_command_text_matches_action_kwargs(
     project: Project,
     monkeypatch: pytest.MonkeyPatch,

@@ -28,6 +28,7 @@ from operon.tui.screens.common import (
     styled_file_status,
     styled_scientific_name,
 )
+from operon.workflow import TRANSITIONS, VALID_STATES
 
 NEXT_ID_TYPES = list(ENTITY_PREFIXES)
 
@@ -213,6 +214,132 @@ class LifecycleModal(WriteModal):
             self.app.notify(f"{self.action} applied to {self.entity_type} {self.entity_id}")
         else:
             self.app.notify(f"no change: {self.entity_type} {self.entity_id}")
+        self.dismiss(payload)
+
+
+class SetStateModal(WriteModal):
+    """Form + confirm for `operon set-state` (manual, audited transition).
+
+    Two deliberate departures from the CLI flags, both on the side of the
+    audit trail: the message is required here (the CLI defaults it to
+    "forced transition"), and ``--force`` is an explicit, default-off
+    checkbox — the dialog shows the standard transitions from the current
+    state and lets the core's own ``ConflictError`` explain a non-standard
+    one instead of pre-empting it.
+    """
+
+    def __init__(self, project: Project, entity_type: str, entity_id: str,
+                 current_state: str) -> None:
+        super().__init__(f"Set state: {entity_type} {entity_id}")
+        self.project = project
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.current_state = (current_state or "").upper()
+
+    def compose_form(self) -> Iterable[Any]:
+        allowed = sorted(TRANSITIONS.get(self.current_state, set()))
+        current = self.current_state or "(none recorded)"
+        info = Text()
+        info.append(f"current state: {current}\n")
+        if self.current_state:
+            info.append("standard transitions: " + (", ".join(allowed) if allowed else "(none)") + "\n")
+        info.append(
+            "a manual change is recorded in `changes` with your message as its "
+            "reason and the actor as its author"
+        )
+        yield Static(info, id="set-state-info", classes="modal-info")
+        yield Select(
+            [(state, state) for state in sorted(VALID_STATES)],
+            prompt="target state", id="set-state-state", allow_blank=True,
+        )
+        yield Input(placeholder="message (required: the audit reason)", id="set-state-message")
+        yield Checkbox(
+            "force a non-standard transition (--force; recorded as forced)",
+            id="set-state-force",
+        )
+        yield Static("", id="set-state-hint", classes="modal-info")
+
+    def _selected_state(self) -> str:
+        value = self.query_one("#set-state-state", Select).value
+        return "" if value is Select.NULL else str(value)
+
+    def _forced(self) -> bool:
+        return bool(self.query_one("#set-state-force", Checkbox).value)
+
+    def refresh_hint(self) -> None:
+        """Explain the current choice: legal transition, forced, or refused."""
+        state = self._selected_state()
+        hint = self.query_one("#set-state-hint", Static)
+        if not state or not self.current_state:
+            hint.update("")
+            return
+        allowed = TRANSITIONS.get(self.current_state, set())
+        if state == self.current_state:
+            hint.update(f"{state} is already the current state — nothing to record")
+        elif state in allowed:
+            hint.update(f"{self.current_state} → {state} is a standard transition")
+        elif self._forced():
+            hint.update(
+                f"{self.current_state} → {state} is NOT a standard transition; "
+                "the forced change is recorded in the audit trail"
+            )
+        else:
+            hint.update(
+                f"{self.current_state} → {state} is not a standard transition — "
+                "tick the force box to make it anyway (audited as forced)"
+            )
+
+    def command_text(self) -> str:
+        parts = [
+            "operon", "set-state",
+            "--entity-type", self.entity_type,
+            "--entity-id", self.entity_id,
+            "--state", self._selected_state() or "…",
+        ]
+        message = self.query_one("#set-state-message", Input).value.strip()
+        if message:
+            parts += ["--message", shlex.quote(message)]
+        if self._forced():
+            parts.append("--force")
+        return " ".join(parts)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "set-state-state":
+            self.refresh_hint()
+            self.refresh_command()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "set-state-message":
+            self.refresh_command()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "set-state-force":
+            self.refresh_hint()
+            self.refresh_command()
+
+    def confirm(self) -> None:
+        state = self._selected_state()
+        message = self.query_one("#set-state-message", Input).value.strip()
+        if not state:
+            self.show_error("select the target state")
+            return
+        if not message:
+            self.show_error("message is required: a manual state change is audited with its reason")
+            return
+        self.run_action(
+            lambda: actions.set_state(
+                self.project, self.entity_type, self.entity_id, state, message,
+                force=self._forced(),
+            )
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        previous = payload.get("previous_state") or "(none)"
+        suffix = " (forced)" if payload.get("forced") else ""
+        self.app.notify(
+            f"{payload['entity_type']} {payload['entity_id']}: "
+            f"{previous} → {payload['state']}{suffix}"
+        )
         self.dismiss(payload)
 
 
@@ -521,6 +648,7 @@ class EntitiesPanel(Panel):
     BINDINGS = [
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
+        Binding("s", "set_state", "Set state"),
         Binding("a", "add_record", "Add record"),
         Binding("A", "add_accession", "Add accession"),
         Binding("n", "next_id", "Next ID"),
@@ -581,6 +709,22 @@ class EntitiesPanel(Panel):
         )
 
     def _after_lifecycle(self, result: Any) -> None:
+        if result:
+            self.app.reload_after_write()
+
+    def action_set_state(self) -> None:
+        if not self.detail:
+            self.app.notify("select an entity first", severity="warning")
+            return
+        entity_type = self.detail["entity_type"]
+        entity_id = self.detail["entity_id"]
+        state = self.detail.get("state") or {}
+        self.app.push_screen(
+            SetStateModal(self.project, entity_type, entity_id, state.get("state", "")),
+            self._after_set_state,
+        )
+
+    def _after_set_state(self, result: Any) -> None:
         if result:
             self.app.reload_after_write()
 
