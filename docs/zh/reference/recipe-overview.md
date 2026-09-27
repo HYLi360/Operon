@@ -79,10 +79,11 @@ tool 定义的任何变更都产生新快照。历史用 `operon recipes history
 （Tools & Recipes 标签页）中编辑 recipe：结构化表单在每次内容有变化的保存时递增版本并记录
 相同形态的快照（内容未变的保存是 no-op）——注意 TUI 保存会规范化 YAML 格式并丢弃手写注释，所有版本均
 保存在 `recipe_snapshots` 中。同一标签页还可以编辑 tool 层字段：选中某个工具行会打开
-`description`、`executable`、`version_args`、`version_pattern` 的表单，保存只替换这几个键
-（留空的字段被删除，因此清空的 `executable` 回退为工具名），而 `run_method`、`recipes` 以及任何
-未建模的键都按原样保留；每次保存为该工具的每个 recipe 各记录一条快照，`operon recipes history` 因此
-能看到这次变更。
+`description`、`executable`、`version_args`、`version_pattern` 与 `run_method` 的表单——`run_method`
+是一个模式 Select：逐字命令行（字符串形式）、`conda` 环境（可选的 `bin`/`args`，留空则继承顶层
+`conda:` 段）、`prefix` token 列表、`path`（无启动器），或留空表示“没有 `run_method` 键”。保存只替换
+这几个键（留空的字段被删除，因此清空的 `executable` 回退为工具名），而 `recipes` 以及任何未建模的键都按
+原样保留；每次保存为该工具的每个 recipe 各记录一条快照，`operon recipes history` 因此能看到这次变更。
 
 对于共享同一执行环境的紧耦合程序，`commands` 用有序 command block 取代 `arguments`。
 每个附加程序可以声明自己的 `version_args` 与 `version_pattern`；完整约束见

@@ -1130,9 +1130,10 @@ def save_recipe(
 
 
 #: Tool-level keys the Config screen's tool editor owns.  Everything else in a
-#: tool mapping (``run_method``, ``recipes``, or a key the editor does not model
-#: at all) is kept exactly as parsed.
-MODELED_TOOL_KEYS = ("description", "executable", "version_args", "version_pattern")
+#: tool mapping (``recipes``, or a key the editor does not model at all) is kept
+#: exactly as parsed.
+MODELED_TOOL_KEYS = ("description", "executable", "run_method", "version_args",
+                     "version_pattern")
 
 
 def save_tool(
@@ -1145,10 +1146,12 @@ def save_tool(
     The document is the complete state of the modeled tool keys: a key it
     carries is written, a modeled key it omits is removed from the file (so an
     emptied ``executable`` falls back to the tool name and an emptied
-    ``version_args`` disappears).  Every other key of the tool mapping —
-    ``run_method``, ``recipes`` or a key the editor does not model — is kept
-    exactly as parsed, and a value for such a key in the document is ignored
-    rather than written.  Tools carry no version of their own, so nothing is
+    ``version_args`` disappears).  ``run_method`` is one of the modeled keys —
+    the document carries it as the launcher command string or as a
+    ``conda``/``prefix``/``path`` mapping.  Every other key of the tool mapping
+    — ``recipes`` or a key the editor does not model — is kept exactly as
+    parsed, and a value for such a key in the document is ignored rather than
+    written.  Tools carry no version of their own, so nothing is
     bumped: the whole file is written back with
     ``yaml.safe_dump(sort_keys=False)`` and the result is round-trip verified
     through :func:`operon.tools.load_tools_config` + ``get_tool``; on any
@@ -1179,8 +1182,8 @@ def save_tool(
     # Only the modeled keys are read from the document, and the document is
     # their complete state: a modeled key it omits is removed, so an emptied
     # executable falls back to the tool name.  A value for any other key
-    # (``recipes``, ``run_method``, …) is ignored, so the launcher mapping and
-    # the recipes can never be written from a stale editor document.
+    # (``recipes``, …) is ignored, so the recipes can never be written from a
+    # stale editor document.
     document = {key: value for key, value in tool_doc.items() if key in MODELED_TOOL_KEYS}
     merged = {key: value for key, value in existing.items()
               if key not in MODELED_TOOL_KEYS}

@@ -398,11 +398,16 @@ content-addressed snapshot a later `operon taxonomy compile` consumes.
 background worker with per-row live updates (detected version in green,
 `MISSING` in red) and a summary notification; one broken tool never breaks
 the batch. Selecting a tool row opens the tool editor (description,
-executable, version args — one token per line — and version pattern): the
-form owns exactly those keys, a blanked field is removed (an emptied
-executable falls back to the tool name), unmodeled keys such as `run_method`
-are preserved verbatim and listed under the fields, and *Save tool* records
-one snapshot per recipe of that tool (an unchanged save is a no-op).
+executable, version args — one token per line —, version pattern, and the
+run method): the run method is a mode Select over the verbatim command line,
+a `conda` environment (blank `bin`/`args` inherit the top-level `conda:`
+section), a `prefix` token list, `path`, or blank for “no `run_method` key”.
+The form owns exactly those keys, a blanked field is removed (an emptied
+executable falls back to the tool name), unmodeled keys — a hand-written
+sub-key of a `run_method` mapping included — are preserved and listed under
+the fields, and *Save tool* records one snapshot per recipe of that tool
+(an unchanged save is a no-op). What the selected mode requires is checked
+inline (a command line, a conda environment, a prefix token).
 Below, a recipes table (name, version, tool, entity type, file
 role, format); selecting a recipe opens its editor: description, entity type
 (Select, blank = `*`), file role or file role prefix (mutually exclusive —
