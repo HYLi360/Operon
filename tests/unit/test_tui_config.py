@@ -38,7 +38,7 @@ from operon.database import Database
 from operon.demo import init_demo
 from operon.errors import ValidationError
 from operon.profiles import load_profile
-from operon.tools import get_recipe
+from operon.tools import get_recipe, get_tool
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
@@ -52,6 +52,7 @@ from operon.tui.screens.config import (
     RecipeSaveModal,
     RuleRow,
     SnapshotViewModal,
+    ToolSaveModal,
     _format_parameter_line,
     _parse_parameter_line,
 )
@@ -429,6 +430,106 @@ def test_save_recipe_noop_does_not_bump(project: Project) -> None:
     assert data.recipe_history(project, "blastn_nt") == []
 
 
+# ---------------------------------------------------------------------------
+# actions.save_tool
+# ---------------------------------------------------------------------------
+
+
+def test_save_tool_roundtrip(project: Project) -> None:
+    info = data.get_tool_document(project, "busco")
+    document = dict(info["document"])
+    document["description"] = "edited tool"
+    document["version_args"] = ["--version", "--json"]
+    document["version_pattern"] = r"BUSCO\s+([\d.]+)"
+    result = actions.save_tool(project, "busco", document)
+    assert result["unchanged"] is False
+    assert result["recipes"] == ["busco_autolineage", "busco_lineage"]
+    assert sorted(result["snapshots"]) == ["busco_autolineage", "busco_lineage"]
+
+    tool = get_tool(project, "busco")
+    assert tool.description == "edited tool"
+    assert tool.version_args == ["--version", "--json"]
+    assert tool.version_pattern == r"BUSCO\s+([\d.]+)"
+    # Unmodeled tool-level keys and every recipe survive verbatim.
+    assert tool.executable == "busco"
+    assert tool.raw["run_method"] == "mamba run -n busco_6.1.0"
+    assert sorted(tool.recipes) == ["busco_autolineage", "busco_lineage"]
+
+    # A tool edit records one snapshot per recipe, at the recipe's own version.
+    for name in ("busco_autolineage", "busco_lineage"):
+        rows = data.recipe_history(project, name)
+        assert [row["version"] for row in rows] == [1]
+        snapshot = data.get_recipe_snapshot(project, name, rows[0]["snapshot_id"])
+        assert snapshot["tool"]["description"] == "edited tool"
+        assert snapshot["tool"]["run_method"] == "mamba run -n busco_6.1.0"
+        assert snapshot["recipe"]["description"] == \
+            document["recipes"][name]["description"]
+
+
+def test_save_tool_document_cannot_touch_recipes_or_launcher(project: Project) -> None:
+    info = data.get_tool_document(project, "blastn")
+    document = dict(info["document"])
+    document["description"] = "touched"
+    # A stale document carrying unmodeled keys must not write them: the
+    # launcher mapping and the recipes always come from the file as parsed.
+    document["run_method"] = "sh -c 'echo pwned'"
+    document["recipes"] = {}
+    result = actions.save_tool(project, "blastn", document)
+    assert result["unchanged"] is False
+    tool = get_tool(project, "blastn")
+    assert tool.description == "touched"
+    assert tool.raw["run_method"] == "conda run --no-capture-output -n blast"
+    assert sorted(tool.recipes) == ["blastn_nt"]
+
+
+def test_save_tool_blanking_removes_the_keys(project: Project) -> None:
+    info = data.get_tool_document(project, "hmmsearch")
+    document = dict(info["document"])
+    for key in ("description", "executable", "version_args"):
+        document.pop(key)
+    result = actions.save_tool(project, "hmmsearch", document)
+    assert result["unchanged"] is False
+    tool = get_tool(project, "hmmsearch")
+    assert "description" not in tool.raw
+    assert "executable" not in tool.raw
+    assert "version_args" not in tool.raw
+    assert tool.executable == "hmmsearch"  # the core falls back to the tool name
+    assert tool.description == ""
+    assert tool.version_args == []
+    assert tool.version_pattern == info["document"]["version_pattern"]  # untouched
+
+
+def test_save_tool_noop_writes_nothing(project: Project) -> None:
+    path = project.tools_config_path
+    original_bytes = path.read_bytes()
+    info = data.get_tool_document(project, "blastn")
+    result = actions.save_tool(project, "blastn", dict(info["document"]))
+    assert result["unchanged"] is True
+    assert result["snapshots"] == {}
+    assert path.read_bytes() == original_bytes
+    assert data.recipe_history(project, "blastn_nt") == []
+
+
+def test_save_tool_failure_restores_file_bytes(project: Project) -> None:
+    path = project.tools_config_path
+    original_bytes = path.read_bytes()
+
+    info = data.get_tool_document(project, "blastn")
+    document = dict(info["document"])
+    document["version_args"] = 123  # not iterable: get_tool trips on it
+    with pytest.raises(ValidationError, match="rolled back"):
+        actions.save_tool(project, "blastn", document)
+    assert path.read_bytes() == original_bytes
+
+    with pytest.raises(ValidationError, match="unknown tool"):
+        actions.save_tool(project, "no_such_tool", {})
+    with pytest.raises(ValidationError, match="invalid tool name"):
+        actions.save_tool(project, "../blastn", {})
+    with pytest.raises(ValidationError, match="document must be a mapping"):
+        actions.save_tool(project, "blastn", ["not", "a", "mapping"])  # type: ignore[arg-type]
+    assert path.read_bytes() == original_bytes
+
+
 def test_save_recipe_normalizes_comments(project: Project) -> None:
     path = project.tools_config_path
     path.write_text(path.read_text(encoding="utf-8") + "\n# hand-written note\n", encoding="utf-8")
@@ -685,6 +786,77 @@ def test_config_screen_recipe_save_end_to_end(project: Project) -> None:
     assert recipe.max_hits_per_query == 7
     rows = data.recipe_history(project, "blastn_nt")
     assert [row["version"] for row in rows] == [2]
+
+
+def test_config_screen_tool_save_end_to_end(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            tools_table = panel.query_one("#tools-table", DataTable)
+            assert tools_table.row_count == 5
+
+            panel._load_tool("busco")
+            await pilot.pause()
+            assert panel.current_tool == "busco"
+            assert _static_text(panel.query_one("#tool-heading", Static)) == "busco"
+            assert panel.query_one("#tool-description", Input).value.startswith(
+                "Benchmarking")
+            assert panel.query_one("#tool-executable", Input).value == "busco"
+            assert panel.query_one("#tool-version-args", TextArea).text == "--version"
+            # The launcher mapping is not modeled: the form says so and keeps it.
+            note = _static_text(panel.query_one("#tool-extras-note", Static))
+            assert "run_method" in note
+
+            panel.query_one("#tool-description", Input).value = "edited via TUI"
+            panel.query_one("#tool-version-args", TextArea).text = "--version\n--json"
+            panel.query_one("#tool-version-pattern", Input).value = r"BUSCO\s+([\d.]+)"
+            panel.query_one("#tool-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ToolSaveModal)
+            assert "busco" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool busco")
+            assert not isinstance(app.screen, ToolSaveModal)
+
+    _run(scenario())
+    tool = get_tool(project, "busco")
+    assert tool.description == "edited via TUI"
+    assert tool.version_args == ["--version", "--json"]
+    assert tool.version_pattern == r"BUSCO\s+([\d.]+)"
+    assert tool.raw["run_method"] == "mamba run -n busco_6.1.0"
+    assert sorted(tool.recipes) == ["busco_autolineage", "busco_lineage"]
+    rows = data.recipe_history(project, "busco_lineage")
+    assert [row["version"] for row in rows] == [1]
+
+
+def test_config_screen_tool_save_rejects_an_invalid_pattern(project: Project) -> None:
+    original_pattern = get_tool(project, "blastn").raw["version_pattern"]
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_tool("blastn")
+            await pilot.pause()
+            panel.query_one("#tool-version-pattern", Input).value = "("
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            error = _static_text(panel.query_one("#tool-save-error", Static))
+            assert "not a valid regular expression" in error
+            assert not isinstance(app.screen, ToolSaveModal)
+
+    _run(scenario())
+    assert get_tool(project, "blastn").raw["version_pattern"] == original_pattern
 
 
 # ---------------------------------------------------------------------------
@@ -1834,7 +2006,10 @@ def test_config_screen_list_and_table_selection_loads_editors(project: Project) 
             await pilot.pause()
             await pilot.press("enter")
             await pilot.pause()
-            # Selecting a tool row must not load a recipe.
+            # Selecting a tool row loads the tool editor — and never a recipe.
+            assert panel.current_tool == "blastn"
+            assert _static_text(panel.query_one("#tool-heading", Static)) == "blastn"
+            assert not panel.query_one("#tool-save", Button).disabled
             assert _static_text(panel.query_one("#recipe-heading", Static)) == "select a recipe"
             assert panel.current_recipe is None
 

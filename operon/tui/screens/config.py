@@ -657,6 +657,51 @@ class RecipeSaveModal(WriteModal):
         self.dismiss(payload)
 
 
+class ToolSaveModal(WriteModal):
+    """Confirm a tool-level save inside tools.yaml (formatting is normalized)."""
+
+    def __init__(
+            self,
+            project: Project,
+            tool_name: str,
+            document: dict[str, Any],
+    ) -> None:
+        super().__init__(f"Save tool {tool_name}")
+        self.project = project
+        self.tool_name = tool_name
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no tool-level keys)"
+        yield Static(
+            f"writes config/tools.yaml tool {self.tool_name} ({keys}; blanked "
+            "fields are removed) and records one snapshot per recipe, so "
+            "`operon recipes history` shows the change.  NOTE: saving normalizes "
+            "the file's formatting and drops hand-written comments; every version "
+            "is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return f"config/tools.yaml → tool {self.tool_name} + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tool(self.project, self.tool_name, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify(f"{self.tool_name}: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                f"saved tool {self.tool_name}"
+                + (f" (snapshots: {names})" if names else "")
+            )
+        self.dismiss(payload)
+
+
 class ConfigPanel(Panel):
     """Config screen: profile editors (qc + classification + coverage) + tools/recipes editor."""
 
@@ -676,6 +721,8 @@ class ConfigPanel(Panel):
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
         self.recipe_doc: dict[str, Any] | None = None
+        self.current_tool: str | None = None
+        self.tool_doc: dict[str, Any] | None = None
         # The chain the form currently holds.  Rows mount a turn late, so this
         # is the panel's own count and never read back from the DOM.
         self._command_row_count = 0
@@ -787,6 +834,23 @@ class ConfigPanel(Panel):
                     with Horizontal(classes="config-buttons"):
                         yield Button("Check tools", id="tools-check")
                     yield DataTable(id="tools-table", cursor_type="row")
+                    with VerticalScroll(id="tool-editor"):  # pragma: no branch
+                        yield Static("select a tool", id="tool-heading")
+                        yield Static("Description", classes="modal-label")
+                        yield Input(id="tool-description")
+                        yield Static("Executable (blank = tool name)", classes="modal-label")
+                        yield Input(id="tool-executable")
+                        yield Static("Version args (one token per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="tool-version-args")
+                        yield Static("Version pattern (regular expression)",
+                                     classes="modal-label")
+                        yield Input(id="tool-version-pattern")
+                        yield Static("", id="tool-extras-note")
+                        yield Static("", id="tool-save-error")
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
+                            yield Button("Save tool", id="tool-save",
+                                         variant="primary", disabled=True)
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
                     with Horizontal(classes="config-buttons"):
@@ -1422,6 +1486,95 @@ class ConfigPanel(Panel):
         if name:
             self._load_profile(name)
 
+    # -- tool editor --------------------------------------------------------
+
+    #: Tool-level keys the editor owns; everything else in the tool mapping is
+    #: either shown read-only (recipes) or preserved verbatim (extras note).
+    TOOL_MODELED_KEYS = ("description", "executable", "version_args", "version_pattern")
+
+    def _load_tool(self, name: str) -> None:
+        try:
+            info = data.get_tool_document(self.project, name)
+        except ValidationError as exc:
+            self.app.notify(str(exc), severity="error")
+            return
+        self.current_tool = name
+        self.tool_doc = info["document"]
+        self._render_tool_form(name, info["document"])
+
+    def _render_tool_form(self, name: str, document: dict[str, Any]) -> None:
+        extras = {
+            key: value for key, value in document.items()
+            if key not in self.TOOL_MODELED_KEYS and key != "recipes"
+        }
+        self.query_one("#tool-heading", Static).update(name)
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
+        version_args = document.get("version_args") or []
+        args = version_args if isinstance(version_args, list) else [version_args]
+        self.query_one("#tool-version-args", TextArea).text = "\n".join(
+            str(arg) for arg in args
+        )
+        note = self.query_one("#tool-extras-note", Static)
+        if extras:
+            note.update(Text(_extras_note(extras), style="dim"))
+        else:
+            note.update("")
+        self.query_one("#tool-save-error", Static).update("")
+        self.query_one("#tool-save", Button).disabled = False
+
+    def _compose_tool_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tool writes as a removed key (so a blank
+        # executable falls back to the tool name).
+        document: dict[str, Any] = {}
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            value = self.query_one(widget_id, Input).value.strip()
+            if value:
+                document[key] = value
+        args = [
+            line.strip()
+            for line in self.query_one("#tool-version-args", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        if args:
+            document["version_args"] = args
+        return document
+
+    def _start_tool_save(self) -> None:
+        if not self.current_tool or self.tool_doc is None:
+            return
+        error = self.query_one("#tool-save-error", Static)
+        document = self._form_document(self._compose_tool_document, error)
+        if document is None:
+            return
+        pattern = str(document.get("version_pattern", "") or "")
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error.update(Text(
+                    f"tool {self.current_tool!r}: version_pattern is not a valid "
+                    f"regular expression ({exc})",
+                    style="red",
+                ))
+                return
+        self.app.push_screen(
+            ToolSaveModal(self.project, self.current_tool, document), self._on_tool_saved,
+        )
+
+    def _on_tool_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+        name = self.current_tool
+        if name:
+            self._load_tool(name)
+
     # -- recipe editor ------------------------------------------------------
 
     def _render_recipe_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
@@ -1817,6 +1970,8 @@ class ConfigPanel(Panel):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "recipes-table" and event.row_key.value is not None:
             self._load_recipe(str(event.row_key.value))
+        elif event.data_table.id == "tools-table" and event.row_key.value is not None:
+            self._load_tool(str(event.row_key.value))
 
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
@@ -1897,6 +2052,8 @@ class ConfigPanel(Panel):
             self._open_profile_history()
         elif button_id == "profile-run":
             self._open_classify()
+        elif button_id == "tool-save":
+            self._start_tool_save()
         elif button_id == "recipe-save":
             self._start_recipe_save()
         elif button_id == "recipe-history":
