@@ -465,7 +465,9 @@ an already absent limit blank remains a no-op. With a recipe selected, the
 
 A few surfaces stay in the CLI by decision rather than by omission; the parity
 registry (`operon/tui/parity.py`) records each one as `cli-only` with its
-reason, and `tests/unit/test_tui_cli_parity.py` keeps that honest.
+reason, and `tests/unit/test_tui_cli_parity.py` keeps that honest — with the
+CI workflow exporting `OPERON_PARITY_STRICT=1`, so a gap that reappears as
+`planned` fails the build.
 
 - **TimeTree** (`operon timetree …`, all seven verbs) — the integration is a
   verbatim query cache whose terms forbid mirroring or redistribution, it is

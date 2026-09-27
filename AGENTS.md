@@ -287,7 +287,8 @@ proceed with caution).
   commit — the parity tests in `tests/unit/test_tui_cli_parity.py` fail
   otherwise. Commands intentionally not offered in the TUI are registered
   `cli-only` with a reason; known gaps are registered `planned` with a
-  milestone.
+  milestone (the CI `pytest` job exports `OPERON_PARITY_STRICT=1`, so any
+  `planned` entry that reappears fails the build).
 - `docs/*/operations/database-compatibility.md` lists migration code that
   exists only for pre-1.0 databases and is scheduled for removal at the 1.0
   release; check it before touching `operon/database.py` migrations or the

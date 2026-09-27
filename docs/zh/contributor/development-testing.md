@@ -141,8 +141,8 @@ CLI 是规范面：新能力先落在 CLI 与核心函数，TUI 只调用同一�
      时间戳与耗时的任何差异。
 
 第 1、2、4 层是纯 argparse/SQLite 内省，不依赖 `tui` extra；第 3 层需要 Textual，
-缺失时跳过。设置 `OPERON_PARITY_STRICT=1` 会把 `planned` 条目也视为失败——供最终
-对齐里程碑启用。
+缺失时跳过。设置 `OPERON_PARITY_STRICT=1` 会把 `planned` 条目也视为失败；CI 工作流已在
+`pytest` 作业上设置它（`OPERON_PARITY_STRICT: "1"`），因此再次被登记为 `planned` 的缺口会直接让构建失败。
 
 新增或修改 CLI 命令/flag 时，必须在同一 commit 更新注册表：扩展 `implemented`
 条目的 `params`/`waived` 映射，或将命令登记为 `cli-only`/`planned` 并写明理由，

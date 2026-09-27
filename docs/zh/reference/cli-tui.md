@@ -383,7 +383,8 @@ token 列表、`path`，或留空表示“没有 `run_method` 键”。表单只
 ## 有意保留在 CLI 的界面
 
 以下界面留在 CLI 是明确决定而非遗漏；parity 注册表（`operon/tui/parity.py`）把它们逐条登记为
-`cli-only` 并写明理由，`tests/unit/test_tui_cli_parity.py` 负责保证这一点不被悄悄放宽。
+`cli-only` 并写明理由，`tests/unit/test_tui_cli_parity.py` 负责保证这一点不被悄悄放宽——CI 工作流
+导出 `OPERON_PARITY_STRICT=1`，任何再次以 `planned` 出现的缺口都会让构建失败。
 
 - **TimeTree**（`operon timetree …` 全部七个子命令）——该集成为逐字查询缓存，其条款禁止镜像或再
   分发，且预期迁往分析插件；TUI 有意不为它增加屏幕、对话框或请求面，因此不会意外扩大缓存查询边界。

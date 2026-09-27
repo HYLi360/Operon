@@ -162,8 +162,9 @@ machine-enforced contract lives in two places:
 
 Layers 1, 2, and 4 are pure argparse/SQLite introspection and run without
 the `tui` extra; layer 3 needs Textual and skips without it. Setting
-`OPERON_PARITY_STRICT=1` turns `planned` entries into failures — intended
-for the final alignment milestone.
+`OPERON_PARITY_STRICT=1` turns `planned` entries into failures; the CI
+workflow sets it on the `pytest` job (`OPERON_PARITY_STRICT: "1"`), so a
+gap re-registered as `planned` now fails the build.
 
 When you add or change a CLI command or flag, update the registry in the
 same commit: extend the `params`/`waived` mapping of an `implemented`
