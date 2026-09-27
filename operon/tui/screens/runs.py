@@ -74,6 +74,9 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
                         placeholder="run id", id="runs-filter-run-id")
             yield Input(value=str(self.current.get("parent_run_id") or ""),
                         placeholder="parent run id", id="runs-filter-parent-run-id")
+            yield Input(value=str(self.current.get("resumes_run_id") or ""),
+                        placeholder="resumes run id (--resumes-run-id)",
+                        id="runs-filter-resumes-run-id")
             yield Input(value=str(self.current.get("tool") or ""),
                         placeholder="tool", id="runs-filter-tool")
             yield Input(value=str(self.current.get("executor") or ""),
@@ -94,6 +97,7 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
         for key, widget_id in (
             ("started_from", "runs-filter-from"), ("started_to", "runs-filter-to"),
             ("run_id", "runs-filter-run-id"), ("parent_run_id", "runs-filter-parent-run-id"),
+            ("resumes_run_id", "runs-filter-resumes-run-id"),
             ("tool", "runs-filter-tool"), ("executor", "runs-filter-executor"),
         ):
             text = self.query_one(f"#{widget_id}", Input).value.strip()

@@ -35,6 +35,8 @@ class HomePanel(Panel):
             yield Button("NCBI Datasets import", id="home-ncbi-datasets")
             yield Button("Import dataset", id="home-import-wizard")
             yield Button("Import table", id="home-import-table")
+            yield Button("Create backup", id="home-backup-create")
+            yield Button("Verify backup", id="home-backup-verify")
         yield Static("loading…", id="home-body", classes="body")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -50,6 +52,15 @@ class HomePanel(Panel):
             from operon.tui.screens.table_import import ImportTableModal
 
             self.app.push_screen(ImportTableModal(self.project), self._after_write)
+        elif event.button.id == "home-backup-create":
+            from operon.tui.screens.backup import BackupModal
+
+            # A backup writes outside the project; no panel data changes.
+            self.app.push_screen(BackupModal(self.project))
+        elif event.button.id == "home-backup-verify":
+            from operon.tui.screens.backup import VerifyBackupModal
+
+            self.app.push_screen(VerifyBackupModal())
 
     def _after_write(self, payload: Any) -> None:
         if payload:

@@ -145,8 +145,6 @@ def test_strict_mode_flags_planned_entries(monkeypatch: pytest.MonkeyPatch) -> N
     planned = [
         entry.command_text for entry in REGISTRY if entry.status == STATUS_PLANNED
     ]
-    assert planned, "registry sanity check: expected at least one planned entry"
-
     monkeypatch.delenv("OPERON_PARITY_STRICT", raising=False)
     assert parity.strict_violations() == []
 
@@ -168,6 +166,29 @@ def test_strict_mode_flags_planned_entries(monkeypatch: pytest.MonkeyPatch) -> N
 
 def _implemented_entries() -> list[parity.ParityEntry]:
     return [entry for entry in REGISTRY if entry.status == STATUS_IMPLEMENTED]
+
+
+def test_no_registry_entry_is_still_attributed_to_m5() -> None:
+    """M5's close-out: no gap and no waiver is left waiting on the milestone.
+
+    The milestone attribution lives in the free-text note/reason, so this is
+    the machine check the plan's close-out asks for: after M5 every entry is
+    either implemented, deliberately ``cli-only``, or waived with a standing
+    reason that stands on its own.
+    """
+    planned = [
+        entry.command_text
+        for entry in REGISTRY
+        if entry.status == STATUS_PLANNED and "M5" in entry.note
+    ]
+    waived = [
+        f"{entry.command_text}:{dest}"
+        for entry in REGISTRY
+        for dest, reason in entry.waived.items()
+        if "M5" in reason
+    ]
+    assert planned == []
+    assert waived == []
 
 
 def test_implemented_entries_cover_every_cli_flag() -> None:
@@ -1547,6 +1568,91 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
     assert dismissed == [payload]
 
 
+def test_backup_create_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.backup import BackupModal
+
+    payload = {"path": str(tmp_path / "backup"), "scope": "results", "file_count": 3}
+    calls = spy_action(monkeypatch, "create_backup", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = BackupModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#backup-output")
+            # An empty form keeps the required flag with a placeholder, and the
+            # parser's default scope is what the form starts on.
+            assert modal.command_text() == "operon backup create --output '…'"
+            assert parse_command_text(modal.command_text()).scope == "control"
+
+            (await _q(modal, "#backup-output", Input)).value = str(tmp_path / "backup")
+            (await _q(modal, "#backup-scope", Select)).value = "results"
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.output == str(tmp_path / "backup")
+            assert namespace.scope == "results"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "backup create call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, str(tmp_path / "backup"))
+    assert kwargs == {"scope": "results"}
+    assert dismissed == [payload]
+
+
+def test_backup_verify_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Input
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.backup import VerifyBackupModal
+
+    payload = {
+        "path": str(tmp_path / "backup"), "scope": "control", "checked": 2,
+        "unexpected": 0, "ok": True, "failures": [],
+    }
+    calls = spy_action(monkeypatch, "verify_backup", payload)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = VerifyBackupModal()
+            app.push_screen(modal)
+            await _push(pilot, modal, "#backup-verify-input")
+            assert modal.command_text() == "operon backup verify --input '…'"
+            (await _q(modal, "#backup-verify-input", Input)).value = str(tmp_path / "backup")
+            await pilot.pause()
+            assert parse_command_text(modal.command_text()).input == str(tmp_path / "backup")
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "backup verify call")
+            # Nothing was written: the dialog stays open with the result.
+            await pilot.pause()
+            assert app.screen is modal
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (str(tmp_path / "backup"),)
+    assert kwargs == {}
+
+
 def test_audit_parity_add(
     tmp_path: Path,
     demo_template: Project,
@@ -1567,6 +1673,404 @@ def test_audit_parity_add(
         record_id="ORG_000881",
     )
     assert result["entity_id"] == "ORG_000881"
+    _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
+
+
+def test_export_qc_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportQcModal
+
+    payload = {"path": "/tmp/qc_results.wide.tsv", "directory": "/tmp",
+               "entity_type": "organism", "include_retired": True,
+               "files": [], "rows": 7}
+    calls = spy_action(monkeypatch, "export_qc_report", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ExportQcModal(project, "organism")
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#qc-export-type")
+            # The entity type the screen was opened on prefills the filter and
+            # --export is what the dialog is for; the checkbox starts off.
+            assert modal.command_text() == "operon report qc --entity-type organism --export"
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.entity_type == "organism"
+            assert namespace.export is True
+            assert namespace.include_retired is False
+
+            (await _q(modal, "#qc-export-include-retired", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.include_retired is True
+
+            # "all entity types" drops the filter, like the CLI's default.
+            (await _q(modal, "#qc-export-type", Select)).value = ""
+            await pilot.pause()
+            assert modal.command_text() == "operon report qc --export --include-retired"
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "qc export call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {"entity_type": None, "include_retired": True}
+    assert dismissed == [payload]
+
+
+def test_export_qc_report_matches_the_cli_bytes(
+    project: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The export writes the CLI's own files: same names, same bytes."""
+    aggregate = project.qc_root / "aggregate"
+    assert cli_main(["--project", str(project.root), "report", "qc", "--export"]) == 0
+    capsys.readouterr()
+    cli_bytes = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    assert set(cli_bytes) == {"qc_results.tsv", "qc_results.wide.tsv"}
+
+    shutil.rmtree(aggregate)
+    result = actions.export_qc_report(project)
+    assert result["directory"] == str(aggregate)
+    assert {entry["name"] for entry in result["files"]} == set(cli_bytes)
+    assert result["rows"] == sum(entry["rows"] for entry in result["files"])
+    for name, blob in cli_bytes.items():
+        assert (aggregate / name).read_bytes() == blob, name
+
+    # The entity-type filter is the CLI flag: same bytes again, filtered.
+    assert cli_main([
+        "--project", str(project.root), "report", "qc", "--export",
+        "--entity-type", "organism",
+    ]) == 0
+    capsys.readouterr()
+    filtered = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    shutil.rmtree(aggregate)
+    assert actions.export_qc_report(project, entity_type="organism")["entity_type"] == "organism"
+    for name, blob in filtered.items():
+        assert (aggregate / name).read_bytes() == blob, name
+    assert filtered["qc_results.tsv"] != cli_bytes["qc_results.tsv"], (
+        "the entity-type filter must actually narrow the export"
+    )
+
+
+def test_export_metadata_modal_command_text_matches_action_kwargs(
+    project: Project,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportMetadataModal
+
+    payload = {"path": str(tmp_path / "meta"), "include_retired": True,
+               "tables": 5, "rows": 9, "names": ["organisms.tsv"]}
+    calls = spy_action(monkeypatch, "export_metadata_report", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = ExportMetadataModal(project)
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#metadata-output")
+            # A blank path keeps the flag off: the core default applies.
+            assert modal.command_text() == "operon report metadata"
+            assert parse_command_text(modal.command_text()).output is None
+
+            (await _q(modal, "#metadata-output", Input)).value = str(tmp_path / "meta")
+            (await _q(modal, "#metadata-include-retired", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.output == str(tmp_path / "meta")
+            assert namespace.include_retired is True
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "metadata export call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project,)
+    assert kwargs == {"output": str(tmp_path / "meta"), "include_retired": True}
+    assert dismissed == [payload]
+
+
+def test_entities_export_button_opens_the_metadata_dialog(project: Project) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Button
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import ExportMetadataModal
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            await _wait_until(
+                lambda: app.screen.query("#entities-export-metadata"), "export button"
+            )
+            app.screen.query_one("#entities-export-metadata", Button).press()
+            await _wait_until(
+                lambda: isinstance(app.screen, ExportMetadataModal), "export dialog"
+            )
+
+    _run(scenario())
+
+
+def _assert_same_export(cli_dir: Path, tui_dir: Path) -> None:
+    """The two export directories must agree file by file.
+
+    Every TSV is compared as bytes; ``manifest.json`` is compared with its
+    volatile ``created_at`` dropped, which is the only field a CLI run and a
+    TUI run of the same project may legitimately disagree on.
+    """
+    cli_names = sorted(entry.name for entry in cli_dir.iterdir())
+    assert cli_names == sorted(entry.name for entry in tui_dir.iterdir())
+    for name in cli_names:
+        if name == "manifest.json":
+            continue
+        assert (cli_dir / name).read_bytes() == (tui_dir / name).read_bytes(), name
+    cli_manifest = json.loads((cli_dir / "manifest.json").read_text(encoding="utf-8"))
+    tui_manifest = json.loads((tui_dir / "manifest.json").read_text(encoding="utf-8"))
+    cli_manifest.pop("created_at")
+    tui_manifest.pop("created_at")
+    assert cli_manifest == tui_manifest
+
+
+def test_export_metadata_report_matches_the_cli_bytes(
+    project: Project,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """The export is the CLI's own: same file set, same bytes per file."""
+    cli_out = tmp_path / "cli"
+    tui_out = tmp_path / "tui"
+    assert cli_main([
+        "--project", str(project.root), "report", "metadata", "--output", str(cli_out),
+    ]) == 0
+    capsys.readouterr()
+    result = actions.export_metadata_report(project, output=str(tui_out))
+    assert result["tables"] > 0
+    assert result["rows"] > 0
+    assert result["names"] == sorted(entry.name for entry in cli_out.glob("*.tsv"))
+    _assert_same_export(cli_out, tui_out)
+
+    cli_all = tmp_path / "cli-all"
+    tui_all = tmp_path / "tui-all"
+    assert cli_main([
+        "--project", str(project.root), "report", "metadata",
+        "--output", str(cli_all), "--include-retired",
+    ]) == 0
+    capsys.readouterr()
+    result_all = actions.export_metadata_report(
+        project, output=str(tui_all), include_retired=True)
+    assert result_all["include_retired"] is True
+    _assert_same_export(cli_all, tui_all)
+
+
+def test_set_state_modal_command_text_matches_action_kwargs(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    payload = {"entity_type": "organism", "entity_id": "ORG_000001",
+               "state": "DISCOVERED", "previous_state": "", "forced": False}
+    calls = spy_action(monkeypatch, "set_state", payload)
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000001", "ACCEPTED")
+            app.push_screen(modal, dismissed.append)
+            await _push(pilot, modal, "#set-state-state")
+            # Unselected state and empty message stay as placeholders, and the
+            # force checkbox defaults to off — the CLI's default for --force.
+            assert modal.command_text() == (
+                "operon set-state --entity-type organism --entity-id ORG_000001 "
+                "--state …"
+            )
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.entity_type == "organism"
+            assert namespace.state == "…"
+            assert namespace.force is False
+
+            # A non-standard transition is called out before Confirm, and the
+            # force box is what turns it into an audited deliberate act.
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            (await _q(modal, "#set-state-message", Input)).value = "audit parity"
+            await pilot.pause()
+            assert "not a standard transition" in _static_text(
+                await _q(modal, "#set-state-hint", Static))
+
+            (await _q(modal, "#set-state-force", Checkbox)).value = True
+            await pilot.pause()
+            namespace = parse_command_text(modal.command_text())
+            assert namespace.state == "DISCOVERED"
+            assert namespace.message == "audit parity"
+            assert namespace.force is True
+            assert "recorded in the audit trail" in _static_text(
+                await _q(modal, "#set-state-hint", Static))
+
+            modal.confirm()
+            await _wait_until(lambda: len(calls) == 1, "set-state call")
+
+    _run(scenario())
+    args, kwargs = calls[0]
+    assert args == (project, "organism", "ORG_000001", "DISCOVERED", "audit parity")
+    assert kwargs == {"force": True}
+    assert dismissed == [payload]
+
+
+def test_set_state_modal_reports_an_illegal_transition_inline(
+    project: Project,
+) -> None:
+    """The core's own ConflictError is surfaced inline; --force is a second step."""
+    pytest.importorskip("textual")
+    from textual.widgets import Checkbox, Input, Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    actions.add_record(
+        project, "organism",
+        {"scientific_name": "Illegal State", "taxonomy_source": "NCBI"},
+        record_id="ORG_000884",
+    )
+    actions.set_state(project, "organism", "ORG_000884", "ACCEPTED", "fixture", force=True)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000884", "ACCEPTED")
+            app.push_screen(modal)
+            await _push(pilot, modal, "#set-state-state")
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            (await _q(modal, "#set-state-message", Input)).value = "second attempt"
+            error = await _q(modal, "#modal-error", Static)
+
+            # Without force the run reaches the core, which refuses the
+            # transition; the message lands inline and the form stays open.
+            modal.confirm()
+            await _wait_until(lambda: "use --force" in _static_text(error), "core refusal")
+            assert _entity_state(project, "ORG_000884") == "ACCEPTED"
+
+            # The deliberate second step: tick force and the same form goes through.
+            (await _q(modal, "#set-state-force", Checkbox)).value = True
+            await pilot.pause()
+            modal.confirm()
+            await _wait_until(
+                lambda: _entity_state(project, "ORG_000884") == "DISCOVERED",
+                "forced transition",
+            )
+
+    _run(scenario())
+    assert _last_change_reason(project, "organism:ORG_000884") == "second attempt"
+
+
+def _entity_state(project: Project, entity_id: str) -> str:
+    db = Database(project.db_path, read_only=True)
+    try:
+        return db.get_entity_state("organism", entity_id) or ""
+    finally:
+        db.close()
+
+
+def _last_change_reason(project: Project, object_id: str) -> str:
+    db = Database(project.db_path, read_only=True)
+    try:
+        row = db.query(
+            "SELECT reason FROM changes WHERE object_id=? ORDER BY change_id DESC LIMIT 1",
+            (object_id,),
+        )
+        return str(row[0]["reason"]) if row else ""
+    finally:
+        db.close()
+
+
+def test_set_state_modal_requires_the_message(
+    project: Project,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The audit reason is required where the CLI would default it."""
+    pytest.importorskip("textual")
+    from textual.widgets import Select, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import SetStateModal
+
+    calls = spy_action(monkeypatch, "set_state", {})
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = SetStateModal(project, "organism", "ORG_000001", "")
+            app.push_screen(modal)
+            await _push(pilot, modal, "#set-state-state")
+            (await _q(modal, "#set-state-state", Select)).value = "DISCOVERED"
+            await pilot.pause()
+            modal.confirm()
+            await pilot.pause()
+            assert calls == []
+            assert "message is required" in _static_text(
+                await _q(modal, "#modal-error", Static))
+
+    _run(scenario())
+
+
+def test_audit_parity_set_state(
+    tmp_path: Path,
+    demo_template: Project,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    cli_project, tui_project = _twin_projects(tmp_path, demo_template)
+    fields = ["scientific_name=State Parity", "taxonomy_source=NCBI"]
+    rc = cli_main([
+        "--project", str(cli_project.root), "add", "organism", "--id", "ORG_000882",
+        *[part for field in fields for part in ("--field", field)],
+    ])
+    assert rc == 0
+    capsys.readouterr()
+    rc = cli_main([
+        "--project", str(cli_project.root), "set-state",
+        "--entity-type", "organism", "--entity-id", "ORG_000882",
+        "--state", "DISCOVERED", "--message", "audit parity",
+    ])
+    assert rc == 0
+    capsys.readouterr()
+
+    actions.add_record(
+        tui_project, "organism",
+        {"scientific_name": "State Parity", "taxonomy_source": "NCBI"},
+        record_id="ORG_000882",
+    )
+    result = actions.set_state(
+        tui_project, "organism", "ORG_000882", "DISCOVERED", "audit parity",
+    )
+    assert result["state"] == "DISCOVERED"
+    assert result["previous_state"] == "METADATA_VALIDATED"
+    assert result["forced"] is False
     _assert_audit_equal(cli_project, tui_project, "entity_state", "organisms")
 
 

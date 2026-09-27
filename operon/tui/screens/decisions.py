@@ -10,7 +10,7 @@ from typing import Any
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import DataTable, Input, Select, Static
+from textual.widgets import Checkbox, DataTable, Input, Select, Static
 
 from operon.config import Project, resolve_actor
 from operon.tui import actions, data
@@ -206,6 +206,10 @@ class DecisionsPanel(Panel):
                     value=ALL, id="decisions-decision", allow_blank=False,
                 )
                 yield Input(placeholder="filter by entity", id="decisions-filter")
+                yield Checkbox(
+                    "include retired (--include-retired)",
+                    id="decisions-include-retired",
+                )
             yield DataTable(id="decisions-table", cursor_type="row")
 
     def on_mount(self) -> None:
@@ -226,6 +230,7 @@ class DecisionsPanel(Panel):
         return {
             "decisions": data.list_decisions(
                 self.project, profile=profile, decision=decision, text=text,
+                include_retired=self.query_one("#decisions-include-retired", Checkbox).value,
             ),
             "profiles": data.list_profiles(self.project),
         }
@@ -271,6 +276,10 @@ class DecisionsPanel(Panel):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id in {"decisions-profile", "decisions-decision"}:
+            self.reload()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "decisions-include-retired":
             self.reload()
 
     def _selected_row(self) -> dict[str, Any] | None:

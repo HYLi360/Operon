@@ -1610,22 +1610,11 @@ def _cmd_evict(args: argparse.Namespace, project: Project, db: Database) -> int:
 
 
 def _cmd_locations(args: argparse.Namespace, project: Project, db: Database) -> int:
-    params: list[Any] = []
-    where = ""
-    if args.file_id:
-        where = f"WHERE f.file_id IN ({', '.join('?' for _ in args.file_id)})"
-        params.extend(args.file_id)
-    rows = db.conn.execute(
-        "SELECT f.file_id, f.relative_path, f.status AS local_status, "
-        "COALESCE(l.location_name, '') AS remote, COALESCE(l.status, '') AS remote_status, "
-        "COALESCE(l.verified_at, '') AS verified_at "
-        "FROM files f LEFT JOIN file_locations l ON l.file_id=f.file_id "
-        f"{where} ORDER BY f.file_id, l.location_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
-        params,
-    ).fetchall()
+    from operon.remotes import list_locations
+    rows = list_locations(db, args.file_id or None)
     print(format_table(
         ["file_id", "relative_path", "local_status", "remote", "remote_status", "verified_at"],
-        ([row[column] for column in row.keys()] for row in rows),
+        ([row[column] for column in row] for row in rows),
     ))
     return 0
 
