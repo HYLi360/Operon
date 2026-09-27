@@ -56,6 +56,24 @@ async def _wait_until(predicate: Any, what: str, timeout: float | None = None) -
     raise AssertionError(f"timed out waiting for {what}")
 
 
+async def _await_notification(app: Any, needle: str = "", severity: str = "") -> None:
+    """Wait for a raised notification matching ``needle`` and/or ``severity``.
+
+    ``App.notify`` queues a message, so a callback that has already updated its
+    widgets raises the notification a message-loop turn later: reading
+    ``app._notifications`` straight after the widgets turns a correct flow into
+    an intermittent failure on a slow interpreter (ODR-0051).
+    """
+    def raised() -> bool:
+        return any(
+            (not severity or notification.severity == severity)
+            and (not needle or needle in notification.message)
+            for notification in app._notifications
+        )
+
+    await _wait_until(raised, f"the notification {needle or severity!r}")
+
+
 def parse_command_text(text: str) -> Any:
     """Parse a modal's equivalent-command preview with the real CLI parser."""
     from operon.cli import _parser
@@ -301,6 +319,7 @@ def test_remotes_screen_lists_mirrors_and_residency(tmp_path: Path) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-0051")
 def test_remotes_check_button_probes_and_reports_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -338,8 +357,7 @@ def test_remotes_check_button_probes_and_reports_failures(
                 and "error" in str(table.get_row_at(0)[5]), "checked row")
             await _wait_until(lambda: not button.disabled, "button re-enabled")
             assert calls == [project]
-            severities = [n.severity for n in app._notifications]
-            assert "error" in severities, severities
+            await _await_notification(app, severity="error")
 
     _run(scenario())
 
@@ -568,6 +586,7 @@ def test_pull_modal_command_text_matches_action_kwargs(
     assert kwargs == {}
 
 
+@pytest.mark.bug("ODR-0051")
 def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -611,8 +630,7 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
             assert app.screen is modal, "a failed file must keep the dialog open"
             status = _static_text(await _q(modal, "#sync-status", Static))
             assert "uploaded: 1" in status and "error: 1" in status
-            severities = [n.severity for n in app._notifications]
-            assert "error" in severities, severities
+            await _await_notification(app, severity="error")
             # Closing hands the results back so the screen can reload.
             modal.action_cancel()
             await _wait_until(lambda: bool(dismissed), "modal dismissed")
@@ -622,6 +640,7 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     assert dismissed == [results]
 
 
+@pytest.mark.bug("ODR-0051")
 def test_sync_modal_refuses_to_close_while_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -656,8 +675,7 @@ def test_sync_modal_refuses_to_close_while_running(
             modal.action_cancel()
             await pilot.pause()
             assert app.screen is modal, "a running push must not close"
-            assert "cannot be interrupted" in " ".join(
-                n.message for n in app._notifications)
+            await _await_notification(app, needle="cannot be interrupted")
             release.set()
             await _settled(app)
 
