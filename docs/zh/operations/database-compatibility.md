@@ -111,7 +111,7 @@ profile 的内容哈希、可审计的判定细节与判定时间戳，由 `oper
 
 ## 项目 metadata schema 自动升级
 
-文件：`operon/adapters/ncbi_datasets.py`
+文件：`operon/adapters/_ncbi_plan.py`（导入计划与落库；门面为 `operon/adapters/ncbi_datasets.py`）
 
 `_adapter_schema()` 当前会把 adapter 自有 assembly 字段合并进旧项目的
 `config/schemas.yaml`，追加 paired-source 文件角色并把旧版本提升到 `1.4`。正式版应改为明确

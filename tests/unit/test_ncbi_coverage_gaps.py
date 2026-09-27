@@ -996,7 +996,7 @@ def test_no_space_error_walks_up_and_tolerates_usage_failure(tmp_path, monkeypat
 
 def test_open_source_preserves_existing_files(project_db, tmp_path, monkeypatch):
     project, _db = project_db
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *_args: None)
+    monkeypatch.setattr("operon.adapters._ncbi_sources._require_disk_space", lambda *_args: None)
     source = tmp_path / "report.jsonl"
     source.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
     bundle = ncbi._open_source(source, project, True, label="explicit")
@@ -1139,7 +1139,7 @@ def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkey
 def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
     payload = _dataset_zip_bytes()
     session = _ScriptedSession([None, _SyncResponse(200, payload)])
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *_args: None)
+    monkeypatch.setattr("operon.adapters._ncbi_download._require_disk_space", lambda *_args: None)
     destination = tmp_path / "fallback.zip"
     assert ncbi.download_ncbi_dataset(
         ["GCF_000001405.40"], destination, session=session, max_retries=0,
@@ -1423,7 +1423,7 @@ def test_parallel_download_skips_entries_without_payload_or_error(tmp_path, monk
     async def fake_runner(**kwargs: Any) -> None:
         kwargs["completed_queue"].put((kwargs["batches"][0], None, None))
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", fake_runner)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
     consumed: list[Any] = []
     assert ncbi.download_ncbi_datasets_parallel(
         [["GCF_000001405.40"]], tmp_path, max_workers=1,
@@ -1440,7 +1440,7 @@ def test_parallel_download_truncates_long_failure_details(tmp_path, monkeypatch)
             batch = [f"GCF_{index:09d}.1"]
             kwargs["completed_queue"].put((batch, None, ValidationError("not found")))
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", fake_runner)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
     batches = [[f"GCF_{index:09d}.1"] for index in range(failures)]
     with pytest.raises(ValidationError) as caught:
         ncbi.download_ncbi_datasets_parallel(
@@ -1467,7 +1467,7 @@ def test_download_batches_rechecks_cancellation_after_waiting_for_a_worker(tmp_p
         Path(destination).write_bytes(b"zip")
         return Path(destination)
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_download)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_download)
     completed: queue.Queue[Any] = queue.Queue()
     asyncio.run(ncbi._download_batches_async(
         batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
@@ -1506,7 +1506,7 @@ def test_download_batches_cancel_pending_tasks_after_a_failure(tmp_path, monkeyp
                 raise RuntimeError("cancel probe")
             return False
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", blocked)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", blocked)
     with pytest.raises(RuntimeError, match="cancel probe"):
         asyncio.run(ncbi._download_batches_async(
             batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
@@ -1529,7 +1529,7 @@ def test_parallel_download_external_cancel_event_stops_before_download(tmp_path,
     def fail_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("a download was attempted despite the set cancel event")
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fail_if_called)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fail_if_called)
     consumed: list[tuple[Any, Any]] = []
     cancel_event = threading.Event()
     cancel_event.set()
@@ -1570,7 +1570,7 @@ def test_parallel_download_without_event_keeps_internal_cancellation(tmp_path, m
     async def fake_batch_download(batch, destination, **_kwargs):
         Path(destination).write_bytes(b"zip")
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_batch_download)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_batch_download)
     consumed: list[tuple[Any, Any]] = []
     completed = ncbi.download_ncbi_datasets_parallel(
         [["GCF_000000001.1"]],

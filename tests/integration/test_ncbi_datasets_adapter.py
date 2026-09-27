@@ -463,7 +463,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         with tempfile.TemporaryDirectory() as tmp:
             staging = Path(tmp)
             with patch(
-                "operon.adapters.ncbi_datasets._download_batch_aiohttp",
+                "operon.adapters._ncbi_download._download_batch_aiohttp",
                 side_effect=fake_batch_download,
             ):
                 completed = download_ncbi_datasets_parallel(
@@ -500,7 +500,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         with tempfile.TemporaryDirectory() as tmp:
             staging = Path(tmp)
             with patch(
-                "operon.adapters.ncbi_datasets._download_batch_aiohttp",
+                "operon.adapters._ncbi_download._download_batch_aiohttp",
                 side_effect=fake_batch_download,
             ):
                 completed = download_ncbi_datasets_parallel(
@@ -532,7 +532,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 raise KeyboardInterrupt  # simulated Ctrl-C mid-batch
 
         with tempfile.TemporaryDirectory() as tmp, patch(
-            "operon.adapters.ncbi_datasets._download_batch_aiohttp",
+            "operon.adapters._ncbi_download._download_batch_aiohttp",
             side_effect=fake_batch_download,
         ), self.assertRaises(KeyboardInterrupt):
             download_ncbi_datasets_parallel(

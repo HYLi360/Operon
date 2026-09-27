@@ -49,7 +49,7 @@ The corresponding regression test is `test_v1_qc_and_decisions_migrate_without_d
 
 ## Automatic project metadata-schema upgrades
 
-File: `operon/adapters/ncbi_datasets.py`
+File: `operon/adapters/_ncbi_plan.py` (import planning and persistence; facade `operon/adapters/ncbi_datasets.py`)
 
 `_adapter_schema()` currently merges the adapter-owned assembly fields into an old project's `config/schemas.yaml`, appends paired-source file roles, and raises the old version to `1.4`. The official release should instead explicitly require a supported schema version with an actionable error message, and no longer silently modify old project schemas.
 
