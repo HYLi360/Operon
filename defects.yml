@@ -850,7 +850,7 @@ defects:
   status: fixed
   reproduction: 'Drive PushModal through the Remotes screen, confirm a push in which one file fails, wait for the two result rows, then read app._notifications immediately: Textual''s App.notify queues a Notify message, so the list is only appended when the message loop gets to it, one or more turns after the worker callback that updated the table and the status line. Reading the list in the same turn therefore sees it empty, and how many turns the loop needs depends on the interpreter and the load of the runner.'
   disposition: Registered and fixed in the same round as an instance of the ODR-0027 family (a TUI test asserting on state that a worker delivers a message-loop turn later). The test module now has the predicate wait tests/unit/test_tui_remotes.py::_await_notification and the three sites that read app._notifications directly - the connectivity-check test, the failed-push test and the refuse-to-close-while-running test - all wait for the notification they assert with it, so the class is fixed and not just the reported site. The three tests carry @pytest.mark.bug("ODR-0051").
-  fix_commit: null
+  fix_commit: 46c850fff390b4147aae38a02c3af06a98721667
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure
