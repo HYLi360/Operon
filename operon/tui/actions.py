@@ -1129,6 +1129,185 @@ def save_recipe(
     }
 
 
+#: Tool-level keys the Config screen's tool editor owns.  Everything else in a
+#: tool mapping (``recipes``, or a key the editor does not model at all) is kept
+#: exactly as parsed.
+MODELED_TOOL_KEYS = ("description", "executable", "run_method", "version_args",
+                     "version_pattern")
+
+
+def save_tool(
+        project: Project,
+        tool_name: str,
+        tool_doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and save the tool-level keys of one tool in ``config/tools.yaml``.
+
+    The document is the complete state of the modeled tool keys: a key it
+    carries is written, a modeled key it omits is removed from the file (so an
+    emptied ``executable`` falls back to the tool name and an emptied
+    ``version_args`` disappears).  ``run_method`` is one of the modeled keys —
+    the document carries it as the launcher command string or as a
+    ``conda``/``prefix``/``path`` mapping.  Every other key of the tool mapping
+    — ``recipes`` or a key the editor does not model — is kept exactly as
+    parsed, and a value for such a key in the document is ignored rather than
+    written.  Tools carry no version of their own, so nothing is
+    bumped: the whole file is written back with
+    ``yaml.safe_dump(sort_keys=False)`` and the result is round-trip verified
+    through :func:`operon.tools.load_tools_config` + ``get_tool``; on any
+    failure the previous file content is restored.  A changed save records the
+    same ``{"recipe": ..., "tool": ...}`` snapshot shape
+    :func:`operon.tools.run_analysis` uses, once per recipe of that tool, so
+    ``operon recipes history <name>`` shows the change; an unchanged save is a
+    no-op.
+
+    NOTE: saving from the TUI normalizes tools.yaml formatting and drops
+    hand-written comments; every saved version is preserved verbatim in
+    ``recipe_snapshots`` (see ``operon recipes history/show``).
+    """
+    from operon.tools import get_tool, list_analyses, load_tools_config
+
+    _validate_config_name("tool", tool_name)
+    if not isinstance(tool_doc, dict):
+        raise ValidationError(f"tool {tool_name!r}: document must be a mapping")
+    path = project.tools_config_path
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
+    config = load_tools_config(project)
+    tools = config.get("tools")
+    if not isinstance(tools, dict) or tool_name not in tools:
+        raise ValidationError(f"unknown tool {tool_name!r} in {path}")
+    existing = tools[tool_name]
+    if not isinstance(existing, dict):
+        raise ValidationError(f"tool {tool_name!r} in tools.yaml must be a mapping")
+    # Only the modeled keys are read from the document, and the document is
+    # their complete state: a modeled key it omits is removed, so an emptied
+    # executable falls back to the tool name.  A value for any other key
+    # (``recipes``, …) is ignored, so the recipes can never be written from a
+    # stale editor document.
+    document = {key: value for key, value in tool_doc.items() if key in MODELED_TOOL_KEYS}
+    merged = {key: value for key, value in existing.items()
+              if key not in MODELED_TOOL_KEYS}
+    merged.update(document)
+    if merged == existing:
+        return {
+            "name": tool_name, "unchanged": True, "recipes": [], "snapshots": {},
+        }
+    tools[tool_name] = merged
+
+    text = (
+        "# Operon external tools configuration (YAML)\n"
+        "# Saved via the Operon TUI: formatting is normalized and hand-written\n"
+        "# comments are dropped; every version is kept in recipe_snapshots.\n"
+        + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    )
+    with _saved_config(path, text, previous_text, f"tool {tool_name!r}"):
+        load_tools_config(project)
+        tool = get_tool(project, tool_name)
+        recipes = [
+            recipe for recipe in list_analyses(project)
+            if recipe.tool_name == tool_name
+        ]
+        with _open_writable(project) as db, db.transaction():
+            snapshots = {
+                recipe.name: db.record_recipe(
+                    recipe.name, recipe.version,
+                    {"recipe": recipe.raw, "tool": tool.raw},
+                )
+                for recipe in recipes
+            }
+    return {
+        "name": tool_name, "unchanged": False,
+        "recipes": sorted(snapshots), "snapshots": snapshots,
+    }
+
+
+#: Keys of the top-level ``conda:`` section the defaults editor owns.  Any
+#: other key of the section is kept exactly as parsed.
+MODELED_CONDA_KEYS = ("bin", "run_args")
+
+
+def _tool_launchers(project: Project, config: dict[str, Any]) -> dict[str, list[str]]:
+    """The launcher prefix of every configured tool, as ``config`` resolves it."""
+    from operon.tools import get_tool, launcher_prefix
+
+    launchers: dict[str, list[str]] = {}
+    for name in config.get("tools") or {}:
+        tool = get_tool(project, str(name))
+        launchers[tool.name] = launcher_prefix(tool, config)
+    return launchers
+
+
+def save_tools_defaults(
+        project: Project,
+        conda_doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and save the top-level ``conda:`` section of ``config/tools.yaml``.
+
+    The document is the complete state of the modeled keys: a key it carries is
+    written, a modeled key it omits is removed (so an emptied ``bin`` falls back
+    to ``conda`` and an emptied ``run_args`` to ``run --no-capture-output``).
+    Every other key of the section is kept exactly as parsed, and a value for
+    such a key in the document is ignored rather than written.
+
+    The section is the launcher default shared by every tool, so a changed save
+    records one snapshot per recipe of each tool **whose resolved launcher
+    changed** — a tool that launches through another program, carries an
+    explicit ``bin``/``args``, or does not react to the changed key keeps its
+    snapshot count — in the same ``{"recipe": ..., "tool": ...}`` shape
+    :func:`operon.tools.run_analysis` uses.  Atomic write + round-trip verify,
+    with the previous bytes restored on failure; an unchanged save is a no-op.
+
+    NOTE: saving from the TUI normalizes tools.yaml formatting and drops
+    hand-written comments; every saved version is preserved verbatim in
+    ``recipe_snapshots`` (see ``operon recipes history/show``).
+    """
+    from operon.tools import get_tool, list_analyses, load_tools_config
+
+    if not isinstance(conda_doc, dict):
+        raise ValidationError("the conda section: document must be a mapping")
+    path = project.tools_config_path
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
+    config = load_tools_config(project)
+    existing = config.get("conda") or {}
+    if not isinstance(existing, dict):
+        raise ValidationError(f"the conda section in {path} must be a mapping")
+    document = {key: value for key, value in conda_doc.items() if key in MODELED_CONDA_KEYS}
+    merged = {key: value for key, value in existing.items()
+              if key not in MODELED_CONDA_KEYS}
+    merged.update(document)
+    if merged == existing:
+        return {"unchanged": True, "recipes": [], "snapshots": {}}
+    before = _tool_launchers(project, config)
+    config["conda"] = merged
+
+    text = (
+        "# Operon external tools configuration (YAML)\n"
+        "# Saved via the Operon TUI: formatting is normalized and hand-written\n"
+        "# comments are dropped; every version is kept in recipe_snapshots.\n"
+        + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    )
+    with _saved_config(path, text, previous_text, "the conda section"):
+        after = _tool_launchers(project, load_tools_config(project))
+        changed = {name for name, prefix in after.items() if before.get(name) != prefix}
+        recipes = [
+            recipe for recipe in list_analyses(project)
+            if recipe.tool_name in changed
+        ]
+        tools = {name: get_tool(project, name) for name in changed}
+        with _open_writable(project) as db, db.transaction():
+            snapshots = {
+                recipe.name: db.record_recipe(
+                    recipe.name, recipe.version,
+                    {"recipe": recipe.raw, "tool": tools[recipe.tool_name].raw},
+                )
+                for recipe in recipes
+            }
+    return {
+        "unchanged": False,
+        "recipes": sorted(snapshots), "snapshots": snapshots,
+    }
+
+
 def check_tools(
         project: Project,
         timeout: float = 60.0,

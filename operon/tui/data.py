@@ -639,6 +639,31 @@ def list_tools(project: Project) -> list[dict[str, Any]]:
     return rows
 
 
+def get_tool_document(project: Project, name: str) -> dict[str, Any]:
+    """Return ``{"name": ..., "document": raw tool mapping}`` for the tool editor."""
+    from operon.tools import load_tools_config
+
+    config = load_tools_config(project)
+    tools = config.get("tools")
+    if not isinstance(tools, dict) or name not in tools:
+        raise ValidationError(f"unknown tool {name!r} in {project.tools_config_path}")
+    document = tools[name]
+    if not isinstance(document, dict):
+        raise ValidationError(f"tool {name!r} in tools.yaml must be a mapping")
+    return {"name": name, "document": dict(document)}
+
+
+def get_tools_defaults(project: Project) -> dict[str, Any]:
+    """Return ``{"document": raw top-level conda section}`` for the defaults editor."""
+    from operon.tools import load_tools_config
+
+    section = load_tools_config(project).get("conda") or {}
+    if not isinstance(section, dict):
+        raise ValidationError(
+            f"the conda section in {project.tools_config_path} must be a mapping")
+    return {"document": dict(section)}
+
+
 def list_recipes(project: Project) -> list[dict[str, Any]]:
     """Return one summary row per recipe (CLI ``recipes list``)."""
     from operon.tools import list_analyses

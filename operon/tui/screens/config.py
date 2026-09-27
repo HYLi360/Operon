@@ -657,6 +657,100 @@ class RecipeSaveModal(WriteModal):
         self.dismiss(payload)
 
 
+class CondaDefaultsSaveModal(WriteModal):
+    """Confirm a save of the top-level ``conda:`` section (formatting is normalized)."""
+
+    def __init__(self, project: Project, document: dict[str, Any]) -> None:
+        super().__init__("Save conda defaults")
+        self.project = project
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no conda keys)"
+        yield Static(
+            f"writes the top-level conda: section of config/tools.yaml ({keys}; a "
+            "blanked field falls back to the built-in default) and records one "
+            "snapshot per recipe whose resolved launcher changes.  NOTE: saving "
+            "normalizes the file's formatting and drops hand-written comments; "
+            "every version is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return "config/tools.yaml → conda: defaults + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tools_defaults(self.project, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify("conda defaults: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                "saved conda defaults"
+                + (f" (snapshots: {names})" if names else " (no launcher changed)")
+            )
+        self.dismiss(payload)
+
+
+#: Run-method modes the tool editor offers.  A blank selection means the
+#: ``run_method`` key is absent, so the executable runs directly.
+TOOL_RUN_METHOD_OPTIONS = [
+    ("command line (string)", "string"),
+    ("conda", "conda"),
+    ("prefix", "prefix"),
+    ("path (no launcher)", "path"),
+]
+
+
+class ToolSaveModal(WriteModal):
+    """Confirm a tool-level save inside tools.yaml (formatting is normalized)."""
+
+    def __init__(
+            self,
+            project: Project,
+            tool_name: str,
+            document: dict[str, Any],
+    ) -> None:
+        super().__init__(f"Save tool {tool_name}")
+        self.project = project
+        self.tool_name = tool_name
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no tool-level keys)"
+        yield Static(
+            f"writes config/tools.yaml tool {self.tool_name} ({keys}; blanked "
+            "fields are removed) and records one snapshot per recipe, so "
+            "`operon recipes history` shows the change.  NOTE: saving normalizes "
+            "the file's formatting and drops hand-written comments; every version "
+            "is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return f"config/tools.yaml → tool {self.tool_name} + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tool(self.project, self.tool_name, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify(f"{self.tool_name}: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                f"saved tool {self.tool_name}"
+                + (f" (snapshots: {names})" if names else "")
+            )
+        self.dismiss(payload)
+
+
 class ConfigPanel(Panel):
     """Config screen: profile editors (qc + classification + coverage) + tools/recipes editor."""
 
@@ -676,6 +770,8 @@ class ConfigPanel(Panel):
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
         self.recipe_doc: dict[str, Any] | None = None
+        self.current_tool: str | None = None
+        self.tool_doc: dict[str, Any] | None = None
         # The chain the form currently holds.  Rows mount a turn late, so this
         # is the panel's own count and never read back from the DOM.
         self._command_row_count = 0
@@ -784,9 +880,59 @@ class ConfigPanel(Panel):
                             yield Button("History", id="coverage-history", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
+                    yield Static("Conda defaults (every tool that inherits them)",
+                                 classes="modal-label")
+                    yield Input(placeholder="conda binary (blank = conda)",
+                                id="conda-bin")
+                    yield Static("conda run args (one token per line; blank = "
+                                 "run --no-capture-output)", classes="modal-label")
+                    yield TextArea(id="conda-run-args")
+                    yield Static("", id="conda-note")
+                    yield Static("", id="conda-save-error")
                     with Horizontal(classes="config-buttons"):
+                        yield Button("Save defaults", id="conda-save", disabled=True)
                         yield Button("Check tools", id="tools-check")
                     yield DataTable(id="tools-table", cursor_type="row")
+                    with VerticalScroll(id="tool-editor"):  # pragma: no branch
+                        yield Static("select a tool", id="tool-heading")
+                        yield Static("Description", classes="modal-label")
+                        yield Input(id="tool-description")
+                        yield Static("Executable (blank = tool name)", classes="modal-label")
+                        yield Input(id="tool-executable")
+                        yield Static("Version args (one token per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="tool-version-args")
+                        yield Static("Version pattern (regular expression)",
+                                     classes="modal-label")
+                        yield Input(id="tool-version-pattern")
+                        yield Static("Run method", classes="modal-label")
+                        yield Select(TOOL_RUN_METHOD_OPTIONS, id="tool-run-method",
+                                     prompt="no run_method (run directly)",
+                                     allow_blank=True)
+                        with Vertical(id="tool-run-string-row"):
+                            yield Static("Launcher command (run verbatim)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-string")
+                        with Vertical(id="tool-run-conda-row"):
+                            yield Static("conda environment (required)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-conda-env")
+                            yield Static("conda binary (blank = top-level conda.bin)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-conda-bin")
+                            yield Static("conda run args (one token per line; blank = "
+                                         "top-level conda.run_args)",
+                                         classes="modal-label")
+                            yield TextArea(id="tool-run-conda-args")
+                        with Vertical(id="tool-run-prefix-row"):
+                            yield Static("Launcher prefix (one token per line)",
+                                         classes="modal-label")
+                            yield TextArea(id="tool-run-prefix")
+                        yield Static("", id="tool-extras-note")
+                        yield Static("", id="tool-save-error")
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
+                            yield Button("Save tool", id="tool-save",
+                                         variant="primary", disabled=True)
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
                     with Horizontal(classes="config-buttons"):
@@ -932,6 +1078,7 @@ class ConfigPanel(Panel):
             suffix = f"  · {tag}" if tag else ""
             list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}")))
 
+        self._render_conda_defaults()
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
         for tool in self.tools:
@@ -1422,6 +1569,259 @@ class ConfigPanel(Panel):
         if name:
             self._load_profile(name)
 
+    # -- tool editor --------------------------------------------------------
+
+    #: Tool-level keys the editor owns; everything else in the tool mapping is
+    #: either shown read-only (recipes) or preserved verbatim (extras note).
+    TOOL_MODELED_KEYS = ("description", "executable", "run_method", "version_args",
+                         "version_pattern")
+
+    #: Sub-keys the run-method form owns inside a ``run_method`` mapping.  Any
+    #: other sub-key of the parsed mapping survives a conda-mode edit.
+    RUN_METHOD_SUBKEYS = ("mode", "env", "bin", "args", "prefix")
+
+    def _load_tool(self, name: str) -> None:
+        try:
+            info = data.get_tool_document(self.project, name)
+        except ValidationError as exc:
+            self.app.notify(str(exc), severity="error")
+            return
+        self.current_tool = name
+        self.tool_doc = info["document"]
+        self._render_tool_form(name, info["document"])
+
+    def _render_tool_form(self, name: str, document: dict[str, Any]) -> None:
+        extras = {
+            key: value for key, value in document.items()
+            if key not in self.TOOL_MODELED_KEYS and key != "recipes"
+        }
+        self.query_one("#tool-heading", Static).update(name)
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
+        version_args = document.get("version_args") or []
+        args = version_args if isinstance(version_args, list) else [version_args]
+        self.query_one("#tool-version-args", TextArea).text = "\n".join(
+            str(arg) for arg in args
+        )
+        self._render_run_method(document.get("run_method"))
+        note = self.query_one("#tool-extras-note", Static)
+        messages = [_extras_note(extras)] if extras else []
+        if self._run_method_extras:
+            messages.append(
+                "run_method keeps " + ", ".join(self._run_method_extras)
+            )
+        note.update(Text("; ".join(messages), style="dim") if messages else "")
+        self.query_one("#tool-save-error", Static).update("")
+        self.query_one("#tool-save", Button).disabled = False
+
+    def _render_run_method(self, run_method: Any) -> None:
+        """Fill the run-method widgets; the mode Select drives which rows show."""
+        method = run_method if isinstance(run_method, dict) else {}
+        self._run_method_extras = sorted(set(method) - set(self.RUN_METHOD_SUBKEYS))
+        if isinstance(run_method, str) and run_method:
+            mode = "string"
+        elif method:
+            mode = str(method.get("mode", "conda") or "conda")
+        else:
+            mode = ""  # no run_method key: the executable runs directly
+        self.query_one("#tool-run-string", Input).value = (
+            run_method if isinstance(run_method, str) else ""
+        )
+        self.query_one("#tool-run-conda-env", Input).value = str(
+            method.get("env", "") or "")
+        self.query_one("#tool-run-conda-bin", Input).value = str(
+            method.get("bin", "") or "")
+        self.query_one("#tool-run-conda-args", TextArea).text = "\n".join(
+            self._as_token_list(method.get("args"))
+        )
+        self.query_one("#tool-run-prefix", TextArea).text = "\n".join(
+            self._as_token_list(method.get("prefix"))
+        )
+        select = self.query_one("#tool-run-method", Select)
+        select.value = mode if mode else Select.NULL
+        self._sync_tool_run_method()
+
+    @staticmethod
+    def _as_token_list(value: Any) -> list[str]:
+        if not value:
+            return []
+        tokens = value if isinstance(value, list) else [value]
+        return [str(token) for token in tokens]
+
+    def _sync_tool_run_method(self) -> None:
+        """Show only the rows of the selected run-method mode."""
+        value = self.query_one("#tool-run-method", Select).value
+        mode = "" if value is Select.NULL else str(value)
+        self.query_one("#tool-run-string-row", Vertical).display = mode == "string"
+        self.query_one("#tool-run-conda-row", Vertical).display = mode == "conda"
+        self.query_one("#tool-run-prefix-row", Vertical).display = mode == "prefix"
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "tool-run-method":
+            self._sync_tool_run_method()
+
+    def _compose_tool_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tool writes as a removed key (so a blank
+        # executable falls back to the tool name).
+        document: dict[str, Any] = {}
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            value = self.query_one(widget_id, Input).value.strip()
+            if value:
+                document[key] = value
+        args = [
+            line.strip()
+            for line in self.query_one("#tool-version-args", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        if args:
+            document["version_args"] = args
+        run_method = self._compose_run_method()
+        if run_method is not None:
+            document["run_method"] = run_method
+        return document
+
+    def _compose_run_method(self) -> Any:
+        """The run_method the form holds, or None when the key is dropped."""
+        value = self.query_one("#tool-run-method", Select).value
+        mode = "" if value is Select.NULL else str(value)
+        if not mode:  # blank: no run_method key, the executable runs directly
+            return None
+        if mode == "string":
+            return self.query_one("#tool-run-string", Input).value.strip()
+        if mode == "prefix":
+            return {"mode": "prefix", "prefix": self._text_lines("#tool-run-prefix")}
+        if mode == "path":
+            return {"mode": "path"}
+        original = (self.tool_doc or {}).get("run_method")
+        method: dict[str, Any] = {}
+        if isinstance(original, dict) and str(original.get("mode", "")) == "conda":
+            method.update(original)  # unmodeled sub-keys survive a conda edit
+        method["mode"] = "conda"
+        method["env"] = self.query_one("#tool-run-conda-env", Input).value.strip()
+        conda_bin = self.query_one("#tool-run-conda-bin", Input).value.strip()
+        if conda_bin:
+            method["bin"] = conda_bin
+        else:
+            method.pop("bin", None)  # blank inherits the top-level conda.bin
+        conda_args = self._text_lines("#tool-run-conda-args")
+        if conda_args:
+            method["args"] = conda_args
+        else:
+            method.pop("args", None)  # blank inherits the top-level conda.run_args
+        return method
+
+    def _text_lines(self, widget_id: str) -> list[str]:
+        """A TextArea field as one token per non-empty line."""
+        return [
+            line.strip()
+            for line in self.query_one(widget_id, TextArea).text.splitlines()
+            if line.strip()
+        ]
+
+    def _start_tool_save(self) -> None:
+        if not self.current_tool or self.tool_doc is None:
+            return
+        error = self.query_one("#tool-save-error", Static)
+        document = self._form_document(self._compose_tool_document, error)
+        if document is None:
+            return
+        pattern = str(document.get("version_pattern", "") or "")
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error.update(Text(
+                    f"tool {self.current_tool!r}: version_pattern is not a valid "
+                    f"regular expression ({exc})",
+                    style="red",
+                ))
+                return
+        run_method = document.get("run_method")
+        if run_method == "":
+            error.update(Text(
+                f"tool {self.current_tool!r}: the command-line run method needs "
+                "a command", style="red",
+            ))
+            return
+        if isinstance(run_method, dict):
+            if run_method.get("mode") == "conda" and not run_method.get("env"):
+                error.update(Text(
+                    f"tool {self.current_tool!r}: the conda run method requires "
+                    "an environment (or blank for no run_method)", style="red",
+                ))
+                return
+            if run_method.get("mode") == "prefix" and not run_method.get("prefix"):
+                error.update(Text(
+                    f"tool {self.current_tool!r}: the prefix run method requires "
+                    "at least one token (or blank for no run_method)", style="red",
+                ))
+                return
+        self.app.push_screen(
+            ToolSaveModal(self.project, self.current_tool, document), self._on_tool_saved,
+        )
+
+    def _on_tool_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+        name = self.current_tool
+        if name:
+            self._load_tool(name)
+
+    # -- conda defaults editor ----------------------------------------------
+
+    def _render_conda_defaults(self) -> None:
+        try:
+            document = data.get_tools_defaults(self.project)["document"]
+        except ValidationError as exc:
+            self.query_one("#conda-note", Static).update(Text(str(exc), style="red"))
+            self.query_one("#conda-save", Button).disabled = True
+            return
+        extras = {
+            key: value for key, value in document.items()
+            if key not in actions.MODELED_CONDA_KEYS
+        }
+        self.query_one("#conda-bin", Input).value = str(document.get("bin", "") or "")
+        self.query_one("#conda-run-args", TextArea).text = "\n".join(
+            self._as_token_list(document.get("run_args"))
+        )
+        note = self.query_one("#conda-note", Static)
+        note.update(Text(_extras_note(extras), style="dim") if extras else "")
+        self.query_one("#conda-save-error", Static).update("")
+        self.query_one("#conda-save", Button).disabled = False
+
+    def _compose_conda_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tools_defaults writes as a removed key —
+        # the core then falls back to its built-in default.
+        document: dict[str, Any] = {}
+        binary = self.query_one("#conda-bin", Input).value.strip()
+        if binary:
+            document["bin"] = binary
+        args = self._text_lines("#conda-run-args")
+        if args:
+            document["run_args"] = args
+        return document
+
+    def _start_conda_save(self) -> None:
+        error = self.query_one("#conda-save-error", Static)
+        document = self._form_document(self._compose_conda_document, error)
+        if document is None:
+            return
+        self.app.push_screen(
+            CondaDefaultsSaveModal(self.project, document), self._on_conda_saved,
+        )
+
+    def _on_conda_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+
     # -- recipe editor ------------------------------------------------------
 
     def _render_recipe_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
@@ -1817,6 +2217,8 @@ class ConfigPanel(Panel):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "recipes-table" and event.row_key.value is not None:
             self._load_recipe(str(event.row_key.value))
+        elif event.data_table.id == "tools-table" and event.row_key.value is not None:
+            self._load_tool(str(event.row_key.value))
 
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
@@ -1897,6 +2299,10 @@ class ConfigPanel(Panel):
             self._open_profile_history()
         elif button_id == "profile-run":
             self._open_classify()
+        elif button_id == "conda-save":
+            self._start_conda_save()
+        elif button_id == "tool-save":
+            self._start_tool_save()
         elif button_id == "recipe-save":
             self._start_recipe_save()
         elif button_id == "recipe-history":

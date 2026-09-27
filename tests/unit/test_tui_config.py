@@ -17,7 +17,7 @@ pytest.importorskip("textual")
 import yaml
 from rich.text import Text
 from textual.app import App
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.pilot import OutOfBounds
 from textual.widgets import (
     Button,
@@ -38,13 +38,14 @@ from operon.database import Database
 from operon.demo import init_demo
 from operon.errors import ValidationError
 from operon.profiles import load_profile
-from operon.tools import get_recipe
+from operon.tools import get_recipe, get_tool
 from operon.tui import actions, data
 from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog, FittingSelect, MountTracked
 from operon.tui.screens.config import (
     ENVIRONMENT_POLICIES,
     CommandRow,
+    CondaDefaultsSaveModal,
     ConfigPanel,
     HistoryModal,
     NewProfileModal,
@@ -52,6 +53,7 @@ from operon.tui.screens.config import (
     RecipeSaveModal,
     RuleRow,
     SnapshotViewModal,
+    ToolSaveModal,
     _format_parameter_line,
     _parse_parameter_line,
 )
@@ -429,6 +431,229 @@ def test_save_recipe_noop_does_not_bump(project: Project) -> None:
     assert data.recipe_history(project, "blastn_nt") == []
 
 
+# ---------------------------------------------------------------------------
+# actions.save_tool
+# ---------------------------------------------------------------------------
+
+
+def test_save_tool_roundtrip(project: Project) -> None:
+    info = data.get_tool_document(project, "busco")
+    document = dict(info["document"])
+    document["description"] = "edited tool"
+    document["version_args"] = ["--version", "--json"]
+    document["version_pattern"] = r"BUSCO\s+([\d.]+)"
+    result = actions.save_tool(project, "busco", document)
+    assert result["unchanged"] is False
+    assert result["recipes"] == ["busco_autolineage", "busco_lineage"]
+    assert sorted(result["snapshots"]) == ["busco_autolineage", "busco_lineage"]
+
+    tool = get_tool(project, "busco")
+    assert tool.description == "edited tool"
+    assert tool.version_args == ["--version", "--json"]
+    assert tool.version_pattern == r"BUSCO\s+([\d.]+)"
+    # Unmodeled tool-level keys and every recipe survive verbatim.
+    assert tool.executable == "busco"
+    assert tool.raw["run_method"] == "mamba run -n busco_6.1.0"
+    assert sorted(tool.recipes) == ["busco_autolineage", "busco_lineage"]
+
+    # A tool edit records one snapshot per recipe, at the recipe's own version.
+    for name in ("busco_autolineage", "busco_lineage"):
+        rows = data.recipe_history(project, name)
+        assert [row["version"] for row in rows] == [1]
+        snapshot = data.get_recipe_snapshot(project, name, rows[0]["snapshot_id"])
+        assert snapshot["tool"]["description"] == "edited tool"
+        assert snapshot["tool"]["run_method"] == "mamba run -n busco_6.1.0"
+        assert snapshot["recipe"]["description"] == \
+            document["recipes"][name]["description"]
+
+
+def test_save_tool_document_cannot_touch_recipes(project: Project) -> None:
+    info = data.get_tool_document(project, "blastn")
+    document = dict(info["document"])
+    document["description"] = "touched"
+    # A stale document carrying unmodeled keys must not write them: the recipes
+    # and any hand-written key always come from the file as parsed.
+    document["recipes"] = {}
+    document["notes"] = "hand-written"
+    result = actions.save_tool(project, "blastn", document)
+    assert result["unchanged"] is False
+    tool = get_tool(project, "blastn")
+    assert tool.description == "touched"
+    assert sorted(tool.recipes) == ["blastn_nt"]
+    assert "notes" not in tool.raw
+
+
+def test_save_tool_run_method_string_to_conda(project: Project) -> None:
+    from operon.tools import launcher_prefix, load_tools_config
+
+    info = data.get_tool_document(project, "blastn")
+    assert info["document"]["run_method"] == "conda run --no-capture-output -n blast"
+    document = dict(info["document"])
+    document["run_method"] = {"mode": "conda", "env": "blast"}
+    result = actions.save_tool(project, "blastn", document)
+    assert result["unchanged"] is False
+
+    tool = get_tool(project, "blastn")
+    assert tool.raw["run_method"] == {"mode": "conda", "env": "blast"}
+    # The mapping resolves to the launcher the string form produced.
+    assert launcher_prefix(tool, load_tools_config(project)) == [
+        "conda", "run", "--no-capture-output", "-n", "blast",
+    ]
+
+
+def test_save_tool_run_method_prefix_and_removal(project: Project) -> None:
+    info = data.get_tool_document(project, "hmmsearch")
+    assert "run_method" not in info["document"]
+    document = dict(info["document"])
+    document["run_method"] = {
+        "mode": "prefix", "prefix": ["micromamba", "run", "-n", "hmmer"],
+    }
+    assert actions.save_tool(project, "hmmsearch", document)["unchanged"] is False
+    tool = get_tool(project, "hmmsearch")
+    assert tool.raw["run_method"] == {
+        "mode": "prefix", "prefix": ["micromamba", "run", "-n", "hmmer"],
+    }
+
+    # Dropping the key from the document removes it: the tool runs directly.
+    document.pop("run_method")
+    assert actions.save_tool(project, "hmmsearch", document)["unchanged"] is False
+    tool = get_tool(project, "hmmsearch")
+    assert "run_method" not in tool.raw
+    assert tool.run_method == ""
+
+
+def test_save_tool_blanking_removes_the_keys(project: Project) -> None:
+    info = data.get_tool_document(project, "hmmsearch")
+    document = dict(info["document"])
+    for key in ("description", "executable", "version_args"):
+        document.pop(key)
+    result = actions.save_tool(project, "hmmsearch", document)
+    assert result["unchanged"] is False
+    tool = get_tool(project, "hmmsearch")
+    assert "description" not in tool.raw
+    assert "executable" not in tool.raw
+    assert "version_args" not in tool.raw
+    assert tool.executable == "hmmsearch"  # the core falls back to the tool name
+    assert tool.description == ""
+    assert tool.version_args == []
+    assert tool.version_pattern == info["document"]["version_pattern"]  # untouched
+
+
+def test_save_tool_noop_writes_nothing(project: Project) -> None:
+    path = project.tools_config_path
+    original_bytes = path.read_bytes()
+    info = data.get_tool_document(project, "blastn")
+    result = actions.save_tool(project, "blastn", dict(info["document"]))
+    assert result["unchanged"] is True
+    assert result["snapshots"] == {}
+    assert path.read_bytes() == original_bytes
+    assert data.recipe_history(project, "blastn_nt") == []
+
+
+def test_save_tool_failure_restores_file_bytes(project: Project) -> None:
+    path = project.tools_config_path
+    original_bytes = path.read_bytes()
+
+    info = data.get_tool_document(project, "blastn")
+    document = dict(info["document"])
+    document["version_args"] = 123  # not iterable: get_tool trips on it
+    with pytest.raises(ValidationError, match="rolled back"):
+        actions.save_tool(project, "blastn", document)
+    assert path.read_bytes() == original_bytes
+
+    with pytest.raises(ValidationError, match="unknown tool"):
+        actions.save_tool(project, "no_such_tool", {})
+    with pytest.raises(ValidationError, match="invalid tool name"):
+        actions.save_tool(project, "../blastn", {})
+    with pytest.raises(ValidationError, match="document must be a mapping"):
+        actions.save_tool(project, "blastn", ["not", "a", "mapping"])  # type: ignore[arg-type]
+    assert path.read_bytes() == original_bytes
+
+
+# ---------------------------------------------------------------------------
+# actions.save_tools_defaults
+# ---------------------------------------------------------------------------
+
+
+def test_save_tools_defaults_moves_the_launcher(project: Project) -> None:
+    from operon.tools import launcher_prefix, load_tools_config
+
+    assert launcher_prefix(get_tool(project, "blastn"), load_tools_config(project)) == [
+        "conda", "run", "--no-capture-output", "-n", "blast",
+    ]
+    document = dict(data.get_tools_defaults(project)["document"])
+    document["bin"] = "/opt/mamba/bin/conda"
+    result = actions.save_tools_defaults(project, document)
+    assert result["unchanged"] is False
+    # Only the tools that launch through conda and inherit the binary change.
+    assert result["recipes"] == ["blastn_nt", "blastp_nr", "rpsblast_cdd"]
+
+    config = load_tools_config(project)
+    assert config["conda"] == {
+        "bin": "/opt/mamba/bin/conda",
+        "run_args": ["run", "--no-capture-output"],
+    }
+    assert launcher_prefix(get_tool(project, "blastn"), config) == [
+        "/opt/mamba/bin/conda", "run", "--no-capture-output", "-n", "blast",
+    ]
+    # busco launches through mamba and hmmsearch has no run_method: untouched.
+    assert launcher_prefix(get_tool(project, "busco"), config) == [
+        "mamba", "run", "-n", "busco_6.1.0",
+    ]
+    assert launcher_prefix(get_tool(project, "hmmsearch"), config) == []
+
+    # One snapshot per recipe of a changed tool, at the recipe's own version.
+    rows = data.recipe_history(project, "blastn_nt")
+    assert [row["version"] for row in rows] == [1]
+    snapshot = data.get_recipe_snapshot(project, "blastn_nt", rows[0]["snapshot_id"])
+    assert snapshot["tool"]["run_method"] == "conda run --no-capture-output -n blast"
+    assert data.recipe_history(project, "hmmsearch_pfam") == []
+    assert data.recipe_history(project, "busco_lineage") == []
+
+
+def test_save_tools_defaults_keeps_extras_and_removes_blanked_keys(
+        project: Project) -> None:
+    path = project.tools_config_path
+    info = data.get_tools_defaults(project)
+    # An unchanged document writes nothing.
+    assert actions.save_tools_defaults(project, dict(info["document"]))["unchanged"] is True
+    assert data.recipe_history(project, "blastn_nt") == []
+
+    # An unmodeled key of the section survives; a document value for it is ignored.
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["conda"]["channels"] = ["bioconda"]
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    document = dict(data.get_tools_defaults(project)["document"])
+    document["channels"] = ["evil"]
+    document["run_args"] = ["run", "--live-stream"]
+    result = actions.save_tools_defaults(project, document)
+    assert result["unchanged"] is False
+    # The string form only substitutes the binary, so run_args moved nothing.
+    assert result["recipes"] == []
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert config["conda"]["channels"] == ["bioconda"]
+    assert config["conda"]["run_args"] == ["run", "--live-stream"]
+
+    # Blanking the modeled keys removes them: the core falls back to its defaults.
+    assert actions.save_tools_defaults(project, {})["unchanged"] is False
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert config["conda"] == {"channels": ["bioconda"]}
+
+
+def test_save_tools_defaults_rejects_a_broken_section(project: Project) -> None:
+    path = project.tools_config_path
+    with pytest.raises(ValidationError, match="document must be a mapping"):
+        actions.save_tools_defaults(project, ["not", "a", "mapping"])  # type: ignore[arg-type]
+
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["conda"] = "not-a-mapping"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    original_bytes = path.read_bytes()
+    with pytest.raises(ValidationError, match="must be a mapping"):
+        actions.save_tools_defaults(project, {"bin": "conda"})
+    assert path.read_bytes() == original_bytes
+
+
 def test_save_recipe_normalizes_comments(project: Project) -> None:
     path = project.tools_config_path
     path.write_text(path.read_text(encoding="utf-8") + "\n# hand-written note\n", encoding="utf-8")
@@ -685,6 +910,336 @@ def test_config_screen_recipe_save_end_to_end(project: Project) -> None:
     assert recipe.max_hits_per_query == 7
     rows = data.recipe_history(project, "blastn_nt")
     assert [row["version"] for row in rows] == [2]
+
+
+def test_config_screen_tool_save_end_to_end(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            tools_table = panel.query_one("#tools-table", DataTable)
+            assert tools_table.row_count == 5
+
+            panel._load_tool("busco")
+            await pilot.pause()
+            assert panel.current_tool == "busco"
+            assert _static_text(panel.query_one("#tool-heading", Static)) == "busco"
+            assert panel.query_one("#tool-description", Input).value.startswith(
+                "Benchmarking")
+            assert panel.query_one("#tool-executable", Input).value == "busco"
+            assert panel.query_one("#tool-version-args", TextArea).text == "--version"
+            # The launcher mapping is modeled too: the string form is loaded
+            # into the run-method editor, so nothing is left over as extras.
+            assert panel.query_one("#tool-run-method", Select).value == "string"
+            assert panel.query_one("#tool-run-string", Input).value == \
+                "mamba run -n busco_6.1.0"
+            assert _static_text(panel.query_one("#tool-extras-note", Static)) == ""
+
+            panel.query_one("#tool-description", Input).value = "edited via TUI"
+            panel.query_one("#tool-version-args", TextArea).text = "--version\n--json"
+            panel.query_one("#tool-version-pattern", Input).value = r"BUSCO\s+([\d.]+)"
+            panel.query_one("#tool-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ToolSaveModal)
+            assert "busco" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool busco")
+            assert not isinstance(app.screen, ToolSaveModal)
+
+    _run(scenario())
+    tool = get_tool(project, "busco")
+    assert tool.description == "edited via TUI"
+    assert tool.version_args == ["--version", "--json"]
+    assert tool.version_pattern == r"BUSCO\s+([\d.]+)"
+    assert tool.raw["run_method"] == "mamba run -n busco_6.1.0"
+    assert sorted(tool.recipes) == ["busco_autolineage", "busco_lineage"]
+    rows = data.recipe_history(project, "busco_lineage")
+    assert [row["version"] for row in rows] == [1]
+
+
+def test_config_screen_tool_save_rejects_an_invalid_pattern(project: Project) -> None:
+    original_pattern = get_tool(project, "blastn").raw["version_pattern"]
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_tool("blastn")
+            await pilot.pause()
+            panel.query_one("#tool-version-pattern", Input).value = "("
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            error = _static_text(panel.query_one("#tool-save-error", Static))
+            assert "not a valid regular expression" in error
+            assert not isinstance(app.screen, ToolSaveModal)
+
+    _run(scenario())
+    assert get_tool(project, "blastn").raw["version_pattern"] == original_pattern
+
+
+def test_config_screen_tool_run_method_modes(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_tool("hmmsearch")  # the file carries no run_method
+            await pilot.pause()
+            select = panel.query_one("#tool-run-method", Select)
+            assert select.value is Select.NULL
+            for row_id in ("#tool-run-string-row", "#tool-run-conda-row",
+                           "#tool-run-prefix-row"):
+                assert not panel.query_one(row_id, Vertical).display
+
+            # conda mode without an environment is rejected inline.
+            select.value = "conda"
+            await pilot.pause()
+            assert panel.query_one("#tool-run-conda-row", Vertical).display
+            assert not panel.query_one("#tool-run-string-row", Vertical).display
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            assert "requires an environment" in _static_text(
+                panel.query_one("#tool-save-error", Static))
+            assert not isinstance(app.screen, ToolSaveModal)
+
+            # a prefix launcher saves as the mapping form.
+            select.value = "prefix"
+            await pilot.pause()
+            panel.query_one("#tool-run-prefix", TextArea).text = \
+                "micromamba\nrun\n-n\nhmmer"
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool hmmsearch")
+
+            # an explicit path mode saves as its own mapping.
+            panel._load_tool("hmmsearch")
+            await pilot.pause()
+            select = panel.query_one("#tool-run-method", Select)
+            assert select.value == "prefix"  # reloaded from the file
+            select.value = "path"
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+
+            # and blanking the mode drops the key again.
+            panel._load_tool("hmmsearch")
+            await pilot.pause()
+            select = panel.query_one("#tool-run-method", Select)
+            assert select.value == "path"
+            select.value = Select.NULL
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool hmmsearch")
+
+    _run(scenario())
+    assert "run_method" not in get_tool(project, "hmmsearch").raw
+    # One snapshot per changed save (the rejected conda attempt wrote nothing).
+    rows = data.recipe_history(project, "hmmsearch_pfam")
+    assert [row["version"] for row in rows] == [1, 1, 1]
+    assert len({row["snapshot_id"] for row in rows}) == 3
+
+
+def test_config_screen_tool_run_method_validation_and_extras(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_tool("busco")
+            await pilot.pause()
+            panel.query_one("#tool-run-string", Input).value = "   "
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            assert "needs a command" in _static_text(
+                panel.query_one("#tool-save-error", Static))
+            assert not isinstance(app.screen, ToolSaveModal)
+
+            select = panel.query_one("#tool-run-method", Select)
+            select.value = "prefix"
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            assert "requires at least one token" in _static_text(
+                panel.query_one("#tool-save-error", Static))
+            assert not isinstance(app.screen, ToolSaveModal)
+
+            # A hand-written sub-key of a conda mapping is kept and announced.
+            config = yaml.safe_load(
+                project.tools_config_path.read_text(encoding="utf-8"))
+            config["tools"]["busco"]["run_method"] = {
+                "mode": "conda", "env": "busco_6.1.0", "wrap": "nice",
+            }
+            project.tools_config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            panel._load_tool("busco")
+            await pilot.pause()
+            assert panel.query_one("#tool-run-method", Select).value == "conda"
+            assert panel.query_one("#tool-run-conda-env", Input).value == "busco_6.1.0"
+            assert "run_method keeps wrap" in _static_text(
+                panel.query_one("#tool-extras-note", Static))
+
+            panel.query_one("#tool-description", Input).value = "edited via TUI"
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool busco")
+
+    _run(scenario())
+    tool = get_tool(project, "busco")
+    assert tool.description == "edited via TUI"
+    assert tool.raw["run_method"] == {
+        "mode": "conda", "env": "busco_6.1.0", "wrap": "nice",
+    }
+
+
+def test_config_screen_tool_run_method_conda_bin_and_args(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            # Saving with no tool loaded is a no-op (and cancelling writes nothing).
+            panel._start_tool_save()
+            await pilot.pause()
+            assert not isinstance(app.screen, ToolSaveModal)
+
+            panel._load_tool("hmmsearch")
+            await pilot.pause()
+            # A cleared version pattern is dropped instead of written blank.
+            panel.query_one("#tool-version-pattern", Input).value = ""
+            select = panel.query_one("#tool-run-method", Select)
+            select.value = "conda"
+            await pilot.pause()
+            panel.query_one("#tool-run-conda-env", Input).value = "hmmer"
+            panel.query_one("#tool-run-conda-bin", Input).value = "/opt/mamba/bin/conda"
+            panel.query_one("#tool-run-conda-args", TextArea).text = \
+                "run\n--no-capture-output"
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            assert isinstance(app.screen, ToolSaveModal)
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            await pilot.pause()
+            assert not isinstance(app.screen, ToolSaveModal)
+
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved tool hmmsearch")
+
+    _run(scenario())
+    tool = get_tool(project, "hmmsearch")
+    assert tool.raw["run_method"] == {
+        "mode": "conda",
+        "env": "hmmer",
+        "bin": "/opt/mamba/bin/conda",
+        "args": ["run", "--no-capture-output"],
+    }
+    assert "version_pattern" not in tool.raw
+
+
+def test_config_screen_conda_defaults_save(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            assert panel.query_one("#conda-bin", Input).value == "conda"
+            assert panel.query_one("#conda-run-args", TextArea).text == \
+                "run\n--no-capture-output"
+            assert _static_text(panel.query_one("#conda-note", Static)) == ""
+            assert not panel.query_one("#conda-save", Button).disabled
+
+            panel.query_one("#conda-bin", Input).value = "/opt/mamba/bin/conda"
+            await _click(pilot, "#conda-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, CondaDefaultsSaveModal)
+            assert "conda" in _static_text(modal.query_one("#modal-command", Static))
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved conda defaults")
+            assert not isinstance(app.screen, CondaDefaultsSaveModal)
+
+    _run(scenario())
+    config = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    assert config["conda"]["bin"] == "/opt/mamba/bin/conda"
+    # Only the launchers that inherit the binary moved.
+    rows = data.recipe_history(project, "blastn_nt")
+    assert [row["version"] for row in rows] == [1]
+    assert data.recipe_history(project, "busco_lineage") == []
+
+
+def test_config_screen_conda_defaults_extras_and_invalid_section(project: Project) -> None:
+    path = project.tools_config_path
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            # A hand-written key of the section is announced and kept.
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            config["conda"]["channels"] = ["bioconda"]
+            path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            panel.reload()
+            await _settled(app)
+            await pilot.pause()
+            assert "channels" in _static_text(panel.query_one("#conda-note", Static))
+
+            panel.query_one("#conda-bin", Input).value = "mamba"
+            await _click(pilot, "#conda-save")
+            await pilot.pause()
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved conda defaults")
+
+            # A section that is not a mapping opens read-only.
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            config["conda"] = "not-a-mapping"
+            path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            panel.reload()
+            await _settled(app)
+            await pilot.pause()
+            assert panel.query_one("#conda-save", Button).disabled
+            assert "must be a mapping" in _static_text(
+                panel.query_one("#conda-note", Static))
+
+    _run(scenario())
+    config = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    assert config["conda"] == "not-a-mapping"  # the editor never rewrote it
 
 
 # ---------------------------------------------------------------------------
@@ -1834,7 +2389,10 @@ def test_config_screen_list_and_table_selection_loads_editors(project: Project) 
             await pilot.pause()
             await pilot.press("enter")
             await pilot.pause()
-            # Selecting a tool row must not load a recipe.
+            # Selecting a tool row loads the tool editor — and never a recipe.
+            assert panel.current_tool == "blastn"
+            assert _static_text(panel.query_one("#tool-heading", Static)) == "blastn"
+            assert not panel.query_one("#tool-save", Button).disabled
             assert _static_text(panel.query_one("#recipe-heading", Static)) == "select a recipe"
             assert panel.current_recipe is None
 

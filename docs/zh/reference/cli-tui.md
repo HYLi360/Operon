@@ -331,7 +331,16 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 **Tools & Recipes 标签页。** 工具表（名称、可执行文件、启动方式）加
 *Check tools* 按钮——等价于 `operon tools-check`，在后台 worker 中运行并逐行
 实时更新（检测到的版本为绿色，`MISSING` 为红色），结束时给出汇总通知；单个
-工具损坏不会影响整批。下方是 recipe 表（名称、版本、工具、实体类型、文件
+工具损坏不会影响整批。选中某个工具行会打开 tool 编辑器（description、
+executable、version args（每行一个 token）、version pattern 与启动方式）：启动方式是一个模式
+Select——逐字命令行、`conda` 环境（`bin`/`args` 留空则继承顶层 `conda:` 段）、`prefix`
+token 列表、`path`，或留空表示“没有 `run_method` 键”。表单只拥有这几个键，留空的字段会被删除
+（清空的 executable 回退为工具名），未建模的键（包括 `run_method` 映射里手写的子键）逐字保留并在
+字段下方列出，*Save tool* 会为该工具的每个 recipe 各记录一条快照（内容未变的保存是 no-op）。所选模式
+必需的字段会被内联校验（命令行、conda 环境、prefix token）。工具表上方，*Conda defaults* 编辑工具规格
+继承的顶层 `conda:` 段：表单拥有 `bin` 与 `run_args`（留空的字段被删除，回落为内置的 `conda` /
+`run --no-capture-output`），段内其它键逐字保留并列出，*Save defaults* 只为**解析出的启动器确实发生变化**
+的那些 recipe 记录快照。下方是 recipe 表（名称、版本、工具、实体类型、文件
 角色、格式）；选中某个 recipe 打开其编辑器：description、entity type
 （Select，留空 = `*`）、file role 或 file role prefix（二者互斥——同时设置
 会被内联拒绝）、format、输入/输出产物类型（Select：file/directory，留空 =
@@ -374,7 +383,8 @@ rank 的键）以**只读**打开：界面给出理由、*Save profile* 禁用�
 ## 有意保留在 CLI 的界面
 
 以下界面留在 CLI 是明确决定而非遗漏；parity 注册表（`operon/tui/parity.py`）把它们逐条登记为
-`cli-only` 并写明理由，`tests/unit/test_tui_cli_parity.py` 负责保证这一点不被悄悄放宽。
+`cli-only` 并写明理由，`tests/unit/test_tui_cli_parity.py` 负责保证这一点不被悄悄放宽——CI 工作流
+导出 `OPERON_PARITY_STRICT=1`，任何再次以 `planned` 出现的缺口都会让构建失败。
 
 - **TimeTree**（`operon timetree …` 全部七个子命令）——该集成为逐字查询缓存，其条款禁止镜像或再
   分发，且预期迁往分析插件；TUI 有意不为它增加屏幕、对话框或请求面，因此不会意外扩大缓存查询边界。
