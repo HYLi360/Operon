@@ -84,6 +84,9 @@ tool 定义的任何变更都产生新快照。历史用 `operon recipes history
 `conda:` 段）、`prefix` token 列表、`path`（无启动器），或留空表示“没有 `run_method` 键”。保存只替换
 这几个键（留空的字段被删除，因此清空的 `executable` 回退为工具名），而 `recipes` 以及任何未建模的键都按
 原样保留；每次保存为该工具的每个 recipe 各记录一条快照，`operon recipes history` 因此能看到这次变更。
+工具表上方还可以编辑顶层 `conda:` 段：其 `bin` 与 `run_args` 是所有继承它们的工具解析启动器时的默认值，
+留空的字段会被删除（回落到 `conda` / `run --no-capture-output`），段内其它键按原样保留，保存只为
+**解析出的启动器确实发生变化**的那些 recipe 记录快照。
 
 对于共享同一执行环境的紧耦合程序，`commands` 用有序 command block 取代 `arguments`。
 每个附加程序可以声明自己的 `version_args` 与 `version_pattern`；完整约束见

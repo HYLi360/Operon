@@ -337,7 +337,10 @@ Select——逐字命令行、`conda` 环境（`bin`/`args` 留空则继承顶�
 token 列表、`path`，或留空表示“没有 `run_method` 键”。表单只拥有这几个键，留空的字段会被删除
 （清空的 executable 回退为工具名），未建模的键（包括 `run_method` 映射里手写的子键）逐字保留并在
 字段下方列出，*Save tool* 会为该工具的每个 recipe 各记录一条快照（内容未变的保存是 no-op）。所选模式
-必需的字段会被内联校验（命令行、conda 环境、prefix token）。下方是 recipe 表（名称、版本、工具、实体类型、文件
+必需的字段会被内联校验（命令行、conda 环境、prefix token）。工具表上方，*Conda defaults* 编辑工具规格
+继承的顶层 `conda:` 段：表单拥有 `bin` 与 `run_args`（留空的字段被删除，回落为内置的 `conda` /
+`run --no-capture-output`），段内其它键逐字保留并列出，*Save defaults* 只为**解析出的启动器确实发生变化**
+的那些 recipe 记录快照。下方是 recipe 表（名称、版本、工具、实体类型、文件
 角色、格式）；选中某个 recipe 打开其编辑器：description、entity type
 （Select，留空 = `*`）、file role 或 file role prefix（二者互斥——同时设置
 会被内联拒绝）、format、输入/输出产物类型（Select：file/directory，留空 =

@@ -653,6 +653,17 @@ def get_tool_document(project: Project, name: str) -> dict[str, Any]:
     return {"name": name, "document": dict(document)}
 
 
+def get_tools_defaults(project: Project) -> dict[str, Any]:
+    """Return ``{"document": raw top-level conda section}`` for the defaults editor."""
+    from operon.tools import load_tools_config
+
+    section = load_tools_config(project).get("conda") or {}
+    if not isinstance(section, dict):
+        raise ValidationError(
+            f"the conda section in {project.tools_config_path} must be a mapping")
+    return {"document": dict(section)}
+
+
 def list_recipes(project: Project) -> list[dict[str, Any]]:
     """Return one summary row per recipe (CLI ``recipes list``)."""
     from operon.tools import list_analyses

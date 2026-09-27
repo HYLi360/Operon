@@ -407,7 +407,12 @@ executable falls back to the tool name), unmodeled keys — a hand-written
 sub-key of a `run_method` mapping included — are preserved and listed under
 the fields, and *Save tool* records one snapshot per recipe of that tool
 (an unchanged save is a no-op). What the selected mode requires is checked
-inline (a command line, a conda environment, a prefix token).
+inline (a command line, a conda environment, a prefix token). Above the tools
+table, *Conda defaults* edits the top-level `conda:` section the tool specs
+inherit from: the form owns `bin` and `run_args` (a blanked field is removed,
+restoring the built-in `conda` / `run --no-capture-output`), other keys of the
+section are preserved and listed, and *Save defaults* records one snapshot per
+recipe whose resolved launcher actually changed.
 Below, a recipes table (name, version, tool, entity type, file
 role, format); selecting a recipe opens its editor: description, entity type
 (Select, blank = `*`), file role or file role prefix (mutually exclusive —

@@ -657,6 +657,45 @@ class RecipeSaveModal(WriteModal):
         self.dismiss(payload)
 
 
+class CondaDefaultsSaveModal(WriteModal):
+    """Confirm a save of the top-level ``conda:`` section (formatting is normalized)."""
+
+    def __init__(self, project: Project, document: dict[str, Any]) -> None:
+        super().__init__("Save conda defaults")
+        self.project = project
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no conda keys)"
+        yield Static(
+            f"writes the top-level conda: section of config/tools.yaml ({keys}; a "
+            "blanked field falls back to the built-in default) and records one "
+            "snapshot per recipe whose resolved launcher changes.  NOTE: saving "
+            "normalizes the file's formatting and drops hand-written comments; "
+            "every version is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return "config/tools.yaml → conda: defaults + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tools_defaults(self.project, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify("conda defaults: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                "saved conda defaults"
+                + (f" (snapshots: {names})" if names else " (no launcher changed)")
+            )
+        self.dismiss(payload)
+
+
 #: Run-method modes the tool editor offers.  A blank selection means the
 #: ``run_method`` key is absent, so the executable runs directly.
 TOOL_RUN_METHOD_OPTIONS = [
@@ -841,7 +880,17 @@ class ConfigPanel(Panel):
                             yield Button("History", id="coverage-history", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
+                    yield Static("Conda defaults (every tool that inherits them)",
+                                 classes="modal-label")
+                    yield Input(placeholder="conda binary (blank = conda)",
+                                id="conda-bin")
+                    yield Static("conda run args (one token per line; blank = "
+                                 "run --no-capture-output)", classes="modal-label")
+                    yield TextArea(id="conda-run-args")
+                    yield Static("", id="conda-note")
+                    yield Static("", id="conda-save-error")
                     with Horizontal(classes="config-buttons"):
+                        yield Button("Save defaults", id="conda-save", disabled=True)
                         yield Button("Check tools", id="tools-check")
                     yield DataTable(id="tools-table", cursor_type="row")
                     with VerticalScroll(id="tool-editor"):  # pragma: no branch
@@ -1029,6 +1078,7 @@ class ConfigPanel(Panel):
             suffix = f"  · {tag}" if tag else ""
             list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}")))
 
+        self._render_conda_defaults()
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
         for tool in self.tools:
@@ -1723,6 +1773,55 @@ class ConfigPanel(Panel):
         if name:
             self._load_tool(name)
 
+    # -- conda defaults editor ----------------------------------------------
+
+    def _render_conda_defaults(self) -> None:
+        try:
+            document = data.get_tools_defaults(self.project)["document"]
+        except ValidationError as exc:
+            self.query_one("#conda-note", Static).update(Text(str(exc), style="red"))
+            self.query_one("#conda-save", Button).disabled = True
+            return
+        extras = {
+            key: value for key, value in document.items()
+            if key not in actions.MODELED_CONDA_KEYS
+        }
+        self.query_one("#conda-bin", Input).value = str(document.get("bin", "") or "")
+        self.query_one("#conda-run-args", TextArea).text = "\n".join(
+            self._as_token_list(document.get("run_args"))
+        )
+        note = self.query_one("#conda-note", Static)
+        note.update(Text(_extras_note(extras), style="dim") if extras else "")
+        self.query_one("#conda-save-error", Static).update("")
+        self.query_one("#conda-save", Button).disabled = False
+
+    def _compose_conda_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tools_defaults writes as a removed key —
+        # the core then falls back to its built-in default.
+        document: dict[str, Any] = {}
+        binary = self.query_one("#conda-bin", Input).value.strip()
+        if binary:
+            document["bin"] = binary
+        args = self._text_lines("#conda-run-args")
+        if args:
+            document["run_args"] = args
+        return document
+
+    def _start_conda_save(self) -> None:
+        error = self.query_one("#conda-save-error", Static)
+        document = self._form_document(self._compose_conda_document, error)
+        if document is None:
+            return
+        self.app.push_screen(
+            CondaDefaultsSaveModal(self.project, document), self._on_conda_saved,
+        )
+
+    def _on_conda_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+
     # -- recipe editor ------------------------------------------------------
 
     def _render_recipe_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
@@ -2200,6 +2299,8 @@ class ConfigPanel(Panel):
             self._open_profile_history()
         elif button_id == "profile-run":
             self._open_classify()
+        elif button_id == "conda-save":
+            self._start_conda_save()
         elif button_id == "tool-save":
             self._start_tool_save()
         elif button_id == "recipe-save":
