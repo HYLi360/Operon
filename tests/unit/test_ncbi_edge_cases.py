@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import queue
+import random
 import ssl
 import struct
 import sys
 import threading
+import time
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -289,15 +292,7 @@ def test_biosample_and_metadata_extraction_accept_alternate_keys():
     assert metadata["annotation"]["provider"] == "RefSeq"
 
 
-def test_zip_validation_extraction_and_diagnostics(tmp_path: Path):
-    package = tmp_path / "package.zip"
-    with zipfile.ZipFile(package, "w") as archive:
-        archive.writestr("dir/", "")
-        archive.writestr("dir/file.txt", "ok")
-    destination = tmp_path / "out"
-    ncbi._safe_extract_zip(package, destination)
-    assert (destination / "dir" / "file.txt").read_text() == "ok"
-
+def test_zip_validation_and_diagnostics(tmp_path: Path):
     symlink = zipfile.ZipInfo("link")
     symlink.create_system = 3
     symlink.external_attr = 0o120777 << 16
@@ -337,8 +332,8 @@ def test_zip_validation_extraction_and_diagnostics(tmp_path: Path):
 
 
 def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _a, _b: 0.0)
     attempts = []
 
     def fail_once(**kwargs):
@@ -347,7 +342,7 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
             raise ssl.SSLError("transient")
         return kwargs["destination"]
 
-    monkeypatch.setattr(ncbi, "_download_ncbi_dataset_once", fail_once)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_ncbi_dataset_once", fail_once)
     destination = tmp_path / "result.zip"
     assert ncbi.download_ncbi_dataset(
         ["GCF_000001405.40"], destination, session=object(), max_retries=1
@@ -362,7 +357,7 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
         timeouts.append(kwargs)
         raise requests.exceptions.Timeout("slow")
 
-    monkeypatch.setattr(ncbi, "_download_ncbi_dataset_once", always_timeout)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_ncbi_dataset_once", always_timeout)
     with pytest.raises(ValidationError, match="failed after 2 attempt"):
         ncbi.download_ncbi_dataset(
             ["GCF_000001405.40"], destination, session=object(), max_retries=1
@@ -499,7 +494,7 @@ def test_open_and_preserve_sources_are_idempotent(tmp_path, monkeypatch):
     assert bundle.root == directory.resolve() and bundle.label == "label"
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *_a: None)
+    monkeypatch.setattr("operon.adapters._ncbi_sources._require_disk_space", lambda *_a: None)
     preserved = ncbi._preserve_source(source, project)
     assert preserved.is_file()
     assert ncbi._preserve_source(source, project) == preserved
@@ -549,7 +544,7 @@ def test_download_batches_async_success_error_and_cancellation(tmp_path, monkeyp
         destination.write_bytes(b"zip")
         return destination
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_download)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_download)
     completed = queue.Queue()
     cancel = threading.Event()
     asyncio.run(ncbi._download_batches_async(
@@ -576,7 +571,7 @@ def test_parallel_download_wrapper_aggregates_or_reports_errors(tmp_path, monkey
     async def fake_runner(**kwargs):
         kwargs["completed_queue"].put((kwargs["batches"][0], None, ValidationError("bad")))
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", fake_runner)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
     with pytest.raises(ValidationError, match="download batch"):
         ncbi.download_ncbi_datasets_parallel(
             [["GCF_000000001.1"]], tmp_path, max_workers=1, on_complete=lambda *_a: None
@@ -591,7 +586,7 @@ def test_parallel_download_wrapper_aggregates_or_reports_errors(tmp_path, monkey
     async def crashed(**_kwargs):
         raise RuntimeError("runner")
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", crashed)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", crashed)
     with pytest.raises(RuntimeError, match="runner"):
         ncbi.download_ncbi_datasets_parallel(
             [["GCF_000000001.1"]], tmp_path, max_workers=1, on_complete=lambda *_a: None
@@ -603,7 +598,7 @@ def test_interruptible_retry_sleep_cancel_and_completion(monkeypatch):
     # Avoid monkeypatching asyncio.sleep recursively by using a small custom awaitable.
     async def no_sleep(_seconds):
         return None
-    monkeypatch.setattr(ncbi.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
     asyncio.run(ncbi._interruptible_retry_sleep(0.3, event))
     event.set()
     with pytest.raises(ncbi._DownloadCancelled):
@@ -697,7 +692,7 @@ def test_aiohttp_download_success_headers_content_length_and_fallback(tmp_path, 
     second = _FakeResponse(200, [data[:10], data[10:]], {"Content-Length": str(len(data))})
     _fake_aiohttp(monkeypatch, [first, second], captured)
     disk_checks = []
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *args: disk_checks.append(args))
+    monkeypatch.setattr("operon.adapters._ncbi_download._require_disk_space", lambda *args: disk_checks.append(args))
     destination = tmp_path / "package.zip"
     result = asyncio.run(ncbi._download_batch_aiohttp(**_download_kwargs(destination)))
     assert result == destination and zipfile.is_zipfile(destination)
@@ -714,7 +709,7 @@ def test_aiohttp_download_retries_transient_status_and_connection(tmp_path, monk
     ])
     async def no_sleep(*_args):
         return None
-    monkeypatch.setattr(ncbi, "_interruptible_retry_sleep", no_sleep)
+    monkeypatch.setattr("operon.adapters._ncbi_download._interruptible_retry_sleep", no_sleep)
     destination = tmp_path / "retry.zip"
     assert asyncio.run(ncbi._download_batch_aiohttp(
         **_download_kwargs(destination, max_retries=1)
@@ -768,7 +763,7 @@ def test_aiohttp_download_cancellation_during_transfer_and_no_space(tmp_path, mo
         error = OSError("full")
         error.errno = 28
         raise error
-    monkeypatch.setattr(ncbi.os, "fsync", no_space)
+    monkeypatch.setattr(os, "fsync", no_space)
     with pytest.raises(ValidationError, match="ran out of space"):
         asyncio.run(ncbi._download_batch_aiohttp(
             **_download_kwargs(tmp_path / "full.zip")

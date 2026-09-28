@@ -83,7 +83,7 @@
 | `operon/table_import.py` | CSV/XLSX 模板、第一工作表读取、碰撞预览、受审计的 insert/patch |
 | `operon/entity_view.py` | 内部 ID/accession 解析与 organism 根实体图展开 |
 | `operon/backup.py` | SQLite 一致备份、control/results/full scope、checksum manifest 校验 |
-| `operon/adapters/ncbi_datasets.py` | NCBI Datasets JSON/JSONL/TSV/ZIP 解析、REST 下载、Entrez 回退、稳定 ID 去重与自动归档 |
+| `operon/adapters/ncbi_datasets.py` | NCBI Datasets 适配器门面：运行编排与 re-export；内部实现位于 `_ncbi_model`（常量/数据模型/纯助手，不访问数据库）、`_ncbi_storage`（各层共用的无状态磁盘空间守卫）、`_ncbi_sources`（来源发现、ZIP 安全）、`_ncbi_download`（REST/aiohttp 下载、Entrez 回退）与 `_ncbi_plan`（导入计划、include 复用匹配、落库） |
 | `operon/qc/parsers.py` | 纯 Python 行为参考实现，用于回归测试 Cython 解析器的指标与错误语义 |
 | `operon/qc/_parsers.pyx` | 内置 QC 必需的 Cython 生产解析器，指标输出与错误信息和纯 Python 参考实现逐位一致 |
 | `operon/qc/__init__.py` | 组装内置 QC stage，加载 Cython 解析器并把指标写入 `qc_results` |

@@ -228,14 +228,14 @@
 
 ## NCBI Datasets 适配器
 
-- **导入最终还是可能清空字段。** 适配器的合并检查把来源中的 `na`/`n/a`/`null`/`none` 视为非空，随后它们被归一化为 NULL，而 upsert 会写入每一列——因此既有值确实会被清成 NULL，且清空会写审计，这与“只增改不清空”的读法相矛盾（`adapters/ncbi_datasets.py`、`schema.py`）。
-- **部分归一化是静默的。** 未知 sex 值变为 `unknown`；无法解析的日期和越界的经纬度变为 NULL——没有错误或原因码（`adapters/ncbi_datasets.py`）。
-- **只接受 `GCA_`/`GCF_` accession**（可带版本号，统一大写）；SRA run 与其他标识体系是硬性校验错误（`adapters/ncbi_datasets.py`）。
+- **导入最终还是可能清空字段。** 适配器的合并检查把来源中的 `na`/`n/a`/`null`/`none` 视为非空，随后它们被归一化为 NULL，而 upsert 会写入每一列——因此既有值确实会被清成 NULL，且清空会写审计，这与“只增改不清空”的读法相矛盾（`adapters/_ncbi_model.py`、`schema.py`）。
+- **部分归一化是静默的。** 未知 sex 值变为 `unknown`；无法解析的日期和越界的经纬度变为 NULL——没有错误或原因码（`adapters/_ncbi_model.py`）。
+- **只接受 `GCA_`/`GCF_` accession**（可带版本号，统一大写）；SRA run 与其他标识体系是硬性校验错误（`adapters/_ncbi_model.py`）。
 - **部分下载失败时保留已提交批次。** 部分批次失败而其余导入成功时，run 在成功批次已提交之后抛校验错误；重跑会幂等跳过已完成批次（`adapters/ncbi_datasets.py`）。
-- **pre-2.6 注释桥接是保守的。** 仅当 report 属于 assembly 的规范 accession、且该注释行未被其他 accession 认领时才复用既有注释行——这是对“GCA/GCF 成对包注释元数据相同但 GFF 字节不同”的规避（`adapters/ncbi_datasets.py`）。
-- **磁盘预检保留固定 64 MiB**，且下载暂存在项目根内，从不使用 `/tmp`（`adapters/ncbi_datasets.py`）。
-- **适配器自动升级旧元数据 schema。** 打开 pre-{{ metadata_schema }} 的 `config/schemas.yaml` 会就地升级，归一化格式并丢弃手写注释（与首次 REMOTE_ONLY 驱逐触发的归一化相同；见[远程存储指南](../guides/remote-storage.md)）（`adapters/ncbi_datasets.py`）。
-- **不带版本号的 accession 会重复下载已归档的包。** `_canonical_accession` 保留版本号，因此当归档 assembly 为 `GCF_000001405.40` 而请求写 `GCF_000001405` 时，`_assembly_asset_role` 会推导出备用来源角色 `genome_fasta_refseq`；manifest 中没有任何行带该角色，于是该 include 被判定为缺失，每次运行都会重新下载整个包。ingest 仍是幂等的，所以这只是重复传输而非重复归档——需要复用归档时请写带版本号的 accession（`adapters/ncbi_datasets.py`）。
+- **pre-2.6 注释桥接是保守的。** 仅当 report 属于 assembly 的规范 accession、且该注释行未被其他 accession 认领时才复用既有注释行——这是对“GCA/GCF 成对包注释元数据相同但 GFF 字节不同”的规避（`adapters/_ncbi_plan.py`）。
+- **磁盘预检保留固定 64 MiB**，且下载暂存在项目根内，从不使用 `/tmp`（`adapters/_ncbi_storage.py`、`adapters/ncbi_datasets.py`）。
+- **适配器自动升级旧元数据 schema。** 打开 pre-{{ metadata_schema }} 的 `config/schemas.yaml` 会就地升级，归一化格式并丢弃手写注释（与首次 REMOTE_ONLY 驱逐触发的归一化相同；见[远程存储指南](../guides/remote-storage.md)）（`adapters/_ncbi_plan.py`）。
+- **不带版本号的 accession 会重复下载已归档的包。** `_canonical_accession` 保留版本号，因此当归档 assembly 为 `GCF_000001405.40` 而请求写 `GCF_000001405` 时，`_assembly_asset_role` 会推导出备用来源角色 `genome_fasta_refseq`；manifest 中没有任何行带该角色，于是该 include 被判定为缺失，每次运行都会重新下载整个包。ingest 仍是幂等的，所以这只是重复传输而非重复归档——需要复用归档时请写带版本号的 accession（`adapters/_ncbi_model.py`）。
 - **`ncbi-reconcile` 可能应用了改动却不留痕迹。** accession 行已消失的 accession-primary 更新会被静默跳过，重放的 supersession 条目也不写审计记录；两者对幂等性都是正确的，但在 `changes` 中不可见（`ncbi_reconcile.py`）。
 
 ## 备份与导入向导
@@ -273,8 +273,8 @@
 若干开发期兼容垫片只为 1.0 之前创建的数据库而存在，计划在 1.0 移除（代码中标记 `TODO(1.0)`）：
 
 - `database.py` 中 pre-1.0 迁移调用与 `_migrate_pre_1_0_schema()` 重建（遗留行保留 `legacy:` 输入身份，永不与新 QC 行去重）。
-- `adapters/ncbi_datasets.py` 中针对旧 schema 的防御性字段投影与自动元数据 schema 升级。
+- `adapters/_ncbi_plan.py` 中针对旧 schema 的防御性字段投影与自动元数据 schema 升级。
 
-其他开发期垫片没有 `TODO(1.0)` 标记，也不在该清单中：`adapters/ncbi_datasets.py` 中的 pre-2.6 注释桥接与遗留 `_table_exists` 守卫、首次 REMOTE_ONLY 驱逐时对 `config/schemas.yaml` 的改写（`remotes.py`），以及为本地运行保留执行后端出现之前摘要的 `location_identity` 摘要垫片（`tools.py`）。
+其他开发期垫片没有 `TODO(1.0)` 标记，也不在该清单中：`adapters/_ncbi_plan.py` 中的 pre-2.6 注释桥接与遗留 `_table_exists` 守卫、首次 REMOTE_ONLY 驱逐时对 `config/schemas.yaml` 的改写（`remotes.py`），以及为本地运行保留执行后端出现之前摘要的 `location_identity` 摘要垫片（`tools.py`）。
 
 完整清单与移除策略见[数据库兼容性](../operations/database-compatibility.md)。

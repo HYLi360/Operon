@@ -36,7 +36,14 @@ Current version markers (must stay consistent across code and docs):
   `operon/__main__.py`; console script `operon = operon.cli:main`).
   - `operon/adapters/` — external source adapters: NCBI Datasets
     (offline-first: JSON/JSONL, ZIP, or unpacked directories, plus optional
-    online download) and TimeTree (query-cache-only REST client caching the
+    online download; `ncbi_datasets.py` is the facade/run orchestration, split
+    into the internal `_ncbi_model` (constants, data models and pure helpers
+    with no database access), `_ncbi_storage` (stateless disk-space guards
+    shared by the layers above), `_ncbi_sources` (source discovery, ZIP
+    safety), `_ncbi_download` (requests/aiohttp downloads, Entrez fallback)
+    and `_ncbi_plan` (import planning, include-reuse matching and
+    persistence) submodules)
+    and TimeTree (query-cache-only REST client caching the
     verbatim responses of exact queries under `adapters_cache/timetree/`;
     mirroring or redistribution is forbidden by TimeTree's terms).
   - `operon/qc/` — home for all QC functionality: streaming
@@ -287,7 +294,8 @@ proceed with caution).
   commit — the parity tests in `tests/unit/test_tui_cli_parity.py` fail
   otherwise. Commands intentionally not offered in the TUI are registered
   `cli-only` with a reason; known gaps are registered `planned` with a
-  milestone.
+  milestone (the CI `pytest` job exports `OPERON_PARITY_STRICT=1`, so any
+  `planned` entry that reappears fails the build).
 - `docs/*/operations/database-compatibility.md` lists migration code that
   exists only for pre-1.0 databases and is scheduled for removal at the 1.0
   release; check it before touching `operon/database.py` migrations or the

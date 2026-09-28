@@ -1129,6 +1129,185 @@ def save_recipe(
     }
 
 
+#: Tool-level keys the Config screen's tool editor owns.  Everything else in a
+#: tool mapping (``recipes``, or a key the editor does not model at all) is kept
+#: exactly as parsed.
+MODELED_TOOL_KEYS = ("description", "executable", "run_method", "version_args",
+                     "version_pattern")
+
+
+def save_tool(
+        project: Project,
+        tool_name: str,
+        tool_doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and save the tool-level keys of one tool in ``config/tools.yaml``.
+
+    The document is the complete state of the modeled tool keys: a key it
+    carries is written, a modeled key it omits is removed from the file (so an
+    emptied ``executable`` falls back to the tool name and an emptied
+    ``version_args`` disappears).  ``run_method`` is one of the modeled keys —
+    the document carries it as the launcher command string or as a
+    ``conda``/``prefix``/``path`` mapping.  Every other key of the tool mapping
+    — ``recipes`` or a key the editor does not model — is kept exactly as
+    parsed, and a value for such a key in the document is ignored rather than
+    written.  Tools carry no version of their own, so nothing is
+    bumped: the whole file is written back with
+    ``yaml.safe_dump(sort_keys=False)`` and the result is round-trip verified
+    through :func:`operon.tools.load_tools_config` + ``get_tool``; on any
+    failure the previous file content is restored.  A changed save records the
+    same ``{"recipe": ..., "tool": ...}`` snapshot shape
+    :func:`operon.tools.run_analysis` uses, once per recipe of that tool, so
+    ``operon recipes history <name>`` shows the change; an unchanged save is a
+    no-op.
+
+    NOTE: saving from the TUI normalizes tools.yaml formatting and drops
+    hand-written comments; every saved version is preserved verbatim in
+    ``recipe_snapshots`` (see ``operon recipes history/show``).
+    """
+    from operon.tools import get_tool, list_analyses, load_tools_config
+
+    _validate_config_name("tool", tool_name)
+    if not isinstance(tool_doc, dict):
+        raise ValidationError(f"tool {tool_name!r}: document must be a mapping")
+    path = project.tools_config_path
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
+    config = load_tools_config(project)
+    tools = config.get("tools")
+    if not isinstance(tools, dict) or tool_name not in tools:
+        raise ValidationError(f"unknown tool {tool_name!r} in {path}")
+    existing = tools[tool_name]
+    if not isinstance(existing, dict):
+        raise ValidationError(f"tool {tool_name!r} in tools.yaml must be a mapping")
+    # Only the modeled keys are read from the document, and the document is
+    # their complete state: a modeled key it omits is removed, so an emptied
+    # executable falls back to the tool name.  A value for any other key
+    # (``recipes``, …) is ignored, so the recipes can never be written from a
+    # stale editor document.
+    document = {key: value for key, value in tool_doc.items() if key in MODELED_TOOL_KEYS}
+    merged = {key: value for key, value in existing.items()
+              if key not in MODELED_TOOL_KEYS}
+    merged.update(document)
+    if merged == existing:
+        return {
+            "name": tool_name, "unchanged": True, "recipes": [], "snapshots": {},
+        }
+    tools[tool_name] = merged
+
+    text = (
+        "# Operon external tools configuration (YAML)\n"
+        "# Saved via the Operon TUI: formatting is normalized and hand-written\n"
+        "# comments are dropped; every version is kept in recipe_snapshots.\n"
+        + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    )
+    with _saved_config(path, text, previous_text, f"tool {tool_name!r}"):
+        load_tools_config(project)
+        tool = get_tool(project, tool_name)
+        recipes = [
+            recipe for recipe in list_analyses(project)
+            if recipe.tool_name == tool_name
+        ]
+        with _open_writable(project) as db, db.transaction():
+            snapshots = {
+                recipe.name: db.record_recipe(
+                    recipe.name, recipe.version,
+                    {"recipe": recipe.raw, "tool": tool.raw},
+                )
+                for recipe in recipes
+            }
+    return {
+        "name": tool_name, "unchanged": False,
+        "recipes": sorted(snapshots), "snapshots": snapshots,
+    }
+
+
+#: Keys of the top-level ``conda:`` section the defaults editor owns.  Any
+#: other key of the section is kept exactly as parsed.
+MODELED_CONDA_KEYS = ("bin", "run_args")
+
+
+def _tool_launchers(project: Project, config: dict[str, Any]) -> dict[str, list[str]]:
+    """The launcher prefix of every configured tool, as ``config`` resolves it."""
+    from operon.tools import get_tool, launcher_prefix
+
+    launchers: dict[str, list[str]] = {}
+    for name in config.get("tools") or {}:
+        tool = get_tool(project, str(name))
+        launchers[tool.name] = launcher_prefix(tool, config)
+    return launchers
+
+
+def save_tools_defaults(
+        project: Project,
+        conda_doc: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and save the top-level ``conda:`` section of ``config/tools.yaml``.
+
+    The document is the complete state of the modeled keys: a key it carries is
+    written, a modeled key it omits is removed (so an emptied ``bin`` falls back
+    to ``conda`` and an emptied ``run_args`` to ``run --no-capture-output``).
+    Every other key of the section is kept exactly as parsed, and a value for
+    such a key in the document is ignored rather than written.
+
+    The section is the launcher default shared by every tool, so a changed save
+    records one snapshot per recipe of each tool **whose resolved launcher
+    changed** — a tool that launches through another program, carries an
+    explicit ``bin``/``args``, or does not react to the changed key keeps its
+    snapshot count — in the same ``{"recipe": ..., "tool": ...}`` shape
+    :func:`operon.tools.run_analysis` uses.  Atomic write + round-trip verify,
+    with the previous bytes restored on failure; an unchanged save is a no-op.
+
+    NOTE: saving from the TUI normalizes tools.yaml formatting and drops
+    hand-written comments; every saved version is preserved verbatim in
+    ``recipe_snapshots`` (see ``operon recipes history/show``).
+    """
+    from operon.tools import get_tool, list_analyses, load_tools_config
+
+    if not isinstance(conda_doc, dict):
+        raise ValidationError("the conda section: document must be a mapping")
+    path = project.tools_config_path
+    previous_text = path.read_bytes().decode("utf-8") if path.exists() else None
+    config = load_tools_config(project)
+    existing = config.get("conda") or {}
+    if not isinstance(existing, dict):
+        raise ValidationError(f"the conda section in {path} must be a mapping")
+    document = {key: value for key, value in conda_doc.items() if key in MODELED_CONDA_KEYS}
+    merged = {key: value for key, value in existing.items()
+              if key not in MODELED_CONDA_KEYS}
+    merged.update(document)
+    if merged == existing:
+        return {"unchanged": True, "recipes": [], "snapshots": {}}
+    before = _tool_launchers(project, config)
+    config["conda"] = merged
+
+    text = (
+        "# Operon external tools configuration (YAML)\n"
+        "# Saved via the Operon TUI: formatting is normalized and hand-written\n"
+        "# comments are dropped; every version is kept in recipe_snapshots.\n"
+        + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    )
+    with _saved_config(path, text, previous_text, "the conda section"):
+        after = _tool_launchers(project, load_tools_config(project))
+        changed = {name for name, prefix in after.items() if before.get(name) != prefix}
+        recipes = [
+            recipe for recipe in list_analyses(project)
+            if recipe.tool_name in changed
+        ]
+        tools = {name: get_tool(project, name) for name in changed}
+        with _open_writable(project) as db, db.transaction():
+            snapshots = {
+                recipe.name: db.record_recipe(
+                    recipe.name, recipe.version,
+                    {"recipe": recipe.raw, "tool": tools[recipe.tool_name].raw},
+                )
+                for recipe in recipes
+            }
+    return {
+        "unchanged": False,
+        "recipes": sorted(snapshots), "snapshots": snapshots,
+    }
+
+
 def check_tools(
         project: Project,
         timeout: float = 60.0,
@@ -1661,3 +1840,257 @@ def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
     with _open_writable(project) as db:
         entity_id = db.next_id(entity_type)
     return {"entity_type": entity_type, "entity_id": entity_id}
+
+
+# -- storage and administration (M5) -----------------------------------------
+
+
+def create_backup(project: Project, output: str, scope: str = "control") -> dict[str, Any]:
+    """Create a checksum-manifested backup like ``operon backup create``.
+
+    The CLI opens this command on a *read-only* session (a backup does not
+    write to the project database; the consistent snapshot comes from
+    SQLite's own backup API), so the TUI does the same.  The destination must
+    not exist and must stay outside the project root — the core raises for
+    both, exactly as it does for the CLI.
+    """
+    from operon.backup import create_backup as create_backup_core
+
+    if not str(output).strip():
+        raise ValidationError("an output path is required (--output)")
+    db = Database(project.db_path, read_only=True)
+    try:
+        return create_backup_core(db, project, str(output).strip(), scope=scope)
+    finally:
+        db.close()
+
+
+def verify_backup(path: str) -> dict[str, Any]:
+    """Verify a backup directory like ``operon backup verify``.
+
+    ``verify`` authenticates an existing backup directory against its own
+    manifest: no project database is involved, so this action opens no
+    session at all.  The returned payload carries the CLI's exit semantics —
+    ``ok`` false with a per-file ``failures`` list.
+    """
+    from operon.backup import verify_backup as verify_backup_core
+
+    if not str(path).strip():
+        raise ValidationError("a backup path is required (--input)")
+    return verify_backup_core(str(path).strip())
+
+
+def check_remotes(project: Project) -> list[dict[str, Any]]:
+    """Probe every configured remote like ``operon remotes``.
+
+    A read-only action: it opens no session and writes nothing (the CLI opens
+    a read-only connection for the same command).  Each remote is checked on
+    its own and a failure — including a malformed ``remotes:`` entry — is
+    returned as that row's ``status``/``error``, mirroring the CLI's table
+    rather than failing the whole listing.  SFTP connects can block, so the
+    screen runs this in a worker.
+    """
+    from operon.remotes import check_remote
+    from operon.tui import data
+
+    rows: list[dict[str, Any]] = []
+    for row in data.list_remotes(project):
+        if row["status"] == "invalid":
+            rows.append(row)
+            continue
+        try:
+            rows.append(check_remote(project, str(row["name"])))
+        except Exception as exc:  # noqa: BLE001 - one unreachable remote must not hide the rest
+            rows.append({**row, "status": "error",
+                         "error": f"{type(exc).__name__}: {exc}", "files": ""})
+    return rows
+
+
+def push(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Upload manifest files to a mirror like ``operon push``.
+
+    ``file_ids=None`` selects every manifest file (the CLI's default).  The
+    core has no cooperative cancel: transfers are per-file atomic and the
+    remote manifest is published last, so an interrupted push leaves no
+    half-claimed entry, but it cannot be aborted between files either.
+    """
+    from operon.remotes import push as core_push
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return core_push(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def pull(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Restore manifest files from a mirror like ``operon pull``.
+
+    Like the CLI, ``file_ids=None`` restores every entry in the *remote*
+    manifest (the list is read from the mirror when the transfer starts).
+    """
+    from operon.remotes import pull as core_pull
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return core_pull(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def _open_read_only(project: Project) -> Any:
+    """Context manager for a short-lived read-only session (previews)."""
+    return contextlib.closing(Database(project.db_path, read_only=True))
+
+
+def evict_plan(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Check which selected files may be evicted; writes nothing.
+
+    Runs the same per-file remote verification ``operon evict`` performs
+    before it removes bytes (the core's ``verify_remote_record``, with no
+    session), so a file that passes here is exactly one ``evict`` accepts.
+    ``file_locations`` statuses are left untouched: this is a probe, not a
+    state change.  A remote that cannot be reached raises, and the caller
+    must not offer Confirm.
+    """
+    from operon.remotes import (
+        SFTPStore,
+        _require_project_manifest,
+        _select_files,
+        get_remote,
+        verify_remote_record,
+    )
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    name = str(remote).strip()
+    spec = get_remote(project, name)
+    with _open_read_only(project) as db:
+        records = _select_files(db, file_ids)
+    rows: list[dict[str, Any]] = []
+    with SFTPStore(spec) as store:
+        doc = store.read_manifest()
+        # A mirror belonging to another project is a configuration error, not
+        # a per-file verdict.
+        _require_project_manifest(project, name, doc)
+        for record in records:
+            row = {
+                "file_id": record["file_id"],
+                "relative_path": record["relative_path"],
+                "size_bytes": record["size_bytes"],
+                "eligible": False,
+                "reason": "",
+            }
+            try:
+                verify_remote_record(project, name, record, store=store, manifest=doc)
+            except Exception as exc:  # noqa: BLE001 - every failure is a verdict for this row
+                row["reason"] = f"{type(exc).__name__}: {exc}"
+            else:
+                row["eligible"] = True
+            rows.append(row)
+    return rows
+
+
+def evict(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Remove verified local bytes like ``operon evict``.
+
+    The core re-verifies every file against the mirror inside the run, so the
+    TUI's verification gate (:func:`evict_plan`) is a pre-flight, not the
+    guarantee — a mirror that changed in the meantime still fails the run
+    instead of dropping bytes.
+    """
+    from operon.remotes import evict_local
+
+    if not str(remote).strip():
+        raise ValidationError("a remote name is required (--remote)")
+    with _open_writable(project) as db:
+        return evict_local(db, project, str(remote).strip(), file_ids=file_ids or None)
+
+
+def set_state(project: Project, entity_type: str, entity_id: str, state: str,
+              message: str, force: bool = False) -> dict[str, Any]:
+    """Manually set an entity's workflow state, like ``operon set-state``.
+
+    The transition is always audited: the core records it in ``changes`` with
+    the message as its reason, and the TUI requires one — a manual state
+    change without a stated reason is the thing the audit trail exists to
+    prevent.  ``force`` is the CLI's ``--force`` (a non-standard transition),
+    an explicit, default-off opt-in in the dialog; without it the core raises
+    ``ConflictError`` for an illegal transition and the dialog keeps the form
+    open so the operator can tick the box deliberately.
+    """
+    from operon.workflow import set_state as core_set_state
+
+    if not str(message).strip():
+        raise ValidationError("a message is required: a manual state change is audited with its reason")
+    if not str(state).strip():
+        raise ValidationError("a state is required")
+    actor = resolve_actor()
+    with _open_writable(project) as db:
+        db.require_active_entity(entity_type, entity_id)
+        previous = db.get_entity_state(entity_type, entity_id)
+        core_set_state(db, entity_type, entity_id, state, message=str(message).strip(),
+                       force=force, actor=actor)
+        return {
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "state": str(state).upper(),
+            "previous_state": previous or "",
+            "forced": bool(force) and previous != str(state).upper(),
+            "message": str(message).strip(),
+            "actor": actor,
+        }
+
+
+def export_metadata_report(project: Project, output: str | None = None,
+                           include_retired: bool = False) -> dict[str, Any]:
+    """Write ``operon report metadata``, through the core's own exporter.
+
+    Read-only like the CLI's ``report`` group (the session cannot write), so no
+    ``changes`` or ``workflow_runs`` rows are recorded; the TSVs come from the
+    core function with the same flags, which makes them byte-identical to a CLI
+    export of the same project — only the manifest's volatile ``created_at``
+    differs between runs.  The return value reports what the manifest says was
+    written.
+    """
+    from operon.reports import export_metadata_report as core_export
+
+    with _open_read_only(project) as db:
+        path = core_export(db, project, output or None, include_retired=include_retired)
+    manifest = json.loads((Path(path) / "manifest.json").read_text(encoding="utf-8"))
+    tables = manifest.get("tables", {})
+    return {
+        "path": str(path),
+        "include_retired": include_retired,
+        "tables": len(tables),
+        "rows": sum(int(entry.get("row_count", 0)) for entry in tables.values()),
+        "names": sorted(tables),
+    }
+
+
+def export_qc_report(project: Project, entity_type: str | None = None,
+                     include_retired: bool = False) -> dict[str, Any]:
+    """Write ``operon report qc --export``, through the core's own exporter.
+
+    Read-only like the CLI's ``report`` group (no ``changes`` or
+    ``workflow_runs`` rows), and the long-form and wide TSVs come from
+    ``reports.export_qc_tsv`` with the same flags — so they are byte-identical
+    to a CLI export of the same project, entity-type filter included.
+    """
+    from operon.reports import export_qc_tsv
+
+    with _open_read_only(project) as db:
+        wide = export_qc_tsv(
+            db, project, entity_type or None, include_retired=include_retired,
+        )
+    files = []
+    for name in ("qc_results.tsv", "qc_results.wide.tsv"):
+        path = wide.parent / name
+        rows = max(0, len(path.read_text(encoding="utf-8").splitlines()) - 1)
+        files.append({"name": name, "path": str(path), "rows": rows})
+    return {
+        "path": str(wide),
+        "directory": str(wide.parent),
+        "entity_type": entity_type or "",
+        "include_retired": bool(include_retired),
+        "files": files,
+        "rows": sum(entry["rows"] for entry in files),
+    }

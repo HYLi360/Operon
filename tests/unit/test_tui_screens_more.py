@@ -1349,6 +1349,10 @@ def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkey
 
                 released.set()
                 await _wait_until(lambda: released.is_set(), "the held read to return")
+                # Deliberately a bounded sample rather than a condition wait: the
+                # assertion below is that the held payload does *not* reach the UI
+                # thread, so there is no state to wait for — just give it room to
+                # arrive if the guard under test is broken.
                 for _ in range(10):  # let its payload reach the UI thread
                     await pilot.pause()
                     await asyncio.sleep(0.02)
@@ -1882,3 +1886,190 @@ def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Proje
         _run(scenario())
     finally:
         held.set()
+# -- M5 alignment: retired list, supersessions, decisions/include-retired ------
+
+
+def _retire(project: Project, entity_id: str, entity_type: str = "organism") -> None:
+    from operon.tui import actions
+
+    actions.lifecycle_apply(
+        project, entity_id, "RETIRE", "m5 test retirement", "tester",
+        reason_code="other",
+    )
+
+
+def test_retired_modal_mirrors_the_cli_rows_and_direct_only(project: Project) -> None:
+    """The read-only view lists the core's rows; the checkbox is --direct-only."""
+    from operon.lifecycle import list_retired_entities
+    from operon.tui import data
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import RETIREMENT_COLUMNS, RetiredModal
+
+    _retire(project, "ORG_000001")
+    effective = data.list_retired(project)
+    direct = data.list_retired(project, direct_only=True)
+    assert effective, "the retirement must reach the effective set"
+    assert {row["entity_id"] for row in direct} == {"ORG_000001"}
+    assert len(effective) > len(direct), "an organism retirement covers its descendants"
+
+    db = Database(project.db_path, read_only=True)
+    try:
+        cli_rows = [dict(row) for row in list_retired_entities(db)]
+    finally:
+        db.close()
+    assert effective == cli_rows
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            await pilot.pause()
+            modal = RetiredModal(project)
+            app.push_screen(modal)
+            await _wait_until(lambda: modal.rows != [], "retirement rows")
+            table = modal.query_one("#retired-table", DataTable)
+            assert table.row_count == len(effective)
+            assert _static_text(modal.query_one("#retired-command", Static)) == "operon retired"
+            first = effective[0]
+            assert _cell_text(table, 0, 0) == first["entity_type"]
+            assert _cell_text(table, 0, 1) == first["entity_id"]
+            assert _cell_text(table, 0, 7) == first["retired_at"]
+            assert _static_text(
+                modal.query_one("#retired-status", Static)
+            ) == f"{len(effective)} retirement(s)"
+
+            modal.query_one("#retired-direct-only", Checkbox).value = True
+            await _wait_until(
+                lambda: _static_text(modal.query_one("#retired-status", Static))
+                == "1 retirement(s)",
+                "direct-only rows",
+            )
+            assert table.row_count == 1
+            command = _static_text(modal.query_one("#retired-command", Static))
+            assert command == "operon retired --direct-only"
+
+            modal.query_one("#cancel", Button).press()
+            await _wait_until(lambda: app.screen is not modal, "modal close")
+
+    _run(scenario())
+    assert RETIREMENT_COLUMNS[0] == "entity_type"
+
+
+def test_entity_detail_lists_supersessions_both_directions(project: Project) -> None:
+    from operon.tui import data
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.entities import EntitiesPanel
+
+    db = Database(project.db_path)
+    try:
+        db.supersede_entity(
+            "assembly", "ASM_000001", "assembly", "ASM_000002",
+            reason="re-sequenced", workflow_run_id=None,
+        )
+    finally:
+        db.close()
+
+    detail = data.entity_detail(project, "assembly", "ASM_000001")
+    assert detail["supersessions"][0]["superseded_by_id"] == "ASM_000002"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("entities")
+            await pilot.pause()
+            panel = app.screen.query_one(EntitiesPanel)
+            panel._apply_detail(detail)
+            text = _static_text(panel.query_one("#entity-detail", Static))
+            assert "Supersessions" in text
+            assert "superseded by assembly ASM_000002" in text
+            assert "re-sequenced" in text
+
+            other = data.entity_detail(project, "assembly", "ASM_000002")
+            other_text = panel._detail_text(other).plain
+            assert "supersedes assembly ASM_000001" in other_text
+
+    _run(scenario())
+
+
+def test_decisions_screen_include_retired_toggle(project: Project) -> None:
+    from operon.tui import data
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.decisions import DecisionsPanel
+
+    decided = data.list_decisions(project, include_retired=True)
+    assert decided, "the demo project must carry decisions"
+    target = decided[0]
+    _retire(project, target["entity_id"], target["entity_type"])
+
+    filtered = data.list_decisions(project)
+    assert all(
+        (row["entity_type"], row["entity_id"])
+        != (target["entity_type"], target["entity_id"])
+        for row in filtered
+    )
+    assert 0 < len(filtered) < len(decided)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("decisions")
+            await pilot.pause()
+            panel = app.screen.query_one(DecisionsPanel)
+            await _wait_until(lambda: panel.decisions != [], "filtered decisions")
+            assert len(panel.decisions) == len(filtered)
+            panel.query_one("#decisions-include-retired", Checkbox).value = True
+            await _wait_until(
+                lambda: len(panel.decisions) == len(decided),
+                "decisions including retired",
+            )
+
+    _run(scenario())
+
+
+def test_runs_more_filters_accept_resumes_run_id(project: Project, monkeypatch) -> None:
+    from operon.tui import data
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.runs import RunsFiltersModal, RunsPanel
+
+    runs = data.list_workflow_runs(project, limit=0)
+    assert runs, "the demo project must carry workflow runs"
+    calls: list[dict[str, Any]] = []
+    original = data.list_workflow_runs
+
+    def spy(project: Project, **kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return original(project, **kwargs)
+
+    monkeypatch.setattr(data, "list_workflow_runs", spy)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("tasks")
+            await pilot.pause()
+            panel = app.screen.query_one(RunsPanel)
+            await _wait_until(lambda: panel.runs != [], "runs")
+            panel.query_one("#runs-more", Button).press()
+            await _wait_until(
+                lambda: isinstance(app.screen, RunsFiltersModal), "filters dialog"
+            )
+            modal = app.screen
+            modal.query_one("#runs-filter-resumes-run-id", Input).value = runs[0]["run_id"]
+            await _wait_until(
+                lambda: (bool(modal.query("#runs-filter-resumes-run-id"))
+                         and bool(modal.query_one(
+                             "#runs-filter-resumes-run-id", Input).value)),
+                "the resumes-run-id field to hold its value",
+            )
+            modal.query_one("#runs-filter-apply", Button).press()
+            await _wait_until(
+                lambda: any(call.get("resumes_run_id") for call in calls),
+                "resumes-run-id filter to reach the query",
+            )
+            assert panel.query_one("#runs-more", Button).label == "More… (1)"
+
+    _run(scenario())
+    assert calls[-1]["resumes_run_id"] == runs[0]["run_id"]

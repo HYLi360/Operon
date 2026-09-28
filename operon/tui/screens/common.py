@@ -195,6 +195,12 @@ class FittingSelect(Select):
     the retry (``_adopt_value_before_overlay``) and advertises
     :attr:`options_ready` so a form reader can wait instead of reading a
     half-initialised control.
+
+    The same window reaches a *later* assignment: ``Select._watch_value`` stores
+    the value and only then looks up ``SelectCurrent``'s ``#label`` to paint the
+    collapsed control, so a row assigning during ``on_mount`` raised
+    ``NoMatches`` out of the assignment and died with it (ODR-0050).  Painting
+    is retried a turn at a time as well, from :meth:`_watch_value`.
     """
 
     overlay_max_share = 0.8
@@ -305,6 +311,36 @@ class FittingSelect(Select):
             super()._init_selected_option(hint)
         except NoMatches:
             pass
+
+    def _watch_value(self, value: Any) -> None:
+        """Store the value, tolerating a label that has not composed yet.
+
+        Textual's handler stores the value and only then reaches for the
+        ``SelectCurrent``'s ``#label`` to paint the collapsed control, so a row
+        that assigns during ``on_mount`` — the subtree still composing — got
+        ``NoMatches`` out of the assignment and the row's mount died with it
+        (ODR-0050).  The value is already stored at that point; retry the paint
+        instead of raising.  Textual posts ``Changed`` only *after* a successful
+        paint, so the retry reports the value exactly once.
+        """
+        self._paint_value_when_composed(value, attempt=0)
+
+    def _paint_value_when_composed(self, value: Any, attempt: int) -> None:
+        try:
+            super()._watch_value(value)
+        except NoMatches:
+            # Nothing to refresh onto before the mount: the value stands, and the
+            # mount's own guard paints it (ODR-0026).
+            if self.is_mounted and attempt < self._mount_retry_limit:
+                self.call_after_refresh(self._paint_value_when_composed, value, attempt + 1)
+            elif self.is_mounted:
+                # Out of retries: say so once, by name, instead of leaving a
+                # control that silently shows nothing (ODR-0039's shape).
+                self.log.warning(
+                    f"{type(self).__name__} {self.id or '<unnamed>'} could not paint "
+                    f"its value after {self._mount_retry_limit} refreshes — the value "
+                    "stands, its label stays stale"
+                )
 
     def _init_options_when_composed(self, attempt: int) -> None:
         self._setup_options_renderables()

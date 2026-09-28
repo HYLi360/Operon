@@ -19,6 +19,7 @@ silently dropped.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -87,26 +88,140 @@ ARTIFACT_KINDS = ("file", "directory")
 # core default ("warn") applies.
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
 HMMER_MODES = ("hmmsearch", "hmmscan")
+DATABASE_MODES = ("reference", "mutable_cache")
+#: The `slurm` override keys the per-recipe form models, in the order
+#: `execution.slurm` documents them; anything else a recipe carries survives
+#: the round-trip untouched (a future core key must not be dropped here).
+RECIPE_SLURM_FIELDS = (
+    ("partition", "#recipe-slurm-partition", "input"),
+    ("time", "#recipe-slurm-time", "input"),
+    ("mem_gb", "#recipe-slurm-mem-gb", "int"),
+    ("poll_interval", "#recipe-slurm-poll-interval", "float"),
+    ("array", "#recipe-slurm-array", "tri"),
+    ("array_concurrency", "#recipe-slurm-array-concurrency", "int"),
+    ("extra_sbatch", "#recipe-slurm-extra-sbatch", "lines"),
+    ("setup_commands", "#recipe-slurm-setup-commands", "lines"),
+)
 
 PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
 RECIPE_MODELED_ORDER = (
     "description", "entity_type", "file_role", "file_role_prefix", "format",
     "input_kind", "output_kind", "database", "database_version",
-    "environment_policy", "output_subdir", "output_suffix", "arguments",
-    "parameters", "result_parser", "result_glob", "hmmer_mode",
+    "database_mode", "database_checksum",
+    "environment_policy", "output_subdir", "output_suffix", "output_name", "arguments",
+    "commands", "parameters", "slurm", "result_parser", "result_glob", "hmmer_mode",
     "result_columns", "hit_metric_columns", "query_column", "subject_column",
     "numeric_columns", "qstart_column", "qend_column", "sstart_column",
     "send_column", "evalue_column", "bitscore_column", "pident_column",
     "max_hits_per_query",
 )
 RECIPE_MODELED_KEYS = frozenset(RECIPE_MODELED_ORDER) | {"version"}
+#: The spec keys a single parameter line models; every other key a spec carries
+#: is preserved verbatim (and listed under the editor).
+PARAMETER_MODELED_KEYS = frozenset({"default", "required", "choices", "pattern"})
 
 _OMIT = object()
 
 
 def _extras_note(extras: dict[str, Any]) -> str:
     return "preserved as-is: " + ", ".join(str(key) for key in extras)
+
+
+#: A trailing `;`-segment of a parameter line that the form understands.  A
+#: line whose trailing segments do not all match is read as a plain
+#: `name=default` (so a default value may contain `;`), and `pattern=` swallows
+#: the rest of the line, because a regex may contain any separator.
+_PARAM_FLAG_RE = re.compile(
+    r"^(required(\s*=\s*(true|false|yes|no))?|choices\s*=|pattern\s*=)",
+    re.IGNORECASE,
+)
+_PARAM_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _format_parameter_line(name: str, spec: dict[str, Any]) -> str:
+    """One parameter as the editor's line: `name=default; required; …`."""
+    default = spec.get("default")
+    line = f"{name}={'' if default is None else default}"
+    if bool(spec.get("required", False)):
+        line += "; required"
+    choices = spec.get("choices")
+    if isinstance(choices, list) and choices:
+        line += "; choices=" + ",".join(str(choice) for choice in choices)
+    pattern = str(spec.get("pattern", "") or "")
+    if pattern:
+        line += "; pattern=" + pattern
+    return line
+
+
+def _parse_parameter_line(
+    line: str, originals: dict[str, Any] | None = None
+) -> tuple[str, dict[str, Any], list[str]] | None:
+    """Read one editor line back into ``(name, spec, problems)``.
+
+    ``None`` means a blank line.  *originals* is the recipe's whole parameters
+    mapping: every spec key the line does not model is carried over from that
+    parameter's own spec, while the modeled ones (`default`, `required`,
+    `choices`, `pattern`) are authoritative — the line shows exactly what will
+    be written, so deleting a flag deletes the key.
+
+    The flag section is everything after the first ``;``, and it must open with a
+    flag.  A later segment the grammar does not know is reported in *problems*
+    (the form refuses to save rather than write it) so a typo can never turn into
+    part of a default value; a ``;`` in a default value stays a default value as
+    long as the segment after it is not flag-shaped.  ``pattern=`` owns the rest
+    of the line, because a regex may contain ``;``.
+    """
+    line = line.strip()
+    if not line:
+        return None
+    segments = [segment.strip() for segment in line.split(";")]
+    head = segments[0]
+    flags: list[str] = []
+    problems: list[str] = []
+    if len(segments) > 1:
+        if _PARAM_FLAG_RE.match(segments[1]):
+            for segment in segments[1:]:
+                if not _PARAM_FLAG_RE.match(segment):
+                    problems.append(f"unrecognized parameter flag {segment!r}")
+                    break
+                flags.append(segment)
+                if segment.lower().startswith("pattern"):
+                    break  # the regex owns the rest of the line
+        else:
+            head = line  # the `;` belongs to the default value
+    param_name, separator, default_text = head.partition("=")
+    param_name = param_name.strip()
+    if not param_name:
+        return None
+    spec = dict((originals or {}).get(param_name) or {})
+    if separator and default_text.strip():
+        spec["default"] = actions.coerce_scalar(default_text)
+    else:
+        spec.pop("default", None)
+    if problems:
+        return param_name, spec, problems
+    spec.pop("required", None)
+    spec.pop("choices", None)
+    spec.pop("pattern", None)
+    for segment in flags:
+        lowered = segment.lower()
+        if lowered.startswith("required"):
+            _, _, flag_value = segment.partition("=")
+            spec["required"] = (flag_value.strip().lower() not in {"false", "no"}
+                               if flag_value.strip() else True)
+        elif lowered.startswith("choices"):
+            _, _, listed = segment.partition("=")
+            choices = [choice.strip() for choice in listed.split(",") if choice.strip()]
+            if choices:
+                spec["choices"] = choices
+    if flags:
+        marker = re.search(r"(?:^|;)\s*pattern\s*=", line[len(head):], re.IGNORECASE)
+        if marker is not None:
+            pattern = line[len(head):][marker.end():].strip()
+            if pattern:
+                spec["pattern"] = pattern
+    return param_name, spec, problems
 
 
 class RuleRow(ComposedRows, Vertical):
@@ -200,6 +315,108 @@ class RuleRow(ComposedRows, Vertical):
             document["value"] = actions.coerce_scalar(value_text)
         if "code" not in document:
             document["code"] = code
+        return document
+
+
+class CommandRow(ComposedRows, Vertical):
+    """One step of a recipe ``commands`` chain.
+
+    A block's whole vocabulary is ``arguments`` (required, non-empty),
+    ``version_args`` and ``version_pattern``: the row starts from a copy of the
+    block it was built from and only overwrites what it models, so any key a
+    future core adds survives the round-trip untouched.  ``arguments`` is one
+    argument per line, mirroring the recipe-level editor.
+
+    The first row is the recipe's *logical owner*: the core requires its program
+    to be the tool's executable unless the block declares its own
+    ``version_args`` (the recorded tool version and the cache identity's version
+    component describe that program).  The title says so.
+    """
+
+    class RemoveRequested(Message):
+        def __init__(self, row: CommandRow) -> None:
+            super().__init__()
+            self.row = row
+
+        @property
+        def control(self) -> CommandRow:
+            return self.row
+
+    def __init__(self, block: dict[str, Any] | None = None, index: int = 1) -> None:
+        super().__init__(classes="command-row")
+        self.original = dict(block or {})
+        self.index = index
+
+    def on_mount(self) -> None:
+        self.mark_form_ready()
+
+    def compose(self) -> ComposeResult:
+        version_args = self.original.get("version_args")
+        with Horizontal(classes="command-inputs"):
+            yield Static(self._title(), classes="command-title")
+            yield Button("✕", classes="command-remove")
+        yield Static("arguments (one per line; required)", classes="modal-label")
+        yield TextArea(
+            "\n".join(str(arg) for arg in self.original.get("arguments") or []),
+            classes="command-arguments",
+        )
+        yield Input(
+            value=(
+                ", ".join(str(item) for item in version_args)
+                if isinstance(version_args, list) else ""
+            ),
+            placeholder="version_args (comma separated; blank = inherit the tool's probe)",
+            classes="command-version-args",
+        )
+        yield Input(
+            value=str(self.original.get("version_pattern", "") or ""),
+            placeholder="version_pattern (regex; requires version_args)",
+            classes="command-version-pattern",
+        )
+
+    def _title(self) -> str:
+        owner = "  (logical owner)" if self.index == 1 else ""
+        return f"step {self.index}{owner}"
+
+    def set_index(self, index: int) -> None:
+        """Renumber after a removal, so the owner label follows the first row."""
+        self.index = index
+        if self.form_ready:  # a row still composing has no title to update yet
+            self.query_one(".command-title", Static).update(self._title())
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.has_class("command-remove"):
+            event.stop()
+            self.post_message(self.RemoveRequested(self))
+
+    def command_document(self) -> dict[str, Any]:
+        """Compose the block, preserving original key order and unknown keys."""
+        arguments = [
+            line.strip()
+            for line in self.query_one(".command-arguments", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        version_text = self.query_one(".command-version-args", Input).value.strip()
+        version_args = [part.strip() for part in version_text.split(",") if part.strip()]
+        version_pattern = self.query_one(".command-version-pattern", Input).value.strip()
+        document: dict[str, Any] = {}
+        for key, original_value in self.original.items():
+            if key == "arguments":
+                document[key] = arguments
+            elif key == "version_args":
+                if version_args:
+                    document[key] = version_args
+            elif key == "version_pattern":
+                if version_pattern:
+                    document[key] = version_pattern
+            else:
+                document[key] = original_value
+        if "arguments" not in document:
+            document["arguments"] = arguments
+        if version_args and "version_args" not in document:
+            document["version_args"] = version_args
+        if version_pattern and "version_pattern" not in document:
+            document["version_pattern"] = version_pattern
         return document
 
 
@@ -440,6 +657,100 @@ class RecipeSaveModal(WriteModal):
         self.dismiss(payload)
 
 
+class CondaDefaultsSaveModal(WriteModal):
+    """Confirm a save of the top-level ``conda:`` section (formatting is normalized)."""
+
+    def __init__(self, project: Project, document: dict[str, Any]) -> None:
+        super().__init__("Save conda defaults")
+        self.project = project
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no conda keys)"
+        yield Static(
+            f"writes the top-level conda: section of config/tools.yaml ({keys}; a "
+            "blanked field falls back to the built-in default) and records one "
+            "snapshot per recipe whose resolved launcher changes.  NOTE: saving "
+            "normalizes the file's formatting and drops hand-written comments; "
+            "every version is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return "config/tools.yaml → conda: defaults + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tools_defaults(self.project, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify("conda defaults: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                "saved conda defaults"
+                + (f" (snapshots: {names})" if names else " (no launcher changed)")
+            )
+        self.dismiss(payload)
+
+
+#: Run-method modes the tool editor offers.  A blank selection means the
+#: ``run_method`` key is absent, so the executable runs directly.
+TOOL_RUN_METHOD_OPTIONS = [
+    ("command line (string)", "string"),
+    ("conda", "conda"),
+    ("prefix", "prefix"),
+    ("path (no launcher)", "path"),
+]
+
+
+class ToolSaveModal(WriteModal):
+    """Confirm a tool-level save inside tools.yaml (formatting is normalized)."""
+
+    def __init__(
+            self,
+            project: Project,
+            tool_name: str,
+            document: dict[str, Any],
+    ) -> None:
+        super().__init__(f"Save tool {tool_name}")
+        self.project = project
+        self.tool_name = tool_name
+        self.document = document
+
+    def compose_form(self) -> Iterable[Any]:
+        keys = ", ".join(sorted(self.document)) or "(no tool-level keys)"
+        yield Static(
+            f"writes config/tools.yaml tool {self.tool_name} ({keys}; blanked "
+            "fields are removed) and records one snapshot per recipe, so "
+            "`operon recipes history` shows the change.  NOTE: saving normalizes "
+            "the file's formatting and drops hand-written comments; every version "
+            "is preserved in recipe_snapshots.",
+            classes="modal-info",
+        )
+
+    def command_text(self) -> str:
+        return f"config/tools.yaml → tool {self.tool_name} + recipe_snapshots rows"
+
+    def confirm(self) -> None:
+        self.run_action(
+            lambda: actions.save_tool(self.project, self.tool_name, self.document)
+        )
+
+    def on_action_success(self, payload: Any) -> None:
+        if payload.get("unchanged"):
+            self.app.notify(f"{self.tool_name}: unchanged — nothing written")
+        else:
+            names = ", ".join(payload.get("recipes") or [])
+            self.app.notify(
+                f"saved tool {self.tool_name}"
+                + (f" (snapshots: {names})" if names else "")
+            )
+        self.dismiss(payload)
+
+
 class ConfigPanel(Panel):
     """Config screen: profile editors (qc + classification + coverage) + tools/recipes editor."""
 
@@ -459,6 +770,15 @@ class ConfigPanel(Panel):
         self.current_recipe: str | None = None
         self.recipe_tool: str | None = None
         self.recipe_doc: dict[str, Any] | None = None
+        self.current_tool: str | None = None
+        self.tool_doc: dict[str, Any] | None = None
+        # The chain the form currently holds.  Rows mount a turn late, so this
+        # is the panel's own count and never read back from the DOM.
+        self._command_row_count = 0
+        # `slurm` keys the form does not model, carried verbatim into the save.
+        self._slurm_extras: dict[str, Any] = {}
+        # Parameter lines the grammar could not read, reported on save.
+        self._parameter_problems: list[str] = []
         self.checking_tools = False
 
     # -- layout -----------------------------------------------------------
@@ -560,9 +880,59 @@ class ConfigPanel(Panel):
                             yield Button("History", id="coverage-history", disabled=True)
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
+                    yield Static("Conda defaults (every tool that inherits them)",
+                                 classes="modal-label")
+                    yield Input(placeholder="conda binary (blank = conda)",
+                                id="conda-bin")
+                    yield Static("conda run args (one token per line; blank = "
+                                 "run --no-capture-output)", classes="modal-label")
+                    yield TextArea(id="conda-run-args")
+                    yield Static("", id="conda-note")
+                    yield Static("", id="conda-save-error")
                     with Horizontal(classes="config-buttons"):
+                        yield Button("Save defaults", id="conda-save", disabled=True)
                         yield Button("Check tools", id="tools-check")
                     yield DataTable(id="tools-table", cursor_type="row")
+                    with VerticalScroll(id="tool-editor"):  # pragma: no branch
+                        yield Static("select a tool", id="tool-heading")
+                        yield Static("Description", classes="modal-label")
+                        yield Input(id="tool-description")
+                        yield Static("Executable (blank = tool name)", classes="modal-label")
+                        yield Input(id="tool-executable")
+                        yield Static("Version args (one token per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="tool-version-args")
+                        yield Static("Version pattern (regular expression)",
+                                     classes="modal-label")
+                        yield Input(id="tool-version-pattern")
+                        yield Static("Run method", classes="modal-label")
+                        yield Select(TOOL_RUN_METHOD_OPTIONS, id="tool-run-method",
+                                     prompt="no run_method (run directly)",
+                                     allow_blank=True)
+                        with Vertical(id="tool-run-string-row"):
+                            yield Static("Launcher command (run verbatim)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-string")
+                        with Vertical(id="tool-run-conda-row"):
+                            yield Static("conda environment (required)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-conda-env")
+                            yield Static("conda binary (blank = top-level conda.bin)",
+                                         classes="modal-label")
+                            yield Input(id="tool-run-conda-bin")
+                            yield Static("conda run args (one token per line; blank = "
+                                         "top-level conda.run_args)",
+                                         classes="modal-label")
+                            yield TextArea(id="tool-run-conda-args")
+                        with Vertical(id="tool-run-prefix-row"):
+                            yield Static("Launcher prefix (one token per line)",
+                                         classes="modal-label")
+                            yield TextArea(id="tool-run-prefix")
+                        yield Static("", id="tool-extras-note")
+                        yield Static("", id="tool-save-error")
+                        with Horizontal(classes="config-buttons"):  # pragma: no branch
+                            yield Button("Save tool", id="tool-save",
+                                         variant="primary", disabled=True)
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
                     with Horizontal(classes="config-buttons"):
@@ -586,19 +956,56 @@ class ConfigPanel(Panel):
                                      id="recipe-output-kind", allow_blank=True)
                         yield Input(placeholder="database", id="recipe-database")
                         yield Input(placeholder="database_version", id="recipe-database-version")
+                        yield Select([(mode, mode) for mode in DATABASE_MODES],
+                                     id="recipe-database-mode", allow_blank=True)
+                        yield Input(placeholder="database_checksum (sha256 hex; optional)",
+                                    id="recipe-database-checksum")
                         yield Static("Environment policy (blank = key absent; core default "
                                      "'warn')", classes="modal-label")
                         yield Select([(policy, policy) for policy in ENVIRONMENT_POLICIES],
                                      id="recipe-environment-policy", allow_blank=True)
+                        yield Static("Slurm overrides (optional; merges over "
+                                     "execution.slurm — unknown keys preserved)",
+                                     classes="modal-label")
+                        yield Input(placeholder="slurm partition",
+                                    id="recipe-slurm-partition")
+                        yield Input(placeholder="slurm time (e.g. 24:00:00)",
+                                    id="recipe-slurm-time")
+                        yield Input(placeholder="slurm mem_gb", id="recipe-slurm-mem-gb")
+                        yield Input(placeholder="slurm poll_interval (seconds)",
+                                    id="recipe-slurm-poll-interval")
+                        yield Select([("true", "true"), ("false", "false")],
+                                     id="recipe-slurm-array", allow_blank=True)
+                        yield Input(placeholder="slurm array_concurrency",
+                                    id="recipe-slurm-array-concurrency")
+                        yield Static("slurm extra_sbatch (one sbatch flag per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="recipe-slurm-extra-sbatch")
+                        yield Static("slurm setup_commands (one command per line)",
+                                     classes="modal-label")
+                        yield TextArea(id="recipe-slurm-setup-commands")
+                        yield Static("", id="recipe-slurm-note")
                         yield Input(placeholder="output_subdir", id="recipe-output-subdir")
                         yield Input(placeholder="output_suffix", id="recipe-output-suffix")
+                        yield Input(placeholder="output_name (template, e.g. "
+                                               "${file_id}.out)", id="recipe-output-name")
                         yield Static("Arguments (one per line; ${placeholders} stay as-is)",
                                      classes="modal-label")
                         yield TextArea(id="recipe-arguments")
-                        yield Static("Runtime parameters (name=default per line; other spec "
-                                     "keys preserved)", classes="modal-label")
+                        yield Static("Runtime parameters (name=default per line, then "
+                                     "optional `; required`, `; choices=a,b` and "
+                                     "`; pattern=<regex>` — pattern takes the rest of the "
+                                     "line; other spec keys preserved)",
+                                     classes="modal-label")
                         yield TextArea(id="recipe-parameters")
                         yield Static("", id="recipe-parameters-note")
+                        yield Static("Commands chain (optional; mutually exclusive with "
+                                     "arguments — every step runs in the parent tool's single "
+                                     "run_method environment)", classes="modal-label")
+                        yield MountTracked(id="recipe-command-list")
+                        with Horizontal(classes="config-buttons"):
+                            yield Button("Add step", id="recipe-add-command")
+                        yield Static("", id="recipe-command-note")
                         yield Static("Result parser", classes="modal-label")
                         yield Select([(parser, parser) for parser in RESULT_PARSERS],
                                      value="none", id="recipe-result-parser", allow_blank=False)
@@ -671,6 +1078,7 @@ class ConfigPanel(Panel):
             suffix = f"  · {tag}" if tag else ""
             list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}")))
 
+        self._render_conda_defaults()
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
         for tool in self.tools:
@@ -1161,6 +1569,259 @@ class ConfigPanel(Panel):
         if name:
             self._load_profile(name)
 
+    # -- tool editor --------------------------------------------------------
+
+    #: Tool-level keys the editor owns; everything else in the tool mapping is
+    #: either shown read-only (recipes) or preserved verbatim (extras note).
+    TOOL_MODELED_KEYS = ("description", "executable", "run_method", "version_args",
+                         "version_pattern")
+
+    #: Sub-keys the run-method form owns inside a ``run_method`` mapping.  Any
+    #: other sub-key of the parsed mapping survives a conda-mode edit.
+    RUN_METHOD_SUBKEYS = ("mode", "env", "bin", "args", "prefix")
+
+    def _load_tool(self, name: str) -> None:
+        try:
+            info = data.get_tool_document(self.project, name)
+        except ValidationError as exc:
+            self.app.notify(str(exc), severity="error")
+            return
+        self.current_tool = name
+        self.tool_doc = info["document"]
+        self._render_tool_form(name, info["document"])
+
+    def _render_tool_form(self, name: str, document: dict[str, Any]) -> None:
+        extras = {
+            key: value for key, value in document.items()
+            if key not in self.TOOL_MODELED_KEYS and key != "recipes"
+        }
+        self.query_one("#tool-heading", Static).update(name)
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
+        version_args = document.get("version_args") or []
+        args = version_args if isinstance(version_args, list) else [version_args]
+        self.query_one("#tool-version-args", TextArea).text = "\n".join(
+            str(arg) for arg in args
+        )
+        self._render_run_method(document.get("run_method"))
+        note = self.query_one("#tool-extras-note", Static)
+        messages = [_extras_note(extras)] if extras else []
+        if self._run_method_extras:
+            messages.append(
+                "run_method keeps " + ", ".join(self._run_method_extras)
+            )
+        note.update(Text("; ".join(messages), style="dim") if messages else "")
+        self.query_one("#tool-save-error", Static).update("")
+        self.query_one("#tool-save", Button).disabled = False
+
+    def _render_run_method(self, run_method: Any) -> None:
+        """Fill the run-method widgets; the mode Select drives which rows show."""
+        method = run_method if isinstance(run_method, dict) else {}
+        self._run_method_extras = sorted(set(method) - set(self.RUN_METHOD_SUBKEYS))
+        if isinstance(run_method, str) and run_method:
+            mode = "string"
+        elif method:
+            mode = str(method.get("mode", "conda") or "conda")
+        else:
+            mode = ""  # no run_method key: the executable runs directly
+        self.query_one("#tool-run-string", Input).value = (
+            run_method if isinstance(run_method, str) else ""
+        )
+        self.query_one("#tool-run-conda-env", Input).value = str(
+            method.get("env", "") or "")
+        self.query_one("#tool-run-conda-bin", Input).value = str(
+            method.get("bin", "") or "")
+        self.query_one("#tool-run-conda-args", TextArea).text = "\n".join(
+            self._as_token_list(method.get("args"))
+        )
+        self.query_one("#tool-run-prefix", TextArea).text = "\n".join(
+            self._as_token_list(method.get("prefix"))
+        )
+        select = self.query_one("#tool-run-method", Select)
+        select.value = mode if mode else Select.NULL
+        self._sync_tool_run_method()
+
+    @staticmethod
+    def _as_token_list(value: Any) -> list[str]:
+        if not value:
+            return []
+        tokens = value if isinstance(value, list) else [value]
+        return [str(token) for token in tokens]
+
+    def _sync_tool_run_method(self) -> None:
+        """Show only the rows of the selected run-method mode."""
+        value = self.query_one("#tool-run-method", Select).value
+        mode = "" if value is Select.NULL else str(value)
+        self.query_one("#tool-run-string-row", Vertical).display = mode == "string"
+        self.query_one("#tool-run-conda-row", Vertical).display = mode == "conda"
+        self.query_one("#tool-run-prefix-row", Vertical).display = mode == "prefix"
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "tool-run-method":
+            self._sync_tool_run_method()
+
+    def _compose_tool_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tool writes as a removed key (so a blank
+        # executable falls back to the tool name).
+        document: dict[str, Any] = {}
+        for key, widget_id in (("description", "#tool-description"),
+                               ("executable", "#tool-executable"),
+                               ("version_pattern", "#tool-version-pattern")):
+            value = self.query_one(widget_id, Input).value.strip()
+            if value:
+                document[key] = value
+        args = [
+            line.strip()
+            for line in self.query_one("#tool-version-args", TextArea).text.splitlines()
+            if line.strip()
+        ]
+        if args:
+            document["version_args"] = args
+        run_method = self._compose_run_method()
+        if run_method is not None:
+            document["run_method"] = run_method
+        return document
+
+    def _compose_run_method(self) -> Any:
+        """The run_method the form holds, or None when the key is dropped."""
+        value = self.query_one("#tool-run-method", Select).value
+        mode = "" if value is Select.NULL else str(value)
+        if not mode:  # blank: no run_method key, the executable runs directly
+            return None
+        if mode == "string":
+            return self.query_one("#tool-run-string", Input).value.strip()
+        if mode == "prefix":
+            return {"mode": "prefix", "prefix": self._text_lines("#tool-run-prefix")}
+        if mode == "path":
+            return {"mode": "path"}
+        original = (self.tool_doc or {}).get("run_method")
+        method: dict[str, Any] = {}
+        if isinstance(original, dict) and str(original.get("mode", "")) == "conda":
+            method.update(original)  # unmodeled sub-keys survive a conda edit
+        method["mode"] = "conda"
+        method["env"] = self.query_one("#tool-run-conda-env", Input).value.strip()
+        conda_bin = self.query_one("#tool-run-conda-bin", Input).value.strip()
+        if conda_bin:
+            method["bin"] = conda_bin
+        else:
+            method.pop("bin", None)  # blank inherits the top-level conda.bin
+        conda_args = self._text_lines("#tool-run-conda-args")
+        if conda_args:
+            method["args"] = conda_args
+        else:
+            method.pop("args", None)  # blank inherits the top-level conda.run_args
+        return method
+
+    def _text_lines(self, widget_id: str) -> list[str]:
+        """A TextArea field as one token per non-empty line."""
+        return [
+            line.strip()
+            for line in self.query_one(widget_id, TextArea).text.splitlines()
+            if line.strip()
+        ]
+
+    def _start_tool_save(self) -> None:
+        if not self.current_tool or self.tool_doc is None:
+            return
+        error = self.query_one("#tool-save-error", Static)
+        document = self._form_document(self._compose_tool_document, error)
+        if document is None:
+            return
+        pattern = str(document.get("version_pattern", "") or "")
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error.update(Text(
+                    f"tool {self.current_tool!r}: version_pattern is not a valid "
+                    f"regular expression ({exc})",
+                    style="red",
+                ))
+                return
+        run_method = document.get("run_method")
+        if run_method == "":
+            error.update(Text(
+                f"tool {self.current_tool!r}: the command-line run method needs "
+                "a command", style="red",
+            ))
+            return
+        if isinstance(run_method, dict):
+            if run_method.get("mode") == "conda" and not run_method.get("env"):
+                error.update(Text(
+                    f"tool {self.current_tool!r}: the conda run method requires "
+                    "an environment (or blank for no run_method)", style="red",
+                ))
+                return
+            if run_method.get("mode") == "prefix" and not run_method.get("prefix"):
+                error.update(Text(
+                    f"tool {self.current_tool!r}: the prefix run method requires "
+                    "at least one token (or blank for no run_method)", style="red",
+                ))
+                return
+        self.app.push_screen(
+            ToolSaveModal(self.project, self.current_tool, document), self._on_tool_saved,
+        )
+
+    def _on_tool_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+        name = self.current_tool
+        if name:
+            self._load_tool(name)
+
+    # -- conda defaults editor ----------------------------------------------
+
+    def _render_conda_defaults(self) -> None:
+        try:
+            document = data.get_tools_defaults(self.project)["document"]
+        except ValidationError as exc:
+            self.query_one("#conda-note", Static).update(Text(str(exc), style="red"))
+            self.query_one("#conda-save", Button).disabled = True
+            return
+        extras = {
+            key: value for key, value in document.items()
+            if key not in actions.MODELED_CONDA_KEYS
+        }
+        self.query_one("#conda-bin", Input).value = str(document.get("bin", "") or "")
+        self.query_one("#conda-run-args", TextArea).text = "\n".join(
+            self._as_token_list(document.get("run_args"))
+        )
+        note = self.query_one("#conda-note", Static)
+        note.update(Text(_extras_note(extras), style="dim") if extras else "")
+        self.query_one("#conda-save-error", Static).update("")
+        self.query_one("#conda-save", Button).disabled = False
+
+    def _compose_conda_document(self) -> dict[str, Any]:
+        # The document is the complete state of the modeled keys: a blanked
+        # field is omitted, which save_tools_defaults writes as a removed key —
+        # the core then falls back to its built-in default.
+        document: dict[str, Any] = {}
+        binary = self.query_one("#conda-bin", Input).value.strip()
+        if binary:
+            document["bin"] = binary
+        args = self._text_lines("#conda-run-args")
+        if args:
+            document["run_args"] = args
+        return document
+
+    def _start_conda_save(self) -> None:
+        error = self.query_one("#conda-save-error", Static)
+        document = self._form_document(self._compose_conda_document, error)
+        if document is None:
+            return
+        self.app.push_screen(
+            CondaDefaultsSaveModal(self.project, document), self._on_conda_saved,
+        )
+
+    def _on_conda_saved(self, payload: Any) -> None:
+        if not payload:
+            return
+        self.reload()
+
     # -- recipe editor ------------------------------------------------------
 
     def _render_recipe_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
@@ -1184,6 +1845,7 @@ class ConfigPanel(Panel):
                 ("output_kind", "#recipe-output-kind", ARTIFACT_KINDS),
                 ("environment_policy", "#recipe-environment-policy", ENVIRONMENT_POLICIES),
                 ("hmmer_mode", "#recipe-hmmer-mode", HMMER_MODES),
+                ("database_mode", "#recipe-database-mode", DATABASE_MODES),
         ):
             value = str(document.get(key, "") or "")
             select = self.query_one(widget_id, Select)
@@ -1196,10 +1858,14 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-database", Input).value = str(document.get("database", "") or "")
         self.query_one("#recipe-database-version", Input).value = str(
             document.get("database_version", "") or "")
+        self.query_one("#recipe-database-checksum", Input).value = str(
+            document.get("database_checksum", "") or "")
         self.query_one("#recipe-output-subdir", Input).value = str(
             document.get("output_subdir", "") or "")
         self.query_one("#recipe-output-suffix", Input).value = str(
             document.get("output_suffix", "") or "")
+        self.query_one("#recipe-output-name", Input).value = str(
+            document.get("output_name", "") or "")
         arguments = document.get("arguments", []) or []
         self.query_one("#recipe-arguments", TextArea).text = "\n".join(str(a) for a in arguments)
         parameters = document.get("parameters", {}) or {}
@@ -1207,9 +1873,8 @@ class ConfigPanel(Panel):
         preserved_specs = []
         for param_name, spec in parameters.items():
             spec = spec if isinstance(spec, dict) else {}
-            default = spec.get("default")
-            lines.append(f"{param_name}={'' if default is None else default}")
-            extra_keys = sorted(set(spec) - {"default"})
+            lines.append(_format_parameter_line(param_name, spec))
+            extra_keys = sorted(set(spec) - PARAMETER_MODELED_KEYS)
             if extra_keys:
                 preserved_specs.append(f"{param_name}: {', '.join(extra_keys)}")
         self.query_one("#recipe-parameters", TextArea).text = "\n".join(lines)
@@ -1217,6 +1882,8 @@ class ConfigPanel(Panel):
             Text("preserved spec keys — " + "; ".join(preserved_specs), style="dim")
             if preserved_specs else ""
         )
+        self._render_command_rows(document.get("commands"))
+        self._render_slurm_fields(document.get("slurm"))
         parser = str(document.get("result_parser", "none") or "none")
         parser_select = self.query_one("#recipe-result-parser", Select)
         if parser not in RESULT_PARSERS:
@@ -1251,6 +1918,104 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-history", Button).disabled = False
         self.query_one("#recipe-run", Button).disabled = False
 
+    def _render_slurm_fields(self, slurm: Any) -> None:
+        """Fill the slurm overrides, keeping every key the form does not model."""
+        data = slurm if isinstance(slurm, dict) else {}
+        modeled = {name for name, _, _ in RECIPE_SLURM_FIELDS}
+        self._slurm_extras = {key: value for key, value in data.items()
+                             if key not in modeled}
+        for key, widget_id, kind in RECIPE_SLURM_FIELDS:
+            value = data.get(key)
+            if kind == "lines":
+                self.query_one(widget_id, TextArea).text = (
+                    "\n".join(str(item) for item in value)
+                    if isinstance(value, list) else "")
+            elif kind == "tri":
+                self.query_one(widget_id, Select).value = (
+                    Select.NULL if value is None else ("true" if value else "false"))
+            else:
+                self.query_one(widget_id, Input).value = (
+                    "" if value is None else str(value))
+        note = self.query_one("#recipe-slurm-note", Static)
+        note.update(
+            Text("preserved slurm keys — " + ", ".join(sorted(self._slurm_extras)),
+                 style="dim")
+            if self._slurm_extras else ""
+        )
+
+    def _compose_slurm_document(self) -> dict[str, Any]:
+        """The `slurm` block: modeled keys when set, unmodeled keys verbatim.
+
+        A number the widget cannot parse is handed over as text on purpose —
+        `_start_recipe_save` refuses it inline with the core's own wording
+        rather than letting `load_slurm_config` trip over it at run time.
+        """
+        document: dict[str, Any] = dict(self._slurm_extras)
+        for key, widget_id, kind in RECIPE_SLURM_FIELDS:
+            if kind == "lines":
+                lines = [line.strip()
+                         for line in self.query_one(widget_id, TextArea).text.splitlines()
+                         if line.strip()]
+                if lines:
+                    document[key] = lines
+                continue
+            if kind == "tri":
+                value = self.query_one(widget_id, Select).value
+                if value is not Select.NULL:
+                    document[key] = str(value) == "true"
+                continue
+            text = self.query_one(widget_id, Input).value.strip()
+            if not text:
+                continue
+            for kind_type, convert in (("int", int), ("float", float)):
+                if kind == kind_type:
+                    try:
+                        document[key] = convert(text)
+                    except ValueError:
+                        document[key] = text
+                    break
+            else:
+                document[key] = text
+        return document
+
+    def _render_command_rows(self, blocks: Any) -> None:
+        """Rebuild the commands rows from a document (a new recipe, a snapshot)."""
+        rows = [
+            CommandRow(block, index)
+            for index, block in enumerate(blocks if isinstance(blocks, list) else [], start=1)
+            if isinstance(block, dict)
+        ]
+        remount(self.query_one("#recipe-command-list", MountTracked), *rows)
+        # The panel counts the chain itself: the replacement lands a turn later,
+        # so neither the note nor a reader may trust the DOM for it.
+        self._command_row_count = len(rows)
+        self._refresh_command_note()
+
+    def _renumber_command_rows(self) -> None:
+        for index, row in enumerate(self.query(CommandRow).results(CommandRow), start=1):
+            row.set_index(index)
+
+    def _refresh_command_note(self) -> None:
+        """Say what the chain means, and shout when ``arguments`` is also set."""
+        row_count = self._command_row_count
+        arguments = self.query_one("#recipe-arguments", TextArea).text.strip()
+        note_view = self.query_one("#recipe-command-note", Static)
+        if not row_count:
+            note_view.update("")
+            return
+        if arguments:
+            note_view.update(Text(
+                f"'commands' and 'arguments' are mutually exclusive — clear one "
+                f"before saving ({row_count} step(s) defined)",
+                style="yellow",
+            ))
+            return
+        note_view.update(Text(
+            f"{row_count} step(s); every step runs in the parent tool's single "
+            "run_method environment",
+            style="dim",
+        ))
+
     def _load_recipe(self, name: str) -> None:
         try:
             info = data.get_recipe_document(self.project, name)
@@ -1276,20 +2041,15 @@ class ConfigPanel(Panel):
         ]
         original_parameters = original.get("parameters", {}) or {}
         parameters: dict[str, Any] = {}
-        for line in self.query_one("#recipe-parameters", TextArea).text.splitlines():
-            line = line.strip()
-            if not line:
+        self._parameter_problems = []
+        for index, line in enumerate(
+                self.query_one("#recipe-parameters", TextArea).text.splitlines(), start=1):
+            parsed = _parse_parameter_line(line, original_parameters)
+            if parsed is None:
                 continue
-            param_name, separator, default_text = line.partition("=")
-            param_name = param_name.strip()
-            if not param_name:
-                continue
-            spec = dict(original_parameters.get(param_name) or {})
-            if separator and default_text.strip():
-                spec["default"] = actions.coerce_scalar(default_text)
-            else:
-                spec.pop("default", None)
-            parameters[param_name] = spec
+            parameters[parsed[0]] = parsed[1]
+            self._parameter_problems.extend(
+                f"line {index}: {problem}" for problem in parsed[2])
         columns = [
             column.strip()
             for column in self.query_one("#recipe-result-columns", Input).value.split(",")
@@ -1320,8 +2080,10 @@ class ConfigPanel(Panel):
                                ("format", "#recipe-format"),
                                ("database", "#recipe-database"),
                                ("database_version", "#recipe-database-version"),
+                               ("database_checksum", "#recipe-database-checksum"),
                                ("output_subdir", "#recipe-output-subdir"),
                                ("output_suffix", "#recipe-output-suffix"),
+                               ("output_name", "#recipe-output-name"),
                                ("result_glob", "#recipe-result-glob"),
                                ("query_column", "#recipe-query-column"),
                                ("subject_column", "#recipe-subject-column"),
@@ -1337,7 +2099,8 @@ class ConfigPanel(Panel):
         for key, widget_id in (("input_kind", "#recipe-input-kind"),
                                ("output_kind", "#recipe-output-kind"),
                                ("environment_policy", "#recipe-environment-policy"),
-                               ("hmmer_mode", "#recipe-hmmer-mode")):
+                               ("hmmer_mode", "#recipe-hmmer-mode"),
+                               ("database_mode", "#recipe-database-mode")):
             select_value = self.query_one(widget_id, Select).value
             text = "" if select_value is Select.NULL else str(select_value)
             new_values[key] = text if text or key in original else _OMIT
@@ -1345,6 +2108,12 @@ class ConfigPanel(Panel):
             entity_type if entity_type or "entity_type" in original else _OMIT
         )
         new_values["arguments"] = arguments if arguments or "arguments" in original else _OMIT
+        commands = [row.command_document() for row in self.query(CommandRow).results(CommandRow)]
+        new_values["commands"] = commands if commands or "commands" in original else _OMIT
+        slurm_values = self._compose_slurm_document()
+        new_values["slurm"] = (
+            slurm_values if slurm_values or "slurm" in original else _OMIT
+        )
         new_values["parameters"] = parameters if parameters or "parameters" in original else _OMIT
         new_values["result_parser"] = parser
         new_values["result_columns"] = (
@@ -1448,9 +2217,19 @@ class ConfigPanel(Panel):
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "recipes-table" and event.row_key.value is not None:
             self._load_recipe(str(event.row_key.value))
+        elif event.data_table.id == "tools-table" and event.row_key.value is not None:
+            self._load_tool(str(event.row_key.value))
 
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
+
+    async def on_command_row_remove_requested(self, event: CommandRow.RemoveRequested) -> None:
+        event.stop()
+        # Removal is deferred, so renumber and re-count only once it has landed.
+        await event.row.remove()
+        self._command_row_count = max(0, self._command_row_count - 1)
+        self._renumber_command_rows()
+        self._refresh_command_note()
 
     def on_source_row_remove_requested(self, event: SourceRow.RemoveRequested) -> None:
         event.stop()
@@ -1461,6 +2240,10 @@ class ConfigPanel(Panel):
             self, event: ClassificationRuleRow.RemoveRequested) -> None:
         event.stop()
         event.row.remove()
+
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        if event.text_area.id == "recipe-arguments":
+            self._refresh_command_note()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.has_class("source-name"):
@@ -1483,6 +2266,13 @@ class ConfigPanel(Panel):
                 RuleRow({"metric": "", "operator": ">", "value": "", "code": ""}),
                 when_present=".rule-row",
             )
+        elif button_id == "recipe-add-command":
+            container = self.query_one("#recipe-command-list", MountTracked)
+            index = self._command_row_count + 1
+            container.mount_later(CommandRow({"arguments": []}, index),
+                                  when_present=".command-row")
+            self._command_row_count = index
+            self._refresh_command_note()
         elif button_id == "profile-save":
             self._start_profile_save()
         elif button_id == "profile-history":
@@ -1509,6 +2299,10 @@ class ConfigPanel(Panel):
             self._open_profile_history()
         elif button_id == "profile-run":
             self._open_classify()
+        elif button_id == "conda-save":
+            self._start_conda_save()
+        elif button_id == "tool-save":
+            self._start_tool_save()
         elif button_id == "recipe-save":
             self._start_recipe_save()
         elif button_id == "recipe-history":
@@ -1532,7 +2326,7 @@ class ConfigPanel(Panel):
     #: Rows whose own composed subtree must be in the tree before a read.
     EDITOR_ROW_SELECTORS = (
         ".rule-row, .source-row, .classrule-row, .bestby-row, .condition-row, "
-        ".condition-editor"
+        ".condition-editor, .command-row"
     )
 
     def _form_mounting(self) -> bool:
@@ -1718,11 +2512,85 @@ class ConfigPanel(Panel):
     def _start_recipe_save(self) -> None:
         if not self.current_recipe or not self.recipe_tool or self.recipe_doc is None:
             return
-        document = self._compose_recipe_document()
         error = self.query_one("#recipe-save-error", Static)
-        # Mirror the mutual-exclusion check of tools.get_recipe inline, before
+        document = self._form_document(self._compose_recipe_document, error)
+        if document is None:
+            return
+        # Mirror the mutual-exclusion checks of tools.get_recipe inline, before
         # the confirmation modal opens; the save_recipe round-trip still
         # re-validates everything else against the core loader.
+        commands = document.get("commands") or []
+        if commands and document.get("arguments"):
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: 'commands' and 'arguments' "
+                "are mutually exclusive",
+                style="red",
+            ))
+            return
+        for index, block in enumerate(commands, start=1):
+            if not block.get("arguments"):
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: commands block {index} "
+                    "requires a non-empty 'arguments' list",
+                    style="red",
+                ))
+                return
+            if block.get("version_pattern") and not block.get("version_args"):
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: commands block {index} "
+                    "version_pattern requires version_args",
+                    style="red",
+                ))
+                return
+        if self._parameter_problems:
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: "
+                + "; ".join(self._parameter_problems),
+                style="red",
+            ))
+            return
+        for name, spec in (document.get("parameters") or {}).items():
+            if _PARAM_NAME_RE.fullmatch(name) is None:
+                error.update(Text(
+                    f"analysis {self.current_recipe!r}: invalid parameter name {name!r}",
+                    style="red",
+                ))
+                return
+            pattern = str(spec.get("pattern", "") or "")
+            if pattern:
+                try:
+                    re.compile(pattern)
+                except re.error as exc:
+                    error.update(Text(
+                        f"analysis {self.current_recipe!r}: parameter {name!r} pattern "
+                        f"is not a valid regular expression ({exc})",
+                        style="red",
+                    ))
+                    return
+        slurm = document.get("slurm") or {}
+        for key, kind, message in (
+                ("mem_gb", int, "slurm mem_gb must be an integer >= 0"),
+                ("poll_interval", float, "slurm poll_interval must be a number > 0"),
+                ("array_concurrency", int,
+                 "slurm array_concurrency must be a positive integer")):
+            value = slurm.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, kind):
+                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
+                return
+            if (key == "mem_gb" and value < 0) or (key == "array_concurrency" and value < 1) \
+                    or (key == "poll_interval" and value <= 0):
+                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
+                return
+        if (str(document.get("database_mode", "")).strip() == "mutable_cache"
+                and not str(document.get("database_version", "")).strip()):
+            error.update(Text(
+                f"analysis {self.current_recipe!r}: mutable_cache requires an "
+                "explicit database_version",
+                style="red",
+            ))
+            return
         if (str(document.get("file_role", "")).strip()
                 and str(document.get("file_role_prefix", "")).strip()):
             error.update(Text(

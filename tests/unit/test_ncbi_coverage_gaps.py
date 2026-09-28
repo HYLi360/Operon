@@ -17,12 +17,15 @@ import asyncio
 import errno
 import io
 import json
+import os
 import queue
+import random
 import ssl
 import struct
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -996,7 +999,7 @@ def test_no_space_error_walks_up_and_tolerates_usage_failure(tmp_path, monkeypat
 
 def test_open_source_preserves_existing_files(project_db, tmp_path, monkeypatch):
     project, _db = project_db
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *_args: None)
+    monkeypatch.setattr("operon.adapters._ncbi_sources._require_disk_space", lambda *_args: None)
     source = tmp_path / "report.jsonl"
     source.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
     bundle = ncbi._open_source(source, project, True, label="explicit")
@@ -1108,8 +1111,8 @@ def test_download_builds_retrying_session_when_none_supplied(tmp_path, monkeypat
     ],
 )
 def test_download_retries_transient_transport_errors(tmp_path, monkeypatch, error, fragment, calls):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     session = _ScriptedSession([error] * calls)
     with pytest.raises(ValidationError, match="failed after 2 attempt") as caught:
         ncbi.download_ncbi_dataset(
@@ -1121,8 +1124,8 @@ def test_download_retries_transient_transport_errors(tmp_path, monkeypatch, erro
 
 
 def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     primary = _SyncResponse(503)
     fallback = _SyncResponse(503)
     session = _ScriptedSession([primary, fallback])
@@ -1139,7 +1142,7 @@ def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkey
 def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
     payload = _dataset_zip_bytes()
     session = _ScriptedSession([None, _SyncResponse(200, payload)])
-    monkeypatch.setattr(ncbi, "_require_disk_space", lambda *_args: None)
+    monkeypatch.setattr("operon.adapters._ncbi_download._require_disk_space", lambda *_args: None)
     destination = tmp_path / "fallback.zip"
     assert ncbi.download_ncbi_dataset(
         ["GCF_000001405.40"], destination, session=session, max_retries=0,
@@ -1160,8 +1163,8 @@ def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
 @pytest.mark.parametrize("fallback_fails", [False, True])
 def test_download_handles_transport_errors_from_the_fallback_base(
         tmp_path, monkeypatch, error, fallback_fails):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     payload = _dataset_zip_bytes()
     if fallback_fails:
         # Primary answers 404 (prompting the alpha fallback), which then fails.
@@ -1184,8 +1187,8 @@ def test_download_handles_transport_errors_from_the_fallback_base(
 
 
 def test_download_retries_retryable_non_zip_payload(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     session = _ScriptedSession([_SyncResponse(200, b"temporary gateway failure")])
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
@@ -1200,7 +1203,7 @@ def test_download_cleanup_failure_does_not_hide_payload_error(tmp_path, monkeypa
     def broken_unlink(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("simulated unlink failure")
 
-    monkeypatch.setattr(ncbi.os, "unlink", broken_unlink)
+    monkeypatch.setattr(os, "unlink", broken_unlink)
     session = _ScriptedSession([_SyncResponse(200, b"temporary gateway failure")])
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="no recognizable ZIP content"):
@@ -1216,7 +1219,7 @@ def test_download_enospc_is_reported_as_no_space(tmp_path, monkeypatch):
         error.errno = errno.ENOSPC
         raise error
 
-    monkeypatch.setattr(ncbi.os, "fsync", full_disk)
+    monkeypatch.setattr(os, "fsync", full_disk)
     session = _ScriptedSession([_SyncResponse(200, _dataset_zip_bytes())])
     destination = tmp_path / "full.zip"
     with pytest.raises(ValidationError, match="ran out of space") as caught:
@@ -1340,7 +1343,7 @@ def test_aiohttp_download_treats_non_enospc_oserror_as_transient(tmp_path, monke
     def broken_fsync(_fd: int) -> None:
         raise OSError(errno.EIO, "fsync failed")
 
-    monkeypatch.setattr(ncbi.os, "fsync", broken_fsync)
+    monkeypatch.setattr(os, "fsync", broken_fsync)
     _install_fake_aiohttp(monkeypatch, [_FakeAiohttpResponse(200, [_dataset_zip_bytes()])])
     destination = tmp_path / "io-error.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
@@ -1369,8 +1372,8 @@ def test_aiohttp_download_rejects_truncated_readme_package(tmp_path, monkeypatch
 
 
 def test_download_retries_body_errors_during_transfer(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     body_error = requests.exceptions.ChunkedEncodingError("body truncated")
     session = _ScriptedSession([
         _SyncResponse(200, body_error=body_error),
@@ -1387,8 +1390,8 @@ def test_download_retries_body_errors_during_transfer(tmp_path, monkeypatch):
 
 
 def test_download_retries_connection_error_raised_while_closing(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     payload = _dataset_zip_bytes()
 
     class FlakyCloseResponse(_SyncResponse):
@@ -1423,7 +1426,7 @@ def test_parallel_download_skips_entries_without_payload_or_error(tmp_path, monk
     async def fake_runner(**kwargs: Any) -> None:
         kwargs["completed_queue"].put((kwargs["batches"][0], None, None))
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", fake_runner)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
     consumed: list[Any] = []
     assert ncbi.download_ncbi_datasets_parallel(
         [["GCF_000001405.40"]], tmp_path, max_workers=1,
@@ -1440,7 +1443,7 @@ def test_parallel_download_truncates_long_failure_details(tmp_path, monkeypatch)
             batch = [f"GCF_{index:09d}.1"]
             kwargs["completed_queue"].put((batch, None, ValidationError("not found")))
 
-    monkeypatch.setattr(ncbi, "_download_batches_async", fake_runner)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
     batches = [[f"GCF_{index:09d}.1"] for index in range(failures)]
     with pytest.raises(ValidationError) as caught:
         ncbi.download_ncbi_datasets_parallel(
@@ -1467,7 +1470,7 @@ def test_download_batches_rechecks_cancellation_after_waiting_for_a_worker(tmp_p
         Path(destination).write_bytes(b"zip")
         return Path(destination)
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_download)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_download)
     completed: queue.Queue[Any] = queue.Queue()
     asyncio.run(ncbi._download_batches_async(
         batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
@@ -1506,7 +1509,7 @@ def test_download_batches_cancel_pending_tasks_after_a_failure(tmp_path, monkeyp
                 raise RuntimeError("cancel probe")
             return False
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", blocked)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", blocked)
     with pytest.raises(RuntimeError, match="cancel probe"):
         asyncio.run(ncbi._download_batches_async(
             batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
@@ -1529,7 +1532,7 @@ def test_parallel_download_external_cancel_event_stops_before_download(tmp_path,
     def fail_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("a download was attempted despite the set cancel event")
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fail_if_called)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fail_if_called)
     consumed: list[tuple[Any, Any]] = []
     cancel_event = threading.Event()
     cancel_event.set()
@@ -1570,7 +1573,7 @@ def test_parallel_download_without_event_keeps_internal_cancellation(tmp_path, m
     async def fake_batch_download(batch, destination, **_kwargs):
         Path(destination).write_bytes(b"zip")
 
-    monkeypatch.setattr(ncbi, "_download_batch_aiohttp", fake_batch_download)
+    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_batch_download)
     consumed: list[tuple[Any, Any]] = []
     completed = ncbi.download_ncbi_datasets_parallel(
         [["GCF_000000001.1"]],

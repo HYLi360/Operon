@@ -29,6 +29,7 @@ from operon.tui.app import OperonApp
 from operon.tui.screens.common import ErrorDialog
 from operon.tui.screens.files import FilesPanel
 from operon.tui.screens.files_ops import PipelineModal
+from tests.tui_helpers import click as _click
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
@@ -108,16 +109,6 @@ async def _wait_until(predicate: Callable[[], bool], description: str,
         if loop.time() > deadline:
             raise TimeoutError(f"UI did not {description} within {timeout}s")
         await asyncio.sleep(0.05)
-
-
-async def _click(pilot, selector: str) -> None:
-    """Click a widget, clearing a lingering press effect first (ODR-0024)."""
-    widget = pilot.app.screen.query_one(selector)
-    widget.scroll_visible(animate=False)
-    await pilot.pause()
-    if isinstance(widget, Button) and widget.has_class("-active"):
-        await _wait_until(lambda: not widget.has_class("-active"), f"{selector} to settle")
-    await pilot.click(selector)
 
 
 def _static_text(widget: Static) -> str:
