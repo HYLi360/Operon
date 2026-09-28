@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import queue
+import random
 import ssl
 import struct
 import sys
 import threading
+import time
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -289,15 +292,7 @@ def test_biosample_and_metadata_extraction_accept_alternate_keys():
     assert metadata["annotation"]["provider"] == "RefSeq"
 
 
-def test_zip_validation_extraction_and_diagnostics(tmp_path: Path):
-    package = tmp_path / "package.zip"
-    with zipfile.ZipFile(package, "w") as archive:
-        archive.writestr("dir/", "")
-        archive.writestr("dir/file.txt", "ok")
-    destination = tmp_path / "out"
-    ncbi._safe_extract_zip(package, destination)
-    assert (destination / "dir" / "file.txt").read_text() == "ok"
-
+def test_zip_validation_and_diagnostics(tmp_path: Path):
     symlink = zipfile.ZipInfo("link")
     symlink.create_system = 3
     symlink.external_attr = 0o120777 << 16
@@ -337,8 +332,8 @@ def test_zip_validation_extraction_and_diagnostics(tmp_path: Path):
 
 
 def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _a, _b: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _a, _b: 0.0)
     attempts = []
 
     def fail_once(**kwargs):
@@ -603,7 +598,7 @@ def test_interruptible_retry_sleep_cancel_and_completion(monkeypatch):
     # Avoid monkeypatching asyncio.sleep recursively by using a small custom awaitable.
     async def no_sleep(_seconds):
         return None
-    monkeypatch.setattr(ncbi.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
     asyncio.run(ncbi._interruptible_retry_sleep(0.3, event))
     event.set()
     with pytest.raises(ncbi._DownloadCancelled):
@@ -768,7 +763,7 @@ def test_aiohttp_download_cancellation_during_transfer_and_no_space(tmp_path, mo
         error = OSError("full")
         error.errno = 28
         raise error
-    monkeypatch.setattr(ncbi.os, "fsync", no_space)
+    monkeypatch.setattr(os, "fsync", no_space)
     with pytest.raises(ValidationError, match="ran out of space"):
         asyncio.run(ncbi._download_batch_aiohttp(
             **_download_kwargs(tmp_path / "full.zip")

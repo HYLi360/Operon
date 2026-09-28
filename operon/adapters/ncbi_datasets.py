@@ -7,21 +7,17 @@ streamed NCBI Datasets package download in front of that pipeline.
 """
 
 # Facade module: run orchestration plus explicit re-exports of the internal
-# _ncbi_model/_ncbi_sources/_ncbi_download/_ncbi_plan submodules for the CLI, TUI
-# and tests (F401); asyncio/os/random/shutil/time are also stdlib test patch points.
-# ruff: noqa: F401
+# _ncbi_model/_ncbi_sources/_ncbi_download/_ncbi_plan submodules for the CLI, the
+# TUI and the tests.  Every deliberate re-export is listed in __all__ below, so
+# ruff's F401 check stays meaningful for everything else in this module.
 from __future__ import annotations
 
-import asyncio
 import errno
 import hashlib
 import json
-import os
-import random
-import shutil
+import shutil  # noqa: F401 - the adapter tests patch shutil.* through this namespace
 import tempfile
 import threading
-import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -104,12 +100,85 @@ from ._ncbi_sources import (
     _open_source,
     _preserve_source,
     _require_disk_space,
-    _safe_extract_zip,
     _validate_zip_info,
     _zip_package_diagnostic,
     discover_dataset_assets,
     load_dataset_reports,
 )
+
+# Deliberate re-export surface for the CLI (operon/cli.py), the TUI
+# (operon/tui/actions.py), operon/ncbi_reconcile.py and the tests.  Kept in
+# the sorted order ruff's RUF022 expects.
+__all__ = [
+    "DEFAULT_INCLUDES",
+    "INCLUDE_TYPES",
+    "NCBI_DATASETS_API_FALLBACK",
+    "NCBI_SOURCE_FILE_ROLES",
+    "VERSIONED_ACCESSION_RE",
+    "DatasetAsset",
+    "ImportPlan",
+    "SourceBundle",
+    "_DownloadCancelled",
+    "_PlanBuilder",
+    "_accession_from_path",
+    "_accession_version",
+    "_adapter_schema",
+    "_annotation_identity",
+    "_apply_plan",
+    "_assembly_asset_role",
+    "_assembly_namespace",
+    "_asset_role",
+    "_asset_sha256",
+    "_canonical_accession",
+    "_chunks",
+    "_collect_accessions",
+    "_date_only",
+    "_deduplicate_reports",
+    "_deep_merge",
+    "_download_batch_aiohttp",
+    "_download_batches_async",
+    "_download_ncbi_dataset_once",
+    "_extract_metadata",
+    "_file_satisfies_include",
+    "_find_archived_assembly",
+    "_float_or_none",
+    "_format_bytes",
+    "_ingest_dataset_asset",
+    "_integer_or_none",
+    "_interruptible_retry_sleep",
+    "_lat_lon",
+    "_local_zip_entry_names",
+    "_mapping",
+    "_merge_nonempty",
+    "_no_space_error",
+    "_normalize_assembly_level",
+    "_normalize_reference_status",
+    "_normalize_sex",
+    "_normalize_source_database",
+    "_open_source",
+    "_pick",
+    "_plan_missing_downloads",
+    "_preflight_assets",
+    "_preserve_source",
+    "_read_report_file",
+    "_read_report_handle",
+    "_read_report_tsv",
+    "_report_has_accession",
+    "_require_disk_space",
+    "_select_canonical_assembly_accession",
+    "_split_accession",
+    "_unique",
+    "_validate_plan_rows",
+    "_validate_zip_info",
+    "_version_tuple",
+    "_zip_package_diagnostic",
+    "discover_dataset_assets",
+    "download_ncbi_dataset",
+    "download_ncbi_datasets_parallel",
+    "fetch_entrez_assembly_reports",
+    "load_dataset_reports",
+    "run_ncbi_datasets_adapter",
+]
 
 
 def run_ncbi_datasets_adapter(

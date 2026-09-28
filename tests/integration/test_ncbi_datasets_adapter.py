@@ -22,7 +22,6 @@ from operon.adapters.ncbi_datasets import (
     _DownloadCancelled,
     _read_report_file,
     _require_disk_space,
-    _safe_extract_zip,
     _zip_package_diagnostic,
     download_ncbi_dataset,
     download_ncbi_datasets_parallel,
@@ -192,11 +191,23 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
     def test_zip_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            self._init(root)
             package = root / "bad.zip"
             with zipfile.ZipFile(package, "w") as archive:
                 archive.writestr("../../outside.txt", "bad")
-            with self.assertRaises(ValidationError):
-                _safe_extract_zip(package, root / "unpack")
+            db = Database(root / "operon.sqlite")
+            try:
+                # Every ZIP member is validated when the package is opened;
+                # a traversal member aborts the run before anything is read
+                # or extracted.
+                with self.assertRaisesRegex(
+                    ValidationError, "unsafe path in NCBI dataset ZIP"
+                ):
+                    run_ncbi_datasets_adapter(
+                        db, load_project(root), inputs=[str(package)],
+                    )
+            finally:
+                db.close()
 
     def test_new_accession_version_creates_a_new_immutable_assembly(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -282,7 +293,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 archive.writestr(f"{prefix}/protein.faa", ">p1\nMK\n")
 
             with patch(
-                "operon.adapters.ncbi_datasets._safe_extract_zip",
+                "zipfile.ZipFile.extractall",
                 side_effect=AssertionError("whole-package extraction must not be used"),
             ):
                 self.assertEqual(

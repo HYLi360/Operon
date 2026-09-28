@@ -332,19 +332,3 @@ def _validate_zip_info(info: zipfile.ZipInfo) -> None:
     mode = info.external_attr >> 16
     if stat.S_ISLNK(mode):
         raise ValidationError(f"symbolic link is not allowed in NCBI dataset ZIP: {info.filename}")
-
-
-def _safe_extract_zip(path: Path, destination: Path) -> None:
-    destination = destination.resolve()
-    with zipfile.ZipFile(path) as archive:
-        for info in _validated_zip_infos(archive):
-            member = PurePosixPath(info.filename)
-            target = (destination / Path(*member.parts)).resolve()
-            if destination != target and destination not in target.parents:  # pragma: no cover
-                raise ValidationError(f"unsafe path in NCBI dataset ZIP: {info.filename}")
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(info) as source, open(target, "wb") as output:
-                shutil.copyfileobj(source, output, length=1024 * 1024)

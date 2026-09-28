@@ -17,12 +17,15 @@ import asyncio
 import errno
 import io
 import json
+import os
 import queue
+import random
 import ssl
 import struct
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -1108,8 +1111,8 @@ def test_download_builds_retrying_session_when_none_supplied(tmp_path, monkeypat
     ],
 )
 def test_download_retries_transient_transport_errors(tmp_path, monkeypatch, error, fragment, calls):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     session = _ScriptedSession([error] * calls)
     with pytest.raises(ValidationError, match="failed after 2 attempt") as caught:
         ncbi.download_ncbi_dataset(
@@ -1121,8 +1124,8 @@ def test_download_retries_transient_transport_errors(tmp_path, monkeypatch, erro
 
 
 def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     primary = _SyncResponse(503)
     fallback = _SyncResponse(503)
     session = _ScriptedSession([primary, fallback])
@@ -1160,8 +1163,8 @@ def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
 @pytest.mark.parametrize("fallback_fails", [False, True])
 def test_download_handles_transport_errors_from_the_fallback_base(
         tmp_path, monkeypatch, error, fallback_fails):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     payload = _dataset_zip_bytes()
     if fallback_fails:
         # Primary answers 404 (prompting the alpha fallback), which then fails.
@@ -1184,8 +1187,8 @@ def test_download_handles_transport_errors_from_the_fallback_base(
 
 
 def test_download_retries_retryable_non_zip_payload(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     session = _ScriptedSession([_SyncResponse(200, b"temporary gateway failure")])
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
@@ -1200,7 +1203,7 @@ def test_download_cleanup_failure_does_not_hide_payload_error(tmp_path, monkeypa
     def broken_unlink(*_args: Any, **_kwargs: Any) -> None:
         raise OSError("simulated unlink failure")
 
-    monkeypatch.setattr(ncbi.os, "unlink", broken_unlink)
+    monkeypatch.setattr(os, "unlink", broken_unlink)
     session = _ScriptedSession([_SyncResponse(200, b"temporary gateway failure")])
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="no recognizable ZIP content"):
@@ -1216,7 +1219,7 @@ def test_download_enospc_is_reported_as_no_space(tmp_path, monkeypatch):
         error.errno = errno.ENOSPC
         raise error
 
-    monkeypatch.setattr(ncbi.os, "fsync", full_disk)
+    monkeypatch.setattr(os, "fsync", full_disk)
     session = _ScriptedSession([_SyncResponse(200, _dataset_zip_bytes())])
     destination = tmp_path / "full.zip"
     with pytest.raises(ValidationError, match="ran out of space") as caught:
@@ -1340,7 +1343,7 @@ def test_aiohttp_download_treats_non_enospc_oserror_as_transient(tmp_path, monke
     def broken_fsync(_fd: int) -> None:
         raise OSError(errno.EIO, "fsync failed")
 
-    monkeypatch.setattr(ncbi.os, "fsync", broken_fsync)
+    monkeypatch.setattr(os, "fsync", broken_fsync)
     _install_fake_aiohttp(monkeypatch, [_FakeAiohttpResponse(200, [_dataset_zip_bytes()])])
     destination = tmp_path / "io-error.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
@@ -1369,8 +1372,8 @@ def test_aiohttp_download_rejects_truncated_readme_package(tmp_path, monkeypatch
 
 
 def test_download_retries_body_errors_during_transfer(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     body_error = requests.exceptions.ChunkedEncodingError("body truncated")
     session = _ScriptedSession([
         _SyncResponse(200, body_error=body_error),
@@ -1387,8 +1390,8 @@ def test_download_retries_body_errors_during_transfer(tmp_path, monkeypatch):
 
 
 def test_download_retries_connection_error_raised_while_closing(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(ncbi.random, "uniform", lambda _low, _high: 0.0)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     payload = _dataset_zip_bytes()
 
     class FlakyCloseResponse(_SyncResponse):
