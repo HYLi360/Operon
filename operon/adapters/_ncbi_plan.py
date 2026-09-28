@@ -469,8 +469,16 @@ def _apply_plan(
         schema: Schema,
         *,
         workflow_run_id: str,
+        normalized: dict[str, list[dict[str, Any]]],
 ) -> None:
-    normalized = _validate_plan_rows(schema, plan)
+    """Persist one batch's plan rows.
+
+    ``normalized`` is the batch's row set already run through
+    :func:`_validate_plan_rows` by the caller; re-validating here would repeat
+    the whole schema normalization once more per batch.  ``schema`` is the
+    same adapter schema with the legacy-field upgrade persisted, so the
+    column projections stay aligned.
+    """
     with db.transaction() as conn:
         db.ensure_metadata_columns(schema)
         for table in ("organisms", "samples", "assemblies", "annotations", "accessions"):

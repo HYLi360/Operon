@@ -561,7 +561,9 @@ def _process_source(
 
         plan = _PlanBuilder(db).build(bundle_reports, bundle_assets)
         _preflight_assets(db, plan)
-        _validate_plan_rows(ctx.preview_schema, plan)
+        # Validate each batch's plan rows exactly once; the normalized rows
+        # feed `_apply_plan` below instead of being recomputed inside it.
+        normalized = _validate_plan_rows(ctx.preview_schema, plan)
         ctx.imported_assembly_ids.update(plan.assembly_ids.values())
         for table, rows in plan.tables.items():
             summary["metadata_rows"][table] += len(rows)
@@ -582,7 +584,8 @@ def _process_source(
         if ctx.persisted_schema is None:
             ctx.persisted_schema = _adapter_schema(project, persist=True)
         _apply_plan(
-            db, project, plan, ctx.persisted_schema, workflow_run_id=ctx.run_id,
+            db, project, plan, ctx.persisted_schema,
+            workflow_run_id=ctx.run_id, normalized=normalized,
         )
         source_file_ids = _archive_plan_assets(ctx, plan)
         return {
