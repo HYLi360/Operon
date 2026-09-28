@@ -41,7 +41,10 @@ scripts/defects.sh add --title "..." --severity medium --component tools \
 `list` 在较宽的终端中显示表格，在窄终端中切换为逐条紧凑布局；`show` 会把记录中的长字段按段落折行。
 颜色只在交互式终端中启用，也可通过 `NO_COLOR` 禁用。
 
-`add` 会分配下一个编号并追加一条 `status: open` 记录，同时保持现有注册表模式和 YAML 存储格式不变。
+`add` 会分配下一个编号并追加一条 `status: open` 记录，然后把目标文件重写为规范存储格式。
+短字符串使用单引号，因此 ISO 日期不会被读回成时间戳。较长的文本写成按统一宽度折行的字面块，
+段落之间恰好一个空行——不能没有，也不能连续两个。`tests/unit/test_defect_registry.py`
+会在注册表文件偏离这一格式时失败。
 
 ## 规则
 
