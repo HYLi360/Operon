@@ -29,26 +29,50 @@ def test_metric_none_text_bool_and_write_skips_none():
     db = DB()
     record = {"file_id": "F", "sha256": "a" * 64, "size_bytes": 1}
     item = qc.metric("annotation", "A", "annotation_basic", "m", 1)
-    qc._write(db, [None, item], record, [{
-        "kind": "assembly", "file_id": "AF", "sha256": "b" * 64, "size_bytes": 1,
-    }])
-    assert len(db.rows) == 1 and db.rows[0]["input_identity"].startswith("input-set:v1:")
+    qc._write(
+        db,
+        [None, item],
+        record,
+        [
+            {
+                "kind": "assembly",
+                "file_id": "AF",
+                "sha256": "b" * 64,
+                "size_bytes": 1,
+            }
+        ],
+    )
+    assert len(db.rows) == 1 and db.rows[0]["input_identity"].startswith(
+        "input-set:v1:"
+    )
 
 
 def test_related_input_descriptor_and_failed_verification(tmp_path, monkeypatch):
     record = {
-        "file_id": "F", "sha256": "a" * 64, "size_bytes": 1,
-        "relative_path": "missing", "file_role": "genome_fasta",
-        "format": "fasta", "compression": "none",
+        "file_id": "F",
+        "sha256": "a" * 64,
+        "size_bytes": 1,
+        "relative_path": "missing",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "compression": "none",
     }
     related = []
-    monkeypatch.setattr(qc, "verify_local_file_identity", lambda *_a, **_k: (
-        False, {"size_bytes": 0, "verification_method": "missing"}
-    ))
+    monkeypatch.setattr(
+        qc,
+        "verify_local_file_identity",
+        lambda *_a, **_k: (False, {"size_bytes": 0, "verification_method": "missing"}),
+    )
     with pytest.raises(QCError, match="related assembly"):
         qc._verify_related_input(
-            SimpleNamespace(), SimpleNamespace(root=tmp_path), record,
-            kind="assembly", stage="verify", timings={}, related_inputs=related, rehash=True,
+            SimpleNamespace(),
+            SimpleNamespace(root=tmp_path),
+            record,
+            kind="assembly",
+            stage="verify",
+            timings={},
+            related_inputs=related,
+            rehash=True,
         )
     assert related[0]["integrity"]["verification_method"] == "missing"
 
@@ -64,8 +88,10 @@ def test_fasta_cache_row_rejects_bad_ids(seqid):
 def _cache_header(record, *, count=1, digest="bad"):
     return {
         "cache_format": qc.FASTA_LENGTH_CACHE_FORMAT,
-        "file_id": record["file_id"], "sha256": record["sha256"],
-        "size_bytes": record["size_bytes"], "sequence_count": count,
+        "file_id": record["file_id"],
+        "sha256": record["sha256"],
+        "size_bytes": record["size_bytes"],
+        "sequence_count": count,
         "lengths_sha256": digest,
     }
 
@@ -108,7 +134,9 @@ def test_fasta_cache_roundtrip_write_failure_and_cached_statuses(tmp_path, monke
     qc._write_fasta_length_cache(path, record, {"a": 1})
     assert qc._load_fasta_length_cache(path, record) == {"a": 1}
 
-    monkeypatch.setattr(qc.os, "fsync", lambda _fd: (_ for _ in ()).throw(OSError("disk")))
+    monkeypatch.setattr(
+        qc.os, "fsync", lambda _fd: (_ for _ in ()).throw(OSError("disk"))
+    )
     with pytest.raises(OSError):
         qc._write_fasta_length_cache(tmp_path / "failed.tsv", record, {"a": 1})
     assert not list(tmp_path.glob(".failed.tsv.*"))
@@ -117,7 +145,11 @@ def test_fasta_cache_roundtrip_write_failure_and_cached_statuses(tmp_path, monke
     fasta = tmp_path / "assembly.fa"
     fasta.write_text(">a\nA\n", encoding="utf-8")
     monkeypatch.setattr(qc, "fasta_lengths", lambda _path: {"a": 1})
-    monkeypatch.setattr(qc, "_write_fasta_length_cache", lambda *_a: (_ for _ in ()).throw(OSError("disk")))
+    monkeypatch.setattr(
+        qc,
+        "_write_fasta_length_cache",
+        lambda *_a: (_ for _ in ()).throw(OSError("disk")),
+    )
     lengths, info = qc._cached_fasta_lengths(project, record, fasta, {})
     assert lengths == {"a": 1} and info["status"] == "write_failed" and "error" in info
 
@@ -133,7 +165,10 @@ class _Result:
 def test_pairing_metric_all_early_returns_cache_and_mismatch(tmp_path, monkeypatch):
     project = SimpleNamespace(root=tmp_path)
     base = {
-        "file_id": "R1", "sha256": "a", "entity_type": "run", "entity_id": "RUN_1",
+        "file_id": "R1",
+        "sha256": "a",
+        "entity_type": "run",
+        "entity_id": "RUN_1",
         "file_role": "other",
     }
     assert qc._pairing_metric(SimpleNamespace(), project, base, 1) is None
@@ -167,13 +202,24 @@ def test_qc_missing_file_and_qc_all_forwards_force_checksum(tmp_path, monkeypatc
     try:
         with pytest.raises(FileNotFoundError, match="not found in manifest"):
             qc.qc_file(db, project, "FIL_999999")
-        db.insert_row("organisms", {"organism_id": "ORG_1", "scientific_name": "Example"})
-        db.insert_row("files", {
-            "file_id": "FIL_1", "entity_type": "organism", "entity_id": "ORG_1",
-            "file_role": "other", "format": "other", "compression": "none",
-            "relative_path": "x.bin", "size_bytes": 1, "sha256": "a" * 64,
-            "status": "CHECKSUM_VERIFIED",
-        })
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_1", "scientific_name": "Example"}
+        )
+        db.insert_row(
+            "files",
+            {
+                "file_id": "FIL_1",
+                "entity_type": "organism",
+                "entity_id": "ORG_1",
+                "file_role": "other",
+                "format": "other",
+                "compression": "none",
+                "relative_path": "x.bin",
+                "size_bytes": 1,
+                "sha256": "a" * 64,
+                "status": "CHECKSUM_VERIFIED",
+            },
+        )
         calls = []
 
         def fake_qc_file(*args, **kwargs):
@@ -184,7 +230,11 @@ def test_qc_missing_file_and_qc_all_forwards_force_checksum(tmp_path, monkeypatc
         assert qc.qc_all(db, project, entity_type="assembly") == []
         assert calls == []
         results = qc.qc_all(
-            db, project, entity_type="organism", entity_id="ORG_1", file_id="FIL_1",
+            db,
+            project,
+            entity_type="organism",
+            entity_id="ORG_1",
+            file_id="FIL_1",
             force_checksum=True,
         )
         # qc_all's own contract: one result per selected file, the selection

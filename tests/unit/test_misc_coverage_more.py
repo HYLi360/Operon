@@ -81,11 +81,17 @@ def project_db(tmp_path: Path):
 
 
 def _insert_graph(db: Database) -> None:
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Graphus"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Graphus"}
+    )
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
     db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +198,9 @@ def test_atomic_copy_keeps_staging_on_failed_unlink(tmp_path):
     staging[0].unlink()
 
 
-def test_atomic_copytree_failure_before_staging_leaves_no_leftovers(tmp_path, monkeypatch):
+def test_atomic_copytree_failure_before_staging_leaves_no_leftovers(
+    tmp_path, monkeypatch
+):
     source = tmp_path / "src"
     source.mkdir()
     (source / "a.txt").write_text("a", encoding="utf-8")
@@ -222,7 +230,9 @@ def test_chunked_batches_an_exact_multiple_without_an_empty_tail():
 def test_entity_graph_rejects_an_unknown_scope(project_db):
     _project, db = project_db
     _insert_graph(db)
-    with pytest.raises(ValidationError, match="unknown entity graph scope 'everything'"):
+    with pytest.raises(
+        ValidationError, match="unknown entity graph scope 'everything'"
+    ):
         entity_view.entity_graph(db, "ORG_000001", scope="everything")
     assert entity_view.entity_graph(db, "ORG_000001")["scope"] == "matched"
 
@@ -248,8 +258,11 @@ def test_entity_subtree_for_a_sample_lists_its_own_descendants(project_db):
     _project, db = project_db
     _insert_graph(db)
     assert entity_subtree(db, "sample", "SMP_000001") == {
-        "organism": [], "sample": ["SMP_000001"], "run": ["RUN_000001"],
-        "assembly": ["ASM_000001"], "annotation": ["ANN_000001"],
+        "organism": [],
+        "sample": ["SMP_000001"],
+        "run": ["RUN_000001"],
+        "assembly": ["ASM_000001"],
+        "annotation": ["ANN_000001"],
     }
 
 
@@ -290,13 +303,21 @@ def test_lifecycle_plan_counts_files_and_release_members(project_db, tmp_path):
     record = ingest_file(db, project, genome, "assembly", "ASM_000001", "genome_fasta")
     db.conn.execute(
         "INSERT INTO releases(version, created_at, profile, path, manifest_sha256, summary) "
-        "VALUES(?,?,?,?,?,?)", ("v1", "now", "p", "releases/v1", "x", "{}"),
+        "VALUES(?,?,?,?,?,?)",
+        ("v1", "now", "p", "releases/v1", "x", "{}"),
     )
     db.conn.execute(
         "INSERT INTO release_members(release_version, file_id, entity_type, entity_id, "
         "release_path, sha256, size_bytes) VALUES(?,?,?,?,?,?,?)",
-        ("v1", record["file_id"], "assembly", "ASM_000001", "data/x.fa",
-         record["sha256"], record["size_bytes"]),
+        (
+            "v1",
+            record["file_id"],
+            "assembly",
+            "ASM_000001",
+            "data/x.fa",
+            record["sha256"],
+            record["size_bytes"],
+        ),
     )
     db.conn.commit()
     plan = lifecycle_plan(db, "ASM_000001", action="RETIRE")
@@ -318,21 +339,35 @@ def test_unique_combinations_ignore_missing_values(project_db, tmp_path):
     custom.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
     schema = Schema.from_file(custom)
 
-    rows, errors = schema.validate_and_normalize("samples", [
-        {"sample_id": "SMP_000001", "organism_id": "ORG_000001"},
-        {"sample_id": "SMP_000002", "organism_id": "ORG_000001"},
-    ])
+    rows, errors = schema.validate_and_normalize(
+        "samples",
+        [
+            {"sample_id": "SMP_000001", "organism_id": "ORG_000001"},
+            {"sample_id": "SMP_000002", "organism_id": "ORG_000001"},
+        ],
+    )
     assert errors == []
     assert [row["sample_id"] for row in rows] == ["SMP_000001", "SMP_000002"]
     assert rows[0]["strain"] is None
 
     with pytest.raises(ValidationError, match="duplicate unique combination"):
-        schema.validate_and_normalize("samples", [
-            {"sample_id": "SMP_000001", "organism_id": "ORG_000001",
-             "strain": "A", "isolate": "B"},
-            {"sample_id": "SMP_000002", "organism_id": "ORG_000001",
-             "strain": "A", "isolate": "B"},
-        ])
+        schema.validate_and_normalize(
+            "samples",
+            [
+                {
+                    "sample_id": "SMP_000001",
+                    "organism_id": "ORG_000001",
+                    "strain": "A",
+                    "isolate": "B",
+                },
+                {
+                    "sample_id": "SMP_000002",
+                    "organism_id": "ORG_000001",
+                    "strain": "A",
+                    "isolate": "B",
+                },
+            ],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -341,8 +376,14 @@ def test_unique_combinations_ignore_missing_values(project_db, tmp_path):
 
 
 def test_alignment_rows_without_extra_json_still_classify():
-    context = _row_context({"query_id": "g1 description", "query_start": 5,
-                            "query_end": 9, "extra_json": None})
+    context = _row_context(
+        {
+            "query_id": "g1 description",
+            "query_start": 5,
+            "query_end": 9,
+            "extra_json": None,
+        }
+    )
     assert context["seqid"] == "g1"
     assert context["span"] == 5
     assert _extra_fields(None) == {}
@@ -354,14 +395,38 @@ def test_profile_accepts_any_and_not_condition_groups():
         "kind": "sequence_classification",
         "version": 1,
         "applies_to": {"entity_type": "annotation", "file_role": "protein_fasta"},
-        "sources": {"core": {"analysis": "cdd", "filter": [
-            {"any": [{"field": "hit_type", "operator": "==", "value": "Specific"},
-                     {"field": "hit_type", "operator": "==", "value": "Motif"}]},
-            {"not": {"field": "short_name", "operator": "like", "value": "bhlh_%"}},
-        ]}},
+        "sources": {
+            "core": {
+                "analysis": "cdd",
+                "filter": [
+                    {
+                        "any": [
+                            {
+                                "field": "hit_type",
+                                "operator": "==",
+                                "value": "Specific",
+                            },
+                            {"field": "hit_type", "operator": "==", "value": "Motif"},
+                        ]
+                    },
+                    {
+                        "not": {
+                            "field": "short_name",
+                            "operator": "like",
+                            "value": "bhlh_%",
+                        }
+                    },
+                ],
+            }
+        },
         "rules": [
-            {"label": "HIT", "source": "core", "when": [
-                {"not": {"field": "incomplete", "operator": "==", "value": "NC"}}]},
+            {
+                "label": "HIT",
+                "source": "core",
+                "when": [
+                    {"not": {"field": "incomplete", "operator": "==", "value": "NC"}}
+                ],
+            },
             {"label": "NONE", "default": True},
         ],
     }
@@ -433,14 +498,17 @@ def _make_project(root: Path) -> tuple[object, Database]:
 def test_backup_rebases_only_project_internal_absolute_links(tmp_path):
     project, db = _make_project(tmp_path / "project")
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "B"})
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "B"}
+        )
         views = project.root / "standardized" / "assemblies" / "ASM_000001"
         views.mkdir(parents=True)
         archived = project.root / "raw" / "assemblies" / "ASM_000001" / "genome.fasta"
         archived.parent.mkdir(parents=True)
         archived.write_text(">ctg1\nACGT\n", encoding="utf-8")
         (views / "relative.fasta").symlink_to(
-            Path("../../raw/assemblies/ASM_000001/genome.fasta"))
+            Path("../../raw/assemblies/ASM_000001/genome.fasta")
+        )
         (views / "internal.fasta").symlink_to(archived)
         external = tmp_path / "external.txt"
         external.write_text("outside\n", encoding="utf-8")
@@ -453,12 +521,14 @@ def test_backup_rebases_only_project_internal_absolute_links(tmp_path):
         copied = destination / "standardized" / "assemblies" / "ASM_000001"
         # A portable relative link is preserved verbatim.
         assert os.readlink(copied / "relative.fasta") == (
-            "../../raw/assemblies/ASM_000001/genome.fasta")
+            "../../raw/assemblies/ASM_000001/genome.fasta"
+        )
         # An absolute link into the project is rebased so the backup is movable.
         rebased = os.readlink(copied / "internal.fasta")
         assert not os.path.isabs(rebased)
         assert (copied / "internal.fasta").resolve() == (
-            destination / "raw" / "assemblies" / "ASM_000001" / "genome.fasta").resolve()
+            destination / "raw" / "assemblies" / "ASM_000001" / "genome.fasta"
+        ).resolve()
         # An external target keeps its original link text and is never followed.
         assert os.readlink(copied / "external.fasta") == str(external)
         assert backup.verify_backup(destination)["ok"] is True
@@ -469,7 +539,9 @@ def test_backup_rebases_only_project_internal_absolute_links(tmp_path):
 def test_verify_backup_reports_missing_and_unexpected_symlinks(tmp_path):
     project, db = _make_project(tmp_path / "project")
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "B"})
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "B"}
+        )
         views = project.root / "standardized" / "assemblies" / "ASM_000001"
         views.mkdir(parents=True)
         archived = project.root / "raw" / "assemblies" / "ASM_000001" / "genome.fasta"
@@ -481,25 +553,38 @@ def test_verify_backup_reports_missing_and_unexpected_symlinks(tmp_path):
         backup.create_backup(db, project, destination, scope="full")
         assert backup.verify_backup(destination)["ok"] is True
 
-        link = destination / "standardized" / "assemblies" / "ASM_000001" / "internal.fasta"
+        link = (
+            destination
+            / "standardized"
+            / "assemblies"
+            / "ASM_000001"
+            / "internal.fasta"
+        )
         link.unlink()
         report = backup.verify_backup(destination)
         assert report["ok"] is False
-        assert {"relative_path": link.relative_to(destination).as_posix(),
-                "error": "missing symlink"} in report["failures"]
+        assert {
+            "relative_path": link.relative_to(destination).as_posix(),
+            "error": "missing symlink",
+        } in report["failures"]
 
         # Restore the link, then swap a manifest regular file for a symlink.
-        link.symlink_to(os.path.relpath(
-            destination / "raw" / "assemblies" / "ASM_000001" / "genome.fasta",
-            link.parent))
+        link.symlink_to(
+            os.path.relpath(
+                destination / "raw" / "assemblies" / "ASM_000001" / "genome.fasta",
+                link.parent,
+            )
+        )
         assert backup.verify_backup(destination)["ok"] is True
         swap = destination / "project.yaml"
         swap.unlink()
         swap.symlink_to("operon.sqlite")
         report = backup.verify_backup(destination)
         assert report["ok"] is False
-        assert {"relative_path": "project.yaml",
-                "error": "unexpected symlink"} in report["failures"]
+        assert {
+            "relative_path": "project.yaml",
+            "error": "unexpected symlink",
+        } in report["failures"]
     finally:
         db.close()
 
@@ -509,8 +594,16 @@ def test_verify_backup_reports_missing_and_unexpected_symlinks(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _ingest(db: Database, project, tmp_path: Path, name: str, text: str,
-            entity_type: str, entity_id: str, role: str) -> dict:
+def _ingest(
+    db: Database,
+    project,
+    tmp_path: Path,
+    name: str,
+    text: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+) -> dict:
     path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return ingest_file(db, project, path, entity_type, entity_id, role)
@@ -524,17 +617,51 @@ def export_project(tmp_path: Path):
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
     for suffix in ("1", "2"):
-        db.insert_row("assemblies", {
-            "assembly_id": f"ASM_00000{suffix}", "sample_id": "SMP_000001"})
+        db.insert_row(
+            "assemblies",
+            {"assembly_id": f"ASM_00000{suffix}", "sample_id": "SMP_000001"},
+        )
     files = {
-        "genome1": _ingest(db, project, tmp_path, "genome1.fa", ">ctg1\nACGTACGT\n",
-                           "assembly", "ASM_000001", "genome_fasta"),
-        "genome2": _ingest(db, project, tmp_path, "genome2.fa", ">ctg2\nTTTTGGGG\n",
-                           "assembly", "ASM_000002", "genome_fasta"),
-        "proteins1": _ingest(db, project, tmp_path, "proteins.faa", ">p1\nMAAA\n",
-                             "assembly", "ASM_000001", "protein_fasta"),
-        "table1": _ingest(db, project, tmp_path, "genes.tsv", "gene\tvalue\na\t1\n",
-                          "assembly", "ASM_000001", "annotation_table"),
+        "genome1": _ingest(
+            db,
+            project,
+            tmp_path,
+            "genome1.fa",
+            ">ctg1\nACGTACGT\n",
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+        ),
+        "genome2": _ingest(
+            db,
+            project,
+            tmp_path,
+            "genome2.fa",
+            ">ctg2\nTTTTGGGG\n",
+            "assembly",
+            "ASM_000002",
+            "genome_fasta",
+        ),
+        "proteins1": _ingest(
+            db,
+            project,
+            tmp_path,
+            "proteins.faa",
+            ">p1\nMAAA\n",
+            "assembly",
+            "ASM_000001",
+            "protein_fasta",
+        ),
+        "table1": _ingest(
+            db,
+            project,
+            tmp_path,
+            "genes.tsv",
+            "gene\tvalue\na\t1\n",
+            "assembly",
+            "ASM_000001",
+            "annotation_table",
+        ),
     }
     try:
         yield project, db, files
@@ -547,19 +674,29 @@ def _read_tsv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
-def test_export_skips_taxa_inference_for_taxonomy_snapshot_members(export_project, tmp_path):
+def test_export_skips_taxa_inference_for_taxonomy_snapshot_members(
+    export_project, tmp_path
+):
     """Snapshot packages export as opaque members: no organism can be traced."""
     project, db, _files = export_project
     snapshot = project.root / "taxonomy" / "TAX_000001"
     snapshot.mkdir(parents=True)
     (snapshot / "nodes.dmp").write_text("1\t|\tno rank\t|\n", encoding="utf-8")
-    db.insert_row("files", {
-        "file_id": "FIL_TAX_000001", "entity_type": "taxonomy_snapshot",
-        "entity_id": "TAX_000001", "file_role": "taxonomy_package",
-        "format": "directory", "compression": "none",
-        "relative_path": "taxonomy/TAX_000001", "size_bytes": 1,
-        "sha256": sha256_directory(snapshot), "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_TAX_000001",
+            "entity_type": "taxonomy_snapshot",
+            "entity_id": "TAX_000001",
+            "file_role": "taxonomy_package",
+            "format": "directory",
+            "compression": "none",
+            "relative_path": "taxonomy/TAX_000001",
+            "size_bytes": 1,
+            "sha256": sha256_directory(snapshot),
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     out = tmp_path / "snapshot-export"
     summary = export_files(db, project, output_dir=out, entity_type="taxonomy_snapshot")
     assert summary["file_count"] == 1
@@ -570,7 +707,9 @@ def test_export_skips_taxa_inference_for_taxonomy_snapshot_members(export_projec
     assert _read_tsv(out / "taxa.tsv") == []
 
 
-def test_export_selection_by_entity_ids_format_and_entity_state(export_project, tmp_path):
+def test_export_selection_by_entity_ids_format_and_entity_state(
+    export_project, tmp_path
+):
     project, db, files = export_project
     db.set_entity_state("assembly", "ASM_000002", "METADATA_VALIDATED", "test")
 
@@ -598,12 +737,14 @@ def test_export_failure_leaves_an_occupied_workspace_empty(export_project, tmp_p
     """A failed export must not leave a half-materialized member set behind."""
     project, db, files = export_project
     (project.root / files["genome2"]["relative_path"]).write_text(
-        ">ctg2\ntampered\n", encoding="utf-8")
+        ">ctg2\ntampered\n", encoding="utf-8"
+    )
     out = tmp_path / "empty-target"
     out.mkdir()
     with pytest.raises(RuntimeError, match="checksum mismatch"):
-        export_files(db, project, output_dir=out,
-                     entity_ids=["ASM_000001", "ASM_000002"])
+        export_files(
+            db, project, output_dir=out, entity_ids=["ASM_000001", "ASM_000002"]
+        )
     assert out.is_dir()
     assert list(out.iterdir()) == []
 
@@ -631,13 +772,15 @@ def test_export_workspace_publish_contract(export_project, tmp_path):
     occupied.mkdir()
     (occupied / "stale.txt").write_text("x", encoding="utf-8")
     with pytest.raises(FileExistsError, match="not empty"):
-        _export_files_in_workspace(db, project, output_dir=occupied,
-                                   entity_type="assembly")
+        _export_files_in_workspace(
+            db, project, output_dir=occupied, entity_type="assembly"
+        )
     assert (occupied / "stale.txt").read_text(encoding="utf-8") == "x"
 
     fresh = tmp_path / "fresh"
     summary = _export_files_in_workspace(
-        db, project, output_dir=fresh, entity_type="assembly", include_qc=False)
+        db, project, output_dir=fresh, entity_type="assembly", include_qc=False
+    )
     assert summary["output_dir"] == str(fresh)
     assert (fresh / "manifest.tsv").is_file()
     assert not (fresh / "qc.tsv").exists()
@@ -645,13 +788,19 @@ def test_export_workspace_publish_contract(export_project, tmp_path):
 
 def test_export_remote_only_member_requires_hydration(export_project, tmp_path):
     project, db, files = export_project
-    db.conn.execute("UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?",
-                    (files["genome1"]["file_id"],))
+    db.conn.execute(
+        "UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?",
+        (files["genome1"]["file_id"],),
+    )
     db.conn.commit()
     (project.root / files["genome1"]["relative_path"]).unlink()
     with pytest.raises(FileNotFoundError, match="remote-only"):
-        export_files(db, project, output_dir=tmp_path / "out",
-                     file_ids=[files["genome1"]["file_id"]])
+        export_files(
+            db,
+            project,
+            output_dir=tmp_path / "out",
+            file_ids=[files["genome1"]["file_id"]],
+        )
 
 
 def test_export_directory_artifact_copy_and_hardlink(export_project, tmp_path):
@@ -659,27 +808,47 @@ def test_export_directory_artifact_copy_and_hardlink(export_project, tmp_path):
     tree = tmp_path / "pangenome"
     tree.mkdir()
     (tree / "gene_presence_absence.tsv").write_text("gene\na\n", encoding="utf-8")
-    adopted = lineage.adopt_files(db, project, items=[{
-        "path": str(tree), "entity_type": "assembly", "entity_id": "ASM_000001",
-        "role": "pangenome_dir", "format": "directory", "compression": "none",
-        "derived_from": [_files["genome1"]["file_id"]],
-    }])[0]
+    adopted = lineage.adopt_files(
+        db,
+        project,
+        items=[
+            {
+                "path": str(tree),
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "role": "pangenome_dir",
+                "format": "directory",
+                "compression": "none",
+                "derived_from": [_files["genome1"]["file_id"]],
+            }
+        ],
+    )[0]
 
     copied = tmp_path / "dir-copy"
-    export_files(db, project, output_dir=copied, file_ids=[adopted["file_id"]],
-                 include_qc=False)
+    export_files(
+        db, project, output_dir=copied, file_ids=[adopted["file_id"]], include_qc=False
+    )
     row = _read_tsv(copied / "manifest.tsv")[0]
     exported = copied / row["export_relative_path"]
     assert exported.is_dir() and (exported / "gene_presence_absence.tsv").is_file()
     assert not exported.is_symlink()
     assert sha256_file(exported / "gene_presence_absence.tsv") == sha256_file(
-        tree / "gene_presence_absence.tsv")
+        tree / "gene_presence_absence.tsv"
+    )
 
     linked = tmp_path / "dir-link"
-    export_files(db, project, output_dir=linked, file_ids=[adopted["file_id"]],
-                 link_kind="hardlink", include_qc=False)
+    export_files(
+        db,
+        project,
+        output_dir=linked,
+        file_ids=[adopted["file_id"]],
+        link_kind="hardlink",
+        include_qc=False,
+    )
     row = _read_tsv(linked / "manifest.tsv")[0]
-    assert (linked / row["export_relative_path"] / "gene_presence_absence.tsv").is_file()
+    assert (
+        linked / row["export_relative_path"] / "gene_presence_absence.tsv"
+    ).is_file()
 
 
 def test_export_hardlink_falls_back_to_a_copy(export_project, tmp_path, monkeypatch):
@@ -690,8 +859,14 @@ def test_export_hardlink_falls_back_to_a_copy(export_project, tmp_path, monkeypa
 
     monkeypatch.setattr("operon.export.os.link", unsupported)
     out = tmp_path / "hard-fallback"
-    export_files(db, project, output_dir=out, file_ids=[files["genome1"]["file_id"]],
-                 link_kind="hardlink", include_qc=False)
+    export_files(
+        db,
+        project,
+        output_dir=out,
+        file_ids=[files["genome1"]["file_id"]],
+        link_kind="hardlink",
+        include_qc=False,
+    )
     row = _read_tsv(out / "manifest.tsv")[0]
     exported = out / row["export_relative_path"]
     source = project.root / row["original_relative_path"]
@@ -706,8 +881,9 @@ def test_export_hardlink_falls_back_to_a_copy(export_project, tmp_path, monkeypa
 
 def _write_qc_profile(project, name: str, applies_to) -> None:
     (project.profiles_dir / f"{name}.yaml").write_text(
-        yaml.safe_dump({"kind": "qc", "version": 1, "applies_to": applies_to},
-                       sort_keys=False),
+        yaml.safe_dump(
+            {"kind": "qc", "version": 1, "applies_to": applies_to}, sort_keys=False
+        ),
         encoding="utf-8",
     )
 
@@ -724,18 +900,35 @@ def test_release_preflight_accepts_empty_and_unknown_applies_to(project_db):
     assert unknown["accepted_file_count"] == 0
 
 
-def test_release_preflight_falls_back_when_observed_json_is_unreadable(project_db, tmp_path):
+def test_release_preflight_falls_back_when_observed_json_is_unreadable(
+    project_db, tmp_path
+):
     project, db = project_db
     _insert_graph(db)
     _write_qc_profile(project, "release_observed", ["assembly"])
-    _ingest(db, project, tmp_path, "genome.fa", ">ctg1\nACGT\n",
-            "assembly", "ASM_000001", "genome_fasta")
-    db.upsert_decision({
-        "entity_type": "assembly", "entity_id": "ASM_000001",
-        "profile": "release_observed", "profile_version": 1, "decision": "FAIL",
-        "reason_codes": json.dumps(["LOW_QUALITY"]), "observed": "not-json",
-        "thresholds": "{}", "evaluated_at": "2099-01-01T00:00:00+00:00",
-    })
+    _ingest(
+        db,
+        project,
+        tmp_path,
+        "genome.fa",
+        ">ctg1\nACGT\n",
+        "assembly",
+        "ASM_000001",
+        "genome_fasta",
+    )
+    db.upsert_decision(
+        {
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "profile": "release_observed",
+            "profile_version": 1,
+            "decision": "FAIL",
+            "reason_codes": json.dumps(["LOW_QUALITY"]),
+            "observed": "not-json",
+            "thresholds": "{}",
+            "evaluated_at": "2099-01-01T00:00:00+00:00",
+        }
+    )
     summary = release.create_release(db, project, "v-observed", "release_observed")
     # The unreadable watermark degrades to the timestamp comparison, so the
     # decision itself is the only exclusion.
@@ -743,19 +936,32 @@ def test_release_preflight_falls_back_when_observed_json_is_unreadable(project_d
     assert summary["excluded_entity_count"] == 1
     excluded = _read_tsv(Path(summary["path"]) / "exclusions.tsv")
     assert [(row["entity_id"], row["exclusion_reason"]) for row in excluded] == [
-        ("ASM_000001", "DECISION")]
+        ("ASM_000001", "DECISION")
+    ]
 
 
-def test_release_preflight_summarizes_more_than_ten_problem_entities(project_db, tmp_path):
+def test_release_preflight_summarizes_more_than_ten_problem_entities(
+    project_db, tmp_path
+):
     project, db = project_db
     _write_qc_profile(project, "release_many", ["assembly"])
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
     for number in range(1, 12):
         entity_id = f"ASM_{number:06d}"
-        db.insert_row("assemblies", {"assembly_id": entity_id, "sample_id": "SMP_000001"})
-        _ingest(db, project, tmp_path, f"genome{number}.fa", f">ctg{number}\nACGT\n",
-                "assembly", entity_id, "genome_fasta")
+        db.insert_row(
+            "assemblies", {"assembly_id": entity_id, "sample_id": "SMP_000001"}
+        )
+        _ingest(
+            db,
+            project,
+            tmp_path,
+            f"genome{number}.fa",
+            f">ctg{number}\nACGT\n",
+            "assembly",
+            entity_id,
+            "genome_fasta",
+        )
     with pytest.raises(ValidationError) as caught:
         release.create_release(db, project, "v-many", "release_many")
     message = str(caught.value)
@@ -773,15 +979,23 @@ def test_release_hardlinks_a_directory_member(project_db, tmp_path, monkeypatch)
     tree.mkdir(parents=True)
     (tree / "x.txt").write_text("x", encoding="utf-8")
     member = {
-        "file_id": "FIL_000001", "entity_type": "organism", "entity_id": "ORG_000001",
-        "file_role": "pangenome_dir", "format": "directory", "compression": "none",
-        "relative_path": "raw/tree", "source_url": None, "size_bytes": 1,
-        "sha256": sha256_path(tree), "status": "CHECKSUM_VERIFIED",
+        "file_id": "FIL_000001",
+        "entity_type": "organism",
+        "entity_id": "ORG_000001",
+        "file_role": "pangenome_dir",
+        "format": "directory",
+        "compression": "none",
+        "relative_path": "raw/tree",
+        "source_url": None,
+        "size_bytes": 1,
+        "sha256": sha256_path(tree),
+        "status": "CHECKSUM_VERIFIED",
         "effective_decision": "PASS",
     }
     monkeypatch.setattr(release, "release_files_for", lambda *_a: [member])
-    summary = release.create_release(db, project, "v-dir", "p", copy_files=False,
-                                     link_kind="hardlink")
+    summary = release.create_release(
+        db, project, "v-dir", "p", copy_files=False, link_kind="hardlink"
+    )
     published = Path(summary["path"]) / "data" / "organism" / "ORG_000001" / "tree"
     assert (published / "x.txt").read_text(encoding="utf-8") == "x"
 
@@ -801,7 +1015,8 @@ def _import_taxonomy(project, db, tmp_path: Path, *, ranks, thresholds, root_tax
         {"taxId": 23, "parents": [10], "rank": "genus", "taxName": "Gen3"},
     ]
     source.write_text(
-        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
     taxonomy.import_ncbi_taxonomy(db, project, source, "cov.1")
     profile = {
         "kind": "taxonomy_coverage",
@@ -813,22 +1028,33 @@ def _import_taxonomy(project, db, tmp_path: Path, *, ranks, thresholds, root_tax
         "thresholds": thresholds,
     }
     (project.profiles_dir / "cov.yaml").write_text(
-        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
+        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+    )
     return taxonomy.compile_reference_set(db, project, "cov", "cov.1")
 
 
-def test_metadata_coverage_rounds_percentages_and_scopes_every_rank(project_db, tmp_path):
+def test_metadata_coverage_rounds_percentages_and_scopes_every_rank(
+    project_db, tmp_path
+):
     project, db = project_db
     reference = _import_taxonomy(
-        project, db, tmp_path, ranks=["genus"],
+        project,
+        db,
+        tmp_path,
+        ranks=["genus"],
         thresholds={"genus": {"min_coverage_percent": 50}},
         root_taxids=[1],
     )
     for organism_id, name, taxid in (("ORG_000001", "Covered", 20),):
-        db.insert_row("organisms", {
-            "organism_id": organism_id, "scientific_name": name,
-            "taxon_id": taxid, "taxonomy_source": "NCBI",
-        })
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": organism_id,
+                "scientific_name": name,
+                "taxon_id": taxid,
+                "taxonomy_source": "NCBI",
+            },
+        )
     report = coverage.report_coverage(db, project, reference["reference_set_id"])
     metrics = {metric["rank"]: metric for metric in report["metrics"]}
     assert metrics["genus"]["numerator"] == 1
@@ -858,31 +1084,52 @@ def test_release_scope_coverage_uses_a_relative_release_path(project_db, tmp_pat
     project, db = project_db
     _insert_graph(db)
     _import_taxonomy(
-        project, db, tmp_path, ranks=["genus"],
-        thresholds={"genus": {"min_coverage_percent": 0}}, root_taxids=[1],
+        project,
+        db,
+        tmp_path,
+        ranks=["genus"],
+        thresholds={"genus": {"min_coverage_percent": 0}},
+        root_taxids=[1],
     )
-    db.conn.execute("UPDATE organisms SET taxon_id=20, taxonomy_source='NCBI' "
-                    "WHERE organism_id='ORG_000001'")
+    db.conn.execute(
+        "UPDATE organisms SET taxon_id=20, taxonomy_source='NCBI' "
+        "WHERE organism_id='ORG_000001'"
+    )
     db.conn.commit()
     _write_qc_profile(project, "release_coverage", ["assembly"])
-    _ingest(db, project, tmp_path, "genome.fa", ">ctg1\nACGT\n",
-            "assembly", "ASM_000001", "genome_fasta")
-    db.upsert_decision({
-        "entity_type": "assembly", "entity_id": "ASM_000001",
-        "profile": "release_coverage", "profile_version": 1, "decision": "PASS",
-        "reason_codes": "[]", "observed": "{}", "thresholds": "{}",
-        "evaluated_at": "2099-01-01T00:00:00+00:00",
-    })
+    _ingest(
+        db,
+        project,
+        tmp_path,
+        "genome.fa",
+        ">ctg1\nACGT\n",
+        "assembly",
+        "ASM_000001",
+        "genome_fasta",
+    )
+    db.upsert_decision(
+        {
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "profile": "release_coverage",
+            "profile_version": 1,
+            "decision": "PASS",
+            "reason_codes": "[]",
+            "observed": "{}",
+            "thresholds": "{}",
+            "evaluated_at": "2099-01-01T00:00:00+00:00",
+        }
+    )
     for state in ("STANDARDIZED", "QC_RUNNING", "QC_COMPLETE", "ACCEPTED"):
         set_state(db, "assembly", "ASM_000001", state, "release fixture")
     summary = release.create_release(db, project, "v1", "release_coverage")
     assert summary["accepted_file_count"] == 1
     # Releases can be recorded with a project-relative path.
-    db.conn.execute("UPDATE releases SET path=? WHERE version='v1'",
-                    ("releases/v1",))
+    db.conn.execute("UPDATE releases SET path=? WHERE version='v1'", ("releases/v1",))
     db.conn.commit()
-    reference = db.query(
-        "SELECT reference_set_id FROM taxonomy_reference_sets")[0]["reference_set_id"]
+    reference = db.query("SELECT reference_set_id FROM taxonomy_reference_sets")[0][
+        "reference_set_id"
+    ]
     report = coverage.report_coverage(db, project, reference, release_version="v1")
     assert report["scope_kind"] == "release"
     assert report["scope_value"] == "v1"
@@ -894,8 +1141,9 @@ def test_release_scope_coverage_uses_a_relative_release_path(project_db, tmp_pat
 
     # A tampered frozen metadata snapshot is rejected before any report row.
     organisms_tsv = Path(summary["path"]) / "organisms.tsv"
-    organisms_tsv.write_text(organisms_tsv.read_text(encoding="utf-8") + "\n",
-                             encoding="utf-8")
+    organisms_tsv.write_text(
+        organisms_tsv.read_text(encoding="utf-8") + "\n", encoding="utf-8"
+    )
     with pytest.raises(ValidationError, match="metadata checksum mismatch"):
         coverage.report_coverage(db, project, reference, release_version="v1")
 
@@ -903,13 +1151,22 @@ def test_release_scope_coverage_uses_a_relative_release_path(project_db, tmp_pat
 def test_coverage_publish_failure_leaves_no_partial_report(project_db, tmp_path):
     project, db = project_db
     reference = _import_taxonomy(
-        project, db, tmp_path, ranks=["genus"],
-        thresholds={"genus": {"min_coverage_percent": 0}}, root_taxids=[1],
+        project,
+        db,
+        tmp_path,
+        ranks=["genus"],
+        thresholds={"genus": {"min_coverage_percent": 0}},
+        root_taxids=[1],
     )
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Covered",
-        "taxon_id": 20, "taxonomy_source": "NCBI",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Covered",
+            "taxon_id": 20,
+            "taxonomy_source": "NCBI",
+        },
+    )
     db.conn.execute(
         "CREATE TRIGGER fail_coverage_insert BEFORE INSERT ON coverage_reports "
         "BEGIN SELECT RAISE(ABORT, 'injected coverage failure'); END;"
@@ -921,7 +1178,8 @@ def test_coverage_publish_failure_leaves_no_partial_report(project_db, tmp_path)
     assert not reports_root.exists() or list(reports_root.iterdir()) == []
     assert db.query("SELECT COUNT(*) AS n FROM coverage_reports")[0]["n"] == 0
     failure = db.query(
-        "SELECT status, error FROM workflow_runs WHERE step='coverage_report'")[0]
+        "SELECT status, error FROM workflow_runs WHERE step='coverage_report'"
+    )[0]
     assert failure["status"] == "failed"
     assert "injected coverage failure" in failure["error"]
 
@@ -934,27 +1192,59 @@ def test_coverage_publish_failure_leaves_no_partial_report(project_db, tmp_path)
 def _clean_draft(genome: Path) -> dict:
     return {
         "source": {
-            "source_type": "insdc", "database_name": "NCBI", "provider": "NCBI",
+            "source_type": "insdc",
+            "database_name": "NCBI",
+            "provider": "NCBI",
             "record_url": "https://example.invalid/dataset/1",
         },
-        "organism": {"action": "create", "id": "ORG_000001", "row": {
-            "organism_id": "ORG_000001", "scientific_name": "Wizardus testii",
-            "taxon_id": 1, "taxonomy_source": "NCBI"}},
-        "sample": {"action": "create", "id": "SMP_000001", "row": {
-            "sample_id": "SMP_000001", "organism_id": "ORG_000001"}},
-        "run": {"action": "create", "id": "RUN_000001", "row": {
-            "run_id": "RUN_000001", "sample_id": "SMP_000001",
-            "library_strategy": "WGS"}},
-        "assembly": {"action": "create", "id": "ASM_000001", "row": {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-            "assembly_version": "1"}},
+        "organism": {
+            "action": "create",
+            "id": "ORG_000001",
+            "row": {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Wizardus testii",
+                "taxon_id": 1,
+                "taxonomy_source": "NCBI",
+            },
+        },
+        "sample": {
+            "action": "create",
+            "id": "SMP_000001",
+            "row": {"sample_id": "SMP_000001", "organism_id": "ORG_000001"},
+        },
+        "run": {
+            "action": "create",
+            "id": "RUN_000001",
+            "row": {
+                "run_id": "RUN_000001",
+                "sample_id": "SMP_000001",
+                "library_strategy": "WGS",
+            },
+        },
+        "assembly": {
+            "action": "create",
+            "id": "ASM_000001",
+            "row": {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_version": "1",
+            },
+        },
         "annotation": None,
-        "files": [{"label": "Genome FASTA", "role": "genome_fasta",
-                   "entity_type": "assembly", "path": str(genome)}],
+        "files": [
+            {
+                "label": "Genome FASTA",
+                "role": "genome_fasta",
+                "entity_type": "assembly",
+                "path": str(genome),
+            }
+        ],
     }
 
 
-def test_ask_files_without_annotation_or_run_only_asks_for_the_genome(tmp_path, monkeypatch):
+def test_ask_files_without_annotation_or_run_only_asks_for_the_genome(
+    tmp_path, monkeypatch
+):
     asked: list[str] = []
 
     def record(label, current=""):
@@ -991,7 +1281,9 @@ def test_preflight_blocks_a_reused_sample_from_another_organism(project_db):
         "sample": {"action": "reuse", "id": "SMP_000001"},
         "files": [],
     }
-    with pytest.raises(ValidationError, match="does not belong to the selected organism"):
+    with pytest.raises(
+        ValidationError, match="does not belong to the selected organism"
+    ):
         _preflight(db, project, draft)
 
 
@@ -1010,7 +1302,8 @@ def test_commit_reuses_an_archived_target_without_new_files(project_db, tmp_path
         reuse[entity_type] = {"action": "reuse", "id": reuse[entity_type]["id"]}
     second = _commit(db, project, reuse)
     assert [row["file_id"] for row in second["files"]] == [
-        row["file_id"] for row in first["files"]]
+        row["file_id"] for row in first["files"]
+    ]
     assert [path for path in archived.iterdir() if path.is_file()] == targets
     assert db.query("SELECT COUNT(*) AS n FROM files")[0]["n"] == 1
 
@@ -1021,8 +1314,12 @@ def test_commit_removes_a_directory_target_when_bookkeeping_fails(project_db, tm
     bundle.mkdir()
     (bundle / "genes.gff3").write_text("##gff-version 3\n", encoding="utf-8")
     draft = _clean_draft(tmp_path / "genome.fna")
-    draft["files"][0] = {"label": "Annotation bundle", "role": "annotation_bundle",
-                         "entity_type": "assembly", "path": str(bundle)}
+    draft["files"][0] = {
+        "label": "Annotation bundle",
+        "role": "annotation_bundle",
+        "entity_type": "assembly",
+        "path": str(bundle),
+    }
     (tmp_path / "genome.fna").write_text(">x\nACGT\n", encoding="utf-8")
     db.conn.execute(
         "CREATE TRIGGER fail_import_run BEFORE INSERT ON workflow_runs "
@@ -1032,8 +1329,12 @@ def test_commit_removes_a_directory_target_when_bookkeeping_fails(project_db, tm
     with pytest.raises(sqlite3.IntegrityError, match="injected import failure"):
         _commit(db, project, draft)
     # Nothing survives: no archived bundle, no metadata rows, no run log.
-    assert not (project.raw_root / "assemblies" / "ASM_000001"
-                / "ASM_000001.annotation_bundle.dir").exists()
+    assert not (
+        project.raw_root
+        / "assemblies"
+        / "ASM_000001"
+        / "ASM_000001.annotation_bundle.dir"
+    ).exists()
     assert not any(path.is_file() for path in project.raw_root.rglob("*"))
     assert db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"] == 0
     assert db.query("SELECT COUNT(*) AS n FROM files")[0]["n"] == 0
@@ -1046,9 +1347,11 @@ def test_commit_removes_a_directory_target_when_bookkeeping_fails(project_db, tm
 
 
 def _xlsx(path: Path, workbook: str, sheet: str) -> Path:
-    rels = ("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/"
-            "relationships\"><Relationship Id=\"rId1\" "
-            "Target=\"worksheets/sheet1.xml\"/></Relationships>")
+    rels = (
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+        'relationships"><Relationship Id="rId1" '
+        'Target="worksheets/sheet1.xml"/></Relationships>'
+    )
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("xl/workbook.xml", workbook)
         archive.writestr("xl/_rels/workbook.xml.rels", rels)
@@ -1059,42 +1362,70 @@ def _xlsx(path: Path, workbook: str, sheet: str) -> Path:
 def test_xlsx_with_a_headerless_empty_sheet_reads_as_no_rows(tmp_path):
     ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-    workbook = (f'<workbook xmlns="{ns}" xmlns:r="{rel}">'
-                f'<sheets><sheet name="data" r:id="rId1"/></sheets></workbook>')
+    workbook = (
+        f'<workbook xmlns="{ns}" xmlns:r="{rel}">'
+        f'<sheets><sheet name="data" r:id="rId1"/></sheets></workbook>'
+    )
     sheet = f'<worksheet xmlns="{ns}"><sheetData/></worksheet>'
     path = _xlsx(tmp_path / "headerless.xlsx", workbook, sheet)
     assert read_table_file(path) == []
 
 
-def test_accession_table_preview_validates_targets_and_applies_updates(project_db, tmp_path):
+def test_accession_table_preview_validates_targets_and_applies_updates(
+    project_db, tmp_path
+):
     project, db = project_db
     schema = Schema.from_file(project.schema_path)
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
-    db.insert_row("accessions", {
-        "internal_type": "organism", "internal_id": "ORG_000001",
-        "namespace": "LAB", "accession": "A1", "version": "1",
-    })
+    db.insert_row(
+        "accessions",
+        {
+            "internal_type": "organism",
+            "internal_id": "ORG_000001",
+            "namespace": "LAB",
+            "accession": "A1",
+            "version": "1",
+        },
+    )
     source = tmp_path / "accessions.csv"
     with open(source, "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(
-            handle, fieldnames=["namespace", "accession", "internal_type",
-                                "internal_id", "version"])
+            handle,
+            fieldnames=[
+                "namespace",
+                "accession",
+                "internal_type",
+                "internal_id",
+                "version",
+            ],
+        )
         writer.writeheader()
-        writer.writerow({"namespace": "LAB", "accession": "A1",
-                         "internal_type": "organism", "internal_id": "ORG_000001",
-                         "version": "2"})
+        writer.writerow(
+            {
+                "namespace": "LAB",
+                "accession": "A1",
+                "internal_type": "organism",
+                "internal_id": "ORG_000001",
+                "version": "2",
+            }
+        )
     preview = preview_table_import(db, schema, "accessions", source)
     assert (preview["insert"], preview["update"], preview["unchanged"]) == (0, 1, 0)
     assert preview["items"][0]["differences"] == ["version"]
 
     result = apply_table_import(db, schema, preview, on_conflict="update")
     assert result == {"inserted": 0, "updated": 1, "unchanged": 0, "skipped": 0}
-    assert db.query("SELECT version FROM accessions WHERE accession='A1'")[0]["version"] == "2"
+    assert (
+        db.query("SELECT version FROM accessions WHERE accession='A1'")[0]["version"]
+        == "2"
+    )
     audit = db.query(
         "SELECT field, old_value, new_value FROM changes "
-        "WHERE object_type='accessions' AND reason='table import update'")
+        "WHERE object_type='accessions' AND reason='table import update'"
+    )
     assert [(row["field"], row["old_value"], row["new_value"]) for row in audit] == [
-        ("version", "1", "2")]
+        ("version", "1", "2")
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1109,25 +1440,47 @@ def fanout_project(tmp_path: Path):
     db = Database(project.db_path)
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("annotations", {
-        "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        "annotation_source": "test", "annotation_version": 1,
-    })
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000001",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "test",
+            "annotation_version": 1,
+        },
+    )
     fasta = tmp_path / "proteins.faa"
     fasta.write_text(">p1\nMPEPTIDE\n>p2\nAAAAAA\n>p3\nCCCCCC\n", encoding="utf-8")
-    source = ingest_file(db, project, fasta, "annotation", "ANN_000001", "protein_fasta")
+    source = ingest_file(
+        db, project, fasta, "annotation", "ANN_000001", "protein_fasta"
+    )
     for seqid, length in (("p1", 8), ("p2", 6), ("p3", 6)):
-        db.insert_row("sequences", {
-            "file_id": source["file_id"], "file_sha256": source["sha256"],
-            "entity_type": "annotation", "entity_id": "ANN_000001",
-            "seqid": seqid, "length": length,
-        })
+        db.insert_row(
+            "sequences",
+            {
+                "file_id": source["file_id"],
+                "file_sha256": source["sha256"],
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "seqid": seqid,
+                "length": length,
+            },
+        )
     assignments_path = tmp_path / "assign.tsv"
     assignments_path.write_text("unit\tseqid\nSF01\tp1\nSF02\tp2\n", encoding="utf-8")
     assignments = ingest_file(
-        db, project, assignments_path, "annotation", "ANN_000001",
-        "subfamily_assignments", fmt="tsv", compression="none")
+        db,
+        project,
+        assignments_path,
+        "annotation",
+        "ANN_000001",
+        "subfamily_assignments",
+        fmt="tsv",
+        compression="none",
+    )
     try:
         yield project, db, source, assignments
     finally:
@@ -1150,20 +1503,31 @@ def _fanout(db, project, source, assignments, **overrides):
 def test_fanout_rejects_duplicate_source_files(fanout_project):
     project, db, source, assignments = fanout_project
     with pytest.raises(ValidationError, match="duplicate --source-file"):
-        _fanout(db, project, source, assignments,
-                source_file_ids=[source["file_id"], source["file_id"]])
-    assert db.query("SELECT COUNT(*) AS n FROM workflow_runs WHERE step='fanout'")[0]["n"] == 0
+        _fanout(
+            db,
+            project,
+            source,
+            assignments,
+            source_file_ids=[source["file_id"], source["file_id"]],
+        )
+    assert (
+        db.query("SELECT COUNT(*) AS n FROM workflow_runs WHERE step='fanout'")[0]["n"]
+        == 0
+    )
 
 
 def test_fanout_rejects_remote_only_and_missing_manifest_bytes(fanout_project):
     project, db, source, assignments = fanout_project
-    db.conn.execute("UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?",
-                    (source["file_id"],))
+    db.conn.execute(
+        "UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?", (source["file_id"],)
+    )
     db.conn.commit()
     with pytest.raises(ValidationError, match="REMOTE_ONLY"):
         _fanout(db, project, source, assignments)
-    db.conn.execute("UPDATE files SET status='CHECKSUM_VERIFIED' WHERE file_id=?",
-                    (source["file_id"],))
+    db.conn.execute(
+        "UPDATE files SET status='CHECKSUM_VERIFIED' WHERE file_id=?",
+        (source["file_id"],),
+    )
     db.conn.commit()
     (project.root / source["relative_path"]).unlink()
     with pytest.raises(ValidationError, match="bytes are missing"):
@@ -1173,15 +1537,18 @@ def test_fanout_rejects_remote_only_and_missing_manifest_bytes(fanout_project):
 def test_fanout_rejects_tampered_source_bytes(fanout_project):
     project, db, source, assignments = fanout_project
     (project.root / source["relative_path"]).write_text(
-        ">p1\nTAMPERED\n>p2\nAAAAAA\n>p3\nCCCCCC\n", encoding="utf-8")
+        ">p1\nTAMPERED\n>p2\nAAAAAA\n>p3\nCCCCCC\n", encoding="utf-8"
+    )
     with pytest.raises(ChecksumError, match="failed manifest verification"):
         _fanout(db, project, source, assignments)
 
 
 def test_fanout_rejects_a_stale_sequence_registry(fanout_project):
     project, db, source, assignments = fanout_project
-    db.conn.execute("UPDATE sequences SET file_sha256='stale' WHERE file_id=? AND seqid='p2'",
-                    (source["file_id"],))
+    db.conn.execute(
+        "UPDATE sequences SET file_sha256='stale' WHERE file_id=? AND seqid='p2'",
+        (source["file_id"],),
+    )
     db.conn.commit()
     with pytest.raises(ValidationError, match="predates the current file bytes"):
         _fanout(db, project, source, assignments)
@@ -1189,11 +1556,17 @@ def test_fanout_rejects_a_stale_sequence_registry(fanout_project):
 
 def test_fanout_rejects_a_seqid_absent_from_the_fasta(fanout_project):
     project, db, source, assignments = fanout_project
-    db.insert_row("sequences", {
-        "file_id": source["file_id"], "file_sha256": source["sha256"],
-        "entity_type": "annotation", "entity_id": "ANN_000001",
-        "seqid": "ghost", "length": 10,
-    })
+    db.insert_row(
+        "sequences",
+        {
+            "file_id": source["file_id"],
+            "file_sha256": source["sha256"],
+            "entity_type": "annotation",
+            "entity_id": "ANN_000001",
+            "seqid": "ghost",
+            "length": 10,
+        },
+    )
     assignments_path = project.root / assignments["relative_path"]
     assignments_path.write_text("unit\tseqid\nSF01\tghost\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="absent from the source FASTA bytes"):
@@ -1202,8 +1575,12 @@ def test_fanout_rejects_a_seqid_absent_from_the_fasta(fanout_project):
 
 def test_fanout_rejects_an_occupied_target_with_different_content(fanout_project):
     project, db, source, assignments = fanout_project
-    target = (project.analysis_root / "derived" / "ANN_000001"
-              / "ANN_000001.subfamily_alignment:SF01.fasta")
+    target = (
+        project.analysis_root
+        / "derived"
+        / "ANN_000001"
+        / "ANN_000001.subfamily_alignment:SF01.fasta"
+    )
     target.parent.mkdir(parents=True)
     target.write_text(">p1\nDIFFERENT\n", encoding="utf-8")
     with pytest.raises(ConflictError, match="occupied by different content"):
@@ -1222,8 +1599,15 @@ def test_fanout_batch_failure_removes_created_targets_and_records_it(fanout_proj
         _fanout(db, project, source, assignments)
     derived = project.analysis_root / "derived" / "ANN_000001"
     assert not derived.exists() or list(derived.iterdir()) == []
-    assert db.query("SELECT COUNT(*) AS n FROM files WHERE relative_path LIKE 'analysis/%'")[0]["n"] == 0
-    runs = db.query("SELECT status, exit_code, error FROM workflow_runs WHERE step='fanout'")
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM files WHERE relative_path LIKE 'analysis/%'"
+        )[0]["n"]
+        == 0
+    )
+    runs = db.query(
+        "SELECT status, exit_code, error FROM workflow_runs WHERE step='fanout'"
+    )
     assert [(row["status"], row["exit_code"]) for row in runs] == [("failed", 1)]
     assert "injected lineage failure" in runs[0]["error"]
 
@@ -1255,14 +1639,20 @@ def test_load_adopt_manifest_rejects_broken_json(tmp_path):
         load_adopt_manifest(mapping)
 
 
-def test_adopt_resolves_relative_paths_and_rejects_incompatible_shapes(fanout_project, tmp_path):
+def test_adopt_resolves_relative_paths_and_rejects_incompatible_shapes(
+    fanout_project, tmp_path
+):
     project, db, source, _assignments = fanout_project
     derived = project.root / "inputs" / "matrix.tsv"
     derived.parent.mkdir()
     derived.write_text("id\tvalue\nctg1\t1\n", encoding="utf-8")
     item = {
-        "path": "inputs/matrix.tsv", "entity_type": "annotation", "entity_id": "ANN_000001",
-        "role": "pangenome_matrix", "format": "tsv", "compression": "none",
+        "path": "inputs/matrix.tsv",
+        "entity_type": "annotation",
+        "entity_id": "ANN_000001",
+        "role": "pangenome_matrix",
+        "format": "tsv",
+        "compression": "none",
         "derived_from": [source["file_id"]],
     }
     record = adopt_files(db, project, items=[item])[0]
@@ -1273,45 +1663,89 @@ def test_adopt_resolves_relative_paths_and_rejects_incompatible_shapes(fanout_pr
     tree.mkdir()
     (tree / "gene.txt").write_text("gene\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="incompatible format/compression"):
-        adopt_files(db, project, items=[{
-            **item, "path": str(tree), "role": "bad_bundle",
-            "format": "tsv", "compression": "none",
-        }])
+        adopt_files(
+            db,
+            project,
+            items=[
+                {
+                    **item,
+                    "path": str(tree),
+                    "role": "bad_bundle",
+                    "format": "tsv",
+                    "compression": "none",
+                }
+            ],
+        )
 
 
 def test_adopt_rejects_a_manifest_path_escaping_the_project(fanout_project, tmp_path):
     project, db, source, _assignments = fanout_project
     outside = tmp_path / "outside.tsv"
     outside.write_text("id\tvalue\nctg1\t1\n", encoding="utf-8")
-    db.insert_row("files", {
-        "file_id": "FIL_ESCAPE", "entity_type": "annotation", "entity_id": "ANN_000001",
-        "file_role": "escaping_matrix", "format": "tsv", "compression": "none",
-        "relative_path": "../outside.tsv", "size_bytes": outside.stat().st_size,
-        "sha256": sha256_file(outside), "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_ESCAPE",
+            "entity_type": "annotation",
+            "entity_id": "ANN_000001",
+            "file_role": "escaping_matrix",
+            "format": "tsv",
+            "compression": "none",
+            "relative_path": "../outside.tsv",
+            "size_bytes": outside.stat().st_size,
+            "sha256": sha256_file(outside),
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     with pytest.raises(ValidationError, match="escapes the project"):
-        adopt_files(db, project, items=[{
-            "path": str(outside), "entity_type": "annotation",
-            "entity_id": "ANN_000001", "role": "escaping_matrix",
-            "format": "tsv", "compression": "none",
-            "derived_from": [source["file_id"]],
-        }])
+        adopt_files(
+            db,
+            project,
+            items=[
+                {
+                    "path": str(outside),
+                    "entity_type": "annotation",
+                    "entity_id": "ANN_000001",
+                    "role": "escaping_matrix",
+                    "format": "tsv",
+                    "compression": "none",
+                    "derived_from": [source["file_id"]],
+                }
+            ],
+        )
 
 
 def test_adopt_registers_a_preexisting_identical_target(fanout_project, tmp_path):
     project, db, source, _assignments = fanout_project
     derived = tmp_path / "matrix.tsv"
     derived.write_text("id\tvalue\nctg1\t1\n", encoding="utf-8")
-    target = (project.analysis_root / "adopted" / "ANN_000001"
-              / "ANN_000001.pangenome_matrix.tsv")
+    target = (
+        project.analysis_root
+        / "adopted"
+        / "ANN_000001"
+        / "ANN_000001.pangenome_matrix.tsv"
+    )
     target.parent.mkdir(parents=True)
     target.write_bytes(derived.read_bytes())
-    record = adopt_files(db, project, items=[{
-        "path": str(derived), "entity_type": "annotation", "entity_id": "ANN_000001",
-        "role": "pangenome_matrix", "format": "tsv", "compression": "none",
-        "derived_from": [source["file_id"]],
-    }])[0]
-    assert record["relative_path"] == "analysis/adopted/ANN_000001/ANN_000001.pangenome_matrix.tsv"
+    record = adopt_files(
+        db,
+        project,
+        items=[
+            {
+                "path": str(derived),
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "role": "pangenome_matrix",
+                "format": "tsv",
+                "compression": "none",
+                "derived_from": [source["file_id"]],
+            }
+        ],
+    )[0]
+    assert (
+        record["relative_path"]
+        == "analysis/adopted/ANN_000001/ANN_000001.pangenome_matrix.tsv"
+    )
     assert target.read_text(encoding="utf-8") == derived.read_text(encoding="utf-8")
 
 
@@ -1322,56 +1756,122 @@ def test_adopt_registers_a_preexisting_identical_target(fanout_project, tmp_path
 
 @pytest.fixture
 def seq_project(tmp_path: Path):
-    assert main(["--project", str(tmp_path), "init", str(tmp_path),
-                 "--project-id", "PRJ_SEQ_9"]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(tmp_path),
+                "init",
+                str(tmp_path),
+                "--project-id",
+                "PRJ_SEQ_9",
+            ]
+        )
+        == 0
+    )
     project = load_project(tmp_path)
     db = Database(project.db_path)
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus"}
+    )
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("annotations", {
-        "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        "annotation_source": "test", "annotation_version": 1,
-    })
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000001",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "test",
+            "annotation_version": 1,
+        },
+    )
     fasta = tmp_path / "proteins.faa"
     fasta.write_text(
         ">p1\n" + "M" * 50 + "\n>p2\n" + "C" * 40 + "\n>p3\n" + "G" * 20 + "\n",
-        encoding="utf-8")
-    record = ingest_file(db, project, fasta, "annotation", "ANN_000001", "protein_fasta")
+        encoding="utf-8",
+    )
+    record = ingest_file(
+        db, project, fasta, "annotation", "ANN_000001", "protein_fasta"
+    )
     for seqid, length in (("p1", 50), ("p2", 40), ("p3", 20)):
-        db.insert_row("sequences", {
-            "file_id": record["file_id"], "file_sha256": record["sha256"],
-            "entity_type": "annotation", "entity_id": "ANN_000001",
-            "seqid": seqid, "length": length,
-        })
-    db.insert_row("analysis_jobs", {
-        "analysis_name": "cdd", "entity_type": "annotation", "entity_id": "ANN_000001",
-        "file_id": record["file_id"], "tool": "faketool", "tool_version": "1.0",
-        "parameter_set": "default", "parameter_sha256": "p" * 64,
-        "input_sha256": record["sha256"], "database_identity": "db",
-        "status": "completed", "started_at": "2026-01-01T00:00:00+00:00",
-    })
+        db.insert_row(
+            "sequences",
+            {
+                "file_id": record["file_id"],
+                "file_sha256": record["sha256"],
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "seqid": seqid,
+                "length": length,
+            },
+        )
+    db.insert_row(
+        "analysis_jobs",
+        {
+            "analysis_name": "cdd",
+            "entity_type": "annotation",
+            "entity_id": "ANN_000001",
+            "file_id": record["file_id"],
+            "tool": "faketool",
+            "tool_version": "1.0",
+            "parameter_set": "default",
+            "parameter_sha256": "p" * 64,
+            "input_sha256": record["sha256"],
+            "database_identity": "db",
+            "status": "completed",
+            "started_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
     job = db.query("SELECT max(job_id) AS j FROM analysis_jobs")[0]["j"]
     alignments = [
         # No coordinates at all: excluded as missing_coordinates.
-        {"query_id": "p1", "subject_id": "s1", "hit_rank": 1,
-         "query_start": None, "query_end": None, "evalue": 1e-5},
+        {
+            "query_id": "p1",
+            "subject_id": "s1",
+            "hit_rank": 1,
+            "query_start": None,
+            "query_end": None,
+            "evalue": 1e-5,
+        },
         # Coordinates beyond the sequence: excluded as region_outside_sequence.
-        {"query_id": "p3", "subject_id": "s2", "hit_rank": 1,
-         "query_start": 50, "query_end": 90, "evalue": 1e-6},
+        {
+            "query_id": "p3",
+            "subject_id": "s2",
+            "hit_rank": 1,
+            "query_start": 50,
+            "query_end": 90,
+            "evalue": 1e-6,
+        },
         # Usable centered region on p2.
-        {"query_id": "p2 description", "subject_id": "s3", "hit_rank": 1,
-         "query_start": 10, "query_end": 39, "evalue": 1e-8},
+        {
+            "query_id": "p2 description",
+            "subject_id": "s3",
+            "hit_rank": 1,
+            "query_start": 10,
+            "query_end": 39,
+            "evalue": 1e-8,
+        },
     ]
     for alignment in alignments:
-        db.insert_row("analysis_alignments", {
-            "job_id": job, "entity_type": "annotation", "entity_id": "ANN_000001",
-            "file_id": record["file_id"], "analysis_name": "cdd",
-            "subject_id": alignment["subject_id"], "hit_rank": alignment["hit_rank"],
-            "query_id": alignment["query_id"], "query_start": alignment["query_start"],
-            "query_end": alignment["query_end"], "evalue": alignment["evalue"],
-            "extra_json": None,
-        })
+        db.insert_row(
+            "analysis_alignments",
+            {
+                "job_id": job,
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "file_id": record["file_id"],
+                "analysis_name": "cdd",
+                "subject_id": alignment["subject_id"],
+                "hit_rank": alignment["hit_rank"],
+                "query_id": alignment["query_id"],
+                "query_start": alignment["query_start"],
+                "query_end": alignment["query_end"],
+                "evalue": alignment["evalue"],
+                "extra_json": None,
+            },
+        )
     try:
         yield project, db, record
     finally:
@@ -1381,15 +1881,24 @@ def seq_project(tmp_path: Path):
 def test_extract_domains_requires_exactly_one_region_source(seq_project, tmp_path):
     project, db, record = seq_project
     out = tmp_path / "out.faa"
-    with pytest.raises(ValidationError, match="exactly one of --analysis or --regions-tsv"):
-        sequence_tools.extract_domains(db, project, file_id=record["file_id"],
-                                       out=out, command="extract")
+    with pytest.raises(
+        ValidationError, match="exactly one of --analysis or --regions-tsv"
+    ):
+        sequence_tools.extract_domains(
+            db, project, file_id=record["file_id"], out=out, command="extract"
+        )
     regions = tmp_path / "regions.tsv"
     regions.write_text("seqid\tstart\tend\np1\t1\t10\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="only apply to --analysis regions"):
         sequence_tools.extract_domains(
-            db, project, file_id=record["file_id"], out=out, command="extract",
-            regions_tsv=regions, subject_like="bhlh%")
+            db,
+            project,
+            file_id=record["file_id"],
+            out=out,
+            command="extract",
+            regions_tsv=regions,
+            subject_like="bhlh%",
+        )
     assert not out.exists()
 
 
@@ -1408,11 +1917,20 @@ def test_extract_domains_rejects_malformed_region_rows(seq_project, tmp_path):
         regions.write_text(text, encoding="utf-8")
         with pytest.raises(ValidationError, match=message):
             sequence_tools.extract_domains(
-                db, project, file_id=record["file_id"], out=out, command="extract",
-                regions_tsv=regions)
+                db,
+                project,
+                file_id=record["file_id"],
+                out=out,
+                command="extract",
+                regions_tsv=regions,
+            )
     assert not out.exists()
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='extract-domains'")[0]["n"] == 0
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='extract-domains'"
+        )[0]["n"]
+        == 0
+    )
 
 
 def test_extract_domains_reports_every_exclusion_reason(seq_project, tmp_path):
@@ -1420,8 +1938,14 @@ def test_extract_domains_reports_every_exclusion_reason(seq_project, tmp_path):
     out = tmp_path / "domains.faa"
     manifest = tmp_path / "domains.tsv"
     result = sequence_tools.extract_domains(
-        db, project, file_id=record["file_id"], out=out, command="extract",
-        analysis="cdd", manifest=manifest)
+        db,
+        project,
+        file_id=record["file_id"],
+        out=out,
+        command="extract",
+        analysis="cdd",
+        manifest=manifest,
+    )
     assert (result["extracted"], result["excluded"]) == (1, 2)
     rows = {row["seqid"]: row for row in _read_tsv(manifest)}
     assert rows["p1"]["excluded_reason"] == "missing_coordinates"
@@ -1431,28 +1955,53 @@ def test_extract_domains_reports_every_exclusion_reason(seq_project, tmp_path):
     assert out.read_text(encoding="utf-8").startswith(">p2\n")
     run = db.query("SELECT * FROM workflow_runs WHERE step='extract-domains'")[0]
     details = json.loads(run["execution_details"])
-    assert (details["extracted"], details["excluded"], details["mode"]) == (1, 2, "best-only")
+    assert (details["extracted"], details["excluded"], details["mode"]) == (
+        1,
+        2,
+        "best-only",
+    )
 
 
-def test_select_sequences_accepts_evalue_only_and_entity_narrowing(seq_project, tmp_path):
+def test_select_sequences_accepts_evalue_only_and_entity_narrowing(
+    seq_project, tmp_path
+):
     project, db, record = seq_project
     out = tmp_path / "selected.faa"
     # evalue-max alone exercises the criteria builder without an analysis filter.
     result = sequence_tools.select_sequences(
-        db, project, file_id=record["file_id"], out=out, command="select",
-        evalue_max=1e-7)
+        db,
+        project,
+        file_id=record["file_id"],
+        out=out,
+        command="select",
+        evalue_max=1e-7,
+    )
     assert (result["total"], result["selected"]) == (3, 1)
     assert out.read_text(encoding="utf-8").startswith(">p2\n")
 
     narrow = tmp_path / "narrow.faa"
     result = sequence_tools.select_sequences(
-        db, project, file_id=record["file_id"], out=narrow, command="select",
-        analyses=["cdd"], entity_type="annotation", entity_id="ANN_000001")
+        db,
+        project,
+        file_id=record["file_id"],
+        out=narrow,
+        command="select",
+        analyses=["cdd"],
+        entity_type="annotation",
+        entity_id="ANN_000001",
+    )
     assert (result["total"], result["selected"]) == (3, 3)
     no_match = tmp_path / "no-match.faa"
     result = sequence_tools.select_sequences(
-        db, project, file_id=record["file_id"], out=no_match, command="select",
-        analyses=["cdd"], entity_type="annotation", entity_id="ANN_999999")
+        db,
+        project,
+        file_id=record["file_id"],
+        out=no_match,
+        command="select",
+        analyses=["cdd"],
+        entity_type="annotation",
+        entity_id="ANN_999999",
+    )
     assert result["selected"] == 0
     assert no_match.read_text(encoding="utf-8") == ""
 
@@ -1462,28 +2011,48 @@ def test_sequence_tools_reject_unknown_and_missing_source_files(seq_project, tmp
     out = tmp_path / "out.faa"
     with pytest.raises(ValidationError, match="does not exist in the manifest"):
         sequence_tools.select_sequences(
-            db, project, file_id="FIL_999999", out=out, command="select",
-            analyses=["cdd"])
+            db,
+            project,
+            file_id="FIL_999999",
+            out=out,
+            command="select",
+            analyses=["cdd"],
+        )
     sequence_path = project.root / record["relative_path"]
     sequence_path.unlink()
     with pytest.raises(ValidationError, match="bytes are missing"):
         sequence_tools.select_sequences(
-            db, project, file_id=record["file_id"], out=out, command="select",
-            analyses=["cdd"])
+            db,
+            project,
+            file_id=record["file_id"],
+            out=out,
+            command="select",
+            analyses=["cdd"],
+        )
     assert not out.exists()
 
 
 def test_coverage_publish_failure_before_rename_removes_the_staging_tree(
-        project_db, tmp_path, monkeypatch):
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     reference = _import_taxonomy(
-        project, db, tmp_path, ranks=["genus"],
-        thresholds={"genus": {"min_coverage_percent": 0}}, root_taxids=[1],
+        project,
+        db,
+        tmp_path,
+        ranks=["genus"],
+        thresholds={"genus": {"min_coverage_percent": 0}},
+        root_taxids=[1],
     )
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Covered",
-        "taxon_id": 20, "taxonomy_source": "NCBI",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Covered",
+            "taxon_id": 20,
+            "taxonomy_source": "NCBI",
+        },
+    )
 
     def failing_replace(_source, _target):
         raise OSError("publish failed")
@@ -1496,16 +2065,27 @@ def test_coverage_publish_failure_before_rename_removes_the_staging_tree(
     assert db.query("SELECT COUNT(*) AS n FROM coverage_reports")[0]["n"] == 0
 
 
-def test_published_coverage_report_survives_a_provenance_log_failure(project_db, tmp_path):
+def test_published_coverage_report_survives_a_provenance_log_failure(
+    project_db, tmp_path
+):
     project, db = project_db
     reference = _import_taxonomy(
-        project, db, tmp_path, ranks=["genus"],
-        thresholds={"genus": {"min_coverage_percent": 0}}, root_taxids=[1],
+        project,
+        db,
+        tmp_path,
+        ranks=["genus"],
+        thresholds={"genus": {"min_coverage_percent": 0}},
+        root_taxids=[1],
     )
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Covered",
-        "taxon_id": 20, "taxonomy_source": "NCBI",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Covered",
+            "taxon_id": 20,
+            "taxonomy_source": "NCBI",
+        },
+    )
     db.conn.execute(
         "CREATE TRIGGER fail_coverage_run BEFORE INSERT ON workflow_runs "
         "BEGIN SELECT RAISE(ABORT, 'injected log failure'); END;"
@@ -1526,25 +2106,42 @@ def test_published_coverage_report_survives_a_provenance_log_failure(project_db,
     assert reused["path"] == str(published)
 
 
-def test_subject_matching_tolerates_missing_and_malformed_hit_metadata(seq_project, tmp_path):
+def test_subject_matching_tolerates_missing_and_malformed_hit_metadata(
+    seq_project, tmp_path
+):
     """Hits without matching subject metadata never match, and never raise."""
     project, db, record = seq_project
     job = db.query("SELECT max(job_id) AS j FROM analysis_jobs")[0]["j"]
     for query_id, subject_id, extra_json in (
-            ("p1", "nope", "{broken"),   # unparsable extra JSON
-            ("p3", "zzz", None),         # no extra JSON at all
+        ("p1", "nope", "{broken"),  # unparsable extra JSON
+        ("p3", "zzz", None),  # no extra JSON at all
     ):
-        db.insert_row("analysis_alignments", {
-            "job_id": job, "entity_type": "annotation", "entity_id": "ANN_000001",
-            "file_id": record["file_id"], "analysis_name": "cdd",
-            "query_id": query_id, "subject_id": subject_id, "hit_rank": 1,
-            "query_start": 1, "query_end": 20, "evalue": 1e-9,
-            "extra_json": extra_json,
-        })
+        db.insert_row(
+            "analysis_alignments",
+            {
+                "job_id": job,
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "file_id": record["file_id"],
+                "analysis_name": "cdd",
+                "query_id": query_id,
+                "subject_id": subject_id,
+                "hit_rank": 1,
+                "query_start": 1,
+                "query_end": 20,
+                "evalue": 1e-9,
+                "extra_json": extra_json,
+            },
+        )
     out = tmp_path / "matched.faa"
     result = sequence_tools.select_sequences(
-        db, project, file_id=record["file_id"], out=out, command="select",
-        subject_like="s3")
+        db,
+        project,
+        file_id=record["file_id"],
+        out=out,
+        command="select",
+        subject_like="s3",
+    )
     assert (result["total"], result["selected"]) == (3, 1)
     assert out.read_text(encoding="utf-8").startswith(">p2\n")
 
@@ -1552,14 +2149,23 @@ def test_subject_matching_tolerates_missing_and_malformed_hit_metadata(seq_proje
 def test_fanout_adopts_a_preexisting_identical_unit_target(fanout_project, tmp_path):
     """An unregistered target with identical bytes is registered, not refused."""
     project, db, source, assignments = fanout_project
-    target = (project.analysis_root / "derived" / "ANN_000001"
-              / "ANN_000001.subfamily_alignment:SF01.fasta")
+    target = (
+        project.analysis_root
+        / "derived"
+        / "ANN_000001"
+        / "ANN_000001.subfamily_alignment:SF01.fasta"
+    )
     target.parent.mkdir(parents=True)
     target.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
     result = _fanout(db, project, source, assignments)
     unit = {row["unit"]: row for row in result["units"]}["SF01"]
     assert unit["status"] == "created"
     assert (project.root / unit["relative_path"]).read_text(encoding="utf-8") == (
-        ">p1\nMPEPTIDE\n")
-    assert db.query("SELECT COUNT(*) AS n FROM files WHERE file_role=?",
-                    (unit["role"],))[0]["n"] == 1
+        ">p1\nMPEPTIDE\n"
+    )
+    assert (
+        db.query("SELECT COUNT(*) AS n FROM files WHERE file_role=?", (unit["role"],))[
+            0
+        ]["n"]
+        == 1
+    )

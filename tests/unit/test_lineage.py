@@ -24,7 +24,9 @@ def project_db(tmp_path: Path):
     db = Database(project.db_path)
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
     genome = tmp_path / "genome.fa"
     genome.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
     source = ingest_file(db, project, genome, "assembly", "ASM_000001", "genome_fasta")
@@ -34,7 +36,9 @@ def project_db(tmp_path: Path):
         db.close()
 
 
-def _write_derived(root: Path, name: str = "matrix.tsv", content: str = "id\tvalue\nctg1\t1\n") -> Path:
+def _write_derived(
+    root: Path, name: str = "matrix.tsv", content: str = "id\tvalue\nctg1\t1\n"
+) -> Path:
     path = root / name
     path.write_text(content, encoding="utf-8")
     return path
@@ -55,7 +59,9 @@ def _item(path: Path, source: dict, **overrides) -> dict:
 
 
 def _lineage_rows(db: Database) -> list[dict]:
-    return [dict(row) for row in db.conn.execute("SELECT * FROM file_lineage").fetchall()]
+    return [
+        dict(row) for row in db.conn.execute("SELECT * FROM file_lineage").fetchall()
+    ]
 
 
 def test_adopt_single_file_registers_lineage_and_run(project_db, tmp_path):
@@ -76,8 +82,12 @@ def test_adopt_single_file_registers_lineage_and_run(project_db, tmp_path):
     assert edges[0]["input_file_id"] == source["file_id"]
     assert edges[0]["workflow_run_id"] is None
 
-    runs = [dict(row) for row in db.conn.execute(
-        "SELECT * FROM workflow_runs WHERE step='adopt'").fetchall()]
+    runs = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT * FROM workflow_runs WHERE step='adopt'"
+        ).fetchall()
+    ]
     assert len(runs) == 1
     details = json.loads(runs[0]["execution_details"])
     assert details["actor"] == "tester"
@@ -91,14 +101,19 @@ def test_adopt_idempotent_same_bytes(project_db, tmp_path):
     files_before = db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"]
     second = adopt_files(db, project, items=[_item(derived, source)])
     assert second[0]["file_id"] == first[0]["file_id"]
-    assert db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"] == files_before
+    assert (
+        db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"]
+        == files_before
+    )
     assert len(_lineage_rows(db)) == 1
 
 
 def test_adopt_conflicting_bytes_raise(project_db, tmp_path):
     project, db, source = project_db
     adopt_files(db, project, items=[_item(_write_derived(tmp_path), source)])
-    changed = _write_derived(tmp_path, name="matrix2.tsv", content="id\tvalue\nctg1\t2\n")
+    changed = _write_derived(
+        tmp_path, name="matrix2.tsv", content="id\tvalue\nctg1\t2\n"
+    )
     with pytest.raises(ConflictError):
         adopt_files(db, project, items=[_item(changed, source)])
     # The conflicting item was not registered and no extra lineage edge exists.
@@ -108,22 +123,37 @@ def test_adopt_conflicting_bytes_raise(project_db, tmp_path):
 def test_adopt_unknown_derived_from_aborts_whole_batch(project_db, tmp_path):
     project, db, source = project_db
     good = _item(_write_derived(tmp_path, name="good.tsv"), source, role="derived_a")
-    bad = _item(_write_derived(tmp_path, name="bad.tsv"), source, role="derived_b",
-                derived_from=["FIL_999999"])
+    bad = _item(
+        _write_derived(tmp_path, name="bad.tsv"),
+        source,
+        role="derived_b",
+        derived_from=["FIL_999999"],
+    )
     files_before = db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"]
     with pytest.raises(ValidationError, match="FIL_999999"):
         adopt_files(db, project, items=[good, bad])
-    assert db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"] == files_before
+    assert (
+        db.conn.execute("SELECT COUNT(*) AS n FROM files").fetchone()["n"]
+        == files_before
+    )
     assert _lineage_rows(db) == []
-    assert db.conn.execute(
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='adopt'").fetchone()["n"] == 0
+    assert (
+        db.conn.execute(
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='adopt'"
+        ).fetchone()["n"]
+        == 0
+    )
 
 
 @pytest.mark.parametrize("existing_conflict", [False, True])
-def test_adopt_content_conflicts_abort_before_materializing(project_db, tmp_path, existing_conflict):
+def test_adopt_content_conflicts_abort_before_materializing(
+    project_db, tmp_path, existing_conflict
+):
     project, db, source = project_db
     first = _item(_write_derived(tmp_path, "first.tsv"), source, role="batch_a")
-    second = _item(_write_derived(tmp_path, "second.tsv", "different"), source, role="batch_a")
+    second = _item(
+        _write_derived(tmp_path, "second.tsv", "different"), source, role="batch_a"
+    )
     if existing_conflict:
         adopt_files(db, project, items=[first])
         first = _item(_write_derived(tmp_path, "new.tsv"), source, role="new_role")
@@ -135,11 +165,15 @@ def test_adopt_content_conflicts_abort_before_materializing(project_db, tmp_path
     assert (project.logs_root / "workflow.jsonl").read_bytes() == log
     expected = "batch_a" if existing_conflict else None
     artifacts = list((project.analysis_root / "adopted").rglob("*.tsv"))
-    assert [path.name for path in artifacts] == ([f"ASM_000001.{expected}.tsv"] if expected else [])
+    assert [path.name for path in artifacts] == (
+        [f"ASM_000001.{expected}.tsv"] if expected else []
+    )
 
 
 @pytest.mark.parametrize("failure", ["second_item", "batch_log", "interrupt"])
-def test_adopt_late_failure_rolls_back_files_state_lineage_and_logs(project_db, tmp_path, monkeypatch, failure):
+def test_adopt_late_failure_rolls_back_files_state_lineage_and_logs(
+    project_db, tmp_path, monkeypatch, failure
+):
     project, db, source = project_db
     existing = _item(_write_derived(tmp_path, "existing.tsv"), source, role="existing")
     existing_record = adopt_files(db, project, items=[existing])[0]
@@ -175,9 +209,13 @@ def test_adopt_late_failure_rolls_back_files_state_lineage_and_logs(project_db, 
     assert not db.conn.in_transaction
     assert list(db.conn.iterdump()) == before
     assert (project.logs_root / "workflow.jsonl").read_bytes() == log
-    assert (project.root / existing_record["relative_path"]).read_bytes() == Path(existing["path"]).read_bytes()
+    assert (project.root / existing_record["relative_path"]).read_bytes() == Path(
+        existing["path"]
+    ).read_bytes()
     adopted = project.analysis_root / "adopted" / "ASM_000001"
-    assert sorted(path.name for path in adopted.iterdir()) == ["ASM_000001.existing.tsv"]
+    assert sorted(path.name for path in adopted.iterdir()) == [
+        "ASM_000001.existing.tsv"
+    ]
     monkeypatch.undo()
     assert len(adopt_files(db, project, items=[existing, first, second])) == 3
 
@@ -204,10 +242,14 @@ def test_adopt_preserves_conflicting_unregistered_destination(project_db, tmp_pa
     target.write_text("preexisting bytes")
     before = list(db.conn.iterdump())
     with pytest.raises(ConflictError, match="occupied"):
-        adopt_files(db, project, items=[
-            _item(_write_derived(tmp_path, "first.tsv"), source, role="new_role"),
-            _item(_write_derived(tmp_path, "second.tsv"), source, role="derived"),
-        ])
+        adopt_files(
+            db,
+            project,
+            items=[
+                _item(_write_derived(tmp_path, "first.tsv"), source, role="new_role"),
+                _item(_write_derived(tmp_path, "second.tsv"), source, role="derived"),
+            ],
+        )
     assert target.read_text() == "preexisting bytes"
     assert list(target.parent.iterdir()) == [target]
     assert list(db.conn.iterdump()) == before
@@ -218,13 +260,25 @@ def test_adopt_directory_artifact(project_db, tmp_path):
     tree = tmp_path / "roary_out"
     tree.mkdir()
     (tree / "gene_presence_absence.txt").write_text("gene\na\n", encoding="utf-8")
-    results = adopt_files(db, project, items=[_item(
-        tree, source, role="pangenome_dir", format="directory", compression="none",
-        workflow_run_id="WF_EXTERNAL_1",
-    )])
+    results = adopt_files(
+        db,
+        project,
+        items=[
+            _item(
+                tree,
+                source,
+                role="pangenome_dir",
+                format="directory",
+                compression="none",
+                workflow_run_id="WF_EXTERNAL_1",
+            )
+        ],
+    )
     record = results[0]
     assert record["format"] == "directory"
-    assert (project.root / record["relative_path"] / "gene_presence_absence.txt").is_file()
+    assert (
+        project.root / record["relative_path"] / "gene_presence_absence.txt"
+    ).is_file()
     edge = _lineage_rows(db)[0]
     assert edge["workflow_run_id"] == "WF_EXTERNAL_1"
 
@@ -234,11 +288,24 @@ def test_adopted_file_is_analysis_candidate(project_db, tmp_path):
     derived = _write_derived(tmp_path)
     adopted = adopt_files(db, project, items=[_item(derived, source)])[0]
     recipe = Recipe(
-        name="downstream", tool_name="tool", description="", entity_type="assembly",
-        file_role="pangenome_matrix", fmt="tsv", input_kind="file", database="",
-        database_version="", output_subdir="downstream", output_kind="file",
-        output_name_template="", output_suffix=".tsv", arguments=[], parameters={},
-        result_parser="none", max_hits_per_query=2, raw={},
+        name="downstream",
+        tool_name="tool",
+        description="",
+        entity_type="assembly",
+        file_role="pangenome_matrix",
+        fmt="tsv",
+        input_kind="file",
+        database="",
+        database_version="",
+        output_subdir="downstream",
+        output_kind="file",
+        output_name_template="",
+        output_suffix=".tsv",
+        arguments=[],
+        parameters={},
+        result_parser="none",
+        max_hits_per_query=2,
+        raw={},
     )
     candidates = candidate_files(db, recipe)
     assert [row["file_id"] for row in candidates] == [adopted["file_id"]]
@@ -247,17 +314,36 @@ def test_adopted_file_is_analysis_candidate(project_db, tmp_path):
 def test_load_adopt_manifest_json_and_tsv(project_db, tmp_path):
     _project, _db, source = project_db
     json_manifest = tmp_path / "adopt.json"
-    json_manifest.write_text(json.dumps([{
-        "path": "out/a.tsv", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "role": "derived_a", "format": "tsv", "compression": "none",
-        "derived_from": [source["file_id"]], "workflow_run_id": "WF_1",
-    }]), encoding="utf-8")
+    json_manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "path": "out/a.tsv",
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "role": "derived_a",
+                    "format": "tsv",
+                    "compression": "none",
+                    "derived_from": [source["file_id"]],
+                    "workflow_run_id": "WF_1",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
     items = load_adopt_manifest(json_manifest)
-    assert items == [{
-        "path": "out/a.tsv", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "role": "derived_a", "format": "tsv", "compression": "none",
-        "derived_from": [source["file_id"]], "workflow_run_id": "WF_1",
-    }]
+    assert items == [
+        {
+            "path": "out/a.tsv",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "role": "derived_a",
+            "format": "tsv",
+            "compression": "none",
+            "derived_from": [source["file_id"]],
+            "workflow_run_id": "WF_1",
+        }
+    ]
 
     tsv_manifest = tmp_path / "adopt.tsv"
     tsv_manifest.write_text(
@@ -280,23 +366,50 @@ def test_load_adopt_manifest_json_and_tsv(project_db, tmp_path):
 def test_adopt_cli_single_file_and_manifest(project_db, tmp_path, capsys):
     project, db, source = project_db
     derived = _write_derived(tmp_path)
-    assert main([
-        "--project", str(tmp_path), "adopt",
-        "--file", str(derived), "--entity-type", "assembly", "--entity-id", "ASM_000001",
-        "--role", "cli_derived", "--format", "tsv", "--compression", "none",
-        "--derived-from", source["file_id"], "--actor", "cli-tester",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(tmp_path),
+                "adopt",
+                "--file",
+                str(derived),
+                "--entity-type",
+                "assembly",
+                "--entity-id",
+                "ASM_000001",
+                "--role",
+                "cli_derived",
+                "--format",
+                "tsv",
+                "--compression",
+                "none",
+                "--derived-from",
+                source["file_id"],
+                "--actor",
+                "cli-tester",
+            ]
+        )
+        == 0
+    )
     summary = json.loads(capsys.readouterr().out)
     assert summary["registered"] == 1
     assert summary["file_ids"][0].startswith("FIL_")
 
     second = _write_derived(tmp_path, name="second.tsv", content="x\n")
     manifest = tmp_path / "batch.json"
-    manifest.write_text(json.dumps([_item(second, source, role="cli_batch")]), encoding="utf-8")
-    assert main(["--project", str(tmp_path), "adopt", "--from-manifest", str(manifest)]) == 0
+    manifest.write_text(
+        json.dumps([_item(second, source, role="cli_batch")]), encoding="utf-8"
+    )
+    assert (
+        main(["--project", str(tmp_path), "adopt", "--from-manifest", str(manifest)])
+        == 0
+    )
     summary = json.loads(capsys.readouterr().out)
     assert summary["registered"] == 1
-    assert db.conn.execute("SELECT COUNT(*) AS n FROM file_lineage").fetchone()["n"] == 2
+    assert (
+        db.conn.execute("SELECT COUNT(*) AS n FROM file_lineage").fetchone()["n"] == 2
+    )
 
 
 def test_adopt_cli_mode_exclusivity(tmp_path):
@@ -304,4 +417,6 @@ def test_adopt_cli_mode_exclusivity(tmp_path):
     with pytest.raises(SystemExit):
         main(["--project", str(tmp_path), "adopt"])
     with pytest.raises(SystemExit):
-        main(["--project", str(tmp_path), "adopt", "--file", "x", "--from-manifest", "y"])
+        main(
+            ["--project", str(tmp_path), "adopt", "--file", "x", "--from-manifest", "y"]
+        )

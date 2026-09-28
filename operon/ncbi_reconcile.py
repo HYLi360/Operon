@@ -19,8 +19,14 @@ from operon.workflow import finish_run, new_run_id, start_run
 
 _ACCESSION_RE = re.compile(r"GC[AF]_\d+(?:\.\d+)?", re.IGNORECASE)
 _EARLY_STATES = {
-    "DISCOVERED", "METADATA_FETCHED", "METADATA_VALIDATED", "DOWNLOAD_PENDING",
-    "DOWNLOADED", "DOWNLOAD_FAILED", "CHECKSUM_VERIFIED", "CHECKSUM_FAILED",
+    "DISCOVERED",
+    "METADATA_FETCHED",
+    "METADATA_VALIDATED",
+    "DOWNLOAD_PENDING",
+    "DOWNLOADED",
+    "DOWNLOAD_FAILED",
+    "CHECKSUM_VERIFIED",
+    "CHECKSUM_FAILED",
     "STANDARDIZED",
 }
 
@@ -37,18 +43,24 @@ def _annotation_files(db: Database, annotation_id: str) -> dict[str, dict[str, A
 
 
 def _reference_score(db: Database, annotation_id: str) -> tuple[int, int, int]:
-    qc = int(db.conn.execute(
-        "SELECT COUNT(*) FROM qc_results WHERE entity_type='annotation' AND entity_id=?",
-        (annotation_id,),
-    ).fetchone()[0])
-    analysis = int(db.conn.execute(
-        "SELECT COUNT(*) FROM analysis_jobs WHERE entity_type='annotation' AND entity_id=?",
-        (annotation_id,),
-    ).fetchone()[0])
-    releases = int(db.conn.execute(
-        "SELECT COUNT(*) FROM release_members WHERE entity_type='annotation' AND entity_id=?",
-        (annotation_id,),
-    ).fetchone()[0])
+    qc = int(
+        db.conn.execute(
+            "SELECT COUNT(*) FROM qc_results WHERE entity_type='annotation' AND entity_id=?",
+            (annotation_id,),
+        ).fetchone()[0]
+    )
+    analysis = int(
+        db.conn.execute(
+            "SELECT COUNT(*) FROM analysis_jobs WHERE entity_type='annotation' AND entity_id=?",
+            (annotation_id,),
+        ).fetchone()[0]
+    )
+    releases = int(
+        db.conn.execute(
+            "SELECT COUNT(*) FROM release_members WHERE entity_type='annotation' AND entity_id=?",
+            (annotation_id,),
+        ).fetchone()[0]
+    )
     file_count = len(_annotation_files(db, annotation_id))
     number = int(str(annotation_id).rsplit("_", 1)[-1])
     return qc + analysis + releases, file_count, -number
@@ -58,10 +70,9 @@ def _compatible_duplicate(db: Database, canonical: str, duplicate: str) -> bool:
     left = _annotation_files(db, canonical)
     right = _annotation_files(db, duplicate)
     for role in set(left) & set(right):
-        if (
-                str(left[role]["sha256"]).lower() != str(right[role]["sha256"]).lower()
-                or int(left[role]["size_bytes"]) != int(right[role]["size_bytes"])
-        ):
+        if str(left[role]["sha256"]).lower() != str(
+            right[role]["sha256"]
+        ).lower() or int(left[role]["size_bytes"]) != int(right[role]["size_bytes"]):
             return False
     return True
 
@@ -78,28 +89,34 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
         "warnings": [],
     }
 
-    has_supersessions = db.conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='entity_supersessions'"
-    ).fetchone() is not None
+    has_supersessions = (
+        db.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='entity_supersessions'"
+        ).fetchone()
+        is not None
+    )
     superseded_ids: set[str] = (
         {
             str(row["object_id"])
             for row in db.conn.execute(
-            "SELECT object_id FROM entity_supersessions WHERE object_type='annotation'"
-        )
+                "SELECT object_id FROM entity_supersessions WHERE object_type='annotation'"
+            )
         }
-        if has_supersessions else set()
+        if has_supersessions
+        else set()
     )
     groups: dict[tuple[Any, ...], list[str]] = defaultdict(list)
     for row in db.conn.execute(
-            "SELECT annotation_id, assembly_id, annotation_source, annotation_version, annotation_date "
-            "FROM annotations ORDER BY annotation_id"
+        "SELECT annotation_id, assembly_id, annotation_source, annotation_version, annotation_date "
+        "FROM annotations ORDER BY annotation_id"
     ):
         if str(row["annotation_id"]) in superseded_ids:
             continue
         key = (
-            row["assembly_id"], str(row["annotation_source"] or "").strip().casefold(),
-            int(row["annotation_version"] or 1), str(row["annotation_date"] or ""),
+            row["assembly_id"],
+            str(row["annotation_source"] or "").strip().casefold(),
+            int(row["annotation_version"] or 1),
+            str(row["annotation_date"] or ""),
         )
         groups[key].append(str(row["annotation_id"]))
     for key, annotation_ids in groups.items():
@@ -110,26 +127,32 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
             if duplicate == canonical:
                 continue
             if not _compatible_duplicate(db, canonical, duplicate):
-                plan["warnings"].append({
-                    "kind": "annotation_bytes_differ",
-                    "annotation_id": duplicate,
-                    "candidate": canonical,
-                })
+                plan["warnings"].append(
+                    {
+                        "kind": "annotation_bytes_differ",
+                        "annotation_id": duplicate,
+                        "candidate": canonical,
+                    }
+                )
                 continue
             superseded_ids.add(duplicate)
-            plan["annotation_supersessions"].append({
-                "annotation_id": duplicate,
-                "superseded_by": canonical,
-                "identity": {
-                    "assembly_id": key[0], "provider": key[1],
-                    "version": key[2], "date": key[3],
-                },
-            })
+            plan["annotation_supersessions"].append(
+                {
+                    "annotation_id": duplicate,
+                    "superseded_by": canonical,
+                    "identity": {
+                        "assembly_id": key[0],
+                        "provider": key[1],
+                        "version": key[2],
+                        "date": key[3],
+                    },
+                }
+            )
 
     aliases: dict[str, list[str]] = defaultdict(list)
     for row in db.conn.execute(
-            "SELECT internal_id, accession FROM accessions WHERE internal_type='assembly' "
-            "AND namespace IN ('NCBI_Assembly','NCBI_GenBank_Assembly','NCBI_RefSeq_Assembly')"
+        "SELECT internal_id, accession FROM accessions WHERE internal_type='assembly' "
+        "AND namespace IN ('NCBI_Assembly','NCBI_GenBank_Assembly','NCBI_RefSeq_Assembly')"
     ):
         value = str(row["accession"]).upper()
         if value not in aliases[str(row["internal_id"])]:
@@ -144,14 +167,16 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
             "WHERE assembly_id=?",
             (assembly_id,),
         ).fetchone()
-        current_accession = str(assembly["assembly_accession"] or "").upper() if assembly else ""
+        current_accession = (
+            str(assembly["assembly_accession"] or "").upper() if assembly else ""
+        )
         historical_accession = ""
         for file_row in db.conn.execute(
-                "SELECT f.file_id, f.source_url FROM files f LEFT JOIN annotations an "
-                "ON f.entity_type='annotation' AND f.entity_id=an.annotation_id "
-                "WHERE (f.entity_type='assembly' AND f.entity_id=?) "
-                "OR (f.entity_type='annotation' AND an.assembly_id=?) ORDER BY f.file_id",
-                (assembly_id, assembly_id),
+            "SELECT f.file_id, f.source_url FROM files f LEFT JOIN annotations an "
+            "ON f.entity_type='annotation' AND f.entity_id=an.annotation_id "
+            "WHERE (f.entity_type='assembly' AND f.entity_id=?) "
+            "OR (f.entity_type='annotation' AND an.assembly_id=?) ORDER BY f.file_id",
+            (assembly_id, assembly_id),
         ):
             matches = _ACCESSION_RE.findall(str(file_row["source_url"] or ""))
             candidate = matches[-1].upper() if matches else ""
@@ -159,28 +184,30 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                 historical_accession = candidate
                 break
         canonical = (
-                historical_accession
-                or (current_accession if current_accession in values else "")
-                or gcf[-1]
+            historical_accession
+            or (current_accession if current_accession in values else "")
+            or gcf[-1]
         )
         canonical_database = "RefSeq" if canonical.startswith("GCF_") else "GenBank"
         if assembly and (
-                current_accession != canonical
-                or str(assembly["source_database"] or "") != canonical_database
+            current_accession != canonical
+            or str(assembly["source_database"] or "") != canonical_database
         ):
-            plan["assembly_updates"].append({
-                "assembly_id": assembly_id,
-                "old_accession": assembly["assembly_accession"],
-                "new_accession": canonical,
-                "old_source_database": assembly["source_database"],
-                "new_source_database": canonical_database,
-            })
+            plan["assembly_updates"].append(
+                {
+                    "assembly_id": assembly_id,
+                    "old_accession": assembly["assembly_accession"],
+                    "new_accession": canonical,
+                    "old_source_database": assembly["source_database"],
+                    "new_source_database": canonical_database,
+                }
+            )
         for row in db.conn.execute(
-                "SELECT file_id, file_role, source_url, sha256, relative_path, format, compression "
-                "FROM files "
-                "WHERE entity_type='assembly' AND entity_id=? "
-                "AND file_role IN ('genome_fasta','assembly_report')",
-                (assembly_id,),
+            "SELECT file_id, file_role, source_url, sha256, relative_path, format, compression "
+            "FROM files "
+            "WHERE entity_type='assembly' AND entity_id=? "
+            "AND file_role IN ('genome_fasta','assembly_report')",
+            (assembly_id,),
         ):
             matches = _ACCESSION_RE.findall(str(row["source_url"] or ""))
             source_accession = matches[-1].upper() if matches else ""
@@ -193,30 +220,48 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
                 "AND file_role=? AND file_id<>? LIMIT 1",
                 (assembly_id, new_role, row["file_id"]),
             ).fetchone()
-            if conflict and str(conflict["sha256"]).lower() != str(row["sha256"]).lower():
-                plan["warnings"].append({
-                    "kind": "alternate_role_conflict", "file_id": row["file_id"],
-                    "existing_file_id": conflict["file_id"], "role": new_role,
-                })
+            if (
+                conflict
+                and str(conflict["sha256"]).lower() != str(row["sha256"]).lower()
+            ):
+                plan["warnings"].append(
+                    {
+                        "kind": "alternate_role_conflict",
+                        "file_id": row["file_id"],
+                        "existing_file_id": conflict["file_id"],
+                        "role": new_role,
+                    }
+                )
                 continue
             # The archived file must move to the renamed role's canonical
             # path too, otherwise the plain name stays occupied and a later
             # ingest of the canonical role collides with these bytes.
             old_rel = str(row["relative_path"])
-            new_rel = str(PurePosixPath(old_rel).parent / canonical_filename(
-                str(assembly_id), new_role, str(row["format"]), str(row["compression"]),
-            ))
-            plan["file_role_updates"].append({
-                "file_id": row["file_id"], "assembly_id": assembly_id,
-                "old_role": row["file_role"], "new_role": new_role,
-                "source_accession": source_accession,
-                "old_relative_path": old_rel,
-                "new_relative_path": new_rel,
-                "clear_fasta_link": bool(
-                    row["file_role"] == "genome_fasta"
-                    and assembly and assembly["fasta_file_id"] == row["file_id"]
-                ),
-            })
+            new_rel = str(
+                PurePosixPath(old_rel).parent
+                / canonical_filename(
+                    str(assembly_id),
+                    new_role,
+                    str(row["format"]),
+                    str(row["compression"]),
+                )
+            )
+            plan["file_role_updates"].append(
+                {
+                    "file_id": row["file_id"],
+                    "assembly_id": assembly_id,
+                    "old_role": row["file_role"],
+                    "new_role": new_role,
+                    "source_accession": source_accession,
+                    "old_relative_path": old_rel,
+                    "new_relative_path": new_rel,
+                    "clear_fasta_link": bool(
+                        row["file_role"] == "genome_fasta"
+                        and assembly
+                        and assembly["fasta_file_id"] == row["file_id"]
+                    ),
+                }
+            )
         for value in values:
             generic = db.conn.execute(
                 "SELECT is_primary FROM accessions WHERE namespace='NCBI_Assembly' AND accession=?",
@@ -224,46 +269,54 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
             ).fetchone()
             desired = 1 if value == canonical else 0
             if generic is not None and int(generic["is_primary"] or 0) != desired:
-                plan["accession_primary_updates"].append({
-                    "namespace": "NCBI_Assembly",
-                    "accession": value,
-                    "is_primary": desired,
-                })
+                plan["accession_primary_updates"].append(
+                    {
+                        "namespace": "NCBI_Assembly",
+                        "accession": value,
+                        "is_primary": desired,
+                    }
+                )
 
     # Rows renamed by an earlier reconciliation (or equivalent repair) whose
     # files still sit at the pre-rename canonical path: align relative_path
     # with the role-derived canonical name so future ingests of the plain
     # role do not collide with these bytes.
     for row in db.conn.execute(
-            "SELECT file_id, entity_id, file_role, format, compression, relative_path "
-            "FROM files WHERE file_role IN ('genome_fasta_genbank','genome_fasta_refseq',"
-            "'assembly_report_genbank','assembly_report_refseq')"
+        "SELECT file_id, entity_id, file_role, format, compression, relative_path "
+        "FROM files WHERE file_role IN ('genome_fasta_genbank','genome_fasta_refseq',"
+        "'assembly_report_genbank','assembly_report_refseq')"
     ):
         old_rel = str(row["relative_path"])
         expected = canonical_filename(
-            str(row["entity_id"]), str(row["file_role"]),
-            str(row["format"]), str(row["compression"]),
+            str(row["entity_id"]),
+            str(row["file_role"]),
+            str(row["format"]),
+            str(row["compression"]),
         )
         if PurePosixPath(old_rel).name != expected:
-            plan["file_path_repairs"].append({
-                "file_id": row["file_id"],
-                "old_relative_path": old_rel,
-                "new_relative_path": str(PurePosixPath(old_rel).parent / expected),
-            })
+            plan["file_path_repairs"].append(
+                {
+                    "file_id": row["file_id"],
+                    "old_relative_path": old_rel,
+                    "new_relative_path": str(PurePosixPath(old_rel).parent / expected),
+                }
+            )
 
     for row in db.conn.execute(
-            "SELECT e.entity_id, e.state FROM entity_state e WHERE e.entity_type='annotation' "
-            "AND EXISTS (SELECT 1 FROM qc_results q WHERE q.entity_type='annotation' "
-            "AND q.entity_id=e.entity_id)"
+        "SELECT e.entity_id, e.state FROM entity_state e WHERE e.entity_type='annotation' "
+        "AND EXISTS (SELECT 1 FROM qc_results q WHERE q.entity_type='annotation' "
+        "AND q.entity_id=e.entity_id)"
     ):
         annotation_id = str(row["entity_id"])
         if annotation_id in superseded_ids or str(row["state"]) not in _EARLY_STATES:
             continue
-        plan["state_restorations"].append({
-            "annotation_id": annotation_id,
-            "old_state": row["state"],
-            "new_state": "QC_COMPLETE",
-        })
+        plan["state_restorations"].append(
+            {
+                "annotation_id": annotation_id,
+                "old_state": row["state"],
+                "new_state": "QC_COMPLETE",
+            }
+        )
     plan["summary"] = {
         key: len(value) for key, value in plan.items() if isinstance(value, list)
     }
@@ -271,15 +324,15 @@ def plan_ncbi_reconciliation(db: Database) -> dict[str, Any]:
 
 
 def _apply_path_move(
-        db: Database,
-        project: Project,
-        file_id: str,
-        old_rel: str,
-        new_rel: str,
-        *,
-        actor: str | None,
-        run_id: str,
-        reason: str,
+    db: Database,
+    project: Project,
+    file_id: str,
+    old_rel: str,
+    new_rel: str,
+    *,
+    actor: str | None,
+    run_id: str,
+    reason: str,
 ) -> bool:
     """Move an archived file to its new canonical path and update the row.
 
@@ -292,7 +345,10 @@ def _apply_path_move(
     new_path = project.root / new_rel
     if not old_path.exists():
         return False
-    if new_path.exists() and sha256_file(new_path).lower() != sha256_file(old_path).lower():
+    if (
+        new_path.exists()
+        and sha256_file(new_path).lower() != sha256_file(old_path).lower()
+    ):
         raise ConflictError(
             f"cannot move {old_path} to {new_path}: destination exists with different bytes"
         )
@@ -302,23 +358,31 @@ def _apply_path_move(
         "UPDATE files SET relative_path=? WHERE file_id=?", (new_rel, file_id)
     )
     db.record_change(
-        "files", file_id, "relative_path", old_rel, new_rel, reason,
-        actor=actor, workflow_run_id=run_id,
+        "files",
+        file_id,
+        "relative_path",
+        old_rel,
+        new_rel,
+        reason,
+        actor=actor,
+        workflow_run_id=run_id,
     )
     return True
 
 
 def apply_ncbi_reconciliation(
-        db: Database,
-        project: Project,
-        *,
-        actor: str | None = None,
+    db: Database,
+    project: Project,
+    *,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Apply a freshly computed conservative plan as one audited repair run."""
     from operon.adapters.ncbi_datasets import _adapter_schema
 
     plan = plan_ncbi_reconciliation(db)
-    blocking = [item for item in plan["warnings"] if item["kind"] == "alternate_role_conflict"]
+    blocking = [
+        item for item in plan["warnings"] if item["kind"] == "alternate_role_conflict"
+    ]
     if blocking:
         raise ConflictError(
             "NCBI reconciliation has alternate-role byte conflicts; review the dry-run plan first"
@@ -329,28 +393,35 @@ def apply_ncbi_reconciliation(
     plan_sha256 = hashlib.sha256(
         json.dumps(plan, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
-    start_run(db, {
-        "run_id": run_id,
-        "step": "ncbi_datasets_reconcile",
-        "status": "running",
-        "started_at": now_iso(),
-        "tool": "Operon NCBI reconciliation",
-        "input_sha256": plan_sha256,
-        "command": "operon ncbi-reconcile --apply",
-    })
+    start_run(
+        db,
+        {
+            "run_id": run_id,
+            "step": "ncbi_datasets_reconcile",
+            "status": "running",
+            "started_at": now_iso(),
+            "tool": "Operon NCBI reconciliation",
+            "input_sha256": plan_sha256,
+            "command": "operon ncbi-reconcile --apply",
+        },
+    )
     path_moves = [
-                     (
-                         item["file_id"], item["old_relative_path"], item["new_relative_path"],
-                         "move renamed NCBI source-specific artifact to its canonical path",
-                     )
-                     for item in plan["file_role_updates"]
-                 ] + [
-                     (
-                         item["file_id"], item["old_relative_path"], item["new_relative_path"],
-                         "align archived path with reconciled source-specific role",
-                     )
-                     for item in plan["file_path_repairs"]
-                 ]
+        (
+            item["file_id"],
+            item["old_relative_path"],
+            item["new_relative_path"],
+            "move renamed NCBI source-specific artifact to its canonical path",
+        )
+        for item in plan["file_role_updates"]
+    ] + [
+        (
+            item["file_id"],
+            item["old_relative_path"],
+            item["new_relative_path"],
+            "align archived path with reconciled source-specific role",
+        )
+        for item in plan["file_path_repairs"]
+    ]
     skipped_path_moves: list[str] = []
     try:
         # Validate every destination before touching anything: physical moves
@@ -361,8 +432,9 @@ def apply_ncbi_reconciliation(
             old_path = project.root / old_rel
             new_path = project.root / new_rel
             if (
-                    old_path.exists() and new_path.exists()
-                    and sha256_file(new_path).lower() != sha256_file(old_path).lower()
+                old_path.exists()
+                and new_path.exists()
+                and sha256_file(new_path).lower() != sha256_file(old_path).lower()
             ):
                 raise ConflictError(
                     f"cannot move {old_path} to {new_path}: "
@@ -371,37 +443,64 @@ def apply_ncbi_reconciliation(
         with db.transaction():
             for file_id, old_rel, new_rel, reason in path_moves:
                 if not _apply_path_move(
-                        db, project, file_id, old_rel, new_rel,
-                        actor=actor, run_id=run_id, reason=reason,
+                    db,
+                    project,
+                    file_id,
+                    old_rel,
+                    new_rel,
+                    actor=actor,
+                    run_id=run_id,
+                    reason=reason,
                 ):
                     skipped_path_moves.append(file_id)
             for item in plan["annotation_supersessions"]:
                 inserted = db.supersede_entity(
-                    "annotation", item["annotation_id"], "annotation", item["superseded_by"],
+                    "annotation",
+                    item["annotation_id"],
+                    "annotation",
+                    item["superseded_by"],
                     reason="identical NCBI annotation identity reconciled without deleting history",
-                    evidence=json.dumps(item["identity"], ensure_ascii=False, sort_keys=True),
+                    evidence=json.dumps(
+                        item["identity"], ensure_ascii=False, sort_keys=True
+                    ),
                     workflow_run_id=run_id,
                 )
                 if inserted:
                     db.record_change(
-                        "annotation", item["annotation_id"], "superseded_by", None,
-                        item["superseded_by"], "NCBI annotation reconciliation",
-                        evidence=json.dumps(item["identity"], ensure_ascii=False, sort_keys=True),
-                        actor=actor, workflow_run_id=run_id,
+                        "annotation",
+                        item["annotation_id"],
+                        "superseded_by",
+                        None,
+                        item["superseded_by"],
+                        "NCBI annotation reconciliation",
+                        evidence=json.dumps(
+                            item["identity"], ensure_ascii=False, sort_keys=True
+                        ),
+                        actor=actor,
+                        workflow_run_id=run_id,
                     )
             for item in plan["assembly_updates"]:
                 db.conn.execute(
                     "UPDATE assemblies SET assembly_accession=?, source_database=? WHERE assembly_id=?",
-                    (item["new_accession"], item["new_source_database"], item["assembly_id"]),
+                    (
+                        item["new_accession"],
+                        item["new_source_database"],
+                        item["assembly_id"],
+                    ),
                 )
                 for field, old_key, new_key in (
-                        ("assembly_accession", "old_accession", "new_accession"),
-                        ("source_database", "old_source_database", "new_source_database"),
+                    ("assembly_accession", "old_accession", "new_accession"),
+                    ("source_database", "old_source_database", "new_source_database"),
                 ):
                     db.record_change(
-                        "assemblies", item["assembly_id"], field, item[old_key], item[new_key],
+                        "assemblies",
+                        item["assembly_id"],
+                        field,
+                        item[old_key],
+                        item[new_key],
                         "restore stable canonical accession for paired GCA/GCF",
-                        actor=actor, workflow_run_id=run_id,
+                        actor=actor,
+                        workflow_run_id=run_id,
                     )
             for item in plan["file_role_updates"]:
                 db.conn.execute(
@@ -414,9 +513,15 @@ def apply_ncbi_reconciliation(
                         (item["assembly_id"], item["file_id"]),
                     )
                 db.record_change(
-                    "files", item["file_id"], "file_role", item["old_role"], item["new_role"],
+                    "files",
+                    item["file_id"],
+                    "file_role",
+                    item["old_role"],
+                    item["new_role"],
                     "preserve paired GCA/GCF source-specific assembly artifact",
-                    evidence=item["source_accession"], actor=actor, workflow_run_id=run_id,
+                    evidence=item["source_accession"],
+                    actor=actor,
+                    workflow_run_id=run_id,
                 )
             for item in plan["accession_primary_updates"]:
                 row = db.conn.execute(
@@ -430,35 +535,53 @@ def apply_ncbi_reconciliation(
                     (item["is_primary"], item["namespace"], item["accession"]),
                 )
                 db.record_change(
-                    "accessions", f"{item['namespace']}:{item['accession']}", "is_primary",
-                    row["is_primary"], item["is_primary"],
+                    "accessions",
+                    f"{item['namespace']}:{item['accession']}",
+                    "is_primary",
+                    row["is_primary"],
+                    item["is_primary"],
                     "make paired GCA/GCF generic canonical mapping deterministic",
-                    actor=actor, workflow_run_id=run_id,
+                    actor=actor,
+                    workflow_run_id=run_id,
                 )
             for item in plan["state_restorations"]:
                 db.conn.execute(
                     "UPDATE entity_state SET state=?, message=?, updated_at=? "
                     "WHERE entity_type='annotation' AND entity_id=?",
                     (
-                        item["new_state"], "restored from existing QC evidence by NCBI reconciliation",
-                        now_iso(), item["annotation_id"],
+                        item["new_state"],
+                        "restored from existing QC evidence by NCBI reconciliation",
+                        now_iso(),
+                        item["annotation_id"],
                     ),
                 )
                 db.record_change(
-                    "entity_state", f"annotation:{item['annotation_id']}", "state",
-                    item["old_state"], item["new_state"],
+                    "entity_state",
+                    f"annotation:{item['annotation_id']}",
+                    "state",
+                    item["old_state"],
+                    item["new_state"],
                     "restore state from existing QC results after idempotent re-import downgrade",
-                    actor=actor, workflow_run_id=run_id,
+                    actor=actor,
+                    workflow_run_id=run_id,
                 )
         plan["skipped_path_moves"] = skipped_path_moves
         db.record_change(
-            "adapter_repair", run_id, None, None,
+            "adapter_repair",
+            run_id,
+            None,
+            None,
             json.dumps(plan["summary"], ensure_ascii=False, sort_keys=True),
-            "NCBI Datasets reconciliation applied", actor=actor,
+            "NCBI Datasets reconciliation applied",
+            actor=actor,
             workflow_run_id=run_id,
         )
         finish_run(
-            db, project, run_id, status="completed", exit_code=0,
+            db,
+            project,
+            run_id,
+            status="completed",
+            exit_code=0,
             output_sha256=plan_sha256,
             execution_details=json.dumps(plan, ensure_ascii=False, sort_keys=True),
         )

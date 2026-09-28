@@ -45,6 +45,11 @@ Review both `issues` and `errors`: a failed or timed-out tool does not establish
 that its files are clean. Trivy needs access to its vulnerability database;
 when its default mirror is unavailable, the official GHCR mirror can be selected
 with `TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db:2`.
+A trailing `# noqa`, `# type: ignore`, or `# pragma` must already sit on a
+line `ruff format` will not wrap. The formatter keeps such a comment but moves
+it onto the new closing line, and a later `ruff check --fix` deletes that
+relocated comment as an unused suppression. `tests/unit/test_ruff_suppression_format.py`
+formats the tree and fails if any of those comments move.
 Ruff and Bandit retain their project configuration modes, while Pylint uses
 explicit managed patterns. The standalone Bandit scan honors `bandit.yml`;
 the duplicate Prospector Bandit wrapper is disabled. F821 remains enabled.

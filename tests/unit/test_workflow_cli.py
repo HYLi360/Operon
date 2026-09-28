@@ -97,15 +97,31 @@ def test_list_runs_supports_filters_timezones_and_unlimited_offset(workflow_proj
             oldest_first=True,
         )
         assert [record["run_id"] for record in filtered] == ["WF_FAILED", "WF_RESUMED"]
-        assert [record["run_id"] for record in list_runs(
-            db, parent_run_id="WF_PARENT", executor="local",
-        )] == ["WF_FAILED"]
-        assert [record["run_id"] for record in list_runs(
-            db, resumes_run_id="WF_FAILED", executor="slurm",
-        )] == ["WF_RESUMED"]
-        assert [record["run_id"] for record in list_runs(
-            db, run_id="WF_RELEASE", limit=0, offset=1,
-        )] == []
+        assert [
+            record["run_id"]
+            for record in list_runs(
+                db,
+                parent_run_id="WF_PARENT",
+                executor="local",
+            )
+        ] == ["WF_FAILED"]
+        assert [
+            record["run_id"]
+            for record in list_runs(
+                db,
+                resumes_run_id="WF_FAILED",
+                executor="slurm",
+            )
+        ] == ["WF_RESUMED"]
+        assert [
+            record["run_id"]
+            for record in list_runs(
+                db,
+                run_id="WF_RELEASE",
+                limit=0,
+                offset=1,
+            )
+        ] == []
         assert get_run(db, "WF_FAILED")["error"] == "input could not be parsed"
         assert get_run(db, "WF_MISSING") is None
     finally:
@@ -117,54 +133,123 @@ def test_workflow_list_table_filters_and_order(workflow_project, capsys):
     assert main(["--project", root, "workflow", "list", "--limit", "0"]) == 0
     output = capsys.readouterr().out
     assert "started_local" in output and "duration" in output
-    assert output.index("WF_RELEASE") < output.index("WF_RESUMED") < output.index("WF_FAILED")
+    assert (
+        output.index("WF_RELEASE")
+        < output.index("WF_RESUMED")
+        < output.index("WF_FAILED")
+    )
 
-    assert main([
-        "--project", root, "workflow", "list",
-        "--from", "2026-09-02T00:00:00Z",
-        "--to", "2026-09-03T00:00:00Z",
-        "--step", "qc",
-        "--status", "failed",
-        "--entity-type", "assembly",
-        "--entity-id", "ASM_000001",
-        "--parent-run-id", "WF_PARENT",
-        "--tool", "qc-tool",
-        "--executor", "local",
-        "--oldest-first",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--from",
+                "2026-09-02T00:00:00Z",
+                "--to",
+                "2026-09-03T00:00:00Z",
+                "--step",
+                "qc",
+                "--status",
+                "failed",
+                "--entity-type",
+                "assembly",
+                "--entity-id",
+                "ASM_000001",
+                "--parent-run-id",
+                "WF_PARENT",
+                "--tool",
+                "qc-tool",
+                "--executor",
+                "local",
+                "--oldest-first",
+            ]
+        )
+        == 0
+    )
     output = capsys.readouterr().out
     assert "WF_FAILED" in output
     assert "WF_RESUMED" not in output
     assert "2.500s" in output
 
-    assert main([
-        "--project", root, "workflow", "list", "--run-id", "missing",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--run-id",
+                "missing",
+            ]
+        )
+        == 0
+    )
     assert capsys.readouterr().out.strip() == "no workflow runs matched"
 
 
 def test_workflow_list_json_jsonl_and_pagination(workflow_project, capsys):
     root = str(workflow_project.root)
-    assert main([
-        "--project", root, "workflow", "list", "--format", "json",
-        "--oldest-first", "--limit", "1", "--offset", "1",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--format",
+                "json",
+                "--oldest-first",
+                "--limit",
+                "1",
+                "--offset",
+                "1",
+            ]
+        )
+        == 0
+    )
     records = json.loads(capsys.readouterr().out)
     assert [record["run_id"] for record in records] == ["WF_FAILED"]
     assert records[0]["execution_details"] == {"attempt": 1, "backend": "local"}
 
-    assert main([
-        "--project", root, "workflow", "list", "--format", "jsonl",
-        "--resumes-run-id", "WF_FAILED", "--limit", "0",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--format",
+                "jsonl",
+                "--resumes-run-id",
+                "WF_FAILED",
+                "--limit",
+                "0",
+            ]
+        )
+        == 0
+    )
     line = json.loads(capsys.readouterr().out)
     assert line["run_id"] == "WF_RESUMED"
     assert line["execution_details"] == "legacy plain text"
 
-    assert main([
-        "--project", root, "workflow", "list", "--format", "json",
-        "--run-id", "missing",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--format",
+                "json",
+                "--run-id",
+                "missing",
+            ]
+        )
+        == 0
+    )
     assert json.loads(capsys.readouterr().out) == []
 
 
@@ -178,9 +263,20 @@ def test_workflow_show_text_json_and_missing(workflow_project, capsys):
     assert "input could not be parsed" in output
     assert '"attempt": 1' in output
 
-    assert main([
-        "--project", root, "workflow", "show", "WF_RESUMED", "--format", "json",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "show",
+                "WF_RESUMED",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
     record = json.loads(capsys.readouterr().out)
     assert record["run_id"] == "WF_RESUMED"
     assert record["execution_details"] == "legacy plain text"
@@ -217,7 +313,8 @@ def test_workflow_show_environment_summary(workflow_project, capsys):
     try:
         with db.transaction():
             db.conn.execute(
-                "UPDATE workflow_runs SET environment_id='missing' WHERE run_id='WF_FAILED'")
+                "UPDATE workflow_runs SET environment_id='missing' WHERE run_id='WF_FAILED'"
+            )
     finally:
         db.close()
     assert main(["--project", root, "workflow", "show", "WF_FAILED"]) == 0
@@ -232,9 +329,7 @@ def test_workflow_show_environment_summary(workflow_project, capsys):
 
 def test_workflow_time_validation_and_rendering_edges(workflow_project, capsys):
     assert cli._workflow_time("2026-09-02T00:00:00Z").endswith("+00:00")
-    assert cli._workflow_time("2026-09-02").endswith(
-        datetime_local_suffix()
-    )
+    assert cli._workflow_time("2026-09-02").endswith(datetime_local_suffix())
     with pytest.raises(argparse.ArgumentTypeError, match="ISO-8601"):
         cli._workflow_time("yesterday afternoon")
     with pytest.raises(argparse.ArgumentTypeError, match="non-negative"):
@@ -243,20 +338,42 @@ def test_workflow_time_validation_and_rendering_edges(workflow_project, capsys):
         cli._nonnegative_int("-1")
 
     root = str(workflow_project.root)
-    assert main([
-        "--project", root, "workflow", "list",
-        "--from", "2026-09-03", "--to", "2026-09-02",
-    ]) == 2
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "workflow",
+                "list",
+                "--from",
+                "2026-09-03",
+                "--to",
+                "2026-09-02",
+            ]
+        )
+        == 2
+    )
     assert "--from must be earlier than --to" in capsys.readouterr().err
 
     assert cli._workflow_duration({"started_at": None, "finished_at": None}) == "-"
-    assert cli._workflow_duration({
-        "started_at": "invalid", "finished_at": "also-invalid",
-    }) == "-"
-    assert cli._workflow_duration({
-        "started_at": "2026-09-02T00:00:03+00:00",
-        "finished_at": "2026-09-02T00:00:01+00:00",
-    }) == "0.000s"
+    assert (
+        cli._workflow_duration(
+            {
+                "started_at": "invalid",
+                "finished_at": "also-invalid",
+            }
+        )
+        == "-"
+    )
+    assert (
+        cli._workflow_duration(
+            {
+                "started_at": "2026-09-02T00:00:03+00:00",
+                "finished_at": "2026-09-02T00:00:01+00:00",
+            }
+        )
+        == "0.000s"
+    )
     assert cli._compact_workflow_value("x" * 20, 10) == "xxxxxxx..."
     assert cli._workflow_started_local("invalid timestamp") == "invalid timestamp"
     assert cli._workflow_started_local(None) == "-"
@@ -274,9 +391,18 @@ def test_workflow_command_uses_read_only_database(workflow_project, capsys):
     try:
         os.chmod(workflow_project.db_path, 0o444)
         os.chmod(root, 0o555)
-        assert main([
-            "--project", str(root), "workflow", "show", "WF_PARENT",
-        ]) == 0
+        assert (
+            main(
+                [
+                    "--project",
+                    str(root),
+                    "workflow",
+                    "show",
+                    "WF_PARENT",
+                ]
+            )
+            == 0
+        )
         assert "WF_PARENT" in capsys.readouterr().out
     finally:
         os.chmod(root, original_dir_mode)

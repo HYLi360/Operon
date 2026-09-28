@@ -28,40 +28,52 @@ def naive_alignment_qc(records):
         raise QCError("alignment is empty")
     lengths = {len(sequence) for _, sequence in records}
     if len(lengths) != 1:
-        raise QCError(f"alignment sequences have unequal lengths: {sorted(lengths)[:10]}")
+        raise QCError(
+            f"alignment sequences have unequal lengths: {sorted(lengths)[:10]}"
+        )
     aln_len = lengths.pop()
     sequence_rows = []
     for header, sequence in records:
         nongap = sum(char not in "-." for char in sequence)
-        sequence_rows.append({
-            "safe_id": header,
-            "alignment_length": aln_len,
-            "non_gap_sites": nongap,
-            "coverage": f"{nongap / aln_len:.6f}" if aln_len else "0",
-            "gap_fraction": f"{1 - nongap / aln_len:.6f}" if aln_len else "1",
-        })
+        sequence_rows.append(
+            {
+                "safe_id": header,
+                "alignment_length": aln_len,
+                "non_gap_sites": nongap,
+                "coverage": f"{nongap / aln_len:.6f}" if aln_len else "0",
+                "gap_fraction": f"{1 - nongap / aln_len:.6f}" if aln_len else "1",
+            }
+        )
     column_rows = []
     for col in range(aln_len):
         chars = [sequence[col] for _, sequence in records]
         nongap_chars = [char for char in chars if char not in "-."]
         counts = Counter(nongap_chars)
-        column_rows.append({
-            "column_1based": col + 1,
-            "occupancy": f"{len(nongap_chars) / len(records):.6f}",
-            "distinct_residues": len(counts),
-            "consensus": counts.most_common(1)[0][0] if counts else "-",
-            "consensus_fraction": (
-                f"{counts.most_common(1)[0][1] / len(nongap_chars):.6f}" if nongap_chars else "0"
-            ),
-        })
+        column_rows.append(
+            {
+                "column_1based": col + 1,
+                "occupancy": f"{len(nongap_chars) / len(records):.6f}",
+                "distinct_residues": len(counts),
+                "consensus": counts.most_common(1)[0][0] if counts else "-",
+                "consensus_fraction": (
+                    f"{counts.most_common(1)[0][1] / len(nongap_chars):.6f}"
+                    if nongap_chars
+                    else "0"
+                ),
+            }
+        )
     coverages = sorted(float(row["coverage"]) for row in sequence_rows)
     summary = {
         "sequences": len(records),
         "alignment_length": aln_len,
         "mean_coverage": sum(coverages) / len(coverages),
         "median_coverage": coverages[len(coverages) // 2],
-        "columns_occupancy_ge_0_9": sum(float(row["occupancy"]) >= 0.9 for row in column_rows),
-        "columns_occupancy_ge_0_7": sum(float(row["occupancy"]) >= 0.7 for row in column_rows),
+        "columns_occupancy_ge_0_9": sum(
+            float(row["occupancy"]) >= 0.9 for row in column_rows
+        ),
+        "columns_occupancy_ge_0_7": sum(
+            float(row["occupancy"]) >= 0.7 for row in column_rows
+        ),
     }
     return sequence_rows, column_rows, summary
 
@@ -74,20 +86,27 @@ def formatted_result(result: AlignmentQCResult):
         _format_gap_fraction,
         _format_occupancy,
     )
-    sequence_rows = [{
-        "safe_id": row["safe_id"],
-        "alignment_length": row["alignment_length"],
-        "non_gap_sites": row["non_gap_sites"],
-        "coverage": _format_coverage(row),
-        "gap_fraction": _format_gap_fraction(row),
-    } for row in result.sequence_rows]
-    column_rows = [{
-        "column_1based": row["column_1based"],
-        "occupancy": _format_occupancy(row),
-        "distinct_residues": row["distinct_residues"],
-        "consensus": row["consensus"],
-        "consensus_fraction": _format_consensus_fraction(row),
-    } for row in result.column_rows]
+
+    sequence_rows = [
+        {
+            "safe_id": row["safe_id"],
+            "alignment_length": row["alignment_length"],
+            "non_gap_sites": row["non_gap_sites"],
+            "coverage": _format_coverage(row),
+            "gap_fraction": _format_gap_fraction(row),
+        }
+        for row in result.sequence_rows
+    ]
+    column_rows = [
+        {
+            "column_1based": row["column_1based"],
+            "occupancy": _format_occupancy(row),
+            "distinct_residues": row["distinct_residues"],
+            "consensus": row["consensus"],
+            "consensus_fraction": _format_consensus_fraction(row),
+        }
+        for row in result.column_rows
+    ]
     return sequence_rows, column_rows, result.summary
 
 
@@ -107,13 +126,17 @@ def random_alignment(rng: random.Random, n_sequences: int, n_columns: int):
 
 @pytest.mark.bug("ODR-40")
 def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
-    result = compute_alignment_qc(iter([
-        ("=1+1", "A"),
-        ("+2", "C"),
-        ("-3", "G"),
-        ("@4", "T"),
-        ("plain", "N"),
-    ]))
+    result = compute_alignment_qc(
+        iter(
+            [
+                ("=1+1", "A"),
+                ("+2", "C"),
+                ("-3", "G"),
+                ("@4", "T"),
+                ("plain", "N"),
+            ]
+        )
+    )
     write_alignment_qc(result, tmp_path / "out")
     expected = (
         "safe_id\talignment_length\tnon_gap_sites\tcoverage\tgap_fraction\r\n"
@@ -123,7 +146,9 @@ def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
         "'@4\t1\t1\t1.000000\t0.000000\r\n"
         "plain\t1\t1\t1.000000\t0.000000\r\n"
     )
-    assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode("utf-8")
+    assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode(
+        "utf-8"
+    )
 
 
 @pytest.mark.bug("ODR-40")
@@ -145,8 +170,14 @@ def test_formula_trigger_headers_match_across_backends():
     cy_result = cy_alignment.compute_alignment_qc(iter(records))
     assert py_result == cy_result
     assert [row["safe_id"] for row in cy_result.sequence_rows] == [
-        "'=1+1", "'+2", "'-3", "'@4", "'\tlead", "'\rlead",
-        "'=already-escaped", "plain",
+        "'=1+1",
+        "'+2",
+        "'-3",
+        "'@4",
+        "'\tlead",
+        "'\rlead",
+        "'=already-escaped",
+        "plain",
     ]
 
 
@@ -156,28 +187,34 @@ class TestNaiveParity:
     # not repeated here; the regression file runs both backends on them.
 
     def test_single_residue_column(self):
-        assert_parity([
-            ("a", "AAAA"),
-            ("b", "-A-A"),
-            ("c", ".AA."),
-        ])
+        assert_parity(
+            [
+                ("a", "AAAA"),
+                ("b", "-A-A"),
+                ("c", ".AA."),
+            ]
+        )
 
     def test_length_one_column(self):
         assert_parity([("a", "A"), ("b", "-"), ("c", "G")])
 
     def test_all_gap_sequence(self):
-        assert_parity([
-            ("a", "----"),
-            ("b", "ACGT"),
-        ])
+        assert_parity(
+            [
+                ("a", "----"),
+                ("b", "ACGT"),
+            ]
+        )
 
     def test_even_sequence_count_median(self):
-        assert_parity([
-            ("a", "AAAA"),
-            ("b", "AA--"),
-            ("c", "A---"),
-            ("d", "----"),
-        ])
+        assert_parity(
+            [
+                ("a", "AAAA"),
+                ("b", "AA--"),
+                ("c", "A---"),
+                ("d", "----"),
+            ]
+        )
 
     def test_random_medium_alignment(self):
         rng = random.Random(20260911)
@@ -227,7 +264,9 @@ class TestWriters:
             "s1\t4\t3\t0.750000\t0.250000\r\n"
             "s2\t4\t3\t0.750000\t0.250000\r\n"
         )
-        assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode("utf-8")
+        assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode(
+            "utf-8"
+        )
 
     def test_column_qc_tsv_bytes(self, tmp_path):
         write_alignment_qc(self._result(), tmp_path / "out")
@@ -238,7 +277,9 @@ class TestWriters:
             "3\t0.000000\t0\t-\t0\r\n"
             "4\t1.000000\t2\tT\t0.500000\r\n"
         )
-        assert (tmp_path / "out" / "column_qc.tsv").read_bytes() == expected.encode("utf-8")
+        assert (tmp_path / "out" / "column_qc.tsv").read_bytes() == expected.encode(
+            "utf-8"
+        )
 
     def test_summary_json_bytes(self, tmp_path):
         result = self._result()
@@ -281,9 +322,15 @@ class TestCli:
         monkeypatch.chdir(tmp_path)
         alignment = self._write_alignment(tmp_path)
         outdir = tmp_path / "qc_out"
-        exit_code = main([
-            "alignment-qc", "--alignment", str(alignment), "--outdir", str(outdir),
-        ])
+        exit_code = main(
+            [
+                "alignment-qc",
+                "--alignment",
+                str(alignment),
+                "--outdir",
+                str(outdir),
+            ]
+        )
         assert exit_code == 0
         captured = capsys.readouterr()
         summary = json.loads(captured.out)
@@ -303,9 +350,15 @@ class TestCli:
     def test_cli_error_exit_code(self, tmp_path, capsys):
         alignment = tmp_path / "bad.faa"
         alignment.write_text(">a\nACGT\n>b\nAC\n", encoding="utf-8")
-        exit_code = main([
-            "alignment-qc", "--alignment", str(alignment), "--outdir", str(tmp_path / "out"),
-        ])
+        exit_code = main(
+            [
+                "alignment-qc",
+                "--alignment",
+                str(alignment),
+                "--outdir",
+                str(tmp_path / "out"),
+            ]
+        )
         assert exit_code == 1
         captured = capsys.readouterr()
         assert "unequal lengths" in captured.err

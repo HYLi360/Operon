@@ -36,8 +36,20 @@ from operon.utils import atomic_write_text, escape_formula_text
 
 GAP_CHARACTERS = frozenset("-.")
 
-SEQUENCE_QC_FIELDS = ["safe_id", "alignment_length", "non_gap_sites", "coverage", "gap_fraction"]
-COLUMN_QC_FIELDS = ["column_1based", "occupancy", "distinct_residues", "consensus", "consensus_fraction"]
+SEQUENCE_QC_FIELDS = [
+    "safe_id",
+    "alignment_length",
+    "non_gap_sites",
+    "coverage",
+    "gap_fraction",
+]
+COLUMN_QC_FIELDS = [
+    "column_1based",
+    "occupancy",
+    "distinct_residues",
+    "consensus",
+    "consensus_fraction",
+]
 
 
 @dataclass
@@ -70,33 +82,39 @@ def compute_alignment_qc(records: Iterable[tuple[str, str]]) -> AlignmentQCResul
                 nongap += 1
                 column_nongap[index] += 1
                 column_counts[index][char] += 1
-        sequence_rows.append({
-            # ODR-40: a header beginning with a spreadsheet formula trigger
-            # would execute as a formula when sequence_qc.tsv is opened in a
-            # spreadsheet application, so safe_id is stored already escaped.
-            "safe_id": escape_formula_text(header),
-            "alignment_length": aln_len,
-            "non_gap_sites": nongap,
-            "coverage": nongap / aln_len if aln_len else 0.0,
-            "gap_fraction": 1 - nongap / aln_len if aln_len else 1.0,
-        })
+        sequence_rows.append(
+            {
+                # ODR-40: a header beginning with a spreadsheet formula trigger
+                # would execute as a formula when sequence_qc.tsv is opened in a
+                # spreadsheet application, so safe_id is stored already escaped.
+                "safe_id": escape_formula_text(header),
+                "alignment_length": aln_len,
+                "non_gap_sites": nongap,
+                "coverage": nongap / aln_len if aln_len else 0.0,
+                "gap_fraction": 1 - nongap / aln_len if aln_len else 1.0,
+            }
+        )
     if aln_len is None:
         raise QCError("alignment is empty")
     if len(lengths) != 1:
-        raise QCError(f"alignment sequences have unequal lengths: {sorted(lengths)[:10]}")
+        raise QCError(
+            f"alignment sequences have unequal lengths: {sorted(lengths)[:10]}"
+        )
     sequence_count = len(sequence_rows)
     column_rows: list[dict[str, Any]] = []
     for column in range(aln_len):
         counts = column_counts[column]
         nongap = column_nongap[column]
         top = counts.most_common(1)[0] if counts else None
-        column_rows.append({
-            "column_1based": column + 1,
-            "occupancy": nongap / sequence_count,
-            "distinct_residues": len(counts),
-            "consensus": top[0] if top is not None else "-",
-            "consensus_fraction": top[1] / nongap if nongap else 0.0,
-        })
+        column_rows.append(
+            {
+                "column_1based": column + 1,
+                "occupancy": nongap / sequence_count,
+                "distinct_residues": len(counts),
+                "consensus": top[0] if top is not None else "-",
+                "consensus_fraction": top[1] / nongap if nongap else 0.0,
+            }
+        )
     coverages = sorted(float(_format_coverage(row)) for row in sequence_rows)
     summary = {
         "sequences": sequence_count,
@@ -111,7 +129,9 @@ def compute_alignment_qc(records: Iterable[tuple[str, str]]) -> AlignmentQCResul
         ),
     }
     return AlignmentQCResult(
-        sequence_rows=sequence_rows, column_rows=column_rows, summary=summary,
+        sequence_rows=sequence_rows,
+        column_rows=column_rows,
+        summary=summary,
     )
 
 
@@ -147,23 +167,35 @@ def _render_tsv(fields: list[str], rows: Iterator[list[Any]]) -> str:
 
 
 def _render_sequence_qc(sequence_rows: list[dict[str, Any]]) -> str:
-    return _render_tsv(SEQUENCE_QC_FIELDS, (
-        [
-            row["safe_id"], row["alignment_length"], row["non_gap_sites"],
-            _format_coverage(row), _format_gap_fraction(row),
-        ]
-        for row in sequence_rows
-    ))
+    return _render_tsv(
+        SEQUENCE_QC_FIELDS,
+        (
+            [
+                row["safe_id"],
+                row["alignment_length"],
+                row["non_gap_sites"],
+                _format_coverage(row),
+                _format_gap_fraction(row),
+            ]
+            for row in sequence_rows
+        ),
+    )
 
 
 def _render_column_qc(column_rows: list[dict[str, Any]]) -> str:
-    return _render_tsv(COLUMN_QC_FIELDS, (
-        [
-            row["column_1based"], _format_occupancy(row), row["distinct_residues"],
-            row["consensus"], _format_consensus_fraction(row),
-        ]
-        for row in column_rows
-    ))
+    return _render_tsv(
+        COLUMN_QC_FIELDS,
+        (
+            [
+                row["column_1based"],
+                _format_occupancy(row),
+                row["distinct_residues"],
+                row["consensus"],
+                _format_consensus_fraction(row),
+            ]
+            for row in column_rows
+        ),
+    )
 
 
 def render_summary_json(summary: dict[str, Any]) -> str:
@@ -175,6 +207,8 @@ def write_alignment_qc(result: AlignmentQCResult, outdir: str | Path) -> None:
     """Write sequence_qc.tsv, column_qc.tsv and alignment_qc.json atomically."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(outdir / "sequence_qc.tsv", _render_sequence_qc(result.sequence_rows))
+    atomic_write_text(
+        outdir / "sequence_qc.tsv", _render_sequence_qc(result.sequence_rows)
+    )
     atomic_write_text(outdir / "column_qc.tsv", _render_column_qc(result.column_rows))
     atomic_write_text(outdir / "alignment_qc.json", render_summary_json(result.summary))

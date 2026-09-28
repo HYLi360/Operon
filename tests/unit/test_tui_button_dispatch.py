@@ -37,7 +37,7 @@ def _handler_bodies(path: Path) -> list[tuple[int, list[str]]]:
             continue
         indented = (line[: len(line) - len(stripped)] + " ", "\t")
         body = []
-        for follow in lines[index + 1:]:
+        for follow in lines[index + 1 :]:
             if follow.strip() and not follow.startswith(indented):
                 break
             body.append(follow)
@@ -51,7 +51,9 @@ def _unguarded_delegations() -> list[str]:
         for line_number, body in _handler_bodies(path):
             if not any(SUPER_CALL in line for line in body):
                 continue
-            target = next(index for index, line in enumerate(body) if SUPER_CALL in line)
+            target = next(
+                index for index, line in enumerate(body) if SUPER_CALL in line
+            )
             previous = ""
             for earlier in reversed(body[:target]):
                 if earlier.strip() and not earlier.strip().startswith("#"):

@@ -25,8 +25,15 @@ def _isolated_home(monkeypatch, tmp_path: Path):
     """Every test runs against a throwaway HOME and XDG config directory."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    for variable in ("OPERON_ACTOR", "USER", "LOGNAME", "USERNAME", "NCBI_EMAIL",
-                     "NCBI_API_KEY", "OPERON_SPLASH"):
+    for variable in (
+        "OPERON_ACTOR",
+        "USER",
+        "LOGNAME",
+        "USERNAME",
+        "NCBI_EMAIL",
+        "NCBI_API_KEY",
+        "OPERON_SPLASH",
+    ):
         monkeypatch.delenv(variable, raising=False)
     config_module.reset_user_config()
     yield tmp_path
@@ -176,8 +183,10 @@ def test_config_check_flags_permissions_and_unknown_keys(capsys) -> None:
 def test_config_check_fails_on_secret_material(capsys) -> None:
     path = user_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("schema_version: 1\nncbi:\n  email: x@example.org\n  api_key: leaked\n",
-                    encoding="utf-8")
+    path.write_text(
+        "schema_version: 1\nncbi:\n  email: x@example.org\n  api_key: leaked\n",
+        encoding="utf-8",
+    )
     path.chmod(0o600)
     assert main(["config", "check"]) == 1
     assert "must not live in the configuration file" in capsys.readouterr().err
@@ -201,15 +210,18 @@ def test_config_secret_list_without_a_backend(monkeypatch, tmp_path, capsys) -> 
     # ODR-48: the macOS keychain probe ignores PATH — it asks sys.platform and
     # /usr/bin/security — so a Darwin runner would report "keychain: available"
     # here unless the probe is pinned as well.
-    monkeypatch.setattr(secrets_module.MacKeychainBackend, "binary",
-                        str(tmp_path / "missing-security"))
+    monkeypatch.setattr(
+        secrets_module.MacKeychainBackend, "binary", str(tmp_path / "missing-security")
+    )
     assert main(["config", "secret", "list"]) == 0
     captured = capsys.readouterr()
     assert "active backend: none available" in captured.out
     assert "ncbi.api_key: unset" in captured.out
 
 
-def test_config_secret_list_reports_the_environment(monkeypatch, tmp_path, capsys) -> None:
+def test_config_secret_list_reports_the_environment(
+    monkeypatch, tmp_path, capsys
+) -> None:
     empty_bin = tmp_path / "empty-bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
@@ -221,7 +233,8 @@ def test_config_secret_list_reports_the_environment(monkeypatch, tmp_path, capsy
 def test_config_secret_set_reads_stdin(monkeypatch, capsys) -> None:
     stored: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        secrets_module, "store_secret",
+        secrets_module,
+        "store_secret",
         lambda name, value, **kwargs: stored.append((name, value)) or "fake-backend",
     )
     monkeypatch.setattr("sys.stdin", io.StringIO("shh\n"))
@@ -243,7 +256,9 @@ def test_config_secret_set_rejects_unknown_names(monkeypatch, capsys) -> None:
 
 
 def test_config_secret_get_and_clear(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(secrets_module, "read_secret", lambda name, **kwargs: "stored-value")
+    monkeypatch.setattr(
+        secrets_module, "read_secret", lambda name, **kwargs: "stored-value"
+    )
     assert main(["config", "secret", "get", "ncbi.api_key"]) == 0
     assert capsys.readouterr().out.strip() == "stored-value"
 
@@ -268,7 +283,12 @@ def test_config_secret_list_marks_available_backends(monkeypatch, capsys) -> Non
             {"name": "systemd-creds", "available": True, "active": False},
         ],
         "secrets": [
-            {"name": "ncbi.api_key", "env_var": "NCBI_API_KEY", "env_set": False, "stored": None},
+            {
+                "name": "ncbi.api_key",
+                "env_var": "NCBI_API_KEY",
+                "env_set": False,
+                "stored": None,
+            },
         ],
     }
     monkeypatch.setattr(secrets_module, "secret_status", lambda **kwargs: report)

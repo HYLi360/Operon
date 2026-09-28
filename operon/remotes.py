@@ -59,6 +59,7 @@ def import_paramiko() -> Any:
     """Import Paramiko lazily so non-remote commands avoid SSH setup."""
     try:
         import paramiko
+
         return paramiko
     except ImportError as exc:
         raise ConfigError(
@@ -96,19 +97,25 @@ def get_remote(project: Project, name: str) -> RemoteSpec:
     remotes = list_remotes(project)
     if name not in remotes:
         available = ", ".join(sorted(remotes)) or "(none)"
-        raise ValidationError(f"unknown remote {name!r} in project.yaml; available: {available}")
+        raise ValidationError(
+            f"unknown remote {name!r} in project.yaml; available: {available}"
+        )
     raw = remotes[name]
     if not isinstance(raw, dict):
         raise ValidationError(f"remote {name!r} in project.yaml must be a mapping")
     rtype = str(raw.get("type", "sftp") or "sftp")
     if rtype != "sftp":
-        raise ValidationError(f"remote {name!r}: unsupported type {rtype!r} (only 'sftp')")
+        raise ValidationError(
+            f"remote {name!r}: unsupported type {rtype!r} (only 'sftp')"
+        )
     host = str(raw.get("host", "") or "").strip()
     root = str(raw.get("root", "") or "").strip()
     if not host:
         raise ValidationError(f"remote {name!r}: 'host' is required")
     if not root:
-        raise ValidationError(f"remote {name!r}: 'root' (remote mirror directory) is required")
+        raise ValidationError(
+            f"remote {name!r}: 'root' (remote mirror directory) is required"
+        )
     if not root.startswith("/"):
         raise ValidationError(f"remote {name!r}: 'root' must be an absolute POSIX path")
     return RemoteSpec(
@@ -121,7 +128,9 @@ def get_remote(project: Project, name: str) -> RemoteSpec:
         connect_timeout=float(raw.get("connect_timeout", 30) or 30),
         known_hosts=str(raw.get("known_hosts", "") or "").strip(),
         host_key_sha256=str(raw.get("host_key_sha256", "") or "").strip(),
-        insecure_accept_unknown_host=bool(raw.get("insecure_accept_unknown_host", False)),
+        insecure_accept_unknown_host=bool(
+            raw.get("insecure_accept_unknown_host", False)
+        ),
     )
 
 
@@ -133,12 +142,23 @@ def _normalize_host_key_fingerprint(value: str) -> str:
 
 
 def _host_key_fingerprint(key: Any) -> str:
-    return base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode("ascii").rstrip("=")
+    return (
+        base64.b64encode(hashlib.sha256(key.asbytes()).digest())
+        .decode("ascii")
+        .rstrip("=")
+    )
 
 
-def connect_ssh(host: str, user: str = "", port: int = 22, key_file: str = "",
-                connect_timeout: float = 30.0, known_hosts: str = "",
-                host_key_sha256: str = "", insecure_accept_unknown_host: bool = False) -> Any:
+def connect_ssh(
+    host: str,
+    user: str = "",
+    port: int = 22,
+    key_file: str = "",
+    connect_timeout: float = 30.0,
+    known_hosts: str = "",
+    host_key_sha256: str = "",
+    insecure_accept_unknown_host: bool = False,
+) -> Any:
     """Open a host-key-verified SSH connection with key/agent authentication."""
     paramiko = import_paramiko()
     client = paramiko.SSHClient()
@@ -148,11 +168,16 @@ def connect_ssh(host: str, user: str = "", port: int = 22, key_file: str = "",
             client.load_host_keys(os.path.expanduser(known_hosts))
         except OSError as exc:
             client.close()
-            raise ConfigError(f"cannot load SSH known-hosts file {known_hosts!r}: {exc}") from exc
+            raise ConfigError(
+                f"cannot load SSH known-hosts file {known_hosts!r}: {exc}"
+            ) from exc
     expected_fingerprint = _normalize_host_key_fingerprint(host_key_sha256)
     if expected_fingerprint:
+
         class PinnedHostKeyPolicy(paramiko.MissingHostKeyPolicy):
-            def missing_host_key(self, ssh_client: Any, hostname: str, key: Any) -> None:
+            def missing_host_key(
+                self, ssh_client: Any, hostname: str, key: Any
+            ) -> None:
                 actual = _host_key_fingerprint(key)
                 if actual != expected_fingerprint:
                     raise paramiko.SSHException(
@@ -200,7 +225,9 @@ def connect_ssh(host: str, user: str = "", port: int = 22, key_file: str = "",
         client.close()
         if isinstance(exc, RemoteError):
             raise
-        raise RemoteError(f"cannot connect to {address}: {type(exc).__name__}: {exc}") from exc
+        raise RemoteError(
+            f"cannot connect to {address}: {type(exc).__name__}: {exc}"
+        ) from exc
     return client
 
 
@@ -239,16 +266,21 @@ def validate_relative_path(value: str, *, label: str = "remote relative path") -
 
 def local_artifact_path(project: Project, relative_path: str) -> Path:
     """Resolve a manifest path while proving it stays inside the project."""
-    relative_path = validate_relative_path(relative_path, label="manifest relative_path")
+    relative_path = validate_relative_path(
+        relative_path, label="manifest relative_path"
+    )
     root = project.root.resolve()
     target = (root / relative_path).resolve(strict=False)
     if not target.is_relative_to(root):
-        raise ValidationError(f"manifest relative_path escapes project root: {relative_path!r}")
+        raise ValidationError(
+            f"manifest relative_path escapes project root: {relative_path!r}"
+        )
     return target
 
 
-def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
-                  sftp: Any = None) -> str:
+def remote_sha256(
+    client: Any, remote_path: str, timeout: float = 600.0, sftp: Any = None
+) -> str:
     """Return an exact remote file SHA-256, falling back to streamed SFTP.
 
     A dropped exec channel falls through to the SFTP path; if neither path can
@@ -257,7 +289,9 @@ def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
     output = ""
     status: int | None = None
     try:
-        _, stdout, _ = client.exec_command(f"sha256sum -- {shlex.quote(remote_path)}", timeout=timeout)
+        _, stdout, _ = client.exec_command(
+            f"sha256sum -- {shlex.quote(remote_path)}", timeout=timeout
+        )
         output = stdout.read().decode("utf-8", "replace")
         status = stdout.channel.recv_exit_status()
     except Exception:  # noqa: BLE001 - exec-channel failure falls back to the SFTP streaming hash  # pylint: disable=broad-exception-caught
@@ -272,7 +306,9 @@ def remote_sha256(client: Any, remote_path: str, timeout: float = 600.0,
             sftp = client.open_sftp()
             owns_sftp = True
         except Exception as exc:
-            raise RemoteUnavailableError(f"cannot hash remote file {remote_path}: {exc}") from exc
+            raise RemoteUnavailableError(
+                f"cannot hash remote file {remote_path}: {exc}"
+            ) from exc
     else:
         owns_sftp = False
     digest = hashlib.sha256()
@@ -308,11 +344,19 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
 
     def walk(remote_dir: str, relative_dir: str = "") -> None:
         try:
-            children = sorted(sftp.listdir_attr(remote_dir), key=lambda item: item.filename)
+            children = sorted(
+                sftp.listdir_attr(remote_dir), key=lambda item: item.filename
+            )
         except Exception as exc:
-            raise RemoteUnavailableError(f"cannot list remote directory {remote_dir}: {exc}") from exc
+            raise RemoteUnavailableError(
+                f"cannot list remote directory {remote_dir}: {exc}"
+            ) from exc
         for child in children:
-            relative = posixpath.join(relative_dir, child.filename) if relative_dir else child.filename
+            relative = (
+                posixpath.join(relative_dir, child.filename)
+                if relative_dir
+                else child.filename
+            )
             remote_child = posixpath.join(remote_dir, child.filename)
             mode = _sftp_lstat(sftp, remote_child).st_mode
             if stat_module.S_ISLNK(mode):
@@ -323,7 +367,9 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
             elif stat_module.S_ISREG(mode):
                 entries.append((relative, "F", int(child.st_size)))
             else:
-                raise RemoteError(f"unsupported remote directory entry type: {remote_child}")
+                raise RemoteError(
+                    f"unsupported remote directory entry type: {remote_child}"
+                )
 
     walk(root)
     digest = hashlib.sha256()
@@ -333,9 +379,13 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
         if kind == "L":
             target = str(value).encode("utf-8", errors="surrogateescape")
             digest.update(b"L\0" + str(len(relative)).encode("ascii") + b":" + relative)
-            digest.update(b"\0" + str(len(target)).encode("ascii") + b":" + target + b"\0")
+            digest.update(
+                b"\0" + str(len(target)).encode("ascii") + b":" + target + b"\0"
+            )
         elif kind == "D":
-            digest.update(b"D\0" + str(len(relative)).encode("ascii") + b":" + relative + b"\0")
+            digest.update(
+                b"D\0" + str(len(relative)).encode("ascii") + b":" + relative + b"\0"
+            )
         else:
             size = int(value)
             total_size += size
@@ -350,7 +400,9 @@ def _remote_directory_identity(sftp: Any, root: str) -> tuple[str, int]:
                             break
                         digest.update(chunk)
             except Exception as exc:
-                raise RemoteError(f"cannot hash remote directory member {remote_file}: {exc}") from exc
+                raise RemoteError(
+                    f"cannot hash remote directory member {remote_file}: {exc}"
+                ) from exc
             digest.update(b"\0")
     return digest.hexdigest(), total_size
 
@@ -416,8 +468,11 @@ class SFTPStore:
     def client(self) -> Any:
         if self._client is None:
             self._client = connect_ssh(
-                self.spec.host, user=self.spec.user, port=self.spec.port,
-                key_file=self.spec.key_file, connect_timeout=self.spec.connect_timeout,
+                self.spec.host,
+                user=self.spec.user,
+                port=self.spec.port,
+                key_file=self.spec.key_file,
+                connect_timeout=self.spec.connect_timeout,
                 known_hosts=self.spec.known_hosts,
                 host_key_sha256=self.spec.host_key_sha256,
                 insecure_accept_unknown_host=self.spec.insecure_accept_unknown_host,
@@ -435,7 +490,9 @@ class SFTPStore:
         root = posixpath.normpath(self.spec.root)
         joined = posixpath.normpath(posixpath.join(root, rel))
         if joined == root or not joined.startswith(root.rstrip("/") + "/"):
-            raise ValidationError(f"remote path escapes configured root {root!r}: {rel!r}")
+            raise ValidationError(
+                f"remote path escapes configured root {root!r}: {rel!r}"
+            )
         return joined
 
     def exists(self, rel: str) -> bool:
@@ -474,8 +531,9 @@ class SFTPStore:
             ) from exc
         return self._remote_identity_matches(remote, stat, sha256, size_bytes)
 
-    def _remote_identity_matches(self, remote: str, stat: Any,
-                                 sha256: str, size_bytes: int) -> bool:
+    def _remote_identity_matches(
+        self, remote: str, stat: Any, sha256: str, size_bytes: int
+    ) -> bool:
         if stat_module.S_ISDIR(stat.st_mode):
             digest, actual_size = _remote_directory_identity(self.sftp, remote)
         elif stat_module.S_ISREG(stat.st_mode):
@@ -485,8 +543,14 @@ class SFTPStore:
             return False
         return actual_size == int(size_bytes) and digest == str(sha256).lower()
 
-    def put(self, local: Path, rel: str, *, expect_sha256: str | None = None,
-            expect_size_bytes: int | None = None) -> None:
+    def put(
+        self,
+        local: Path,
+        rel: str,
+        *,
+        expect_sha256: str | None = None,
+        expect_size_bytes: int | None = None,
+    ) -> None:
         """Upload to a staging name, verify there, and only then publish.
 
         When the expected identity is given, the staged bytes are verified
@@ -501,7 +565,9 @@ class SFTPStore:
             if local.is_dir():
                 self.sftp.mkdir(tmp)
                 for path in iter_directory_entries(local):
-                    remote_member = posixpath.join(tmp, path.relative_to(local).as_posix())
+                    remote_member = posixpath.join(
+                        tmp, path.relative_to(local).as_posix()
+                    )
                     if path.is_symlink():
                         sftp_makedirs(self.sftp, posixpath.dirname(remote_member))
                         self.sftp.symlink(os.readlink(path), remote_member)
@@ -516,8 +582,9 @@ class SFTPStore:
                 self.sftp.put(str(local), tmp)
             if expect_sha256 is not None and expect_size_bytes is not None:
                 stat = _sftp_lstat(self.sftp, tmp)
-                if not self._remote_identity_matches(tmp, stat, expect_sha256,
-                                                     expect_size_bytes):
+                if not self._remote_identity_matches(
+                    tmp, stat, expect_sha256, expect_size_bytes
+                ):
                     raise RemoteError(
                         f"upload verification failed for {rel} "
                         f"on remote {self.spec.name!r}"
@@ -539,7 +606,9 @@ class SFTPStore:
             raise RemoteError(f"unsupported remote artifact type: {remote}")
 
     def _get_directory(self, remote: str, local: Path) -> None:
-        for entry in sorted(self.sftp.listdir_attr(remote), key=lambda item: item.filename):
+        for entry in sorted(
+            self.sftp.listdir_attr(remote), key=lambda item: item.filename
+        ):
             remote_child = posixpath.join(remote, entry.filename)
             local_child = local / entry.filename
             mode = _sftp_lstat(self.sftp, remote_child).st_mode
@@ -578,14 +647,18 @@ class SFTPStore:
         doc["version"] = 2
         doc["remote_root"] = self.spec.root
         doc["updated_at"] = now_iso()
-        payload = json.dumps(doc, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
+        payload = json.dumps(doc, ensure_ascii=False, sort_keys=True, indent=2).encode(
+            "utf-8"
+        )
         remote = self.remote_path(REMOTE_MANIFEST_NAME)
         sftp_makedirs(self.sftp, posixpath.dirname(remote))
         tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
         try:
             with self.sftp.open(tmp, "wb") as handle:
                 handle.write(payload)
-            _publish_remote(self.sftp, tmp, remote, overwrite=self.exists(REMOTE_MANIFEST_NAME))
+            _publish_remote(
+                self.sftp, tmp, remote, overwrite=self.exists(REMOTE_MANIFEST_NAME)
+            )
         except BaseException:
             _remove_remote_tree(self.sftp, tmp)
             raise
@@ -599,7 +672,9 @@ class SFTPStore:
         operator can inspect and remove a stale lock after proving no writer is
         active.
         """
-        wait_timeout = self.spec.connect_timeout if timeout is None else max(0.0, float(timeout))
+        wait_timeout = (
+            self.spec.connect_timeout if timeout is None else max(0.0, float(timeout))
+        )
         sftp_makedirs(self.sftp, self.spec.root)
         lock_path = self.remote_path(REMOTE_MANIFEST_LOCK_NAME)
         owner_path = posixpath.join(lock_path, "owner.json")
@@ -624,7 +699,8 @@ class SFTPStore:
                 time.sleep(0.2)
         try:
             owner = json.dumps(
-                {"token": uuid.uuid4().hex, "created_at": now_iso()}, sort_keys=True,
+                {"token": uuid.uuid4().hex, "created_at": now_iso()},
+                sort_keys=True,
             ).encode("utf-8")
             with self.sftp.open(owner_path, "wb") as handle:
                 handle.write(owner)
@@ -646,7 +722,8 @@ def _select_files(db: Database, file_ids: list[str] | None) -> list[dict[str, An
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
         rows = db.conn.execute(
-            f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id", file_ids  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
+            f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id",
+            file_ids,  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
         ).fetchall()
         found = {row["file_id"] for row in rows}
         missing = [file_id for file_id in file_ids if file_id not in found]
@@ -657,22 +734,33 @@ def _select_files(db: Database, file_ids: list[str] | None) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
-def _sync_log(db: Database, project: Project, step: str, record: dict[str, Any],
-              status: str, error: str | None = None) -> None:
+def _sync_log(
+    db: Database,
+    project: Project,
+    step: str,
+    record: dict[str, Any],
+    status: str,
+    error: str | None = None,
+) -> None:
     from operon.workflow import log_run
-    log_run(db, project, {
-        "entity_type": record.get("entity_type"),
-        "entity_id": record.get("entity_id"),
-        "step": step,
-        "status": "failed" if status == "error" else "completed",
-        "started_at": now_iso(),
-        "finished_at": now_iso(),
-        "command": f"{step} {record.get('relative_path', '')}".strip(),
-        "input_sha256": record.get("sha256"),
-        "executor": "sftp",
-        "execution_details": json.dumps({"result": status}, sort_keys=True),
-        "error": error,
-    })
+
+    log_run(
+        db,
+        project,
+        {
+            "entity_type": record.get("entity_type"),
+            "entity_id": record.get("entity_id"),
+            "step": step,
+            "status": "failed" if status == "error" else "completed",
+            "started_at": now_iso(),
+            "finished_at": now_iso(),
+            "command": f"{step} {record.get('relative_path', '')}".strip(),
+            "input_sha256": record.get("sha256"),
+            "executor": "sftp",
+            "execution_details": json.dumps({"result": status}, sort_keys=True),
+            "error": error,
+        },
+    )
 
 
 def _require_project_manifest(project: Project, name: str, doc: dict[str, Any]) -> None:
@@ -685,8 +773,14 @@ def _require_project_manifest(project: Project, name: str, doc: dict[str, Any]) 
     doc["project_id"] = project.project_id
 
 
-def _record_remote_location(db: Database, name: str, record: dict[str, Any],
-                            relative_path: str, *, status: str = "AVAILABLE") -> None:
+def _record_remote_location(
+    db: Database,
+    name: str,
+    record: dict[str, Any],
+    relative_path: str,
+    *,
+    status: str = "AVAILABLE",
+) -> None:
     db.conn.execute(
         "INSERT INTO file_locations(file_id, location_name, location_type, uri, relative_path, "
         "sha256, size_bytes, status, verified_at) VALUES(?,?,?,?,?,?,?,?,?) "
@@ -695,8 +789,15 @@ def _record_remote_location(db: Database, name: str, record: dict[str, Any],
         "relative_path=excluded.relative_path, sha256=excluded.sha256, "
         "size_bytes=excluded.size_bytes, status=excluded.status, verified_at=excluded.verified_at",
         (
-            record["file_id"], name, "sftp", f"remote://{name}/{relative_path}", relative_path,
-            str(record["sha256"]).lower(), int(record["size_bytes"]), status, now_iso(),
+            record["file_id"],
+            name,
+            "sftp",
+            f"remote://{name}/{relative_path}",
+            relative_path,
+            str(record["sha256"]).lower(),
+            int(record["size_bytes"]),
+            status,
+            now_iso(),
         ),
     )
     db.conn.commit()
@@ -705,9 +806,13 @@ def _record_remote_location(db: Database, name: str, record: dict[str, Any],
 def _mark_remote_location(db: Database, name: str, file_id: str, status: str) -> None:
     row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
     if row is None:
-        raise ValidationError(f"cannot mark remote location for unknown file_id {file_id}")
+        raise ValidationError(
+            f"cannot mark remote location for unknown file_id {file_id}"
+        )
     record = dict(row)
-    rel = validate_relative_path(record["relative_path"], label="manifest relative_path")
+    rel = validate_relative_path(
+        record["relative_path"], label="manifest relative_path"
+    )
     _record_remote_location(db, name, record, rel, status=status)
 
 
@@ -725,16 +830,17 @@ def _entry_identity(entry: dict[str, Any], *, label: str) -> tuple[str, str, int
     return file_id, sha, size
 
 
-def _assert_entry_matches_record(name: str, rel: str, entry: dict[str, Any],
-                                 record: dict[str, Any]) -> None:
+def _assert_entry_matches_record(
+    name: str, rel: str, entry: dict[str, Any], record: dict[str, Any]
+) -> None:
     entry_file_id, entry_sha, entry_size = _entry_identity(
         entry, label=f"remote {name!r} manifest entry {rel!r}"
     )
     if (
-            entry_file_id != str(record["file_id"])
-            or entry_sha != str(record["sha256"]).lower()
-            or entry_size != int(record["size_bytes"])
-            or rel != str(record["relative_path"])
+        entry_file_id != str(record["file_id"])
+        or entry_sha != str(record["sha256"]).lower()
+        or entry_size != int(record["size_bytes"])
+        or rel != str(record["relative_path"])
     ):
         raise ConflictError(
             f"remote {name!r} identity for {rel} does not match local manifest "
@@ -742,8 +848,9 @@ def _assert_entry_matches_record(name: str, rel: str, entry: dict[str, Any],
         )
 
 
-def push(db: Database, project: Project, name: str,
-         file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def push(
+    db: Database, project: Project, name: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Upload files as one locked manifest batch, continuing per-item errors."""
     spec = get_remote(project, name)
     records = _select_files(db, file_ids)
@@ -758,13 +865,17 @@ def push(db: Database, project: Project, name: str,
                 raise RemoteError(f"remote {name!r} manifest 'files' must be an object")
             manifest_changed = False
             for record in records:
-                rel = validate_relative_path(record["relative_path"], label="manifest relative_path")
+                rel = validate_relative_path(
+                    record["relative_path"], label="manifest relative_path"
+                )
                 sha = str(record["sha256"]).lower()
                 size = int(record["size_bytes"])
                 local = local_artifact_path(project, rel)
                 result = {
-                    "file_id": record["file_id"], "relative_path": rel,
-                    "status": "", "error": None,
+                    "file_id": record["file_id"],
+                    "relative_path": rel,
+                    "status": "",
+                    "error": None,
                 }
                 try:
                     entry = entries.get(rel)
@@ -777,13 +888,20 @@ def push(db: Database, project: Project, name: str,
                             raise RemoteError(
                                 f"local artifact is absent and remote {name!r} has no verified copy: {rel}"
                             )
-                    elif path_size_bytes(local) != size or sha256_path(local).lower() != sha:
-                        raise ConflictError(f"local content does not match manifest identity: {rel}")
+                    elif (
+                        path_size_bytes(local) != size
+                        or sha256_path(local).lower() != sha
+                    ):
+                        raise ConflictError(
+                            f"local content does not match manifest identity: {rel}"
+                        )
                     elif entry is not None:
                         if store.matches(rel, sha, size):
                             result["status"] = "skipped"
                         else:
-                            _mark_remote_location(db, name, record["file_id"], "CORRUPT")
+                            _mark_remote_location(
+                                db, name, record["file_id"], "CORRUPT"
+                            )
                             raise ConflictError(
                                 f"remote {name!r} content at {rel} diverges from its manifest entry; "
                                 "refusing to overwrite — resolve the remote copy manually"
@@ -792,21 +910,27 @@ def push(db: Database, project: Project, name: str,
                         remote_exists = store.exists(rel)
                         if remote_exists:
                             if not store.matches(rel, sha, size):
-                                _mark_remote_location(db, name, record["file_id"], "CORRUPT")
+                                _mark_remote_location(
+                                    db, name, record["file_id"], "CORRUPT"
+                                )
                                 raise ConflictError(
                                     f"remote {name!r} already holds different bytes at {rel}; "
                                     "refusing to overwrite — resolve the remote copy manually"
                                 )
                             result["status"] = "indexed"
                         else:
-                            store.put(local, rel, expect_sha256=sha,
-                                      expect_size_bytes=size)
+                            store.put(
+                                local, rel, expect_sha256=sha, expect_size_bytes=size
+                            )
                             result["status"] = "uploaded"
                         entries[rel] = {
-                            "file_id": record["file_id"], "relative_path": rel,
-                            "sha256": sha, "size_bytes": size,
+                            "file_id": record["file_id"],
+                            "relative_path": rel,
+                            "sha256": sha,
+                            "size_bytes": size,
                             "kind": "directory" if local.is_dir() else "file",
-                            "format": record.get("format"), "synced_at": now_iso(),
+                            "format": record.get("format"),
+                            "synced_at": now_iso(),
                         }
                         manifest_changed = True
                 except Exception as exc:  # noqa: BLE001 - one failed file must not stop the push batch  # pylint: disable=broad-exception-caught
@@ -827,14 +951,19 @@ def push(db: Database, project: Project, name: str,
         if result["status"] != "error":
             _record_remote_location(db, name, record, result["relative_path"])
         _sync_log(
-            db, project, f"push:{name}", record, result["status"],
+            db,
+            project,
+            f"push:{name}",
+            record,
+            result["status"],
             result.get("error"),
         )
     return results
 
 
-def pull(db: Database, project: Project, name: str,
-         file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def pull(
+    db: Database, project: Project, name: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Restore manifest files from a configured remote (idempotent, verified)."""
     from operon.files import remember_local_file_verification
 
@@ -852,23 +981,38 @@ def pull(db: Database, project: Project, name: str,
         else:
             items = []
             for rel in sorted(entries):
-                safe_rel = validate_relative_path(rel, label="remote manifest relative path")
+                safe_rel = validate_relative_path(
+                    rel, label="remote manifest relative path"
+                )
                 entry_file_id, _, _ = _entry_identity(
                     entries[rel], label=f"remote {name!r} manifest entry {rel!r}"
                 )
-                row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (entry_file_id,)).fetchone()
+                row = db.conn.execute(
+                    "SELECT * FROM files WHERE file_id=?", (entry_file_id,)
+                ).fetchone()
                 items.append((safe_rel, dict(row) if row else None))
         for rel, record in items:
             rel = validate_relative_path(rel, label="remote manifest relative path")
             entry = entries.get(rel)
             result = {
                 "file_id": (record or {}).get("file_id", ""),
-                "relative_path": rel, "status": "", "error": None,
+                "relative_path": rel,
+                "status": "",
+                "error": None,
             }
             if entry is None:
-                result.update(status="error", error="not present in the remote manifest")
+                result.update(
+                    status="error", error="not present in the remote manifest"
+                )
                 results.append(result)
-                _sync_log(db, project, f"pull:{name}", record or {"relative_path": rel}, "error", result["error"])
+                _sync_log(
+                    db,
+                    project,
+                    f"pull:{name}",
+                    record or {"relative_path": rel},
+                    "error",
+                    result["error"],
+                )
                 continue
             try:
                 entry_file_id, sha, size = _entry_identity(
@@ -887,7 +1031,10 @@ def pull(db: Database, project: Project, name: str,
                     )
                 local = local_artifact_path(project, rel)
                 if local.exists():
-                    if path_size_bytes(local) == size and sha256_path(local).lower() == sha:
+                    if (
+                        path_size_bytes(local) == size
+                        and sha256_path(local).lower() == sha
+                    ):
                         result["status"] = "skipped"
                     else:
                         raise ConflictError(
@@ -897,16 +1044,27 @@ def pull(db: Database, project: Project, name: str,
                     local.parent.mkdir(parents=True, exist_ok=True)
                     is_directory = str(entry.get("kind", "file")) == "directory"
                     if is_directory:
-                        tmp = Path(tempfile.mkdtemp(prefix=f".{local.name}.", dir=str(local.parent)))
+                        tmp = Path(
+                            tempfile.mkdtemp(
+                                prefix=f".{local.name}.", dir=str(local.parent)
+                            )
+                        )
                         tmp.rmdir()
                     else:
-                        fd, tmp_name = tempfile.mkstemp(prefix=f".{local.name}.", dir=str(local.parent))
+                        fd, tmp_name = tempfile.mkstemp(
+                            prefix=f".{local.name}.", dir=str(local.parent)
+                        )
                         os.close(fd)
                         tmp = Path(tmp_name)
                     try:
                         store.get(rel, tmp)
-                        if path_size_bytes(tmp) != size or sha256_path(tmp).lower() != sha:
-                            raise RemoteError(f"download verification failed for {rel} from remote {name!r}")
+                        if (
+                            path_size_bytes(tmp) != size
+                            or sha256_path(tmp).lower() != sha
+                        ):
+                            raise RemoteError(
+                                f"download verification failed for {rel} from remote {name!r}"
+                            )
                         os.replace(tmp, local)
                     except BaseException:
                         if tmp.is_dir() and not tmp.is_symlink():
@@ -917,7 +1075,8 @@ def pull(db: Database, project: Project, name: str,
                     result["status"] = "downloaded"
                 if record.get("status") != "STANDARDIZED":
                     db.set_file_status(
-                        record["file_id"], "CHECKSUM_VERIFIED",
+                        record["file_id"],
+                        "CHECKSUM_VERIFIED",
                         reason=f"local bytes restored and verified from remote {name}",
                         actor="operon pull",
                         evidence=f"remote://{name}/{rel}",
@@ -928,7 +1087,14 @@ def pull(db: Database, project: Project, name: str,
             except Exception as exc:
                 result.update(status="error", error=f"{type(exc).__name__}: {exc}")
                 results.append(result)
-                _sync_log(db, project, f"pull:{name}", record or {"relative_path": rel}, "error", result["error"])
+                _sync_log(
+                    db,
+                    project,
+                    f"pull:{name}",
+                    record or {"relative_path": rel},
+                    "error",
+                    result["error"],
+                )
                 continue
             results.append(result)
             _sync_log(db, project, f"pull:{name}", record, result["status"])
@@ -953,19 +1119,24 @@ def _write_placeholder(project: Project, name: str, record: dict[str, Any]) -> P
         "uri": f"remote://{name}/{record['relative_path']}",
         "created_at": now_iso(),
     }
-    atomic_write_text(target, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+    atomic_write_text(
+        target, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    )
     return target
 
 
 def _ensure_remote_only_schema(project: Project) -> None:
     """Add the REMOTE_ONLY enum value to an existing project's files schema."""
     import yaml
+
     try:
         document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8")) or {}
         status = document["tables"]["files"]["fields"]["status"]
         allowed = list(status.get("allowed", []))
     except (OSError, KeyError, TypeError) as exc:
-        raise ValidationError(f"cannot upgrade project files status schema: {exc}") from exc
+        raise ValidationError(
+            f"cannot upgrade project files status schema: {exc}"
+        ) from exc
     changed = False
     if "REMOTE_ONLY" not in allowed:
         allowed.append("REMOTE_ONLY")
@@ -982,24 +1153,40 @@ def _ensure_remote_only_schema(project: Project) -> None:
         )
 
 
-def verify_remote_record(project: Project, name: str, record: dict[str, Any],
-                         db: Database | None = None, *, store: SFTPStore | None = None,
-                         manifest: dict[str, Any] | None = None, client: Any = None) -> str:
+def verify_remote_record(
+    project: Project,
+    name: str,
+    record: dict[str, Any],
+    db: Database | None = None,
+    *,
+    store: SFTPStore | None = None,
+    manifest: dict[str, Any] | None = None,
+    client: Any = None,
+) -> str:
     """Verify a local manifest record against a configured remote and return its path."""
     if store is None:
         spec = get_remote(project, name)
         with SFTPStore(spec, client=client) as opened:
             return verify_remote_record(
-                project, name, record, db=db, store=opened, manifest=manifest,
+                project,
+                name,
+                record,
+                db=db,
+                store=opened,
+                manifest=manifest,
             )
-    rel = validate_relative_path(record["relative_path"], label="manifest relative_path")
+    rel = validate_relative_path(
+        record["relative_path"], label="manifest relative_path"
+    )
     doc = manifest if manifest is not None else store.read_manifest()
     _require_project_manifest(project, name, doc)
     entry = doc.get("files", {}).get(rel)
     if entry is None:
         if db is not None:
             _mark_remote_location(db, name, record["file_id"], "MISSING")
-        raise RemoteError(f"remote {name!r} has no manifest entry for {record['file_id']} at {rel}")
+        raise RemoteError(
+            f"remote {name!r} has no manifest entry for {record['file_id']} at {rel}"
+        )
     try:
         _assert_entry_matches_record(name, rel, entry, record)
     except Exception:
@@ -1010,14 +1197,17 @@ def verify_remote_record(project: Project, name: str, record: dict[str, Any],
         if db is not None:
             status = "CORRUPT" if store.exists(rel) else "MISSING"
             _mark_remote_location(db, name, record["file_id"], status)
-        raise ConflictError(f"remote {name!r} artifact diverges from its manifest: {rel}")
+        raise ConflictError(
+            f"remote {name!r} artifact diverges from its manifest: {rel}"
+        )
     if db is not None:
         _record_remote_location(db, name, record, rel)
     return store.remote_path(rel)
 
 
-def evict_local(db: Database, project: Project, name: str,
-                file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def evict_local(
+    db: Database, project: Project, name: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Remove verified local bytes only after proving an exact remote copy exists.
 
     The logical path remains in ``files`` and a small pointer is written under
@@ -1039,25 +1229,40 @@ def evict_local(db: Database, project: Project, name: str,
         doc = store.read_manifest()
         _require_project_manifest(project, name, doc)
         for record in records:
-            rel = validate_relative_path(record["relative_path"], label="manifest relative_path")
-            result = {"file_id": record["file_id"], "relative_path": rel, "status": "", "error": None}
+            rel = validate_relative_path(
+                record["relative_path"], label="manifest relative_path"
+            )
+            result = {
+                "file_id": record["file_id"],
+                "relative_path": rel,
+                "status": "",
+                "error": None,
+            }
             try:
                 verify_remote_record(
-                    project, name, record, db=db, store=store, manifest=doc,
+                    project,
+                    name,
+                    record,
+                    db=db,
+                    store=store,
+                    manifest=doc,
                 )
                 local = local_artifact_path(project, rel)
                 local_present = local.exists()
                 if local_present and (
-                        path_size_bytes(local) != int(record["size_bytes"])
-                        or sha256_path(local).lower() != str(record["sha256"]).lower()
+                    path_size_bytes(local) != int(record["size_bytes"])
+                    or sha256_path(local).lower() != str(record["sha256"]).lower()
                 ):
-                    raise ConflictError(f"local artifact does not match manifest; refusing to evict: {rel}")
+                    raise ConflictError(
+                        f"local artifact does not match manifest; refusing to evict: {rel}"
+                    )
                 _ensure_remote_only_schema(project)
                 _write_placeholder(project, name, record)
                 _record_remote_location(db, name, record, rel)
                 clear_local_file_verification(db, record["file_id"])
                 db.set_file_status(
-                    record["file_id"], "REMOTE_ONLY",
+                    record["file_id"],
+                    "REMOTE_ONLY",
                     reason=f"local bytes evicted after verification on remote {name}",
                     actor="operon evict",
                     evidence=f"remote://{name}/{rel}",
@@ -1071,9 +1276,12 @@ def evict_local(db: Database, project: Project, name: str,
                     except BaseException:
                         # Keep the manifest truthful: the bytes are still here,
                         # so the file is not remote-only yet.
-                        placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
+                        placeholder_path(project, record["file_id"]).unlink(
+                            missing_ok=True
+                        )
                         db.set_file_status(
-                            record["file_id"], str(record["status"]),
+                            record["file_id"],
+                            str(record["status"]),
                             reason="eviction failed; local bytes retained",
                             actor="operon evict",
                         )
@@ -1084,24 +1292,31 @@ def evict_local(db: Database, project: Project, name: str,
             except RemoteUnavailableError as exc:
                 result.update(
                     status="error",
-                    error=(f"{type(exc).__name__}: {exc} — evict aborted; re-run once the remote "
-                           f"is reachable, already-processed files are skipped"),
+                    error=(
+                        f"{type(exc).__name__}: {exc} — evict aborted; re-run once the remote "
+                        f"is reachable, already-processed files are skipped"
+                    ),
                 )
                 results.append(result)
-                _sync_log(db, project, f"evict:{name}", record, "error", result["error"])
+                _sync_log(
+                    db, project, f"evict:{name}", record, "error", result["error"]
+                )
                 break
             except Exception as exc:
                 result.update(status="error", error=f"{type(exc).__name__}: {exc}")
                 results.append(result)
-                _sync_log(db, project, f"evict:{name}", record, "error", result["error"])
+                _sync_log(
+                    db, project, f"evict:{name}", record, "error", result["error"]
+                )
                 continue
             results.append(result)
             _sync_log(db, project, f"evict:{name}", record, result["status"])
     return results
 
 
-def list_locations(db: Database, file_ids: Iterable[str] | None = None,
-                   limit: int = 0) -> list[dict[str, Any]]:
+def list_locations(
+    db: Database, file_ids: Iterable[str] | None = None, limit: int = 0
+) -> list[dict[str, Any]]:
     """Local/remote residency rows for manifest files (``operon locations``).
 
     One row per (file, remote) pair; a file with no remote copy keeps its
@@ -1130,8 +1345,14 @@ def list_locations(db: Database, file_ids: Iterable[str] | None = None,
 def check_remote(project: Project, name: str) -> dict[str, Any]:
     """Connectivity check used by `operon remotes`."""
     spec = get_remote(project, name)
-    result: dict[str, Any] = {"name": name, "type": "sftp", "address": spec.address, "root": spec.root, "status": "ok",
-                              "error": ""}
+    result: dict[str, Any] = {
+        "name": name,
+        "type": "sftp",
+        "address": spec.address,
+        "root": spec.root,
+        "status": "ok",
+        "error": "",
+    }
     try:
         with SFTPStore(spec) as store:
             store.sftp.stat(spec.root)
@@ -1153,9 +1374,13 @@ def fetch_url_to_temp(project: Project, url: str) -> Path:
     if url.startswith("sftp://"):
         parsed = urlparse(url)
         if not parsed.hostname or not parsed.path or parsed.path == "/":
-            raise ValidationError(f"invalid sftp URL (expect sftp://[user@]host[:port]/path): {url!r}")
+            raise ValidationError(
+                f"invalid sftp URL (expect sftp://[user@]host[:port]/path): {url!r}"
+            )
         if parsed.password:
-            raise ValidationError("passwords in sftp:// URLs are not supported; use SSH keys")
+            raise ValidationError(
+                "passwords in sftp:// URLs are not supported; use SSH keys"
+            )
         client = connect_ssh(
             parsed.hostname,
             user=parsed.username or "",
@@ -1179,10 +1404,12 @@ def fetch_url_to_temp(project: Project, url: str) -> Path:
             client.close()
         return tmp
     if url.startswith("remote://"):
-        rest = url[len("remote://"):]
+        rest = url[len("remote://") :]
         name, _, rel = rest.partition("/")
         if not name or not rel:
-            raise ValidationError(f"invalid remote URL (expect remote://<name>/<path>): {url!r}")
+            raise ValidationError(
+                f"invalid remote URL (expect remote://<name>/<path>): {url!r}"
+            )
         rel = validate_relative_path(unquote(rel), label="remote URL path")
         spec = get_remote(project, name)
         basename = posixpath.basename(rel)
@@ -1192,20 +1419,32 @@ def fetch_url_to_temp(project: Project, url: str) -> Path:
                 _require_project_manifest(project, name, doc)
                 entry = doc.get("files", {}).get(rel)
                 if entry is None:
-                    raise RemoteError(f"remote {name!r} has no manifest entry for {rel}")
-                _, sha, size = _entry_identity(entry, label=f"remote {name!r} manifest entry {rel!r}")
+                    raise RemoteError(
+                        f"remote {name!r} has no manifest entry for {rel}"
+                    )
+                _, sha, size = _entry_identity(
+                    entry, label=f"remote {name!r} manifest entry {rel!r}"
+                )
                 if not store.matches(rel, sha, size):
-                    raise ConflictError(f"remote {name!r} content diverges from its manifest: {rel}")
+                    raise ConflictError(
+                        f"remote {name!r} content diverges from its manifest: {rel}"
+                    )
                 if str(entry.get("kind", "file")) == "directory":
-                    tmp = Path(tempfile.mkdtemp(prefix="operon-fetch-", suffix=f"-{basename}"))
+                    tmp = Path(
+                        tempfile.mkdtemp(prefix="operon-fetch-", suffix=f"-{basename}")
+                    )
                     tmp.rmdir()
                 else:
-                    fd, tmp_name = tempfile.mkstemp(prefix="operon-fetch-", suffix=f"-{basename}")
+                    fd, tmp_name = tempfile.mkstemp(
+                        prefix="operon-fetch-", suffix=f"-{basename}"
+                    )
                     os.close(fd)
                     tmp = Path(tmp_name)
                 store.get(rel, tmp)
                 if path_size_bytes(tmp) != size or sha256_path(tmp).lower() != sha:
-                    raise RemoteError(f"download verification failed for remote://{name}/{rel}")
+                    raise RemoteError(
+                        f"download verification failed for remote://{name}/{rel}"
+                    )
         except BaseException:
             if "tmp" in locals():
                 if tmp.is_dir() and not tmp.is_symlink():

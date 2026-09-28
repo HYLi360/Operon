@@ -58,6 +58,7 @@ def project_db(tmp_path: Path):
 # Payload builders
 # --------------------------------------------------------------------------
 
+
 def _report(accession: str = "GCF_000001405.40") -> dict[str, Any]:
     return {
         "accession": accession,
@@ -92,27 +93,30 @@ def _report(accession: str = "GCF_000001405.40") -> dict[str, Any]:
 
 
 def _write_package(
-        path: Path,
-        accession: str = "GCF_000001405.40",
-        *,
-        report: dict[str, Any] | None = None,
-        include_report: bool = True,
-        genome: bool = False,
-        gff: bool = False,
-        sequence_report: bool = False,
-        catalog: bool = False,
-        paired: str | None = None,
+    path: Path,
+    accession: str = "GCF_000001405.40",
+    *,
+    report: dict[str, Any] | None = None,
+    include_report: bool = True,
+    genome: bool = False,
+    gff: bool = False,
+    sequence_report: bool = False,
+    catalog: bool = False,
+    paired: str | None = None,
 ) -> Path:
     """Build a minimal NCBI Datasets ZIP package on disk."""
     document = report if report is not None else _report(accession)
     if paired is not None:
-        document["assemblyInfo"]["pairedAssembly"] = {"accession": paired} if paired else {}
+        document["assemblyInfo"]["pairedAssembly"] = (
+            {"accession": paired} if paired else {}
+        )
     prefix = f"ncbi_dataset/data/{accession}"
     with zipfile.ZipFile(path, "w") as archive:
         if include_report:
             archive.writestr(
                 "ncbi_dataset/data/assembly_data_report.jsonl",
-                "".join(json.dumps(row) + "\n" for row in document) if isinstance(document, list)
+                "".join(json.dumps(row) + "\n" for row in document)
+                if isinstance(document, list)
                 else json.dumps(document) + "\n",
             )
         if genome:
@@ -123,18 +127,20 @@ def _write_package(
                 "##gff-version 3\nchr1\tRefSeq\tgene\t1\t4\t.\t+\t.\tID=g1\n",
             )
         if sequence_report:
-            archive.writestr(f"{prefix}/sequence_report.jsonl", '{"sequence_name":"chr1"}\n')
+            archive.writestr(
+                f"{prefix}/sequence_report.jsonl", '{"sequence_name":"chr1"}\n'
+            )
         if catalog:
             archive.writestr("ncbi_dataset/data/dataset_catalog.json", "{}")
     return path
 
 
 def _write_directory_package(
-        root: Path,
-        accession: str = "GCF_000001405.40",
-        *,
-        genome: bool = True,
-        gff: bool = False,
+    root: Path,
+    accession: str = "GCF_000001405.40",
+    *,
+    genome: bool = True,
+    gff: bool = False,
 ) -> Path:
     data = root / "ncbi_dataset" / "data"
     (data / accession).mkdir(parents=True)
@@ -142,9 +148,13 @@ def _write_directory_package(
         json.dumps(_report(accession)) + "\n", encoding="utf-8"
     )
     if genome:
-        (data / accession / "genomic.fna").write_text(">chr1\nACGTACGTACGT\n", encoding="utf-8")
+        (data / accession / "genomic.fna").write_text(
+            ">chr1\nACGTACGTACGT\n", encoding="utf-8"
+        )
     if gff:
-        (data / accession / "genomic.gff").write_text("##gff-version 3\n", encoding="utf-8")
+        (data / accession / "genomic.gff").write_text(
+            "##gff-version 3\n", encoding="utf-8"
+        )
     return root
 
 
@@ -184,9 +194,12 @@ def _central_directory_offsets(payload: bytes, member: str) -> dict[str, int]:
     for _ in range(total):
         fields = struct.unpack_from("<IHHHHHHIIIHHHHHII", payload, position)
         name_length, extra_length, comment_length, local_offset = (
-            fields[10], fields[11], fields[12], fields[16],
+            fields[10],
+            fields[11],
+            fields[12],
+            fields[16],
         )
-        name = payload[position + 46: position + 46 + name_length].decode("utf-8")
+        name = payload[position + 46 : position + 46 + name_length].decode("utf-8")
         if name == member:
             return {"central": position, "local": local_offset}
         position += 46 + name_length + extra_length + comment_length
@@ -225,11 +238,14 @@ def _fake_parallel(handler) -> Any:
 # Source bundles, IDs and plan building
 # --------------------------------------------------------------------------
 
+
 def test_source_bundle_close_cleans_up_temporary_directory(tmp_path: Path):
     temporary = tempfile.TemporaryDirectory(dir=tmp_path)
     root = Path(temporary.name)
     assert root.is_dir()
-    bundle = ncbi.SourceBundle(source=root, root=root, label="staged", temporary=temporary)
+    bundle = ncbi.SourceBundle(
+        source=root, root=root, label="staged", temporary=temporary
+    )
     bundle.close()
     assert not root.exists()
 
@@ -238,7 +254,9 @@ def test_id_allocator_ignores_ids_that_do_not_match_the_prefix(project_db):
     _project, db = project_db
     # A development-era row whose ID does not follow the ORG_###### pattern must
     # not stop the allocator from starting at ORG_000001.
-    db.insert_row("organisms", {"organism_id": "LEGACY_ORGANISM", "scientific_name": "Legacy"})
+    db.insert_row(
+        "organisms", {"organism_id": "LEGACY_ORGANISM", "scientific_name": "Legacy"}
+    )
     plan = ncbi._PlanBuilder(db).build([_report()], [])
     assert plan.new_ids["organism"] == 1
     assert plan.tables["organisms"][0]["organism_id"] == "ORG_000001"
@@ -246,14 +264,24 @@ def test_id_allocator_ignores_ids_that_do_not_match_the_prefix(project_db):
 
 def test_plan_builder_matches_existing_assembly_without_accession_row(project_db):
     _project, db = project_db
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Homo sapiens", "taxon_id": 9606,
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Homo sapiens",
+            "taxon_id": 9606,
+        },
+    )
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_accession": "GCF_000001405.40", "assembly_version": 40,
-    })
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCF_000001405.40",
+            "assembly_version": 40,
+        },
+    )
     plan = ncbi._PlanBuilder(db).build([_report()], [])
     assert plan.new_ids["assembly"] == 0
     assert plan.assembly_ids["GCF_000001405.40"] == "ASM_000001"
@@ -307,13 +335,15 @@ def test_paired_reports_across_inputs_merge_observed_groups(project_db, tmp_path
     assert len(summary["sources"]) == 2
     assert db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"] == 1
     assert (
-        db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"] == gcf
+        db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"]
+        == gcf
     )
 
 
 # --------------------------------------------------------------------------
 # Entrez fallback / inputs without records
 # --------------------------------------------------------------------------
+
 
 def test_package_without_reports_falls_back_to_entrez(project_db, monkeypatch):
     project, db = project_db
@@ -353,9 +383,14 @@ def test_package_without_reports_falls_back_to_entrez(project_db, monkeypatch):
         # Entrez metadata fallback exists for.
         return _write_package(staging / "batch.zip", catalog=True, include_report=False)
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=["GCF_000001405.40"], includes=["genome"],
+        db,
+        project,
+        accessions=["GCF_000001405.40"],
+        includes=["genome"],
         email="curator@example.org",
     )
     assert summary["sources"][0]["reports"] == 1
@@ -370,7 +405,9 @@ def test_input_without_records_reports_no_assembly_records(project_db, tmp_path)
     empty.write_text("\n\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="no NCBI assembly records found"):
         ncbi.run_ncbi_datasets_adapter(db, project, inputs=[empty])
-    runs = db.query("SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'")
+    runs = db.query(
+        "SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
+    )
     assert len(runs) == 1
     assert runs[0]["status"] == "failed"
     assert "no NCBI assembly records found" in runs[0]["error"]
@@ -380,6 +417,7 @@ def test_input_without_records_reports_no_assembly_records(project_db, tmp_path)
 # Download orchestration (dry-run, aggregate failures, interruption)
 # --------------------------------------------------------------------------
 
+
 def test_dry_run_download_success_writes_nothing(project_db, monkeypatch):
     project, db = project_db
     seen: list[list[str]] = []
@@ -388,9 +426,15 @@ def test_dry_run_download_success_writes_nothing(project_db, monkeypatch):
         seen.append(batch)
         return _write_package(staging / "batch.zip", batch[0], genome=True)
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=["GCF_000001405.40"], includes=["genome"], dry_run=True,
+        db,
+        project,
+        accessions=["GCF_000001405.40"],
+        includes=["genome"],
+        dry_run=True,
     )
     assert seen == [["GCF_000001405.40"]]
     assert summary["dry_run"] is True
@@ -409,9 +453,15 @@ def test_dry_run_download_failure_is_summarized_not_raised(project_db, monkeypat
     def handler(batch: list[str], staging: Path) -> None:
         return None
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=["GCF_000001405.40"], includes=["genome"], dry_run=True,
+        db,
+        project,
+        accessions=["GCF_000001405.40"],
+        includes=["genome"],
+        dry_run=True,
     )
     assert summary["assembly_records"] == 0
     assert summary["download_failures"][0]["accessions"] == "GCF_000001405.40"
@@ -427,15 +477,25 @@ def test_all_failed_batches_raise_aggregated_download_error(project_db, monkeypa
     def handler(batch: list[str], staging: Path) -> None:
         return None
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     with pytest.raises(ValidationError) as caught:
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=["GCF_000001405.40"], includes=["genome"],
+            db,
+            project,
+            accessions=["GCF_000001405.40"],
+            includes=["genome"],
         )
     message = str(caught.value)
-    assert "no NCBI assembly records could be imported; download batch failures:" in message
+    assert (
+        "no NCBI assembly records could be imported; download batch failures:"
+        in message
+    )
     assert "- GCF_000001405.40: ValidationError: synthetic download failure" in message
-    runs = db.query("SELECT status FROM workflow_runs WHERE step='ncbi_datasets_import'")
+    runs = db.query(
+        "SELECT status FROM workflow_runs WHERE step='ncbi_datasets_import'"
+    )
     assert runs[0]["status"] == "failed"
     items = db.query("SELECT status, error FROM adapter_run_items")
     assert items[0]["status"] == "failed"
@@ -451,10 +511,16 @@ def test_more_than_twenty_failed_batches_truncate_details(project_db, monkeypatc
             return _write_package(staging / "ok.zip", batch[0], genome=True)
         return None
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     with pytest.raises(ValidationError) as caught:
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=accessions, includes=["genome"], batch_size=1,
+            db,
+            project,
+            accessions=accessions,
+            includes=["genome"],
+            batch_size=1,
         )
     message = str(caught.value)
     assert (
@@ -479,7 +545,10 @@ def test_dry_run_keyboard_interrupt_is_not_audited(project_db, monkeypatch):
     monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", explode)
     with pytest.raises(KeyboardInterrupt):
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=["GCF_000001405.40"], dry_run=True,
+            db,
+            project,
+            accessions=["GCF_000001405.40"],
+            dry_run=True,
         )
     assert db.query("SELECT COUNT(*) AS n FROM workflow_runs")[0]["n"] == 0
 
@@ -499,11 +568,15 @@ def test_interrupt_audit_failure_does_not_mask_shutdown(project_db, monkeypatch)
         ncbi.run_ncbi_datasets_adapter(db, project, accessions=["GCF_000001405.40"])
     # The audit write failed, so the run row is left untouched instead of the
     # shutdown being converted into an unrelated error.
-    runs = db.query("SELECT status FROM workflow_runs WHERE step='ncbi_datasets_import'")
+    runs = db.query(
+        "SELECT status FROM workflow_runs WHERE step='ncbi_datasets_import'"
+    )
     assert runs[0]["status"] == "running"
 
 
-def test_enospc_during_import_is_reported_as_no_space(project_db, tmp_path, monkeypatch):
+def test_enospc_during_import_is_reported_as_no_space(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     package = _write_package(tmp_path / "package.zip", genome=True)
 
@@ -515,7 +588,9 @@ def test_enospc_during_import_is_reported_as_no_space(project_db, tmp_path, monk
         ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package])
     assert "ran out of space" in str(caught.value)
     assert isinstance(caught.value.__cause__, OSError)
-    runs = db.query("SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'")
+    runs = db.query(
+        "SELECT status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
+    )
     assert runs[0]["status"] == "failed"
     assert "ran out of space" in runs[0]["error"]
 
@@ -548,15 +623,25 @@ def test_dry_run_download_processing_failure_propagates(project_db, monkeypatch)
                 "ncbi_dataset/data/assembly_data_report.jsonl",
                 json.dumps(_report(accession)) + "\n",
             )
-            archive.writestr(f"ncbi_dataset/data/{accession}/one_genomic.fna", ">a\nACGT\n")
-            archive.writestr(f"ncbi_dataset/data/{accession}/two_genomic.fna", ">b\nTTTT\n")
+            archive.writestr(
+                f"ncbi_dataset/data/{accession}/one_genomic.fna", ">a\nACGT\n"
+            )
+            archive.writestr(
+                f"ncbi_dataset/data/{accession}/two_genomic.fna", ">b\nTTTT\n"
+            )
         return destination
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     monkeypatch.setattr(ncbi, "finish_run", _forbidden_finish_run)
     with pytest.raises(ConflictError, match="multiple different files"):
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=[accession], includes=["genome"], dry_run=True,
+            db,
+            project,
+            accessions=[accession],
+            includes=["genome"],
+            dry_run=True,
         )
     # A dry run never records workflow rows, even when the batch fails mid-import.
     assert db.query("SELECT COUNT(*) AS n FROM workflow_runs")[0]["n"] == 0
@@ -564,7 +649,9 @@ def test_dry_run_download_processing_failure_propagates(project_db, monkeypatch)
     assert db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"] == 0
 
 
-def test_failed_run_audit_failure_does_not_mask_original_error(project_db, tmp_path, monkeypatch):
+def test_failed_run_audit_failure_does_not_mask_original_error(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     package = _write_package(tmp_path / "package.zip", genome=True)
 
@@ -584,11 +671,15 @@ def test_failed_run_audit_failure_does_not_mask_original_error(project_db, tmp_p
 # Archival options: --no-archive-files, --standardize
 # --------------------------------------------------------------------------
 
+
 def test_archive_files_disabled_imports_metadata_only(project_db, tmp_path):
     project, db = project_db
     package = _write_package(tmp_path / "package.zip", genome=True, gff=True)
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, inputs=[package], archive_files=False,
+        db,
+        project,
+        inputs=[package],
+        archive_files=False,
     )
     assert summary["discovered_files"] == 2
     assert summary["archived_files"] == []
@@ -604,14 +695,19 @@ def test_standardize_creates_standardized_copies(project_db, tmp_path):
     project, db = project_db
     directory = _write_directory_package(tmp_path / "package", genome=True)
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, inputs=[directory], standardize=True,
+        db,
+        project,
+        inputs=[directory],
+        standardize=True,
     )
     assert summary["archived_files"] and summary["standardized_files"]
     assert summary["standardized_files"] == summary["archived_files"]
     row = dict(db.query("SELECT * FROM files")[0])
     assert row["status"] == "STANDARDIZED"
     assert (project.root / row["relative_path"]).exists()
-    standardized = [path for path in project.standardized_root.rglob("*") if path.is_file()]
+    standardized = [
+        path for path in project.standardized_root.rglob("*") if path.is_file()
+    ]
     assert len(standardized) == 1
     assert standardized[0].name == Path(row["relative_path"]).name
     assert standardized[0].read_text(encoding="utf-8") == ">chr1\nACGTACGTACGT\n"
@@ -621,21 +717,32 @@ def test_standardize_creates_standardized_copies(project_db, tmp_path):
 # Resume/skip planning against existing archived files
 # --------------------------------------------------------------------------
 
+
 def test_unversioned_request_reuses_archive_and_downloads_only_missing_roles(
-        project_db, tmp_path, monkeypatch):
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     gca = "GCA_000001405.29"
     gcf = "GCF_000001405.40"
     package = _write_package(
-        tmp_path / "gca.zip", gca, genome=True, paired=gcf,
+        tmp_path / "gca.zip",
+        gca,
+        genome=True,
+        paired=gcf,
     )
     ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package])
-    assert db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"] == gcf
+    assert (
+        db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"]
+        == gcf
+    )
 
     # An unversioned request resolves to the archived version without a download.
     monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _forbidden_download)
     skipped = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=["GCA_000001405"], includes=["genome"],
+        db,
+        project,
+        accessions=["GCA_000001405"],
+        includes=["genome"],
     )
     assert skipped["skipped_existing"] == ["GCA_000001405"]
     assert skipped["download_plan"] == []
@@ -645,36 +752,55 @@ def test_unversioned_request_reuses_archive_and_downloads_only_missing_roles(
 
     def handler(batch: list[str], staging: Path) -> Path:
         seen.append((batch, ("sequence-report",)))
-        return _write_package(staging / "batch.zip", gca, sequence_report=True, paired=gcf)
+        return _write_package(
+            staging / "batch.zip", gca, sequence_report=True, paired=gcf
+        )
 
-    monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler))
+    monkeypatch.setattr(
+        ncbi, "download_ncbi_datasets_parallel", _fake_parallel(handler)
+    )
     widened = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=[gca], includes=["genome", "sequence-report"],
+        db,
+        project,
+        accessions=[gca],
+        includes=["genome", "sequence-report"],
     )
     assert seen == [([gca], ("sequence-report",))]
     assert widened["skipped_existing"] == []
-    assert [row["file_role"] for row in db.query(
-        "SELECT file_role FROM files WHERE entity_type='assembly' ORDER BY file_role"
-    )] == ["assembly_report_genbank", "genome_fasta_genbank"]
+    assert [
+        row["file_role"]
+        for row in db.query(
+            "SELECT file_role FROM files WHERE entity_type='assembly' ORDER BY file_role"
+        )
+    ] == ["assembly_report_genbank", "genome_fasta_genbank"]
 
 
 def test_missing_annotation_mapping_falls_back_to_existing_annotation_rows(
-        project_db, tmp_path, monkeypatch):
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     accession = "GCF_000001405.40"
     package = _write_package(tmp_path / "package.zip", genome=True, gff=True)
     ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package])
-    annotation_id = db.query("SELECT annotation_id FROM annotations")[0]["annotation_id"]
+    annotation_id = db.query("SELECT annotation_id FROM annotations")[0][
+        "annotation_id"
+    ]
     # Simulate a project written before the annotation-identity table existed.
     db.conn.execute("DELETE FROM ncbi_annotation_records")
     db.conn.commit()
     monkeypatch.setattr(ncbi, "download_ncbi_datasets_parallel", _forbidden_download)
     summary = ncbi.run_ncbi_datasets_adapter(
-        db, project, accessions=[accession], includes=["gff3"],
+        db,
+        project,
+        accessions=[accession],
+        includes=["gff3"],
     )
     assert summary["skipped_existing"] == [accession]
     assert db.query("SELECT COUNT(*) AS n FROM annotations")[0]["n"] == 1
-    assert db.query("SELECT annotation_id FROM annotations")[0]["annotation_id"] == annotation_id
+    assert (
+        db.query("SELECT annotation_id FROM annotations")[0]["annotation_id"]
+        == annotation_id
+    )
 
 
 def test_file_satisfies_include_requires_standardized_copy(project_db):
@@ -688,27 +814,42 @@ def test_file_satisfies_include_requires_standardized_copy(project_db):
         "entity_id": "ASM_000001",
         "relative_path": relative,
     }
-    assert ncbi._file_satisfies_include(
-        project, row, entity_type="assembly", standardize=False
-    ) is True
-    assert ncbi._file_satisfies_include(
-        project, row, entity_type="assembly", standardize=True
-    ) is False
+    assert (
+        ncbi._file_satisfies_include(
+            project, row, entity_type="assembly", standardize=False
+        )
+        is True
+    )
+    assert (
+        ncbi._file_satisfies_include(
+            project, row, entity_type="assembly", standardize=True
+        )
+        is False
+    )
     standardized = (
-        project.standardized_root / raw_bucket("assembly") / "ASM_000001" / Path(relative).name
+        project.standardized_root
+        / raw_bucket("assembly")
+        / "ASM_000001"
+        / Path(relative).name
     )
     standardized.parent.mkdir(parents=True, exist_ok=True)
     standardized.write_text(">chr1\nACGT\n", encoding="utf-8")
-    assert ncbi._file_satisfies_include(
-        project, row, entity_type="assembly", standardize=True
-    ) is True
+    assert (
+        ncbi._file_satisfies_include(
+            project, row, entity_type="assembly", standardize=True
+        )
+        is True
+    )
 
 
 # --------------------------------------------------------------------------
 # ZIP entry scanning
 # --------------------------------------------------------------------------
 
-def test_local_zip_entry_names_handles_truncated_names_and_zip64_markers(tmp_path: Path):
+
+def test_local_zip_entry_names_handles_truncated_names_and_zip64_markers(
+    tmp_path: Path,
+):
     name = b"ncbi_dataset/data/GCF_000001405.40/genomic.fna"
     truncated = tmp_path / "truncated.zip"
     truncated.write_bytes(
@@ -720,7 +861,8 @@ def test_local_zip_entry_names_handles_truncated_names_and_zip64_markers(tmp_pat
     zip64.write_bytes(
         struct.pack(
             "<IHHHHHIIIHH", 0x04034B50, 20, 0, 0, 0, 0, 0, 0xFFFFFFFF, 0, len(name), 0
-        ) + name
+        )
+        + name
     )
     assert ncbi._local_zip_entry_names(zip64) == [name.decode("utf-8")]
 
@@ -728,6 +870,7 @@ def test_local_zip_entry_names_handles_truncated_names_and_zip64_markers(tmp_pat
 # --------------------------------------------------------------------------
 # Report/asset discovery edge cases
 # --------------------------------------------------------------------------
+
 
 def test_load_dataset_reports_handles_missing_root_and_jsonl_fallback(tmp_path: Path):
     accession = "GCF_000001405.40"
@@ -737,17 +880,23 @@ def test_load_dataset_reports_handles_missing_root_and_jsonl_fallback(tmp_path: 
     # A non-existent root still honours an explicitly supplied report file.
     direct = tmp_path / "direct_report.jsonl"
     direct.write_text(json.dumps(_report(accession)) + "\n", encoding="utf-8")
-    assert ncbi.load_dataset_reports(tmp_path / "missing", direct_file=direct) == from_zip
+    assert (
+        ncbi.load_dataset_reports(tmp_path / "missing", direct_file=direct) == from_zip
+    )
 
     directory = tmp_path / "unpacked"
     directory.mkdir()
     fallback = directory / "unusual_name.jsonl"
     fallback.write_text(json.dumps(_report(accession)) + "\n", encoding="utf-8")
     (directory / "sequence_report.jsonl").write_text("{}\n", encoding="utf-8")
-    assert [row["accession"] for row in ncbi.load_dataset_reports(directory)] == [accession]
+    assert [row["accession"] for row in ncbi.load_dataset_reports(directory)] == [
+        accession
+    ]
 
 
-def test_discover_dataset_assets_skips_directories_and_unattributed_files(tmp_path: Path):
+def test_discover_dataset_assets_skips_directories_and_unattributed_files(
+    tmp_path: Path,
+):
     accession = "GCF_000001405.40"
     report = _report(accession)
     package = tmp_path / "package.zip"
@@ -762,28 +911,32 @@ def test_discover_dataset_assets_skips_directories_and_unattributed_files(tmp_pa
     with zipfile.ZipFile(anonymous, "w") as archive:
         archive.writestr("ncbi_dataset/data/genomic.fna", ">x\nACGT\n")
     assert ncbi.discover_dataset_assets(anonymous, [], "zip") == []
-    assert [asset.role for asset in ncbi.discover_dataset_assets(anonymous, [report], "zip")] == [
-        "genome_fasta"
-    ]
+    assert [
+        asset.role for asset in ncbi.discover_dataset_assets(anonymous, [report], "zip")
+    ] == ["genome_fasta"]
 
     directory = tmp_path / "unpacked"
     (directory / accession).mkdir(parents=True)
     (directory / accession / "genomic.fna").write_text(">x\nACGT\n", encoding="utf-8")
     (directory / accession / "nested").mkdir()
-    assert [asset.role for asset in ncbi.discover_dataset_assets(directory, [report], "dir")] == [
-        "genome_fasta"
-    ]
+    assert [
+        asset.role for asset in ncbi.discover_dataset_assets(directory, [report], "dir")
+    ] == ["genome_fasta"]
     # A file without an accession in its path falls back to the single report.
     unnamed = tmp_path / "unnamed"
     unnamed.mkdir()
     (unnamed / "genomic.fna").write_text(">x\nACGT\n", encoding="utf-8")
     assert [
-        asset.accession for asset in ncbi.discover_dataset_assets(unnamed, [report], "dir")
+        asset.accession
+        for asset in ncbi.discover_dataset_assets(unnamed, [report], "dir")
     ] == [accession]
     # Two reports make the package accession ambiguous: unnamed files are dropped.
-    assert ncbi.discover_dataset_assets(
-        unnamed, [report, _report("GCF_000001406.1")], "dir"
-    ) == []
+    assert (
+        ncbi.discover_dataset_assets(
+            unnamed, [report, _report("GCF_000001406.1")], "dir"
+        )
+        == []
+    )
 
 
 def test_non_utf8_report_is_rejected_with_source_name(tmp_path: Path):
@@ -801,9 +954,9 @@ def test_non_utf8_report_is_rejected_with_source_name(tmp_path: Path):
 def test_json_report_fallback_skips_blank_lines_and_non_objects():
     handle = io.StringIO('{"x": 1}\n\n7\n{"x": 2}\n')
     assert ncbi._read_report_handle(handle, "unknown.txt") == [{"x": 1}, {"x": 2}]
-    assert ncbi._read_report_handle(io.StringIO('{"only": "header"}\n'), "report.txt") == [
-        {"only": "header"}
-    ]
+    assert ncbi._read_report_handle(
+        io.StringIO('{"only": "header"}\n'), "report.txt"
+    ) == [{"only": "header"}]
 
 
 def test_biosample_attributes_ignore_rows_without_name_or_value():
@@ -829,6 +982,7 @@ def test_accession_from_path_keeps_first_unversioned_match():
 # Project schema upgrade
 # --------------------------------------------------------------------------
 
+
 def _schema_path(root: Path) -> Path:
     return root / "config" / "schemas.yaml"
 
@@ -848,7 +1002,9 @@ def test_adapter_reports_unreadable_project_schema(project_db, tmp_path, capsys)
     source = tmp_path / "report.jsonl"
     source.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
     _schema_path(tmp_path).unlink()
-    assert main(["--project", str(tmp_path), "ncbi-datasets", "--input", str(source)]) == 2
+    assert (
+        main(["--project", str(tmp_path), "ncbi-datasets", "--input", str(source)]) == 2
+    )
     assert "cannot read project metadata schema" in capsys.readouterr().err
 
 
@@ -856,7 +1012,9 @@ def test_adapter_rejects_schema_without_tables_mapping(project_db, tmp_path):
     project, db = project_db
     _store_schema_document(tmp_path, {"schema_version": "1.4"})
     with pytest.raises(ValidationError, match="must contain a 'tables' mapping"):
-        ncbi.run_ncbi_datasets_adapter(db, project, accessions=["GCF_000001405.40"], plan_only=True)
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000001405.40"], plan_only=True
+        )
 
 
 def test_adapter_rejects_schema_without_assembly_fields(project_db, tmp_path):
@@ -865,7 +1023,9 @@ def test_adapter_rejects_schema_without_assembly_fields(project_db, tmp_path):
     document["tables"]["assemblies"].pop("fields")
     _store_schema_document(tmp_path, document)
     with pytest.raises(ValidationError, match="no assemblies.fields mapping"):
-        ncbi.run_ncbi_datasets_adapter(db, project, accessions=["GCF_000001405.40"], plan_only=True)
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000001405.40"], plan_only=True
+        )
 
 
 def test_adapter_rejects_schema_without_file_role_allowed_list(project_db, tmp_path):
@@ -874,7 +1034,9 @@ def test_adapter_rejects_schema_without_file_role_allowed_list(project_db, tmp_p
     document["tables"]["files"]["fields"]["file_role"].pop("allowed")
     _store_schema_document(tmp_path, document)
     with pytest.raises(ValidationError, match="no files.file_role.allowed list"):
-        ncbi.run_ncbi_datasets_adapter(db, project, accessions=["GCF_000001405.40"], plan_only=True)
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, accessions=["GCF_000001405.40"], plan_only=True
+        )
 
 
 def test_adapter_upgrades_schema_with_missing_ncbi_roles(project_db, tmp_path):
@@ -886,7 +1048,10 @@ def test_adapter_upgrades_schema_with_missing_ncbi_roles(project_db, tmp_path):
             allowed.remove(role)
     _store_schema_document(tmp_path, document)
     package = _write_package(
-        tmp_path / "gca.zip", "GCA_000001405.29", genome=True, paired="GCF_000001405.40",
+        tmp_path / "gca.zip",
+        "GCA_000001405.29",
+        genome=True,
+        paired="GCF_000001405.40",
     )
     ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package])
     upgraded = _load_schema_document(tmp_path)
@@ -894,22 +1059,34 @@ def test_adapter_upgrades_schema_with_missing_ncbi_roles(project_db, tmp_path):
         upgraded["tables"]["files"]["fields"]["file_role"]["allowed"]
     )
     # The restored role is what lets the GenBank paired artifact be validated.
-    assert db.query("SELECT file_role FROM files")[0]["file_role"] == "genome_fasta_genbank"
+    assert (
+        db.query("SELECT file_role FROM files")[0]["file_role"]
+        == "genome_fasta_genbank"
+    )
 
 
 # --------------------------------------------------------------------------
 # Per-asset ingestion
 # --------------------------------------------------------------------------
 
+
 def test_ingest_asset_without_readable_source_is_rejected(project_db):
     project, db = project_db
     asset = ncbi.DatasetAsset(
-        path=None, accession="GCF_000001405.40", role="genome_fasta",
+        path=None,
+        accession="GCF_000001405.40",
+        role="genome_fasta",
         source_url="ncbi-datasets:test",
     )
     with pytest.raises(ValidationError, match="no readable source"):
         ncbi._ingest_dataset_asset(
-            db, project, asset, "assembly", "ASM_000001", run_id="WF_test", standardize=False,
+            db,
+            project,
+            asset,
+            "assembly",
+            "ASM_000001",
+            run_id="WF_test",
+            standardize=False,
         )
 
 
@@ -922,7 +1099,9 @@ def test_zip_member_with_declared_size_mismatch_is_rejected(project_db, tmp_path
             "ncbi_dataset/data/assembly_data_report.jsonl",
             json.dumps(_report(accession)) + "\n",
         )
-        archive.writestr(f"ncbi_dataset/data/{accession}/genomic.fna", ">x\nACGTACGTACGT\n")
+        archive.writestr(
+            f"ncbi_dataset/data/{accession}/genomic.fna", ">x\nACGTACGTACGT\n"
+        )
     member = f"ncbi_dataset/data/{accession}/genomic.fna"
     payload = bytearray(package.read_bytes())
     offsets = _central_directory_offsets(bytes(payload), member)
@@ -939,7 +1118,9 @@ def test_zip_member_with_declared_size_mismatch_is_rejected(project_db, tmp_path
     assert "expected 9999 bytes" in str(caught.value)
 
 
-def test_extraction_failures_are_wrapped_as_validation_errors(project_db, tmp_path, monkeypatch):
+def test_extraction_failures_are_wrapped_as_validation_errors(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     package = _write_package(tmp_path / "package.zip", genome=True)
 
@@ -948,7 +1129,9 @@ def test_extraction_failures_are_wrapped_as_validation_errors(project_db, tmp_pa
 
     monkeypatch.setattr(ncbi.shutil, "copyfileobj", broken_copyfileobj)
     with pytest.raises(ValidationError, match="cannot extract NCBI ZIP asset"):
-        ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package], preserve_sources=False)
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, inputs=[package], preserve_sources=False
+        )
 
 
 def test_extraction_enospc_is_reported_as_no_space(project_db, tmp_path, monkeypatch):
@@ -962,7 +1145,9 @@ def test_extraction_enospc_is_reported_as_no_space(project_db, tmp_path, monkeyp
 
     monkeypatch.setattr(ncbi.shutil, "copyfileobj", full_disk)
     with pytest.raises(ValidationError, match="ran out of space"):
-        ncbi.run_ncbi_datasets_adapter(db, project, inputs=[package], preserve_sources=False)
+        ncbi.run_ncbi_datasets_adapter(
+            db, project, inputs=[package], preserve_sources=False
+        )
 
 
 def test_directory_input_ingests_files_without_staging(project_db, tmp_path):
@@ -970,10 +1155,14 @@ def test_directory_input_ingests_files_without_staging(project_db, tmp_path):
     directory = _write_directory_package(tmp_path / "package", genome=True, gff=True)
     nested = directory / "ncbi_dataset" / "data" / "GCF_000001405.40" / "subdir"
     nested.mkdir()
-    summary = ncbi.run_ncbi_datasets_adapter(db, project, inputs=[directory], preserve_sources=True)
+    summary = ncbi.run_ncbi_datasets_adapter(
+        db, project, inputs=[directory], preserve_sources=True
+    )
     assert summary["discovered_files"] == 2
     assert len(summary["archived_files"]) == 2
-    row = db.query("SELECT relative_path, source_url FROM files ORDER BY file_role LIMIT 1")[0]
+    row = db.query(
+        "SELECT relative_path, source_url FROM files ORDER BY file_role LIMIT 1"
+    )[0]
     assert row["source_url"].startswith("ncbi-datasets:")
     assert (project.root / row["relative_path"]).exists()
     # Directory inputs are already on the project filesystem: nothing to preserve.
@@ -984,8 +1173,11 @@ def test_directory_input_ingests_files_without_staging(project_db, tmp_path):
 # Disk space / source preservation helpers
 # --------------------------------------------------------------------------
 
+
 def test_no_space_error_walks_up_and_tolerates_usage_failure(tmp_path, monkeypatch):
-    error = ncbi._no_space_error(tmp_path / "missing" / "deeper", "archive asset", OSError("full"))
+    error = ncbi._no_space_error(
+        tmp_path / "missing" / "deeper", "archive asset", OSError("full")
+    )
     assert "ran out of space" in str(error)
     assert str(tmp_path) in str(error)
 
@@ -999,7 +1191,9 @@ def test_no_space_error_walks_up_and_tolerates_usage_failure(tmp_path, monkeypat
 
 def test_open_source_preserves_existing_files(project_db, tmp_path, monkeypatch):
     project, _db = project_db
-    monkeypatch.setattr("operon.adapters._ncbi_sources._require_disk_space", lambda *_args: None)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_sources._require_disk_space", lambda *_args: None
+    )
     source = tmp_path / "report.jsonl"
     source.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
     bundle = ncbi._open_source(source, project, True, label="explicit")
@@ -1016,19 +1210,22 @@ def test_open_source_preserves_existing_files(project_db, tmp_path, monkeypatch)
 # Synchronous (requests) download path
 # --------------------------------------------------------------------------
 
+
 class _SyncResponse:
     """Minimal stand-in for ``requests.Response`` with a streamed body."""
 
     def __init__(
-            self,
-            status: int = 200,
-            payload: bytes = b"",
-            headers: dict[str, str] | None = None,
-            body_error: BaseException | None = None,
+        self,
+        status: int = 200,
+        payload: bytes = b"",
+        headers: dict[str, str] | None = None,
+        body_error: BaseException | None = None,
     ) -> None:
         self.status_code = status
         self.payload = payload
-        self.headers = {"Content-Length": str(len(payload))} if headers is None else headers
+        self.headers = (
+            {"Content-Length": str(len(payload))} if headers is None else headers
+        )
         self.body_error = body_error
         self.closed = False
 
@@ -1086,9 +1283,15 @@ def test_download_builds_retrying_session_when_none_supplied(tmp_path, monkeypat
 
     monkeypatch.setattr(requests, "Session", FakeSession)
     destination = tmp_path / "dataset.zip"
-    assert ncbi.download_ncbi_dataset(
-        ["GCF_000001405.40"], destination, includes=["genome"], max_retries=0,
-    ) == destination
+    assert (
+        ncbi.download_ncbi_dataset(
+            ["GCF_000001405.40"],
+            destination,
+            includes=["genome"],
+            max_retries=0,
+        )
+        == destination
+    )
     assert zipfile.is_zipfile(destination)
     assert destination.stat().st_size == len(payload)
     session = created[0]
@@ -1104,20 +1307,32 @@ def test_download_builds_retrying_session_when_none_supplied(tmp_path, monkeypat
         # base and only re-raised on the alpha fallback, so each attempt costs
         # two calls.
         (ssl.SSLError("ssl record layer failure"), "ssl record layer failure", 4),
-        (requests.exceptions.ConnectionError("connection reset by peer"),
-         "connection reset by peer", 4),
+        (
+            requests.exceptions.ConnectionError("connection reset by peer"),
+            "connection reset by peer",
+            4,
+        ),
         (requests.exceptions.Timeout("read timed out"), "read timed out", 4),
-        (requests.exceptions.ChunkedEncodingError("chunked encoding error"), "chunked", 2),
+        (
+            requests.exceptions.ChunkedEncodingError("chunked encoding error"),
+            "chunked",
+            2,
+        ),
     ],
 )
-def test_download_retries_transient_transport_errors(tmp_path, monkeypatch, error, fragment, calls):
+def test_download_retries_transient_transport_errors(
+    tmp_path, monkeypatch, error, fragment, calls
+):
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     session = _ScriptedSession([error] * calls)
     with pytest.raises(ValidationError, match="failed after 2 attempt") as caught:
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], tmp_path / "retry.zip", session=session,
-            max_retries=1, retry_backoff=0.0,
+            ["GCF_000001405.40"],
+            tmp_path / "retry.zip",
+            session=session,
+            max_retries=1,
+            retry_backoff=0.0,
         )
     assert fragment in str(caught.value)
     assert len(session.calls) == calls
@@ -1131,8 +1346,11 @@ def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkey
     session = _ScriptedSession([primary, fallback])
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], tmp_path / "busy.zip", session=session,
-            max_retries=0, retry_backoff=0.0,
+            ["GCF_000001405.40"],
+            tmp_path / "busy.zip",
+            session=session,
+            max_retries=0,
+            retry_backoff=0.0,
         )
     assert "HTTP 503 from NCBI Datasets" in str(caught.value)
     assert primary.closed and fallback.closed
@@ -1142,13 +1360,23 @@ def test_download_retries_retryable_http_status_from_both_bases(tmp_path, monkey
 def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
     payload = _dataset_zip_bytes()
     session = _ScriptedSession([None, _SyncResponse(200, payload)])
-    monkeypatch.setattr("operon.adapters._ncbi_download._require_disk_space", lambda *_args: None)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._require_disk_space", lambda *_args: None
+    )
     destination = tmp_path / "fallback.zip"
-    assert ncbi.download_ncbi_dataset(
-        ["GCF_000001405.40"], destination, session=session, max_retries=0,
-    ) == destination
+    assert (
+        ncbi.download_ncbi_dataset(
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=0,
+        )
+        == destination
+    )
     assert zipfile.is_zipfile(destination)
-    assert session.calls[0].endswith("/datasets/v2/genome/accession/GCF_000001405.40/download")
+    assert session.calls[0].endswith(
+        "/datasets/v2/genome/accession/GCF_000001405.40/download"
+    )
     assert session.calls[1].startswith(ncbi.NCBI_DATASETS_API_FALLBACK)
 
 
@@ -1162,7 +1390,8 @@ def test_download_recovers_from_missing_client_response(tmp_path, monkeypatch):
 )
 @pytest.mark.parametrize("fallback_fails", [False, True])
 def test_download_handles_transport_errors_from_the_fallback_base(
-        tmp_path, monkeypatch, error, fallback_fails):
+    tmp_path, monkeypatch, error, fallback_fails
+):
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     payload = _dataset_zip_bytes()
@@ -1171,7 +1400,10 @@ def test_download_handles_transport_errors_from_the_fallback_base(
         session = _ScriptedSession([_SyncResponse(404), error])
         with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
             ncbi.download_ncbi_dataset(
-                ["GCF_000001405.40"], tmp_path / "alpha.zip", session=session, max_retries=0,
+                ["GCF_000001405.40"],
+                tmp_path / "alpha.zip",
+                session=session,
+                max_retries=0,
             )
         assert str(error) in str(caught.value)
     else:
@@ -1179,9 +1411,15 @@ def test_download_handles_transport_errors_from_the_fallback_base(
         # against the alpha endpoint within the same attempt.
         session = _ScriptedSession([error, _SyncResponse(200, payload)])
         destination = tmp_path / "alpha.zip"
-        assert ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], destination, session=session, max_retries=0,
-        ) == destination
+        assert (
+            ncbi.download_ncbi_dataset(
+                ["GCF_000001405.40"],
+                destination,
+                session=session,
+                max_retries=0,
+            )
+            == destination
+        )
         assert session.calls[1].startswith(ncbi.NCBI_DATASETS_API_FALLBACK)
     assert len(session.calls) == 2
 
@@ -1193,7 +1431,10 @@ def test_download_retries_retryable_non_zip_payload(tmp_path, monkeypatch):
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], destination, session=session, max_retries=0,
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=0,
         )
     assert "no recognizable ZIP content" in str(caught.value)
     assert not destination.exists()
@@ -1208,7 +1449,10 @@ def test_download_cleanup_failure_does_not_hide_payload_error(tmp_path, monkeypa
     destination = tmp_path / "broken.zip"
     with pytest.raises(ValidationError, match="no recognizable ZIP content"):
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], destination, session=session, max_retries=0,
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=0,
         )
     assert not destination.exists()
 
@@ -1224,7 +1468,10 @@ def test_download_enospc_is_reported_as_no_space(tmp_path, monkeypatch):
     destination = tmp_path / "full.zip"
     with pytest.raises(ValidationError, match="ran out of space") as caught:
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], destination, session=session, max_retries=0,
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=0,
         )
     assert "download NCBI dataset package" in str(caught.value)
     assert not destination.exists()
@@ -1233,6 +1480,7 @@ def test_download_enospc_is_reported_as_no_space(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 # Asynchronous (aiohttp) download path
 # --------------------------------------------------------------------------
+
 
 class _FakeClientError(Exception):
     """Stands in for aiohttp's connection/payload error classes."""
@@ -1245,7 +1493,9 @@ class _FakeClientResponseError(Exception):
 
 
 class _FakeContent:
-    def __init__(self, chunks: Sequence[bytes] = (), error: BaseException | None = None) -> None:
+    def __init__(
+        self, chunks: Sequence[bytes] = (), error: BaseException | None = None
+    ) -> None:
         self.chunks = list(chunks)
         self.error = error
 
@@ -1258,11 +1508,11 @@ class _FakeContent:
 
 class _FakeAiohttpResponse:
     def __init__(
-            self,
-            status: int = 200,
-            chunks: Sequence[bytes] = (),
-            headers: dict[str, str] | None = None,
-            body_error: BaseException | None = None,
+        self,
+        status: int = 200,
+        chunks: Sequence[bytes] = (),
+        headers: dict[str, str] | None = None,
+        body_error: BaseException | None = None,
     ) -> None:
         self.status = status
         self.headers = dict(headers or {})
@@ -1294,15 +1544,19 @@ def _install_fake_aiohttp(monkeypatch, outcomes: list[Any]) -> Any:
                 raise outcome
             return outcome
 
-    fake = type("FakeAiohttp", (), {
-        "ClientSession": Session,
-        "ClientTimeout": lambda **kwargs: kwargs,
-        "ClientSSLError": _FakeClientError,
-        "ClientConnectionError": _FakeClientError,
-        "ServerDisconnectedError": _FakeClientError,
-        "ClientPayloadError": _FakeClientError,
-        "ClientResponseError": _FakeClientResponseError,
-    })
+    fake = type(
+        "FakeAiohttp",
+        (),
+        {
+            "ClientSession": Session,
+            "ClientTimeout": lambda **kwargs: kwargs,
+            "ClientSSLError": _FakeClientError,
+            "ClientConnectionError": _FakeClientError,
+            "ServerDisconnectedError": _FakeClientError,
+            "ClientPayloadError": _FakeClientError,
+            "ClientResponseError": _FakeClientResponseError,
+        },
+    )
     monkeypatch.setitem(sys.modules, "aiohttp", fake)
     return fake
 
@@ -1321,9 +1575,12 @@ def _aiohttp_kwargs(destination: Path, *, max_retries: int = 0) -> dict[str, Any
     )
 
 
-def test_aiohttp_download_wraps_connection_errors_from_both_bases(tmp_path, monkeypatch):
+def test_aiohttp_download_wraps_connection_errors_from_both_bases(
+    tmp_path, monkeypatch
+):
     _install_fake_aiohttp(
-        monkeypatch, [_FakeClientError("primary reset"), _FakeClientError("alpha reset")]
+        monkeypatch,
+        [_FakeClientError("primary reset"), _FakeClientError("alpha reset")],
     )
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         asyncio.run(ncbi._download_batch_aiohttp(**_aiohttp_kwargs(tmp_path / "x.zip")))
@@ -1331,9 +1588,14 @@ def test_aiohttp_download_wraps_connection_errors_from_both_bases(tmp_path, monk
 
 
 def test_aiohttp_download_retries_payload_errors_during_transfer(tmp_path, monkeypatch):
-    _install_fake_aiohttp(monkeypatch, [
-        _FakeAiohttpResponse(200, [b"partial"], body_error=_FakeClientError("body reset")),
-    ])
+    _install_fake_aiohttp(
+        monkeypatch,
+        [
+            _FakeAiohttpResponse(
+                200, [b"partial"], body_error=_FakeClientError("body reset")
+            ),
+        ],
+    )
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         asyncio.run(ncbi._download_batch_aiohttp(**_aiohttp_kwargs(tmp_path / "x.zip")))
     assert "body reset" in str(caught.value)
@@ -1344,7 +1606,9 @@ def test_aiohttp_download_treats_non_enospc_oserror_as_transient(tmp_path, monke
         raise OSError(errno.EIO, "fsync failed")
 
     monkeypatch.setattr(os, "fsync", broken_fsync)
-    _install_fake_aiohttp(monkeypatch, [_FakeAiohttpResponse(200, [_dataset_zip_bytes()])])
+    _install_fake_aiohttp(
+        monkeypatch, [_FakeAiohttpResponse(200, [_dataset_zip_bytes()])]
+    )
     destination = tmp_path / "io-error.zip"
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         asyncio.run(ncbi._download_batch_aiohttp(**_aiohttp_kwargs(destination)))
@@ -1352,8 +1616,12 @@ def test_aiohttp_download_treats_non_enospc_oserror_as_transient(tmp_path, monke
     assert not destination.exists()
 
 
-def test_aiohttp_download_retries_retryable_client_response_error(tmp_path, monkeypatch):
-    _install_fake_aiohttp(monkeypatch, [_FakeClientResponseError(503, "503 from client")])
+def test_aiohttp_download_retries_retryable_client_response_error(
+    tmp_path, monkeypatch
+):
+    _install_fake_aiohttp(
+        monkeypatch, [_FakeClientResponseError(503, "503 from client")]
+    )
     with pytest.raises(ValidationError, match="failed after 1 attempt") as caught:
         asyncio.run(ncbi._download_batch_aiohttp(**_aiohttp_kwargs(tmp_path / "x.zip")))
     assert "503 from client" in str(caught.value)
@@ -1361,9 +1629,12 @@ def test_aiohttp_download_retries_retryable_client_response_error(tmp_path, monk
 
 def test_aiohttp_download_rejects_truncated_readme_package(tmp_path, monkeypatch):
     payload = _truncate_before_central_directory(_readme_zip_bytes())
-    _install_fake_aiohttp(monkeypatch, [
-        _FakeAiohttpResponse(200, [payload], {"Content-Length": str(len(payload))}),
-    ])
+    _install_fake_aiohttp(
+        monkeypatch,
+        [
+            _FakeAiohttpResponse(200, [payload], {"Content-Length": str(len(payload))}),
+        ],
+    )
     destination = tmp_path / "readme-only.zip"
     with pytest.raises(ValidationError, match="README-only") as caught:
         asyncio.run(ncbi._download_batch_aiohttp(**_aiohttp_kwargs(destination)))
@@ -1375,15 +1646,20 @@ def test_download_retries_body_errors_during_transfer(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(random, "uniform", lambda _low, _high: 0.0)
     body_error = requests.exceptions.ChunkedEncodingError("body truncated")
-    session = _ScriptedSession([
-        _SyncResponse(200, body_error=body_error),
-        _SyncResponse(200, body_error=body_error),
-    ])
+    session = _ScriptedSession(
+        [
+            _SyncResponse(200, body_error=body_error),
+            _SyncResponse(200, body_error=body_error),
+        ]
+    )
     destination = tmp_path / "truncated.zip"
     with pytest.raises(ValidationError, match="failed after 2 attempt") as caught:
         ncbi.download_ncbi_dataset(
-            ["GCF_000001405.40"], destination, session=session,
-            max_retries=1, retry_backoff=0.0,
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=1,
+            retry_backoff=0.0,
         )
     assert "body truncated" in str(caught.value)
     assert not destination.exists()
@@ -1409,10 +1685,16 @@ def test_download_retries_connection_error_raised_while_closing(tmp_path, monkey
     second = FlakyCloseResponse(200, payload)
     session = _ScriptedSession([first, second])
     destination = tmp_path / "close-retry.zip"
-    assert ncbi.download_ncbi_dataset(
-        ["GCF_000001405.40"], destination, session=session,
-        max_retries=1, retry_backoff=0.0,
-    ) == destination
+    assert (
+        ncbi.download_ncbi_dataset(
+            ["GCF_000001405.40"],
+            destination,
+            session=session,
+            max_retries=1,
+            retry_backoff=0.0,
+        )
+        == destination
+    )
     assert zipfile.is_zipfile(destination)
     assert FlakyCloseResponse.close_calls == [first, second]
     assert second.closed is True
@@ -1422,16 +1704,26 @@ def test_download_retries_connection_error_raised_while_closing(tmp_path, monkey
 # Parallel download orchestration
 # --------------------------------------------------------------------------
 
-def test_parallel_download_skips_entries_without_payload_or_error(tmp_path, monkeypatch):
+
+def test_parallel_download_skips_entries_without_payload_or_error(
+    tmp_path, monkeypatch
+):
     async def fake_runner(**kwargs: Any) -> None:
         kwargs["completed_queue"].put((kwargs["batches"][0], None, None))
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batches_async", fake_runner
+    )
     consumed: list[Any] = []
-    assert ncbi.download_ncbi_datasets_parallel(
-        [["GCF_000001405.40"]], tmp_path, max_workers=1,
-        on_complete=lambda batch, path: consumed.append((batch, path)),
-    ) == []
+    assert (
+        ncbi.download_ncbi_datasets_parallel(
+            [["GCF_000001405.40"]],
+            tmp_path,
+            max_workers=1,
+            on_complete=lambda batch, path: consumed.append((batch, path)),
+        )
+        == []
+    )
     assert consumed == []
 
 
@@ -1443,11 +1735,16 @@ def test_parallel_download_truncates_long_failure_details(tmp_path, monkeypatch)
             batch = [f"GCF_{index:09d}.1"]
             kwargs["completed_queue"].put((batch, None, ValidationError("not found")))
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batches_async", fake_runner
+    )
     batches = [[f"GCF_{index:09d}.1"] for index in range(failures)]
     with pytest.raises(ValidationError) as caught:
         ncbi.download_ncbi_datasets_parallel(
-            batches, tmp_path, max_workers=1, on_complete=lambda *_args: None,
+            batches,
+            tmp_path,
+            max_workers=1,
+            on_complete=lambda *_args: None,
         )
     message = str(caught.value)
     assert f"{failures}/{failures} NCBI download batch(es) failed" in message
@@ -1455,7 +1752,9 @@ def test_parallel_download_truncates_long_failure_details(tmp_path, monkeypatch)
     assert "- ... and 1 more failed batch(es)" in message
 
 
-def test_download_batches_rechecks_cancellation_after_waiting_for_a_worker(tmp_path, monkeypatch):
+def test_download_batches_rechecks_cancellation_after_waiting_for_a_worker(
+    tmp_path, monkeypatch
+):
     class CountingEvent:
         """Reports "cancelled" only for the worker that waited on the semaphore."""
 
@@ -1470,14 +1769,25 @@ def test_download_batches_rechecks_cancellation_after_waiting_for_a_worker(tmp_p
         Path(destination).write_bytes(b"zip")
         return Path(destination)
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_download)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batch_aiohttp", fake_download
+    )
     completed: queue.Queue[Any] = queue.Queue()
-    asyncio.run(ncbi._download_batches_async(
-        batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
-        staging_dir=tmp_path, includes=["genome"], email=None, api_key=None, timeout=1.0,
-        max_workers=1, max_retries=0, retry_backoff=0.0,
-        completed_queue=completed, cancel_event=CountingEvent(),
-    ))
+    asyncio.run(
+        ncbi._download_batches_async(
+            batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
+            staging_dir=tmp_path,
+            includes=["genome"],
+            email=None,
+            api_key=None,
+            timeout=1.0,
+            max_workers=1,
+            max_retries=0,
+            retry_backoff=0.0,
+            completed_queue=completed,
+            cancel_event=CountingEvent(),
+        )
+    )
     items = [completed.get_nowait(), completed.get_nowait()]
     cancelled = [item for item in items if isinstance(item[2], ncbi._DownloadCancelled)]
     succeed = [item for item in items if item[2] is None]
@@ -1509,14 +1819,25 @@ def test_download_batches_cancel_pending_tasks_after_a_failure(tmp_path, monkeyp
                 raise RuntimeError("cancel probe")
             return False
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", blocked)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batch_aiohttp", blocked
+    )
     with pytest.raises(RuntimeError, match="cancel probe"):
-        asyncio.run(ncbi._download_batches_async(
-            batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
-            staging_dir=tmp_path, includes=["genome"], email=None, api_key=None, timeout=1.0,
-            max_workers=1, max_retries=0, retry_backoff=0.0,
-            completed_queue=queue.Queue(), cancel_event=ExplodingEvent(),
-        ))
+        asyncio.run(
+            ncbi._download_batches_async(
+                batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
+                staging_dir=tmp_path,
+                includes=["genome"],
+                email=None,
+                api_key=None,
+                timeout=1.0,
+                max_workers=1,
+                max_retries=0,
+                retry_backoff=0.0,
+                completed_queue=queue.Queue(),
+                cancel_event=ExplodingEvent(),
+            )
+        )
     assert started.is_set() is True
     assert cancelled.is_set() is True
 
@@ -1525,14 +1846,19 @@ def test_download_batches_cancel_pending_tasks_after_a_failure(tmp_path, monkeyp
 # Cooperative cancellation through a caller-supplied cancel_event (TUI path)
 # --------------------------------------------------------------------------
 
-def test_parallel_download_external_cancel_event_stops_before_download(tmp_path, monkeypatch):
+
+def test_parallel_download_external_cancel_event_stops_before_download(
+    tmp_path, monkeypatch
+):
     """A pre-set caller event aborts before any download and raises ShutdownRequested."""
     from operon.shutdown import ShutdownRequested
 
     def fail_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("a download was attempted despite the set cancel event")
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fail_if_called)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batch_aiohttp", fail_if_called
+    )
     consumed: list[tuple[Any, Any]] = []
     cancel_event = threading.Event()
     cancel_event.set()
@@ -1560,7 +1886,10 @@ def test_adapter_run_with_set_cancel_event_is_recorded_interrupted(project_db):
     cancel_event.set()
     with pytest.raises(ShutdownRequested):
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=["GCF_000001405.40"], cancel_event=cancel_event,
+            db,
+            project,
+            accessions=["GCF_000001405.40"],
+            cancel_event=cancel_event,
         )
     runs = db.query(
         "SELECT status, exit_code FROM workflow_runs WHERE step='ncbi_datasets_import'"
@@ -1568,12 +1897,17 @@ def test_adapter_run_with_set_cancel_event_is_recorded_interrupted(project_db):
     assert [dict(row) for row in runs] == [{"status": "interrupted", "exit_code": 130}]
 
 
-def test_parallel_download_without_event_keeps_internal_cancellation(tmp_path, monkeypatch):
+def test_parallel_download_without_event_keeps_internal_cancellation(
+    tmp_path, monkeypatch
+):
     """No caller event: behaviour is unchanged (batches complete normally)."""
+
     async def fake_batch_download(batch, destination, **_kwargs):
         Path(destination).write_bytes(b"zip")
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_batch_download)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batch_aiohttp", fake_batch_download
+    )
     consumed: list[tuple[Any, Any]] = []
     completed = ncbi.download_ncbi_datasets_parallel(
         [["GCF_000000001.1"]],

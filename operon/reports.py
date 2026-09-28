@@ -14,16 +14,22 @@ from operon.schema import write_tsv
 from operon.utils import format_table, now_iso, sha256_file
 
 METADATA_REPORT_TABLES = [
-    "organisms", "samples", "runs", "assemblies", "annotations", "accessions", "files",
+    "organisms",
+    "samples",
+    "runs",
+    "assemblies",
+    "annotations",
+    "accessions",
+    "files",
 ]
 SOURCE_REPORT_TABLES = ["data_sources", "source_links"]
 
 
 def render_report_rows(
-        rows: Sequence[Mapping[str, Any]],
-        fmt: str,
-        *,
-        headers: Sequence[str] | None = None,
+    rows: Sequence[Mapping[str, Any]],
+    fmt: str,
+    *,
+    headers: Sequence[str] | None = None,
 ) -> str:
     """Render report rows as aligned text, TSV, or JSON.
 
@@ -34,8 +40,8 @@ def render_report_rows(
     empty result renders as ``""`` in text mode so the caller can print its own
     "(no results)" line, and as an empty JSON/TSV document otherwise.
     """
-    keys = list(headers) if headers is not None else (
-        list(rows[0].keys()) if rows else []
+    keys = (
+        list(headers) if headers is not None else (list(rows[0].keys()) if rows else [])
     )
 
     def value(row: Any, key: str) -> Any:
@@ -45,15 +51,20 @@ def render_report_rows(
             return None
 
     if fmt == "json":
-        return json.dumps(
-            [{key: value(row, key) for key in keys} for row in rows],
-            ensure_ascii=False,
-            indent=2,
-        ) + "\n"
+        return (
+            json.dumps(
+                [{key: value(row, key) for key in keys} for row in rows],
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n"
+        )
     if fmt == "tsv":
         lines = ["\t".join(keys)]
         lines.extend(
-            "\t".join("" if value(row, key) is None else str(value(row, key)) for key in keys)
+            "\t".join(
+                "" if value(row, key) is None else str(value(row, key)) for key in keys
+            )
             for row in rows
         )
         return "\n".join(lines) + "\n"
@@ -61,15 +72,17 @@ def render_report_rows(
         raise ValidationError(f"unknown report format: {fmt}")
     if not rows:
         return ""
-    return format_table(keys, ([value(row, key) for key in keys] for row in rows)) + "\n"
+    return (
+        format_table(keys, ([value(row, key) for key in keys] for row in rows)) + "\n"
+    )
 
 
 def export_metadata_report(
-        db: Database,
-        project: Project,
-        output: str | Path | None = None,
-        *,
-        include_retired: bool = False,
+    db: Database,
+    project: Project,
+    output: str | Path | None = None,
+    *,
+    include_retired: bool = False,
 ) -> Path:
     """Write a derived, read-only metadata snapshot from SQLite.
 
@@ -93,7 +106,8 @@ def export_metadata_report(
         columns = schema.columns(table)
         rows = (
             db.export_rows(table, columns)
-            if include_retired else db.export_active_rows(table, columns)
+            if include_retired
+            else db.export_active_rows(table, columns)
         )
         path = out / f"{table}.tsv"
         write_tsv(path, columns, rows)
@@ -105,7 +119,8 @@ def export_metadata_report(
         columns = db.table_columns(table)
         rows = (
             db.export_rows(table, columns)
-            if include_retired else db.export_active_rows(table, columns)
+            if include_retired
+            else db.export_active_rows(table, columns)
         )
         path = out / f"{table}.tsv"
         write_tsv(path, columns, rows)
@@ -121,11 +136,11 @@ def export_metadata_report(
 
 
 def qc_rows(
-        db: Database,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        *,
-        include_retired: bool = False,
+    db: Database,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    *,
+    include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     sql = "SELECT * FROM qc_results WHERE 1=1"
     params: list[Any] = []
@@ -146,7 +161,7 @@ def qc_rows(
 
 
 def qc_wide(
-        db: Database, entity_type: str | None = None, *, include_retired: bool = False
+    db: Database, entity_type: str | None = None, *, include_retired: bool = False
 ) -> tuple[list[str], list[dict[str, Any]]]:
     """Pivot long QC results into a wide table for browsing/statistics."""
     rows = qc_rows(db, entity_type=entity_type, include_retired=include_retired)
@@ -167,19 +182,26 @@ def qc_wide(
 
 
 def print_qc_table(
-        db: Database,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        *,
-        include_retired: bool = False,
+    db: Database,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    *,
+    include_retired: bool = False,
 ) -> str:
-    rows = qc_rows(
-        db, entity_type, entity_id, include_retired=include_retired
-    )
+    rows = qc_rows(db, entity_type, entity_id, include_retired=include_retired)
     if not rows:
         return "(no QC results)"
-    headers = ["entity_type", "entity_id", "file_id", "qc_stage", "metric_name", "metric_value", "metric_unit", "tool",
-               "evaluated_at"]
+    headers = [
+        "entity_type",
+        "entity_id",
+        "file_id",
+        "qc_stage",
+        "metric_name",
+        "metric_value",
+        "metric_unit",
+        "tool",
+        "evaluated_at",
+    ]
     return format_table(headers, ([r[h] for h in headers] for r in rows))
 
 
@@ -187,12 +209,14 @@ def print_status(db: Database) -> str:
     rows = db.conn.execute(
         "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state ORDER BY entity_type, entity_id"
     ).fetchall()
-    return format_table(["entity_type", "entity_id", "state", "message", "updated_at"],
-                        ([r[c] for c in r.keys()] for r in rows))
+    return format_table(
+        ["entity_type", "entity_id", "state", "message", "updated_at"],
+        ([r[c] for c in r.keys()] for r in rows),
+    )
 
 
 def print_decisions(
-        db: Database, profile: str | None = None, *, include_retired: bool = False
+    db: Database, profile: str | None = None, *, include_retired: bool = False
 ) -> str:
     sql = "SELECT entity_type, entity_id, profile, profile_version, decision, COALESCE(curated_decision,'') AS curated_decision, reason_codes, evaluated_at FROM current_decisions"
     params: list[Any] = []
@@ -213,35 +237,72 @@ def print_decisions(
     if not rows:
         return "(no decisions)"
     import json as _json
+
     def _reasons(value):
         try:
             parsed = _json.loads(value or "[]")
-            return ", ".join(str(x) for x in parsed) if isinstance(parsed, list) else value or ""
+            return (
+                ", ".join(str(x) for x in parsed)
+                if isinstance(parsed, list)
+                else value or ""
+            )
         except ValueError:
             return value or ""
 
     return format_table(
-        ["entity_type", "entity_id", "profile", "version", "decision", "curated", "reasons", "evaluated_at"], (
-            [r["entity_type"], r["entity_id"], r["profile"], r["profile_version"], r["decision"], r["curated_decision"],
-             _reasons(r["reason_codes"]), r["evaluated_at"]] for r in rows
-        ))
+        [
+            "entity_type",
+            "entity_id",
+            "profile",
+            "version",
+            "decision",
+            "curated",
+            "reasons",
+            "evaluated_at",
+        ],
+        (
+            [
+                r["entity_type"],
+                r["entity_id"],
+                r["profile"],
+                r["profile_version"],
+                r["decision"],
+                r["curated_decision"],
+                _reasons(r["reason_codes"]),
+                r["evaluated_at"],
+            ]
+            for r in rows
+        ),
+    )
 
 
 def export_qc_tsv(
-        db: Database,
-        project: Project,
-        entity_type: str | None = None,
-        *,
-        include_retired: bool = False,
+    db: Database,
+    project: Project,
+    entity_type: str | None = None,
+    *,
+    include_retired: bool = False,
 ) -> Path:
     out = project.qc_root / "aggregate" / "qc_results.tsv"
-    columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name",
-               "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at"]
+    columns = [
+        "entity_type",
+        "entity_id",
+        "file_id",
+        "file_sha256",
+        "input_identity",
+        "qc_stage",
+        "metric_name",
+        "metric_value",
+        "metric_numeric",
+        "metric_unit",
+        "tool",
+        "tool_version",
+        "parameter_set",
+        "evaluated_at",
+    ]
     rows = qc_rows(db, entity_type, include_retired=include_retired)
     write_tsv(out, columns, rows)
-    columns_wide, rows_wide = qc_wide(
-        db, entity_type, include_retired=include_retired
-    )
+    columns_wide, rows_wide = qc_wide(db, entity_type, include_retired=include_retired)
     wide_out = project.qc_root / "aggregate" / "qc_results.wide.tsv"
     write_tsv(wide_out, columns_wide, rows_wide)
     return wide_out

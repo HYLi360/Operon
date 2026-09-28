@@ -686,8 +686,8 @@ class Database:
             conn.close()
             message = str(exc).lower()
             if (
-                    "attempt to write a readonly database" not in message
-                    and "unable to open database file" not in message
+                "attempt to write a readonly database" not in message
+                and "unable to open database file" not in message
             ):
                 raise
         except BaseException:
@@ -754,9 +754,11 @@ class Database:
             self._ensure_current_schema_objects()
             self._conn.execute(
                 "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
-                "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version " + SCHEMA_VERSION + "', datetime('now') "  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
-                                                                                             "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
-                                                                                             "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
+                "SELECT 'database', 'SCHEMA', 'ACTIVE', 'schema version "
+                + SCHEMA_VERSION
+                + "', datetime('now') "  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
+                "ON CONFLICT(entity_type, entity_id) DO UPDATE SET state=excluded.state, message=excluded.message, "
+                "updated_at=excluded.updated_at WHERE entity_state.message<>excluded.message"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
             )
             self._conn.commit()
         except BaseException:
@@ -772,11 +774,11 @@ class Database:
         """
         assembly_columns = set(self.table_columns("assemblies"))
         for column in (
-                "assembly_name",
-                "bioproject_accession",
-                "source_database",
-                "assembly_status",
-                "assembly_type",
+            "assembly_name",
+            "bioproject_accession",
+            "source_database",
+            "assembly_status",
+            "assembly_type",
         ):
             if column not in assembly_columns:
                 self._conn.execute(f'ALTER TABLE assemblies ADD COLUMN "{column}" TEXT')
@@ -866,7 +868,9 @@ class Database:
         workflow_columns = set(self.table_columns("workflow_runs"))
         for column in ("executor", "scheduler_job_id", "execution_details"):
             if column not in workflow_columns:
-                self._conn.execute(f'ALTER TABLE workflow_runs ADD COLUMN "{column}" TEXT')
+                self._conn.execute(
+                    f'ALTER TABLE workflow_runs ADD COLUMN "{column}" TEXT'
+                )
         self._conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS file_locations (
@@ -915,7 +919,9 @@ class Database:
         """Add resumable adapter items, source identities and repair provenance."""
         workflow_columns = set(self.table_columns("workflow_runs"))
         if "resumes_run_id" not in workflow_columns:
-            self._conn.execute('ALTER TABLE workflow_runs ADD COLUMN "resumes_run_id" TEXT')
+            self._conn.execute(
+                'ALTER TABLE workflow_runs ADD COLUMN "resumes_run_id" TEXT'
+            )
         change_columns = set(self.table_columns("changes"))
         if "workflow_run_id" not in change_columns:
             self._conn.execute('ALTER TABLE changes ADD COLUMN "workflow_run_id" TEXT')
@@ -924,8 +930,12 @@ class Database:
                 'ALTER TABLE changes ADD COLUMN "reverts_change_id" INTEGER REFERENCES changes(change_id)'
             )
         self._conn.executescript(RECOVERY_SCHEMA_DDL)
-        migration_document = "operon schema 2.6: resumable adapters and NCBI source identities"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_document = (
+            "operon schema 2.6: resumable adapters and NCBI source identities"
+        )
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -936,8 +946,12 @@ class Database:
     def _migrate_lifecycle_schema_2_7(self) -> None:
         """Add append-only logical retirement and restoration history."""
         self._conn.executescript(LIFECYCLE_SCHEMA_DDL)
-        migration_document = "operon schema 2.7: append-only entity lifecycle retirement"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_document = (
+            "operon schema 2.7: append-only entity lifecycle retirement"
+        )
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -949,7 +963,9 @@ class Database:
         """Add content-addressed execution-environment records for run provenance."""
         for table in ("workflow_runs", "analysis_jobs"):
             if "environment_id" not in set(self.table_columns(table)):
-                self._conn.execute(f'ALTER TABLE {table} ADD COLUMN "environment_id" TEXT')
+                self._conn.execute(
+                    f'ALTER TABLE {table} ADD COLUMN "environment_id" TEXT'
+                )
         self._conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS execution_environments (
@@ -960,7 +976,9 @@ class Database:
             """
         )
         migration_document = "operon schema 2.8: execution environment capture"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -973,11 +991,13 @@ class Database:
         workflow_columns = set(self.table_columns("workflow_runs"))
         for column in ("duration_seconds", "avg_rss_mb", "cpu_seconds"):
             if column not in workflow_columns:
-                self._conn.execute(f'ALTER TABLE workflow_runs ADD COLUMN "{column}" REAL')
+                self._conn.execute(
+                    f'ALTER TABLE workflow_runs ADD COLUMN "{column}" REAL'
+                )
         if "recipe_snapshot_id" not in set(self.table_columns("analysis_jobs")):
             self._conn.execute(
                 'ALTER TABLE analysis_jobs ADD COLUMN "recipe_snapshot_id" INTEGER '
-                'REFERENCES recipe_snapshots(recipe_snapshot_id)'
+                "REFERENCES recipe_snapshots(recipe_snapshot_id)"
             )
         self._conn.executescript(
             """
@@ -1000,8 +1020,12 @@ class Database:
             );
             """
         )
-        migration_document = "operon schema 2.9: file lineage, recipe snapshots, and run resource usage"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_document = (
+            "operon schema 2.9: file lineage, recipe snapshots, and run resource usage"
+        )
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -1049,8 +1073,12 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_analysis_alignments_job ON analysis_alignments(job_id, query_id, hit_rank);
             """
         )
-        migration_document = "operon schema 2.10: per-sequence lengths and analysis alignments"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_document = (
+            "operon schema 2.10: per-sequence lengths and analysis alignments"
+        )
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -1076,7 +1104,9 @@ class Database:
             """
         )
         migration_document = "operon schema 2.11: sequence classification labels"
-        migration_sha256 = hashlib.sha256(migration_document.encode("utf-8")).hexdigest()
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
         self._conn.execute(
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
@@ -1148,15 +1178,20 @@ class Database:
     # Generic row helpers
     # ------------------------------------------------------------------
     def table_columns(self, table: str) -> list[str]:
-        rows = self._conn.execute(f"PRAGMA table_info({quote_identifier(table)})").fetchall()
+        rows = self._conn.execute(
+            f"PRAGMA table_info({quote_identifier(table)})"
+        ).fetchall()
         return [row["name"] for row in rows]
 
-    def upsert_rows(self, table: str, columns: list[str], rows: Iterable[dict[str, Any]]) -> int:
+    def upsert_rows(
+        self, table: str, columns: list[str], rows: Iterable[dict[str, Any]]
+    ) -> int:
         """Insert or update rows by primary key. Generated tables are replaceable."""
         columns = list(columns)
         assignments = ", ".join(
             f"{quote_identifier(c)}=excluded.{quote_identifier(c)}"
-            for c in columns if c != "pk" and c not in self._primary_keys(table)
+            for c in columns
+            if c != "pk" and c not in self._primary_keys(table)
         )
         insert_cols = ", ".join(quote_identifier(c) for c in columns)
         placeholders = ", ".join("?" for _ in columns)
@@ -1211,24 +1246,57 @@ class Database:
         denied = {
             getattr(sqlite3, name)
             for name in (
-                "SQLITE_INSERT", "SQLITE_UPDATE", "SQLITE_DELETE",
-                "SQLITE_CREATE_INDEX", "SQLITE_CREATE_TABLE", "SQLITE_CREATE_TEMP_INDEX",
-                "SQLITE_CREATE_TEMP_TABLE", "SQLITE_CREATE_TEMP_TRIGGER", "SQLITE_CREATE_TEMP_VIEW",
-                "SQLITE_CREATE_TRIGGER", "SQLITE_CREATE_VIEW", "SQLITE_DROP_INDEX",
-                "SQLITE_DROP_TABLE", "SQLITE_DROP_TEMP_INDEX", "SQLITE_DROP_TEMP_TABLE",
-                "SQLITE_DROP_TEMP_TRIGGER", "SQLITE_DROP_TEMP_VIEW", "SQLITE_DROP_TRIGGER",
-                "SQLITE_DROP_VIEW", "SQLITE_ALTER_TABLE", "SQLITE_REINDEX", "SQLITE_ANALYZE",
-                "SQLITE_ATTACH", "SQLITE_DETACH", "SQLITE_TRANSACTION", "SQLITE_SAVEPOINT",
+                "SQLITE_INSERT",
+                "SQLITE_UPDATE",
+                "SQLITE_DELETE",
+                "SQLITE_CREATE_INDEX",
+                "SQLITE_CREATE_TABLE",
+                "SQLITE_CREATE_TEMP_INDEX",
+                "SQLITE_CREATE_TEMP_TABLE",
+                "SQLITE_CREATE_TEMP_TRIGGER",
+                "SQLITE_CREATE_TEMP_VIEW",
+                "SQLITE_CREATE_TRIGGER",
+                "SQLITE_CREATE_VIEW",
+                "SQLITE_DROP_INDEX",
+                "SQLITE_DROP_TABLE",
+                "SQLITE_DROP_TEMP_INDEX",
+                "SQLITE_DROP_TEMP_TABLE",
+                "SQLITE_DROP_TEMP_TRIGGER",
+                "SQLITE_DROP_TEMP_VIEW",
+                "SQLITE_DROP_TRIGGER",
+                "SQLITE_DROP_VIEW",
+                "SQLITE_ALTER_TABLE",
+                "SQLITE_REINDEX",
+                "SQLITE_ANALYZE",
+                "SQLITE_ATTACH",
+                "SQLITE_DETACH",
+                "SQLITE_TRANSACTION",
+                "SQLITE_SAVEPOINT",
             )
             if hasattr(sqlite3, name)
         }
         safe_pragmas = {
-            "table_info", "table_xinfo", "index_info", "index_xinfo", "index_list",
-            "foreign_key_list", "database_list", "compile_options", "schema_version",
-            "user_version", "application_id", "encoding",
+            "table_info",
+            "table_xinfo",
+            "index_info",
+            "index_xinfo",
+            "index_list",
+            "foreign_key_list",
+            "database_list",
+            "compile_options",
+            "schema_version",
+            "user_version",
+            "application_id",
+            "encoding",
         }
 
-        def authorize(action: int, arg1: str | None, arg2: str | None, _db: str | None, _source: str | None) -> int:
+        def authorize(
+            action: int,
+            arg1: str | None,
+            arg2: str | None,
+            _db: str | None,
+            _source: str | None,
+        ) -> int:
             if action in denied:
                 return sqlite3.SQLITE_DENY
             if action == getattr(sqlite3, "SQLITE_PRAGMA", -1):
@@ -1251,7 +1319,8 @@ class Database:
         table = ENTITY_TABLES[entity_type]
         id_col = ENTITY_ID_COLUMNS[entity_type]
         row = self._conn.execute(
-            f"SELECT 1 FROM {table} WHERE {id_col}=?", (entity_id,)  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
+            f"SELECT 1 FROM {table} WHERE {id_col}=?",
+            (entity_id,),  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         ).fetchone()
         return row is not None
 
@@ -1260,7 +1329,7 @@ class Database:
             raise EntityNotFoundError(f"{entity_type} {entity_id} does not exist")
 
     def effective_retirements(
-            self, entity_type: str, entity_id: str
+        self, entity_type: str, entity_id: str
     ) -> list[dict[str, Any]]:
         """Return every direct or inherited retirement root for an entity."""
         if entity_type not in ENTITY_TABLES or not self.lifecycle_schema_available():
@@ -1276,11 +1345,14 @@ class Database:
         """Return whether an entity is directly or ancestrally retired."""
         if entity_type not in ENTITY_TABLES or not self.lifecycle_schema_available():
             return False
-        return self._conn.execute(
-            "SELECT 1 FROM effective_retired_entities "
-            "WHERE entity_type=? AND entity_id=? LIMIT 1",
-            (entity_type, entity_id),
-        ).fetchone() is not None
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM effective_retired_entities "
+                "WHERE entity_type=? AND entity_id=? LIMIT 1",
+                (entity_type, entity_id),
+            ).fetchone()
+            is not None
+        )
 
     def require_active_entity(self, entity_type: str, entity_id: str) -> None:
         """Require an existing entity that is not effectively retired."""
@@ -1314,7 +1386,7 @@ class Database:
             )
 
     def current_lifecycle_event(
-            self, entity_type: str, entity_id: str
+        self, entity_type: str, entity_id: str
     ) -> dict[str, Any] | None:
         """Return the latest direct lifecycle event for one entity."""
         if not self.lifecycle_schema_available():
@@ -1341,10 +1413,13 @@ class Database:
 
     def lifecycle_schema_available(self) -> bool:
         """Return whether schema 2.7 lifecycle objects are present."""
-        return self._conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='view' "
-            "AND name='effective_retired_entities'"
-        ).fetchone() is not None
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='view' "
+                "AND name='effective_retired_entities'"
+            ).fetchone()
+            is not None
+        )
 
     @staticmethod
     def _id_spec(entity_type: str) -> tuple[str, str | None, str | None]:
@@ -1357,12 +1432,21 @@ class Database:
         table = ENTITY_TABLES.get(entity_type)
         if entity_type == "source":
             table = "data_sources"
-        id_col = "source_id" if entity_type == "source" else ENTITY_ID_COLUMNS.get(entity_type)
+        id_col = (
+            "source_id"
+            if entity_type == "source"
+            else ENTITY_ID_COLUMNS.get(entity_type)
+        )
         return prefix, table, id_col
 
     @staticmethod
-    def _max_id_number(conn: sqlite3.Connection, entity_type: str, prefix: str,
-                       table: str | None, id_col: str | None) -> int:
+    def _max_id_number(
+        conn: sqlite3.Connection,
+        entity_type: str,
+        prefix: str,
+        table: str | None,
+        id_col: str | None,
+    ) -> int:
         max_n = 0
         if table:
             try:
@@ -1385,8 +1469,15 @@ class Database:
                     max_n = max(max_n, int(match.group(1)))
         return max_n
 
-    def _reserve_id(self, conn: sqlite3.Connection, entity_type: str, prefix: str,
-                    table: str | None, id_col: str | None, local_max: int = 0) -> str:
+    def _reserve_id(
+        self,
+        conn: sqlite3.Connection,
+        entity_type: str,
+        prefix: str,
+        table: str | None,
+        id_col: str | None,
+        local_max: int = 0,
+    ) -> str:
         max_n = self._max_id_number(conn, entity_type, prefix, table, id_col)
         row = conn.execute(
             "SELECT next_number FROM id_counters WHERE entity_type=?", (entity_type,)
@@ -1415,12 +1506,22 @@ class Database:
             # reserve inside the caller's transaction and roll back the
             # reservation together with its metadata writes.
             return self._reserve_id(
-                self._conn, entity_type, prefix, table, id_col, local_max=local_max,
+                self._conn,
+                entity_type,
+                prefix,
+                table,
+                id_col,
+                local_max=local_max,
             )
         self._conn.execute("BEGIN IMMEDIATE")
         try:
             value = self._reserve_id(
-                self._conn, entity_type, prefix, table, id_col, local_max=local_max,
+                self._conn,
+                entity_type,
+                prefix,
+                table,
+                id_col,
+                local_max=local_max,
             )
             self._conn.commit()
             return value
@@ -1429,10 +1530,10 @@ class Database:
             raise
 
     def register_data_source(
-            self,
-            source: dict[str, Any],
-            *,
-            workflow_run_id: str | None = None,
+        self,
+        source: dict[str, Any],
+        *,
+        workflow_run_id: str | None = None,
     ) -> dict[str, Any]:
         """Normalize and idempotently register one external data source."""
         normalized = {
@@ -1452,11 +1553,17 @@ class Database:
             raise ValidationError("data source database or repository is required")
         if normalized["source_type"] == "non_insdc":
             if not normalized["citation"]:
-                raise ValidationError("non-INSDC data requires a reference citation or DOI")
+                raise ValidationError(
+                    "non-INSDC data requires a reference citation or DOI"
+                )
             if not normalized["license_name"]:
-                raise ValidationError("non-INSDC data requires a License name or SPDX identifier")
+                raise ValidationError(
+                    "non-INSDC data requires a License name or SPDX identifier"
+                )
         identity_sha256 = hashlib.sha256(
-            json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            json.dumps(
+                normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
         ).hexdigest()
         existing = self._conn.execute(
             "SELECT * FROM data_sources WHERE identity_sha256=?", (identity_sha256,)
@@ -1482,28 +1589,34 @@ class Database:
         return record
 
     def link_data_source(
-            self,
-            source_id: str,
-            objects: Iterable[tuple[str, str]],
-            *,
-            workflow_run_id: str | None = None,
-            relationship: str = "derived_from",
+        self,
+        source_id: str,
+        objects: Iterable[tuple[str, str]],
+        *,
+        workflow_run_id: str | None = None,
+        relationship: str = "derived_from",
     ) -> int:
         """Link a registered source to entities or files, idempotently."""
         allowed = {"organism", "sample", "run", "assembly", "annotation", "file"}
-        normalized = sorted({(str(kind), str(object_id)) for kind, object_id in objects})
+        normalized = sorted(
+            {(str(kind), str(object_id)) for kind, object_id in objects}
+        )
         unknown = sorted({kind for kind, _object_id in normalized} - allowed)
         if unknown:
             raise ValidationError(f"unsupported source link object type(s): {unknown}")
-        if self._conn.execute(
+        if (
+            self._conn.execute(
                 "SELECT 1 FROM data_sources WHERE source_id=?", (source_id,)
-        ).fetchone() is None:
+            ).fetchone()
+            is None
+        ):
             raise EntityNotFoundError(f"data source {source_id} does not exist")
         for kind, object_id in normalized:
             exists = (
                 self._conn.execute(
                     "SELECT 1 FROM files WHERE file_id=?", (object_id,)
-                ).fetchone() is not None
+                ).fetchone()
+                is not None
                 if kind == "file"
                 else self.entity_exists(kind, object_id)
             )
@@ -1519,7 +1632,14 @@ class Database:
                 "(source_id, object_type, object_id, relationship, linked_at, workflow_run_id) "
                 "VALUES(?,?,?,?,?,?)",
                 [
-                    (source_id, kind, object_id, relationship, linked_at, workflow_run_id)
+                    (
+                        source_id,
+                        kind,
+                        object_id,
+                        relationship,
+                        linked_at,
+                        workflow_run_id,
+                    )
                     for kind, object_id in normalized
                 ],
             )
@@ -1531,12 +1651,19 @@ class Database:
     def ensure_metadata_columns(self, schema: Schema) -> None:
         """Add project-defined metadata fields atomically (nesting if needed)."""
         type_map = {
-            "integer": "INTEGER", "boolean": "INTEGER", "float": "REAL",
-            "id": "TEXT", "string": "TEXT", "date": "TEXT", "datetime": "TEXT",
+            "integer": "INTEGER",
+            "boolean": "INTEGER",
+            "float": "REAL",
+            "id": "TEXT",
+            "string": "TEXT",
+            "date": "TEXT",
+            "datetime": "TEXT",
         }
         with self.transaction():
             for table, spec in schema.tables.items():
-                if table not in MANUAL_TABLES or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+                if table not in MANUAL_TABLES or not re.fullmatch(
+                    r"[A-Za-z_][A-Za-z0-9_]*", table
+                ):
                     continue
                 existing = set(self.table_columns(table))
                 for column, field_spec in spec["fields"].items():
@@ -1545,10 +1672,14 @@ class Database:
                     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column):
                         raise ValidationError(f"unsafe metadata column name {column!r}")
                     sqlite_type = type_map.get(field_spec.get("type", "string"), "TEXT")
-                    self._conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlite_type}')
+                    self._conn.execute(
+                        f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sqlite_type}'
+                    )
                     existing.add(column)
 
-    def export_rows(self, table: str, columns: list[str] | None = None) -> list[dict[str, Any]]:
+    def export_rows(
+        self, table: str, columns: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         cols = columns or self.table_columns(table)
         existing = set(self.table_columns(table))
         selected = [c for c in cols if c in existing]
@@ -1560,7 +1691,7 @@ class Database:
         return [{c: row[c] if c in existing else None for c in cols} for row in rows]
 
     def export_active_rows(
-            self, table: str, columns: list[str] | None = None
+        self, table: str, columns: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Export rows whose owning metadata entity is not effectively retired."""
         if not self.lifecycle_schema_available():
@@ -1571,11 +1702,15 @@ class Database:
         if not selected:
             return []
         entity_type = next(
-            (kind for kind, entity_table in ENTITY_TABLES.items() if entity_table == table),
+            (
+                kind
+                for kind, entity_table in ENTITY_TABLES.items()
+                if entity_table == table
+            ),
             None,
         )
-        projection = ", ".join(f't.{quote_identifier(column)}' for column in selected)
-        sql = f'SELECT {projection} FROM {quote_identifier(table)} t'  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
+        projection = ", ".join(f"t.{quote_identifier(column)}" for column in selected)
+        sql = f"SELECT {projection} FROM {quote_identifier(table)} t"  # nosec B608 # validated identifiers or fixed schema fragments; values are bound
         if entity_type is not None:
             id_column = ENTITY_ID_COLUMNS[entity_type]
             sql += (
@@ -1617,13 +1752,15 @@ class Database:
             for row in rows
         ]
 
-    def latest_metrics(self, entity_type: str, entity_id: str,
-                       qc_stage: str | None = None) -> dict[str, float | str]:
+    def latest_metrics(
+        self, entity_type: str, entity_id: str, qc_stage: str | None = None
+    ) -> dict[str, float | str]:
         """Most recent metric value per name, optionally restricted to one QC stage."""
         stage_filter = " AND qc_stage=?" if qc_stage is not None else ""
         params: tuple[Any, ...] = (
             (entity_type, entity_id, qc_stage)
-            if qc_stage is not None else (entity_type, entity_id)
+            if qc_stage is not None
+            else (entity_type, entity_id)
         )
         rows = self._conn.execute(
             f"""
@@ -1642,10 +1779,19 @@ class Database:
             params,
         ).fetchall()
         result: dict[str, float | str] = {}
-        conservative_min = {"file_exists", "sha256_match", "parseable", "paired_read_count_match"}
+        conservative_min = {
+            "file_exists",
+            "sha256_match",
+            "parseable",
+            "paired_read_count_match",
+        }
         for row in rows:
             name = row["metric_name"]
-            value = row["metric_numeric"] if row["metric_numeric"] is not None else row["metric_value"]
+            value = (
+                row["metric_numeric"]
+                if row["metric_numeric"] is not None
+                else row["metric_value"]
+            )
             if name in conservative_min and name in result:
                 try:
                     result[name] = min(float(result[name]), float(value))
@@ -1657,15 +1803,30 @@ class Database:
 
     def insert_qc_result(self, metric: dict[str, Any]) -> None:
         columns = [
-            "entity_type", "entity_id", "file_id", "file_sha256", "input_identity",
-            "qc_stage", "metric_name", "metric_value",
-            "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at",
+            "entity_type",
+            "entity_id",
+            "file_id",
+            "file_sha256",
+            "input_identity",
+            "qc_stage",
+            "metric_name",
+            "metric_value",
+            "metric_numeric",
+            "metric_unit",
+            "tool",
+            "tool_version",
+            "parameter_set",
+            "evaluated_at",
         ]
         metric = dict(metric)
-        metric.setdefault("input_identity", (
-            f"file:{metric.get('file_id')}:{metric.get('file_sha256')}"
-            if metric.get("file_id") else f"entity:{metric.get('entity_type')}:{metric.get('entity_id')}"
-        ))
+        metric.setdefault(
+            "input_identity",
+            (
+                f"file:{metric.get('file_id')}:{metric.get('file_sha256')}"
+                if metric.get("file_id")
+                else f"entity:{metric.get('entity_type')}:{metric.get('entity_id')}"
+            ),
+        )
         placeholders = ", ".join("?" for _ in columns)
         sql = (
             f"INSERT INTO qc_results ({', '.join(columns)}) VALUES ({placeholders}) "
@@ -1682,14 +1843,29 @@ class Database:
         with self.transaction():
             for metric in metrics:
                 metric = dict(metric)
-                metric.setdefault("input_identity", (
-                    f"file:{metric.get('file_id')}:{metric.get('file_sha256')}"
-                    if metric.get("file_id") else f"entity:{metric.get('entity_type')}:{metric.get('entity_id')}"
-                ))
+                metric.setdefault(
+                    "input_identity",
+                    (
+                        f"file:{metric.get('file_id')}:{metric.get('file_sha256')}"
+                        if metric.get("file_id")
+                        else f"entity:{metric.get('entity_type')}:{metric.get('entity_id')}"
+                    ),
+                )
                 columns = [
-                    "entity_type", "entity_id", "file_id", "file_sha256", "input_identity",
-                    "qc_stage", "metric_name", "metric_value",
-                    "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set", "evaluated_at",
+                    "entity_type",
+                    "entity_id",
+                    "file_id",
+                    "file_sha256",
+                    "input_identity",
+                    "qc_stage",
+                    "metric_name",
+                    "metric_value",
+                    "metric_numeric",
+                    "metric_unit",
+                    "tool",
+                    "tool_version",
+                    "parameter_set",
+                    "evaluated_at",
                 ]
                 placeholders = ", ".join("?" for _ in columns)
                 sql = (
@@ -1703,9 +1879,16 @@ class Database:
                 count += 1
         return count
 
-    def set_entity_state(self, entity_type: str, entity_id: str, state: str, message: str | None = None,
-                         updated_at: str | None = None) -> None:
+    def set_entity_state(
+        self,
+        entity_type: str,
+        entity_id: str,
+        state: str,
+        message: str | None = None,
+        updated_at: str | None = None,
+    ) -> None:
         from operon.utils import now_iso
+
         updated_at = updated_at or now_iso()
         with self.transaction():
             self._conn.execute(
@@ -1716,23 +1899,44 @@ class Database:
 
     def get_entity_state(self, entity_type: str, entity_id: str) -> str | None:
         row = self._conn.execute(
-            "SELECT state FROM entity_state WHERE entity_type=? AND entity_id=?", (entity_type, entity_id)
+            "SELECT state FROM entity_state WHERE entity_type=? AND entity_id=?",
+            (entity_type, entity_id),
         ).fetchone()
         return row["state"] if row else None
 
-    def record_change(self, object_type: str, object_id: str, field: str | None, old_value: Any, new_value: Any,
-                      reason: str, evidence: str | None = None, actor: str | None = None,
-                      workflow_run_id: str | None = None,
-                      reverts_change_id: int | None = None) -> int:
+    def record_change(
+        self,
+        object_type: str,
+        object_id: str,
+        field: str | None,
+        old_value: Any,
+        new_value: Any,
+        reason: str,
+        evidence: str | None = None,
+        actor: str | None = None,
+        workflow_run_id: str | None = None,
+        reverts_change_id: int | None = None,
+    ) -> int:
         from operon.utils import now_iso
+
         with self.transaction():
             cursor = self._conn.execute(
                 "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, "
                 "evidence, actor, changed_at, workflow_run_id, reverts_change_id) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (object_type, object_id, field, str(old_value) if old_value is not None else None,
-                 str(new_value) if new_value is not None else None, reason, evidence, actor, now_iso(),
-                 workflow_run_id, reverts_change_id),
+                (
+                    object_type,
+                    object_id,
+                    field,
+                    str(old_value) if old_value is not None else None,
+                    str(new_value) if new_value is not None else None,
+                    reason,
+                    evidence,
+                    actor,
+                    now_iso(),
+                    workflow_run_id,
+                    reverts_change_id,
+                ),
             )
         return int(cursor.lastrowid)
 
@@ -1744,6 +1948,7 @@ class Database:
         """
         from operon.environment import environment_fingerprint
         from operon.utils import now_iso
+
         environment_id = environment_fingerprint(document)
         canonical = json.dumps(document, sort_keys=True, ensure_ascii=False)
         self._conn.execute(
@@ -1754,17 +1959,17 @@ class Database:
         return environment_id
 
     def upsert_adapter_run_item(
-            self,
-            run_id: str,
-            item_key: str,
-            requested_includes: str,
-            status: str,
-            *,
-            attempt: int = 1,
-            started_at: str | None = None,
-            finished_at: str | None = None,
-            error: str | None = None,
-            result_json: str | None = None,
+        self,
+        run_id: str,
+        item_key: str,
+        requested_includes: str,
+        status: str,
+        *,
+        attempt: int = 1,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        error: str | None = None,
+        result_json: str | None = None,
     ) -> None:
         """Persist one resumable adapter item without rewriting older runs."""
         with self.transaction():
@@ -1777,24 +1982,32 @@ class Database:
                 "attempt=excluded.attempt, started_at=COALESCE(excluded.started_at, adapter_run_items.started_at), "
                 "finished_at=excluded.finished_at, error=excluded.error, result_json=excluded.result_json",
                 (
-                    run_id, item_key, requested_includes, status, attempt, started_at,
-                    finished_at, error, result_json,
+                    run_id,
+                    item_key,
+                    requested_includes,
+                    status,
+                    attempt,
+                    started_at,
+                    finished_at,
+                    error,
+                    result_json,
                 ),
             )
 
     def supersede_entity(
-            self,
-            object_type: str,
-            object_id: str,
-            superseded_by_type: str,
-            superseded_by_id: str,
-            *,
-            reason: str,
-            evidence: str | None = None,
-            workflow_run_id: str | None = None,
+        self,
+        object_type: str,
+        object_id: str,
+        superseded_by_type: str,
+        superseded_by_id: str,
+        *,
+        reason: str,
+        evidence: str | None = None,
+        workflow_run_id: str | None = None,
     ) -> bool:
         """Append a logical supersession; original rows and artifacts remain intact."""
         from operon.utils import now_iso
+
         before = self._conn.total_changes
         with self.transaction():
             self._conn.execute(
@@ -1802,35 +2015,62 @@ class Database:
                 "(object_type, object_id, superseded_by_type, superseded_by_id, reason, evidence, "
                 "workflow_run_id, superseded_at) VALUES(?,?,?,?,?,?,?,?)",
                 (
-                    object_type, object_id, superseded_by_type, superseded_by_id,
-                    reason, evidence, workflow_run_id, now_iso(),
+                    object_type,
+                    object_id,
+                    superseded_by_type,
+                    superseded_by_id,
+                    reason,
+                    evidence,
+                    workflow_run_id,
+                    now_iso(),
                 ),
             )
         return self._conn.total_changes > before
 
-    def set_file_status(self, file_id: str, status: str, *, reason: str,
-                        actor: str, evidence: str | None = None) -> bool:
+    def set_file_status(
+        self,
+        file_id: str,
+        status: str,
+        *,
+        reason: str,
+        actor: str,
+        evidence: str | None = None,
+    ) -> bool:
         """Set one file status and append its audit row in the same transaction."""
         from operon.utils import now_iso
-        row = self._conn.execute("SELECT status FROM files WHERE file_id=?", (file_id,)).fetchone()
+
+        row = self._conn.execute(
+            "SELECT status FROM files WHERE file_id=?", (file_id,)
+        ).fetchone()
         if row is None:
             raise EntityNotFoundError(f"file {file_id} does not exist")
         old_status = str(row["status"])
         if old_status == status:
             return False
         with self.transaction():
-            self._conn.execute("UPDATE files SET status=? WHERE file_id=?", (status, file_id))
+            self._conn.execute(
+                "UPDATE files SET status=? WHERE file_id=?", (status, file_id)
+            )
             self._conn.execute(
                 "INSERT INTO changes(object_type, object_id, field, old_value, new_value, reason, "
                 "evidence, actor, changed_at) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
-                    "files", file_id, "status", old_status, status, reason,
-                    evidence, actor, now_iso(),
+                    "files",
+                    file_id,
+                    "status",
+                    old_status,
+                    status,
+                    reason,
+                    evidence,
+                    actor,
+                    now_iso(),
                 ),
             )
         return True
 
-    def record_profile(self, name: str, version: int, sha256: str, document: str, recorded_at: str) -> int:
+    def record_profile(
+        self, name: str, version: int, sha256: str, document: str, recorded_at: str
+    ) -> int:
         with self.transaction():
             self._conn.execute(
                 "INSERT OR IGNORE INTO qc_profiles(profile_name, profile_version, profile_sha256, profile_document, recorded_at) "
@@ -1850,6 +2090,7 @@ class Database:
         recording the same recipe twice is idempotent and yields one row.
         """
         from operon.utils import now_iso
+
         canonical = json.dumps(document, sort_keys=True, ensure_ascii=False)
         sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         with self.transaction():
@@ -1869,10 +2110,22 @@ class Database:
     def upsert_decision(self, decision: dict[str, Any]) -> int:
         """Append an automatic decision; retained name preserves API compatibility."""
         columns = [
-            "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id", "profile_sha256",
-            "decision", "curated_decision",
-            "reason_codes", "observed", "thresholds", "evaluated_at", "curated_by", "curated_reason",
-            "curated_evidence", "curated_at",
+            "entity_type",
+            "entity_id",
+            "profile",
+            "profile_version",
+            "profile_snapshot_id",
+            "profile_sha256",
+            "decision",
+            "curated_decision",
+            "reason_codes",
+            "observed",
+            "thresholds",
+            "evaluated_at",
+            "curated_by",
+            "curated_reason",
+            "curated_evidence",
+            "curated_at",
         ]
         placeholders = ", ".join("?" for _ in columns)
         with self.transaction():
@@ -1882,7 +2135,9 @@ class Database:
             )
         return int(cursor.lastrowid)
 
-    def effective_decision(self, entity_type: str, entity_id: str, profile: str) -> str | None:
+    def effective_decision(
+        self, entity_type: str, entity_id: str, profile: str
+    ) -> str | None:
         row = self._conn.execute(
             "SELECT COALESCE(curated_decision, decision) AS effective FROM current_decisions "
             "WHERE entity_type=? AND entity_id=? AND profile=?",

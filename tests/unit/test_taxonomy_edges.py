@@ -75,16 +75,23 @@ def test_tokens_ids_suffixes_and_scalar_parsing(project_db, tmp_path):
     assert taxonomy._taxid("") is None
     assert taxonomy._taxids(None) == []
     assert taxonomy._taxids([1, "bad", {"id": 2}]) == [1, 2]
-    assert taxonomy._scientific_name({"currentScientificName": {"text": " Name "}}) == "Name"
+    assert (
+        taxonomy._scientific_name({"currentScientificName": {"text": " Name "}})
+        == "Name"
+    )
     assert taxonomy._scientific_name({}) == ""
     assert taxonomy._unwrap_taxonomy_record({"taxonomy": {"taxId": 1}}) == {"taxId": 1}
-    assert taxonomy._unwrap_taxonomy_record({"taxonomyNode": []}) == {"taxonomyNode": []}
+    assert taxonomy._unwrap_taxonomy_record({"taxonomyNode": []}) == {
+        "taxonomyNode": []
+    }
 
 
 def test_iter_and_normalize_taxonomy_records_reject_bad_input():
-    rows = list(taxonomy._iter_taxonomy_records(
-        io.StringIO('\n{"taxonomy_node":{"taxId":1}}\n'), "source"
-    ))
+    rows = list(
+        taxonomy._iter_taxonomy_records(
+            io.StringIO('\n{"taxonomy_node":{"taxId":1}}\n'), "source"
+        )
+    )
     assert rows == [{"taxId": 1}]
     with pytest.raises(ValidationError, match="invalid taxonomy JSON on line 1"):
         list(taxonomy._iter_taxonomy_records(io.StringIO("bad\n"), "source"))
@@ -95,17 +102,29 @@ def test_iter_and_normalize_taxonomy_records_reject_bad_input():
     with pytest.raises(ValidationError, match="no current scientific name"):
         taxonomy._normalized_node({"taxId": 2}, "source")
 
-    root, aliases = taxonomy._normalized_node({
-        "taxId": 1, "rank": "no rank", "taxName": "root",
-        "secondaryTaxIds": [1, 10, 10], "isFormal": False,
-    }, "source")
+    root, aliases = taxonomy._normalized_node(
+        {
+            "taxId": 1,
+            "rank": "no rank",
+            "taxName": "root",
+            "secondaryTaxIds": [1, 10, 10],
+            "isFormal": False,
+        },
+        "source",
+    )
     assert root["parent_taxid"] == 1
     assert root["rank"] == "no_rank"
     assert root["is_formal"] == 0
     assert aliases == [{"alias_taxid": 10, "current_taxid": 1, "status": "secondary"}]
-    child, _ = taxonomy._normalized_node({
-        "tax_id": "2", "parents": [1], "scientificName": "child", "extinct": True,
-    }, "source")
+    child, _ = taxonomy._normalized_node(
+        {
+            "tax_id": "2",
+            "parents": [1],
+            "scientificName": "child",
+            "extinct": True,
+        },
+        "source",
+    )
     assert child["parent_taxid"] == 1 and child["is_extinct"] == 1
     assert taxonomy._dmp_fields("1\t|\t2\t|\n", "x", 1, 2)[:2] == ["1", "2"]
     with pytest.raises(ValidationError, match="malformed NCBI taxdump"):
@@ -134,7 +153,13 @@ def test_archive_detection_and_text_contexts(tmp_path):
             pass
 
     dump = tmp_path / "taxdump.tar.gz"
-    _tar(dump, {"nested/nodes.dmp": "1 | 1 | no rank |\n", "names.dmp": "1 | root | | scientific name |\n"})
+    _tar(
+        dump,
+        {
+            "nested/nodes.dmp": "1 | 1 | no rank |\n",
+            "names.dmp": "1 | root | | scientific name |\n",
+        },
+    )
     assert taxonomy._taxonomy_source_format(dump) == "ncbi_taxdump"
     with taxonomy._archive_text_member(dump, "nodes.dmp") as handle:
         assert handle.readline().startswith("1")
@@ -185,14 +210,34 @@ def test_archive_missing_members_and_unknown_formats(tmp_path):
         (lambda p: p["filters"].update(exclude_subtrees=["x"]), "integer TaxIDs"),
         (lambda p: p["filters"].update(exclude_subtrees=[-1]), "positive TaxIDs"),
         (lambda p: p["filters"].update(exclude_extinct="yes"), "true or false"),
-        (lambda p: p["filters"].update(exclude_name_patterns="x"), "list of regular expressions"),
-        (lambda p: p["filters"].update(exclude_name_patterns=["["]), "invalid coverage exclusion"),
+        (
+            lambda p: p["filters"].update(exclude_name_patterns="x"),
+            "list of regular expressions",
+        ),
+        (
+            lambda p: p["filters"].update(exclude_name_patterns=["["]),
+            "invalid coverage exclusion",
+        ),
         (lambda p: p.update(thresholds=[1]), "thresholds must be a mapping"),
         (lambda p: p["thresholds"].pop("genus"), "exactly the configured"),
-        (lambda p: p["thresholds"].update(family=[1]), "thresholds.family must be a mapping"),
-        (lambda p: p["thresholds"]["family"].update(min_coverage_percent="x"), "must be numeric"),
-        (lambda p: p["thresholds"]["family"].update(min_coverage_percent=101), "between 0 and 100"),
-        (lambda p: p["thresholds"]["family"].update(min_coverage_percent=float("nan")), "between 0 and 100"),
+        (
+            lambda p: p["thresholds"].update(family=[1]),
+            "thresholds.family must be a mapping",
+        ),
+        (
+            lambda p: p["thresholds"]["family"].update(min_coverage_percent="x"),
+            "must be numeric",
+        ),
+        (
+            lambda p: p["thresholds"]["family"].update(min_coverage_percent=101),
+            "between 0 and 100",
+        ),
+        (
+            lambda p: p["thresholds"]["family"].update(
+                min_coverage_percent=float("nan")
+            ),
+            "between 0 and 100",
+        ),
     ],
 )
 def test_coverage_profile_validation_errors(mutate, message):
@@ -233,10 +278,20 @@ def test_descendant_targets_validates_roots_exclusions_and_extinct_data(project_
         taxonomy._descendant_targets(db, "TAX_000001", [99], [], ["family"], False)
     with pytest.raises(ValidationError, match="excluded subtree"):
         taxonomy._descendant_targets(db, "TAX_000001", [1], [99], ["family"], False)
-    rows = taxonomy._descendant_targets(db, "TAX_000001", [1], [3], ["family", "genus"], False)
-    assert {(row["rank"], row["taxid"]) for row in rows} == {("family", 2), ("genus", 4)}
-    rows = taxonomy._descendant_targets(db, "TAX_000001", [1], [], ["family", "genus"], True)
-    assert {(row["rank"], row["taxid"]) for row in rows} == {("family", 2), ("genus", 3)}
+    rows = taxonomy._descendant_targets(
+        db, "TAX_000001", [1], [3], ["family", "genus"], False
+    )
+    assert {(row["rank"], row["taxid"]) for row in rows} == {
+        ("family", 2),
+        ("genus", 4),
+    }
+    rows = taxonomy._descendant_targets(
+        db, "TAX_000001", [1], [], ["family", "genus"], True
+    )
+    assert {(row["rank"], row["taxid"]) for row in rows} == {
+        ("family", 2),
+        ("genus", 3),
+    }
     db.conn.execute("UPDATE taxonomy_nodes SET is_extinct=NULL WHERE taxid=3")
     with pytest.raises(ValidationError, match="has no complete extinct annotation"):
         taxonomy._descendant_targets(db, "TAX_000001", [1], [], ["genus"], True)
@@ -247,14 +302,23 @@ def test_schema_upgrade_rejects_invalid_documents(project_db):
     project.schema_path.write_text("tables: []\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="cannot upgrade"):
         taxonomy._ensure_taxonomy_metadata_schema(project)
-    project.schema_path.write_text(yaml.safe_dump({
-        "schema_version": "1.0",
-        "tables": {"files": {"fields": {
-            "entity_type": {"allowed": []},
-            "entity_id": {"pattern": "["},
-            "file_role": {"allowed": []},
-        }}},
-    }), encoding="utf-8")
+    project.schema_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "tables": {
+                    "files": {
+                        "fields": {
+                            "entity_type": {"allowed": []},
+                            "entity_id": {"pattern": "["},
+                            "file_role": {"allowed": []},
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ValidationError, match="invalid files.entity_id pattern"):
         taxonomy._ensure_taxonomy_metadata_schema(project)
 
@@ -262,27 +326,29 @@ def test_schema_upgrade_rejects_invalid_documents(project_db):
 def test_taxdump_import_with_merged_and_deleted_aliases(project_db, tmp_path):
     project, db = project_db
     package = tmp_path / "taxdump.tar.gz"
-    _tar(package, {
-        "nodes.dmp": (
-            "1 | 1 | no rank |\n"
-            "2 | 1 | family |\n"
-            "3 | 2 | genus |\n"
-        ),
-        "names.dmp": (
-            "1 | root | | scientific name |\n"
-            "1 | all | | synonym |\n"
-            "2 | Family | | scientific name |\n"
-            "3 | Genus | | scientific name |\n"
-        ),
-        "merged.dmp": "99 | 3 |\n",
-        "delnodes.dmp": "100 |\n",
-    })
+    _tar(
+        package,
+        {
+            "nodes.dmp": ("1 | 1 | no rank |\n2 | 1 | family |\n3 | 2 | genus |\n"),
+            "names.dmp": (
+                "1 | root | | scientific name |\n"
+                "1 | all | | synonym |\n"
+                "2 | Family | | scientific name |\n"
+                "3 | Genus | | scientific name |\n"
+            ),
+            "merged.dmp": "99 | 3 |\n",
+            "delnodes.dmp": "100 |\n",
+        },
+    )
     result = taxonomy.import_ncbi_taxonomy(db, project, package, "taxdump-1")
     assert result["node_count"] == 3 and result["source_format"] == "ncbi_taxdump"
     aliases = db.query(
         "SELECT alias_taxid, current_taxid, status FROM taxonomy_aliases ORDER BY alias_taxid"
     )
-    assert [tuple(row) for row in aliases] == [(99, 3, "merged"), (100, None, "deleted")]
+    assert [tuple(row) for row in aliases] == [
+        (99, 3, "merged"),
+        (100, None, "deleted"),
+    ]
     reused = taxonomy.import_ncbi_taxonomy(db, project, package, "taxdump-1")
     assert reused["reused"] is True
 
@@ -290,32 +356,50 @@ def test_taxdump_import_with_merged_and_deleted_aliases(project_db, tmp_path):
 @pytest.mark.parametrize(
     ("files", "message"),
     [
-        ({
-            "nodes.dmp": "1 | 1 | no rank |\n2 | 1 | genus |\n",
-            "names.dmp": "1 | root | | scientific name |\n",
-        }, "has no scientific name"),
-        ({
-            "nodes.dmp": "",
-            "names.dmp": "1 | root | | scientific name |\n",
-        }, "contains no taxonomy nodes"),
-        ({
-            "nodes.dmp": "bad | 1 | no rank |\n",
-            "names.dmp": "1 | root | | scientific name |\n",
-        }, "invalid TaxID"),
-        ({
-            "nodes.dmp": "1 | 1 | no rank |\n",
-            "names.dmp": "bad | root | | scientific name |\n",
-        }, "invalid scientific-name row"),
-        ({
-            "nodes.dmp": "1 | 1 | no rank |\n",
-            "names.dmp": "1 | root | | scientific name |\n",
-            "merged.dmp": "bad | 1 |\n",
-        }, "merged.dmp: invalid row"),
-        ({
-            "nodes.dmp": "1 | 1 | no rank |\n",
-            "names.dmp": "1 | root | | scientific name |\n",
-            "delnodes.dmp": "bad |\n",
-        }, "delnodes.dmp: invalid row"),
+        (
+            {
+                "nodes.dmp": "1 | 1 | no rank |\n2 | 1 | genus |\n",
+                "names.dmp": "1 | root | | scientific name |\n",
+            },
+            "has no scientific name",
+        ),
+        (
+            {
+                "nodes.dmp": "",
+                "names.dmp": "1 | root | | scientific name |\n",
+            },
+            "contains no taxonomy nodes",
+        ),
+        (
+            {
+                "nodes.dmp": "bad | 1 | no rank |\n",
+                "names.dmp": "1 | root | | scientific name |\n",
+            },
+            "invalid TaxID",
+        ),
+        (
+            {
+                "nodes.dmp": "1 | 1 | no rank |\n",
+                "names.dmp": "bad | root | | scientific name |\n",
+            },
+            "invalid scientific-name row",
+        ),
+        (
+            {
+                "nodes.dmp": "1 | 1 | no rank |\n",
+                "names.dmp": "1 | root | | scientific name |\n",
+                "merged.dmp": "bad | 1 |\n",
+            },
+            "merged.dmp: invalid row",
+        ),
+        (
+            {
+                "nodes.dmp": "1 | 1 | no rank |\n",
+                "names.dmp": "1 | root | | scientific name |\n",
+                "delnodes.dmp": "bad |\n",
+            },
+            "delnodes.dmp: invalid row",
+        ),
     ],
 )
 def test_taxdump_import_validation_paths(project_db, tmp_path, files, message):
@@ -333,7 +417,9 @@ def test_json_taxonomy_rejects_incomplete_parent(project_db, tmp_path):
         {"taxId": 1, "parentTaxId": 1, "rank": "no rank", "taxName": "root"},
         {"taxId": 2, "parentTaxId": 99, "rank": "genus", "taxName": "orphan"},
     ]
-    source.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    source.write_text(
+        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+    )
     with pytest.raises(ValidationError, match="refers to missing parent"):
         taxonomy.import_ncbi_taxonomy(db, project, source, "json-1")
 
@@ -341,11 +427,14 @@ def test_json_taxonomy_rejects_incomplete_parent(project_db, tmp_path):
 def test_taxdump_rejects_alias_target_missing_from_nodes(project_db, tmp_path):
     project, db = project_db
     package = tmp_path / "missing-alias-target.tar.gz"
-    _tar(package, {
-        "nodes.dmp": "1 | 1 | no rank |\n",
-        "names.dmp": "1 | root | | scientific name |\n",
-        "merged.dmp": "99 | 999 |\n",
-    })
+    _tar(
+        package,
+        {
+            "nodes.dmp": "1 | 1 | no rank |\n",
+            "names.dmp": "1 | root | | scientific name |\n",
+            "merged.dmp": "99 | 999 |\n",
+        },
+    )
     with pytest.raises(ValidationError, match="alias TaxID 99"):
         taxonomy.import_ncbi_taxonomy(db, project, package, "alias-1")
 
@@ -354,11 +443,23 @@ def _legacy_schema_document() -> dict:
     """Minimal metadata schema 1.2 document from before taxonomy snapshots existed."""
     return {
         "schema_version": "1.2",
-        "tables": {"files": {"fields": {
-            "entity_type": {"allowed": ["organism", "sample", "run", "assembly", "annotation"]},
-            "entity_id": {"pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$"},
-            "file_role": {"allowed": ["genome_fasta", "other"]},
-        }}},
+        "tables": {
+            "files": {
+                "fields": {
+                    "entity_type": {
+                        "allowed": [
+                            "organism",
+                            "sample",
+                            "run",
+                            "assembly",
+                            "annotation",
+                        ]
+                    },
+                    "entity_id": {"pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$"},
+                    "file_role": {"allowed": ["genome_fasta", "other"]},
+                }
+            }
+        },
     }
 
 
@@ -377,8 +478,18 @@ def _upgraded_file_fields(text: str) -> dict:
 @pytest.mark.parametrize(
     ("field", "key", "expected"),
     [
-        ("entity_type", "allowed",
-         ["organism", "sample", "run", "assembly", "annotation", "taxonomy_snapshot"]),
+        (
+            "entity_type",
+            "allowed",
+            [
+                "organism",
+                "sample",
+                "run",
+                "assembly",
+                "annotation",
+                "taxonomy_snapshot",
+            ],
+        ),
         ("entity_id", "pattern", r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$"),
         ("file_role", "allowed", ["genome_fasta", "taxonomy_package", "other"]),
     ],
@@ -387,7 +498,9 @@ def _upgraded_file_fields(text: str) -> dict:
 def test_schema_upgrade_rewrites_legacy_fields(project_db, field, key, expected):
     """One legacy 1.2 upgrade extends each files-table field for taxonomy."""
     project, _db = project_db
-    assert _upgraded_file_fields(_upgrade_legacy_schema(project))[field][key] == expected
+    assert (
+        _upgraded_file_fields(_upgrade_legacy_schema(project))[field][key] == expected
+    )
 
 
 def test_schema_upgrade_version_canonical_header_and_idempotency(project_db):
@@ -442,14 +555,18 @@ def test_reused_snapshot_rejects_modified_archived_bytes(project_db, tmp_path):
     result = taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-2")
     archived = Path(result["path"])
     archived.write_bytes(archived.read_bytes() + b"tampered")
-    with pytest.raises(ConflictError, match="archived taxonomy source is missing or has changed"):
+    with pytest.raises(
+        ConflictError, match="archived taxonomy source is missing or has changed"
+    ):
         taxonomy.import_ncbi_taxonomy(db, project, source, "reuse-2")
 
 
 def test_import_rejects_preserved_source_with_different_bytes(project_db, tmp_path):
     project, db = project_db
     source = _minimal_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
-    target = project.raw_root / "metadata" / "ncbi_taxonomy" / f"{sha256_file(source)}.jsonl"
+    target = (
+        project.raw_root / "metadata" / "ncbi_taxonomy" / f"{sha256_file(source)}.jsonl"
+    )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("different bytes", encoding="utf-8")
     with pytest.raises(ConflictError, match="preserved taxonomy source conflicts"):
@@ -488,26 +605,32 @@ def test_taxdump_import_flushes_batches_larger_than_5000_rows(project_db, tmp_pa
     project, db = project_db
     node_count = 5002
     package = tmp_path / "big-taxdump.tar.gz"
-    _tar(package, {
-        "nodes.dmp": "1 | 1 | no rank |\n" + "".join(
-            f"{taxid} | 1 | genus |\n" for taxid in range(2, node_count + 1)
-        ),
-        "names.dmp": "".join(
-            f"{taxid} | Name {taxid} | | scientific name |\n"
-            for taxid in range(1, node_count + 1)
-        ),
-        "merged.dmp": "".join(
-            f"{100000 + index} | {1 + index % node_count} |\n" for index in range(5001)
-        ),
-        "delnodes.dmp": "".join(f"{200000 + index} |\n" for index in range(5001)),
-    })
+    _tar(
+        package,
+        {
+            "nodes.dmp": "1 | 1 | no rank |\n"
+            + "".join(f"{taxid} | 1 | genus |\n" for taxid in range(2, node_count + 1)),
+            "names.dmp": "".join(
+                f"{taxid} | Name {taxid} | | scientific name |\n"
+                for taxid in range(1, node_count + 1)
+            ),
+            "merged.dmp": "".join(
+                f"{100000 + index} | {1 + index % node_count} |\n"
+                for index in range(5001)
+            ),
+            "delnodes.dmp": "".join(f"{200000 + index} |\n" for index in range(5001)),
+        },
+    )
     result = taxonomy.import_ncbi_taxonomy(db, project, package, "big-dump")
     assert result["node_count"] == node_count
     snapshot_id = result["taxonomy_snapshot_id"]
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM taxonomy_nodes WHERE taxonomy_snapshot_id=?",
-        (snapshot_id,),
-    )[0]["n"] == node_count
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM taxonomy_nodes WHERE taxonomy_snapshot_id=?",
+            (snapshot_id,),
+        )[0]["n"]
+        == node_count
+    )
     alias_counts = {
         row["status"]: row["n"]
         for row in db.query(
@@ -518,13 +641,18 @@ def test_taxdump_import_flushes_batches_larger_than_5000_rows(project_db, tmp_pa
     }
     assert alias_counts == {"merged": 5001, "deleted": 5001}
     # Rows past the first 5000-row flush must be imported too.
-    assert db.query(
-        "SELECT parent_taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid=?",
-        (snapshot_id, node_count),
-    )[0]["parent_taxid"] == 1
+    assert (
+        db.query(
+            "SELECT parent_taxid FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid=?",
+            (snapshot_id, node_count),
+        )[0]["parent_taxid"]
+        == 1
+    )
 
 
-def test_jsonl_import_flushes_node_and_alias_batches_over_5000_records(project_db, tmp_path):
+def test_jsonl_import_flushes_node_and_alias_batches_over_5000_records(
+    project_db, tmp_path
+):
     project, db = project_db
     record_count = 5002
     records = [{"taxId": 1, "rank": "no rank", "taxName": "root"}]
@@ -545,7 +673,10 @@ def test_jsonl_import_flushes_node_and_alias_batches_over_5000_records(project_d
     result = taxonomy.import_ncbi_taxonomy(db, project, source, "big-jsonl")
     assert result["node_count"] == record_count
     snapshot_id = result["taxonomy_snapshot_id"]
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM taxonomy_aliases WHERE taxonomy_snapshot_id=?",
-        (snapshot_id,),
-    )[0]["n"] == record_count - 1
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM taxonomy_aliases WHERE taxonomy_snapshot_id=?",
+            (snapshot_id,),
+        )[0]["n"]
+        == record_count - 1
+    )

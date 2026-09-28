@@ -28,14 +28,27 @@ class TestAnalysisShutdown(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_ANSH_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_ANSH_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -44,7 +57,9 @@ class TestAnalysisShutdown(PytestAssertions):
             out = args[args.index('-out') + 1]
             with open(out, 'w') as handle:
                 handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_tool_config(self, executable: Path, database: str = ""):
@@ -64,39 +79,97 @@ class TestAnalysisShutdown(PytestAssertions):
                             "database": database,
                             "output_subdir": "fake_nt",
                             "output_suffix": ".out.tsv",
-                            "arguments": ["-query", "${input}", "-out", "${output}", "-num_threads", "${threads}"],
+                            "arguments": [
+                                "-query",
+                                "${input}",
+                                "-out",
+                                "${output}",
+                                "-num_threads",
+                                "${threads}",
+                            ],
                             "result_parser": "blast_tabular",
-                            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+                            "result_columns": [
+                                "qseqid",
+                                "sseqid",
+                                "pident",
+                                "length",
+                                "evalue",
+                                "bitscore",
+                            ],
                         }
                     },
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_assembly(self, number: int = 1):
-        self.db.insert_row("organisms", {"organism_id": f"ORG_{number:06d}", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"})
-        self.db.insert_row("assemblies", {"assembly_id": f"ASM_{number:06d}", "sample_id": f"SMP_{number:06d}", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": f"ORG_{number:06d}",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples",
+            {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"},
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": f"ASM_{number:06d}",
+                "sample_id": f"SMP_{number:06d}",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / f"asm{number}.fa"
         fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", f"ASM_{number:06d}", "genome_fasta")
+        return ingest_file(
+            self.db,
+            self.project,
+            fasta,
+            "assembly",
+            f"ASM_{number:06d}",
+            "genome_fasta",
+        )
 
     def _interrupting_run(self, file_id: str):
         """Fake executor.run: leave a partial output, then raise the signal."""
-        def fake_run(_executor, argv, *, cwd, stdout_path, stderr_path, timeout=None,
-                     threads=None, run_id=None, stage_inputs=(), expected_outputs=()):
+
+        def fake_run(
+            _executor,
+            argv,
+            *,
+            cwd,
+            stdout_path,
+            stderr_path,
+            timeout=None,
+            threads=None,
+            run_id=None,
+            stage_inputs=(),
+            expected_outputs=(),
+        ):
             Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
             Path(stdout_path).write_text("partial stdout\n", encoding="utf-8")
             for path in expected_outputs:
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 Path(path).write_text("partial output\n", encoding="utf-8")
             raise ShutdownRequested(signal.SIGINT)
+
         return fake_run
 
     def _output_path(self, file_id: str) -> Path:
-        return (self.project.analysis_root / "fake_nt" / "ASM_000001"
-                / f"{file_id}.genome_fasta.out.tsv")
+        return (
+            self.project.analysis_root
+            / "fake_nt"
+            / "ASM_000001"
+            / f"{file_id}.genome_fasta.out.tsv"
+        )
 
     def test_interrupt_finalizes_job_removes_partial_and_resumes(self, monkeypatch):
         self._write_fake_blast()
@@ -104,7 +177,9 @@ class TestAnalysisShutdown(PytestAssertions):
         file_row = self._add_assembly()
         output = self._output_path(file_row["file_id"])
 
-        monkeypatch.setattr(LocalExecutor, "run", self._interrupting_run(file_row["file_id"]))
+        monkeypatch.setattr(
+            LocalExecutor, "run", self._interrupting_run(file_row["file_id"])
+        )
         rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"])
         self.assertEqual(rc, 130)
 
@@ -130,8 +205,19 @@ class TestAnalysisShutdown(PytestAssertions):
         file_row = self._add_assembly()
         output = self._output_path(file_row["file_id"])
 
-        monkeypatch.setattr(LocalExecutor, "run", self._interrupting_run(file_row["file_id"]))
-        rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt", "--keep-partial"])
+        monkeypatch.setattr(
+            LocalExecutor, "run", self._interrupting_run(file_row["file_id"])
+        )
+        rc = main(
+            [
+                "--project",
+                str(self.root),
+                "analyze",
+                "--analysis",
+                "fake_nt",
+                "--keep-partial",
+            ]
+        )
         self.assertEqual(rc, 130)
         jobs = self.db.query("SELECT * FROM analysis_jobs")
         self.assertEqual(jobs[0]["status"], "interrupted")
@@ -175,22 +261,30 @@ class TestAnalysisShutdown(PytestAssertions):
         rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"])
         self.assertEqual(rc, 0)
         jobs = self.db.query(
-            "SELECT analysis_name, status FROM analysis_jobs ORDER BY job_id")
+            "SELECT analysis_name, status FROM analysis_jobs ORDER BY job_id"
+        )
         self.assertEqual(
             [(j["analysis_name"], j["status"]) for j in jobs],
-            [("fake_nt", "interrupted"), ("other_nt", "RUNNING"), ("fake_nt", "completed")],
+            [
+                ("fake_nt", "interrupted"),
+                ("other_nt", "RUNNING"),
+                ("fake_nt", "completed"),
+            ],
         )
 
     def test_failed_tool_marks_job_failed_and_records_error(self):
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
                 print('fakeblast: 9.8.7')
                 raise SystemExit(0)
             raise SystemExit(3)
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         self._write_tool_config(script)
         self._add_assembly()
 
@@ -201,7 +295,9 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["status"], "failed")
         self.assertIsNotNone(jobs[0]["finished_at"])
-        self.assertTrue(jobs[0]["error"].startswith("RuntimeError: analysis:fake_nt failed"))
+        self.assertTrue(
+            jobs[0]["error"].startswith("RuntimeError: analysis:fake_nt failed")
+        )
         self.assertIn("exit code 3", jobs[0]["error"])
         self.assertFalse("expected output missing" in jobs[0]["error"])
 
@@ -215,7 +311,9 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertEqual(results[0]["status"], "error")
         self.assertIn("input missing", results[0]["error"])
         # The failure is pre-flight: no job row was ever inserted.
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0
+        )
 
     def test_cancel_event_stops_sequential_batch_between_files(self, monkeypatch):
         """Cooperative cancellation on the per-file path: the in-flight file
@@ -232,8 +330,13 @@ class TestAnalysisShutdown(PytestAssertions):
                 cancel_event.set()
 
         with pytest.raises(ShutdownRequested):
-            run_analysis(self.project, self.db, "fake_nt",
-                         progress_callback=cancelling, cancel_event=cancel_event)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                progress_callback=cancelling,
+                cancel_event=cancel_event,
+            )
 
         jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
         self.assertEqual([j["status"] for j in jobs], ["completed"])
@@ -242,8 +345,14 @@ class TestAnalysisShutdown(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt")
         self.assertEqual([r["status"] for r in results], ["cached", "completed"])
         self.assertEqual(
-            [j["status"] for j in self.db.query("SELECT status FROM analysis_jobs ORDER BY job_id")],
-            ["completed", "completed"])
+            [
+                j["status"]
+                for j in self.db.query(
+                    "SELECT status FROM analysis_jobs ORDER BY job_id"
+                )
+            ],
+            ["completed", "completed"],
+        )
 
     def test_missing_reference_database_is_rejected_before_running(self):
         self._write_fake_blast()
@@ -253,4 +362,6 @@ class TestAnalysisShutdown(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt")
         self.assertEqual(results[0]["status"], "error")
         self.assertIn("reference database not found", results[0]["error"])
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0
+        )

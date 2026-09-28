@@ -27,16 +27,25 @@ class TestLineageCascade(PytestAssertions):
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
+        self.db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus"}
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+        )
         fasta = self.root / "genome.fa"
         fasta.write_text(">ctg1\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        self.genome = ingest_file(self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+        self.genome = ingest_file(
+            self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta"
+        )
 
     def _write_fake_tool(self, name: str, version: str) -> Path:
         script = self.root / f"{name}.py"
-        script.write_text(textwrap.dedent(f"""
+        script.write_text(
+            textwrap.dedent(f"""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -49,7 +58,9 @@ class TestLineageCascade(PytestAssertions):
             with open(out, 'w') as handle:
                 handle.write('tool={name}\\n')
                 handle.write('input_bytes=' + str(len(data)) + '\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_tools_yaml(self):
@@ -97,28 +108,60 @@ class TestLineageCascade(PytestAssertions):
             },
         }
         self.project.tools_config_path.write_text(
-            yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+            yaml.safe_dump(document, sort_keys=False), encoding="utf-8"
+        )
 
     def test_export_adopt_analyze_cascade(self):
         self._write_tools_yaml()
 
         # QC + evaluate the raw assembly, then run the upstream recipe.
         self.assertEqual(
-            main(["--project", str(self.root), "qc", "--file-id", self.genome["file_id"]]), 0)
+            main(
+                ["--project", str(self.root), "qc", "--file-id", self.genome["file_id"]]
+            ),
+            0,
+        )
         self.assertEqual(
-            main(["--project", str(self.root), "evaluate", "--entity-type", "assembly",
-                  "--entity-id", "ASM_000001"]), 0)
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "evaluate",
+                    "--entity-type",
+                    "assembly",
+                    "--entity-id",
+                    "ASM_000001",
+                ]
+            ),
+            0,
+        )
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "count_bases"]), 0)
-        upstream_job = self.db.query("SELECT * FROM analysis_jobs WHERE analysis_name='count_bases'")[0]
+            main(["--project", str(self.root), "analyze", "--analysis", "count_bases"]),
+            0,
+        )
+        upstream_job = self.db.query(
+            "SELECT * FROM analysis_jobs WHERE analysis_name='count_bases'"
+        )[0]
         self.assertEqual(upstream_job["status"], "completed")
         self.assertIsNotNone(upstream_job["recipe_snapshot_id"])
 
         # Export the raw inputs, then simulate an external workflow manager
         # consuming the export plus the upstream analysis output.
         export_dir = self.root / "handoff"
-        self.assertEqual(main(["--project", str(self.root), "export",
-                               "--output", str(export_dir), "--entity-type", "assembly"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "export",
+                    "--output",
+                    str(export_dir),
+                    "--entity-type",
+                    "assembly",
+                ]
+            ),
+            0,
+        )
         self.assertTrue((export_dir / "manifest.tsv").is_file())
         workflow_out = self.root / "external_run"
         workflow_out.mkdir()
@@ -138,7 +181,11 @@ class TestLineageCascade(PytestAssertions):
             encoding="utf-8",
         )
         self.assertEqual(
-            main(["--project", str(self.root), "adopt", "--from-manifest", str(manifest)]), 0)
+            main(
+                ["--project", str(self.root), "adopt", "--from-manifest", str(manifest)]
+            ),
+            0,
+        )
         edges = self.db.query("SELECT * FROM file_lineage")
         self.assertEqual(len(edges), 1)
         self.assertEqual(edges[0]["input_file_id"], self.genome["file_id"])
@@ -147,18 +194,33 @@ class TestLineageCascade(PytestAssertions):
 
         # The downstream recipe cascades onto the adopted artifact.
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "summarize_matrix"]), 0)
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "summarize_matrix",
+                ]
+            ),
+            0,
+        )
         downstream_jobs = self.db.query(
-            "SELECT * FROM analysis_jobs WHERE analysis_name='summarize_matrix'")
+            "SELECT * FROM analysis_jobs WHERE analysis_name='summarize_matrix'"
+        )
         self.assertEqual(len(downstream_jobs), 1)
         downstream = downstream_jobs[0]
         self.assertEqual(downstream["status"], "completed")
         self.assertEqual(downstream["file_id"], adopted_file_id)
         self.assertIsNotNone(downstream["recipe_snapshot_id"])
 
-        snapshots = self.db.query("SELECT * FROM recipe_snapshots ORDER BY recipe_snapshot_id")
-        self.assertEqual({row["recipe_name"] for row in snapshots},
-                         {"count_bases", "summarize_matrix"})
+        snapshots = self.db.query(
+            "SELECT * FROM recipe_snapshots ORDER BY recipe_snapshot_id"
+        )
+        self.assertEqual(
+            {row["recipe_name"] for row in snapshots},
+            {"count_bases", "summarize_matrix"},
+        )
         versions = {row["recipe_name"]: row["recipe_version"] for row in snapshots}
         self.assertEqual(versions, {"count_bases": 1, "summarize_matrix": 3})
 

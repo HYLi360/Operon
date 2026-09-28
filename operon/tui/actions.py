@@ -43,10 +43,10 @@ def _open_writable(project: Project) -> Iterator[Database]:
 
 
 def evaluate(
-        project: Project,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        profile: str | None = None,
+    project: Project,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    profile: str | None = None,
 ) -> list[dict[str, Any]]:
     """Evaluate decisions like ``operon evaluate``; returns summary rows."""
     from operon.rules import evaluate_all, evaluate_entity
@@ -54,7 +54,9 @@ def evaluate(
     with _open_writable(project) as db:
         if entity_id:
             if not entity_type:
-                raise ValidationError("--entity-type is required when --entity-id is given")
+                raise ValidationError(
+                    "--entity-type is required when --entity-id is given"
+                )
             rows = [evaluate_entity(db, project, entity_type, entity_id, profile)]
         else:
             rows = evaluate_all(db, project, profile, entity_type)
@@ -71,21 +73,29 @@ def evaluate(
 
 
 def curate(
-        project: Project,
-        entity_type: str,
-        entity_id: str,
-        profile: str,
-        decision: str,
-        reviewer: str,
-        reason: str,
-        evidence: str | None = None,
+    project: Project,
+    entity_type: str,
+    entity_id: str,
+    profile: str,
+    decision: str,
+    reviewer: str,
+    reason: str,
+    evidence: str | None = None,
 ) -> None:
     """Record a curated decision like ``operon curate`` (audited override)."""
     from operon.rules import curate_decision
 
     with _open_writable(project) as db:
-        curate_decision(db, entity_type, entity_id, profile, decision,
-                        reviewer=reviewer, reason=reason, evidence=evidence)
+        curate_decision(
+            db,
+            entity_type,
+            entity_id,
+            profile,
+            decision,
+            reviewer=reviewer,
+            reason=reason,
+            evidence=evidence,
+        )
 
 
 def lifecycle_preview(project: Project, identifier: str, action: str) -> dict[str, Any]:
@@ -100,13 +110,13 @@ def lifecycle_preview(project: Project, identifier: str, action: str) -> dict[st
 
 
 def lifecycle_apply(
-        project: Project,
-        identifier: str,
-        action: str,
-        reason: str,
-        actor: str,
-        reason_code: str | None = None,
-        evidence: str | None = None,
+    project: Project,
+    identifier: str,
+    action: str,
+    reason: str,
+    actor: str,
+    reason_code: str | None = None,
+    evidence: str | None = None,
 ) -> dict[str, Any]:
     """Apply a RETIRE/RESTORE exactly like ``operon retire|restore --apply``."""
     from operon.lifecycle import apply_lifecycle_event, lifecycle_plan
@@ -124,7 +134,12 @@ def lifecycle_apply(
         if not plan["will_change"]:
             if plan["blocker"]:
                 raise ValidationError(plan["blocker"])
-            return {"applied": False, "action": action, "target": plan["target"], "plan": plan}
+            return {
+                "applied": False,
+                "action": action,
+                "target": plan["target"],
+                "plan": plan,
+            }
         target = plan["target"]
         run_id = new_run_id()
         started_at = now_iso()
@@ -155,16 +170,26 @@ def lifecycle_apply(
                     "exit_code": 0,
                     "command": f"operon {action.lower()} {identifier}",
                     "tool": "operon",
-                    "parameter_set": json.dumps({
-                        "reason_code": reason_code if reason_code is not None else "manual_restore",
-                        "reason": reason,
-                        "actor": actor,
-                    }, ensure_ascii=False, sort_keys=True),
-                    "execution_details": json.dumps({
-                        "entity_counts": plan["entity_counts"],
-                        "reference_counts": plan["reference_counts"],
-                        "physical_changes": plan["physical_changes"],
-                    }, ensure_ascii=False, sort_keys=True),
+                    "parameter_set": json.dumps(
+                        {
+                            "reason_code": reason_code
+                            if reason_code is not None
+                            else "manual_restore",
+                            "reason": reason,
+                            "actor": actor,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "execution_details": json.dumps(
+                        {
+                            "entity_counts": plan["entity_counts"],
+                            "reference_counts": plan["reference_counts"],
+                            "physical_changes": plan["physical_changes"],
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                 },
                 jsonl_buffer=jsonl_buffer,
             )
@@ -174,20 +199,22 @@ def lifecycle_apply(
             "action": action,
             "target": target,
             "event": result["event"],
-            "effectively_retired": db.is_entity_retired(target["entity_type"], target["entity_id"]),
+            "effectively_retired": db.is_entity_retired(
+                target["entity_type"], target["entity_id"]
+            ),
         }
 
 
 def ingest(
-        project: Project,
-        source: str,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
-        move: bool = False,
+    project: Project,
+    source: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
+    move: bool = False,
 ) -> dict[str, Any]:
     """Archive one file like ``operon ingest``; ConflictError propagates."""
     from operon.files import ingest_file
@@ -195,6 +222,7 @@ def ingest(
     temp_path: Path | None = None
     if source.startswith(("sftp://", "remote://")):
         from operon.remotes import fetch_url_to_temp
+
         original_url = source
         temp_path = fetch_url_to_temp(project, source)
         source = str(temp_path)
@@ -202,8 +230,16 @@ def ingest(
     try:
         with _open_writable(project) as db:
             return ingest_file(
-                db, project, source, entity_type, entity_id, role,
-                fmt=fmt, compression=compression, source_url=source_url, move=move,
+                db,
+                project,
+                source,
+                entity_type,
+                entity_id,
+                role,
+                fmt=fmt,
+                compression=compression,
+                source_url=source_url,
+                move=move,
             )
     finally:
         if temp_path is not None:
@@ -221,8 +257,9 @@ def verify(project: Project, file_ids: list[str] | None = None) -> list[dict[str
         return verify_files(db, project, file_ids)
 
 
-def standardize(project: Project, file_id: str | None = None,
-                link_kind: str = "copy") -> dict[str, Any]:
+def standardize(
+    project: Project, file_id: str | None = None, link_kind: str = "copy"
+) -> dict[str, Any]:
     """Stage verified files into ``standardized/`` like ``operon standardize``.
 
     One file when ``file_id`` is given — there the core raises, so the modal can
@@ -234,24 +271,33 @@ def standardize(project: Project, file_id: str | None = None,
     with _open_writable(project) as db:
         if file_id:
             result = standardize_file(db, project, file_id, link_kind=link_kind)
-            return {"file_id": file_id, "link_kind": link_kind, "total": 1,
-                    "results": [result], "errors": []}
+            return {
+                "file_id": file_id,
+                "link_kind": link_kind,
+                "total": 1,
+                "results": [result],
+                "errors": [],
+            }
         results = standardize_all(db, project, link_kind=link_kind)
-        return {"file_id": None, "link_kind": link_kind, "total": len(results),
-                "results": results,
-                "errors": [item for item in results if "error" in item]}
+        return {
+            "file_id": None,
+            "link_kind": link_kind,
+            "total": len(results),
+            "results": results,
+            "errors": [item for item in results if "error" in item],
+        }
 
 
 def run_qc(
-        project: Project,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        file_id: str | None = None,
-        progress: Callable[[int, int, dict[str, Any]], None] | None = None,
-        *,
-        sample_size: int = 1000000,
-        phred_offset: int | str = 33,
-        rehash: bool = False,
+    project: Project,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    file_id: str | None = None,
+    progress: Callable[[int, int, dict[str, Any]], None] | None = None,
+    *,
+    sample_size: int = 1000000,
+    phred_offset: int | str = 33,
+    rehash: bool = False,
 ) -> list[dict[str, Any]]:
     """Run built-in QC like ``operon qc``.
 
@@ -267,9 +313,15 @@ def run_qc(
         raise ValidationError("phred offset must be 33, 64 or auto")
     with _open_writable(project) as db:
         return qc_all(
-            db, project, entity_type=entity_type, entity_id=entity_id,
-            file_id=file_id, progress_callback=progress,
-            sample_size=sample_size, phred_offset=phred_offset, force_checksum=rehash,
+            db,
+            project,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            file_id=file_id,
+            progress_callback=progress,
+            sample_size=sample_size,
+            phred_offset=phred_offset,
+            force_checksum=rehash,
         )
 
 
@@ -297,10 +349,10 @@ def _validate_backend_choice(backend: str | None) -> None:
 
 
 def preflight_backend(
-        project: Project,
-        backend: str | None = None,
-        *,
-        recipe_name: str | None = None,
+    project: Project,
+    backend: str | None = None,
+    *,
+    recipe_name: str | None = None,
 ) -> dict[str, Any]:
     """Resolve and validate an execution backend exactly like ``operon analyze``.
 
@@ -338,20 +390,20 @@ def preflight_backend(
 
 
 def run_analysis(
-        project: Project,
-        analysis: str,
-        *,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        limit: int | None = None,
-        threads: int | None = None,
-        dry_run: bool = False,
-        force: bool = False,
-        keep_partial: bool = False,
-        parameters: dict[str, str] | None = None,
-        backend: str | None = None,
-        progress: Callable[[int, int, str, str], None] | None = None,
-        cancel_event: threading.Event | None = None,
+    project: Project,
+    analysis: str,
+    *,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    limit: int | None = None,
+    threads: int | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+    keep_partial: bool = False,
+    parameters: dict[str, str] | None = None,
+    backend: str | None = None,
+    progress: Callable[[int, int, str, str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Run one analysis recipe like ``operon analyze``.
 
@@ -379,12 +431,20 @@ def run_analysis(
     try:
         with _open_writable(project) as db, contextlib.redirect_stdout(buffer):
             results = _run_analysis(
-                project, db, analysis,
-                entity_type=entity_type, entity_id=entity_id,
-                limit=limit, threads=threads, dry_run=dry_run, force=force,
+                project,
+                db,
+                analysis,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                limit=limit,
+                threads=threads,
+                dry_run=dry_run,
+                force=force,
                 backend=backend,
-                keep_partial=keep_partial, runtime_parameters=parameters,
-                progress_callback=progress, cancel_event=cancel_event,
+                keep_partial=keep_partial,
+                runtime_parameters=parameters,
+                progress_callback=progress,
+                cancel_event=cancel_event,
             )
     except ShutdownRequested:
         # A cooperative cancel reaches the core as the signal-style interrupt;
@@ -406,20 +466,20 @@ def run_analysis(
 
 
 def run_external(
-        project: Project,
-        step: str,
-        command_line: str,
-        *,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        parameter_set: str | None = None,
-        tool: str | None = None,
-        inputs: Iterable[str] = (),
-        expected_outputs: Iterable[str] = (),
-        threads: int | None = None,
-        cwd: str | None = None,
-        timeout: float | None = None,
-        backend: str | None = None,
+    project: Project,
+    step: str,
+    command_line: str,
+    *,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    parameter_set: str | None = None,
+    tool: str | None = None,
+    inputs: Iterable[str] = (),
+    expected_outputs: Iterable[str] = (),
+    threads: int | None = None,
+    cwd: str | None = None,
+    timeout: float | None = None,
+    backend: str | None = None,
 ) -> dict[str, Any]:
     """Run one external command like ``operon run-external``.
 
@@ -459,6 +519,7 @@ def run_external(
                 get_tool,
                 load_tools_config,
             )
+
             try:
                 tool_spec = get_tool(project, tool)
             except ValidationError:
@@ -466,32 +527,49 @@ def run_external(
             if tool_spec is not None:
                 try:
                     config = load_tools_config(project)
-                    tool_version, raw_output = detect_tool_version_record(tool_spec, config)
+                    tool_version, raw_output = detect_tool_version_record(
+                        tool_spec, config
+                    )
                     extra_details = {"tool_version_raw": raw_output}
                 except Exception as exc:  # noqa: BLE001 - detection never blocks the run  # pylint: disable=broad-exception-caught
                     print(f"warning: version detection for {tool!r} failed: {exc}")
         run_id = new_run_id()
-        print(f"run {run_id}: logs {project.logs_root / (run_id + '.stdout.log')} / "
-              f"{project.logs_root / (run_id + '.stderr.log')}; "
-              f"watch: operon workflow show {run_id} --follow")
+        print(
+            f"run {run_id}: logs {project.logs_root / (run_id + '.stdout.log')} / "
+            f"{project.logs_root / (run_id + '.stderr.log')}; "
+            f"watch: operon workflow show {run_id} --follow"
+        )
         record: dict[str, Any]
         try:
             with _open_writable(project) as db:
                 record = run_external_command(
-                    db, project, argv, step=step,
-                    entity_type=entity_type, entity_id=entity_id,
+                    db,
+                    project,
+                    argv,
+                    step=step,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
                     parameter_set=parameter_set,
                     expected_outputs=list(expected_outputs),
-                    cwd=cwd, timeout=timeout, tool=tool, tool_version=tool_version,
-                    backend=backend, threads=threads, inputs=list(inputs),
-                    extra_details=extra_details, run_id=run_id,
+                    cwd=cwd,
+                    timeout=timeout,
+                    tool=tool,
+                    tool_version=tool_version,
+                    backend=backend,
+                    threads=threads,
+                    inputs=list(inputs),
+                    extra_details=extra_details,
+                    run_id=run_id,
                 )
         except RuntimeError as exc:
             # The core recorded the failed run before raising; keep the summary
             # so the UI can open the full record.
             record = {
-                "run_id": run_id, "step": step, "status": "failed",
-                "exit_code": None, "error": str(exc),
+                "run_id": run_id,
+                "step": step,
+                "status": "failed",
+                "exit_code": None,
+                "error": str(exc),
                 "stdout_file": str(project.logs_root / f"{run_id}.stdout.log"),
                 "stderr_file": str(project.logs_root / f"{run_id}.stderr.log"),
             }
@@ -518,7 +596,18 @@ def run_external(
 # to the same snapshot.
 # ---------------------------------------------------------------------------
 
-PROFILE_OPERATORS = (">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in", "exists")
+PROFILE_OPERATORS = (
+    ">=",
+    "<=",
+    ">",
+    "<",
+    "==",
+    "!=",
+    "between",
+    "in",
+    "not_in",
+    "exists",
+)
 ENTITY_TYPE_NAMES = ("organism", "sample", "run", "assembly", "annotation")
 # The TUI's profile editor saves three kinds; each kind has its own form,
 # dispatched by the document's own kind (see operon/tui/screens/config*.py).
@@ -528,18 +617,18 @@ PROFILE_KINDS = ("qc", CLASSIFICATION_KIND, COVERAGE_KIND)
 
 
 def write_analysis_report(
-        project: Project,
-        *,
-        out: str,
-        fmt: str = "text",
-        analysis: str | None = None,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        query_id: str | None = None,
-        subject_id: str | None = None,
-        evalue_max: float | None = None,
-        limit: int = 20,
-        include_retired: bool = False,
+    project: Project,
+    *,
+    out: str,
+    fmt: str = "text",
+    analysis: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    query_id: str | None = None,
+    subject_id: str | None = None,
+    evalue_max: float | None = None,
+    limit: int = 20,
+    include_retired: bool = False,
 ) -> dict[str, Any]:
     """Write alignment hits to a path exactly like ``report analysis --hits --out``.
 
@@ -587,22 +676,24 @@ def run_classify(project: Project, profile_name: str) -> dict[str, Any]:
     _validate_config_name("profile", profile_name)
     command = shlex.join(["operon", "classify-sequences", "--profile", profile_name])
     with _open_writable(project) as db:
-        return classify_sequences(db, project, profile_name=profile_name, command=command)
+        return classify_sequences(
+            db, project, profile_name=profile_name, command=command
+        )
 
 
 def extract_domains(
-        project: Project,
-        *,
-        file_id: str,
-        out: str,
-        analysis: str | None = None,
-        regions_tsv: str | None = None,
-        flank: int = 5,
-        min_length: int = 30,
-        best_only: bool = True,
-        subject_like: str | None = None,
-        evalue_max: float | None = None,
-        manifest: str | None = None,
+    project: Project,
+    *,
+    file_id: str,
+    out: str,
+    analysis: str | None = None,
+    regions_tsv: str | None = None,
+    flank: int = 5,
+    min_length: int = 30,
+    best_only: bool = True,
+    subject_like: str | None = None,
+    evalue_max: float | None = None,
+    manifest: str | None = None,
 ) -> dict[str, Any]:
     """Run ``operon extract-domains``; the output FASTA stays unregistered.
 
@@ -616,7 +707,9 @@ def extract_domains(
     if bool(analysis) == bool(regions_tsv):
         raise ValidationError("exactly one of --analysis or --regions-tsv is required")
     if regions_tsv and (subject_like or evalue_max is not None):
-        raise ValidationError("--subject-like/--evalue-max only apply to --analysis regions")
+        raise ValidationError(
+            "--subject-like/--evalue-max only apply to --analysis regions"
+        )
     if not file_id.strip():
         raise ValidationError("--file-id is required")
     if not out.strip():
@@ -637,28 +730,36 @@ def extract_domains(
         parts += ["--manifest", manifest]
     with _open_writable(project) as db:
         return core_extract(
-            db, project,
-            file_id=file_id, out=out, command=shlex.join(parts),
-            analysis=analysis, regions_tsv=regions_tsv,
-            flank=flank, min_length=min_length, best_only=best_only,
-            subject_like=subject_like, evalue_max=evalue_max, manifest=manifest,
+            db,
+            project,
+            file_id=file_id,
+            out=out,
+            command=shlex.join(parts),
+            analysis=analysis,
+            regions_tsv=regions_tsv,
+            flank=flank,
+            min_length=min_length,
+            best_only=best_only,
+            subject_like=subject_like,
+            evalue_max=evalue_max,
+            manifest=manifest,
         )
 
 
 def select_sequences(
-        project: Project,
-        *,
-        file_id: str,
-        out: str,
-        analyses: Iterable[str] = (),
-        subject_like: str | None = None,
-        evalue_max: float | None = None,
-        min_span: int | None = None,
-        hit_type: str | None = None,
-        require_hit: bool = True,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        manifest: str | None = None,
+    project: Project,
+    *,
+    file_id: str,
+    out: str,
+    analyses: Iterable[str] = (),
+    subject_like: str | None = None,
+    evalue_max: float | None = None,
+    min_span: int | None = None,
+    hit_type: str | None = None,
+    require_hit: bool = True,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    manifest: str | None = None,
 ) -> dict[str, Any]:
     """Run ``operon select-sequences``; the output FASTA stays unregistered."""
     from operon.sequence_tools import select_sequences as core_select
@@ -668,8 +769,13 @@ def select_sequences(
         raise ValidationError("--file-id is required")
     if not out.strip():
         raise ValidationError("--out is required")
-    if not analyses and subject_like is None and evalue_max is None \
-            and min_span is None and hit_type is None:
+    if (
+        not analyses
+        and subject_like is None
+        and evalue_max is None
+        and min_span is None
+        and hit_type is None
+    ):
         raise ValidationError(
             "no hit criteria given; pass at least one of --analysis, --subject-like, "
             "--evalue-max, --min-span or --hit-type"
@@ -695,20 +801,29 @@ def select_sequences(
         parts += ["--manifest", manifest]
     with _open_writable(project) as db:
         return core_select(
-            db, project,
-            file_id=file_id, out=out, command=shlex.join(parts),
-            analyses=analyses, subject_like=subject_like, evalue_max=evalue_max,
-            min_span=min_span, hit_type=hit_type, require_hit=require_hit,
-            entity_type=entity_type, entity_id=entity_id, manifest=manifest,
+            db,
+            project,
+            file_id=file_id,
+            out=out,
+            command=shlex.join(parts),
+            analyses=analyses,
+            subject_like=subject_like,
+            evalue_max=evalue_max,
+            min_span=min_span,
+            hit_type=hit_type,
+            require_hit=require_hit,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            manifest=manifest,
         )
 
 
 def adopt(
-        project: Project,
-        *,
-        items: list[dict[str, Any]] | None = None,
-        manifest: str | None = None,
-        actor: str | None = None,
+    project: Project,
+    *,
+    items: list[dict[str, Any]] | None = None,
+    manifest: str | None = None,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Run ``operon adopt`` for one item or a manifest, like the CLI.
 
@@ -727,19 +842,31 @@ def adopt(
         raise ValidationError("adopt needs one item or a manifest")
     reused_flags: list[bool] = []
     for item in items:
-        missing = [key for key in ("path", "entity_type", "entity_id", "role")
-                   if not str(item.get(key) or "").strip()]
+        missing = [
+            key
+            for key in ("path", "entity_type", "entity_id", "role")
+            if not str(item.get(key) or "").strip()
+        ]
         if missing:
             raise ValidationError(f"single-file adopt requires {', '.join(missing)}")
         if not item.get("derived_from"):
-            raise ValidationError("single-file adopt requires at least one --derived-from FILE_ID")
+            raise ValidationError(
+                "single-file adopt requires at least one --derived-from FILE_ID"
+            )
         path = Path(str(item["path"]))
         sha = sha256_file(path) if path.exists() and path.is_file() else None
         with _open_writable(project) as db:
-            existing = find_existing_file(
-                db, str(item["entity_type"]), str(item["entity_id"]), str(item["role"]),
-                sha or "",
-            ) if sha else None
+            existing = (
+                find_existing_file(
+                    db,
+                    str(item["entity_type"]),
+                    str(item["entity_id"]),
+                    str(item["role"]),
+                    sha or "",
+                )
+                if sha
+                else None
+            )
         reused_flags.append(existing is not None)
     resolved_actor = (resolve_actor(actor) or "adopt").strip()
     with _open_writable(project) as db:
@@ -755,36 +882,52 @@ def adopt(
 
 
 def fanout(
-        project: Project,
-        *,
-        assignments_file_id: str,
-        source_file_ids: Iterable[str],
-        entity_type: str,
-        entity_id: str,
-        role_prefix: str,
-        unit_column: str = "unit",
-        seqid_column: str = "seqid",
-        parent_run_id: str | None = None,
-        actor: str | None = None,
-        dry_run: bool = False,
+    project: Project,
+    *,
+    assignments_file_id: str,
+    source_file_ids: Iterable[str],
+    entity_type: str,
+    entity_id: str,
+    role_prefix: str,
+    unit_column: str = "unit",
+    seqid_column: str = "seqid",
+    parent_run_id: str | None = None,
+    actor: str | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Run ``operon fanout`` (or its ``--dry-run`` preflight) like the CLI."""
     from operon.fanout import fanout_units
 
     source_file_ids = [file_id for file_id in source_file_ids if str(file_id).strip()]
-    missing = [name for name, value in (
-        ("--assignments-file", assignments_file_id), ("--entity-type", entity_type),
-        ("--entity-id", entity_id), ("--role-prefix", role_prefix),
-    ) if not str(value or "").strip()]
+    missing = [
+        name
+        for name, value in (
+            ("--assignments-file", assignments_file_id),
+            ("--entity-type", entity_type),
+            ("--entity-id", entity_id),
+            ("--role-prefix", role_prefix),
+        )
+        if not str(value or "").strip()
+    ]
     if missing:
         raise ValidationError(f"fanout requires {', '.join(missing)}")
     if not source_file_ids:
         raise ValidationError("fanout requires at least one --source-file FILE_ID")
     parts = [
-        "operon", "fanout", "--assignments-file", assignments_file_id,
-        "--entity-type", entity_type, "--entity-id", entity_id,
-        "--role-prefix", role_prefix,
-        "--unit-column", unit_column, "--seqid-column", seqid_column,
+        "operon",
+        "fanout",
+        "--assignments-file",
+        assignments_file_id,
+        "--entity-type",
+        entity_type,
+        "--entity-id",
+        entity_id,
+        "--role-prefix",
+        role_prefix,
+        "--unit-column",
+        unit_column,
+        "--seqid-column",
+        seqid_column,
     ]
     for file_id in source_file_ids:
         parts += ["--source-file", file_id]
@@ -795,14 +938,19 @@ def fanout(
     resolved_actor = (resolve_actor(actor) or "fanout").strip()
     with _open_writable(project) as db:
         return fanout_units(
-            db, project,
+            db,
+            project,
             assignments_file_id=assignments_file_id,
             source_file_ids=source_file_ids,
-            entity_type=entity_type, entity_id=entity_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
             role_prefix=role_prefix,
-            unit_column=unit_column, seqid_column=seqid_column,
-            parent_run_id=parent_run_id, actor=resolved_actor,
-            dry_run=dry_run, command=shlex.join(parts),
+            unit_column=unit_column,
+            seqid_column=seqid_column,
+            parent_run_id=parent_run_id,
+            actor=resolved_actor,
+            dry_run=dry_run,
+            command=shlex.join(parts),
         )
 
 
@@ -831,7 +979,9 @@ def _coerce_rule_values(rule: dict[str, Any]) -> None:
         if isinstance(rule.get(key), str):
             rule[key] = coerce_scalar(rule[key])
     if isinstance(rule.get("values"), list):
-        rule["values"] = [coerce_scalar(v) if isinstance(v, str) else v for v in rule["values"]]
+        rule["values"] = [
+            coerce_scalar(v) if isinstance(v, str) else v for v in rule["values"]
+        ]
 
 
 def _coerce_classification_values(document: dict[str, Any]) -> None:
@@ -841,6 +991,7 @@ def _coerce_classification_values(document: dict[str, Any]) -> None:
     the form's text inputs are coerced here before validation; ``any``/``not``
     groups are walked recursively.
     """
+
     def coerce_condition(condition: Any) -> None:
         if not isinstance(condition, dict):
             return
@@ -883,8 +1034,9 @@ def _validate_coverage_document(name: str, document: dict[str, Any]) -> None:
     _validate_coverage_profile(name, document)
 
 
-def _validate_profile_document(name: str, document: dict[str, Any], *,
-                               kind: str = "qc") -> None:
+def _validate_profile_document(
+    name: str, document: dict[str, Any], *, kind: str = "qc"
+) -> None:
     if not isinstance(document, dict):
         raise ValidationError(f"profile {name!r}: document must be a mapping")
     if str(document.get("kind", "")) != kind:
@@ -911,10 +1063,14 @@ def _validate_profile_document(name: str, document: dict[str, Any], *,
     for section in ("required", "warnings"):
         rules = document.get(section, [])
         if not isinstance(rules, list):
-            raise ValidationError(f"profile {name!r}: '{section}' must be a list of rules")
+            raise ValidationError(
+                f"profile {name!r}: '{section}' must be a list of rules"
+            )
         for index, rule in enumerate(rules, start=1):
             if not isinstance(rule, dict):
-                raise ValidationError(f"profile {name!r}: {section} rule {index} must be a mapping")
+                raise ValidationError(
+                    f"profile {name!r}: {section} rule {index} must be a mapping"
+                )
             label = f"{section} rule {index}"
             if not str(rule.get("metric", "")).strip():
                 raise ValidationError(f"profile {name!r}: {label}: metric is required")
@@ -929,8 +1085,9 @@ def _validate_profile_document(name: str, document: dict[str, Any], *,
 
 
 @contextmanager
-def _saved_config(path: Path, text: str, previous_text: str | None,
-                  label: str) -> Iterator[None]:
+def _saved_config(
+    path: Path, text: str, previous_text: str | None, label: str
+) -> Iterator[None]:
     """Publish configuration atomically and restore it if validation or storage fails."""
     try:
         atomic_write_text(path, text)
@@ -945,8 +1102,14 @@ def _saved_config(path: Path, text: str, previous_text: str | None,
         raise
 
 
-def save_profile(project: Project, name: str, document: dict[str, Any], *,
-                 known_version: int = 0, kind: str = "qc") -> dict[str, Any]:
+def save_profile(
+    project: Project,
+    name: str,
+    document: dict[str, Any],
+    *,
+    known_version: int = 0,
+    kind: str = "qc",
+) -> dict[str, Any]:
     """Validate and save a profile of ``kind`` as a new version.
 
     The composed document is validated (``qc`` rules, the core's
@@ -983,7 +1146,9 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
     if previous_text is not None:
         parsed = yaml.safe_load(previous_text)
         if not isinstance(parsed, dict):
-            raise ValidationError(f"profile {name!r}: existing file is not a YAML mapping")
+            raise ValidationError(
+                f"profile {name!r}: existing file is not a YAML mapping"
+            )
         existing = parsed
         if str(existing.get("kind")) != kind:
             raise ValidationError(
@@ -991,16 +1156,26 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
             )
         old_version = int(existing.get("version", 1))
         comparable = {key: value for key, value in document.items() if key != "version"}
-        existing_content = {key: value for key, value in existing.items() if key != "version"}
+        existing_content = {
+            key: value for key, value in existing.items() if key != "version"
+        }
         if comparable == existing_content:
             return {
-                "name": name, "version": old_version, "sha256": None,
-                "snapshot_id": None, "unchanged": True,
+                "name": name,
+                "version": old_version,
+                "sha256": None,
+                "snapshot_id": None,
+                "unchanged": True,
             }
-    document["version"] = config_version_floor(
-        project, "profile", name,
-        max(known_version, int(existing.get("version", 1)) if existing else 0),
-    ) + 1
+    document["version"] = (
+        config_version_floor(
+            project,
+            "profile",
+            name,
+            max(known_version, int(existing.get("version", 1)) if existing else 0),
+        )
+        + 1
+    )
     if kind == CLASSIFICATION_KIND:
         _coerce_classification_values(document)
     elif kind == COVERAGE_KIND:
@@ -1019,39 +1194,50 @@ def save_profile(project: Project, name: str, document: dict[str, Any], *,
     )
     with _saved_config(path, text, previous_text, f"profile {name!r}"):
         loaded = load_profile(project.profiles_dir, name, expected_kind=kind)
-        profile_document = json.dumps(loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        profile_document = json.dumps(
+            loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
         sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
         version = int(loaded.get("version", 1))
         with _open_writable(project) as db:
             with db.transaction():
-                snapshot_id = db.record_profile(name, version, sha256, profile_document, now_iso())
+                snapshot_id = db.record_profile(
+                    name, version, sha256, profile_document, now_iso()
+                )
     return {
-        "name": name, "version": version, "sha256": sha256,
-        "snapshot_id": snapshot_id, "unchanged": False,
+        "name": name,
+        "version": version,
+        "sha256": sha256,
+        "snapshot_id": snapshot_id,
+        "unchanged": False,
     }
 
 
-def save_classification_profile(project: Project, name: str, document: dict[str, Any], *,
-                                known_version: int = 0) -> dict[str, Any]:
+def save_classification_profile(
+    project: Project, name: str, document: dict[str, Any], *, known_version: int = 0
+) -> dict[str, Any]:
     """Save a ``kind: sequence_classification`` profile (see :func:`save_profile`)."""
-    return save_profile(project, name, document, known_version=known_version,
-                        kind=CLASSIFICATION_KIND)
+    return save_profile(
+        project, name, document, known_version=known_version, kind=CLASSIFICATION_KIND
+    )
 
 
-def save_coverage_profile(project: Project, name: str, document: dict[str, Any], *,
-                          known_version: int = 0) -> dict[str, Any]:
+def save_coverage_profile(
+    project: Project, name: str, document: dict[str, Any], *, known_version: int = 0
+) -> dict[str, Any]:
     """Save a ``kind: taxonomy_coverage`` profile (see :func:`save_profile`)."""
-    return save_profile(project, name, document, known_version=known_version,
-                        kind=COVERAGE_KIND)
+    return save_profile(
+        project, name, document, known_version=known_version, kind=COVERAGE_KIND
+    )
 
 
 def save_recipe(
-        project: Project,
-        tool_name: str,
-        recipe_name: str,
-        recipe_doc: dict[str, Any],
-        *,
-        known_version: int = 0,
+    project: Project,
+    tool_name: str,
+    recipe_name: str,
+    recipe_doc: dict[str, Any],
+    *,
+    known_version: int = 0,
 ) -> dict[str, Any]:
     """Validate and save one recipe inside ``config/tools.yaml`` as a new version.
 
@@ -1097,16 +1283,26 @@ def save_recipe(
     if existing is not None:
         old_version = int(existing.get("version", 1))
         comparable = {key: value for key, value in document.items() if key != "version"}
-        existing_content = {key: value for key, value in existing.items() if key != "version"}
+        existing_content = {
+            key: value for key, value in existing.items() if key != "version"
+        }
         if comparable == existing_content:
             return {
-                "name": recipe_name, "tool": tool_name, "version": old_version,
-                "snapshot_id": None, "unchanged": True,
+                "name": recipe_name,
+                "tool": tool_name,
+                "version": old_version,
+                "snapshot_id": None,
+                "unchanged": True,
             }
-    document["version"] = config_version_floor(
-        project, "recipe", recipe_name,
-        max(known_version, int(existing.get("version", 1)) if existing else 0),
-    ) + 1
+    document["version"] = (
+        config_version_floor(
+            project,
+            "recipe",
+            recipe_name,
+            max(known_version, int(existing.get("version", 1)) if existing else 0),
+        )
+        + 1
+    )
     recipes[recipe_name] = document
 
     text = (
@@ -1124,22 +1320,30 @@ def save_recipe(
                 recipe.name, recipe.version, {"recipe": recipe.raw, "tool": tool.raw}
             )
     return {
-        "name": recipe.name, "tool": tool_name, "version": recipe.version,
-        "snapshot_id": snapshot_id, "unchanged": False,
+        "name": recipe.name,
+        "tool": tool_name,
+        "version": recipe.version,
+        "snapshot_id": snapshot_id,
+        "unchanged": False,
     }
 
 
 #: Tool-level keys the Config screen's tool editor owns.  Everything else in a
 #: tool mapping (``recipes``, or a key the editor does not model at all) is kept
 #: exactly as parsed.
-MODELED_TOOL_KEYS = ("description", "executable", "run_method", "version_args",
-                     "version_pattern")
+MODELED_TOOL_KEYS = (
+    "description",
+    "executable",
+    "run_method",
+    "version_args",
+    "version_pattern",
+)
 
 
 def save_tool(
-        project: Project,
-        tool_name: str,
-        tool_doc: dict[str, Any],
+    project: Project,
+    tool_name: str,
+    tool_doc: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate and save the tool-level keys of one tool in ``config/tools.yaml``.
 
@@ -1184,13 +1388,19 @@ def save_tool(
     # executable falls back to the tool name.  A value for any other key
     # (``recipes``, …) is ignored, so the recipes can never be written from a
     # stale editor document.
-    document = {key: value for key, value in tool_doc.items() if key in MODELED_TOOL_KEYS}
-    merged = {key: value for key, value in existing.items()
-              if key not in MODELED_TOOL_KEYS}
+    document = {
+        key: value for key, value in tool_doc.items() if key in MODELED_TOOL_KEYS
+    }
+    merged = {
+        key: value for key, value in existing.items() if key not in MODELED_TOOL_KEYS
+    }
     merged.update(document)
     if merged == existing:
         return {
-            "name": tool_name, "unchanged": True, "recipes": [], "snapshots": {},
+            "name": tool_name,
+            "unchanged": True,
+            "recipes": [],
+            "snapshots": {},
         }
     tools[tool_name] = merged
 
@@ -1204,20 +1414,22 @@ def save_tool(
         load_tools_config(project)
         tool = get_tool(project, tool_name)
         recipes = [
-            recipe for recipe in list_analyses(project)
-            if recipe.tool_name == tool_name
+            recipe for recipe in list_analyses(project) if recipe.tool_name == tool_name
         ]
         with _open_writable(project) as db, db.transaction():
             snapshots = {
                 recipe.name: db.record_recipe(
-                    recipe.name, recipe.version,
+                    recipe.name,
+                    recipe.version,
                     {"recipe": recipe.raw, "tool": tool.raw},
                 )
                 for recipe in recipes
             }
     return {
-        "name": tool_name, "unchanged": False,
-        "recipes": sorted(snapshots), "snapshots": snapshots,
+        "name": tool_name,
+        "unchanged": False,
+        "recipes": sorted(snapshots),
+        "snapshots": snapshots,
     }
 
 
@@ -1238,8 +1450,8 @@ def _tool_launchers(project: Project, config: dict[str, Any]) -> dict[str, list[
 
 
 def save_tools_defaults(
-        project: Project,
-        conda_doc: dict[str, Any],
+    project: Project,
+    conda_doc: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate and save the top-level ``conda:`` section of ``config/tools.yaml``.
 
@@ -1271,9 +1483,12 @@ def save_tools_defaults(
     existing = config.get("conda") or {}
     if not isinstance(existing, dict):
         raise ValidationError(f"the conda section in {path} must be a mapping")
-    document = {key: value for key, value in conda_doc.items() if key in MODELED_CONDA_KEYS}
-    merged = {key: value for key, value in existing.items()
-              if key not in MODELED_CONDA_KEYS}
+    document = {
+        key: value for key, value in conda_doc.items() if key in MODELED_CONDA_KEYS
+    }
+    merged = {
+        key: value for key, value in existing.items() if key not in MODELED_CONDA_KEYS
+    }
     merged.update(document)
     if merged == existing:
         return {"unchanged": True, "recipes": [], "snapshots": {}}
@@ -1290,28 +1505,29 @@ def save_tools_defaults(
         after = _tool_launchers(project, load_tools_config(project))
         changed = {name for name, prefix in after.items() if before.get(name) != prefix}
         recipes = [
-            recipe for recipe in list_analyses(project)
-            if recipe.tool_name in changed
+            recipe for recipe in list_analyses(project) if recipe.tool_name in changed
         ]
         tools = {name: get_tool(project, name) for name in changed}
         with _open_writable(project) as db, db.transaction():
             snapshots = {
                 recipe.name: db.record_recipe(
-                    recipe.name, recipe.version,
+                    recipe.name,
+                    recipe.version,
                     {"recipe": recipe.raw, "tool": tools[recipe.tool_name].raw},
                 )
                 for recipe in recipes
             }
     return {
         "unchanged": False,
-        "recipes": sorted(snapshots), "snapshots": snapshots,
+        "recipes": sorted(snapshots),
+        "snapshots": snapshots,
     }
 
 
 def check_tools(
-        project: Project,
-        timeout: float = 60.0,
-        on_result: Callable[[dict[str, Any]], None] | None = None,
+    project: Project,
+    timeout: float = 60.0,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Probe every configured tool's version, like ``operon tools-check``.
 
@@ -1380,26 +1596,26 @@ class NcbiDatasetsCancelled(Exception):
 
 
 def ncbi_datasets(
-        project: Project,
-        *,
-        inputs: Iterable[str] = (),
-        accessions: Iterable[str] = (),
-        accession_file: str | None = None,
-        include: Iterable[str] | None = None,
-        archive_files: bool = True,
-        standardize: bool = False,
-        dry_run: bool = False,
-        preserve_sources: bool = True,
-        email: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 300.0,
-        batch_size: int = 10,
-        download_workers: int = 3,
-        retries: int = 4,
-        retry_backoff: float = 1.0,
-        resume_run_id: str | None = None,
-        plan_only: bool = False,
-        cancel_event: threading.Event | None = None,
+    project: Project,
+    *,
+    inputs: Iterable[str] = (),
+    accessions: Iterable[str] = (),
+    accession_file: str | None = None,
+    include: Iterable[str] | None = None,
+    archive_files: bool = True,
+    standardize: bool = False,
+    dry_run: bool = False,
+    preserve_sources: bool = True,
+    email: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 300.0,
+    batch_size: int = 10,
+    download_workers: int = 3,
+    retries: int = 4,
+    retry_backoff: float = 1.0,
+    resume_run_id: str | None = None,
+    plan_only: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Run the NCBI Datasets adapter like ``operon ncbi-datasets``.
 
@@ -1423,14 +1639,21 @@ def ncbi_datasets(
     inputs = [str(value).strip() for value in inputs if str(value).strip()]
     accessions = [str(value).strip() for value in accessions if str(value).strip()]
     if not inputs and not accessions and not (accession_file or "").strip():
-        raise ValidationError("provide at least one --input, --accession, or --accession-file")
+        raise ValidationError(
+            "provide at least one --input, --accession, or --accession-file"
+        )
     if plan_only and inputs:
-        raise ValidationError("--plan-only supports accession requests, not offline --input packages")
+        raise ValidationError(
+            "--plan-only supports accession requests, not offline --input packages"
+        )
     for accession in accessions:
         if not VERSIONED_ACCESSION_RE.fullmatch(accession.upper()):
             raise ValidationError(f"invalid NCBI assembly accession: {accession!r}")
-    includes = [str(value).strip() for value in include if str(value).strip()] \
-        if include is not None else None
+    includes = (
+        [str(value).strip() for value in include if str(value).strip()]
+        if include is not None
+        else None
+    )
     unknown_includes = sorted(set(includes or ()) - set(INCLUDE_TYPES))
     if unknown_includes:
         raise ValidationError(f"unknown NCBI include type(s): {unknown_includes}")
@@ -1493,46 +1716,54 @@ def reserve_entity_ids(project: Project) -> dict[str, str]:
     allows.
     """
     with _open_writable(project) as db:
-        return {entity_type: db.next_id(entity_type) for entity_type in ENTITY_TYPE_NAMES}
+        return {
+            entity_type: db.next_id(entity_type) for entity_type in ENTITY_TYPE_NAMES
+        }
 
 
 def create_release(
-        project: Project,
-        version: str,
-        profile: str,
-        copy_files: bool = False,
-        link_kind: str = "copy",
+    project: Project,
+    version: str,
+    profile: str,
+    copy_files: bool = False,
+    link_kind: str = "copy",
 ) -> dict[str, Any]:
     """Create an immutable release like ``operon release``; FileExistsError propagates."""
     from operon.release import create_release as _create_release
 
     with _open_writable(project) as db:
         return _create_release(
-            db, project, version, profile, copy_files=copy_files, link_kind=link_kind,
+            db,
+            project,
+            version,
+            profile,
+            copy_files=copy_files,
+            link_kind=link_kind,
         )
 
 
 def export(
-        project: Project,
-        output_dir: str,
-        *,
-        entity_type: str | None = None,
-        entity_ids: list[str] | None = None,
-        file_ids: list[str] | None = None,
-        file_role: str | None = None,
-        fmt: str | None = None,
-        state: str | None = None,
-        decision: str | None = None,
-        profile: str | None = None,
-        link_kind: str = "copy",
-        include_qc: bool = True,
+    project: Project,
+    output_dir: str,
+    *,
+    entity_type: str | None = None,
+    entity_ids: list[str] | None = None,
+    file_ids: list[str] | None = None,
+    file_role: str | None = None,
+    fmt: str | None = None,
+    state: str | None = None,
+    decision: str | None = None,
+    profile: str | None = None,
+    link_kind: str = "copy",
+    include_qc: bool = True,
 ) -> dict[str, Any]:
     """Materialize a selective export like ``operon export``; FileExistsError propagates."""
     from operon.export import export_files
 
     with _open_writable(project) as db:
         return export_files(
-            db, project,
+            db,
+            project,
             output_dir=output_dir,
             entity_type=entity_type,
             entity_ids=entity_ids or (),
@@ -1548,9 +1779,9 @@ def export(
 
 
 def run_coverage(
-        project: Project,
-        reference_set_id: str,
-        release_version: str | None = None,
+    project: Project,
+    reference_set_id: str,
+    release_version: str | None = None,
 ) -> dict[str, Any]:
     """Generate a taxonomy coverage report like ``operon report coverage``.
 
@@ -1561,13 +1792,15 @@ def run_coverage(
     from operon.coverage import report_coverage
 
     with _open_writable(project) as db:
-        return report_coverage(db, project, reference_set_id, release_version=release_version)
+        return report_coverage(
+            db, project, reference_set_id, release_version=release_version
+        )
 
 
 def import_taxonomy(
-        project: Project,
-        source: str,
-        taxonomy_version: str,
+    project: Project,
+    source: str,
+    taxonomy_version: str,
 ) -> dict[str, Any]:
     """Import an NCBI taxonomy package like ``operon taxonomy import``.
 
@@ -1582,9 +1815,9 @@ def import_taxonomy(
 
 
 def compile_reference_set(
-        project: Project,
-        profile_name: str,
-        taxonomy_version: str,
+    project: Project,
+    profile_name: str,
+    taxonomy_version: str,
 ) -> dict[str, Any]:
     """Compile a coverage denominator like ``operon taxonomy compile``.
 
@@ -1600,10 +1833,10 @@ def compile_reference_set(
 
 
 def add_record(
-        project: Project,
-        entity_type: str,
-        fields: dict[str, Any],
-        record_id: str | None = None,
+    project: Project,
+    entity_type: str,
+    fields: dict[str, Any],
+    record_id: str | None = None,
 ) -> dict[str, Any]:
     """Add one metadata record like ``operon add`` (same core, same audit rows)."""
     from operon.schema import add_metadata_record
@@ -1611,11 +1844,16 @@ def add_record(
     if entity_type not in ENTITY_TYPE_NAMES:
         raise ValidationError(
             f"unknown entity type {entity_type!r}; "
-            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}"
+        )
     with _open_writable(project) as db:
         return add_metadata_record(
-            db, project, entity_type, fields,
-            record_id=record_id, actor=resolve_actor(),
+            db,
+            project,
+            entity_type,
+            fields,
+            record_id=record_id,
+            actor=resolve_actor(),
         )
 
 
@@ -1651,18 +1889,19 @@ def table_import_preview(project: Project, table: str, path: str) -> dict[str, A
     db = Database(project.db_path, read_only=True)
     try:
         return preview_table_import(
-            db, Schema.from_file(project.schema_path), table, path)
+            db, Schema.from_file(project.schema_path), table, path
+        )
     finally:
         db.close()
 
 
 def import_table(
-        project: Project,
-        *,
-        table: str,
-        path: str,
-        on_conflict: str | None = None,
-        actor: str | None = None,
+    project: Project,
+    *,
+    table: str,
+    path: str,
+    on_conflict: str | None = None,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Apply a metadata-table import like ``operon import table --yes``.
 
@@ -1691,9 +1930,13 @@ def import_table(
         # the explicit Select choice replaces it.
         if preview["update"] and on_conflict is None:
             raise ValidationError(
-                "existing rows would change; pass --on-conflict error, skip or update")
+                "existing rows would change; pass --on-conflict error, skip or update"
+            )
         result = apply_table_import(
-            db, schema, preview, on_conflict=on_conflict or "error",
+            db,
+            schema,
+            preview,
+            on_conflict=on_conflict or "error",
             actor=actor if actor is not None else resolve_actor(),
         )
     return {**result, "table": table, "source": str(path)}
@@ -1734,16 +1977,16 @@ def import_qc(project: Project, path: str) -> dict[str, Any]:
 
 
 def pipeline_preview(
-        project: Project,
-        *,
-        source: str,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        profile: str | None = None,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
+    project: Project,
+    *,
+    source: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    profile: str | None = None,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """Preview a ``run-pipeline`` run like the CLI's preflight step.
 
@@ -1757,24 +2000,33 @@ def pipeline_preview(
 
     db = Database(project.db_path, read_only=True)
     try:
-        return plan_pipeline(db, project, source=source, entity_type=entity_type,
-                             entity_id=entity_id, role=role, profile=profile,
-                             fmt=fmt, compression=compression, source_url=source_url)
+        return plan_pipeline(
+            db,
+            project,
+            source=source,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            role=role,
+            profile=profile,
+            fmt=fmt,
+            compression=compression,
+            source_url=source_url,
+        )
     finally:
         db.close()
 
 
 def run_pipeline(
-        project: Project,
-        *,
-        source: str,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        profile: str | None = None,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
+    project: Project,
+    *,
+    source: str,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    profile: str | None = None,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """Run the four pipeline stages like ``operon run-pipeline``.
 
@@ -1786,20 +2038,29 @@ def run_pipeline(
     from operon.pipeline import run_pipeline as run_pipeline_core
 
     with _open_writable(project) as db:
-        return run_pipeline_core(db, project, source=source, entity_type=entity_type,
-                                 entity_id=entity_id, role=role, profile=profile,
-                                 fmt=fmt, compression=compression, source_url=source_url)
+        return run_pipeline_core(
+            db,
+            project,
+            source=source,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            role=role,
+            profile=profile,
+            fmt=fmt,
+            compression=compression,
+            source_url=source_url,
+        )
 
 
 def add_accession(
-        project: Project,
-        *,
-        internal_type: str,
-        internal_id: str,
-        namespace: str,
-        accession: str,
-        version: str | None = None,
-        primary: bool = False,
+    project: Project,
+    *,
+    internal_type: str,
+    internal_id: str,
+    namespace: str,
+    accession: str,
+    version: str | None = None,
+    primary: bool = False,
 ) -> dict[str, Any]:
     """Map an accession like ``operon add-accession``; the target must be active."""
     from operon.schema import add_accession_record
@@ -1807,9 +2068,13 @@ def add_accession(
     if internal_type not in ENTITY_TYPE_NAMES:
         raise ValidationError(
             f"unknown entity type {internal_type!r}; "
-            f"choose from {', '.join(ENTITY_TYPE_NAMES)}")
-    for label, value in (("--internal-id", internal_id), ("--namespace", namespace),
-                         ("--accession", accession)):
+            f"choose from {', '.join(ENTITY_TYPE_NAMES)}"
+        )
+    for label, value in (
+        ("--internal-id", internal_id),
+        ("--namespace", namespace),
+        ("--accession", accession),
+    ):
         if not str(value).strip():
             raise ValidationError(f"{label} is required")
     with _open_writable(project) as db:
@@ -1836,7 +2101,8 @@ def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
 
     if entity_type not in ENTITY_PREFIXES:
         raise ValidationError(
-            f"unknown entity type {entity_type!r}; choose from {', '.join(ENTITY_PREFIXES)}")
+            f"unknown entity type {entity_type!r}; choose from {', '.join(ENTITY_PREFIXES)}"
+        )
     with _open_writable(project) as db:
         entity_id = db.next_id(entity_type)
     return {"entity_type": entity_type, "entity_id": entity_id}
@@ -1845,7 +2111,9 @@ def reserve_next_id(project: Project, entity_type: str) -> dict[str, Any]:
 # -- storage and administration (M5) -----------------------------------------
 
 
-def create_backup(project: Project, output: str, scope: str = "control") -> dict[str, Any]:
+def create_backup(
+    project: Project, output: str, scope: str = "control"
+) -> dict[str, Any]:
     """Create a checksum-manifested backup like ``operon backup create``.
 
     The CLI opens this command on a *read-only* session (a backup does not
@@ -1901,12 +2169,20 @@ def check_remotes(project: Project) -> list[dict[str, Any]]:
         try:
             rows.append(check_remote(project, str(row["name"])))
         except Exception as exc:  # noqa: BLE001 - one unreachable remote must not hide the rest
-            rows.append({**row, "status": "error",
-                         "error": f"{type(exc).__name__}: {exc}", "files": ""})
+            rows.append(
+                {
+                    **row,
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "files": "",
+                }
+            )
     return rows
 
 
-def push(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def push(
+    project: Project, remote: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Upload manifest files to a mirror like ``operon push``.
 
     ``file_ids=None`` selects every manifest file (the CLI's default).  The
@@ -1922,7 +2198,9 @@ def push(project: Project, remote: str, file_ids: list[str] | None = None) -> li
         return core_push(db, project, str(remote).strip(), file_ids=file_ids or None)
 
 
-def pull(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def pull(
+    project: Project, remote: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Restore manifest files from a mirror like ``operon pull``.
 
     Like the CLI, ``file_ids=None`` restores every entry in the *remote*
@@ -1941,7 +2219,9 @@ def _open_read_only(project: Project) -> Any:
     return contextlib.closing(Database(project.db_path, read_only=True))
 
 
-def evict_plan(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def evict_plan(
+    project: Project, remote: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Check which selected files may be evicted; writes nothing.
 
     Runs the same per-file remote verification ``operon evict`` performs
@@ -1989,7 +2269,9 @@ def evict_plan(project: Project, remote: str, file_ids: list[str] | None = None)
     return rows
 
 
-def evict(project: Project, remote: str, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def evict(
+    project: Project, remote: str, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Remove verified local bytes like ``operon evict``.
 
     The core re-verifies every file against the mirror inside the run, so the
@@ -2005,8 +2287,14 @@ def evict(project: Project, remote: str, file_ids: list[str] | None = None) -> l
         return evict_local(db, project, str(remote).strip(), file_ids=file_ids or None)
 
 
-def set_state(project: Project, entity_type: str, entity_id: str, state: str,
-              message: str, force: bool = False) -> dict[str, Any]:
+def set_state(
+    project: Project,
+    entity_type: str,
+    entity_id: str,
+    state: str,
+    message: str,
+    force: bool = False,
+) -> dict[str, Any]:
     """Manually set an entity's workflow state, like ``operon set-state``.
 
     The transition is always audited: the core records it in ``changes`` with
@@ -2020,15 +2308,24 @@ def set_state(project: Project, entity_type: str, entity_id: str, state: str,
     from operon.workflow import set_state as core_set_state
 
     if not str(message).strip():
-        raise ValidationError("a message is required: a manual state change is audited with its reason")
+        raise ValidationError(
+            "a message is required: a manual state change is audited with its reason"
+        )
     if not str(state).strip():
         raise ValidationError("a state is required")
     actor = resolve_actor()
     with _open_writable(project) as db:
         db.require_active_entity(entity_type, entity_id)
         previous = db.get_entity_state(entity_type, entity_id)
-        core_set_state(db, entity_type, entity_id, state, message=str(message).strip(),
-                       force=force, actor=actor)
+        core_set_state(
+            db,
+            entity_type,
+            entity_id,
+            state,
+            message=str(message).strip(),
+            force=force,
+            actor=actor,
+        )
         return {
             "entity_type": entity_type,
             "entity_id": entity_id,
@@ -2040,8 +2337,9 @@ def set_state(project: Project, entity_type: str, entity_id: str, state: str,
         }
 
 
-def export_metadata_report(project: Project, output: str | None = None,
-                           include_retired: bool = False) -> dict[str, Any]:
+def export_metadata_report(
+    project: Project, output: str | None = None, include_retired: bool = False
+) -> dict[str, Any]:
     """Write ``operon report metadata``, through the core's own exporter.
 
     Read-only like the CLI's ``report`` group (the session cannot write), so no
@@ -2066,8 +2364,9 @@ def export_metadata_report(project: Project, output: str | None = None,
     }
 
 
-def export_qc_report(project: Project, entity_type: str | None = None,
-                     include_retired: bool = False) -> dict[str, Any]:
+def export_qc_report(
+    project: Project, entity_type: str | None = None, include_retired: bool = False
+) -> dict[str, Any]:
     """Write ``operon report qc --export``, through the core's own exporter.
 
     Read-only like the CLI's ``report`` group (no ``changes`` or
@@ -2079,7 +2378,10 @@ def export_qc_report(project: Project, entity_type: str | None = None,
 
     with _open_read_only(project) as db:
         wide = export_qc_tsv(
-            db, project, entity_type or None, include_retired=include_retired,
+            db,
+            project,
+            entity_type or None,
+            include_retired=include_retired,
         )
     files = []
     for name in ("qc_results.tsv", "qc_results.wide.tsv"):

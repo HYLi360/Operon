@@ -41,7 +41,11 @@ from operon.tui.screens.common import (
 from operon.tui.screens.decisions import DECISION_VALUES
 
 LINK_KIND_OPTIONS = [("copy", "copy"), ("hardlink", "hardlink")]
-EXPORT_LINK_KIND_OPTIONS = [("copy", "copy"), ("hardlink", "hardlink"), ("symlink", "symlink")]
+EXPORT_LINK_KIND_OPTIONS = [
+    ("copy", "copy"),
+    ("hardlink", "hardlink"),
+    ("symlink", "symlink"),
+]
 
 
 def _select_text(widget: Select) -> str:
@@ -52,8 +56,14 @@ def _select_text(widget: Select) -> str:
 class CreateReleaseModal(WriteModal):
     """Confirm + create for ``operon release``."""
 
-    def __init__(self, project: Project, version: str, profile: str,
-                 copy_files: bool, link_kind: str) -> None:
+    def __init__(
+        self,
+        project: Project,
+        version: str,
+        profile: str,
+        copy_files: bool,
+        link_kind: str,
+    ) -> None:
         super().__init__(f"Create release {version}")
         self.project = project
         self.version = version
@@ -70,8 +80,14 @@ class CreateReleaseModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        parts = ["operon", "release", "--version", shlex.quote(self.version),
-                 "--profile", shlex.quote(self.profile)]
+        parts = [
+            "operon",
+            "release",
+            "--version",
+            shlex.quote(self.version),
+            "--profile",
+            shlex.quote(self.profile),
+        ]
         if self.copy_files:
             parts.append("--copy-files")
         elif self.link_kind != "copy":
@@ -79,10 +95,15 @@ class CreateReleaseModal(WriteModal):
         return " ".join(parts)
 
     def confirm(self) -> None:
-        self.run_action(lambda: actions.create_release(
-            self.project, self.version, self.profile,
-            copy_files=self.copy_files, link_kind=self.link_kind,
-        ))
+        self.run_action(
+            lambda: actions.create_release(
+                self.project,
+                self.version,
+                self.profile,
+                copy_files=self.copy_files,
+                link_kind=self.link_kind,
+            )
+        )
 
     def on_action_success(self, payload: Any) -> None:
         self.app.notify(
@@ -95,7 +116,9 @@ class CreateReleaseModal(WriteModal):
 class ExportModal(WriteModal):
     """Confirm + run for ``operon export``."""
 
-    def __init__(self, project: Project, output_dir: str, filters: dict[str, Any]) -> None:
+    def __init__(
+        self, project: Project, output_dir: str, filters: dict[str, Any]
+    ) -> None:
         super().__init__("Export files")
         self.project = project
         self.output_dir = output_dir
@@ -113,9 +136,14 @@ class ExportModal(WriteModal):
     def command_text(self) -> str:
         filters = self.filters
         parts = ["operon", "export", "--output", shlex.quote(self.output_dir)]
-        for key, flag in (("entity_type", "--entity-type"), ("file_role", "--file-role"),
-                          ("fmt", "--format"), ("state", "--state"),
-                          ("decision", "--decision"), ("profile", "--profile")):
+        for key, flag in (
+            ("entity_type", "--entity-type"),
+            ("file_role", "--file-role"),
+            ("fmt", "--format"),
+            ("state", "--state"),
+            ("decision", "--decision"),
+            ("profile", "--profile"),
+        ):
             if filters.get(key):
                 parts += [flag, shlex.quote(str(filters[key]))]
         for entity_id in filters.get("entity_ids") or []:
@@ -129,7 +157,9 @@ class ExportModal(WriteModal):
         return " ".join(parts)
 
     def confirm(self) -> None:
-        self.run_action(lambda: actions.export(self.project, self.output_dir, **self.filters))
+        self.run_action(
+            lambda: actions.export(self.project, self.output_dir, **self.filters)
+        )
 
     def on_action_success(self, payload: Any) -> None:
         self.app.notify(
@@ -156,52 +186,90 @@ class PublishPanel(Panel):
                     yield DataTable(id="releases-table", cursor_type="row")
                     with VerticalScroll(id="release-form"):
                         yield Static("New release", classes="modal-label")
-                        yield Input(placeholder="version (required, e.g. 2026.09)",
-                                    id="release-version")
+                        yield Input(
+                            placeholder="version (required, e.g. 2026.09)",
+                            id="release-version",
+                        )
                         yield Static("Profile", classes="modal-label")
                         yield Select([], id="release-profile", allow_blank=True)
-                        yield Checkbox("Copy files (--copy-files)", value=True,
-                                       id="release-copy-files")
-                        yield Static("Link kind (when not copying)", classes="modal-label")
-                        yield Select(LINK_KIND_OPTIONS, value="copy",
-                                     id="release-link", allow_blank=False)
+                        yield Checkbox(
+                            "Copy files (--copy-files)",
+                            value=True,
+                            id="release-copy-files",
+                        )
+                        yield Static(
+                            "Link kind (when not copying)", classes="modal-label"
+                        )
+                        yield Select(
+                            LINK_KIND_OPTIONS,
+                            value="copy",
+                            id="release-link",
+                            allow_blank=False,
+                        )
                         with Horizontal(classes="config-buttons"):
                             yield Button("Preview", id="release-preview-btn")
-                            yield Button("Create release", id="release-create",
-                                         variant="primary")
-                        yield Static("select a profile and press Preview",
-                                     id="release-preview-summary", classes="modal-info")
+                            yield Button(
+                                "Create release", id="release-create", variant="primary"
+                            )
+                        yield Static(
+                            "select a profile and press Preview",
+                            id="release-preview-summary",
+                            classes="modal-info",
+                        )
                         yield DataTable(id="release-exclusions-table")
                         yield Static("", id="release-error")
             with TabPane("Export", id="tab-export"):
                 with VerticalScroll(id="export-layout"):
-                    yield Static("Selection filters (at least one is required)",
-                                 classes="modal-label")
+                    yield Static(
+                        "Selection filters (at least one is required)",
+                        classes="modal-label",
+                    )
                     with Horizontal(id="export-fields"):
                         with Vertical(classes="export-column"):
                             yield Static("Entity type", classes="modal-label")
-                            yield Select(ENTITY_TYPE_OPTIONS, id="export-entity-type",
-                                         allow_blank=True)
-                            yield Input(placeholder="entity id (comma-separated)",
-                                        id="export-entity-id")
-                            yield Input(placeholder="file id (comma-separated)",
-                                        id="export-file-id")
+                            yield Select(
+                                ENTITY_TYPE_OPTIONS,
+                                id="export-entity-type",
+                                allow_blank=True,
+                            )
+                            yield Input(
+                                placeholder="entity id (comma-separated)",
+                                id="export-entity-id",
+                            )
+                            yield Input(
+                                placeholder="file id (comma-separated)",
+                                id="export-file-id",
+                            )
                             yield Input(placeholder="file role", id="export-file-role")
                             yield Input(placeholder="format", id="export-format")
                             yield Input(placeholder="entity state", id="export-state")
                         with Vertical(classes="export-column"):
-                            yield Static("Decision (requires profile)", classes="modal-label")
-                            yield Select([(value, value) for value in DECISION_VALUES],
-                                         id="export-decision", allow_blank=True)
+                            yield Static(
+                                "Decision (requires profile)", classes="modal-label"
+                            )
+                            yield Select(
+                                [(value, value) for value in DECISION_VALUES],
+                                id="export-decision",
+                                allow_blank=True,
+                            )
                             yield Static("Profile", classes="modal-label")
                             yield Select([], id="export-profile", allow_blank=True)
                             yield Static("Link kind", classes="modal-label")
-                            yield Select(EXPORT_LINK_KIND_OPTIONS, value="copy",
-                                         id="export-link", allow_blank=False)
-                            yield Checkbox("Include qc.tsv metrics snapshot", value=True,
-                                           id="export-include-qc")
-                    yield Input(placeholder="output directory (required; must not exist or be empty)",
-                                id="export-output")
+                            yield Select(
+                                EXPORT_LINK_KIND_OPTIONS,
+                                value="copy",
+                                id="export-link",
+                                allow_blank=False,
+                            )
+                            yield Checkbox(
+                                "Include qc.tsv metrics snapshot",
+                                value=True,
+                                id="export-include-qc",
+                            )
+                    yield Input(
+                        placeholder="output directory (required; must not exist or be empty)",
+                        id="export-output",
+                    )
                     with Horizontal(classes="config-buttons"):
                         yield Button("Preview", id="export-preview-btn")
                         yield Button("Run export", id="export-run", variant="primary")
@@ -249,8 +317,12 @@ class PublishPanel(Panel):
                 select.value = current
 
     def show_error(self, exc: BaseException) -> None:
-        self.query_one("#release-error", Static).update(Text(f"error: {exc}", style="red"))
-        self.query_one("#export-error", Static).update(Text(f"error: {exc}", style="red"))
+        self.query_one("#release-error", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
+        self.query_one("#export-error", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
 
     # -- release tab ----------------------------------------------------------
 
@@ -268,7 +340,8 @@ class PublishPanel(Panel):
         self.query_one("#release-error", Static).update("")
         self.query_one("#release-preview-summary", Static).update("loading preview…")
         self._load_release_preview(
-            profile, self.begin_request(("release", profile)),
+            profile,
+            self.begin_request(("release", profile)),
         )
 
     @work(thread=True, exclusive=True, group="release-preview")
@@ -329,15 +402,20 @@ class PublishPanel(Panel):
             if item.strip()
         ]
         return {
-            "entity_type": _select_text(self.query_one("#export-entity-type", Select)) or None,
+            "entity_type": _select_text(self.query_one("#export-entity-type", Select))
+            or None,
             "entity_ids": entity_ids,
-            "file_ids": [item.strip() for item in
-                         self.query_one("#export-file-id", Input).value.split(",")
-                         if item.strip()],
-            "file_role": self.query_one("#export-file-role", Input).value.strip() or None,
+            "file_ids": [
+                item.strip()
+                for item in self.query_one("#export-file-id", Input).value.split(",")
+                if item.strip()
+            ],
+            "file_role": self.query_one("#export-file-role", Input).value.strip()
+            or None,
             "fmt": self.query_one("#export-format", Input).value.strip() or None,
             "state": self.query_one("#export-state", Input).value.strip() or None,
-            "decision": _select_text(self.query_one("#export-decision", Select)) or None,
+            "decision": _select_text(self.query_one("#export-decision", Select))
+            or None,
             "profile": _select_text(self.query_one("#export-profile", Select)) or None,
             "link_kind": _select_text(self.query_one("#export-link", Select)) or "copy",
             "include_qc": self.query_one("#export-include-qc", Checkbox).value,
@@ -347,8 +425,17 @@ class PublishPanel(Panel):
         self.query_one("#export-error", Static).update(Text(str(message), style="red"))
 
     def _validate_export_filters(self, filters: dict[str, Any]) -> str | None:
-        if not any([filters["entity_type"], filters["entity_ids"], filters.get("file_ids"), filters["file_role"],
-                    filters["fmt"], filters["state"], filters["decision"]]):
+        if not any(
+            [
+                filters["entity_type"],
+                filters["entity_ids"],
+                filters.get("file_ids"),
+                filters["file_role"],
+                filters["fmt"],
+                filters["state"],
+                filters["decision"],
+            ]
+        ):
             return "export requires at least one selection criterion"
         if filters["decision"] and not filters["profile"]:
             return "--decision requires --profile"
@@ -363,7 +450,8 @@ class PublishPanel(Panel):
         self.query_one("#export-error", Static).update("")
         self.query_one("#export-preview-summary", Static).update("loading preview…")
         self._load_export_preview(
-            filters, self.begin_request(("export", tuple(sorted(filters.items())))),
+            filters,
+            self.begin_request(("export", tuple(sorted(filters.items())))),
         )
 
     @work(thread=True, exclusive=True, group="export-preview")
@@ -404,8 +492,12 @@ class PublishPanel(Panel):
             self._show_export_error("output directory is required")
             return
         output_path = Path(output).expanduser()
-        if output_path.exists() and (not output_path.is_dir() or any(output_path.iterdir())):
-            self._show_export_error(f"export output directory is not empty: {output_path}")
+        if output_path.exists() and (
+            not output_path.is_dir() or any(output_path.iterdir())
+        ):
+            self._show_export_error(
+                f"export output directory is not empty: {output_path}"
+            )
             return
         self.query_one("#export-error", Static).update("")
         self.app.push_screen(

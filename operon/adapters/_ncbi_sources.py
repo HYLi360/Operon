@@ -39,13 +39,22 @@ def _local_zip_entry_names(path: Path, limit: int = 200) -> list[str]:
     names: list[str] = []
     offset = 0
     while offset + 30 <= len(data) and len(names) < limit:
-        if data[offset:offset + 4] != b"PK\x03\x04":
+        if data[offset : offset + 4] != b"PK\x03\x04":
             break
         try:
-            (_sig, _version, _flags, _method, _mtime, _mdate,
-             _crc, comp_size, _uncomp_size, name_len, extra_len) = struct.unpack_from(
-                "<IHHHHHIIIHH", data, offset
-            )
+            (
+                _sig,
+                _version,
+                _flags,
+                _method,
+                _mtime,
+                _mdate,
+                _crc,
+                comp_size,
+                _uncomp_size,
+                name_len,
+                extra_len,
+            ) = struct.unpack_from("<IHHHHHIIIHH", data, offset)
         except struct.error:  # pragma: no cover
             break
         start = offset + 30
@@ -64,8 +73,14 @@ def _zip_package_diagnostic(path: Path, accessions: Sequence[str]) -> tuple[bool
     entries = _local_zip_entry_names(path)
     names = [name.lower() for name in entries]
     has_report = any(
-        name.endswith(("assembly_data_report.jsonl", "assembly_data_report.json",
-                       "dataset_report.jsonl", "dataset_report.json"))
+        name.endswith(
+            (
+                "assembly_data_report.jsonl",
+                "assembly_data_report.json",
+                "dataset_report.jsonl",
+                "dataset_report.json",
+            )
+        )
         for name in names
     )
     has_data = any(name.startswith("ncbi_dataset/data/") for name in names)
@@ -87,7 +102,9 @@ def _zip_package_diagnostic(path: Path, accessions: Sequence[str]) -> tuple[bool
     )
 
 
-def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> list[dict[str, Any]]:
+def load_dataset_reports(
+    root: str | Path, direct_file: Path | None = None
+) -> list[dict[str, Any]]:
     root = Path(root)
     if root.is_file() and zipfile.is_zipfile(root):
         reports: list[dict[str, Any]] = []
@@ -99,21 +116,32 @@ def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> l
                 "dataset_report.jsonl",
                 "dataset_report.json",
             }
-            candidates = [info for info in infos if PurePosixPath(info.filename).name in exact_names]
+            candidates = [
+                info
+                for info in infos
+                if PurePosixPath(info.filename).name in exact_names
+            ]
             if not candidates:
                 candidates = [
-                    info for info in infos
+                    info
+                    for info in infos
                     if info.filename.lower().endswith(".jsonl")
-                       and "sequence_report" not in PurePosixPath(info.filename).name
+                    and "sequence_report" not in PurePosixPath(info.filename).name
                 ]
             for info in candidates:
                 with archive.open(info) as raw_handle:
                     text_handle = io.TextIOWrapper(raw_handle, encoding="utf-8-sig")
-                    reports.extend(_read_report_handle(text_handle, f"{root}!/{info.filename}"))
+                    reports.extend(
+                        _read_report_handle(text_handle, f"{root}!/{info.filename}")
+                    )
         return _deduplicate_reports(reports)
 
     candidates: list[Path] = []
-    if direct_file and direct_file.exists() and direct_file.suffix.lower() not in {".zip"}:
+    if (
+        direct_file
+        and direct_file.exists()
+        and direct_file.suffix.lower() not in {".zip"}
+    ):
         candidates.append(direct_file)
     if root.is_file():
         candidates.append(root)
@@ -124,9 +152,17 @@ def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> l
             "dataset_report.jsonl",
             "dataset_report.json",
         }
-        candidates.extend(path for path in root.rglob("*") if path.is_file() and path.name in exact_names)
+        candidates.extend(
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.name in exact_names
+        )
         if not candidates:
-            candidates.extend(path for path in root.rglob("*.jsonl") if "sequence_report" not in path.name)
+            candidates.extend(
+                path
+                for path in root.rglob("*.jsonl")
+                if "sequence_report" not in path.name
+            )
     unique_candidates = list(dict.fromkeys(path.resolve() for path in candidates))
     reports: list[dict[str, Any]] = []
     for path in unique_candidates:
@@ -135,13 +171,14 @@ def load_dataset_reports(root: str | Path, direct_file: Path | None = None) -> l
 
 
 def discover_dataset_assets(
-        root: str | Path,
-        reports: Sequence[dict[str, Any]],
-        source_label: str,
+    root: str | Path,
+    reports: Sequence[dict[str, Any]],
+    source_label: str,
 ) -> list[DatasetAsset]:
     root = Path(root)
     report_accessions = [
-        _extract_metadata(report)["accession"] for report in reports
+        _extract_metadata(report)["accession"]
+        for report in reports
         if _extract_metadata(report)["accession"]
     ]
     if root.is_file() and zipfile.is_zipfile(root):
@@ -159,15 +196,17 @@ def discover_dataset_assets(
                     accession = report_accessions[0]
                 if not accession:
                     continue
-                assets.append(DatasetAsset(
-                    path=None,
-                    accession=accession,
-                    role=role,
-                    source_url=f"ncbi-datasets:{source_label}:{info.filename}",
-                    archive_path=root,
-                    archive_member=info.filename,
-                    size_bytes=info.file_size,
-                ))
+                assets.append(
+                    DatasetAsset(
+                        path=None,
+                        accession=accession,
+                        role=role,
+                        source_url=f"ncbi-datasets:{source_label}:{info.filename}",
+                        archive_path=root,
+                        archive_member=info.filename,
+                        size_bytes=info.file_size,
+                    )
+                )
         return assets
     if not root.is_dir():
         return []
@@ -183,27 +222,37 @@ def discover_dataset_assets(
             accession = report_accessions[0]
         if not accession:
             continue
-        assets.append(DatasetAsset(
-            path=path,
-            accession=accession,
-            role=role,
-            source_url=f"ncbi-datasets:{source_label}:{path.relative_to(root).as_posix()}",
-            size_bytes=path.stat().st_size,
-        ))
+        assets.append(
+            DatasetAsset(
+                path=path,
+                accession=accession,
+                role=role,
+                source_url=f"ncbi-datasets:{source_label}:{path.relative_to(root).as_posix()}",
+                size_bytes=path.stat().st_size,
+            )
+        )
     return assets
 
 
 def _asset_role(path: Path) -> str | None:
     name = path.name.lower()
-    if name in {"assembly_data_report.jsonl", "assembly_data_report.json", "dataset_catalog.json"}:
+    if name in {
+        "assembly_data_report.jsonl",
+        "assembly_data_report.json",
+        "dataset_catalog.json",
+    }:
         return None
     if "sequence_report" in name or "assembly_report" in name:
         return "assembly_report"
     if name.endswith((".gff", ".gff3", ".gff.gz", ".gff3.gz")):
         return "annotation_gff3"
-    if name.endswith((".faa", ".faa.gz")) and ("protein" in name or name == "protein.faa"):
+    if name.endswith((".faa", ".faa.gz")) and (
+        "protein" in name or name == "protein.faa"
+    ):
         return "protein_fasta"
-    if "cds" in name and name.endswith((".fna", ".fa", ".fasta", ".fna.gz", ".fa.gz", ".fasta.gz")):
+    if "cds" in name and name.endswith(
+        (".fna", ".fa", ".fasta", ".fna.gz", ".fa.gz", ".fasta.gz")
+    ):
         return "cds_fasta"
     if name.endswith((".fna", ".fa", ".fasta", ".fna.gz", ".fa.gz", ".fasta.gz")):
         if any(token in name for token in ("rna", "cds", "protein")):
@@ -231,7 +280,9 @@ def _accession_from_path(path: Path) -> str:
     return fallback
 
 
-def _open_source(path: Path, project: Project, preserve: bool, label: str | None = None) -> SourceBundle:
+def _open_source(
+    path: Path, project: Project, preserve: bool, label: str | None = None
+) -> SourceBundle:
     path = path.resolve()
     if not path.exists():
         raise ValidationError(f"NCBI Datasets input does not exist: {path}")
@@ -239,14 +290,20 @@ def _open_source(path: Path, project: Project, preserve: bool, label: str | None
     if preserve and path.is_file():
         preserved = _preserve_source(path, project)
     if path.is_dir():
-        return SourceBundle(source=path, root=path, label=label or str(path), preserved_path=preserved)
+        return SourceBundle(
+            source=path, root=path, label=label or str(path), preserved_path=preserved
+        )
     if zipfile.is_zipfile(path):
         # Validate archive paths eagerly, but deliberately do not extract the
         # package.  Reports and assets are streamed from the ZIP later.
         with zipfile.ZipFile(path) as archive:
             _validated_zip_infos(archive)
-        return SourceBundle(source=path, root=path, label=label or str(path), preserved_path=preserved)
-    return SourceBundle(source=path, root=path, label=label or str(path), preserved_path=preserved)
+        return SourceBundle(
+            source=path, root=path, label=label or str(path), preserved_path=preserved
+        )
+    return SourceBundle(
+        source=path, root=path, label=label or str(path), preserved_path=preserved
+    )
 
 
 def _preserve_source(path: Path, project: Project, *, move: bool = False) -> Path:
@@ -256,7 +313,9 @@ def _preserve_source(path: Path, project: Project, *, move: bool = False) -> Pat
     target = project.raw_root / "metadata" / "ncbi_datasets" / f"{digest}{suffix}"
     if target.exists():
         if sha256_file(target) != digest:
-            raise ConflictError(f"preserved NCBI source {target} has unexpected content")
+            raise ConflictError(
+                f"preserved NCBI source {target} has unexpected content"
+            )
         if move and path != target:
             path.unlink(missing_ok=True)
         return target
@@ -264,7 +323,9 @@ def _preserve_source(path: Path, project: Project, *, move: bool = False) -> Pat
         target.parent.mkdir(parents=True, exist_ok=True)
         os.replace(path, target)
     else:
-        _require_disk_space(target.parent, path.stat().st_size, "preserve NCBI source package")
+        _require_disk_space(
+            target.parent, path.stat().st_size, "preserve NCBI source package"
+        )
         atomic_copy(path, target)
     return target
 
@@ -284,4 +345,6 @@ def _validate_zip_info(info: zipfile.ZipInfo) -> None:
         raise ValidationError(f"unsafe path in NCBI dataset ZIP: {info.filename}")
     mode = info.external_attr >> 16
     if stat.S_ISLNK(mode):
-        raise ValidationError(f"symbolic link is not allowed in NCBI dataset ZIP: {info.filename}")
+        raise ValidationError(
+            f"symbolic link is not allowed in NCBI dataset ZIP: {info.filename}"
+        )

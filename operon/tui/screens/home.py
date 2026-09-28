@@ -98,8 +98,10 @@ class HomePanel(Panel):
         text.append("\n")
 
         text.append("Files\n", style="bold underline")
-        text.append(f"  {summary.get('file_count', 0)} files, "
-                    f"{human_size(summary.get('file_bytes', 0))} total\n\n")
+        text.append(
+            f"  {summary.get('file_count', 0)} files, "
+            f"{human_size(summary.get('file_bytes', 0))} total\n\n"
+        )
 
         text.append("Current decisions\n", style="bold underline")
         decision_counts = summary.get("decision_counts") or {}
@@ -141,14 +143,19 @@ class HomePanel(Panel):
             text.append(styled_status(record.get("status")))
             text.append(f"  run {record['run_id']}  {record.get('step', '-')}\n")
         if (attention.get("failed_run_count") or 0) > len(attention.get("runs") or []):
-            text.append(f"  … and {attention['failed_run_count'] - len(attention.get('runs', []))} "
-                        "more failed/interrupted runs\n", style="dim")
+            text.append(
+                f"  … and {attention['failed_run_count'] - len(attention.get('runs', []))} "
+                "more failed/interrupted runs\n",
+                style="dim",
+            )
         for row in attention.get("decisions") or []:
             items += 1
             effective = row.get("curated_decision") or row.get("decision")
             text.append("  ")
             text.append(styled_decision(effective))
-            text.append(f"  {row['entity_type']} {row['entity_id']}  ({row.get('profile', '-')})\n")
+            text.append(
+                f"  {row['entity_type']} {row['entity_id']}  ({row.get('profile', '-')})\n"
+            )
         for row in attention.get("files") or []:
             items += 1
             text.append("  ", style=None)

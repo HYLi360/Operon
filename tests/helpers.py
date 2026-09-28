@@ -44,14 +44,18 @@ class PytestAssertions:
     """
 
     def setup_method(self) -> None:
-        self._cleanup_callbacks: list[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]] = []
+        self._cleanup_callbacks: list[
+            tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]
+        ] = []
 
     def teardown_method(self) -> None:
         while self._cleanup_callbacks:
             callback, args, kwargs = self._cleanup_callbacks.pop()
             callback(*args, **kwargs)
 
-    def addCleanup(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+    def addCleanup(
+        self, callback: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> None:
         self._cleanup_callbacks.append((callback, args, kwargs))
 
     @staticmethod
@@ -95,7 +99,9 @@ class PytestAssertions:
         assert left <= right, message
 
     @staticmethod
-    def assertAlmostEqual(left: float, right: float, places: int = 7, message: Any = None) -> None:
+    def assertAlmostEqual(
+        left: float, right: float, places: int = 7, message: Any = None
+    ) -> None:
         assert round(abs(left - right), places) == 0, message
 
     @staticmethod
@@ -103,5 +109,7 @@ class PytestAssertions:
         return pytest.raises(exception)
 
     @staticmethod
-    def assertRaisesRegex(exception: type[BaseException], pattern: str) -> AbstractContextManager[Any]:
+    def assertRaisesRegex(
+        exception: type[BaseException], pattern: str
+    ) -> AbstractContextManager[Any]:
         return pytest.raises(exception, match=pattern)

@@ -27,13 +27,26 @@ from operon.workflow import log_run
 FASTA_LINE_WIDTH = 60
 
 EXTRACT_MANIFEST_COLUMNS = [
-    "seqid", "source_file_id", "analysis_name", "subject_id",
-    "region_start", "region_end", "extracted_start", "extracted_end",
-    "length", "evalue", "excluded_reason",
+    "seqid",
+    "source_file_id",
+    "analysis_name",
+    "subject_id",
+    "region_start",
+    "region_end",
+    "extracted_start",
+    "extracted_end",
+    "length",
+    "evalue",
+    "excluded_reason",
 ]
 
 SELECT_MANIFEST_COLUMNS = [
-    "seqid", "selected", "matched_analysis", "best_evalue", "best_subject", "hit_count",
+    "seqid",
+    "selected",
+    "matched_analysis",
+    "best_evalue",
+    "best_subject",
+    "hit_count",
 ]
 
 
@@ -58,7 +71,9 @@ def _extra_fields(extra_json: str | None) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _source_fasta(db: Database, project: Project, file_id: str) -> tuple[dict[str, Any], Path]:
+def _source_fasta(
+    db: Database, project: Project, file_id: str
+) -> tuple[dict[str, Any], Path]:
     row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
     if not row:
         raise ValidationError(f"file {file_id} does not exist in the manifest")
@@ -83,16 +98,20 @@ def _subject_matches(row: dict[str, Any], subject_like: str | None) -> bool:
         return True
     if _like_match(subject_like, row.get("subject_id")):
         return True
-    return _like_match(subject_like, _extra_fields(row.get("extra_json")).get("short_name"))
+    return _like_match(
+        subject_like, _extra_fields(row.get("extra_json")).get("short_name")
+    )
 
 
 def _alignment_rows(
-        db: Database, file_id: str, *,
-        analyses: Iterable[str] = (),
-        evalue_max: float | None = None,
-        min_span: int | None = None,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
+    db: Database,
+    file_id: str,
+    *,
+    analyses: Iterable[str] = (),
+    evalue_max: float | None = None,
+    min_span: int | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
 ) -> list[dict[str, Any]]:
     conditions = ["a.file_id = ?", "j.status = 'completed'"]
     parameters: list[Any] = [file_id]
@@ -132,7 +151,7 @@ def _format_fasta(records: list[tuple[str, str]]) -> str:
     for header, sequence in records:
         lines.append(f">{header}")
         lines.extend(
-            sequence[i:i + FASTA_LINE_WIDTH]
+            sequence[i : i + FASTA_LINE_WIDTH]
             for i in range(0, len(sequence), FASTA_LINE_WIDTH)
         )
     return "\n".join(lines) + "\n"
@@ -141,7 +160,9 @@ def _format_fasta(records: list[tuple[str, str]]) -> str:
 def _format_manifest(columns: list[str], rows: list[dict[str, Any]]) -> str:
     lines = ["\t".join(columns)]
     for row in rows:
-        lines.append("\t".join("" if row.get(c) is None else str(row.get(c)) for c in columns))
+        lines.append(
+            "\t".join("" if row.get(c) is None else str(row.get(c)) for c in columns)
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -193,8 +214,12 @@ class _ExtractContext:
 def _validate_region_source(ctx: _ExtractContext) -> None:
     if (ctx.analysis is None) == (ctx.regions_tsv is None):
         raise ValidationError("exactly one of --analysis or --regions-tsv is required")
-    if ctx.regions_tsv is not None and (ctx.subject_like is not None or ctx.evalue_max is not None):
-        raise ValidationError("--subject-like/--evalue-max only apply to --analysis regions")
+    if ctx.regions_tsv is not None and (
+        ctx.subject_like is not None or ctx.evalue_max is not None
+    ):
+        raise ValidationError(
+            "--subject-like/--evalue-max only apply to --analysis regions"
+        )
 
 
 def _resolve_source_fasta(ctx: _ExtractContext) -> None:
@@ -204,25 +229,29 @@ def _resolve_source_fasta(ctx: _ExtractContext) -> None:
 def _collect_analysis_candidates(ctx: _ExtractContext) -> None:
     candidates: list[dict[str, Any]] = []
     for row in _alignment_rows(
-            ctx.db, ctx.file_id, analyses=[ctx.analysis], evalue_max=ctx.evalue_max):
+        ctx.db, ctx.file_id, analyses=[ctx.analysis], evalue_max=ctx.evalue_max
+    ):
         if not _subject_matches(row, ctx.subject_like):
             continue
-        candidates.append({
-            "seqid": str(row["query_id"]).split()[0],
-            "start": row["query_start"],
-            "end": row["query_end"],
-            "subject_id": row["subject_id"],
-            "evalue": row["evalue"],
-            "analysis_name": row["analysis_name"],
-            "hit_rank": row["hit_rank"],
-        })
+        candidates.append(
+            {
+                "seqid": str(row["query_id"]).split()[0],
+                "start": row["query_start"],
+                "end": row["query_end"],
+                "subject_id": row["subject_id"],
+                "evalue": row["evalue"],
+                "analysis_name": row["analysis_name"],
+                "hit_rank": row["hit_rank"],
+            }
+        )
     ctx.candidates = candidates
 
 
 def _collect_tsv_candidates(ctx: _ExtractContext) -> None:
     candidates: list[dict[str, Any]] = []
     for line_number, row in enumerate(
-            read_tsv(ctx.regions_tsv, required_header=["seqid", "start", "end"]), start=2):
+        read_tsv(ctx.regions_tsv, required_header=["seqid", "start", "end"]), start=2
+    ):
         seqid = str(row.get("seqid") or "").strip()
         if not seqid:
             raise ValidationError(f"{ctx.regions_tsv}: line {line_number}: empty seqid")
@@ -244,15 +273,17 @@ def _collect_tsv_candidates(ctx: _ExtractContext) -> None:
             raise ValidationError(
                 f"{ctx.regions_tsv}: line {line_number}: evalue must be numeric"
             ) from exc
-        candidates.append({
-            "seqid": seqid,
-            "start": start,
-            "end": end,
-            "subject_id": str(row.get("subject") or "").strip() or None,
-            "evalue": evalue,
-            "analysis_name": None,
-            "hit_rank": 0,
-        })
+        candidates.append(
+            {
+                "seqid": seqid,
+                "start": start,
+                "end": end,
+                "subject_id": str(row.get("subject") or "").strip() or None,
+                "evalue": evalue,
+                "analysis_name": None,
+                "hit_rank": 0,
+            }
+        )
     ctx.candidates = candidates
 
 
@@ -286,7 +317,9 @@ def _select_region_candidates(ctx: _ExtractContext) -> None:
         chosen: dict[str, dict[str, Any]] = {}
         for candidate in ctx.usable:
             current = chosen.get(candidate["seqid"])
-            if current is None or _evalue_sort_key(candidate) < _evalue_sort_key(current):
+            if current is None or _evalue_sort_key(candidate) < _evalue_sort_key(
+                current
+            ):
                 chosen[candidate["seqid"]] = candidate
         ctx.selected = sorted(chosen.values(), key=_region_sort_key)
     else:
@@ -327,7 +360,7 @@ def _build_region_records(ctx: _ExtractContext) -> None:
         else:
             extracted_start = max(1, int(candidate["start"]) - ctx.flank)
             extracted_end = min(len(sequence), int(candidate["end"]) + ctx.flank)
-            subsequence = sequence[extracted_start - 1:extracted_end]
+            subsequence = sequence[extracted_start - 1 : extracted_end]
             manifest_row.update(
                 extracted_start=extracted_start,
                 extracted_end=extracted_end,
@@ -336,29 +369,35 @@ def _build_region_records(ctx: _ExtractContext) -> None:
             if ctx.best_only:
                 header = candidate["seqid"]
             else:
-                header = f"{candidate['seqid']}|region:{extracted_start}-{extracted_end}"
+                header = (
+                    f"{candidate['seqid']}|region:{extracted_start}-{extracted_end}"
+                )
             records.append((header, subsequence))
         manifest_rows.append(manifest_row)
     for candidate in ctx.excluded:
-        manifest_rows.append({
-            "seqid": candidate["seqid"],
-            "source_file_id": ctx.file_id,
-            "analysis_name": candidate["analysis_name"],
-            "subject_id": candidate.get("subject_id"),
-            "region_start": candidate["start"],
-            "region_end": candidate["end"],
-            "extracted_start": None,
-            "extracted_end": None,
-            "length": None,
-            "evalue": candidate.get("evalue"),
-            "excluded_reason": candidate["excluded_reason"],
-        })
-    manifest_rows.sort(key=lambda r: (
-        str(r["seqid"]),
-        r["region_start"] if r["region_start"] is not None else -1,
-        r["region_end"] if r["region_end"] is not None else -1,
-        str(r.get("subject_id") or ""),
-    ))
+        manifest_rows.append(
+            {
+                "seqid": candidate["seqid"],
+                "source_file_id": ctx.file_id,
+                "analysis_name": candidate["analysis_name"],
+                "subject_id": candidate.get("subject_id"),
+                "region_start": candidate["start"],
+                "region_end": candidate["end"],
+                "extracted_start": None,
+                "extracted_end": None,
+                "length": None,
+                "evalue": candidate.get("evalue"),
+                "excluded_reason": candidate["excluded_reason"],
+            }
+        )
+    manifest_rows.sort(
+        key=lambda r: (
+            str(r["seqid"]),
+            r["region_start"] if r["region_start"] is not None else -1,
+            r["region_end"] if r["region_end"] is not None else -1,
+            str(r.get("subject_id") or ""),
+        )
+    )
     ctx.records = records
     ctx.manifest_rows = manifest_rows
 
@@ -366,30 +405,40 @@ def _build_region_records(ctx: _ExtractContext) -> None:
 def _log_extraction_run(ctx: _ExtractContext) -> dict[str, Any]:
     extracted_count = sum(1 for row in ctx.manifest_rows if not row["excluded_reason"])
     excluded_count = len(ctx.manifest_rows) - extracted_count
-    log_run(ctx.db, ctx.project, {
-        "entity_type": ctx.record["entity_type"],
-        "entity_id": ctx.record["entity_id"],
-        "step": "extract-domains",
-        "status": "completed",
-        "command": ctx.command,
-        "tool": "operon",
-        "input_sha256": ctx.record["sha256"],
-        "output_sha256": sha256_file(ctx.out),
-        "execution_details": json.dumps({
-            "file_id": ctx.file_id,
-            "analysis": ctx.analysis,
-            "regions_tsv": str(ctx.regions_tsv) if ctx.regions_tsv is not None else None,
-            "flank": ctx.flank,
-            "min_length": ctx.min_length,
-            "mode": "best-only" if ctx.best_only else "all-regions",
-            "subject_like": ctx.subject_like,
-            "evalue_max": ctx.evalue_max,
-            "extracted": extracted_count,
-            "excluded": excluded_count,
-            "output": str(ctx.out),
-            "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
-        }, ensure_ascii=False, sort_keys=True),
-    })
+    log_run(
+        ctx.db,
+        ctx.project,
+        {
+            "entity_type": ctx.record["entity_type"],
+            "entity_id": ctx.record["entity_id"],
+            "step": "extract-domains",
+            "status": "completed",
+            "command": ctx.command,
+            "tool": "operon",
+            "input_sha256": ctx.record["sha256"],
+            "output_sha256": sha256_file(ctx.out),
+            "execution_details": json.dumps(
+                {
+                    "file_id": ctx.file_id,
+                    "analysis": ctx.analysis,
+                    "regions_tsv": str(ctx.regions_tsv)
+                    if ctx.regions_tsv is not None
+                    else None,
+                    "flank": ctx.flank,
+                    "min_length": ctx.min_length,
+                    "mode": "best-only" if ctx.best_only else "all-regions",
+                    "subject_like": ctx.subject_like,
+                    "evalue_max": ctx.evalue_max,
+                    "extracted": extracted_count,
+                    "excluded": excluded_count,
+                    "output": str(ctx.out),
+                    "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        },
+    )
     return {
         "extracted": extracted_count,
         "excluded": excluded_count,
@@ -399,25 +448,36 @@ def _log_extraction_run(ctx: _ExtractContext) -> dict[str, Any]:
 
 
 def extract_domains(
-        db: Database, project: Project, *,
-        file_id: str,
-        out: str | Path,
-        command: str,
-        analysis: str | None = None,
-        regions_tsv: str | Path | None = None,
-        flank: int = 5,
-        min_length: int = 30,
-        best_only: bool = True,
-        subject_like: str | None = None,
-        evalue_max: float | None = None,
-        manifest: str | Path | None = None,
+    db: Database,
+    project: Project,
+    *,
+    file_id: str,
+    out: str | Path,
+    command: str,
+    analysis: str | None = None,
+    regions_tsv: str | Path | None = None,
+    flank: int = 5,
+    min_length: int = 30,
+    best_only: bool = True,
+    subject_like: str | None = None,
+    evalue_max: float | None = None,
+    manifest: str | Path | None = None,
 ) -> dict[str, Any]:
     """Extract flanked query regions from a manifest FASTA as a new FASTA."""
     ctx = _ExtractContext(
-        db=db, project=project, file_id=file_id, out=out, command=command,
-        analysis=analysis, regions_tsv=regions_tsv, flank=flank,
-        min_length=min_length, best_only=best_only, subject_like=subject_like,
-        evalue_max=evalue_max, manifest=manifest,
+        db=db,
+        project=project,
+        file_id=file_id,
+        out=out,
+        command=command,
+        analysis=analysis,
+        regions_tsv=regions_tsv,
+        flank=flank,
+        min_length=min_length,
+        best_only=best_only,
+        subject_like=subject_like,
+        evalue_max=evalue_max,
+        manifest=manifest,
     )
     _validate_region_source(ctx)
     _resolve_source_fasta(ctx)
@@ -431,29 +491,38 @@ def extract_domains(
     _build_region_records(ctx)
     atomic_write_text(ctx.out, _format_fasta(ctx.records))
     if ctx.manifest is not None:
-        atomic_write_text(ctx.manifest, _format_manifest(EXTRACT_MANIFEST_COLUMNS, ctx.manifest_rows))
+        atomic_write_text(
+            ctx.manifest, _format_manifest(EXTRACT_MANIFEST_COLUMNS, ctx.manifest_rows)
+        )
     return _log_extraction_run(ctx)
 
 
 def select_sequences(
-        db: Database, project: Project, *,
-        file_id: str,
-        out: str | Path,
-        command: str,
-        analyses: Iterable[str] = (),
-        subject_like: str | None = None,
-        evalue_max: float | None = None,
-        min_span: int | None = None,
-        hit_type: str | None = None,
-        require_hit: bool = True,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        manifest: str | Path | None = None,
+    db: Database,
+    project: Project,
+    *,
+    file_id: str,
+    out: str | Path,
+    command: str,
+    analyses: Iterable[str] = (),
+    subject_like: str | None = None,
+    evalue_max: float | None = None,
+    min_span: int | None = None,
+    hit_type: str | None = None,
+    require_hit: bool = True,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    manifest: str | Path | None = None,
 ) -> dict[str, Any]:
     """Write the subset of a manifest FASTA with (or without) matching hits."""
     analyses = list(analyses)
-    if not analyses and subject_like is None and evalue_max is None \
-            and min_span is None and hit_type is None:
+    if (
+        not analyses
+        and subject_like is None
+        and evalue_max is None
+        and min_span is None
+        and hit_type is None
+    ):
         raise ValidationError(
             "no hit criteria given; pass at least one of --analysis, --subject-like, "
             "--evalue-max, --min-span or --hit-type"
@@ -461,27 +530,37 @@ def select_sequences(
     record, path = _source_fasta(db, project, file_id)
 
     rows = _alignment_rows(
-        db, file_id,
-        analyses=analyses, evalue_max=evalue_max, min_span=min_span,
-        entity_type=entity_type, entity_id=entity_id,
+        db,
+        file_id,
+        analyses=analyses,
+        evalue_max=evalue_max,
+        min_span=min_span,
+        entity_type=entity_type,
+        entity_id=entity_id,
     )
     matched: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not _subject_matches(row, subject_like):
             continue
-        if hit_type is not None \
-                and _extra_fields(row.get("extra_json")).get("hit_type") != hit_type:
+        if (
+            hit_type is not None
+            and _extra_fields(row.get("extra_json")).get("hit_type") != hit_type
+        ):
             continue
         seqid = str(row["query_id"]).split()[0]
         entry = matched.setdefault(seqid, {"hits": 0, "best": None, "analyses": set()})
         entry["hits"] += 1
         entry["analyses"].add(row["analysis_name"])
-        if entry["best"] is None or _evalue_sort_key(row) < _evalue_sort_key(entry["best"]):
+        if entry["best"] is None or _evalue_sort_key(row) < _evalue_sort_key(
+            entry["best"]
+        ):
             entry["best"] = row
 
     universe = [
-        str(row["seqid"]) for row in db.conn.execute(
-            "SELECT seqid FROM sequences WHERE file_id=? ORDER BY seqid", (file_id,),
+        str(row["seqid"])
+        for row in db.conn.execute(
+            "SELECT seqid FROM sequences WHERE file_id=? ORDER BY seqid",
+            (file_id,),
         ).fetchall()
     ]
     if not universe:
@@ -507,16 +586,22 @@ def select_sequences(
     for seqid in sorted(universe_set):
         entry = matched.get(seqid)
         best = entry["best"] if entry else None
-        manifest_rows.append({
-            "seqid": seqid,
-            "selected": 1 if seqid in selected_set else 0,
-            "matched_analysis": ",".join(sorted(entry["analyses"])) if entry else None,
-            "best_evalue": best["evalue"] if best else None,
-            "best_subject": best["subject_id"] if best else None,
-            "hit_count": entry["hits"] if entry else 0,
-        })
+        manifest_rows.append(
+            {
+                "seqid": seqid,
+                "selected": 1 if seqid in selected_set else 0,
+                "matched_analysis": ",".join(sorted(entry["analyses"]))
+                if entry
+                else None,
+                "best_evalue": best["evalue"] if best else None,
+                "best_subject": best["subject_id"] if best else None,
+                "hit_count": entry["hits"] if entry else 0,
+            }
+        )
     if manifest is not None:
-        atomic_write_text(manifest, _format_manifest(SELECT_MANIFEST_COLUMNS, manifest_rows))
+        atomic_write_text(
+            manifest, _format_manifest(SELECT_MANIFEST_COLUMNS, manifest_rows)
+        )
 
     stats = {
         "total": len(universe_set),
@@ -524,30 +609,38 @@ def select_sequences(
         "excluded": len(universe_set) - len(selected_set),
         "matched_not_in_fasta": len(set(matched) - universe_set),
     }
-    log_run(db, project, {
-        "entity_type": record["entity_type"],
-        "entity_id": record["entity_id"],
-        "step": "select-sequences",
-        "status": "completed",
-        "command": command,
-        "tool": "operon",
-        "input_sha256": record["sha256"],
-        "output_sha256": sha256_file(out),
-        "execution_details": json.dumps({
-            "file_id": file_id,
-            "analyses": analyses,
-            "subject_like": subject_like,
-            "evalue_max": evalue_max,
-            "min_span": min_span,
-            "hit_type": hit_type,
-            "mode": "require-hit" if require_hit else "require-no-hit",
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "output": str(out),
-            "manifest": str(manifest) if manifest is not None else None,
-            **stats,
-        }, ensure_ascii=False, sort_keys=True),
-    })
+    log_run(
+        db,
+        project,
+        {
+            "entity_type": record["entity_type"],
+            "entity_id": record["entity_id"],
+            "step": "select-sequences",
+            "status": "completed",
+            "command": command,
+            "tool": "operon",
+            "input_sha256": record["sha256"],
+            "output_sha256": sha256_file(out),
+            "execution_details": json.dumps(
+                {
+                    "file_id": file_id,
+                    "analyses": analyses,
+                    "subject_like": subject_like,
+                    "evalue_max": evalue_max,
+                    "min_span": min_span,
+                    "hit_type": hit_type,
+                    "mode": "require-hit" if require_hit else "require-no-hit",
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "output": str(out),
+                    "manifest": str(manifest) if manifest is not None else None,
+                    **stats,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        },
+    )
     return {
         "total": stats["total"],
         "selected": stats["selected"],

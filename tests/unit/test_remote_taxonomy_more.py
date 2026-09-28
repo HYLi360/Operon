@@ -55,6 +55,7 @@ from tests.unit.test_timetree import (
 # shared fixtures
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture
 def project_db(tmp_path):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
@@ -70,9 +71,13 @@ def _configure_remote(project, root: Path, name: str = "mirror") -> None:
     """Persist one SFTP remote so both the live project and CLI reloads see it."""
     config = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     config.setdefault("remotes", {})[name] = {
-        "type": "sftp", "host": "fake", "root": str(root),
+        "type": "sftp",
+        "host": "fake",
+        "root": str(root),
     }
-    project.config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    project.config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
     project.config["remotes"] = config["remotes"]
 
 
@@ -80,29 +85,53 @@ def _configure_remote(project, root: Path, name: str = "mirror") -> None:
 def remote_env(tmp_path, monkeypatch):
     root = tmp_path / "project"
     root.mkdir()
-    assert main([
-        "--project", str(root), "init", str(root), "--project-id", "PRJ_T6_001",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(root),
+                "init",
+                str(root),
+                "--project-id",
+                "PRJ_T6_001",
+            ]
+        )
+        == 0
+    )
     project = load_project(root)
     db = Database(project.db_path)
     remote_dir = tmp_path / "remote"
     remote_dir.mkdir()
     _configure_remote(project, remote_dir)
     monkeypatch.setattr(remotes, "connect_ssh", lambda *a, **k: FakeSSHClient())
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Testus",
+            "taxonomy_source": "NCBI",
+        },
+    )
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_level": "contig", "assembly_version": 1,
-    })
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_level": "contig",
+            "assembly_version": 1,
+        },
+    )
     source = root / "asm.fa"
     source.write_text(">ctg1\n" + "ACGT" * 250 + "\n", encoding="utf-8")
     record = ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
     try:
         yield SimpleNamespace(
-            project=project, db=db, root=root, remote_dir=remote_dir, record=record,
+            project=project,
+            db=db,
+            root=root,
+            remote_dir=remote_dir,
+            record=record,
         )
     finally:
         db.close()
@@ -117,8 +146,14 @@ def _add_directory_artifact(env, directory_name: str = "tree") -> dict:
     (source / "sub").mkdir(parents=True)
     (source / "sub" / "x.txt").write_text("directory bytes", encoding="utf-8")
     return ingest_file(
-        env.db, env.project, source, "assembly", "ASM_000001", "other",
-        fmt="directory", compression="none",
+        env.db,
+        env.project,
+        source,
+        "assembly",
+        "ASM_000001",
+        "other",
+        fmt="directory",
+        compression="none",
     )
 
 
@@ -170,6 +205,7 @@ class _TruncatingGetSFTP(FakeSFTP):
 # remotes: configuration, connection, and path guards
 # --------------------------------------------------------------------------
 
+
 def test_import_paramiko_reports_a_missing_dependency(monkeypatch):
     import sys
 
@@ -198,6 +234,7 @@ def test_remote_path_rejects_an_empty_spec_root():
 # remotes: hashing, remote trees, and store primitives
 # --------------------------------------------------------------------------
 
+
 def test_remote_sha256_falls_back_to_streaming_on_a_non_digest_reply(remote_env):
     env = remote_env
     rel = env.record["relative_path"]
@@ -215,7 +252,9 @@ def test_remote_sha256_falls_back_to_streaming_on_a_non_digest_reply(remote_env)
     client.exec_command = non_digest_reply
     with SFTPStore(get_remote(env.project, "mirror"), client=client) as store:
         digest = remote_sha256(
-            client, store.remote_path(rel), sftp=store.sftp,
+            client,
+            store.remote_path(rel),
+            sftp=store.sftp,
         )
     assert digest == env.record["sha256"]
     assert digest == hashlib.sha256(remote.read_bytes()).hexdigest()
@@ -283,7 +322,10 @@ def test_get_rejects_an_unsupported_remote_directory_entry(remote_env):
 # remotes: manifest lock lifecycle
 # --------------------------------------------------------------------------
 
-def test_manifest_lock_waits_for_a_concurrent_writer_to_release(remote_env, monkeypatch):
+
+def test_manifest_lock_waits_for_a_concurrent_writer_to_release(
+    remote_env, monkeypatch
+):
     env = remote_env
     store = _store(env.project)
     lock = env.remote_dir / REMOTE_MANIFEST_LOCK_NAME
@@ -320,6 +362,7 @@ def test_manifest_lock_is_released_when_the_owner_marker_cannot_be_written(remot
 # remotes: push/pull failure handling and audit rows
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.bug("ODR-4")
 def test_push_reports_an_upload_that_lands_wrong_bytes(remote_env, monkeypatch):
     env = remote_env
@@ -336,7 +379,10 @@ def test_push_reports_an_upload_that_lands_wrong_bytes(remote_env, monkeypatch):
     assert _store(env.project).read_manifest()["files"] == {}
     assert not (env.remote_dir / rel).exists()
     assert not list(env.remote_dir.glob("*.operon-tmp-*"))
-    assert env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"] == 0
+    assert (
+        env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"]
+        == 0
+    )
     run = env.db.conn.execute(
         "SELECT status, error FROM workflow_runs WHERE step='push:mirror'"
     ).fetchone()
@@ -348,19 +394,30 @@ def test_push_reports_manifest_publication_failure(remote_env, monkeypatch):
     notes = env.root / "notes.txt"
     notes.write_text("notes\n", encoding="utf-8")
     other = ingest_file(
-        env.db, env.project, notes, "assembly", "ASM_000001", "other",
-        fmt="txt", compression="none",
+        env.db,
+        env.project,
+        notes,
+        "assembly",
+        "ASM_000001",
+        "other",
+        fmt="txt",
+        compression="none",
     )
     # One artifact fails its own identity check; the other uploads cleanly and
     # then loses the single manifest batch that would have published it.
-    (env.root / env.record["relative_path"]).write_text("tampered local bytes", encoding="utf-8")
+    (env.root / env.record["relative_path"]).write_text(
+        "tampered local bytes", encoding="utf-8"
+    )
 
     def refuse_manifest(self, doc):
         raise RemoteError("remote rejected the manifest")
 
     monkeypatch.setattr(SFTPStore, "write_manifest", refuse_manifest)
     results = push(
-        env.db, env.project, "mirror", [env.record["file_id"], other["file_id"]],
+        env.db,
+        env.project,
+        "mirror",
+        [env.record["file_id"], other["file_id"]],
     )
     assert [result["status"] for result in results] == ["error", "error"]
     assert "ConflictError" in results[0]["error"]
@@ -368,7 +425,10 @@ def test_push_reports_manifest_publication_failure(remote_env, monkeypatch):
     assert (env.remote_dir / other["relative_path"]).read_bytes() == notes.read_bytes()
     assert not (env.remote_dir / env.record["relative_path"]).exists()
     assert not (env.remote_dir / REMOTE_MANIFEST_NAME).exists()
-    assert env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"] == 0
+    assert (
+        env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"]
+        == 0
+    )
     runs = env.db.conn.execute(
         "SELECT error FROM workflow_runs WHERE step='push:mirror' AND status='failed'"
     ).fetchall()
@@ -390,7 +450,9 @@ def test_pull_removes_the_partial_file_when_verification_fails(remote_env, monke
     assert results[0]["status"] == "error"
     assert "download verification failed" in results[0]["error"]
     assert not local.exists()
-    leftovers = [p.name for p in local.parent.iterdir() if p.name.startswith(f".{local.name}.")]
+    leftovers = [
+        p.name for p in local.parent.iterdir() if p.name.startswith(f".{local.name}.")
+    ]
     assert leftovers == []
     run = env.db.conn.execute(
         "SELECT status FROM workflow_runs WHERE step='pull:mirror'"
@@ -398,7 +460,9 @@ def test_pull_removes_the_partial_file_when_verification_fails(remote_env, monke
     assert run["status"] == "failed"
 
 
-def test_pull_removes_the_partial_directory_when_verification_fails(remote_env, monkeypatch):
+def test_pull_removes_the_partial_directory_when_verification_fails(
+    remote_env, monkeypatch
+):
     env = remote_env
     row = _add_directory_artifact(env)
     push(env.db, env.project, "mirror", [row["file_id"]])
@@ -412,7 +476,9 @@ def test_pull_removes_the_partial_directory_when_verification_fails(remote_env, 
     assert results[0]["status"] == "error"
     assert "download verification failed" in results[0]["error"]
     assert not local.exists()
-    leftovers = [p.name for p in local.parent.iterdir() if p.name.startswith(f".{local.name}.")]
+    leftovers = [
+        p.name for p in local.parent.iterdir() if p.name.startswith(f".{local.name}.")
+    ]
     assert leftovers == []
 
 
@@ -422,12 +488,18 @@ def test_pull_leaves_a_standardized_status_untouched(remote_env):
     local = env.root / env.record["relative_path"]
     local.unlink()
     env.db.set_file_status(
-        env.record["file_id"], "STANDARDIZED", reason="test setup", actor="test",
+        env.record["file_id"],
+        "STANDARDIZED",
+        reason="test setup",
+        actor="test",
     )
 
     results = pull(env.db, env.project, "mirror", [env.record["file_id"]])
     assert results[0]["status"] == "downloaded"
-    assert local.read_bytes() == (env.remote_dir / env.record["relative_path"]).read_bytes()
+    assert (
+        local.read_bytes()
+        == (env.remote_dir / env.record["relative_path"]).read_bytes()
+    )
     status = env.db.conn.execute(
         "SELECT status FROM files WHERE file_id=?", (env.record["file_id"],)
     ).fetchone()["status"]
@@ -449,6 +521,7 @@ def test_pull_leaves_a_standardized_status_untouched(remote_env):
 # remotes: verification without a database, eviction, and connectivity
 # --------------------------------------------------------------------------
 
+
 def test_verify_remote_record_without_a_database_writes_no_location_rows(remote_env):
     env = remote_env
     rel = env.record["relative_path"]
@@ -457,24 +530,45 @@ def test_verify_remote_record_without_a_database_writes_no_location_rows(remote_
     remote.parent.mkdir(parents=True, exist_ok=True)
     remote.write_bytes(local.read_bytes())
     store = _store(env.project)
-    store.write_manifest({"files": {rel: {
-        "file_id": env.record["file_id"], "relative_path": rel,
-        "sha256": env.record["sha256"], "size_bytes": env.record["size_bytes"],
-        "kind": "file",
-    }}})
+    store.write_manifest(
+        {
+            "files": {
+                rel: {
+                    "file_id": env.record["file_id"],
+                    "relative_path": rel,
+                    "sha256": env.record["sha256"],
+                    "size_bytes": env.record["size_bytes"],
+                    "kind": "file",
+                }
+            }
+        }
+    )
 
     assert verify_remote_record(
-        env.project, "mirror", env.record, db=None, store=store,
+        env.project,
+        "mirror",
+        env.record,
+        db=None,
+        store=store,
     ) == store.remote_path(rel)
 
     divergent_entry = {
-        "file_id": env.record["file_id"], "relative_path": rel,
-        "sha256": "b" * 64, "size_bytes": env.record["size_bytes"],
+        "file_id": env.record["file_id"],
+        "relative_path": rel,
+        "sha256": "b" * 64,
+        "size_bytes": env.record["size_bytes"],
     }
     with pytest.raises(ConflictError, match="does not match local manifest"):
         verify_remote_record(
-            env.project, "mirror", env.record, db=None, store=store,
-            manifest={"project_id": env.project.project_id, "files": {rel: divergent_entry}},
+            env.project,
+            "mirror",
+            env.record,
+            db=None,
+            store=store,
+            manifest={
+                "project_id": env.project.project_id,
+                "files": {rel: divergent_entry},
+            },
         )
 
     remote.write_bytes(b"X" * local.stat().st_size)
@@ -483,11 +577,18 @@ def test_verify_remote_record_without_a_database_writes_no_location_rows(remote_
 
     with pytest.raises(RemoteError, match="no manifest entry"):
         verify_remote_record(
-            env.project, "mirror", env.record, db=None, store=store,
+            env.project,
+            "mirror",
+            env.record,
+            db=None,
+            store=store,
             manifest={"files": {}},
         )
 
-    assert env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"] == 0
+    assert (
+        env.db.conn.execute("SELECT COUNT(*) AS n FROM file_locations").fetchone()["n"]
+        == 0
+    )
 
 
 def test_evict_removes_a_directory_artifact_and_points_at_the_remote(remote_env):
@@ -509,7 +610,9 @@ def test_evict_removes_a_directory_artifact_and_points_at_the_remote(remote_env)
     assert status == "REMOTE_ONLY"
 
 
-def test_evict_reports_a_failed_local_removal_and_withdraws_the_pointer(remote_env, monkeypatch):
+def test_evict_reports_a_failed_local_removal_and_withdraws_the_pointer(
+    remote_env, monkeypatch
+):
     env = remote_env
     row = _add_directory_artifact(env)
     push(env.db, env.project, "mirror", [row["file_id"]])
@@ -547,7 +650,9 @@ def test_evict_reports_a_metadata_schema_it_cannot_upgrade(remote_env):
     assert results[0]["status"] == "error"
     assert "cannot upgrade project files status schema" in results[0]["error"]
     assert (env.root / env.record["relative_path"]).exists()
-    placeholder = env.root / ".operon" / "placeholders" / f"{env.record['file_id']}.json"
+    placeholder = (
+        env.root / ".operon" / "placeholders" / f"{env.record['file_id']}.json"
+    )
     assert not placeholder.exists()
     location = env.db.conn.execute(
         "SELECT status FROM file_locations WHERE file_id=? AND location_name='mirror'",
@@ -579,6 +684,7 @@ def test_check_remote_reports_an_unreachable_root_and_cli_exits_one(remote_env, 
 # taxonomy: archive members, scalars, and taxdump import edges
 # --------------------------------------------------------------------------
 
+
 def _tar(path: Path, files: dict[str, str]) -> Path:
     with tarfile.open(path, "w:gz") as archive:
         for name, text in files.items():
@@ -591,7 +697,8 @@ def _tar(path: Path, files: dict[str, str]) -> Path:
 
 def _jsonl(path: Path, records: list[dict]) -> Path:
     path.write_text(
-        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8",
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
     )
     return path
 
@@ -646,12 +753,17 @@ def test_taxdump_import_requires_both_nodes_and_names(project_db, tmp_path):
         taxonomy._import_taxdump(db, "TAX_000001", package)
 
 
-def test_taxdump_with_synonym_only_names_reports_a_missing_scientific_name(project_db, tmp_path):
+def test_taxdump_with_synonym_only_names_reports_a_missing_scientific_name(
+    project_db, tmp_path
+):
     project, db = project_db
-    package = _tar(tmp_path / "synonyms.tar.gz", {
-        "nodes.dmp": "1 | 1 | no rank |\n",
-        "names.dmp": "1 | all | | synonym |\n",
-    })
+    package = _tar(
+        tmp_path / "synonyms.tar.gz",
+        {
+            "nodes.dmp": "1 | 1 | no rank |\n",
+            "names.dmp": "1 | all | | synonym |\n",
+        },
+    )
     with pytest.raises(ValidationError, match="has no scientific name for TaxID 1"):
         taxonomy.import_ncbi_taxonomy(db, project, package, "synonyms-1")
     assert db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"] == 0
@@ -659,25 +771,32 @@ def test_taxdump_with_synonym_only_names_reports_a_missing_scientific_name(proje
 
 def test_taxdump_with_empty_alias_files_imports_without_aliases(project_db, tmp_path):
     project, db = project_db
-    package = _tar(tmp_path / "no-aliases.tar.gz", {
-        "nodes.dmp": "1 | 1 | no rank |\n2 | 1 | genus |\n",
-        "names.dmp": (
-            "1 | root | | scientific name |\n2 | Genus | | scientific name |\n"
-        ),
-        "merged.dmp": "",
-        "delnodes.dmp": "",
-    })
+    package = _tar(
+        tmp_path / "no-aliases.tar.gz",
+        {
+            "nodes.dmp": "1 | 1 | no rank |\n2 | 1 | genus |\n",
+            "names.dmp": (
+                "1 | root | | scientific name |\n2 | Genus | | scientific name |\n"
+            ),
+            "merged.dmp": "",
+            "delnodes.dmp": "",
+        },
+    )
     result = taxonomy.import_ncbi_taxonomy(db, project, package, "no-aliases-1")
     assert result["node_count"] == 2
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM taxonomy_aliases WHERE taxonomy_snapshot_id=?",
-        (result["taxonomy_snapshot_id"],),
-    )[0]["n"] == 0
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM taxonomy_aliases WHERE taxonomy_snapshot_id=?",
+            (result["taxonomy_snapshot_id"],),
+        )[0]["n"]
+        == 0
+    )
 
 
 # --------------------------------------------------------------------------
 # taxonomy: snapshot import identity and failures
 # --------------------------------------------------------------------------
+
 
 def test_import_rejects_a_directory_source(project_db, tmp_path):
     project, db = project_db
@@ -697,7 +816,8 @@ def test_import_rejects_changed_bytes_for_an_existing_version(project_db, tmp_pa
 
 
 def test_import_of_identical_bytes_under_a_new_version_reuses_the_preserved_copy(
-        project_db, tmp_path):
+    project_db, tmp_path
+):
     project, db = project_db
     source = _jsonl(tmp_path / "taxonomy.jsonl", _TAXONOMY_RECORDS)
     first = taxonomy.import_ncbi_taxonomy(db, project, source, "v1")
@@ -739,22 +859,31 @@ def test_import_flushes_an_exact_batch_boundary_without_leftovers(project_db, tm
     result = taxonomy.import_ncbi_taxonomy(db, project, source, "boundary-1")
     assert result["node_count"] == 5000
     snapshot_id = result["taxonomy_snapshot_id"]
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM taxonomy_nodes WHERE taxonomy_snapshot_id=?",
-        (snapshot_id,),
-    )[0]["n"] == 5000
-    assert db.query(
-        "SELECT scientific_name FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid=5000",
-        (snapshot_id,),
-    )[0]["scientific_name"] == "Genus 5000"
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM taxonomy_nodes WHERE taxonomy_snapshot_id=?",
+            (snapshot_id,),
+        )[0]["n"]
+        == 5000
+    )
+    assert (
+        db.query(
+            "SELECT scientific_name FROM taxonomy_nodes WHERE taxonomy_snapshot_id=? AND taxid=5000",
+            (snapshot_id,),
+        )[0]["scientific_name"]
+        == "Genus 5000"
+    )
 
 
 def test_import_failure_survives_broken_run_logging(project_db, tmp_path, monkeypatch):
     project, db = project_db
-    source = _jsonl(tmp_path / "orphan.jsonl", [
-        {"taxId": 1, "parentTaxId": 1, "rank": "no rank", "taxName": "root"},
-        {"taxId": 2, "parentTaxId": 99, "rank": "genus", "taxName": "orphan"},
-    ])
+    source = _jsonl(
+        tmp_path / "orphan.jsonl",
+        [
+            {"taxId": 1, "parentTaxId": 1, "rank": "no rank", "taxName": "root"},
+            {"taxId": 2, "parentTaxId": 99, "rank": "genus", "taxName": "orphan"},
+        ],
+    )
 
     def broken_log_run(*_args, **_kwargs):
         raise RuntimeError("audit database unavailable")
@@ -763,12 +892,18 @@ def test_import_failure_survives_broken_run_logging(project_db, tmp_path, monkey
     with pytest.raises(ValidationError, match="refers to missing parent"):
         taxonomy.import_ncbi_taxonomy(db, project, source, "logfail-1")
     assert db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"] == 0
-    assert db.query("SELECT COUNT(*) AS n FROM files WHERE entity_type='taxonomy_snapshot'")[0]["n"] == 0
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM files WHERE entity_type='taxonomy_snapshot'"
+        )[0]["n"]
+        == 0
+    )
 
 
 # --------------------------------------------------------------------------
 # taxonomy: reference-set compilation, provenance, and listings
 # --------------------------------------------------------------------------
+
 
 def _write_profile(project, name: str, **overrides) -> dict:
     profile = {
@@ -785,7 +920,8 @@ def _write_profile(project, name: str, **overrides) -> dict:
     }
     profile.update(overrides)
     (project.profiles_dir / f"{name}.yaml").write_text(
-        yaml.safe_dump(profile, sort_keys=False), encoding="utf-8",
+        yaml.safe_dump(profile, sort_keys=False),
+        encoding="utf-8",
     )
     return profile
 
@@ -828,9 +964,12 @@ def test_compile_reference_set_freezes_bytes_and_reuses_them(project_db, tmp_pat
     assert second["reused"] is True
     assert second["tsv_sha256"] == first["tsv_sha256"]
     assert db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"] == 1
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM changes WHERE object_type='taxonomy_reference_set'"
-    )[0]["n"] == 1
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM changes WHERE object_type='taxonomy_reference_set'"
+        )[0]["n"]
+        == 1
+    )
     runs = db.query("SELECT status FROM workflow_runs WHERE step='taxonomy_compile'")
     assert [row["status"] for row in runs] == ["completed"]
 
@@ -843,7 +982,9 @@ def test_compile_reference_set_freezes_bytes_and_reuses_them(project_db, tmp_pat
     assert reference_sets[0]["tsv_sha256"] == first["tsv_sha256"]
 
 
-def test_compile_reference_set_rejects_tampered_provenance_and_bytes(project_db, tmp_path):
+def test_compile_reference_set_rejects_tampered_provenance_and_bytes(
+    project_db, tmp_path
+):
     project, db = project_db
     first = _compiled_reference_set(project, db, tmp_path)
     tsv = Path(first["path"])
@@ -862,9 +1003,12 @@ def test_compile_reference_set_rejects_tampered_provenance_and_bytes(project_db,
     failures += 1
 
     sidecar.write_text(
-        original.replace(first["tsv_sha256"], "0" * 64), encoding="utf-8",
+        original.replace(first["tsv_sha256"], "0" * 64),
+        encoding="utf-8",
     )
-    with pytest.raises(ConflictError, match="does not match frozen identity.*tsv_sha256"):
+    with pytest.raises(
+        ConflictError, match="does not match frozen identity.*tsv_sha256"
+    ):
         taxonomy.compile_reference_set(db, project, "plants", "comp-1")
     failures += 1
 
@@ -892,7 +1036,9 @@ def test_compile_reference_set_requires_a_ready_snapshot(project_db):
     project, db = project_db
     _write_profile(project, "plants")
 
-    with pytest.raises(ValidationError, match="ready NCBI taxonomy snapshot 'missing' not found"):
+    with pytest.raises(
+        ValidationError, match="ready NCBI taxonomy snapshot 'missing' not found"
+    ):
         taxonomy.compile_reference_set(db, project, "plants", "missing")
     run = db.query(
         "SELECT status, error FROM workflow_runs WHERE step='taxonomy_compile'"
@@ -901,7 +1047,9 @@ def test_compile_reference_set_requires_a_ready_snapshot(project_db):
     assert db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"] == 0
 
 
-def test_compile_reference_set_rebuilds_a_lost_index_from_frozen_bytes(project_db, tmp_path):
+def test_compile_reference_set_rebuilds_a_lost_index_from_frozen_bytes(
+    project_db, tmp_path
+):
     project, db = project_db
     first = _compiled_reference_set(project, db, tmp_path)
     tsv = Path(first["path"])
@@ -914,50 +1062,70 @@ def test_compile_reference_set_rebuilds_a_lost_index_from_frozen_bytes(project_d
     assert rebuilt["tsv_sha256"] == first["tsv_sha256"]
     assert tsv.read_bytes() == frozen
     assert db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"] == 1
-    assert db.query(
-        "SELECT relative_path FROM taxonomy_reference_sets"
-    )[0]["relative_path"] == project_rel(project, tsv)
+    assert db.query("SELECT relative_path FROM taxonomy_reference_sets")[0][
+        "relative_path"
+    ] == project_rel(project, tsv)
 
 
 def test_compile_reference_set_applies_name_exclusions(project_db, tmp_path):
     project, db = project_db
     records = _TAXONOMY_RECORDS + [
-        {"taxId": 12, "parents": [10], "rank": "genus", "taxName": "Unclassified genus"},
+        {
+            "taxId": 12,
+            "parents": [10],
+            "rank": "genus",
+            "taxName": "Unclassified genus",
+        },
     ]
     source = _jsonl(tmp_path / "taxonomy.jsonl", records)
     taxonomy.import_ncbi_taxonomy(db, project, source, "excl-1")
-    _write_profile(project, "plants", filters={"exclude_name_patterns": ["Unclassified"]})
+    _write_profile(
+        project, "plants", filters={"exclude_name_patterns": ["Unclassified"]}
+    )
 
     result = taxonomy.compile_reference_set(db, project, "plants", "excl-1")
-    rows = [line.split("\t") for line in Path(result["path"]).read_text().splitlines()[1:]]
+    rows = [
+        line.split("\t") for line in Path(result["path"]).read_text().splitlines()[1:]
+    ]
     assert [row[1] for row in rows] == ["10", "11"]
     assert result["genus_count"] == 1
 
 
 def test_compile_reference_set_rejects_an_empty_rank(project_db, tmp_path):
     project, db = project_db
-    source = _jsonl(tmp_path / "taxonomy.jsonl", _TAXONOMY_RECORDS + [
-        {"taxId": 12, "parents": [10], "rank": "genus", "taxName": "Other genus"},
-    ])
+    source = _jsonl(
+        tmp_path / "taxonomy.jsonl",
+        _TAXONOMY_RECORDS
+        + [
+            {"taxId": 12, "parents": [10], "rank": "genus", "taxName": "Other genus"},
+        ],
+    )
     taxonomy.import_ncbi_taxonomy(db, project, source, "empty-rank-1")
-    _write_profile(project, "plants", filters={"exclude_name_patterns": ["Gen", "genus"]})
+    _write_profile(
+        project, "plants", filters={"exclude_name_patterns": ["Gen", "genus"]}
+    )
 
     with pytest.raises(ValidationError, match=r"empty for rank\(s\): genus"):
         taxonomy.compile_reference_set(db, project, "plants", "empty-rank-1")
-    assert not (project.taxonomy_reference_sets_dir / "plants@empty-rank-1.tsv").exists()
+    assert not (
+        project.taxonomy_reference_sets_dir / "plants@empty-rank-1.tsv"
+    ).exists()
 
 
 # --------------------------------------------------------------------------
 # timetree: cache-less operation and response-shape edges
 # --------------------------------------------------------------------------
 
+
 def test_client_without_a_cache_directory_always_uses_the_network(tmp_path):
     pairwise_url = f"{TIMETREE_BASE}/pairwise/3702/9606/summaryjson"
     timeline_url = f"{TIMETREE_BASE}/timeline/3702"
-    session = make_session({
-        pairwise_url: json.dumps(SUMMARY_3702_9606),
-        timeline_url: "node,node_name,adjusted_age\n1,cellular organisms,4200\n",
-    })
+    session = make_session(
+        {
+            pairwise_url: json.dumps(SUMMARY_3702_9606),
+            timeline_url: "node,node_name,adjusted_age\n1,cellular organisms,4200\n",
+        }
+    )
     client = TimeTreeClient(session=session, delay=0)
     assert client.cache_dir is None
 
@@ -981,9 +1149,12 @@ def test_pairwise_skips_non_numeric_age_candidates(tmp_path):
         "ci_high": 1650.0,
         "all_total": 42,
     }
-    client, _ = make_client(tmp_path, {
-        f"{TIMETREE_BASE}/pairwise/1/2/summaryjson": json.dumps(body),
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{TIMETREE_BASE}/pairwise/1/2/summaryjson": json.dumps(body),
+        },
+    )
     result = client.pairwise(1, 2)
     assert result["age_median"] == 1496.0
     assert result["ci_low"] == 1350.0 and result["ci_high"] == 1650.0
@@ -993,14 +1164,25 @@ def test_pairwise_skips_non_numeric_age_candidates(tmp_path):
 def test_resolve_taxon_skips_zero_and_duplicate_ids(tmp_path):
     payload = [
         {"taxon_id": 0, "scientific_name": "Zero"},
-        {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"},
+        {
+            "taxon_id": 3702,
+            "scientific_name": "Arabidopsis thaliana",
+            "rank": "species",
+        },
         {"taxon_id": 3702, "scientific_name": "Duplicate"},
     ]
-    client, _ = make_client(tmp_path, {
-        f"{TIMETREE_BASE}/taxon/Apis": json.dumps(payload),
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{TIMETREE_BASE}/taxon/Apis": json.dumps(payload),
+        },
+    )
     assert client.resolve_taxon("Apis") == [
-        {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"},
+        {
+            "taxon_id": 3702,
+            "scientific_name": "Arabidopsis thaliana",
+            "rank": "species",
+        },
     ]
 
 
@@ -1022,6 +1204,7 @@ def test_build_calibrations_requires_two_taxa(tmp_path):
 # ncbi reconciliation: plan edges
 # --------------------------------------------------------------------------
 
+
 def _seed_taxonomy(db) -> None:
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
@@ -1029,9 +1212,13 @@ def _seed_taxonomy(db) -> None:
 
 def _seed_assembly(db, assembly_id: str = "ASM_000001", **overrides) -> None:
     row = {
-        "assembly_id": assembly_id, "sample_id": "SMP_000001",
-        "assembly_level": "contig", "assembly_version": 1,
-        "assembly_accession": None, "source_database": None, "fasta_file_id": None,
+        "assembly_id": assembly_id,
+        "sample_id": "SMP_000001",
+        "assembly_level": "contig",
+        "assembly_version": 1,
+        "assembly_accession": None,
+        "source_database": None,
+        "fasta_file_id": None,
     }
     row.update(overrides)
     db.insert_row("assemblies", row)
@@ -1039,26 +1226,44 @@ def _seed_assembly(db, assembly_id: str = "ASM_000001", **overrides) -> None:
 
 def _file(file_id, entity_type, entity_id, role, rel, sha, source_url="", size=1):
     return {
-        "file_id": file_id, "entity_type": entity_type, "entity_id": entity_id,
-        "file_role": role, "format": "fasta", "compression": "none",
-        "relative_path": rel, "source_url": source_url, "size_bytes": size,
-        "sha256": sha, "status": "CHECKSUM_VERIFIED",
+        "file_id": file_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "file_role": role,
+        "format": "fasta",
+        "compression": "none",
+        "relative_path": rel,
+        "source_url": source_url,
+        "size_bytes": size,
+        "sha256": sha,
+        "status": "CHECKSUM_VERIFIED",
     }
 
 
 def _seed_accessions(db, assembly_id: str, rows) -> None:
     for accession, namespace, primary in rows:
-        db.insert_row("accessions", {
-            "internal_type": "assembly", "internal_id": assembly_id,
-            "namespace": namespace, "accession": accession, "is_primary": primary,
-        })
+        db.insert_row(
+            "accessions",
+            {
+                "internal_type": "assembly",
+                "internal_id": assembly_id,
+                "namespace": namespace,
+                "accession": accession,
+                "is_primary": primary,
+            },
+        )
 
 
 def _plan_with(repairs=None) -> dict:
     return {
-        "warnings": [], "annotation_supersessions": [], "assembly_updates": [],
-        "file_role_updates": [], "file_path_repairs": repairs or [],
-        "accession_primary_updates": [], "state_restorations": [], "summary": {},
+        "warnings": [],
+        "annotation_supersessions": [],
+        "assembly_updates": [],
+        "file_role_updates": [],
+        "file_path_repairs": repairs or [],
+        "accession_primary_updates": [],
+        "state_restorations": [],
+        "summary": {},
     }
 
 
@@ -1067,26 +1272,44 @@ def test_plan_supersedes_duplicates_sharing_two_identical_roles(project_db):
     _seed_taxonomy(db)
     _seed_assembly(db)
     for annotation_id in ("ANN_000001", "ANN_000002"):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": 1,
-        })
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": 1,
+            },
+        )
     for file_id, annotation_id, role, sha in (
         ("FIL_000001", "ANN_000001", "annotation_gff3", "a" * 64),
         ("FIL_000002", "ANN_000002", "annotation_gff3", "a" * 64),
         ("FIL_000003", "ANN_000001", "protein_fasta", "b" * 64),
         ("FIL_000004", "ANN_000002", "protein_fasta", "b" * 64),
     ):
-        db.insert_row("files", _file(
-            file_id, "annotation", annotation_id, role, f"raw/{file_id}", sha,
-        ))
+        db.insert_row(
+            "files",
+            _file(
+                file_id,
+                "annotation",
+                annotation_id,
+                role,
+                f"raw/{file_id}",
+                sha,
+            ),
+        )
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
     assert plan["warnings"] == []
-    assert [(item["annotation_id"], item["superseded_by"])
-            for item in plan["annotation_supersessions"]] == [("ANN_000002", "ANN_000001")]
+    assert [
+        (item["annotation_id"], item["superseded_by"])
+        for item in plan["annotation_supersessions"]
+    ] == [("ANN_000002", "ANN_000001")]
     assert plan["annotation_supersessions"][0]["identity"] == {
-        "assembly_id": "ASM_000001", "provider": "ncbi", "version": 1, "date": "",
+        "assembly_id": "ASM_000001",
+        "provider": "ncbi",
+        "version": 1,
+        "date": "",
     }
 
 
@@ -1095,18 +1318,37 @@ def test_plan_ignores_annotations_already_recorded_as_superseded(project_db):
     _seed_taxonomy(db)
     _seed_assembly(db)
     for annotation_id in ("ANN_000001", "ANN_000002"):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": 1,
-        })
-        db.insert_row("files", _file(
-            f"FIL_00000{annotation_id[-1]}", "annotation", annotation_id,
-            "annotation_gff3", f"raw/{annotation_id}", "a" * 64,
-        ))
-    assert db.supersede_entity(
-        "annotation", "ANN_000002", "annotation", "ANN_000001",
-        reason="earlier repair", workflow_run_id="RUN_000001",
-    ) is True
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": 1,
+            },
+        )
+        db.insert_row(
+            "files",
+            _file(
+                f"FIL_00000{annotation_id[-1]}",
+                "annotation",
+                annotation_id,
+                "annotation_gff3",
+                f"raw/{annotation_id}",
+                "a" * 64,
+            ),
+        )
+    assert (
+        db.supersede_entity(
+            "annotation",
+            "ANN_000002",
+            "annotation",
+            "ANN_000001",
+            reason="earlier repair",
+            workflow_run_id="RUN_000001",
+        )
+        is True
+    )
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
     assert plan["annotation_supersessions"] == []
@@ -1118,37 +1360,72 @@ def test_plan_leaves_aligned_and_single_namespace_assemblies_alone(project_db):
     _project, db = project_db
     _seed_taxonomy(db)
     _seed_assembly(
-        db, "ASM_000010", assembly_accession="GCF_000000010.1",
-        source_database="RefSeq", fasta_file_id=None,
+        db,
+        "ASM_000010",
+        assembly_accession="GCF_000000010.1",
+        source_database="RefSeq",
+        fasta_file_id=None,
     )
-    _seed_accessions(db, "ASM_000010", (
-        ("GCF_000000010.1", "NCBI_RefSeq_Assembly", 1),
-        ("GCA_000000010.1", "NCBI_GenBank_Assembly", 0),
-        ("GCF_000000010.1", "NCBI_Assembly", 1),
-        ("GCA_000000010.1", "NCBI_Assembly", 0),
-    ))
-    db.insert_row("files", _file(
-        "FIL_000010", "assembly", "ASM_000010", "genome_fasta", "raw/aligned.fa", "c" * 64,
-    ))
+    _seed_accessions(
+        db,
+        "ASM_000010",
+        (
+            ("GCF_000000010.1", "NCBI_RefSeq_Assembly", 1),
+            ("GCA_000000010.1", "NCBI_GenBank_Assembly", 0),
+            ("GCF_000000010.1", "NCBI_Assembly", 1),
+            ("GCA_000000010.1", "NCBI_Assembly", 0),
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000010",
+            "assembly",
+            "ASM_000010",
+            "genome_fasta",
+            "raw/aligned.fa",
+            "c" * 64,
+        ),
+    )
     # A renamed role that already sits at its canonical path needs no repair;
     # the misnamed sibling still does.
     from operon.files import canonical_filename
 
-    canonical = canonical_filename("ASM_000010", "genome_fasta_genbank", "fasta", "none")
-    db.insert_row("files", _file(
-        "FIL_000011", "assembly", "ASM_000010", "genome_fasta_genbank",
-        f"raw/{canonical}", "d" * 64,
-    ))
-    db.insert_row("files", _file(
-        "FIL_000012", "assembly", "ASM_000010", "assembly_report_genbank",
-        "raw/wrong-report.txt", "e" * 64,
-    ))
+    canonical = canonical_filename(
+        "ASM_000010", "genome_fasta_genbank", "fasta", "none"
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000011",
+            "assembly",
+            "ASM_000010",
+            "genome_fasta_genbank",
+            f"raw/{canonical}",
+            "d" * 64,
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000012",
+            "assembly",
+            "ASM_000010",
+            "assembly_report_genbank",
+            "raw/wrong-report.txt",
+            "e" * 64,
+        ),
+    )
     # A GCA-only assembly has no paired namespaces to reconcile.
-    _seed_assembly(db, "ASM_000020", assembly_accession="GCA_000000020.1",
-                   source_database="GenBank")
-    _seed_accessions(db, "ASM_000020", (
-        ("GCA_000000020.1", "NCBI_GenBank_Assembly", 1),
-    ))
+    _seed_assembly(
+        db,
+        "ASM_000020",
+        assembly_accession="GCA_000000020.1",
+        source_database="GenBank",
+    )
+    _seed_accessions(
+        db, "ASM_000020", (("GCA_000000020.1", "NCBI_GenBank_Assembly", 1),)
+    )
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
     assert plan["assembly_updates"] == []
@@ -1156,7 +1433,8 @@ def test_plan_leaves_aligned_and_single_namespace_assemblies_alone(project_db):
     assert plan["accession_primary_updates"] == []
     assert [item["file_id"] for item in plan["file_path_repairs"]] == ["FIL_000012"]
     assert plan["file_path_repairs"][0]["new_relative_path"] == (
-        "raw/" + canonical_filename("ASM_000010", "assembly_report_genbank", "fasta", "none")
+        "raw/"
+        + canonical_filename("ASM_000010", "assembly_report_genbank", "fasta", "none")
     )
     assert plan["warnings"] == []
 
@@ -1165,38 +1443,67 @@ def test_plan_renames_source_specific_roles_and_paths(project_db):
     _project, db = project_db
     _seed_taxonomy(db)
     _seed_assembly(
-        db, "ASM_000030", assembly_accession="GCA_000000030.1",
-        source_database="GenBank", fasta_file_id="FIL_000031",
+        db,
+        "ASM_000030",
+        assembly_accession="GCA_000000030.1",
+        source_database="GenBank",
+        fasta_file_id="FIL_000031",
     )
-    _seed_accessions(db, "ASM_000030", (
-        ("GCF_000000030.1", "NCBI_RefSeq_Assembly", 0),
-        ("GCA_000000030.1", "NCBI_GenBank_Assembly", 1),
-    ))
-    db.insert_row("files", _file(
-        "FIL_000030", "assembly", "ASM_000030", "genome_fasta", "raw/refseq.fna", "f" * 64,
-        "https://example.org/GCF_000000030.1/genome.fna",
-    ))
-    db.insert_row("files", _file(
-        "FIL_000031", "assembly", "ASM_000030", "genome_fasta", "raw/plain.fna", "0" * 64,
-        "https://example.org/GCA_000000030.1/genome.fna",
-    ))
+    _seed_accessions(
+        db,
+        "ASM_000030",
+        (
+            ("GCF_000000030.1", "NCBI_RefSeq_Assembly", 0),
+            ("GCA_000000030.1", "NCBI_GenBank_Assembly", 1),
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000030",
+            "assembly",
+            "ASM_000030",
+            "genome_fasta",
+            "raw/refseq.fna",
+            "f" * 64,
+            "https://example.org/GCF_000000030.1/genome.fna",
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000031",
+            "assembly",
+            "ASM_000030",
+            "genome_fasta",
+            "raw/plain.fna",
+            "0" * 64,
+            "https://example.org/GCA_000000030.1/genome.fna",
+        ),
+    )
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
-    assert plan["assembly_updates"] == [{
-        "assembly_id": "ASM_000030",
-        "old_accession": "GCA_000000030.1",
-        "new_accession": "GCF_000000030.1",
-        "old_source_database": "GenBank",
-        "new_source_database": "RefSeq",
-    }]
-    assert plan["file_role_updates"] == [{
-        "file_id": "FIL_000031", "assembly_id": "ASM_000030",
-        "old_role": "genome_fasta", "new_role": "genome_fasta_genbank",
-        "source_accession": "GCA_000000030.1",
-        "old_relative_path": "raw/plain.fna",
-        "new_relative_path": "raw/ASM_000030.genome_fasta_genbank.fasta",
-        "clear_fasta_link": True,
-    }]
+    assert plan["assembly_updates"] == [
+        {
+            "assembly_id": "ASM_000030",
+            "old_accession": "GCA_000000030.1",
+            "new_accession": "GCF_000000030.1",
+            "old_source_database": "GenBank",
+            "new_source_database": "RefSeq",
+        }
+    ]
+    assert plan["file_role_updates"] == [
+        {
+            "file_id": "FIL_000031",
+            "assembly_id": "ASM_000030",
+            "old_role": "genome_fasta",
+            "new_role": "genome_fasta_genbank",
+            "source_accession": "GCA_000000030.1",
+            "old_relative_path": "raw/plain.fna",
+            "new_relative_path": "raw/ASM_000030.genome_fasta_genbank.fasta",
+            "clear_fasta_link": True,
+        }
+    ]
     assert plan["warnings"] == []
 
 
@@ -1205,85 +1512,168 @@ def test_plan_restores_only_annotations_stuck_in_early_states(project_db):
     _seed_taxonomy(db)
     _seed_assembly(db)
     for annotation_id, state, version in (
-        ("ANN_000040", "QC_COMPLETE", 1), ("ANN_000041", "DOWNLOADED", 2),
+        ("ANN_000040", "QC_COMPLETE", 1),
+        ("ANN_000041", "DOWNLOADED", 2),
     ):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": version,
-        })
-        db.insert_qc_result({
-            "entity_type": "annotation", "entity_id": annotation_id, "qc_stage": "s",
-            "metric_name": "m", "metric_value": "1", "metric_numeric": 1,
-            "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-        })
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": version,
+            },
+        )
+        db.insert_qc_result(
+            {
+                "entity_type": "annotation",
+                "entity_id": annotation_id,
+                "qc_stage": "s",
+                "metric_name": "m",
+                "metric_value": "1",
+                "metric_numeric": 1,
+                "tool": "t",
+                "tool_version": "1",
+                "parameter_set": "p",
+                "evaluated_at": "now",
+            }
+        )
         db.set_entity_state("annotation", annotation_id, state, "recorded")
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
-    assert plan["state_restorations"] == [{
-        "annotation_id": "ANN_000041", "old_state": "DOWNLOADED", "new_state": "QC_COMPLETE",
-    }]
+    assert plan["state_restorations"] == [
+        {
+            "annotation_id": "ANN_000041",
+            "old_state": "DOWNLOADED",
+            "new_state": "QC_COMPLETE",
+        }
+    ]
 
 
 # --------------------------------------------------------------------------
 # ncbi reconciliation: apply
 # --------------------------------------------------------------------------
 
+
 def _seed_apply_scenario(db, project) -> None:
     """One database exercising every repair kind at once."""
     _seed_taxonomy(db)
     _seed_assembly(
-        db, "ASM_000001", assembly_accession="GCA_000000001.1",
-        source_database="GenBank", fasta_file_id="FIL_000020",
+        db,
+        "ASM_000001",
+        assembly_accession="GCA_000000001.1",
+        source_database="GenBank",
+        fasta_file_id="FIL_000020",
     )
-    _seed_accessions(db, "ASM_000001", (
-        ("GCF_000000001.1", "NCBI_RefSeq_Assembly", 0),
-        ("GCA_000000001.1", "NCBI_GenBank_Assembly", 1),
-        ("GCF_000000001.1", "NCBI_Assembly", 0),
-        ("GCA_000000001.1", "NCBI_Assembly", 1),
-    ))
+    _seed_accessions(
+        db,
+        "ASM_000001",
+        (
+            ("GCF_000000001.1", "NCBI_RefSeq_Assembly", 0),
+            ("GCA_000000001.1", "NCBI_GenBank_Assembly", 1),
+            ("GCF_000000001.1", "NCBI_Assembly", 0),
+            ("GCA_000000001.1", "NCBI_Assembly", 1),
+        ),
+    )
     for annotation_id in ("ANN_000001", "ANN_000002"):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": 1,
-        })
-    db.insert_row("annotations", {
-        "annotation_id": "ANN_000005", "assembly_id": "ASM_000001",
-        "annotation_source": "NCBI", "annotation_version": 2,
-    })
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": 1,
+            },
+        )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000005",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "NCBI",
+            "annotation_version": 2,
+        },
+    )
     # A second duplicate group with no artifacts at all.
     for annotation_id in ("ANN_000006", "ANN_000007"):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": 3,
-        })
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": 3,
+            },
+        )
     # Identical duplicate annotation artifacts: ANN_000002 is superseded.  The
     # first file carries a historical RefSeq URL, which makes GCF canonical for
     # the paired GCA/GCF accessions below.
     for file_id, annotation_id, role, sha, url in (
-        ("FIL_000001", "ANN_000001", "annotation_gff3", "a" * 64,
-         "https://example.org/GCF_000000001.1/annotation.gff3"),
+        (
+            "FIL_000001",
+            "ANN_000001",
+            "annotation_gff3",
+            "a" * 64,
+            "https://example.org/GCF_000000001.1/annotation.gff3",
+        ),
         ("FIL_000002", "ANN_000002", "annotation_gff3", "a" * 64, ""),
         ("FIL_000003", "ANN_000001", "protein_fasta", "b" * 64, ""),
         ("FIL_000004", "ANN_000002", "protein_fasta", "b" * 64, ""),
     ):
-        db.insert_row("files", _file(
-            file_id, "annotation", annotation_id, role, f"raw/{file_id}", sha, url,
-        ))
-    db.insert_row("files", _file(
-        "FIL_000020", "assembly", "ASM_000001", "genome_fasta", "raw/old.fna",
-        "e" * 64, "https://example.org/GCA_000000001.1/genome.fna",
-    ))
+        db.insert_row(
+            "files",
+            _file(
+                file_id,
+                "annotation",
+                annotation_id,
+                role,
+                f"raw/{file_id}",
+                sha,
+                url,
+            ),
+        )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000020",
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+            "raw/old.fna",
+            "e" * 64,
+            "https://example.org/GCA_000000001.1/genome.fna",
+        ),
+    )
     # A GenBank report is renamed without clearing the assembly FASTA pointer.
-    db.insert_row("files", _file(
-        "FIL_000021", "assembly", "ASM_000001", "assembly_report", "raw/report.txt",
-        "1" * 64, "https://example.org/GCA_000000001.1/report.txt",
-    ))
-    db.insert_qc_result({
-        "entity_type": "annotation", "entity_id": "ANN_000005", "qc_stage": "s",
-        "metric_name": "m", "metric_value": "1", "metric_numeric": 1,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    db.set_entity_state("annotation", "ANN_000005", "DOWNLOADED", "downgraded by re-import")
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000021",
+            "assembly",
+            "ASM_000001",
+            "assembly_report",
+            "raw/report.txt",
+            "1" * 64,
+            "https://example.org/GCA_000000001.1/report.txt",
+        ),
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "annotation",
+            "entity_id": "ANN_000005",
+            "qc_stage": "s",
+            "metric_name": "m",
+            "metric_value": "1",
+            "metric_numeric": 1,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    db.set_entity_state(
+        "annotation", "ANN_000005", "DOWNLOADED", "downgraded by re-import"
+    )
     for name, payload in (("old.fna", "genome bytes"), ("report.txt", "report bytes")):
         artifact = project.root / "raw" / name
         artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -1309,7 +1699,8 @@ def test_apply_reconciliation_persists_every_repair_with_audit_rows(project_db):
         "WHERE object_type='annotation' ORDER BY object_id"
     )
     assert [(row["object_id"], row["superseded_by_id"]) for row in supersessions] == [
-        ("ANN_000002", "ANN_000001"), ("ANN_000007", "ANN_000006"),
+        ("ANN_000002", "ANN_000001"),
+        ("ANN_000007", "ANN_000006"),
     ]
     assert {row["workflow_run_id"] for row in supersessions} == {result["run_id"]}
 
@@ -1323,17 +1714,23 @@ def test_apply_reconciliation_persists_every_repair_with_audit_rows(project_db):
         "SELECT file_role, relative_path FROM files WHERE file_id='FIL_000020'"
     )[0]
     assert tuple(renamed) == (
-        "genome_fasta_genbank", "raw/ASM_000001.genome_fasta_genbank.fasta",
+        "genome_fasta_genbank",
+        "raw/ASM_000001.genome_fasta_genbank.fasta",
     )
-    assert (project.root / renamed["relative_path"]).read_text(encoding="utf-8") == "genome bytes"
+    assert (project.root / renamed["relative_path"]).read_text(
+        encoding="utf-8"
+    ) == "genome bytes"
     assert not (project.root / "raw" / "old.fna").exists()
     report = db.query(
         "SELECT file_role, relative_path FROM files WHERE file_id='FIL_000021'"
     )[0]
     assert tuple(report) == (
-        "assembly_report_genbank", "raw/ASM_000001.assembly_report_genbank.fasta",
+        "assembly_report_genbank",
+        "raw/ASM_000001.assembly_report_genbank.fasta",
     )
-    assert (project.root / report["relative_path"]).read_text(encoding="utf-8") == "report bytes"
+    assert (project.root / report["relative_path"]).read_text(
+        encoding="utf-8"
+    ) == "report bytes"
 
     primaries = {
         row["accession"]: row["is_primary"]
@@ -1355,9 +1752,12 @@ def test_apply_reconciliation_persists_every_repair_with_audit_rows(project_db):
         (result["run_id"],),
     )[0]
     assert tuple(run) == ("completed", 0, result["plan_sha256"])
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
-    )[0]["n"] == 1
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
+        )[0]["n"]
+        == 1
+    )
 
     changes = {
         (row["object_type"], row["object_id"], row["field"])
@@ -1388,13 +1788,23 @@ def test_apply_reconciliation_persists_every_repair_with_audit_rows(project_db):
     second = ncbi_reconcile.apply_ncbi_reconciliation(db, project, actor="tester")
     assert second["run_id"] != result["run_id"]
     assert set(second["summary"].values()) == {0}
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM changes WHERE workflow_run_id=?",
-        (second["run_id"],),
-    )[0]["n"] == 1
-    assert db.supersede_entity(
-        "annotation", "ANN_000002", "annotation", "ANN_000001", reason="duplicate",
-    ) is False
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM changes WHERE workflow_run_id=?",
+            (second["run_id"],),
+        )[0]["n"]
+        == 1
+    )
+    assert (
+        db.supersede_entity(
+            "annotation",
+            "ANN_000002",
+            "annotation",
+            "ANN_000001",
+            reason="duplicate",
+        )
+        is False
+    )
 
 
 def test_apply_reconciliation_tolerates_equal_path_moves(project_db, monkeypatch):
@@ -1402,42 +1812,97 @@ def test_apply_reconciliation_tolerates_equal_path_moves(project_db, monkeypatch
     (project.root / "raw").mkdir(exist_ok=True)
     (project.root / "raw" / "same.fa").write_text("same", encoding="utf-8")
     (project.root / "raw" / "other.fa").write_text("other", encoding="utf-8")
-    db.insert_row("files", _file(
-        "FIL_000001", "organism", "ORG_000001", "other", "raw/same.fa", "a" * 64,
-    ))
-    db.insert_row("files", _file(
-        "FIL_000002", "organism", "ORG_000001", "other", "raw/other.fa", "b" * 64,
-    ))
-    monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: _plan_with([
-        {"file_id": "FIL_000001", "old_relative_path": "raw/same.fa",
-         "new_relative_path": "raw/same.fa"},
-        {"file_id": "FIL_000002", "old_relative_path": "raw/other.fa",
-         "new_relative_path": "raw/moved.fa"},
-    ]))
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000001",
+            "organism",
+            "ORG_000001",
+            "other",
+            "raw/same.fa",
+            "a" * 64,
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000002",
+            "organism",
+            "ORG_000001",
+            "other",
+            "raw/other.fa",
+            "b" * 64,
+        ),
+    )
+    monkeypatch.setattr(
+        ncbi_reconcile,
+        "plan_ncbi_reconciliation",
+        lambda _db: _plan_with(
+            [
+                {
+                    "file_id": "FIL_000001",
+                    "old_relative_path": "raw/same.fa",
+                    "new_relative_path": "raw/same.fa",
+                },
+                {
+                    "file_id": "FIL_000002",
+                    "old_relative_path": "raw/other.fa",
+                    "new_relative_path": "raw/moved.fa",
+                },
+            ]
+        ),
+    )
 
     result = ncbi_reconcile.apply_ncbi_reconciliation(db, project, actor="tester")
     assert result["skipped_path_moves"] == []
     assert (project.root / "raw" / "same.fa").read_text(encoding="utf-8") == "same"
     assert (project.root / "raw" / "moved.fa").read_text(encoding="utf-8") == "other"
-    assert db.query(
-        "SELECT relative_path FROM files WHERE file_id='FIL_000002'"
-    )[0]["relative_path"] == "raw/moved.fa"
-    assert db.query(
-        "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
-    )[0]["status"] == "completed"
+    assert (
+        db.query("SELECT relative_path FROM files WHERE file_id='FIL_000002'")[0][
+            "relative_path"
+        ]
+        == "raw/moved.fa"
+    )
+    assert (
+        db.query(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+        )[0]["status"]
+        == "completed"
+    )
 
 
-def test_apply_reconciliation_is_idempotent_for_a_replayed_supersession(project_db, monkeypatch):
+def test_apply_reconciliation_is_idempotent_for_a_replayed_supersession(
+    project_db, monkeypatch
+):
     project, db = project_db
-    identity = {"assembly_id": "ASM_000001", "provider": "ncbi", "version": 1, "date": ""}
-    assert db.supersede_entity(
-        "annotation", "ANN_000002", "annotation", "ANN_000001",
-        reason="recorded by an earlier run",
-    ) is True
+    identity = {
+        "assembly_id": "ASM_000001",
+        "provider": "ncbi",
+        "version": 1,
+        "date": "",
+    }
+    assert (
+        db.supersede_entity(
+            "annotation",
+            "ANN_000002",
+            "annotation",
+            "ANN_000001",
+            reason="recorded by an earlier run",
+        )
+        is True
+    )
     plan = _plan_with()
     plan["annotation_supersessions"] = [
-        {"annotation_id": "ANN_000002", "superseded_by": "ANN_000001", "identity": identity},
-        {"annotation_id": "ANN_000003", "superseded_by": "ANN_000001", "identity": identity},
+        {
+            "annotation_id": "ANN_000002",
+            "superseded_by": "ANN_000001",
+            "identity": identity,
+        },
+        {
+            "annotation_id": "ANN_000003",
+            "superseded_by": "ANN_000001",
+            "identity": identity,
+        },
     ]
     monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: plan)
 
@@ -1449,24 +1914,33 @@ def test_apply_reconciliation_is_idempotent_for_a_replayed_supersession(project_
     )
     # The replayed entry writes no duplicate audit row; the new one is recorded.
     assert [row["object_id"] for row in recorded] == ["ANN_000003"]
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM changes WHERE object_id='ANN_000002' "
-        "AND field='superseded_by'"
-    )[0]["n"] == 0
-    assert db.query(
-        "SELECT reason FROM entity_supersessions WHERE object_id='ANN_000002'"
-    )[0]["reason"] == "recorded by an earlier run"
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM changes WHERE object_id='ANN_000002' "
+            "AND field='superseded_by'"
+        )[0]["n"]
+        == 0
+    )
+    assert (
+        db.query(
+            "SELECT reason FROM entity_supersessions WHERE object_id='ANN_000002'"
+        )[0]["reason"]
+        == "recorded by an earlier run"
+    )
     assert db.query("SELECT COUNT(*) AS n FROM entity_supersessions")[0]["n"] == 2
-    assert db.query(
-        "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
-    )[0]["status"] == "completed"
+    assert (
+        db.query(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+        )[0]["status"]
+        == "completed"
+    )
 
 
-def test_apply_reconciliation_skips_redundant_accession_primary_updates(project_db, monkeypatch):
+def test_apply_reconciliation_skips_redundant_accession_primary_updates(
+    project_db, monkeypatch
+):
     project, db = project_db
-    _seed_accessions(db, "ASM_000009", (
-        ("GCF_000000009.1", "NCBI_Assembly", 1),
-    ))
+    _seed_accessions(db, "ASM_000009", (("GCF_000000009.1", "NCBI_Assembly", 1),))
     plan = _plan_with()
     plan["accession_primary_updates"] = [
         # Already at the desired primacy.
@@ -1477,32 +1951,53 @@ def test_apply_reconciliation_skips_redundant_accession_primary_updates(project_
     monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: plan)
 
     result = ncbi_reconcile.apply_ncbi_reconciliation(db, project, actor="tester")
-    assert db.query(
-        "SELECT is_primary FROM accessions WHERE accession='GCF_000000009.1'"
-    )[0]["is_primary"] == 1
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM accessions WHERE accession='GCA_000000009.1'"
-    )[0]["n"] == 0
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM changes WHERE workflow_run_id=? AND object_type='accessions'",
-        (result["run_id"],),
-    )[0]["n"] == 0
-    assert db.query(
-        "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
-    )[0]["status"] == "completed"
+    assert (
+        db.query("SELECT is_primary FROM accessions WHERE accession='GCF_000000009.1'")[
+            0
+        ]["is_primary"]
+        == 1
+    )
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM accessions WHERE accession='GCA_000000009.1'"
+        )[0]["n"]
+        == 0
+    )
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM changes WHERE workflow_run_id=? AND object_type='accessions'",
+            (result["run_id"],),
+        )[0]["n"]
+        == 0
+    )
+    assert (
+        db.query(
+            "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+        )[0]["status"]
+        == "completed"
+    )
 
 
-def test_apply_reconciliation_blocks_on_alternate_role_conflicts(project_db, monkeypatch):
+def test_apply_reconciliation_blocks_on_alternate_role_conflicts(
+    project_db, monkeypatch
+):
     project, db = project_db
     plan = _plan_with()
     plan["warnings"] = [
-        {"kind": "alternate_role_conflict", "file_id": "FIL_000001",
-         "existing_file_id": "FIL_000002", "role": "genome_fasta_genbank"},
+        {
+            "kind": "alternate_role_conflict",
+            "file_id": "FIL_000001",
+            "existing_file_id": "FIL_000002",
+            "role": "genome_fasta_genbank",
+        },
     ]
     monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: plan)
 
     with pytest.raises(ConflictError, match="alternate-role byte conflicts"):
         ncbi_reconcile.apply_ncbi_reconciliation(db, project, actor="tester")
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
-    )[0]["n"] == 0
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='ncbi_datasets_reconcile'"
+        )[0]["n"]
+        == 0
+    )

@@ -41,7 +41,8 @@ def test_positive_int_and_runtime_parameter_validation():
         with pytest.raises(argparse.ArgumentTypeError):
             cli._positive_int(value)
     assert cli._parse_runtime_parameters(["alpha=1", " beta =two=parts"]) == {
-        "alpha": "1", "beta": "two=parts"
+        "alpha": "1",
+        "beta": "two=parts",
     }
     for items in (["bad"], ["=x"], ["x="], ["x=1", "x=2"]):
         with pytest.raises(ValidationError):
@@ -52,7 +53,9 @@ def test_status_schema_migrate_and_next_id(project_db, capsys):
     project, db = project_db
     assert cli._cmd_status(ns(entity_type=None, entity_id=None), db) == 0
     assert "no entity states" in capsys.readouterr().out
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     db.set_entity_state("organism", "ORG_000001", "METADATA_VALIDATED", "ok")
     assert cli._cmd_status(ns(entity_type="organism", entity_id="ORG_000001"), db) == 0
     assert "ORG_000001" in capsys.readouterr().out
@@ -92,10 +95,21 @@ def test_add_entities_accession_and_fk_validation(project_db, capsys):
         args = ns(entity_type=entity_type, record_id=record_id, field=fields)
         assert cli._cmd_add(args, project, db) == 0
     assert "added annotation ANN_000001" in capsys.readouterr().out
-    assert cli._cmd_add_accession(ns(
-        internal_type="organism", internal_id="ORG_000001", namespace="LAB",
-        accession="EX-1", acc_version="1", primary=True,
-    ), project, db) == 0
+    assert (
+        cli._cmd_add_accession(
+            ns(
+                internal_type="organism",
+                internal_id="ORG_000001",
+                namespace="LAB",
+                accession="EX-1",
+                acc_version="1",
+                primary=True,
+            ),
+            project,
+            db,
+        )
+        == 0
+    )
     assert "LAB:EX-1" in capsys.readouterr().out
 
     for entity_type, row in [
@@ -108,57 +122,113 @@ def test_add_entities_accession_and_fk_validation(project_db, capsys):
             check_row_references(db, entity_type, row)
     with pytest.raises(ValidationError, match="fasta_file_id"):
         check_row_references(
-            db, "assembly", {"assembly_id": "ASM_000001", "fasta_file_id": "FIL_MISSING"}
+            db,
+            "assembly",
+            {"assembly_id": "ASM_000001", "fasta_file_id": "FIL_MISSING"},
         )
 
 
 def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys):
     project, db = project_db
-    monkeypatch.setattr(cli, "verify_files", lambda *_a: [
-        {"file_id": "F1", "relative_path": "a", "status": "CHECKSUM_VERIFIED",
-         "remote": None, "current_sha256": "a", "error": None},
-        {"file_id": "F2", "relative_path": "b", "status": "MISSING",
-         "remote": "r", "current_sha256": None, "error": "gone"},
-    ])
+    monkeypatch.setattr(
+        cli,
+        "verify_files",
+        lambda *_a: [
+            {
+                "file_id": "F1",
+                "relative_path": "a",
+                "status": "CHECKSUM_VERIFIED",
+                "remote": None,
+                "current_sha256": "a",
+                "error": None,
+            },
+            {
+                "file_id": "F2",
+                "relative_path": "b",
+                "status": "MISSING",
+                "remote": "r",
+                "current_sha256": None,
+                "error": "gone",
+            },
+        ],
+    )
     assert cli._cmd_verify(ns(file_id=[]), project, db) == 1
     assert "MISSING" in capsys.readouterr().out
     monkeypatch.setattr(cli, "verify_files", lambda *_a: [])
     assert cli._cmd_verify(ns(file_id=["F1"]), project, db) == 0
     assert "verified 0" in capsys.readouterr().out
 
-    monkeypatch.setattr(cli, "standardize_file", lambda *_a, **_k: {"action": "linked", "target": "x"})
+    monkeypatch.setattr(
+        cli, "standardize_file", lambda *_a, **_k: {"action": "linked", "target": "x"}
+    )
     assert cli._cmd_standardize(ns(file_id=["F1"], link="copy"), project, db) == 0
-    monkeypatch.setattr(cli, "standardize_all", lambda *_a, **_k: [
-        {"file_id": "F1", "action": "cached", "target": "x"},
-        {"file_id": "F2", "error": "bad"},
-    ])
+    monkeypatch.setattr(
+        cli,
+        "standardize_all",
+        lambda *_a, **_k: [
+            {"file_id": "F1", "action": "cached", "target": "x"},
+            {"file_id": "F2", "error": "bad"},
+        ],
+    )
     assert cli._cmd_standardize(ns(file_id=[], link="copy"), project, db) == 1
     captured = capsys.readouterr()
     assert "cached" in captured.out and "ERROR bad" in captured.err
 
-    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [
-        {"file_id": "F1", "ok": True}, {"file_id": "F2", "ok": False, "error": "bad"},
-    ])
-    args = ns(entity_type=None, entity_id=None, file_id=None, sample_size=None,
-              phred_offset=None, rehash=False)
+    monkeypatch.setattr(
+        "operon.qc.qc_all",
+        lambda *_a, **_k: [
+            {"file_id": "F1", "ok": True},
+            {"file_id": "F2", "ok": False, "error": "bad"},
+        ],
+    )
+    args = ns(
+        entity_type=None,
+        entity_id=None,
+        file_id=None,
+        sample_size=None,
+        phred_offset=None,
+        rehash=False,
+    )
     assert cli._cmd_qc(args, project, db) == 1
     assert "FAILED bad" in capsys.readouterr().err
-    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [
-        {"file_id": "F1", "ok": True, "file_qc_state": "QC_COMPLETE",
-         "entity_qc_state": "QC_FAILED", "file_statuses": []},
-    ])
+    monkeypatch.setattr(
+        "operon.qc.qc_all",
+        lambda *_a, **_k: [
+            {
+                "file_id": "F1",
+                "ok": True,
+                "file_qc_state": "QC_COMPLETE",
+                "entity_qc_state": "QC_FAILED",
+                "file_statuses": [],
+            },
+        ],
+    )
     assert cli._cmd_qc(args, project, db) == 1
-    assert cli._print_sync_results("push", "r", [
-        {"file_id": "F1", "relative_path": "a", "status": "uploaded"},
-        {"file_id": "F2", "relative_path": "b", "status": "error", "error": "bad"},
-    ]) == 1
+    assert (
+        cli._print_sync_results(
+            "push",
+            "r",
+            [
+                {"file_id": "F1", "relative_path": "a", "status": "uploaded"},
+                {
+                    "file_id": "F2",
+                    "relative_path": "b",
+                    "status": "error",
+                    "error": "bad",
+                },
+            ],
+        )
+        == 1
+    )
     assert "error: 1" in capsys.readouterr().out
     assert cli._print_sync_results("pull", "r", []) == 0
 
 
 def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
     project, db = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     bad = tmp_path / "bad.tsv"
     bad.write_text("entity_type\norganism\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="missing columns"):
@@ -171,7 +241,9 @@ def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
         encoding="utf-8",
     )
     assert cli._cmd_import_qc(ns(tsv_file=good), project, db) == 0
-    row = db.query("SELECT metric_numeric, input_identity, parameter_set FROM qc_results")[0]
+    row = db.query(
+        "SELECT metric_numeric, input_identity, parameter_set FROM qc_results"
+    )[0]
     assert row["metric_numeric"] is None
     assert row["input_identity"] == "entity:organism:ORG_000001"
     assert row["parameter_set"] == "external"
@@ -186,13 +258,24 @@ def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
     with pytest.raises(ValidationError, match="file_id FIL_X does not exist"):
         cli._cmd_import_qc(ns(tsv_file=missing_file), project, db)
 
-    db.insert_row("organisms", {"organism_id": "ORG_000002", "scientific_name": "Other"})
-    db.insert_row("files", {
-        "file_id": "FIL_000001", "entity_type": "organism", "entity_id": "ORG_000001",
-        "file_role": "metadata", "format": "tsv", "compression": "none",
-        "relative_path": "raw/metadata.tsv", "sha256": "a" * 64, "size_bytes": 1,
-        "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000002", "scientific_name": "Other"}
+    )
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_000001",
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "file_role": "metadata",
+            "format": "tsv",
+            "compression": "none",
+            "relative_path": "raw/metadata.tsv",
+            "sha256": "a" * 64,
+            "size_bytes": 1,
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     columns = (
         "entity_type\tentity_id\tfile_id\tfile_sha256\tqc_stage\tmetric_name\t"
         "metric_value\ttool\ttool_version\tparameter_set\n"
@@ -207,7 +290,9 @@ def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
 
     wrong_sha = tmp_path / "wrong-sha.tsv"
     wrong_sha.write_text(
-        columns + "organism\tORG_000001\tFIL_000001\t" + "b" * 64
+        columns
+        + "organism\tORG_000001\tFIL_000001\t"
+        + "b" * 64
         + "\texternal\tx\t1\ttool\t1\tp\n",
         encoding="utf-8",
     )
@@ -216,7 +301,9 @@ def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
 
     matching_file = tmp_path / "matching-file.tsv"
     matching_file.write_text(
-        columns + "organism\tORG_000001\tFIL_000001\t" + "a" * 64
+        columns
+        + "organism\tORG_000001\tFIL_000001\t"
+        + "a" * 64
         + "\texternal\tx\t2\ttool\t1\tp\n",
         encoding="utf-8",
     )
@@ -230,31 +317,86 @@ def test_import_qc_validation_and_numeric_paths(project_db, tmp_path, capsys):
 def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
     project, db = project_db
     with pytest.raises(ValidationError, match="must not be empty"):
-        cli._cmd_run_external(ns(
-            command_line=" ", step="x", entity_type=None, entity_id=None,
-            parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
-            tool=None, inputs=[], threads=None,
-        ), project, db)
-    monkeypatch.setattr("operon.workflow.run_external_command", lambda *_a, **_k: {
-        "run_id": "WF1", "step": "x", "status": "completed", "exit_code": 0,
-        "finished_at": "now",
-    })
-    assert cli._cmd_run_external(ns(
-        command_line="echo ok", step="x", entity_type=None, entity_id=None,
-        parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
-        tool=None, inputs=[], threads=None,
-    ), project, db) == 0
+        cli._cmd_run_external(
+            ns(
+                command_line=" ",
+                step="x",
+                entity_type=None,
+                entity_id=None,
+                parameter_set=None,
+                expected_output=[],
+                cwd=None,
+                timeout=None,
+                backend=None,
+                tool=None,
+                inputs=[],
+                threads=None,
+            ),
+            project,
+            db,
+        )
+    monkeypatch.setattr(
+        "operon.workflow.run_external_command",
+        lambda *_a, **_k: {
+            "run_id": "WF1",
+            "step": "x",
+            "status": "completed",
+            "exit_code": 0,
+            "finished_at": "now",
+        },
+    )
+    assert (
+        cli._cmd_run_external(
+            ns(
+                command_line="echo ok",
+                step="x",
+                entity_type=None,
+                entity_id=None,
+                parameter_set=None,
+                expected_output=[],
+                cwd=None,
+                timeout=None,
+                backend=None,
+                tool=None,
+                inputs=[],
+                threads=None,
+            ),
+            project,
+            db,
+        )
+        == 0
+    )
     assert '"run_id": "WF1"' in capsys.readouterr().out
 
     monkeypatch.setattr("operon.tools.print_tools_table", lambda _p: ("tools", False))
     assert cli._cmd_tools_check(project) == 1
-    monkeypatch.setattr("operon.tools.run_analysis", lambda *_a, **_k: [
-        {"file_id": "F1", "entity_type": "assembly", "entity_id": "A1",
-         "analysis": "x", "status": "planned", "tool_version": "1", "output": "o"},
-        {"file_id": "F2", "status": "error", "error": "bad"},
-    ])
-    args = ns(analysis="x", entity_type=None, entity_id=None, dry_run=True, force=False,
-              limit=None, threads=1, backend=None, keep_partial=False, param=[])
+    monkeypatch.setattr(
+        "operon.tools.run_analysis",
+        lambda *_a, **_k: [
+            {
+                "file_id": "F1",
+                "entity_type": "assembly",
+                "entity_id": "A1",
+                "analysis": "x",
+                "status": "planned",
+                "tool_version": "1",
+                "output": "o",
+            },
+            {"file_id": "F2", "status": "error", "error": "bad"},
+        ],
+    )
+    args = ns(
+        analysis="x",
+        entity_type=None,
+        entity_id=None,
+        dry_run=True,
+        force=False,
+        limit=None,
+        threads=1,
+        backend=None,
+        keep_partial=False,
+        param=[],
+    )
     assert cli._cmd_analyze(args, project, db) == 1
     assert "1 job(s) left" in capsys.readouterr().out
     monkeypatch.setattr("operon.tools.run_analysis", lambda *_a, **_k: [])
@@ -265,9 +407,18 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
 
 def _run_external_ns(**overrides):
     values = dict(
-        command_line="echo ok", step="x", entity_type=None, entity_id=None,
-        parameter_set=None, expected_output=[], cwd=None, timeout=None, backend=None,
-        tool=None, inputs=[], threads=None,
+        command_line="echo ok",
+        step="x",
+        entity_type=None,
+        entity_id=None,
+        parameter_set=None,
+        expected_output=[],
+        cwd=None,
+        timeout=None,
+        backend=None,
+        tool=None,
+        inputs=[],
+        threads=None,
     )
     values.update(overrides)
     return ns(**values)
@@ -279,16 +430,33 @@ def test_run_external_tool_version_threads_and_inputs(project_db, monkeypatch, c
 
     def fake_run(_db, _project, _argv, **kwargs):
         captured.update(kwargs)
-        return {"run_id": "WF2", "step": "x", "status": "completed", "exit_code": 0,
-                "finished_at": "now"}
+        return {
+            "run_id": "WF2",
+            "step": "x",
+            "status": "completed",
+            "exit_code": 0,
+            "finished_at": "now",
+        }
 
     monkeypatch.setattr("operon.workflow.run_external_command", fake_run)
-    monkeypatch.setattr("operon.tools.detect_tool_version_record",
-                        lambda _tool, _config: ("2.15.0", "blastn: 2.15.0+"))
+    monkeypatch.setattr(
+        "operon.tools.detect_tool_version_record",
+        lambda _tool, _config: ("2.15.0", "blastn: 2.15.0+"),
+    )
     # blastn is preconfigured in the default config/tools.yaml.
-    assert cli._cmd_run_external(_run_external_ns(
-        command_line="blastn -h", tool="blastn", inputs=["in.fa"], threads=8,
-    ), project, db) == 0
+    assert (
+        cli._cmd_run_external(
+            _run_external_ns(
+                command_line="blastn -h",
+                tool="blastn",
+                inputs=["in.fa"],
+                threads=8,
+            ),
+            project,
+            db,
+        )
+        == 0
+    )
     assert captured["tool"] == "blastn"
     assert captured["tool_version"] == "2.15.0"
     assert captured["threads"] == 8
@@ -316,14 +484,19 @@ def test_run_external_tool_version_threads_and_inputs(project_db, monkeypatch, c
 
 def test_run_external_input_hashing(project_db, tmp_path):
     from operon.workflow import run_external_command
+
     project, db = project_db
     source = tmp_path / "input.fa"
     source.write_text(">x\nACGT\n", encoding="utf-8")
     other = tmp_path / "other.fa"
     other.write_text(">y\nTTTT\n", encoding="utf-8")
     record = run_external_command(
-        db, project, [sys.executable, "-c", "pass"], step="selftest_inputs",
-        inputs=[other, source], extra_details={"tool_version_raw": "raw out"},
+        db,
+        project,
+        [sys.executable, "-c", "pass"],
+        step="selftest_inputs",
+        inputs=[other, source],
+        extra_details={"tool_version_raw": "raw out"},
     )
     # The combined hash covers the sorted path:sha256 lines, not the order given.
     combined = "\n".join(
@@ -342,7 +515,10 @@ def test_run_external_input_hashing(project_db, tmp_path):
 
     with pytest.raises(ValidationError, match="declared input does not exist"):
         run_external_command(
-            db, project, [sys.executable, "-c", "pass"], step="x",
+            db,
+            project,
+            [sys.executable, "-c", "pass"],
+            step="x",
             inputs=[tmp_path / "missing.fa"],
         )
 
@@ -354,13 +530,26 @@ def test_analysis_results_support_metrics_and_hits(project_db, capsys):
         "INSERT INTO analysis_jobs(job_id, analysis_name, entity_type, entity_id, file_id, tool, "
         "tool_version, parameter_set, parameter_sha256, input_sha256, database_identity, status, started_at) "
         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (1, "a", "organism", "ORG1", "F1", "tool", "1", "p", "sha", "input", "db",
-         "completed", "now"),
+        (
+            1,
+            "a",
+            "organism",
+            "ORG1",
+            "F1",
+            "tool",
+            "1",
+            "p",
+            "sha",
+            "input",
+            "db",
+            "completed",
+            "now",
+        ),
     )
     db.conn.execute(
         "INSERT INTO analysis_results(job_id, analysis_name, entity_type, entity_id, file_id, "
         "metric_name, metric_value) VALUES(?,?,?,?,?,?,?)",
-        (1, "a", "organism", "ORG1", "F1", "score", "1")
+        (1, "a", "organism", "ORG1", "F1", "score", "1"),
     )
     db.conn.execute(
         "INSERT INTO analysis_alignments(job_id, analysis_name, entity_type, entity_id, query_id, "
@@ -374,26 +563,63 @@ def test_analysis_results_support_metrics_and_hits(project_db, capsys):
     assert cli._cmd_analysis_results(ns(hits=True, **filters), db) == 0
     out = capsys.readouterr().out
     assert "bitscore" in out and "hit_rank" in out
-    assert cli._cmd_analysis_results(ns(hits=True, analysis="missing", entity_type=None,
-                                        entity_id=None, limit=10), db) == 0
+    assert (
+        cli._cmd_analysis_results(
+            ns(
+                hits=True,
+                analysis="missing",
+                entity_type=None,
+                entity_id=None,
+                limit=10,
+            ),
+            db,
+        )
+        == 0
+    )
     assert "no analysis results" in capsys.readouterr().out
-    assert cli._cmd_analysis_results(ns(hits=False, analysis=None, entity_type=None,
-                                        entity_id=None, limit=10), db) == 0
+    assert (
+        cli._cmd_analysis_results(
+            ns(hits=False, analysis=None, entity_type=None, entity_id=None, limit=10),
+            db,
+        )
+        == 0
+    )
     with pytest.raises(ValidationError, match="require --hits"):
-        cli._cmd_analysis_results(ns(hits=False, analysis=None, entity_type=None,
-                                     entity_id=None, limit=10, format="tsv"), db)
+        cli._cmd_analysis_results(
+            ns(
+                hits=False,
+                analysis=None,
+                entity_type=None,
+                entity_id=None,
+                limit=10,
+                format="tsv",
+            ),
+            db,
+        )
 
 
-def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkeypatch, capsys):
+def test_remotes_evaluate_pipeline_and_simple_report_branches(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
     monkeypatch.setattr("operon.remotes.list_remotes", lambda _p: {})
     assert cli._cmd_remotes(ns(), project) == 0
     assert "no remotes configured" in capsys.readouterr().out
-    monkeypatch.setattr("operon.remotes.list_remotes", lambda _p: {"good": {}, "bad": {}})
-    monkeypatch.setattr("operon.remotes.check_remote", lambda _p, name: {
-        "name": name, "type": "sftp", "address": "h", "root": "/r", "files": 0,
-        "status": "ok" if name == "good" else "error", "error": "" if name == "good" else "bad",
-    })
+    monkeypatch.setattr(
+        "operon.remotes.list_remotes", lambda _p: {"good": {}, "bad": {}}
+    )
+    monkeypatch.setattr(
+        "operon.remotes.check_remote",
+        lambda _p, name: {
+            "name": name,
+            "type": "sftp",
+            "address": "h",
+            "root": "/r",
+            "files": 0,
+            "status": "ok" if name == "good" else "error",
+            "error": "" if name == "good" else "bad",
+        },
+    )
     assert cli._cmd_remotes(ns(), project) == 1
 
     from operon.pipeline import reason_list
@@ -405,36 +631,80 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(project_db, monkey
     assert reason_list(3) == []
     with pytest.raises(ValidationError, match="entity-type is required"):
         cli._cmd_evaluate(ns(entity_id="X", entity_type=None, profile="p"), project, db)
-    monkeypatch.setattr(cli, "evaluate_entity", lambda *_a: {
-        "entity_type": "organism", "entity_id": "O", "profile": "p",
-        "decision": "PASS", "reason_codes": '[]',
-    })
-    assert cli._cmd_evaluate(ns(entity_id="O", entity_type="organism", profile="p"), project, db) == 0
+    monkeypatch.setattr(
+        cli,
+        "evaluate_entity",
+        lambda *_a: {
+            "entity_type": "organism",
+            "entity_id": "O",
+            "profile": "p",
+            "decision": "PASS",
+            "reason_codes": "[]",
+        },
+    )
+    assert (
+        cli._cmd_evaluate(
+            ns(entity_id="O", entity_type="organism", profile="p"), project, db
+        )
+        == 0
+    )
     monkeypatch.setattr(cli, "evaluate_all", lambda *_a: [])
-    assert cli._cmd_evaluate(ns(entity_id=None, entity_type=None, profile="p"), project, db) == 0
+    assert (
+        cli._cmd_evaluate(
+            ns(entity_id=None, entity_type=None, profile="p"), project, db
+        )
+        == 0
+    )
 
-    monkeypatch.setattr("operon.pipeline.ingest_file",
-                        lambda *_a, **_k: {"file_id": "F1", "sha256": "abcdef"})
-    monkeypatch.setattr("operon.pipeline.standardize_file", lambda *_a, **_k: {"target": "std"})
-    monkeypatch.setattr("operon.pipeline.qc_file", lambda *_a: {"ok": False, "error": "bad"})
-    pipeline = ns(source="x", entity_type="assembly", entity_id="A", role="genome_fasta",
-                  fmt=None, compression=None, source_url=None, profile=None)
+    monkeypatch.setattr(
+        "operon.pipeline.ingest_file",
+        lambda *_a, **_k: {"file_id": "F1", "sha256": "abcdef"},
+    )
+    monkeypatch.setattr(
+        "operon.pipeline.standardize_file", lambda *_a, **_k: {"target": "std"}
+    )
+    monkeypatch.setattr(
+        "operon.pipeline.qc_file", lambda *_a: {"ok": False, "error": "bad"}
+    )
+    pipeline = ns(
+        source="x",
+        entity_type="assembly",
+        entity_id="A",
+        role="genome_fasta",
+        fmt=None,
+        compression=None,
+        source_url=None,
+        profile=None,
+    )
     assert cli._cmd_run_pipeline(pipeline, project, db) == 1
     monkeypatch.setattr("operon.pipeline.qc_file", lambda *_a: {"ok": True})
-    monkeypatch.setattr("operon.pipeline.evaluate_entity",
-                        lambda *_a: {"decision": "PASS", "reason_codes": []})
+    monkeypatch.setattr(
+        "operon.pipeline.evaluate_entity",
+        lambda *_a: {"decision": "PASS", "reason_codes": []},
+    )
     assert cli._cmd_run_pipeline(pipeline, project, db) == 0
 
 
-def test_run_pipeline_preflights_curated_evaluation_before_ingest(project_db, monkeypatch):
+def test_run_pipeline_preflights_curated_evaluation_before_ingest(
+    project_db, monkeypatch
+):
     project, db = project_db
     profile = project.config["qc"]["default_profile"]
-    db.upsert_decision({
-        "entity_type": "assembly", "entity_id": "ASM_1", "profile": profile,
-        "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
-        "curated_reason": "manual review", "reason_codes": "[]", "observed": "{}",
-        "thresholds": "{}", "evaluated_at": "2026-01-01T00:00:00+00:00",
-    })
+    db.upsert_decision(
+        {
+            "entity_type": "assembly",
+            "entity_id": "ASM_1",
+            "profile": profile,
+            "decision": "PASS",
+            "curated_decision": "PASS",
+            "curated_by": "reviewer",
+            "curated_reason": "manual review",
+            "reason_codes": "[]",
+            "observed": "{}",
+            "thresholds": "{}",
+            "evaluated_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
 
     class NotTTY:
         def isatty(self):
@@ -442,9 +712,21 @@ def test_run_pipeline_preflights_curated_evaluation_before_ingest(project_db, mo
 
     monkeypatch.setattr(cli.sys, "stdin", NotTTY())
     monkeypatch.setattr(cli.sys, "stdout", NotTTY())
-    monkeypatch.setattr(cli, "ingest_file", lambda *_a, **_k: pytest.fail("ingest ran before confirmation"))
-    pipeline = ns(source="x", entity_type="assembly", entity_id="ASM_1", role="genome_fasta",
-                  fmt=None, compression=None, source_url=None, profile=None)
+    monkeypatch.setattr(
+        cli,
+        "ingest_file",
+        lambda *_a, **_k: pytest.fail("ingest ran before confirmation"),
+    )
+    pipeline = ns(
+        source="x",
+        entity_type="assembly",
+        entity_id="ASM_1",
+        role="genome_fasta",
+        fmt=None,
+        compression=None,
+        source_url=None,
+        profile=None,
+    )
     with pytest.raises(ValidationError, match="pipeline will.*pass --yes"):
         cli._cmd_run_pipeline(pipeline, project, db)
 
@@ -453,15 +735,36 @@ def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, ca
     project, db = project_db
     monkeypatch.setattr(cli, "print_qc_table", lambda *_a: "qc")
     monkeypatch.setattr(cli, "export_qc_tsv", lambda *_a: Path("qc.tsv"))
-    assert cli._cmd_qc_table(ns(entity_type=None, entity_id=None, export=True), project, db) == 0
+    assert (
+        cli._cmd_qc_table(
+            ns(entity_type=None, entity_id=None, export=True), project, db
+        )
+        == 0
+    )
     monkeypatch.setattr(cli, "print_decisions", lambda *_a: "decisions")
     assert cli._cmd_decisions(ns(profile=None), project, db) == 0
-    monkeypatch.setattr(cli, "report_coverage", lambda *_a, **_k: {
-        "scope_kind": "metadata", "scope_value": "all", "reference_set_id": "R1",
-        "metrics": [{"rank": "genus", "numerator": 1, "denominator": 2,
-                     "coverage_percent": 50, "threshold_percent": 60, "decision": "FAIL"}],
-        "decision": "FAIL", "path": "report.tsv", "exit_code": 1,
-    })
+    monkeypatch.setattr(
+        cli,
+        "report_coverage",
+        lambda *_a, **_k: {
+            "scope_kind": "metadata",
+            "scope_value": "all",
+            "reference_set_id": "R1",
+            "metrics": [
+                {
+                    "rank": "genus",
+                    "numerator": 1,
+                    "denominator": 2,
+                    "coverage_percent": 50,
+                    "threshold_percent": 60,
+                    "decision": "FAIL",
+                }
+            ],
+            "decision": "FAIL",
+            "path": "report.tsv",
+            "exit_code": 1,
+        },
+    )
     args = ns(report_kind="coverage", reference_set="R1", release=None)
     assert cli._cmd_report(args, project, db) == 1
     monkeypatch.setattr(cli, "export_metadata_report", lambda *_a: Path("metadata"))
@@ -471,12 +774,16 @@ def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, ca
 
     monkeypatch.setattr("operon.import_wizard.run_dataset_wizard", lambda *_a: None)
     assert cli._cmd_import(ns(import_kind="dataset"), project, db) == 0
-    monkeypatch.setattr("operon.import_wizard.run_dataset_wizard", lambda *_a: {"ok": True})
+    monkeypatch.setattr(
+        "operon.import_wizard.run_dataset_wizard", lambda *_a: {"ok": True}
+    )
     assert cli._cmd_import(ns(import_kind="dataset"), project, db) == 0
     with pytest.raises(ValidationError, match="unknown import kind"):
         cli._cmd_import(ns(import_kind="unknown"), project, db)
 
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     assert cli._cmd_show(ns(identifier="ORG_000001", json=True), db) == 0
     assert '"organism_id": "ORG_000001"' in capsys.readouterr().out
     assert cli._cmd_show(ns(identifier="ORG_000001", json=False), db) == 0
@@ -489,10 +796,23 @@ def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, ca
         cli._cmd_query(ns(sql="not sql"), db)
 
     assert main(["--project", str(project.root), "query", "not sql"]) == 2
-    assert main([
-        "--project", str(project.root), "run-external", "--step", "empty", "--command", " "
-    ]) == 2
-    monkeypatch.setattr(cli, "_open_project", lambda _args: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "run-external",
+                "--step",
+                "empty",
+                "--command",
+                " ",
+            ]
+        )
+        == 2
+    )
+    monkeypatch.setattr(
+        cli, "_open_project", lambda _args: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     assert main(["--project", str(project.root), "status"]) == 1
 
 
@@ -504,7 +824,9 @@ def test_main_keyboard_interrupt(project_db, monkeypatch):
             pass
 
     monkeypatch.setattr(cli, "_open_project", lambda _args: (project, FakeDB()))
-    monkeypatch.setattr(cli, "_cmd_status", lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt()))
+    monkeypatch.setattr(
+        cli, "_cmd_status", lambda *_a: (_ for _ in ()).throw(KeyboardInterrupt())
+    )
     assert main(["--project", str(project.root), "status"]) == 130
 
 
@@ -555,7 +877,9 @@ def test_ingest_remote_source_cleans_temporary_artifact_after_failure(
     temporary.write_text(">x\nAC\n", encoding="utf-8")
     monkeypatch.setattr("operon.remotes.fetch_url_to_temp", lambda *_a: temporary)
     monkeypatch.setattr(
-        cli, "ingest_file", lambda *_a, **_k: (_ for _ in ()).throw(ValidationError("bad"))
+        cli,
+        "ingest_file",
+        lambda *_a, **_k: (_ for _ in ()).throw(ValidationError("bad")),
     )
     args = ns(
         source="sftp://host/archive/x.fa",
@@ -572,7 +896,9 @@ def test_ingest_remote_source_cleans_temporary_artifact_after_failure(
     assert not temporary.exists()
 
 
-def test_ingest_local_source_does_not_use_remote_staging(project_db, tmp_path, monkeypatch):
+def test_ingest_local_source_does_not_use_remote_staging(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     source = tmp_path / "local.fa"
     source.write_text(">x\nAC\n", encoding="utf-8")
@@ -583,33 +909,82 @@ def test_ingest_local_source_does_not_use_remote_staging(project_db, tmp_path, m
         return {"file_id": "FIL_1", "relative_path": "archive/x", "sha256": "a" * 64}
 
     monkeypatch.setattr(cli, "ingest_file", fake_ingest)
-    assert cli._cmd_ingest(ns(
-        source=str(source), source_url=None, entity_type="assembly", entity_id="ASM_1",
-        role="genome_fasta", fmt=None, compression=None, move=False,
-    ), project, db) == 0
+    assert (
+        cli._cmd_ingest(
+            ns(
+                source=str(source),
+                source_url=None,
+                entity_type="assembly",
+                entity_id="ASM_1",
+                role="genome_fasta",
+                fmt=None,
+                compression=None,
+                move=False,
+            ),
+            project,
+            db,
+        )
+        == 0
+    )
     assert observed == {"source": str(source), "source_url": None}
     assert source.exists()
 
 
-def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(project_db, monkeypatch, capsys):
+def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
     monkeypatch.setattr(cli, "import_ncbi_taxonomy", lambda *_a: {"snapshot": "T1"})
-    monkeypatch.setattr(cli, "compile_reference_set", lambda *_a: {"reference_set": "R1"})
-    monkeypatch.setattr(cli, "list_taxonomy_snapshots", lambda *_a: [{
-        "taxonomy_snapshot_id": "T1", "source": "NCBI", "taxonomy_version": "v1",
-        "node_count": 2, "status": "active", "source_sha256": "abc", "imported_at": "now",
-    }])
-    monkeypatch.setattr(cli, "list_reference_sets", lambda *_a: [{
-        "reference_set_id": "R1", "taxonomy_version": "v1", "profile_name": "p",
-        "family_count": 1, "genus_count": 2, "tsv_sha256": "def", "compiled_at": "now",
-    }])
+    monkeypatch.setattr(
+        cli, "compile_reference_set", lambda *_a: {"reference_set": "R1"}
+    )
+    monkeypatch.setattr(
+        cli,
+        "list_taxonomy_snapshots",
+        lambda *_a: [
+            {
+                "taxonomy_snapshot_id": "T1",
+                "source": "NCBI",
+                "taxonomy_version": "v1",
+                "node_count": 2,
+                "status": "active",
+                "source_sha256": "abc",
+                "imported_at": "now",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        cli,
+        "list_reference_sets",
+        lambda *_a: [
+            {
+                "reference_set_id": "R1",
+                "taxonomy_version": "v1",
+                "profile_name": "p",
+                "family_count": 1,
+                "genus_count": 2,
+                "tsv_sha256": "def",
+                "compiled_at": "now",
+            }
+        ],
+    )
 
-    assert cli._cmd_taxonomy(ns(
-        taxonomy_command="import", input=Path("taxdump.tar.gz"), version="v1"
-    ), project, db) == 0
-    assert cli._cmd_taxonomy(ns(
-        taxonomy_command="compile", profile="p", taxonomy_version="v1"
-    ), project, db) == 0
+    assert (
+        cli._cmd_taxonomy(
+            ns(taxonomy_command="import", input=Path("taxdump.tar.gz"), version="v1"),
+            project,
+            db,
+        )
+        == 0
+    )
+    assert (
+        cli._cmd_taxonomy(
+            ns(taxonomy_command="compile", profile="p", taxonomy_version="v1"),
+            project,
+            db,
+        )
+        == 0
+    )
     assert cli._cmd_taxonomy(ns(taxonomy_command="list"), project, db) == 0
     assert cli._cmd_taxonomy(ns(taxonomy_command="reference-sets"), project, db) == 0
     with pytest.raises(ValidationError, match="unknown taxonomy command"):
@@ -617,15 +992,22 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(project_db, monk
     output = capsys.readouterr().out
     assert "T1" in output and "R1" in output
 
-    for kind, handler in (("qc", "_cmd_qc_table"), ("decisions", "_cmd_decisions"),
-                          ("analysis", "_cmd_analysis_results")):
+    for kind, handler in (
+        ("qc", "_cmd_qc_table"),
+        ("decisions", "_cmd_decisions"),
+        ("analysis", "_cmd_analysis_results"),
+    ):
         routed = []
-        monkeypatch.setattr(cli, handler, lambda *_a, routed=routed: routed.append(kind) or 7)
+        monkeypatch.setattr(
+            cli, handler, lambda *_a, routed=routed: routed.append(kind) or 7
+        )
         assert cli._cmd_report(ns(report_kind=kind), project, db) == 7
         assert routed == [kind]
 
 
-def test_interactive_table_import_conflict_and_confirmation_paths(project_db, monkeypatch):
+def test_interactive_table_import_conflict_and_confirmation_paths(
+    project_db, monkeypatch
+):
     project, db = project_db
     schema = object()
     preview = {
@@ -645,8 +1027,12 @@ def test_interactive_table_import_conflict_and_confirmation_paths(project_db, mo
 
     def args(**overrides):
         values = dict(
-            import_kind="table", template=None, table="organisms", file=Path("rows.tsv"),
-            on_conflict=None, yes=False,
+            import_kind="table",
+            template=None,
+            table="organisms",
+            file=Path("rows.tsv"),
+            on_conflict=None,
+            yes=False,
         )
         values.update(overrides)
         return ns(**values)
@@ -702,21 +1088,39 @@ def test_interactive_table_import_conflict_and_confirmation_paths(project_db, mo
 
 def test_remaining_cli_boolean_branches(project_db, monkeypatch, capsys, tmp_path):
     project, db = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
-    db.insert_row("accessions", {
-        "internal_type": "organism", "internal_id": "ORG_000001",
-        "namespace": "NCBI_Taxonomy", "accession": "123", "is_primary": 1,
-    })
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
+    db.insert_row(
+        "accessions",
+        {
+            "internal_type": "organism",
+            "internal_id": "ORG_000001",
+            "namespace": "NCBI_Taxonomy",
+            "accession": "123",
+            "is_primary": 1,
+        },
+    )
 
     monkeypatch.setattr(cli, "print_qc_table", lambda *_a: "qc")
-    assert cli._cmd_qc_table(ns(entity_type=None, entity_id=None, export=False), project, db) == 0
+    assert (
+        cli._cmd_qc_table(
+            ns(entity_type=None, entity_id=None, export=False), project, db
+        )
+        == 0
+    )
 
-    monkeypatch.setattr("operon.ncbi_reconcile.apply_ncbi_reconciliation", lambda *_a, **_k: {"ok": True})
+    monkeypatch.setattr(
+        "operon.ncbi_reconcile.apply_ncbi_reconciliation",
+        lambda *_a, **_k: {"ok": True},
+    )
     assert cli._cmd_ncbi_reconcile(ns(apply=True, actor=None), project, db) == 0
 
     assert cli._cmd_locations(ns(file_id=["missing"]), project, db) == 0
     assert cli._cmd_show(ns(identifier="ORG_000001", json=False), db) == 0
     assert "NCBI_Taxonomy:123" in capsys.readouterr().out
 
-    monkeypatch.setattr(cli, "_cmd_init", lambda _args: (_ for _ in ()).throw(OSError("disk")))
+    monkeypatch.setattr(
+        cli, "_cmd_init", lambda _args: (_ for _ in ()).throw(OSError("disk"))
+    )
     assert main(["init", str(tmp_path / "other")]) == 1

@@ -46,32 +46,51 @@ class RunExternalModal(WriteModal):
         self._command_line = ""
 
     def compose_form(self) -> Iterable[Any]:
-        yield Static("Step (required; recorded as the workflow step)", classes="modal-label")
+        yield Static(
+            "Step (required; recorded as the workflow step)", classes="modal-label"
+        )
         yield Input(placeholder="step, e.g. busco / quast / fastp", id="external-step")
-        yield Static("Command (required; split with shell-like quoting — no pipes or redirects)",
-                     classes="modal-label")
-        yield Input(placeholder="e.g. busco -i in.fa -o out -m genome", id="external-command")
+        yield Static(
+            "Command (required; split with shell-like quoting — no pipes or redirects)",
+            classes="modal-label",
+        )
+        yield Input(
+            placeholder="e.g. busco -i in.fa -o out -m genome", id="external-command"
+        )
         yield Static("Entity (optional)", classes="modal-label")
         yield Select(ENTITY_TYPE_OPTIONS, id="external-entity-type", allow_blank=True)
         yield Input(placeholder="entity id", id="external-entity-id")
-        yield Static("Tool (optional; its version is detected from config/tools.yaml)",
-                     classes="modal-label")
+        yield Static(
+            "Tool (optional; its version is detected from config/tools.yaml)",
+            classes="modal-label",
+        )
         yield Input(placeholder="tool name", id="external-tool")
         yield Input(placeholder="parameter set label", id="external-parameter-set")
-        yield Input(placeholder="inputs (comma-separated; hashed for provenance)",
-                    id="external-inputs")
-        yield Input(placeholder="expected outputs (comma-separated; must exist and be non-empty)",
-                    id="external-expected-outputs")
-        yield Input(placeholder="threads (blank = project default)", id="external-threads")
-        yield Input(placeholder="working directory (blank = project root)", id="external-cwd")
+        yield Input(
+            placeholder="inputs (comma-separated; hashed for provenance)",
+            id="external-inputs",
+        )
+        yield Input(
+            placeholder="expected outputs (comma-separated; must exist and be non-empty)",
+            id="external-expected-outputs",
+        )
+        yield Input(
+            placeholder="threads (blank = project default)", id="external-threads"
+        )
+        yield Input(
+            placeholder="working directory (blank = project root)", id="external-cwd"
+        )
         yield Input(placeholder="timeout seconds (blank = none)", id="external-timeout")
         yield Static("Execution backend", classes="modal-label")
-        yield Select(backend_select_options(self.project), value="", id="external-backend")
+        yield Select(
+            backend_select_options(self.project), value="", id="external-backend"
+        )
         yield Static(
             "A fresh run id (WF_…) is allocated at submission; logs land in the project's "
             "logs/ directory (`operon workflow show <id> --follow` streams them on the CLI, "
             "which can also interrupt a running command).",
-            id="external-run-note", classes="modal-info",
+            id="external-run-note",
+            classes="modal-info",
         )
         yield Static("", id="external-status", classes="modal-info")
 
@@ -86,10 +105,13 @@ class RunExternalModal(WriteModal):
             "entity_type": "" if entity_value is Select.NULL else str(entity_value),
             "entity_id": self.query_one("#external-entity-id", Input).value.strip(),
             "tool": self.query_one("#external-tool", Input).value.strip(),
-            "parameter_set": self.query_one("#external-parameter-set", Input).value.strip(),
+            "parameter_set": self.query_one(
+                "#external-parameter-set", Input
+            ).value.strip(),
             "inputs": split_list(self.query_one("#external-inputs", Input).value),
             "expected_outputs": split_list(
-                self.query_one("#external-expected-outputs", Input).value),
+                self.query_one("#external-expected-outputs", Input).value
+            ),
             "threads": self.query_one("#external-threads", Input).value.strip(),
             "cwd": self.query_one("#external-cwd", Input).value.strip(),
             "timeout": self.query_one("#external-timeout", Input).value.strip(),
@@ -99,19 +121,30 @@ class RunExternalModal(WriteModal):
     def command_text(self) -> str:
         values = self._form_values()
         parts = [
-            "operon", "run-external",
-            "--step", shlex.quote(values["step"] or "…"),
-            "--command", shlex.quote(values["command_line"] or "…"),
+            "operon",
+            "run-external",
+            "--step",
+            shlex.quote(values["step"] or "…"),
+            "--command",
+            shlex.quote(values["command_line"] or "…"),
         ]
-        for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
-                            ("parameter_set", "--parameter-set"), ("tool", "--tool")):
+        for field, flag in (
+            ("entity_type", "--entity-type"),
+            ("entity_id", "--entity-id"),
+            ("parameter_set", "--parameter-set"),
+            ("tool", "--tool"),
+        ):
             if values[field]:
                 parts += [flag, shlex.quote(values[field])]
         for value in values["inputs"]:
             parts += ["--input", shlex.quote(value)]
         for value in values["expected_outputs"]:
             parts += ["--expected-output", shlex.quote(value)]
-        for field, flag in (("threads", "--threads"), ("cwd", "--cwd"), ("timeout", "--timeout")):
+        for field, flag in (
+            ("threads", "--threads"),
+            ("cwd", "--cwd"),
+            ("timeout", "--timeout"),
+        ):
             if values[field]:
                 parts += [flag, shlex.quote(values[field])]
         if values["backend"]:
@@ -190,8 +223,11 @@ class RunExternalModal(WriteModal):
         self._set_controls_disabled(True)
         self.clear_error()
         self.query_one("#external-status", Static).update("running…")
-        self.run_action(lambda: actions.run_external(
-            self.project, self._step, self._command_line, **self._options))
+        self.run_action(
+            lambda: actions.run_external(
+                self.project, self._step, self._command_line, **self._options
+            )
+        )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Input, Select"):

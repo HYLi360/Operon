@@ -58,12 +58,15 @@ def release_files_for(db: Database, profile: str) -> list[dict[str, Any]]:
 
 def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
     """Return decision and retirement exclusions for a new release."""
-    decisions = [dict(row) for row in db.conn.execute(
-        "SELECT entity_type, entity_id, COALESCE(curated_decision, decision) "
-        "AS effective_decision, reason_codes, evaluated_at "
-        "FROM current_decisions WHERE profile=? ORDER BY entity_type, entity_id",
-        (profile,),
-    ).fetchall()]
+    decisions = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT entity_type, entity_id, COALESCE(curated_decision, decision) "
+            "AS effective_decision, reason_codes, evaluated_at "
+            "FROM current_decisions WHERE profile=? ORDER BY entity_type, entity_id",
+            (profile,),
+        ).fetchall()
+    ]
     retirement_rows = db.conn.execute(
         "SELECT entity_type, entity_id, retired_by_type, retired_by_id, "
         "reason_code, reason FROM effective_retired_entities "
@@ -81,31 +84,42 @@ def release_exclusions_for(db: Database, profile: str) -> list[dict[str, Any]]:
         roots = retirements.get(key, [])
         if not roots and decision["effective_decision"] in ACCEPTED:
             continue
-        excluded.append({
-            **decision,
-            "exclusion_reason": "RETIRED" if roots else "DECISION",
-            "retired_by": json.dumps(
-                [f"{row['retired_by_type']}:{row['retired_by_id']}" for row in roots],
-                ensure_ascii=False,
-            ),
-            "retirement_reason_codes": json.dumps(
-                [row["reason_code"] for row in roots], ensure_ascii=False,
-            ),
-            "retirement_reasons": json.dumps(
-                [row["reason"] for row in roots], ensure_ascii=False,
-            ),
-        })
+        excluded.append(
+            {
+                **decision,
+                "exclusion_reason": "RETIRED" if roots else "DECISION",
+                "retired_by": json.dumps(
+                    [
+                        f"{row['retired_by_type']}:{row['retired_by_id']}"
+                        for row in roots
+                    ],
+                    ensure_ascii=False,
+                ),
+                "retirement_reason_codes": json.dumps(
+                    [row["reason_code"] for row in roots],
+                    ensure_ascii=False,
+                ),
+                "retirement_reasons": json.dumps(
+                    [row["reason"] for row in roots],
+                    ensure_ascii=False,
+                ),
+            }
+        )
     return excluded
 
 
-def _assert_release_entities_evaluated(db: Database, project: Project, profile: str) -> None:
+def _assert_release_entities_evaluated(
+    db: Database, project: Project, profile: str
+) -> None:
     """Reject a release scope containing entities with no current decision."""
     # ``release_files_for`` remains usable by low-level callers that provide a
     # synthetic member list (for example migration tooling); this helper is
     # the release preflight, so an unknown profile must fail loudly instead of
     # silently publishing a zero-member release.
     document = load_profile(project.profiles_dir, profile, expected_kind="qc")
-    applies_to = sorted(set(document.get("applies_to", ["assembly", "annotation", "run"])))
+    applies_to = sorted(
+        set(document.get("applies_to", ["assembly", "annotation", "run"]))
+    )
     if not applies_to:
         return
     placeholders = ", ".join("?" for _ in applies_to)
@@ -149,24 +163,40 @@ def _assert_release_entities_evaluated(db: Database, project: Project, profile: 
                 observed = json.loads(str(decision["observed"] or "{}"))
             except json.JSONDecodeError:
                 observed = {}
-            watermark = observed.get("_metadata_change_id") if isinstance(observed, dict) else None
+            watermark = (
+                observed.get("_metadata_change_id")
+                if isinstance(observed, dict)
+                else None
+            )
             if watermark is not None:
-                stale = db.metadata_change_id(entity_type, str(decision["entity_id"])) > int(watermark)
+                stale = db.metadata_change_id(
+                    entity_type, str(decision["entity_id"])
+                ) > int(watermark)
             else:
                 # Pre-watermark decisions retain the historical timestamp
                 # comparison. New decisions use the monotonic audit ID above.
-                stale = db.conn.execute(
-                    "SELECT 1 FROM changes c WHERE c.object_id=? "
-                    "AND c.object_type IN (?, ?) AND c.field IS NOT NULL "
-                    "AND julianday(c.changed_at)>julianday(?) LIMIT 1",
-                    (decision["entity_id"], entity_type, table, decision["evaluated_at"]),
-                ).fetchone() is not None
+                stale = (
+                    db.conn.execute(
+                        "SELECT 1 FROM changes c WHERE c.object_id=? "
+                        "AND c.object_type IN (?, ?) AND c.field IS NOT NULL "
+                        "AND julianday(c.changed_at)>julianday(?) LIMIT 1",
+                        (
+                            decision["entity_id"],
+                            entity_type,
+                            table,
+                            decision["evaluated_at"],
+                        ),
+                    ).fetchone()
+                    is not None
+                )
             if stale:
                 stale_keys.append((entity_type, str(decision["entity_id"])))
     missing_keys = [(str(row["entity_type"]), str(row["entity_id"])) for row in rows]
     problem_keys = sorted(set(missing_keys + stale_keys))
     if problem_keys:
-        sample = ", ".join(f"{entity_type}:{entity_id}" for entity_type, entity_id in problem_keys[:10])
+        sample = ", ".join(
+            f"{entity_type}:{entity_id}" for entity_type, entity_id in problem_keys[:10]
+        )
         if len(problem_keys) > 10:
             sample += ", ..."
         reason = "missing decisions or metadata changed since evaluation"
@@ -176,25 +206,41 @@ def _assert_release_entities_evaluated(db: Database, project: Project, profile: 
         )
 
 
-def create_release(db: Database, project: Project, version: str, profile: str,
-                   copy_files: bool | None = None, link_kind: str = "copy") -> dict[str, Any]:
+def create_release(
+    db: Database,
+    project: Project,
+    version: str,
+    profile: str,
+    copy_files: bool | None = None,
+    link_kind: str = "copy",
+) -> dict[str, Any]:
     """Create a release through a recoverable staging directory."""
     final_root = project.releases_root / version
     if final_root.exists():
         row = db.conn.execute(
-            "SELECT 1 FROM releases WHERE version=?", (version,),
+            "SELECT 1 FROM releases WHERE version=?",
+            (version,),
         ).fetchone()
         if row is not None:
             raise FileExistsError(f"release {version} already exists: {final_root}")
         _remove_interrupted_release_tree(final_root, version)
     project.releases_root.mkdir(parents=True, exist_ok=True)
-    staging_root = Path(tempfile.mkdtemp(
-        prefix=f".{version}.operon-release-", dir=str(project.releases_root),
-    ))
+    staging_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{version}.operon-release-",
+            dir=str(project.releases_root),
+        )
+    )
     try:
         return _create_release_in_workspace(
-            db, project, version, profile, release_root=staging_root,
-            final_root=final_root, copy_files=copy_files, link_kind=link_kind,
+            db,
+            project,
+            version,
+            profile,
+            release_root=staging_root,
+            final_root=final_root,
+            copy_files=copy_files,
+            link_kind=link_kind,
         )
     except BaseException:
         if staging_root.exists():
@@ -226,9 +272,15 @@ def _remove_interrupted_release_tree(final_root: Path, version: str) -> None:
 
 
 def _create_release_in_workspace(
-        db: Database, project: Project, version: str, profile: str, *,
-        release_root: Path, final_root: Path, copy_files: bool | None = None,
-        link_kind: str = "copy",
+    db: Database,
+    project: Project,
+    version: str,
+    profile: str,
+    *,
+    release_root: Path,
+    final_root: Path,
+    copy_files: bool | None = None,
+    link_kind: str = "copy",
 ) -> dict[str, Any]:
     if copy_files:
         link_kind = "copy"
@@ -238,8 +290,14 @@ def _create_release_in_workspace(
 
     # Metadata snapshots (small, copied).
     metadata_tables = [
-        "organisms", "samples", "runs", "assemblies", "annotations", "accessions",
-        "data_sources", "source_links",
+        "organisms",
+        "samples",
+        "runs",
+        "assemblies",
+        "annotations",
+        "accessions",
+        "data_sources",
+        "source_links",
     ]
     for table in metadata_tables:
         columns = db.table_columns(table)
@@ -280,32 +338,56 @@ def _create_release_in_workspace(
                 except OSError:
                     atomic_copy(source, target)
         target_sha = sha256_path(target)
-        manifest_rows.append({
-            "file_id": member["file_id"],
-            "entity_type": member["entity_type"],
-            "entity_id": member["entity_id"],
-            "file_role": member["file_role"],
-            "format": member["format"],
-            "compression": member["compression"],
-            "release_relative_path": release_rel,
-            "original_relative_path": member["relative_path"],
-            "source_url": member["source_url"],
-            "size_bytes": member["size_bytes"],
-            "sha256": target_sha,
-            "effective_decision": member["effective_decision"],
-        })
+        manifest_rows.append(
+            {
+                "file_id": member["file_id"],
+                "entity_type": member["entity_type"],
+                "entity_id": member["entity_id"],
+                "file_role": member["file_role"],
+                "format": member["format"],
+                "compression": member["compression"],
+                "release_relative_path": release_rel,
+                "original_relative_path": member["relative_path"],
+                "source_url": member["source_url"],
+                "size_bytes": member["size_bytes"],
+                "sha256": target_sha,
+                "effective_decision": member["effective_decision"],
+            }
+        )
 
     manifest_cols = [
-        "file_id", "entity_type", "entity_id", "file_role", "format", "compression",
-        "release_relative_path", "original_relative_path", "source_url", "size_bytes",
-        "sha256", "effective_decision",
+        "file_id",
+        "entity_type",
+        "entity_id",
+        "file_role",
+        "format",
+        "compression",
+        "release_relative_path",
+        "original_relative_path",
+        "source_url",
+        "size_bytes",
+        "sha256",
+        "effective_decision",
     ]
     write_tsv(release_root / "manifest.tsv", manifest_cols, manifest_rows)
 
     # QC summary and decisions.
-    qc_columns = ["entity_type", "entity_id", "file_id", "file_sha256", "input_identity", "qc_stage", "metric_name",
-                  "metric_value", "metric_numeric", "metric_unit", "tool", "tool_version", "parameter_set",
-                  "evaluated_at"]
+    qc_columns = [
+        "entity_type",
+        "entity_id",
+        "file_id",
+        "file_sha256",
+        "input_identity",
+        "qc_stage",
+        "metric_name",
+        "metric_value",
+        "metric_numeric",
+        "metric_unit",
+        "tool",
+        "tool_version",
+        "parameter_set",
+        "evaluated_at",
+    ]
     qc_rows = db.conn.execute(
         "SELECT q.* FROM qc_results q WHERE NOT EXISTS ("
         "SELECT 1 FROM effective_retired_entities r "
@@ -313,9 +395,23 @@ def _create_release_in_workspace(
         "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name"
     ).fetchall()
     write_tsv(release_root / "qc_summary.tsv", qc_columns, [dict(r) for r in qc_rows])
-    decision_cols = ["decision_id", "entity_type", "entity_id", "profile", "profile_version", "profile_snapshot_id",
-                     "profile_sha256", "decision", "curated_decision", "reason_codes", "evaluated_at", "curated_by",
-                     "curated_reason", "curated_evidence", "curated_at"]
+    decision_cols = [
+        "decision_id",
+        "entity_type",
+        "entity_id",
+        "profile",
+        "profile_version",
+        "profile_snapshot_id",
+        "profile_sha256",
+        "decision",
+        "curated_decision",
+        "reason_codes",
+        "evaluated_at",
+        "curated_by",
+        "curated_reason",
+        "curated_evidence",
+        "curated_at",
+    ]
     decision_rows = db.conn.execute(
         "SELECT d.* FROM current_decisions d WHERE d.profile=? AND NOT EXISTS ("
         "SELECT 1 FROM effective_retired_entities r "
@@ -323,28 +419,53 @@ def _create_release_in_workspace(
         "ORDER BY d.entity_type, d.entity_id",
         (profile,),
     ).fetchall()
-    write_tsv(release_root / "decisions.tsv", decision_cols, [dict(r) for r in decision_rows])
-    profile_cols = ["profile_snapshot_id", "profile_name", "profile_version", "profile_sha256", "profile_document",
-                    "recorded_at"]
+    write_tsv(
+        release_root / "decisions.tsv", decision_cols, [dict(r) for r in decision_rows]
+    )
+    profile_cols = [
+        "profile_snapshot_id",
+        "profile_name",
+        "profile_version",
+        "profile_sha256",
+        "profile_document",
+        "recorded_at",
+    ]
     profile_rows = db.conn.execute(
-        "SELECT * FROM qc_profiles WHERE profile_name=? ORDER BY profile_snapshot_id", (profile,)
+        "SELECT * FROM qc_profiles WHERE profile_name=? ORDER BY profile_snapshot_id",
+        (profile,),
     ).fetchall()
-    write_tsv(release_root / "profile_history.tsv", profile_cols, [dict(r) for r in profile_rows])
+    write_tsv(
+        release_root / "profile_history.tsv",
+        profile_cols,
+        [dict(r) for r in profile_rows],
+    )
 
     # Exclusions preserve both failed decisions and retirement provenance.
     excluded = release_exclusions_for(db, profile)
     exclusion_cols = [
-        "entity_type", "entity_id", "effective_decision", "reason_codes",
-        "evaluated_at", "exclusion_reason", "retired_by",
-        "retirement_reason_codes", "retirement_reasons",
+        "entity_type",
+        "entity_id",
+        "effective_decision",
+        "reason_codes",
+        "evaluated_at",
+        "exclusion_reason",
+        "retired_by",
+        "retirement_reason_codes",
+        "retirement_reasons",
     ]
     write_tsv(release_root / "exclusions.tsv", exclusion_cols, excluded)
 
     software = [
-        {"tool": "operon", "version": __version__, "role": "file database, built-in QC and rule engine"},
+        {
+            "tool": "operon",
+            "version": __version__,
+            "role": "file database, built-in QC and rule engine",
+        },
         {"tool": "python", "version": _python_version(), "role": "runtime"},
     ]
-    write_tsv(release_root / "software_versions.tsv", ["tool", "version", "role"], software)
+    write_tsv(
+        release_root / "software_versions.tsv", ["tool", "version", "role"], software
+    )
 
     provenance = {
         "schema": "operon-2.0",
@@ -359,14 +480,18 @@ def _create_release_in_workspace(
         "storage_mode": link_kind,
         "metadata_sha256": metadata_sha256,
     }
-    (release_root / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n",
-                                                  encoding="utf-8")
+    (release_root / "provenance.json").write_text(
+        json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
     checksum_lines = []
     for manifest_row in manifest_rows:
-        checksum_lines.append(f"{manifest_row['sha256']}  {manifest_row['release_relative_path']}")
-    (release_root / "checksums.sha256").write_text("\n".join(checksum_lines) + ("\n" if checksum_lines else ""),
-                                                   encoding="utf-8")
+        checksum_lines.append(
+            f"{manifest_row['sha256']}  {manifest_row['release_relative_path']}"
+        )
+    (release_root / "checksums.sha256").write_text(
+        "\n".join(checksum_lines) + ("\n" if checksum_lines else ""), encoding="utf-8"
+    )
 
     readme = (
         f"# Operon release {version}\n\n"
@@ -402,23 +527,43 @@ def _create_release_in_workspace(
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO releases(version, created_at, profile, path, manifest_sha256, summary) VALUES(?,?,?,?,?,?)",
-                (version, now_iso(), profile, str(final_root), summary["manifest_sha256"], json.dumps(summary)),
+                (
+                    version,
+                    now_iso(),
+                    profile,
+                    str(final_root),
+                    summary["manifest_sha256"],
+                    json.dumps(summary),
+                ),
             )
             db.conn.executemany(
                 "INSERT OR REPLACE INTO release_members(release_version, file_id, entity_type, entity_id, release_path, sha256, size_bytes) "
                 "VALUES(?,?,?,?,?,?,?)",
-                [(version, m["file_id"], m["entity_type"], m["entity_id"], m["release_relative_path"], m["sha256"],
-                  m["size_bytes"]) for m in manifest_rows],
+                [
+                    (
+                        version,
+                        m["file_id"],
+                        m["entity_type"],
+                        m["entity_id"],
+                        m["release_relative_path"],
+                        m["sha256"],
+                        m["size_bytes"],
+                    )
+                    for m in manifest_rows
+                ],
             )
             released_entities = {
-                (member["entity_type"], member["entity_id"])
-                for member in members
+                (member["entity_type"], member["entity_id"]) for member in members
             }
             for entity_type, entity_id in sorted(released_entities):
                 # Accepted members use the normal audited transition machine.
                 set_state(
-                    db, entity_type, entity_id, "RELEASED",
-                    f"released in {version}", actor="operon release",
+                    db,
+                    entity_type,
+                    entity_id,
+                    "RELEASED",
+                    f"released in {version}",
+                    actor="operon release",
                 )
     except BaseException:
         if final_root.exists():
@@ -430,4 +575,5 @@ def _create_release_in_workspace(
 
 def _python_version() -> str:
     import platform
+
     return platform.python_version()

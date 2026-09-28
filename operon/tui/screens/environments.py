@@ -42,7 +42,9 @@ class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
         with Vertical(id="modal-box"):
             yield Label("Captured environments", id="modal-title")
             yield DataTable(id="environments-table", cursor_type="row")
-            yield RichLog(id="environments-output", max_lines=1000, wrap=True, markup=False)
+            yield RichLog(
+                id="environments-output", max_lines=1000, wrap=True, markup=False
+            )
             yield Static("", id="environments-error")
             with Horizontal(id="modal-buttons"):
                 yield Button("View JSON", id="environments-show")
@@ -87,7 +89,9 @@ class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
         return None
 
     def _show_error(self, exc: BaseException | str) -> None:
-        self.query_one("#environments-error", Static).update(Text(str(exc), style="red"))
+        self.query_one("#environments-error", Static).update(
+            Text(str(exc), style="red")
+        )
 
     def _clear_error(self) -> None:
         self.query_one("#environments-error", Static).update("")
@@ -105,10 +109,16 @@ class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
         try:
             if event.button.id == "environments-show":
                 document = data.environment_document(self.project, environment_id)
-                text = json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2)
+                text = json.dumps(
+                    document, ensure_ascii=False, sort_keys=True, indent=2
+                )
             else:
-                fmt = "explicit" if event.button.id == "environments-explicit" else "yaml"
-                text = data.export_environment(self.project, environment_id, fmt).rstrip("\n")
+                fmt = (
+                    "explicit" if event.button.id == "environments-explicit" else "yaml"
+                )
+                text = data.export_environment(
+                    self.project, environment_id, fmt
+                ).rstrip("\n")
         except Exception as exc:  # noqa: BLE001 - shown inline  # pylint: disable=broad-exception-caught
             self._show_error(exc)
             return

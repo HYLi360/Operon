@@ -121,7 +121,9 @@ async def _await_detail_text(app, needle: str) -> str:
     turn of its own, so a read straight afterwards can land on the ``loading…``
     placeholder — the window a slow runner stops on (ODR-29).
     """
-    await _wait_until(lambda: needle in _detail_text(app), f"run detail to show {needle!r}")
+    await _wait_until(
+        lambda: needle in _detail_text(app), f"run detail to show {needle!r}"
+    )
     return _detail_text(app)
 
 
@@ -193,14 +195,23 @@ def test_common_helpers() -> None:
 def test_project_summary(demo_project: Project) -> None:
     summary = data.project_summary(demo_project)
     assert summary["entity_counts"] == {
-        "organism": 2, "sample": 3, "run": 1, "assembly": 3, "annotation": 2,
+        "organism": 2,
+        "sample": 3,
+        "run": 1,
+        "assembly": 3,
+        "annotation": 2,
     }
     assert summary["file_count"] >= 9
     assert summary["file_bytes"] > 0
     assert sum(summary["decision_counts"].values()) > 0
     assert set(summary["decision_counts"]) <= {
-        "PASS", "PASS_WITH_WARNINGS", "REVIEW", "FAIL", "EXCLUDED",
-        "NOT_EVALUATED", "ACCEPT_WITH_WARNING",
+        "PASS",
+        "PASS_WITH_WARNINGS",
+        "REVIEW",
+        "FAIL",
+        "EXCLUDED",
+        "NOT_EVALUATED",
+        "ACCEPT_WITH_WARNING",
     }
     assert summary["latest_release"]["version"] == "2026.08.demo"
 
@@ -222,13 +233,25 @@ def test_attention_items(demo_project: Project, tmp_path: Path) -> None:
     project = Project.init(tmp_path / "attention-project")
     db = Database(project.db_path)
     try:
-        for file_id, status in (("FIL_000001", "CORRUPT"), ("FIL_000002", "CHECKSUM_VERIFIED")):
-            db.insert_row("files", {
-                "file_id": file_id, "entity_type": "assembly", "entity_id": "ASM_000001",
-                "file_role": "genome_fasta", "relative_path": f"raw/{file_id}.fa",
-                "sha256": "a" * 64, "size_bytes": 1, "status": status, "format": "fasta",
-                "compression": "none",
-            })
+        for file_id, status in (
+            ("FIL_000001", "CORRUPT"),
+            ("FIL_000002", "CHECKSUM_VERIFIED"),
+        ):
+            db.insert_row(
+                "files",
+                {
+                    "file_id": file_id,
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "file_role": "genome_fasta",
+                    "relative_path": f"raw/{file_id}.fa",
+                    "sha256": "a" * 64,
+                    "size_bytes": 1,
+                    "status": status,
+                    "format": "fasta",
+                    "compression": "none",
+                },
+            )
         log_run(db, project, {"step": "qc", "status": "failed", "error": "injected"})
         log_run(db, project, {"step": "qc", "status": "interrupted"})
         log_run(db, project, {"step": "qc", "status": "completed"})
@@ -240,7 +263,9 @@ def test_attention_items(demo_project: Project, tmp_path: Path) -> None:
     assert len(attention["runs"]) == 2
     assert all(r["status"] in {"failed", "interrupted"} for r in attention["runs"])
     assert [f["file_id"] for f in attention["files"]] == ["FIL_000001"]
-    assert all(f["status"] not in data.HEALTHY_FILE_STATUSES for f in attention["files"])
+    assert all(
+        f["status"] not in data.HEALTHY_FILE_STATUSES for f in attention["files"]
+    )
 
     page = data.attention_items(project, limit=1)
     assert page["failed_run_count"] == 2, "the count is the total, not the page"
@@ -292,7 +317,8 @@ def test_entity_metrics(demo_project: Project) -> None:
     assert metrics["analysis"] == []
 
     assert data.entity_metrics(demo_project, "organism", "ORG_000001") == {
-        "qc": [], "analysis": [],
+        "qc": [],
+        "analysis": [],
     }
 
 
@@ -366,12 +392,21 @@ def test_workflow_run_detail(demo_project: Project, tmp_path: Path) -> None:
     project = Project.init(tmp_path / "corrupt-details-project")
     db = Database(project.db_path)
     try:
-        broken = log_run(db, project, {
-            "step": "demo", "status": "completed", "execution_details": "not json",
-        })
+        broken = log_run(
+            db,
+            project,
+            {
+                "step": "demo",
+                "status": "completed",
+                "execution_details": "not json",
+            },
+        )
     finally:
         db.close()
-    assert data.workflow_run_detail(project, broken["run_id"])["execution_details"] == "not json"
+    assert (
+        data.workflow_run_detail(project, broken["run_id"])["execution_details"]
+        == "not json"
+    )
 
 
 def test_workflow_run_detail_environment_summary(tmp_path: Path) -> None:
@@ -383,11 +418,18 @@ def test_workflow_run_detail_environment_summary(tmp_path: Path) -> None:
     try:
         with db.transaction():
             environment_id = db.record_environment(
-                {"system": {"os": "Linux"}, "capture_status": "partial"})
-        run = log_run(db, project, {"step": "demo", "status": "completed",
-                                    "environment_id": environment_id})
-        stale = log_run(db, project, {"step": "demo", "status": "completed",
-                                      "environment_id": "missing"})
+                {"system": {"os": "Linux"}, "capture_status": "partial"}
+            )
+        run = log_run(
+            db,
+            project,
+            {"step": "demo", "status": "completed", "environment_id": environment_id},
+        )
+        stale = log_run(
+            db,
+            project,
+            {"step": "demo", "status": "completed", "environment_id": "missing"},
+        )
     finally:
         db.close()
 
@@ -411,12 +453,21 @@ def _seed_analysis_jobs(demo_project: Project, tmp_path: Path) -> tuple[Project,
     project = Project.find(target)
     db = Database(project.db_path)
     try:
-        file_id = db.query("SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0]["file_id"]
-        run = log_run(db, project, {
-            "step": "analysis:seed_tool", "status": "completed",
-            "entity_type": "assembly", "entity_id": "ASM_000001",
-            "executor": "slurm", "scheduler_job_id": "7000_1",
-        })
+        file_id = db.query("SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0][
+            "file_id"
+        ]
+        run = log_run(
+            db,
+            project,
+            {
+                "step": "analysis:seed_tool",
+                "status": "completed",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "executor": "slurm",
+                "scheduler_job_id": "7000_1",
+            },
+        )
         base = {
             "analysis_name": "seed_tool",
             "entity_type": "assembly",
@@ -434,25 +485,32 @@ def _seed_analysis_jobs(demo_project: Project, tmp_path: Path) -> tuple[Project,
             "workflow_run_id": run["run_id"],
         }
         db.insert_row("analysis_jobs", base)
-        db.insert_row("analysis_jobs", {
-            **base,
-            "status": "interrupted",
-            "started_at": "2026-09-18T10:05:00+08:00",
-            "finished_at": None,
-            "workflow_run_id": None,
-            "error": "interrupted by SIGINT\nsecond line of the error",
-        })
+        db.insert_row(
+            "analysis_jobs",
+            {
+                **base,
+                "status": "interrupted",
+                "started_at": "2026-09-18T10:05:00+08:00",
+                "finished_at": None,
+                "workflow_run_id": None,
+                "error": "interrupted by SIGINT\nsecond line of the error",
+            },
+        )
     finally:
         db.close()
     return project, {"run_id": run["run_id"], "file_id": file_id}
 
 
-def test_list_analysis_jobs_includes_interrupted_tasks(demo_project: Project,
-                                                       tmp_path: Path) -> None:
+def test_list_analysis_jobs_includes_interrupted_tasks(
+    demo_project: Project, tmp_path: Path
+) -> None:
     project, seeded = _seed_analysis_jobs(demo_project, tmp_path)
 
     jobs = data.list_analysis_jobs(project)
-    assert [job["status"] for job in jobs] == ["interrupted", "completed"]  # newest first
+    assert [job["status"] for job in jobs] == [
+        "interrupted",
+        "completed",
+    ]  # newest first
     interrupted, completed = jobs
     # The interrupted task has no run row: it stays visible, but the joined
     # scheduler columns are empty instead of hiding the row.
@@ -469,7 +527,9 @@ def test_list_analysis_jobs_includes_interrupted_tasks(demo_project: Project,
     assert data.list_analysis_jobs(project, analysis="seed") != []
     assert data.list_analysis_jobs(project, analysis="no_such_analysis") == []
     assert len(data.list_analysis_jobs(project, limit=1)) == 1
-    assert data.list_analysis_jobs(project, limit=0)[0]["job_id"] == interrupted["job_id"]
+    assert (
+        data.list_analysis_jobs(project, limit=0)[0]["job_id"] == interrupted["job_id"]
+    )
 
 
 def test_entity_tree_on_lifecycle_less_database(tmp_path: Path) -> None:
@@ -481,7 +541,9 @@ def test_entity_tree_on_lifecycle_less_database(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite"
     conn = sqlite3.connect(db_path)
     conn.executescript(DDL)
-    conn.execute("INSERT INTO organisms (organism_id, scientific_name) VALUES ('ORG_000001', 'Legacy')")
+    conn.execute(
+        "INSERT INTO organisms (organism_id, scientific_name) VALUES ('ORG_000001', 'Legacy')"
+    )
     conn.commit()
     conn.close()
 
@@ -503,11 +565,20 @@ def test_entity_tree_retirement(tmp_path: Path) -> None:
     project = Project.init(tmp_path / "retire-project")
     db = Database(project.db_path)
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"})
-        db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"}
+        )
+        db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
         apply_lifecycle_event(
-            db, "organism", "ORG_000001",
-            action="RETIRE", reason="test retirement", actor="tester", reason_code="duplicate",
+            db,
+            "organism",
+            "ORG_000001",
+            action="RETIRE",
+            reason="test retirement",
+            actor="tester",
+            reason_code="duplicate",
         )
     finally:
         db.close()
@@ -525,8 +596,15 @@ def test_workflow_run_detail_execution_details_variants(tmp_path: Path) -> None:
     project = Project.init(tmp_path / "run-detail-project")
     db = Database(project.db_path)
     try:
-        bad = log_run(db, project, {"step": "demo", "status": "failed",
-                                    "execution_details": "not valid json {"})
+        bad = log_run(
+            db,
+            project,
+            {
+                "step": "demo",
+                "status": "failed",
+                "execution_details": "not valid json {",
+            },
+        )
         plain = log_run(db, project, {"step": "demo", "status": "completed"})
     finally:
         db.close()
@@ -557,7 +635,8 @@ def test_data_layer_never_writes(demo_project: Project, tmp_path: Path) -> None:
     database it starts from is byte-identical to the demo's.
     """
     project = Project.find(
-        copy_project_tree(demo_project.root, tmp_path / "read-only-project"))
+        copy_project_tree(demo_project.root, tmp_path / "read-only-project")
+    )
     db_path = project.db_path
     before = sha256_file(db_path)
     os.chmod(db_path, 0o444)
@@ -618,7 +697,8 @@ def test_copied_project_stays_writable_after_a_read_only_session(
     from operon.workflow import log_run
 
     source = Project.find(
-        copy_project_tree(demo_project.root, tmp_path / "read-only-source"))
+        copy_project_tree(demo_project.root, tmp_path / "read-only-source")
+    )
     original_mode = source.db_path.stat().st_mode
     os.chmod(source.db_path, 0o444)
     try:
@@ -673,7 +753,12 @@ def test_navigation_and_home(demo_project: Project) -> None:
             assert "FAIL" in body
 
             runs_panel = app.query_one(RunsPanel)
-            for key, expected in (("2", "entities"), ("3", "files"), ("4", "runs"), ("1", "home")):
+            for key, expected in (
+                ("2", "entities"),
+                ("3", "files"),
+                ("4", "runs"),
+                ("1", "home"),
+            ):
                 await pilot.press(key)
                 await pilot.pause()
                 await _settled(app)
@@ -696,7 +781,10 @@ def test_entities_screen(demo_project: Project) -> None:
             await _settled(app)
             panel = app.query_one(EntitiesPanel)
             assert panel.include_retired is True
-            assert [n["entity_id"] for n in panel.tree_data] == ["ORG_000001", "ORG_000002"]
+            assert [n["entity_id"] for n in panel.tree_data] == [
+                "ORG_000001",
+                "ORG_000002",
+            ]
 
             tree = panel.query_one("#entities-tree", Tree)
             node = _find_tree_node(tree, "assembly", "ASM_000001")
@@ -724,11 +812,20 @@ def test_entities_retired_shown_dimmed_by_default(tmp_path: Path) -> None:
     project = Project.init(tmp_path / "retire-ui-project")
     db = Database(project.db_path)
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"})
-        db.insert_row("organisms", {"organism_id": "ORG_000002", "scientific_name": "Thriving"})
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"}
+        )
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000002", "scientific_name": "Thriving"}
+        )
         apply_lifecycle_event(
-            db, "organism", "ORG_000001",
-            action="RETIRE", reason="test retirement", actor="tester", reason_code="duplicate",
+            db,
+            "organism",
+            "ORG_000001",
+            action="RETIRE",
+            reason="test retirement",
+            actor="tester",
+            reason_code="duplicate",
         )
     finally:
         db.close()
@@ -819,10 +916,16 @@ def test_scientific_name_rank_style(rank: str) -> None:
         )
 
 
-@pytest.mark.parametrize("name", [
-    "Syntheticus alpha", "", "Syntheticus subvar.alpha", "Syntheticus xvar. beta",
-    "Syntheticus [var.] beta",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Syntheticus alpha",
+        "",
+        "Syntheticus subvar.alpha",
+        "Syntheticus xvar. beta",
+        "Syntheticus [var.] beta",
+    ],
+)
 def test_scientific_name_preserves_other_text(name: str) -> None:
     from rich.console import Console
 
@@ -840,17 +943,24 @@ def test_organism_names_render_italic(demo_project: Project) -> None:
     from operon.tui.screens.entities import _node_label
 
     name = "Syntheticus alpha subsp. beta var. gamma"
-    organism = _node_label({"entity_type": "organism", "entity_id": "ORG_1",
-                            "name": name})
+    organism = _node_label(
+        {"entity_type": "organism", "entity_id": "ORG_1", "name": name}
+    )
     assert any("italic" in str(span.style) for span in organism.spans)
-    sample = _node_label({"entity_type": "sample", "entity_id": "SMP_1", "name": "isolate A"})
+    sample = _node_label(
+        {"entity_type": "sample", "entity_id": "SMP_1", "name": "isolate A"}
+    )
     assert not any("italic" in str(span.style) for span in sample.spans)
 
     panel = EntitiesPanel(demo_project)
     detail = {
-        "entity_type": "organism", "entity_id": "ORG_1",
+        "entity_type": "organism",
+        "entity_id": "ORG_1",
         "fields": {"organism_id": "ORG_1", "scientific_name": name},
-        "accessions": [], "state": None, "files": [], "metrics": {},
+        "accessions": [],
+        "state": None,
+        "files": [],
+        "metrics": {},
     }
     text = panel._detail_text(detail)
     name_start = text.plain.index("Syntheticus alpha")
@@ -871,9 +981,12 @@ def test_detail_text_builders(demo_project: Project) -> None:
     entities_panel = EntitiesPanel(demo_project)
     assert "entity not found" in entities_panel._detail_text(None).plain
     sparse = {
-        "entity_type": "run", "entity_id": "RUN_X",
+        "entity_type": "run",
+        "entity_id": "RUN_X",
         "fields": {"run_id": "RUN_X", "platform": None},
-        "accessions": [], "state": None, "files": [],
+        "accessions": [],
+        "state": None,
+        "files": [],
     }
     text = entities_panel._detail_text(sparse).plain
     assert "(no state recorded)" in text
@@ -883,16 +996,30 @@ def test_detail_text_builders(demo_project: Project) -> None:
     assert "file not found" in files_panel._detail_text(None).plain
     located = {
         "file": {
-            "file_id": "FIL_X", "entity_type": "run", "entity_id": "RUN_000001",
-            "file_role": "reads_r1", "format": "fastq", "compression": "none",
-            "relative_path": "raw/reads/x.fastq", "source_url": "https://example.org/x",
-            "downloaded_at": "2026-01-01", "size_bytes": 2048, "sha256": "ab" * 32,
+            "file_id": "FIL_X",
+            "entity_type": "run",
+            "entity_id": "RUN_000001",
+            "file_role": "reads_r1",
+            "format": "fastq",
+            "compression": "none",
+            "relative_path": "raw/reads/x.fastq",
+            "source_url": "https://example.org/x",
+            "downloaded_at": "2026-01-01",
+            "size_bytes": 2048,
+            "sha256": "ab" * 32,
             "status": "MISSING",
         },
         "locations": [
-            {"location_name": "archive", "location_type": "sftp", "uri": "sftp://host/x",
-             "relative_path": "x", "sha256": "ab" * 32, "size_bytes": 2048,
-             "status": "AVAILABLE", "verified_at": "2026-01-02"},
+            {
+                "location_name": "archive",
+                "location_type": "sftp",
+                "uri": "sftp://host/x",
+                "relative_path": "x",
+                "sha256": "ab" * 32,
+                "size_bytes": 2048,
+                "status": "AVAILABLE",
+                "verified_at": "2026-01-02",
+            },
         ],
     }
     text = files_panel._detail_text(located).plain
@@ -903,24 +1030,43 @@ def test_detail_text_builders(demo_project: Project) -> None:
     detail_screen = RunDetailScreen(demo_project, "WF_missing")
     assert "does not exist" in detail_screen._detail_text(None).plain
     record = {
-        "run_id": "WF_X", "status": "failed", "step": "qc",
-        "entity_type": "run", "entity_id": "RUN_000001",
-        "parent_run_id": None, "resumes_run_id": None,
-        "started_at": "2026-01-01T00:00:00+00:00", "finished_at": None,
-        "duration_seconds": None, "threads": None, "max_rss_mb": None,
-        "avg_rss_mb": None, "cpu_seconds": None, "command": "qc ...",
-        "tool": "qc", "tool_version": "0.6.1", "parameter_set": None,
-        "executor": "local", "scheduler_job_id": None, "exit_code": 1,
-        "environment_id": None, "input_sha256": None, "output_sha256": None,
-        "log_file": None, "stdout_file": None, "stderr_file": None,
-        "error": "boom", "execution_details": "plain text details",
+        "run_id": "WF_X",
+        "status": "failed",
+        "step": "qc",
+        "entity_type": "run",
+        "entity_id": "RUN_000001",
+        "parent_run_id": None,
+        "resumes_run_id": None,
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "finished_at": None,
+        "duration_seconds": None,
+        "threads": None,
+        "max_rss_mb": None,
+        "avg_rss_mb": None,
+        "cpu_seconds": None,
+        "command": "qc ...",
+        "tool": "qc",
+        "tool_version": "0.6.1",
+        "parameter_set": None,
+        "executor": "local",
+        "scheduler_job_id": None,
+        "exit_code": 1,
+        "environment_id": None,
+        "input_sha256": None,
+        "output_sha256": None,
+        "log_file": None,
+        "stdout_file": None,
+        "stderr_file": None,
+        "error": "boom",
+        "execution_details": "plain text details",
     }
     text = detail_screen._detail_text(record).plain
     assert "boom" in text
     assert "plain text details" in text
 
-    record_with_env = dict(record, environment_id="env_x",
-                           environment_summary="Ubuntu 22.04; 1024 kB")
+    record_with_env = dict(
+        record, environment_id="env_x", environment_summary="Ubuntu 22.04; 1024 kB"
+    )
     text = detail_screen._detail_text(record_with_env).plain
     assert "env_x" in text
     assert "Ubuntu 22.04; 1024 kB" in text
@@ -929,10 +1075,20 @@ def test_detail_text_builders(demo_project: Project) -> None:
     home.summary = None
     home.attention = {
         "failed_run_count": 25,
-        "runs": [{"run_id": f"WF_{i}", "status": "failed", "step": "qc",
-                  "entity_type": None, "entity_id": None, "started_at": "-", "error": None}
-                 for i in range(10)],
-        "decisions": [], "files": [],
+        "runs": [
+            {
+                "run_id": f"WF_{i}",
+                "status": "failed",
+                "step": "qc",
+                "entity_type": None,
+                "entity_id": None,
+                "started_at": "-",
+                "error": None,
+            }
+            for i in range(10)
+        ],
+        "decisions": [],
+        "files": [],
     }
     home.recent_runs = []
     text = home._build_text().plain
@@ -994,8 +1150,9 @@ def test_runs_screen_filters_and_detail(demo_project: Project) -> None:
     _run(scenario())
 
 
-def test_analysis_jobs_modal_browses_interrupted_tasks(demo_project: Project,
-                                                       tmp_path: Path) -> None:
+def test_analysis_jobs_modal_browses_interrupted_tasks(
+    demo_project: Project, tmp_path: Path
+) -> None:
     """The Tasks screen's jobs browser shows rows that have no workflow run."""
     project, _seeded = _seed_analysis_jobs(demo_project, tmp_path)
 
@@ -1037,13 +1194,18 @@ def test_analysis_jobs_modal_browses_interrupted_tasks(demo_project: Project,
 
             # Highlight events from other tables and out-of-range cursor rows
             # are ignored instead of rewriting the detail pane.
-            modal.on_data_table_row_highlighted(DataTable.RowHighlighted(
-                DataTable(id="other-table"), 0, RowKey("other")))
-            modal.on_data_table_row_highlighted(DataTable.RowHighlighted(
-                table, 99, RowKey("out-of-range")))
+            modal.on_data_table_row_highlighted(
+                DataTable.RowHighlighted(
+                    DataTable(id="other-table"), 0, RowKey("other")
+                )
+            )
+            modal.on_data_table_row_highlighted(
+                DataTable.RowHighlighted(table, 99, RowKey("out-of-range"))
+            )
             await pilot.pause()
             assert "second line of the error" in _static_text(
-                modal.query_one("#jobs-detail", Static))
+                modal.query_one("#jobs-detail", Static)
+            )
 
             # Filters narrow the listing down to the task without a run row.
             modal.query_one("#jobs-status", Select).value = "interrupted"
@@ -1061,7 +1223,8 @@ def test_analysis_jobs_modal_browses_interrupted_tasks(demo_project: Project,
             await _settled(app)
             assert table.row_count == 0
             assert "no matching analysis jobs" in _static_text(
-                modal.query_one("#jobs-detail", Static))
+                modal.query_one("#jobs-detail", Static)
+            )
 
             # Resetting the filters restores the full listing; a non-positive
             # limit falls back to the default instead of hiding everything.
@@ -1081,8 +1244,9 @@ def test_analysis_jobs_modal_browses_interrupted_tasks(demo_project: Project,
     _run(scenario())
 
 
-def test_analysis_jobs_modal_reports_load_failures(demo_project: Project,
-                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analysis_jobs_modal_reports_load_failures(
+    demo_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def explode(*args, **kwargs):
         raise RuntimeError("jobs query exploded")
 
@@ -1096,7 +1260,8 @@ def test_analysis_jobs_modal_reports_load_failures(demo_project: Project,
             await pilot.pause()
             await _settled(app)
             assert "jobs query exploded" in _static_text(
-                modal.query_one("#jobs-detail", Static))
+                modal.query_one("#jobs-detail", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
 
@@ -1203,10 +1368,16 @@ def test_runs_table_view_survives_reload(tmp_path: Path) -> None:
     db = Database(project.db_path)
     try:
         for index in range(80):
-            log_run(db, project, {
-                "step": "qc", "status": "completed",
-                "entity_type": "run", "entity_id": f"RUN_{index:06d}",
-            })
+            log_run(
+                db,
+                project,
+                {
+                    "step": "qc",
+                    "status": "completed",
+                    "entity_type": "run",
+                    "entity_id": f"RUN_{index:06d}",
+                },
+            )
     finally:
         db.close()
 
@@ -1234,7 +1405,10 @@ def test_runs_table_view_survives_reload(tmp_path: Path) -> None:
             deadline = loop.time() + SETTLE_TIMEOUT
             while loop.time() < deadline:
                 await pilot.pause()
-                if table.cursor_row == cursor_row and table.scroll_offset == scroll_offset:
+                if (
+                    table.cursor_row == cursor_row
+                    and table.scroll_offset == scroll_offset
+                ):
                     break
                 await asyncio.sleep(0.05)
             assert table.cursor_row == cursor_row
@@ -1276,7 +1450,9 @@ def test_tui_without_project_returns_2(tmp_path: Path, capsys) -> None:
 
 
 @pytest.mark.parametrize("release_at", [0.5, 1.5])
-def test_splash_waits_for_first_paint_and_initial_reads(demo_project, monkeypatch, release_at):
+def test_splash_waits_for_first_paint_and_initial_reads(
+    demo_project, monkeypatch, release_at
+):
     """Both fast and slow reads must pass the time and data readiness gates."""
     import threading
 
@@ -1302,24 +1478,32 @@ def test_splash_waits_for_first_paint_and_initial_reads(demo_project, monkeypatc
             async with app.run_test(size=(100, 35)) as pilot:
                 await pilot.pause()
                 assert isinstance(app.screen, SplashScreen)
-                assert __version__ in _static_text(app.screen.query_one("#splash-version", Static))
+                assert __version__ in _static_text(
+                    app.screen.query_one("#splash-version", Static)
+                )
                 await pilot.press("2", "?", "r", "escape")
                 assert isinstance(app.screen, SplashScreen)
                 clock[0] = release_at
                 await pilot.pause(0.1)
                 assert isinstance(app.screen, SplashScreen)
-                assert "Home" in _static_text(app.screen.query_one("#splash-status", Static))
+                assert "Home" in _static_text(
+                    app.screen.query_one("#splash-status", Static)
+                )
                 await pilot.resize_terminal(80, 24)
                 gate.set()
                 if release_at < 1:
                     await _wait_until(
-                        lambda: (bool(app.query(HomePanel))
-                                 and app.query_one(HomePanel).initial_load_complete),
+                        lambda: (
+                            bool(app.query(HomePanel))
+                            and app.query_one(HomePanel).initial_load_complete
+                        ),
                         "the deferred Home load to finish",
                     )
                     await pilot.pause(0.1)
                     assert isinstance(app.screen, SplashScreen)
-                    assert "Ready" in _static_text(app.screen.query_one("#splash-status", Static))
+                    assert "Ready" in _static_text(
+                        app.screen.query_one("#splash-status", Static)
+                    )
                 clock[0] = 2
                 await _settled(app)
                 await pilot.pause()
@@ -1369,11 +1553,16 @@ def test_splash_leaves_when_a_panel_drops_its_first_render(demo_project, monkeyp
         app = OperonApp(demo_project)
         async with app.run_test(size=(120, 40)) as pilot:
             home = app.query_one(HomePanel)
-            await _wait_until(lambda: home.initial_load_complete, "the panel to report its load")
+            await _wait_until(
+                lambda: home.initial_load_complete, "the panel to report its load"
+            )
             assert home.initial_load_failed is True
             assert app._starting is True
-            await _tick_until(lambda: not app._starting, clock,
-                              description="the splash screen to leave")
+            await _tick_until(
+                lambda: not app._starting,
+                clock,
+                description="the splash screen to leave",
+            )
             await pilot.pause()
             assert not isinstance(app.screen, SplashScreen)
 
@@ -1393,7 +1582,9 @@ def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
 
     clock = [0.0]
     monkeypatch.setattr(app_module, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(HomePanel, "_load", lambda panel, generation: None)  # never delivers
+    monkeypatch.setattr(
+        HomePanel, "_load", lambda panel, generation: None
+    )  # never delivers
 
     async def scenario():
         app = OperonApp(demo_project)
@@ -1401,8 +1592,11 @@ def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
             home = app.query_one(HomePanel)
             assert home.initial_load_complete is False
             assert app._starting is True
-            await _tick_until(lambda: not app._starting, clock,
-                              description="the startup deadline to release the app")
+            await _tick_until(
+                lambda: not app._starting,
+                clock,
+                description="the startup deadline to release the app",
+            )
             await pilot.pause()
             assert not isinstance(app.screen, SplashScreen)
 
@@ -1421,7 +1615,9 @@ def test_run_detail_read_waits_for_the_loaded_content(demo_project, monkeypatch)
     """
     import threading
 
-    monkeypatch.setattr(RunDetailScreen, "on_mount", lambda screen: None)  # load not scheduled
+    monkeypatch.setattr(
+        RunDetailScreen, "on_mount", lambda screen: None
+    )  # load not scheduled
 
     async def scenario():
         app = OperonApp(demo_project)
@@ -1478,7 +1674,9 @@ def test_no_tui_test_reads_run_detail_straight_after_settling() -> None:
     import re
     from pathlib import Path
 
-    raw_read = re.compile(r'=\s*_static_text\(\s*app\.screen\.query_one\(\s*"#run-detail"')
+    raw_read = re.compile(
+        r'=\s*_static_text\(\s*app\.screen\.query_one\(\s*"#run-detail"'
+    )
     offenders = []
     for path in sorted(Path(__file__).parent.glob("test_tui*.py")):
         text = path.read_text(encoding="utf-8")
@@ -1527,8 +1725,10 @@ def test_splash_resources_and_small_terminal(monkeypatch):
         assert len(rendered.plain.splitlines()) <= height
         assert all(len(line) <= width for line in rendered.plain.splitlines())
     splash.lake_text.cache_clear()
+
     def missing():
         raise FileNotFoundError("missing artwork")
+
     monkeypatch.setattr(splash, "lake_pixels", missing)
     assert "OPERON" in splash.lake_text(80, 24).plain
     splash.lake_text.cache_clear()
@@ -1552,17 +1752,33 @@ def test_list_workflow_runs_advanced_filters(tmp_path: Path) -> None:
     project = Project.init(tmp_path / "runs-filters-project")
     db = Database(project.db_path)
     try:
-        first = log_run(db, project, {
-            "step": "qc", "status": "completed", "tool": "fastp", "executor": "local",
-            "entity_type": "run", "entity_id": "RUN_000001",
-            "started_at": "2026-09-01T10:00:00+08:00",
-        })
-        second = log_run(db, project, {
-            "step": "analysis:blastn_nt", "status": "failed", "tool": "blastn",
-            "executor": "slurm", "entity_type": "assembly", "entity_id": "ASM_000001",
-            "parent_run_id": first["run_id"],
-            "started_at": "2026-09-10T10:00:00+08:00",
-        })
+        first = log_run(
+            db,
+            project,
+            {
+                "step": "qc",
+                "status": "completed",
+                "tool": "fastp",
+                "executor": "local",
+                "entity_type": "run",
+                "entity_id": "RUN_000001",
+                "started_at": "2026-09-01T10:00:00+08:00",
+            },
+        )
+        second = log_run(
+            db,
+            project,
+            {
+                "step": "analysis:blastn_nt",
+                "status": "failed",
+                "tool": "blastn",
+                "executor": "slurm",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "parent_run_id": first["run_id"],
+                "started_at": "2026-09-10T10:00:00+08:00",
+            },
+        )
     finally:
         db.close()
 
@@ -1591,7 +1807,9 @@ def test_list_workflow_runs_advanced_filters(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="ISO-8601"):
         data.list_workflow_runs(project, started_from="yesterday")
     with pytest.raises(ValidationError, match="--from must be earlier than --to"):
-        data.list_workflow_runs(project, started_from="2026-09-10", started_to="2026-09-01")
+        data.list_workflow_runs(
+            project, started_from="2026-09-10", started_to="2026-09-01"
+        )
 
     status = data.workflow_run_status(project, second["run_id"])
     assert status is not None
@@ -1602,12 +1820,15 @@ def test_list_workflow_runs_advanced_filters(tmp_path: Path) -> None:
     assert data.workflow_run_status(project, "WF_missing") is None
 
 
-@pytest.mark.parametrize("value", [
-    "2026-09-18",
-    "2026-09-18T10:00:00",
-    "2026-09-18T10:00:00+08:00",
-    "2026-09-18T10:00:00Z",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-18",
+        "2026-09-18T10:00:00",
+        "2026-09-18T10:00:00+08:00",
+        "2026-09-18T10:00:00Z",
+    ],
+)
 def test_normalize_workflow_time_matches_the_cli(value: str) -> None:
     """The TUI normalizes ISO bounds exactly like ``workflow list --from/--to``."""
     import argparse
@@ -1621,7 +1842,9 @@ def test_normalize_workflow_time_matches_the_cli(value: str) -> None:
         _workflow_time("not a time")
 
 
-def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Project) -> None:
+def test_runs_panel_advanced_filters_behind_the_more_dialog(
+    demo_project: Project,
+) -> None:
     """The strip stays one row; the advanced filters live in the More… dialog."""
     from operon.tui.screens.runs import RunsFiltersModal
 
@@ -1639,7 +1862,11 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Projec
             # One control strip: status/step/entity/limit + the More… button.
             strip = panel.query_one("#runs-filters")
             assert [child.id for child in strip.children] == [
-                "runs-status", "runs-step", "runs-entity", "runs-limit", "runs-more",
+                "runs-status",
+                "runs-step",
+                "runs-entity",
+                "runs-limit",
+                "runs-more",
             ]
             assert strip.region.height <= 4
             assert panel.query_one("#runs-more", Button).label.plain == "More…"
@@ -1653,7 +1880,9 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Projec
             modal.query_one("#runs-filter-from", Input).value = "not-a-time"
             modal.query_one("#runs-filter-apply", Button).press()
             await pilot.pause()
-            assert "ISO-8601" in _static_text(modal.query_one("#runs-filter-error", Static))
+            assert "ISO-8601" in _static_text(
+                modal.query_one("#runs-filter-error", Static)
+            )
             assert isinstance(app.screen, RunsFiltersModal)
             assert table.row_count == total
 
@@ -1662,15 +1891,19 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Projec
             modal.query_one("#runs-filter-to", Input).value = "2026-01-01"
             modal.query_one("#runs-filter-apply", Button).press()
             await pilot.pause()
-            assert "earlier than --to" in _static_text(modal.query_one("#runs-filter-error", Static))
+            assert "earlier than --to" in _static_text(
+                modal.query_one("#runs-filter-error", Static)
+            )
 
             # Applying a real filter reloads the table and the button counts it.
             modal.query_one("#runs-filter-from", Input).value = ""
             modal.query_one("#runs-filter-to", Input).value = ""
             modal.query_one("#runs-filter-tool", Input).value = "no_such_tool"
             modal.query_one("#runs-filter-apply", Button).press()
-            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
-                              "the filters dialog to apply")
+            await _wait_until(
+                lambda: not isinstance(app.screen, RunsFiltersModal),
+                "the filters dialog to apply",
+            )
             await _settled(app)
             assert table.row_count == 0
             assert panel.query_one("#runs-more", Button).label.plain == "More… (1)"
@@ -1684,13 +1917,17 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Projec
             modal.query_one("#runs-filter-oldest-first", Checkbox).value = True
             modal.query_one("#runs-filter-offset", Input).value = "1"
             modal.query_one("#runs-filter-apply", Button).press()
-            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
-                              "the advanced filters to apply")
+            await _wait_until(
+                lambda: not isinstance(app.screen, RunsFiltersModal),
+                "the advanced filters to apply",
+            )
             await _settled(app)
-            expected = data.list_workflow_runs(demo_project, limit=100, offset=1,
-                                               oldest_first=True)
+            expected = data.list_workflow_runs(
+                demo_project, limit=100, offset=1, oldest_first=True
+            )
             assert [row["run_id"] for row in panel.runs] == [
-                row["run_id"] for row in expected]
+                row["run_id"] for row in expected
+            ]
             assert panel.query_one("#runs-more", Button).label.plain == "More… (2)"
 
             # Clear empties the advanced set again.
@@ -1699,8 +1936,10 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(demo_project: Projec
             await _settled(app)
             modal = app.screen
             modal.query_one("#runs-filter-clear", Button).press()
-            await _wait_until(lambda: not isinstance(app.screen, RunsFiltersModal),
-                              "the advanced filters to clear")
+            await _wait_until(
+                lambda: not isinstance(app.screen, RunsFiltersModal),
+                "the advanced filters to clear",
+            )
             await _settled(app)
             assert panel.advanced == {}
             assert panel.query_one("#runs-more", Button).label.plain == "More…"
@@ -1717,10 +1956,16 @@ def _running_run(tmp_path: Path, name: str) -> Project:
     project = Project.init(tmp_path / name)
     db = Database(project.db_path)
     try:
-        log_run(db, project, {
-            "step": "qc", "status": "running",
-            "entity_type": "run", "entity_id": "RUN_000001",
-        })
+        log_run(
+            db,
+            project,
+            {
+                "step": "qc",
+                "status": "running",
+                "entity_type": "run",
+                "entity_id": "RUN_000001",
+            },
+        )
     finally:
         db.close()
     return project
@@ -1770,7 +2015,9 @@ def test_run_detail_follow_streams_logs_until_finished(tmp_path: Path) -> None:
 
             # New bytes are appended incrementally on the next tick.
             stdout_path.write_text(
-                stdout_path.read_text(encoding="utf-8") + "step 2 running\n", encoding="utf-8")
+                stdout_path.read_text(encoding="utf-8") + "step 2 running\n",
+                encoding="utf-8",
+            )
             screen._follow_tick()
             await pilot.pause()
             text = _log_text(log)
@@ -1786,8 +2033,10 @@ def test_run_detail_follow_streams_logs_until_finished(tmp_path: Path) -> None:
             assert screen._follow_timer is None
             assert not screen._following
             assert follow.value is False and follow.disabled
-            assert any("finished: completed" in notification.message
-                       for notification in app._notifications)
+            assert any(
+                "finished: completed" in notification.message
+                for notification in app._notifications
+            )
 
     _run(scenario())
 
@@ -1830,23 +2079,31 @@ def _seed_environments(project: Project) -> dict[str, str]:
     db = Database(project.db_path)
     try:
         with db.transaction():
-            complete = db.record_environment({
-                "system": {"os": "Linux"},
-                "conda": {
-                    "status": "captured",
-                    "explicit": "@EXPLICIT\nhttps://conda.anaconda.org/ch/noarch/test-1.0-0.conda\n",
-                    "packages": [{
-                        "name": "test", "version": "1.0", "build": "0",
-                        "url": "https://conda.anaconda.org/ch/noarch/test-1.0-0.conda",
-                    }],
-                },
-            })
+            complete = db.record_environment(
+                {
+                    "system": {"os": "Linux"},
+                    "conda": {
+                        "status": "captured",
+                        "explicit": "@EXPLICIT\nhttps://conda.anaconda.org/ch/noarch/test-1.0-0.conda\n",
+                        "packages": [
+                            {
+                                "name": "test",
+                                "version": "1.0",
+                                "build": "0",
+                                "url": "https://conda.anaconda.org/ch/noarch/test-1.0-0.conda",
+                            }
+                        ],
+                    },
+                }
+            )
             partial = db.record_environment(
-                {"system": {"os": "Linux"}, "capture_status": "partial"})
+                {"system": {"os": "Linux"}, "capture_status": "partial"}
+            )
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO execution_environments (environment_id, document, created_at) "
-                "VALUES ('ENV_000000000000', 'not json', '2026-01-01T00:00:00+08:00')")
+                "VALUES ('ENV_000000000000', 'not json', '2026-01-01T00:00:00+08:00')"
+            )
     finally:
         db.close()
     return {"complete": complete, "partial": partial}
@@ -1861,7 +2118,9 @@ def test_list_environments_documents_and_exports(tmp_path: Path) -> None:
     # recorded rows share a timestamp and tie-break on their content address).
     assert rows[0]["environment_id"] == "ENV_000000000000"
     assert {row["environment_id"] for row in rows} == {
-        "ENV_000000000000", seeded["complete"], seeded["partial"],
+        "ENV_000000000000",
+        seeded["complete"],
+        seeded["partial"],
     }
     by_id = {row["environment_id"]: row for row in rows}
     assert by_id["ENV_000000000000"]["summary"] == "-"  # unparseable document
@@ -1874,12 +2133,15 @@ def test_list_environments_documents_and_exports(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="unknown environment: ENV_missing"):
         data.environment_document(project, "ENV_missing")
 
-    assert data.export_environment(
-        project, seeded["complete"], "explicit").startswith("@EXPLICIT")
+    assert data.export_environment(project, seeded["complete"], "explicit").startswith(
+        "@EXPLICIT"
+    )
     yaml_text = data.export_environment(project, seeded["complete"], "yaml")
     assert "name: operon-restored" in yaml_text
     assert "test=1.0=0" in yaml_text
-    with pytest.raises(ValidationError, match="no complete Conda explicit specification"):
+    with pytest.raises(
+        ValidationError, match="no complete Conda explicit specification"
+    ):
         data.export_environment(project, seeded["partial"], "explicit")
     with pytest.raises(ValidationError, match="no complete Conda package inventory"):
         data.export_environment(project, seeded["partial"], "yaml")
@@ -1930,7 +2192,8 @@ def test_environments_modal_lists_and_renders(tmp_path: Path) -> None:
             await _click(pilot, "#environments-explicit")
             await pilot.pause()
             assert "no complete Conda explicit specification" in _static_text(
-                modal.query_one("#environments-error", Static))
+                modal.query_one("#environments-error", Static)
+            )
 
             await _click(pilot, "#cancel")
             await pilot.pause()
@@ -1954,10 +2217,12 @@ def test_environments_modal_requires_a_selection(tmp_path: Path) -> None:
             await pilot.pause()
             await _settled(app)
             assert modal.query_one("#environments-table", DataTable).row_count == 0
-            modal.on_button_pressed(Button.Pressed(
-                modal.query_one("#environments-show", Button)))
+            modal.on_button_pressed(
+                Button.Pressed(modal.query_one("#environments-show", Button))
+            )
             assert "select an environment row first" in _static_text(
-                modal.query_one("#environments-error", Static))
+                modal.query_one("#environments-error", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, EnvironmentsModal)
@@ -1978,9 +2243,13 @@ def _seed_hits(project: Project) -> None:
     try:
         db.conn.execute("PRAGMA foreign_keys=OFF")
         for suffix in ("1", "2", "3"):
-            db.insert_row("organisms", {
-                "organism_id": f"ORG_00000{suffix}", "scientific_name": f"Organism {suffix}",
-            })
+            db.insert_row(
+                "organisms",
+                {
+                    "organism_id": f"ORG_00000{suffix}",
+                    "scientific_name": f"Organism {suffix}",
+                },
+            )
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO analysis_jobs(job_id, analysis_name, entity_type, entity_id, file_id,"
@@ -2016,7 +2285,9 @@ def test_analysis_hits_filters_and_retired(tmp_path: Path) -> None:
     rows = data.analysis_hits(project, limit=100)
     # Ordered by entity_id, query_id, hit_rank; the failed job is excluded.
     assert [(row["entity_id"], row["query_id"], row["hit_rank"]) for row in rows] == [
-        ("ORG_000001", "q1", 1), ("ORG_000001", "q1", 2), ("ORG_000002", "q2", 1),
+        ("ORG_000001", "q1", 1),
+        ("ORG_000001", "q1", 2),
+        ("ORG_000002", "q2", 1),
     ]
     assert set(rows[0]) == set(data.ANALYSIS_HIT_COLUMNS)
 
@@ -2032,8 +2303,15 @@ def test_analysis_hits_filters_and_retired(tmp_path: Path) -> None:
 
     db = Database(project.db_path)
     try:
-        apply_lifecycle_event(db, "organism", "ORG_000001", action="RETIRE",
-                              reason="test retirement", actor="tester", reason_code="duplicate")
+        apply_lifecycle_event(
+            db,
+            "organism",
+            "ORG_000001",
+            action="RETIRE",
+            reason="test retirement",
+            actor="tester",
+            reason_code="duplicate",
+        )
     finally:
         db.close()
     assert [row["entity_id"] for row in data.analysis_hits(project)] == ["ORG_000002"]
@@ -2049,18 +2327,36 @@ def test_sequence_label_readers(tmp_path: Path) -> None:
     source.write_text(">s1\nMTEYK\n>s2\nMTEYR\n>s3\nMTEYD\n", encoding="utf-8")
     db = Database(project.db_path)
     try:
-        db.insert_row("files", {
-            "file_id": "FIL_000001", "entity_type": "annotation", "entity_id": "ANN_000001",
-            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
-            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
-            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
-        })
-        db.insert_row("files", {
-            "file_id": "FIL_000002", "entity_type": "annotation", "entity_id": "ANN_000002",
-            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
-            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
-            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
-        })
+        db.insert_row(
+            "files",
+            {
+                "file_id": "FIL_000001",
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "file_role": "protein_fasta",
+                "format": "fasta",
+                "compression": "none",
+                "relative_path": "labels.faa",
+                "size_bytes": source.stat().st_size,
+                "sha256": sha256_file(source),
+                "status": "CHECKSUM_VERIFIED",
+            },
+        )
+        db.insert_row(
+            "files",
+            {
+                "file_id": "FIL_000002",
+                "entity_type": "annotation",
+                "entity_id": "ANN_000002",
+                "file_role": "protein_fasta",
+                "format": "fasta",
+                "compression": "none",
+                "relative_path": "labels.faa",
+                "size_bytes": source.stat().st_size,
+                "sha256": sha256_file(source),
+                "status": "CHECKSUM_VERIFIED",
+            },
+        )
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO sequence_labels(file_id, seqid, label, profile_name,"
@@ -2075,12 +2371,20 @@ def test_sequence_label_readers(tmp_path: Path) -> None:
         db.close()
 
     summary = data.label_summary(project)
-    assert [(row["label"], row["profile_name"], row["sequences"], row["files"])
-            for row in summary] == [("A", "bhlh", 3, 2), ("B", "other", 1, 1), ("U", "bhlh", 1, 1)]
-    assert [row["label"] for row in data.label_summary(project, profile_name="other")] == ["B"]
+    assert [
+        (row["label"], row["profile_name"], row["sequences"], row["files"])
+        for row in summary
+    ] == [("A", "bhlh", 3, 2), ("B", "other", 1, 1), ("U", "bhlh", 1, 1)]
+    assert [
+        row["label"] for row in data.label_summary(project, profile_name="other")
+    ] == ["B"]
 
     labels = data.file_sequence_labels(project, "FIL_000001")
-    assert [(row["label"], row["seqid"]) for row in labels] == [("A", "s1"), ("A", "s2"), ("U", "s3")]
+    assert [(row["label"], row["seqid"]) for row in labels] == [
+        ("A", "s1"),
+        ("A", "s2"),
+        ("U", "s3"),
+    ]
     assert data.file_sequence_labels(project, "FIL_000009") == []
 
     detail = data.file_detail(project, "FIL_000001")
@@ -2101,23 +2405,37 @@ def test_write_analysis_report_matches_cli_export(tmp_path: Path) -> None:
         cli_path = tmp_path / f"cli-{fmt}.txt"
         tui_path = tmp_path / f"tui-{fmt}.txt"
         args = argparse.Namespace(
-            analysis=None, entity_type=None, entity_id=None, query_id=None,
-            subject_id=None, evalue_max=None, limit=50, include_retired=False,
-            hits=True, format=fmt, out=str(cli_path),
+            analysis=None,
+            entity_type=None,
+            entity_id=None,
+            query_id=None,
+            subject_id=None,
+            evalue_max=None,
+            limit=50,
+            include_retired=False,
+            hits=True,
+            format=fmt,
+            out=str(cli_path),
         )
         db = Database(project.db_path)
         try:
             assert cli._cmd_analysis_results(args, db) == 0
         finally:
             db.close()
-        result = actions.write_analysis_report(project, out=str(tui_path), fmt=fmt, limit=50)
+        result = actions.write_analysis_report(
+            project, out=str(tui_path), fmt=fmt, limit=50
+        )
         assert result["rows"] == 3
         assert result["path"] == str(tui_path)
-        assert tui_path.read_text(encoding="utf-8") == cli_path.read_text(encoding="utf-8")
+        assert tui_path.read_text(encoding="utf-8") == cli_path.read_text(
+            encoding="utf-8"
+        )
 
     # The CLI's empty-result line is reused for an empty export.
     empty = tmp_path / "empty.txt"
-    actions.write_analysis_report(project, out=str(empty), fmt="text", analysis="missing")
+    actions.write_analysis_report(
+        project, out=str(empty), fmt="text", analysis="missing"
+    )
     assert empty.read_text(encoding="utf-8") == "(no analysis results)\n"
 
     with pytest.raises(ValidationError, match="output path is required"):
@@ -2147,7 +2465,9 @@ def test_analysis_hits_modal_browses_and_exports(tmp_path: Path) -> None:
             assert isinstance(modal, AnalysisHitsModal)
             table = modal.query_one("#hits-table", DataTable)
             assert table.row_count == 3
-            assert "3 hit row(s)" in _static_text(modal.query_one("#hits-status", Static))
+            assert "3 hit row(s)" in _static_text(
+                modal.query_one("#hits-status", Static)
+            )
 
             # Filters reload through the same read-only query.
             modal.query_one("#hits-entity-id", Input).value = "ORG_000002"
@@ -2158,7 +2478,9 @@ def test_analysis_hits_modal_browses_and_exports(tmp_path: Path) -> None:
             await pilot.pause()
             await _settled(app)
             assert table.row_count == 0
-            assert "0 hit row(s)" in _static_text(modal.query_one("#hits-status", Static))
+            assert "0 hit row(s)" in _static_text(
+                modal.query_one("#hits-status", Static)
+            )
             modal.query_one("#hits-query-id", Input).value = ""
             modal.query_one("#hits-entity-id", Input).value = ""
             await pilot.pause()
@@ -2177,16 +2499,20 @@ def test_analysis_hits_modal_browses_and_exports(tmp_path: Path) -> None:
             modal.query_one("#hits-out", Input).value = str(out_path)
             await _click(pilot, "#hits-export-button")
             await _wait_until(
-                lambda: "wrote 3 row(s)" in _static_text(
-                    modal.query_one("#hits-status", Static)),
+                lambda: (
+                    "wrote 3 row(s)"
+                    in _static_text(modal.query_one("#hits-status", Static))
+                ),
                 "hits export to finish",
             )
             # A failed export reports inline and keeps the modal open.
             modal.query_one("#hits-out", Input).value = "   "
             await _click(pilot, "#hits-export-button")
             await _wait_until(
-                lambda: "export failed" in _static_text(
-                    modal.query_one("#hits-status", Static)),
+                lambda: (
+                    "export failed"
+                    in _static_text(modal.query_one("#hits-status", Static))
+                ),
                 "hits export error",
             )
             await pilot.press("escape")
@@ -2209,12 +2535,21 @@ def test_sequence_labels_modal_and_file_detail(tmp_path: Path) -> None:
     source.write_text(">s1\nMTEYK\n>s2\nMTEYR\n", encoding="utf-8")
     db = Database(project.db_path)
     try:
-        db.insert_row("files", {
-            "file_id": "FIL_000001", "entity_type": "annotation", "entity_id": "ANN_000001",
-            "file_role": "protein_fasta", "format": "fasta", "compression": "none",
-            "relative_path": "labels.faa", "size_bytes": source.stat().st_size,
-            "sha256": sha256_file(source), "status": "CHECKSUM_VERIFIED",
-        })
+        db.insert_row(
+            "files",
+            {
+                "file_id": "FIL_000001",
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+                "file_role": "protein_fasta",
+                "format": "fasta",
+                "compression": "none",
+                "relative_path": "labels.faa",
+                "size_bytes": source.stat().st_size,
+                "sha256": sha256_file(source),
+                "status": "CHECKSUM_VERIFIED",
+            },
+        )
         with db.transaction():
             db.conn.execute(
                 "INSERT INTO sequence_labels(file_id, seqid, label, profile_name,"
@@ -2250,7 +2585,8 @@ def test_sequence_labels_modal_and_file_detail(tmp_path: Path) -> None:
             summary_table = modal.query_one("#labels-table", DataTable)
             assert summary_table.row_count == 2
             assert "2 label/profile group(s) in the project" in _static_text(
-                modal.query_one("#labels-status", Static))
+                modal.query_one("#labels-status", Static)
+            )
             file_table = modal.query_one("#labels-file-table", DataTable)
             assert modal.file_id == "FIL_000001"
             assert file_table.row_count == 2
@@ -2281,7 +2617,9 @@ def _overflowing_controls(root: Any) -> list[str]:
                     f"{row.id}: {child.id} outside its row ({child_region} vs {region})"
                 )
             elif child_region.width < 8:
-                problems.append(f"{row.id}: {child.id} squeezed to {child_region.width} columns")
+                problems.append(
+                    f"{row.id}: {child.id} squeezed to {child_region.width} columns"
+                )
     return problems
 
 
@@ -2317,11 +2655,15 @@ def test_filter_rows_keep_their_controls_inside_the_row(
                 await pilot.pause()
                 await _settled(app)
                 assert not _overflowing_controls(app.screen), f"{screen} screen"
-            for modal in (AnalysisJobsModal(demo_project), AnalysisHitsModal(hits_project)):
+            for modal in (
+                AnalysisJobsModal(demo_project),
+                AnalysisHitsModal(hits_project),
+            ):
                 app.push_screen(modal)
                 await pilot.pause()
                 await _wait_until(
-                    lambda target=modal: not target._loading, f"{type(modal).__name__} load",
+                    lambda target=modal: not target._loading,
+                    f"{type(modal).__name__} load",
                 )
                 assert not _overflowing_controls(modal), type(modal).__name__
                 app.pop_screen()
@@ -2347,8 +2689,9 @@ def test_filter_rows_keep_their_controls_inside_the_row(
 
 
 @pytest.mark.bug("ODR-20")
-def test_analysis_jobs_modal_layout_keeps_its_panes(demo_project: Project,
-                                                    tmp_path: Path) -> None:
+def test_analysis_jobs_modal_layout_keeps_its_panes(
+    demo_project: Project, tmp_path: Path
+) -> None:
     """The jobs dialog's panes stay inside the box and never overlap (ODR-20).
 
     The box used to hold no ``1fr`` child, so the surplus height went to the
@@ -2383,14 +2726,18 @@ def test_analysis_jobs_modal_layout_keeps_its_panes(demo_project: Project,
             for pane in panes:
                 region = pane.region
                 assert region.y >= box.y, f"{pane.id} starts above the box"
-                assert region.y + region.height <= box.y + box.height, \
+                assert region.y + region.height <= box.y + box.height, (
                     f"{pane.id} ends below the box: {region} vs {box}"
+                )
             for index, first in enumerate(panes):
-                for second in panes[index + 1:]:
+                for second in panes[index + 1 :]:
                     a, b = first.region, second.region
-                    assert not (a.x < b.x + b.width and b.x < a.x + a.width
-                                and a.y < b.y + b.height and b.y < a.y + a.height), \
-                        f"{first.id} overlaps {second.id}: {a} vs {b}"
+                    assert not (
+                        a.x < b.x + b.width
+                        and b.x < a.x + a.width
+                        and a.y < b.y + b.height
+                        and b.y < a.y + a.height
+                    ), f"{first.id} overlaps {second.id}: {a} vs {b}"
 
             # The table gets a real viewport (not the single squeezed row) and
             # the detail keeps a usable column to its right.
@@ -2417,9 +2764,13 @@ def test_fitting_select_expands_to_the_longest_option(demo_project: Project) -> 
         app = OperonApp(demo_project)
         async with app.run_test(size=(160, 50)) as pilot:
             await _settled(app)
-            probe = FittingSelect([(label, "x"), ("short", "y")], value="x", id="fit-probe")
+            probe = FittingSelect(
+                [(label, "x"), ("short", "y")], value="x", id="fit-probe"
+            )
             probe.styles.width = 20
-            short = FittingSelect([(label, "x"), ("short", "y")], value="y", id="fit-short")
+            short = FittingSelect(
+                [(label, "x"), ("short", "y")], value="y", id="fit-short"
+            )
             short.styles.width = 20
             await app.screen.mount(probe)
             await app.screen.mount(short)
@@ -2428,13 +2779,18 @@ def test_fitting_select_expands_to_the_longest_option(demo_project: Project) -> 
 
             # The collapsed control shows a long value without growing: a select
             # whose value is long is exactly as tall as one whose value is short.
-            assert probe.region.height == short.region.height, (probe.region, short.region)
+            assert probe.region.height == short.region.height, (
+                probe.region,
+                short.region,
+            )
 
             probe.focus()
             probe.action_show_overlay()
             overlay = probe.query_one(SelectOverlay)
-            await _wait_until(lambda: overlay.region.width > probe.region.width,
-                              "the dropdown to widen to its content")
+            await _wait_until(
+                lambda: overlay.region.width > probe.region.width,
+                "the dropdown to widen to its content",
+            )
             assert overlay.region.width >= len(label) + 2, overlay.region
             assert overlay.region.width <= int(app.size.width * 0.8) + 1, overlay.region
             probe.expanded = False
@@ -2474,14 +2830,17 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
         async with app.run_test(size=(120, 40)):
             await _settled(app)
             monkeypatch.setattr(Select, "compose", without_overlay)
-            probe = FittingSelect([("short", "x"), ("longer", "y")], value="y", id="ODR-38")
+            probe = FittingSelect(
+                [("short", "x"), ("longer", "y")], value="y", id="ODR-38"
+            )
             await app.screen.mount(probe)
             monkeypatch.undo()
 
             # The retry budget runs out with the overlay still missing, and the app
             # is still there to be asked about it.
-            await _wait_until(lambda: probe.options_gave_up,
-                              "the mount retries to run out")
+            await _wait_until(
+                lambda: probe.options_gave_up, "the mount retries to run out"
+            )
             assert probe.is_mounted
             assert not probe.options_ready
             assert probe.value == "y"
@@ -2532,8 +2891,9 @@ def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
             # Out of retries, with the overlay still missing.  The patches stay for
             # the whole run: the recorder above has to be the widget's logger while
             # the retries give up, and the compose patch only matters at mount time.
-            await _wait_until(lambda: probe.options_gave_up,
-                              "the mount retries to run out")
+            await _wait_until(
+                lambda: probe.options_gave_up, "the mount retries to run out"
+            )
             assert probe.is_mounted
             assert not probe.options_ready
             assert probe.options_gave_up

@@ -60,8 +60,11 @@ def _handler(signum: int, frame: object) -> None:
         _force_exit(signum)
     _cleanup_in_progress = True
     name = signal.Signals(signum).name
-    print(f"\nreceived {name}: shutting down gracefully "
-          "(send the signal again to force immediate exit)", file=sys.stderr)
+    print(
+        f"\nreceived {name}: shutting down gracefully "
+        "(send the signal again to force immediate exit)",
+        file=sys.stderr,
+    )
     raise ShutdownRequested(signum)
 
 

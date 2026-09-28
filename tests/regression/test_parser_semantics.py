@@ -10,7 +10,10 @@ from operon.errors import QCError
 from operon.qc import _parsers as cy_parsers
 from operon.qc import parsers as py_parsers
 
-BACKENDS = [pytest.param(py_parsers, id="python"), pytest.param(cy_parsers, id="cython")]
+BACKENDS = [
+    pytest.param(py_parsers, id="python"),
+    pytest.param(cy_parsers, id="cython"),
+]
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -35,13 +38,19 @@ def test_fasta_sequence_must_be_ascii(tmp_path, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-@pytest.mark.parametrize(("content", "message"), [
-    (b"@r1\n", "missing sequence"),
-    (b"@r1\nACGT\n", "missing plus line"),
-    (b"@r1\nACGT\n+\n", "missing quality"),
-    (b"@r1\nACGT\n\nIIII\n", "plus line malformed"),
-    (b"@r1\nAC\n+\nII\n\n@r2\nGT\n+\nII\n", "blank line where FASTQ header was expected"),
-])
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (b"@r1\n", "missing sequence"),
+        (b"@r1\nACGT\n", "missing plus line"),
+        (b"@r1\nACGT\n+\n", "missing quality"),
+        (b"@r1\nACGT\n\nIIII\n", "plus line malformed"),
+        (
+            b"@r1\nAC\n+\nII\n\n@r2\nGT\n+\nII\n",
+            "blank line where FASTQ header was expected",
+        ),
+    ],
+)
 def test_fastq_rejects_truncated_or_blank_records(tmp_path, backend, content, message):
     path = tmp_path / "bad.fq"
     path.write_bytes(content)
@@ -67,11 +76,7 @@ def test_fastq_defaults_to_modern_phred33_and_exposes_ambiguous_auto(tmp_path, b
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_fastq_sampling_is_exact_and_described(tmp_path, backend):
     path = tmp_path / "sample.fq"
-    path.write_bytes(
-        b"@r1\nAAAA\n+\nIIII\n"
-        b"@r2\nAAAA\n+\nIIII\n"
-        b"@r3\nCCCC\n+\nIIII\n"
-    )
+    path.write_bytes(b"@r1\nAAAA\n+\nIIII\n@r2\nAAAA\n+\nIIII\n@r3\nCCCC\n+\nIIII\n")
     stats = backend.fastq_stats(path, sample_size=2)
     assert stats["duplicate_percent"] == 50.0
     assert stats["duplicate_sampled_read_count"] == 2
@@ -83,11 +88,7 @@ def test_fastq_sampling_is_exact_and_described(tmp_path, backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_fastq_length_histogram_preserves_l50_for_odd_totals(tmp_path, backend):
     path = tmp_path / "lengths.fq"
-    path.write_bytes(
-        b"@r1\nAA\n+\nII\n"
-        b"@r2\nCC\n+\nII\n"
-        b"@r3\nG\n+\nI\n"
-    )
+    path.write_bytes(b"@r1\nAA\n+\nII\n@r2\nCC\n+\nII\n@r3\nG\n+\nI\n")
     stats = backend.fastq_stats(path)
     assert stats["read_length_n50"] == 2.0
     assert stats["read_length_l50"] == 2
@@ -165,4 +166,9 @@ def test_fasta_stats_dash_gaps_are_separate_from_n(tmp_path, backend):
 def test_line_splitter_handles_crlf_across_chunks(backend, tmp_path):
     path = tmp_path / "lines.txt"
     path.write_bytes(b"a\r\nb\rc\n" + b"d" * 10 + b"\n")
-    assert list(backend._iter_binary_lines(path, chunk_size=2)) == [b"a", b"b", b"c", b"d" * 10]
+    assert list(backend._iter_binary_lines(path, chunk_size=2)) == [
+        b"a",
+        b"b",
+        b"c",
+        b"d" * 10,
+    ]

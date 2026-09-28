@@ -73,8 +73,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     """Wait for an observable UI result; handoffs pass ``timeout=HANDOFF_TIMEOUT``."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -90,7 +91,10 @@ def _static_text(widget: Static) -> str:
 
 
 def _notifications(app) -> list[tuple[str, str]]:
-    return [(notification.severity, notification.message) for notification in app._notifications]
+    return [
+        (notification.severity, notification.message)
+        for notification in app._notifications
+    ]
 
 
 def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
@@ -106,18 +110,31 @@ def _file_rows(project: Project) -> list[dict]:
 
 
 def _standardized_target(project: Project, row: dict) -> Path:
-    return (project.standardized_root / raw_bucket(row["entity_type"]) / row["entity_id"]
-            / Path(row["relative_path"]).name)
+    return (
+        project.standardized_root
+        / raw_bucket(row["entity_type"])
+        / row["entity_id"]
+        / Path(row["relative_path"]).name
+    )
 
 
-async def _open_modal(pilot, app, row_id: str | None = None) -> tuple[StandardizeModal, dict]:
+async def _open_modal(
+    pilot, app, row_id: str | None = None
+) -> tuple[StandardizeModal, dict]:
     """Open the Files screen's ``S`` modal on one row, returning both."""
     app.action_switch_screen("files")
     await pilot.pause()
     await _settled(app)
     panel = app.query_one(FilesPanel)
-    index = 0 if row_id is None else next(
-        position for position, item in enumerate(panel.files) if item["file_id"] == row_id)
+    index = (
+        0
+        if row_id is None
+        else next(
+            position
+            for position, item in enumerate(panel.files)
+            if item["file_id"] == row_id
+        )
+    )
     table = panel.query_one("#files-table", DataTable)
     table.focus()
     table.move_cursor(row=index, animate=False)
@@ -131,7 +148,8 @@ async def _open_modal(pilot, app, row_id: str | None = None) -> tuple[Standardiz
 
 
 def test_files_screen_standardize_previews_the_cli_and_reports_already_staged(
-        project: Project) -> None:
+    project: Project,
+) -> None:
     """``S`` shows the equivalent command; Confirm runs it and reports the outcome."""
     opened: list[dict] = []
 
@@ -149,28 +167,40 @@ def test_files_screen_standardize_previews_the_cli_and_reports_already_staged(
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: not isinstance(app.screen, StandardizeModal),
-                "standardize modal closed", timeout=HANDOFF_TIMEOUT)
+                "standardize modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app)
-            assert ("information", "standardized 0 file(s); 1 already staged") in _notifications(app)
+            assert (
+                "information",
+                "standardized 0 file(s); 1 already staged",
+            ) in _notifications(app)
 
     _run(scenario())
 
-    row = _query(project, "SELECT * FROM files WHERE file_id=?", (opened[0]["file_id"],))[0]
+    row = _query(
+        project, "SELECT * FROM files WHERE file_id=?", (opened[0]["file_id"],)
+    )[0]
     assert row["status"] == "STANDARDIZED"
     target = _standardized_target(project, row)
     assert target.exists() and not target.is_symlink()
 
 
-def test_standardize_modal_passes_the_chosen_link_kind_through(project: Project,
-                                                              monkeypatch) -> None:
+def test_standardize_modal_passes_the_chosen_link_kind_through(
+    project: Project, monkeypatch
+) -> None:
     """The link-kind control updates the shown command and reaches the action."""
     seen: list[tuple] = []
 
     def fake_standardize(project_arg, file_id=None, link_kind="copy"):
         seen.append((file_id, link_kind))
-        return {"file_id": file_id, "link_kind": link_kind, "total": 1,
-                "results": [{"file_id": file_id, "action": "created", "target": "x"}],
-                "errors": []}
+        return {
+            "file_id": file_id,
+            "link_kind": link_kind,
+            "total": 1,
+            "results": [{"file_id": file_id, "action": "created", "target": "x"}],
+            "errors": [],
+        }
 
     monkeypatch.setattr(actions, "standardize", fake_standardize)
     opened: list[dict] = []
@@ -189,7 +219,9 @@ def test_standardize_modal_passes_the_chosen_link_kind_through(project: Project,
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: not isinstance(app.screen, StandardizeModal),
-                "standardize modal closed", timeout=HANDOFF_TIMEOUT)
+                "standardize modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     _run(scenario())
     assert seen == [(opened[0]["file_id"], "hardlink")]
@@ -197,9 +229,12 @@ def test_standardize_modal_passes_the_chosen_link_kind_through(project: Project,
 
 def test_standardize_reports_a_refused_transition_inline(project: Project) -> None:
     """The core's refusal (a RELEASED entity) stays inline; nothing is staged."""
-    released = _query(project, "SELECT f.* FROM files f JOIN entity_state s "
-                               "ON s.entity_type=f.entity_type AND s.entity_id=f.entity_id "
-                               "WHERE s.state='RELEASED' ORDER BY f.file_id")[0]
+    released = _query(
+        project,
+        "SELECT f.* FROM files f JOIN entity_state s "
+        "ON s.entity_type=f.entity_type AND s.entity_id=f.entity_id "
+        "WHERE s.state='RELEASED' ORDER BY f.file_id",
+    )[0]
     _standardized_target(project, released).unlink()
 
     async def scenario() -> None:
@@ -209,22 +244,33 @@ def test_standardize_reports_a_refused_transition_inline(project: Project) -> No
             assert row["file_id"] == released["file_id"], row
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "illegal transition" in _static_text(
-                    modal.query_one("#modal-error", Static)),
-                "the refusal to appear inline", timeout=HANDOFF_TIMEOUT)
+                lambda: (
+                    "illegal transition"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "the refusal to appear inline",
+                timeout=HANDOFF_TIMEOUT,
+            )
             assert isinstance(app.screen, StandardizeModal)
 
     _run(scenario())
 
-    row = _query(project, "SELECT * FROM files WHERE file_id=?", (released["file_id"],))[0]
+    row = _query(
+        project, "SELECT * FROM files WHERE file_id=?", (released["file_id"],)
+    )[0]
     assert row["status"] == "STANDARDIZED"
     assert not _standardized_target(project, row).exists()
-    state = _query(project, "SELECT state FROM entity_state WHERE entity_type=? AND entity_id=?",
-                   (row["entity_type"], row["entity_id"]))[0]
+    state = _query(
+        project,
+        "SELECT state FROM entity_state WHERE entity_type=? AND entity_id=?",
+        (row["entity_type"], row["entity_id"]),
+    )[0]
     assert state["state"] == "RELEASED"
 
 
-def test_standardize_action_walks_every_file_and_reports_skips(project: Project) -> None:
+def test_standardize_action_walks_every_file_and_reports_skips(
+    project: Project,
+) -> None:
     """The no-file-id form visits every manifest entry and is idempotent."""
     rows = _file_rows(project)
     assert rows, "the demo project has no files"
@@ -233,12 +279,18 @@ def test_standardize_action_walks_every_file_and_reports_skips(project: Project)
 
     assert result["total"] == len(rows)
     assert result["errors"] == []
-    assert {item["file_id"] for item in result["results"]} == {row["file_id"] for row in rows}
+    assert {item["file_id"] for item in result["results"]} == {
+        row["file_id"] for row in rows
+    }
     assert all(item["action"] == "skipped" for item in result["results"])
     for row in rows:
         assert _standardized_target(project, row).exists()
-        assert _query(project, "SELECT status FROM files WHERE file_id=?",
-                      (row["file_id"],))[0]["status"] == "STANDARDIZED"
+        assert (
+            _query(
+                project, "SELECT status FROM files WHERE file_id=?", (row["file_id"],)
+            )[0]["status"]
+            == "STANDARDIZED"
+        )
 
 
 def test_standardize_reports_a_missing_source_by_raising(project: Project) -> None:

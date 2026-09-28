@@ -131,7 +131,8 @@ def test_accession_and_scalar_helpers_cover_invalid_and_empty_values(tmp_path: P
         encoding="utf-8",
     )
     assert ncbi._collect_accessions(["gcf_000001405.40"], accession_file) == [
-        "GCF_000001405.40", "GCA_000001405.29"
+        "GCF_000001405.40",
+        "GCA_000001405.29",
     ]
     with pytest.raises(ValidationError, match="accession file does not exist"):
         ncbi._collect_accessions([], tmp_path / "missing.txt")
@@ -142,11 +143,23 @@ def test_accession_and_scalar_helpers_cover_invalid_and_empty_values(tmp_path: P
     "overrides, message",
     [
         ({}, "provide at least one"),
-        ({"inputs": ["offline"], "accessions": ["GCF_000001405.40"], "plan_only": True},
-         "plan-only"),
-        ({"accessions": ["GCF_000001405.40"], "includes": ["unknown"]}, "unknown NCBI include"),
+        (
+            {
+                "inputs": ["offline"],
+                "accessions": ["GCF_000001405.40"],
+                "plan_only": True,
+            },
+            "plan-only",
+        ),
+        (
+            {"accessions": ["GCF_000001405.40"], "includes": ["unknown"]},
+            "unknown NCBI include",
+        ),
         ({"accessions": ["GCF_000001405.40"], "batch_size": 0}, "batch-size"),
-        ({"accessions": ["GCF_000001405.40"], "download_workers": 11}, "download-workers"),
+        (
+            {"accessions": ["GCF_000001405.40"], "download_workers": 11},
+            "download-workers",
+        ),
         ({"accessions": ["GCF_000001405.40"], "max_retries": -1}, "retries"),
         ({"accessions": ["GCF_000001405.40"], "retry_backoff": -0.1}, "retry-backoff"),
     ],
@@ -168,13 +181,18 @@ def test_adapter_rejects_invalid_top_level_options_before_io(overrides, message)
 
 
 def test_mapping_merge_and_deduplication_helpers():
-    assert ncbi._pick({"Assembly Info": 0, "assembly_info": "yes"}, "assembly info") == "yes"
+    assert (
+        ncbi._pick({"Assembly Info": 0, "assembly_info": "yes"}, "assembly info")
+        == "yes"
+    )
     assert ncbi._pick({"Assembly Info": 0}, "assembly info") == 0
     assert ncbi._pick([], "x") is None
     assert ncbi._mapping({"x": 1}) == {"x": 1}
     assert ncbi._mapping([]) == {}
     assert ncbi._merge_nonempty({"a": 1}, {"a": "", "b": None, "c": 3}) == {
-        "a": 1, "b": None, "c": 3
+        "a": 1,
+        "b": None,
+        "c": 3,
     }
     assert ncbi._deep_merge(
         {"nested": {"a": 1}, "keep": "x"},
@@ -217,18 +235,41 @@ def test_asset_role_detection(name, expected):
 def test_accession_path_and_role_selection():
     path = Path("ncbi_dataset/data/GCF_000001405.40/GCF_000001405_GRCh38_genomic.fna")
     assert ncbi._accession_from_path(path) == "GCF_000001405.40"
-    assert ncbi._accession_from_path(Path("GCA_123456789") / "genomic.fna") == "GCA_123456789"
+    assert (
+        ncbi._accession_from_path(Path("GCA_123456789") / "genomic.fna")
+        == "GCA_123456789"
+    )
     assert ncbi._accession_from_path(Path("plain.txt")) == ""
 
     current = {"assembly_accession": "GCA_000001405.29"}
     related = ["GCA_000001405.29", "GCF_000001405.40"]
-    assert ncbi._select_canonical_assembly_accession(current, related, related[0]) == related[0]
-    assert ncbi._select_canonical_assembly_accession({}, related, related[0]) == related[1]
-    assert ncbi._select_canonical_assembly_accession({}, [related[0]], related[0]) == related[0]
-    assert ncbi._assembly_asset_role("protein_fasta", related[0], related[1]) == "protein_fasta"
-    assert ncbi._assembly_asset_role("genome_fasta", related[1], related[1]) == "genome_fasta"
-    assert ncbi._assembly_asset_role("genome_fasta", related[1], related[0]) == "genome_fasta_refseq"
-    assert ncbi._assembly_asset_role("assembly_report", related[0], related[1]) == "assembly_report_genbank"
+    assert (
+        ncbi._select_canonical_assembly_accession(current, related, related[0])
+        == related[0]
+    )
+    assert (
+        ncbi._select_canonical_assembly_accession({}, related, related[0]) == related[1]
+    )
+    assert (
+        ncbi._select_canonical_assembly_accession({}, [related[0]], related[0])
+        == related[0]
+    )
+    assert (
+        ncbi._assembly_asset_role("protein_fasta", related[0], related[1])
+        == "protein_fasta"
+    )
+    assert (
+        ncbi._assembly_asset_role("genome_fasta", related[1], related[1])
+        == "genome_fasta"
+    )
+    assert (
+        ncbi._assembly_asset_role("genome_fasta", related[1], related[0])
+        == "genome_fasta_refseq"
+    )
+    assert (
+        ncbi._assembly_asset_role("assembly_report", related[0], related[1])
+        == "assembly_report_genbank"
+    )
 
 
 def test_read_report_supports_json_variants_and_csv_errors():
@@ -237,15 +278,23 @@ def test_read_report_supports_json_variants_and_csv_errors():
         {"accession": "GCF_000001405.40"}
     ]
     with pytest.raises(ValidationError, match="invalid JSON on line 2"):
-        ncbi._read_report_handle(io.StringIO('{}\n{bad}\n'), "report.jsonl")
+        ncbi._read_report_handle(io.StringIO("{}\n{bad}\n"), "report.jsonl")
 
     assert ncbi._read_report_handle(io.StringIO("  \n"), "empty.txt") == []
-    assert ncbi._read_report_handle(io.StringIO('[{"x": 1}, 2]'), "report.json") == [{"x": 1}]
-    assert ncbi._read_report_handle(io.StringIO('{"reports":[{"x":1},2]}'), "report.json") == [{"x": 1}]
-    assert ncbi._read_report_handle(io.StringIO('{"assemblies":[{"x":2}]}'), "report.json") == [{"x": 2}]
-    assert ncbi._read_report_handle(io.StringIO('{"data":[{"x":3}]}'), "report.json") == [{"x": 3}]
+    assert ncbi._read_report_handle(io.StringIO('[{"x": 1}, 2]'), "report.json") == [
+        {"x": 1}
+    ]
+    assert ncbi._read_report_handle(
+        io.StringIO('{"reports":[{"x":1},2]}'), "report.json"
+    ) == [{"x": 1}]
+    assert ncbi._read_report_handle(
+        io.StringIO('{"assemblies":[{"x":2}]}'), "report.json"
+    ) == [{"x": 2}]
+    assert ncbi._read_report_handle(
+        io.StringIO('{"data":[{"x":3}]}'), "report.json"
+    ) == [{"x": 3}]
     assert ncbi._read_report_handle(io.StringIO('{"x":4}'), "report.json") == [{"x": 4}]
-    assert ncbi._read_report_handle(io.StringIO('1'), "report.json") == []
+    assert ncbi._read_report_handle(io.StringIO("1"), "report.json") == []
     assert ncbi._read_report_handle(
         io.StringIO('{"x":1}\n{"x":2}\n'), "unknown.txt"
     ) == [{"x": 1}, {"x": 2}]
@@ -253,7 +302,9 @@ def test_read_report_supports_json_variants_and_csv_errors():
         ncbi._read_report_handle(io.StringIO('{"x":1}\nnope\n'), "unknown.txt")
 
     rows = ncbi._read_report_handle(
-        io.StringIO("Assembly Accession,Organism Name,Tax ID\nGCF_000001405.40,Human,9606\n"),
+        io.StringIO(
+            "Assembly Accession,Organism Name,Tax ID\nGCF_000001405.40,Human,9606\n"
+        ),
         "report.csv",
     )
     assert rows[0]["organism"]["taxId"] == "9606"
@@ -273,7 +324,10 @@ def test_biosample_and_metadata_extraction_accept_alternate_keys():
             "biosample": {
                 "accession": "SAMN1",
                 "sampleAttributes": [
-                    {"attributeName": "latitude and longitude", "attributeValue": "1 S 2 W"},
+                    {
+                        "attributeName": "latitude and longitude",
+                        "attributeValue": "1 S 2 W",
+                    },
                     {"harmonizedName": "host", "value": "plant"},
                     "ignored",
                 ],
@@ -321,12 +375,15 @@ def test_zip_validation_and_diagnostics(tmp_path: Path):
     data_header = tmp_path / "data-header.zip"
     name = b"ncbi_dataset/data/GCF_000001405.40/genomic.fna"
     data_header.write_bytes(
-        struct.pack("<IHHHHHIIIHH", 0x04034B50, 20, 0, 0, 0, 0, 0, 0, 0, len(name), 0) + name
+        struct.pack("<IHHHHHIIIHH", 0x04034B50, 20, 0, 0, 0, 0, 0, 0, 0, len(name), 0)
+        + name
     )
     retryable, detail = ncbi._zip_package_diagnostic(data_header, ["GCF_000001405.40"])
     assert retryable is True
     assert "truncated" in detail
-    retryable, detail = ncbi._zip_package_diagnostic(tmp_path / "missing.zip", ["GCF_000001405.40"])
+    retryable, detail = ncbi._zip_package_diagnostic(
+        tmp_path / "missing.zip", ["GCF_000001405.40"]
+    )
     assert retryable is True
     assert "no recognizable ZIP content" in detail
 
@@ -342,11 +399,16 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
             raise ssl.SSLError("transient")
         return kwargs["destination"]
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_ncbi_dataset_once", fail_once)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_ncbi_dataset_once", fail_once
+    )
     destination = tmp_path / "result.zip"
-    assert ncbi.download_ncbi_dataset(
-        ["GCF_000001405.40"], destination, session=object(), max_retries=1
-    ) == destination
+    assert (
+        ncbi.download_ncbi_dataset(
+            ["GCF_000001405.40"], destination, session=object(), max_retries=1
+        )
+        == destination
+    )
     assert len(attempts) == 2
     with pytest.raises(ValidationError, match="no NCBI assembly accessions"):
         ncbi.download_ncbi_dataset([], destination, session=object())
@@ -357,7 +419,9 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
         timeouts.append(kwargs)
         raise requests.exceptions.Timeout("slow")
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_ncbi_dataset_once", always_timeout)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_ncbi_dataset_once", always_timeout
+    )
     with pytest.raises(ValidationError, match="failed after 2 attempt"):
         ncbi.download_ncbi_dataset(
             ["GCF_000001405.40"], destination, session=object(), max_retries=1
@@ -472,14 +536,16 @@ def test_asset_sha_rejects_missing_sources_and_members(tmp_path):
 
 
 def test_disk_space_formatting_and_errors(tmp_path, monkeypatch):
-    monkeypatch.setattr(ncbi.shutil, "disk_usage", lambda _p: type("Usage", (), {"free": 10})())
+    monkeypatch.setattr(
+        ncbi.shutil, "disk_usage", lambda _p: type("Usage", (), {"free": 10})()
+    )
     with pytest.raises(ValidationError, match="insufficient space"):
         ncbi._require_disk_space(tmp_path / "not-created", 100, "download")
     assert ncbi._format_bytes(0) == "0.0 B"
     assert ncbi._format_bytes(1024) == "1.0 KiB"
-    assert ncbi._format_bytes(1024 ** 2) == "1.0 MiB"
-    assert ncbi._format_bytes(1024 ** 3) == "1.0 GiB"
-    assert ncbi._format_bytes(1024 ** 4) == "1.0 TiB"
+    assert ncbi._format_bytes(1024**2) == "1.0 MiB"
+    assert ncbi._format_bytes(1024**3) == "1.0 GiB"
+    assert ncbi._format_bytes(1024**4) == "1.0 TiB"
     error = ncbi._no_space_error(tmp_path, "write", OSError("full"))
     assert isinstance(error, ValidationError) and "ran out of space" in str(error)
 
@@ -494,7 +560,9 @@ def test_open_and_preserve_sources_are_idempotent(tmp_path, monkeypatch):
     assert bundle.root == directory.resolve() and bundle.label == "label"
     source = tmp_path / "source.jsonl"
     source.write_text("{}\n", encoding="utf-8")
-    monkeypatch.setattr("operon.adapters._ncbi_sources._require_disk_space", lambda *_a: None)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_sources._require_disk_space", lambda *_a: None
+    )
     preserved = ncbi._preserve_source(source, project)
     assert preserved.is_file()
     assert ncbi._preserve_source(source, project) == preserved
@@ -519,8 +587,12 @@ def test_preflight_assets_deduplicates_and_detects_internal_conflict(tmp_path):
         path=path, accession=accession, role="genome_fasta", source_url="x"
     )
     plan = ncbi.ImportPlan(
-        tables={}, assets=[make(first), make(same)], assembly_ids={accession: "ASM_1"},
-        annotation_ids={}, assembly_records=[], annotation_records=[],
+        tables={},
+        assets=[make(first), make(same)],
+        assembly_ids={accession: "ASM_1"},
+        annotation_ids={},
+        assembly_records=[],
+        annotation_records=[],
     )
 
     class DB:
@@ -528,6 +600,7 @@ def test_preflight_assets_deduplicates_and_detects_internal_conflict(tmp_path):
             @staticmethod
             def execute(*_a):
                 return type("Cursor", (), {"fetchone": lambda self: None})()
+
         conn = Conn()
 
     ncbi._preflight_assets(DB(), plan)
@@ -544,49 +617,82 @@ def test_download_batches_async_success_error_and_cancellation(tmp_path, monkeyp
         destination.write_bytes(b"zip")
         return destination
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batch_aiohttp", fake_download)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batch_aiohttp", fake_download
+    )
     completed = queue.Queue()
     cancel = threading.Event()
-    asyncio.run(ncbi._download_batches_async(
-        batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
-        staging_dir=tmp_path, includes=["genome"], email=None, api_key=None,
-        timeout=1, max_workers=2, max_retries=0, retry_backoff=0,
-        completed_queue=completed, cancel_event=cancel,
-    ))
+    asyncio.run(
+        ncbi._download_batches_async(
+            batches=[["GCF_000000001.1"], ["GCF_000000002.2"]],
+            staging_dir=tmp_path,
+            includes=["genome"],
+            email=None,
+            api_key=None,
+            timeout=1,
+            max_workers=2,
+            max_retries=0,
+            retry_backoff=0,
+            completed_queue=completed,
+            cancel_event=cancel,
+        )
+    )
     items = [completed.get_nowait(), completed.get_nowait()]
     assert sum(item[1] is not None for item in items) == 1
     assert sum(item[2] is not None for item in items) == 1
 
     cancel.set()
     completed = queue.Queue()
-    asyncio.run(ncbi._download_batches_async(
-        batches=[["GCF_000000001.1"]], staging_dir=tmp_path, includes=["genome"],
-        email=None, api_key=None, timeout=1, max_workers=1, max_retries=0,
-        retry_backoff=0, completed_queue=completed, cancel_event=cancel,
-    ))
+    asyncio.run(
+        ncbi._download_batches_async(
+            batches=[["GCF_000000001.1"]],
+            staging_dir=tmp_path,
+            includes=["genome"],
+            email=None,
+            api_key=None,
+            timeout=1,
+            max_workers=1,
+            max_retries=0,
+            retry_backoff=0,
+            completed_queue=completed,
+            cancel_event=cancel,
+        )
+    )
     assert completed.empty()
 
 
 def test_parallel_download_wrapper_aggregates_or_reports_errors(tmp_path, monkeypatch):
     async def fake_runner(**kwargs):
-        kwargs["completed_queue"].put((kwargs["batches"][0], None, ValidationError("bad")))
+        kwargs["completed_queue"].put(
+            (kwargs["batches"][0], None, ValidationError("bad"))
+        )
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", fake_runner)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batches_async", fake_runner
+    )
     with pytest.raises(ValidationError, match="download batch"):
         ncbi.download_ncbi_datasets_parallel(
             [["GCF_000000001.1"]], tmp_path, max_workers=1, on_complete=lambda *_a: None
         )
     errors = []
-    assert ncbi.download_ncbi_datasets_parallel(
-        [["GCF_000000001.1"]], tmp_path, max_workers=1,
-        on_complete=lambda *_a: None, on_error=lambda batch, error: errors.append((batch, error)),
-    ) == []
+    assert (
+        ncbi.download_ncbi_datasets_parallel(
+            [["GCF_000000001.1"]],
+            tmp_path,
+            max_workers=1,
+            on_complete=lambda *_a: None,
+            on_error=lambda batch, error: errors.append((batch, error)),
+        )
+        == []
+    )
     assert len(errors) == 1
 
     async def crashed(**_kwargs):
         raise RuntimeError("runner")
 
-    monkeypatch.setattr("operon.adapters._ncbi_download._download_batches_async", crashed)
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._download_batches_async", crashed
+    )
     with pytest.raises(RuntimeError, match="runner"):
         ncbi.download_ncbi_datasets_parallel(
             [["GCF_000000001.1"]], tmp_path, max_workers=1, on_complete=lambda *_a: None
@@ -595,9 +701,11 @@ def test_parallel_download_wrapper_aggregates_or_reports_errors(tmp_path, monkey
 
 def test_interruptible_retry_sleep_cancel_and_completion(monkeypatch):
     event = threading.Event()
+
     # Avoid monkeypatching asyncio.sleep recursively by using a small custom awaitable.
     async def no_sleep(_seconds):
         return None
+
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
     asyncio.run(ncbi._interruptible_retry_sleep(0.3, event))
     event.set()
@@ -656,15 +764,19 @@ def _fake_aiohttp(monkeypatch, outcomes, captured=None):
                 raise outcome
             return outcome
 
-    fake = type("FakeAiohttp", (), {
-        "ClientSession": Session,
-        "ClientTimeout": lambda **kwargs: kwargs,
-        "ClientSSLError": RetryableConnectionError,
-        "ClientConnectionError": RetryableConnectionError,
-        "ServerDisconnectedError": RetryableConnectionError,
-        "ClientPayloadError": RetryableConnectionError,
-        "ClientResponseError": _FakeHTTPError,
-    })
+    fake = type(
+        "FakeAiohttp",
+        (),
+        {
+            "ClientSession": Session,
+            "ClientTimeout": lambda **kwargs: kwargs,
+            "ClientSSLError": RetryableConnectionError,
+            "ClientConnectionError": RetryableConnectionError,
+            "ServerDisconnectedError": RetryableConnectionError,
+            "ClientPayloadError": RetryableConnectionError,
+            "ClientResponseError": _FakeHTTPError,
+        },
+    )
     monkeypatch.setitem(sys.modules, "aiohttp", fake)
     return fake
 
@@ -678,21 +790,33 @@ def _zip_bytes() -> bytes:
 
 def _download_kwargs(destination, cancel=None, max_retries=0):
     return dict(
-        accessions=["GCF_000000001.1"], destination=destination,
-        includes=["genome", "protein"], email="test@example.org", api_key="key",
-        timeout=1, max_retries=max_retries, retry_backoff=0,
+        accessions=["GCF_000000001.1"],
+        destination=destination,
+        includes=["genome", "protein"],
+        email="test@example.org",
+        api_key="key",
+        timeout=1,
+        max_retries=max_retries,
+        retry_backoff=0,
         cancel_event=cancel or threading.Event(),
     )
 
 
-def test_aiohttp_download_success_headers_content_length_and_fallback(tmp_path, monkeypatch):
+def test_aiohttp_download_success_headers_content_length_and_fallback(
+    tmp_path, monkeypatch
+):
     data = _zip_bytes()
     captured = []
     first = _FakeResponse(404)
-    second = _FakeResponse(200, [data[:10], data[10:]], {"Content-Length": str(len(data))})
+    second = _FakeResponse(
+        200, [data[:10], data[10:]], {"Content-Length": str(len(data))}
+    )
     _fake_aiohttp(monkeypatch, [first, second], captured)
     disk_checks = []
-    monkeypatch.setattr("operon.adapters._ncbi_download._require_disk_space", lambda *args: disk_checks.append(args))
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._require_disk_space",
+        lambda *args: disk_checks.append(args),
+    )
     destination = tmp_path / "package.zip"
     result = asyncio.run(ncbi._download_batch_aiohttp(**_download_kwargs(destination)))
     assert result == destination and zipfile.is_zipfile(destination)
@@ -701,33 +825,50 @@ def test_aiohttp_download_success_headers_content_length_and_fallback(tmp_path, 
     assert "test@example.org" in captured[0]["headers"]["User-Agent"]
 
 
-def test_aiohttp_download_retries_transient_status_and_connection(tmp_path, monkeypatch):
+def test_aiohttp_download_retries_transient_status_and_connection(
+    tmp_path, monkeypatch
+):
     data = _zip_bytes()
-    _fake_aiohttp(monkeypatch, [
-        _FakeResponse(503), _FakeResponse(503),
-        _FakeResponse(200, [data], {"Content-Length": "bad"}),
-    ])
+    _fake_aiohttp(
+        monkeypatch,
+        [
+            _FakeResponse(503),
+            _FakeResponse(503),
+            _FakeResponse(200, [data], {"Content-Length": "bad"}),
+        ],
+    )
+
     async def no_sleep(*_args):
         return None
-    monkeypatch.setattr("operon.adapters._ncbi_download._interruptible_retry_sleep", no_sleep)
+
+    monkeypatch.setattr(
+        "operon.adapters._ncbi_download._interruptible_retry_sleep", no_sleep
+    )
     destination = tmp_path / "retry.zip"
-    assert asyncio.run(ncbi._download_batch_aiohttp(
-        **_download_kwargs(destination, max_retries=1)
-    )) == destination
+    assert (
+        asyncio.run(
+            ncbi._download_batch_aiohttp(**_download_kwargs(destination, max_retries=1))
+        )
+        == destination
+    )
 
 
-def test_aiohttp_download_validation_retry_exhaustion_and_http_error(tmp_path, monkeypatch):
+def test_aiohttp_download_validation_retry_exhaustion_and_http_error(
+    tmp_path, monkeypatch
+):
     _fake_aiohttp(monkeypatch, [_FakeResponse(200, [b"temporary gateway failure"])])
     with pytest.raises(ValidationError, match="after 1 attempt"):
-        asyncio.run(ncbi._download_batch_aiohttp(
-            **_download_kwargs(tmp_path / "invalid.zip")
-        ))
+        asyncio.run(
+            ncbi._download_batch_aiohttp(**_download_kwargs(tmp_path / "invalid.zip"))
+        )
 
     _fake_aiohttp(monkeypatch, [_FakeResponse(400)])
     with pytest.raises(ValidationError, match="download failed"):
-        asyncio.run(ncbi._download_batch_aiohttp(
-            **_download_kwargs(tmp_path / "bad-request.zip")
-        ))
+        asyncio.run(
+            ncbi._download_batch_aiohttp(
+                **_download_kwargs(tmp_path / "bad-request.zip")
+            )
+        )
 
     with pytest.raises(ValidationError, match="no NCBI assembly accessions"):
         kwargs = _download_kwargs(tmp_path / "empty.zip")
@@ -735,14 +876,18 @@ def test_aiohttp_download_validation_retry_exhaustion_and_http_error(tmp_path, m
         asyncio.run(ncbi._download_batch_aiohttp(**kwargs))
 
 
-def test_aiohttp_download_cancellation_during_transfer_and_no_space(tmp_path, monkeypatch):
+def test_aiohttp_download_cancellation_during_transfer_and_no_space(
+    tmp_path, monkeypatch
+):
     event = threading.Event()
     event.set()
     _fake_aiohttp(monkeypatch, [])
     with pytest.raises(ncbi._DownloadCancelled):
-        asyncio.run(ncbi._download_batch_aiohttp(
-            **_download_kwargs(tmp_path / "cancelled.zip", cancel=event)
-        ))
+        asyncio.run(
+            ncbi._download_batch_aiohttp(
+                **_download_kwargs(tmp_path / "cancelled.zip", cancel=event)
+            )
+        )
 
     class LaterCancel:
         def __init__(self):
@@ -754,37 +899,45 @@ def test_aiohttp_download_cancellation_during_transfer_and_no_space(tmp_path, mo
 
     _fake_aiohttp(monkeypatch, [_FakeResponse(200, [_zip_bytes()])])
     with pytest.raises(ncbi._DownloadCancelled):
-        asyncio.run(ncbi._download_batch_aiohttp(
-            **_download_kwargs(tmp_path / "midstream.zip", cancel=LaterCancel())
-        ))
+        asyncio.run(
+            ncbi._download_batch_aiohttp(
+                **_download_kwargs(tmp_path / "midstream.zip", cancel=LaterCancel())
+            )
+        )
 
     _fake_aiohttp(monkeypatch, [_FakeResponse(200, [_zip_bytes()])])
+
     def no_space(_fd):
         error = OSError("full")
         error.errno = 28
         raise error
+
     monkeypatch.setattr(os, "fsync", no_space)
     with pytest.raises(ValidationError, match="ran out of space"):
-        asyncio.run(ncbi._download_batch_aiohttp(
-            **_download_kwargs(tmp_path / "full.zip")
-        ))
+        asyncio.run(
+            ncbi._download_batch_aiohttp(**_download_kwargs(tmp_path / "full.zip"))
+        )
 
 
 def _assembly_report(accession="GCF_000000001.1", **overrides):
     report = {
         "accession": accession,
         "organism": {
-            "organismName": "Example species", "taxId": 123,
+            "organismName": "Example species",
+            "taxId": 123,
             "infraspecificNames": {"strain": "S1"},
         },
         "assemblyInfo": {
-            "assemblyName": "Example", "assemblyLevel": "Complete Genome",
+            "assemblyName": "Example",
+            "assemblyLevel": "Complete Genome",
             "biosample": {"accession": "SAMN000001"},
             "pairedAssembly": {"accession": "GCA_000000001.1"},
-            "releaseDate": "2025-01-02", "submitter": "Submitter",
+            "releaseDate": "2025-01-02",
+            "submitter": "Submitter",
         },
         "annotationInfo": {
-            "annotationProvider": "RefSeq", "annotationVersion": 2,
+            "annotationProvider": "RefSeq",
+            "annotationVersion": 2,
             "releaseDate": "2025-02-03",
         },
     }
@@ -812,16 +965,27 @@ def test_plan_builder_full_metadata_assets_and_reuse(project_db, tmp_path):
     sample = plan.tables["samples"][0]
     assembly = plan.tables["assemblies"][0]
     annotation = plan.tables["annotations"][0]
-    for table, row in (("organisms", organism), ("samples", sample),
-                       ("assemblies", assembly), ("annotations", annotation)):
+    for table, row in (
+        ("organisms", organism),
+        ("samples", sample),
+        ("assemblies", assembly),
+        ("annotations", annotation),
+    ):
         db.insert_row(table, row)
     for row in plan.tables["accessions"]:
         db.insert_row("accessions", row)
     reused = ncbi._PlanBuilder(db).build([_assembly_report()], [])
-    assert reused.new_ids == {"organism": 0, "sample": 0, "assembly": 0, "annotation": 0}
+    assert reused.new_ids == {
+        "organism": 0,
+        "sample": 0,
+        "assembly": 0,
+        "annotation": 0,
+    }
 
 
-def test_plan_builder_validation_conflicting_accessions_and_fallback_matching(project_db):
+def test_plan_builder_validation_conflicting_accessions_and_fallback_matching(
+    project_db,
+):
     _project, db = project_db
     with pytest.raises(ValidationError, match="no assembly accession"):
         ncbi._PlanBuilder(db)._add_record({"organism": {"organismName": "X"}})
@@ -832,22 +996,42 @@ def test_plan_builder_validation_conflicting_accessions_and_fallback_matching(pr
 
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "A"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_accession": "GCA_000000001.1", "assembly_version": 1,
-    })
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000002", "sample_id": "SMP_000001",
-        "assembly_accession": "GCF_000000001.1", "assembly_version": 1,
-    })
-    db.insert_row("accessions", {
-        "internal_type": "assembly", "internal_id": "ASM_000001",
-        "namespace": "NCBI_GenBank_Assembly", "accession": "GCA_000000001.1",
-    })
-    db.insert_row("accessions", {
-        "internal_type": "assembly", "internal_id": "ASM_000002",
-        "namespace": "NCBI_RefSeq_Assembly", "accession": "GCF_000000001.1",
-    })
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCA_000000001.1",
+            "assembly_version": 1,
+        },
+    )
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000002",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCF_000000001.1",
+            "assembly_version": 1,
+        },
+    )
+    db.insert_row(
+        "accessions",
+        {
+            "internal_type": "assembly",
+            "internal_id": "ASM_000001",
+            "namespace": "NCBI_GenBank_Assembly",
+            "accession": "GCA_000000001.1",
+        },
+    )
+    db.insert_row(
+        "accessions",
+        {
+            "internal_type": "assembly",
+            "internal_id": "ASM_000002",
+            "namespace": "NCBI_RefSeq_Assembly",
+            "accession": "GCF_000000001.1",
+        },
+    )
     with pytest.raises(ConflictError, match="map to different assemblies"):
         ncbi._PlanBuilder(db).build([_assembly_report()], [])
 
@@ -855,7 +1039,8 @@ def test_plan_builder_validation_conflicting_accessions_and_fallback_matching(pr
     assert builder._find_assembly(None) is None
     assert builder._find_assembly("GCF_000000001.1") == "ASM_000002"
     builder.rows["accessions"]["X\0A"] = {
-        "internal_type": "sample", "internal_id": "SMP_000001",
+        "internal_type": "sample",
+        "internal_id": "SMP_000001",
     }
     with pytest.raises(ConflictError, match="already maps"):
         builder._put_accession("assembly", "ASM_000001", "X", "A", 1, True)
@@ -863,34 +1048,73 @@ def test_plan_builder_validation_conflicting_accessions_and_fallback_matching(pr
 
 def test_plan_builder_organism_sample_and_annotation_lookup_fallbacks(project_db):
     _project, db = project_db
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Example species", "taxon_id": 123,
-    })
-    db.insert_row("samples", {
-        "sample_id": "SMP_000001", "organism_id": "ORG_000001",
-        "biosample_accession": "SAMN000001",
-    })
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_accession": "GCF_000000001.1", "assembly_version": 1,
-    })
-    db.insert_row("annotations", {
-        "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        "annotation_source": "NCBI RefSeq", "annotation_version": 1,
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Example species",
+            "taxon_id": 123,
+        },
+    )
+    db.insert_row(
+        "samples",
+        {
+            "sample_id": "SMP_000001",
+            "organism_id": "ORG_000001",
+            "biosample_accession": "SAMN000001",
+        },
+    )
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCF_000000001.1",
+            "assembly_version": 1,
+        },
+    )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000001",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "NCBI RefSeq",
+            "annotation_version": 1,
+        },
+    )
     builder = ncbi._PlanBuilder(db)
-    assert builder._ensure_organism({"taxon_id": None, "scientific_name": "example species"}) == "ORG_000001"
-    assert builder._ensure_organism({"taxon_id": 123, "scientific_name": "Changed"}) == "ORG_000001"
-    assert builder._ensure_sample({
-        "biosample_accession": "SAMN000001", "accession": "GCF_000000001.1"
-    }, "ORG_000001", "ASM_000001") == "SMP_000001"
-    assert builder._ensure_sample({
-        "biosample_accession": "", "accession": "GCF_000000001.1"
-    }, "ORG_000001", "ASM_000001") == "SMP_000001"
+    assert (
+        builder._ensure_organism(
+            {"taxon_id": None, "scientific_name": "example species"}
+        )
+        == "ORG_000001"
+    )
+    assert (
+        builder._ensure_organism({"taxon_id": 123, "scientific_name": "Changed"})
+        == "ORG_000001"
+    )
+    assert (
+        builder._ensure_sample(
+            {"biosample_accession": "SAMN000001", "accession": "GCF_000000001.1"},
+            "ORG_000001",
+            "ASM_000001",
+        )
+        == "SMP_000001"
+    )
+    assert (
+        builder._ensure_sample(
+            {"biosample_accession": "", "accession": "GCF_000000001.1"},
+            "ORG_000001",
+            "ASM_000001",
+        )
+        == "SMP_000001"
+    )
     builder.plan.canonical_accessions["ASM_000001"] = "GCF_000000001.1"
     annotation_id = builder._ensure_annotation("ASM_000001", "GCF_000000001.1", {})
     assert annotation_id == "ANN_000001"
-    assert builder._ensure_annotation("ASM_000001", "GCF_000000001.1", {}) == annotation_id
+    assert (
+        builder._ensure_annotation("ASM_000001", "GCF_000000001.1", {}) == annotation_id
+    )
 
 
 def test_entrez_fallback_validation_empty_and_complete_records(monkeypatch):
@@ -907,23 +1131,50 @@ def test_entrez_fallback_validation_empty_and_complete_records(monkeypatch):
         def __exit__(self, *_args):
             return None
 
-    searches = iter([
-        {"IdList": []}, {"IdList": ["2"]}, {"IdList": ["3"]}, {"IdList": ["4"]},
-    ])
-    summaries = iter([
-        {"DocumentSummarySet": {"DocumentSummary": []}},
-        {"DocumentSummarySet": {"DocumentSummary": [{
-            "AssemblyAccession": "GCF_000000003.1", "SpeciesName": "Species",
-            "Taxid": "3", "AssemblyStatus": "Complete Genome", "AssemblyName": "A",
-            "BioSampleAccn": "SAMN3", "BioProjectAccn": "PRJ3",
-            "Synonym": {"Genbank": "GCA_000000003.1"}, "RefSeq_category": "reference genome",
-            "SubmissionDate": "2025-01-01", "SubmitterOrganization": "Org",
-        }]}},
-        {"DocumentSummarySet": {"DocumentSummary": [{
-            "AssemblyAccession": "GCA_000000004.1", "SpeciesName": "Other",
-            "Taxid": "bad", "Synonym": None,
-        }]}},
-    ])
+    searches = iter(
+        [
+            {"IdList": []},
+            {"IdList": ["2"]},
+            {"IdList": ["3"]},
+            {"IdList": ["4"]},
+        ]
+    )
+    summaries = iter(
+        [
+            {"DocumentSummarySet": {"DocumentSummary": []}},
+            {
+                "DocumentSummarySet": {
+                    "DocumentSummary": [
+                        {
+                            "AssemblyAccession": "GCF_000000003.1",
+                            "SpeciesName": "Species",
+                            "Taxid": "3",
+                            "AssemblyStatus": "Complete Genome",
+                            "AssemblyName": "A",
+                            "BioSampleAccn": "SAMN3",
+                            "BioProjectAccn": "PRJ3",
+                            "Synonym": {"Genbank": "GCA_000000003.1"},
+                            "RefSeq_category": "reference genome",
+                            "SubmissionDate": "2025-01-01",
+                            "SubmitterOrganization": "Org",
+                        }
+                    ]
+                }
+            },
+            {
+                "DocumentSummarySet": {
+                    "DocumentSummary": [
+                        {
+                            "AssemblyAccession": "GCA_000000004.1",
+                            "SpeciesName": "Other",
+                            "Taxid": "bad",
+                            "Synonym": None,
+                        }
+                    ]
+                }
+            },
+        ]
+    )
     fake = type("Entrez", (), {})
     fake.esearch = lambda **_kwargs: Handle(next(searches))
     fake.esummary = lambda **_kwargs: Handle(next(summaries))
@@ -931,9 +1182,13 @@ def test_entrez_fallback_validation_empty_and_complete_records(monkeypatch):
     monkeypatch.setitem(sys.modules, "Bio", type("Bio", (), {"Entrez": fake}))
     reports = ncbi.fetch_entrez_assembly_reports(
         ["GCF_000000001.1", "GCF_000000002.1", "GCF_000000003.1", "GCA_000000004.1"],
-        email="test@example.org", api_key="key",
+        email="test@example.org",
+        api_key="key",
     )
-    assert [row["accession"] for row in reports] == ["GCF_000000003.1", "GCA_000000004.1"]
+    assert [row["accession"] for row in reports] == [
+        "GCF_000000003.1",
+        "GCA_000000004.1",
+    ]
     assert reports[0]["sourceDatabase"] == "SOURCE_DATABASE_REFSEQ"
     assert reports[1]["sourceDatabase"] == "SOURCE_DATABASE_GENBANK"
 
@@ -946,7 +1201,9 @@ def test_preflight_assets_rejects_role_already_archived_with_different_bytes(tmp
         tables={},
         assets=[ncbi.DatasetAsset(path, accession, "genome_fasta", source_url="x")],
         assembly_ids={accession: "ASM_000001"},
-        annotation_ids={}, assembly_records=[], annotation_records=[],
+        annotation_ids={},
+        assembly_records=[],
+        annotation_records=[],
     )
 
     class DB:
@@ -955,6 +1212,7 @@ def test_preflight_assets_rejects_role_already_archived_with_different_bytes(tmp
             def execute(*_a):
                 row = {"file_id": "FIL_000001", "sha256": "0" * 64}
                 return type("Cursor", (), {"fetchone": lambda self: row})()
+
         conn = Conn()
 
     with pytest.raises(ConflictError, match="different bytes"):
@@ -965,37 +1223,61 @@ def test_resume_run_rejects_unknown_workflow_run(project_db):
     project, db = project_db
     with pytest.raises(ValidationError, match="resume workflow run does not exist"):
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=["GCF_000000001.1"], resume_run_id="WF_missing",
+            db,
+            project,
+            accessions=["GCF_000000001.1"],
+            resume_run_id="WF_missing",
         )
 
 
 def test_resume_run_rejects_mismatched_request_fingerprint(project_db):
     project, db = project_db
-    original = start_run(db, {
-        "step": "ncbi_datasets_import",
-        "command": "download 1 accession(s)",
-        "input_sha256": "0" * 64,
-    })
+    original = start_run(
+        db,
+        {
+            "step": "ncbi_datasets_import",
+            "command": "download 1 accession(s)",
+            "input_sha256": "0" * 64,
+        },
+    )
     with pytest.raises(ValidationError, match="differs from the original run"):
         ncbi.run_ncbi_datasets_adapter(
-            db, project, accessions=["GCF_000000001.1"], resume_run_id=original["run_id"],
+            db,
+            project,
+            accessions=["GCF_000000001.1"],
+            resume_run_id=original["run_id"],
         )
 
 
 def _seed_retired_assembly(db: Database) -> None:
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_accession": "GCF_000000001.1", "assembly_version": 1,
-    })
-    db.insert_row("accessions", {
-        "internal_type": "assembly", "internal_id": "ASM_000001",
-        "namespace": "NCBI_RefSeq_Assembly", "accession": "GCF_000000001.1",
-    })
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCF_000000001.1",
+            "assembly_version": 1,
+        },
+    )
+    db.insert_row(
+        "accessions",
+        {
+            "internal_type": "assembly",
+            "internal_id": "ASM_000001",
+            "namespace": "NCBI_RefSeq_Assembly",
+            "accession": "GCF_000000001.1",
+        },
+    )
     apply_lifecycle_event(
-        db, "assembly", "ASM_000001", action="RETIRE",
-        reason_code="accidental_import", reason="imported by mistake", actor="tester",
+        db,
+        "assembly",
+        "ASM_000001",
+        action="RETIRE",
+        reason_code="accidental_import",
+        reason="imported by mistake",
+        actor="tester",
     )
 
 
@@ -1009,14 +1291,17 @@ def test_find_archived_assembly_rejects_retired_assembly(project_db):
 def test_plan_builder_rejects_report_resolving_to_retired_assembly(project_db):
     _project, db = project_db
     _seed_retired_assembly(db)
-    with pytest.raises(ValidationError, match="resolved to retired assembly ASM_000001"):
+    with pytest.raises(
+        ValidationError, match="resolved to retired assembly ASM_000001"
+    ):
         ncbi._PlanBuilder(db).build([_assembly_report()], [])
 
 
 def test_file_satisfies_include_treats_missing_local_file_as_unsatisfied(project_db):
     project, _db = project_db
     row = {
-        "status": "CHECKSUM_VERIFIED", "entity_id": "ASM_000001",
+        "status": "CHECKSUM_VERIFIED",
+        "entity_id": "ASM_000001",
         "relative_path": "raw/assemblies/ASM_000001/genomic.fna",
     }
     assert not ncbi._file_satisfies_include(

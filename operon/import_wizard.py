@@ -39,7 +39,13 @@ def _answer(prompt: Any) -> Any:
 
 
 def _text(message: str, default: str = "", *, required: bool = False) -> str:
-    return str(_answer(questionary.text(message, default=default, validate=_required if required else None))).strip()
+    return str(
+        _answer(
+            questionary.text(
+                message, default=default, validate=_required if required else None
+            )
+        )
+    ).strip()
 
 
 def _select(message: str, choices: list[Any], *, default: Any = None) -> Any:
@@ -51,37 +57,53 @@ def _path(message: str, *, default: str = "") -> str:
 
 
 def _autocomplete(
-        message: str,
-        choices: list[str],
-        *,
-        default: str = "",
-        meta_information: dict[str, str] | None = None,
+    message: str,
+    choices: list[str],
+    *,
+    default: str = "",
+    meta_information: dict[str, str] | None = None,
 ) -> str:
     allowed = set(choices)
-    return str(_answer(questionary.autocomplete(
-        message,
-        choices=choices,
-        default=default,
-        meta_information=meta_information,
-        validate=lambda value: True if value in allowed else "Choose one of the completion options.",
-    ))).strip()
+    return str(
+        _answer(
+            questionary.autocomplete(
+                message,
+                choices=choices,
+                default=default,
+                meta_information=meta_information,
+                validate=lambda value: (
+                    True
+                    if value in allowed
+                    else "Choose one of the completion options."
+                ),
+            )
+        )
+    ).strip()
 
 
 def _confirm(message: str, default: bool = True) -> bool:
     return bool(_answer(questionary.confirm(message, default=default)))
 
 
-def _choice_rows(rows: list[dict[str, Any]], id_field: str, label: Callable[[dict[str, Any]], str]) -> list[Any]:
-    return [questionary.Choice(f"{row[id_field]}  {label(row)}", value=row[id_field]) for row in rows]
+def _choice_rows(
+    rows: list[dict[str, Any]], id_field: str, label: Callable[[dict[str, Any]], str]
+) -> list[Any]:
+    return [
+        questionary.Choice(f"{row[id_field]}  {label(row)}", value=row[id_field])
+        for row in rows
+    ]
 
 
 def _ask_organism(db: Database, draft: dict[str, Any]) -> None:
-    rows = [dict(row) for row in db.conn.execute(
-        "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version "
-        "FROM organisms o WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-        "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
-        "ORDER BY scientific_name, organism_id"
-    ).fetchall()]
+    rows = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT organism_id, scientific_name, taxon_id, taxonomy_source, taxonomy_version "
+            "FROM organisms o WHERE NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
+            "ORDER BY scientific_name, organism_id"
+        ).fetchall()
+    ]
     create_label = "Create a new organism"
     name_counts: dict[str, int] = {}
     for row in rows:
@@ -98,9 +120,14 @@ def _ask_organism(db: Database, draft: dict[str, Any]) -> None:
             details.append(f"TaxID {row['taxon_id']}")
         metadata[label] = " | ".join(details)
     current_id = draft.get("organism", {}).get("id")
-    default = next((label for label, organism_id in labels.items() if organism_id == current_id), "")
+    default = next(
+        (label for label, organism_id in labels.items() if organism_id == current_id),
+        "",
+    )
     selected = _autocomplete(
-        "Select the organism:", [create_label, *labels], default=default,
+        "Select the organism:",
+        [create_label, *labels],
+        default=default,
         meta_information=metadata,
     )
     if selected != create_label:
@@ -111,7 +138,10 @@ def _ask_organism(db: Database, draft: dict[str, Any]) -> None:
         "scientific_name": _text("Scientific name:", required=True),
         "taxon_id": _text("Taxonomy ID (optional):"),
         "taxonomic_rank": _text("Taxonomic rank (optional):", default="species"),
-        "taxonomy_source": _select("Taxonomy source:", ["NCBI", "GTDB", "other", questionary.Choice("Skip", value="")]),
+        "taxonomy_source": _select(
+            "Taxonomy source:",
+            ["NCBI", "GTDB", "other", questionary.Choice("Skip", value="")],
+        ),
         "taxonomy_version": _text("Taxonomy version (optional):"),
     }
     draft["organism"] = {"action": "create", "id": row["organism_id"], "row": row}
@@ -119,24 +149,40 @@ def _ask_organism(db: Database, draft: dict[str, Any]) -> None:
 
 def _ask_source(_db: Database, draft: dict[str, Any]) -> None:
     current = draft.get("source", {})
-    source_type = _select("Source classification:", [
-        questionary.Choice("INSDC (GenBank / ENA / DDBJ)", value="insdc"),
-        questionary.Choice("Non-INSDC database, repository, or institution", value="non_insdc"),
-    ], default=current.get("source_type"))
+    source_type = _select(
+        "Source classification:",
+        [
+            questionary.Choice("INSDC (GenBank / ENA / DDBJ)", value="insdc"),
+            questionary.Choice(
+                "Non-INSDC database, repository, or institution", value="non_insdc"
+            ),
+        ],
+        default=current.get("source_type"),
+    )
     draft["source"] = {
         "source_type": source_type,
         "database_name": _text(
-            "Source database or repository:", current.get("database_name", ""), required=True
+            "Source database or repository:",
+            current.get("database_name", ""),
+            required=True,
         ),
-        "provider": _text("Data provider or institution:", current.get("provider", ""), required=True),
-        "record_url": _text("Source record URL (optional):", current.get("record_url", "")),
+        "provider": _text(
+            "Data provider or institution:", current.get("provider", ""), required=True
+        ),
+        "record_url": _text(
+            "Source record URL (optional):", current.get("record_url", "")
+        ),
         "citation": _text(
-            "Reference citation or DOI" + (":" if source_type == "non_insdc" else " (optional):"),
-            current.get("citation", ""), required=source_type == "non_insdc",
+            "Reference citation or DOI"
+            + (":" if source_type == "non_insdc" else " (optional):"),
+            current.get("citation", ""),
+            required=source_type == "non_insdc",
         ),
         "license_name": _text(
-            "License name or SPDX identifier" + (":" if source_type == "non_insdc" else " (optional):"),
-            current.get("license_name", ""), required=source_type == "non_insdc",
+            "License name or SPDX identifier"
+            + (":" if source_type == "non_insdc" else " (optional):"),
+            current.get("license_name", ""),
+            required=source_type == "non_insdc",
         ),
         "license_url": _text("License URL (optional):", current.get("license_url", "")),
     }
@@ -144,17 +190,28 @@ def _ask_source(_db: Database, draft: dict[str, Any]) -> None:
 
 def _ask_sample(db: Database, draft: dict[str, Any]) -> None:
     organism_id = draft["organism"]["id"]
-    rows = [dict(row) for row in db.conn.execute(
-        "SELECT sample_id, isolate, strain, biosample_accession FROM samples s "
-        "WHERE organism_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-        "WHERE r.entity_type='sample' AND r.entity_id=s.sample_id) ORDER BY sample_id",
-        (organism_id,),
-    ).fetchall()]
+    rows = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT sample_id, isolate, strain, biosample_accession FROM samples s "
+            "WHERE organism_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type='sample' AND r.entity_id=s.sample_id) ORDER BY sample_id",
+            (organism_id,),
+        ).fetchall()
+    ]
     choices: list[Any] = [questionary.Choice("Create a new sample", value="__new__")]
-    choices.extend(_choice_rows(
-        rows, "sample_id",
-        lambda row: row.get("isolate") or row.get("strain") or row.get("biosample_accession") or "sample"
-    ))
+    choices.extend(
+        _choice_rows(
+            rows,
+            "sample_id",
+            lambda row: (
+                row.get("isolate")
+                or row.get("strain")
+                or row.get("biosample_accession")
+                or "sample"
+            ),
+        )
+    )
     selected = _select("Select the sample:", choices)
     if selected != "__new__":
         draft["sample"] = {"action": "reuse", "id": selected}
@@ -179,36 +236,80 @@ def _ask_sequencing(db: Database, draft: dict[str, Any]) -> None:
     row = {
         "run_id": current.get("run_id") or db.next_id("run"),
         "sample_id": draft["sample"]["id"],
-        "run_accession": _text("Run accession (optional):", current.get("run_accession", "")),
-        "experiment_accession": _text("Experiment accession (optional):", current.get("experiment_accession", "")),
-        "library_strategy": _select("Library strategy:",
-                                    ["WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other",
-                                     questionary.Choice("Skip", value="")]),
-        "library_source": _select("Library source:", ["GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER",
-                                                      questionary.Choice("Skip", value="")]),
-        "library_layout": _select("Library layout:",
-                                  ["PAIRED", "SINGLE", "unknown", questionary.Choice("Skip", value="")]),
-        "platform": _select("Sequencing platform:",
-                            ["ILLUMINA", "PACBIO_SMRT", "OXFORD_NANOPORE", "BGISEQ", "ION_TORRENT", "other",
-                             questionary.Choice("Skip", value="")]),
-        "instrument_model": _text("Instrument model (optional):", current.get("instrument_model", "")),
+        "run_accession": _text(
+            "Run accession (optional):", current.get("run_accession", "")
+        ),
+        "experiment_accession": _text(
+            "Experiment accession (optional):", current.get("experiment_accession", "")
+        ),
+        "library_strategy": _select(
+            "Library strategy:",
+            [
+                "WGS",
+                "WGA",
+                "RNA-Seq",
+                "Amplicon",
+                "Hi-C",
+                "ATAC-seq",
+                "other",
+                questionary.Choice("Skip", value=""),
+            ],
+        ),
+        "library_source": _select(
+            "Library source:",
+            [
+                "GENOMIC",
+                "TRANSCRIPTOMIC",
+                "METAGENOMIC",
+                "OTHER",
+                questionary.Choice("Skip", value=""),
+            ],
+        ),
+        "library_layout": _select(
+            "Library layout:",
+            ["PAIRED", "SINGLE", "unknown", questionary.Choice("Skip", value="")],
+        ),
+        "platform": _select(
+            "Sequencing platform:",
+            [
+                "ILLUMINA",
+                "PACBIO_SMRT",
+                "OXFORD_NANOPORE",
+                "BGISEQ",
+                "ION_TORRENT",
+                "other",
+                questionary.Choice("Skip", value=""),
+            ],
+        ),
+        "instrument_model": _text(
+            "Instrument model (optional):", current.get("instrument_model", "")
+        ),
     }
     draft["run"] = {"action": "create", "id": row["run_id"], "row": row}
 
 
 def _ask_assembly(db: Database, draft: dict[str, Any]) -> None:
     sample_id = draft["sample"]["id"]
-    rows = [dict(row) for row in db.conn.execute(
-        "SELECT assembly_id, assembly_accession, assembly_name, assembly_version "
-        "FROM assemblies a WHERE sample_id=? AND NOT EXISTS ("
-        "SELECT 1 FROM effective_retired_entities r "
-        "WHERE r.entity_type='assembly' AND r.entity_id=a.assembly_id) ORDER BY assembly_id",
-        (sample_id,),
-    ).fetchall()]
+    rows = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT assembly_id, assembly_accession, assembly_name, assembly_version "
+            "FROM assemblies a WHERE sample_id=? AND NOT EXISTS ("
+            "SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type='assembly' AND r.entity_id=a.assembly_id) ORDER BY assembly_id",
+            (sample_id,),
+        ).fetchall()
+    ]
     choices: list[Any] = [questionary.Choice("Create a new assembly", value="__new__")]
-    choices.extend(_choice_rows(
-        rows, "assembly_id", lambda row: row.get("assembly_accession") or row.get("assembly_name") or "assembly"
-    ))
+    choices.extend(
+        _choice_rows(
+            rows,
+            "assembly_id",
+            lambda row: (
+                row.get("assembly_accession") or row.get("assembly_name") or "assembly"
+            ),
+        )
+    )
     selected = _select("Select the assembly:", choices)
     if selected != "__new__":
         draft["assembly"] = {"action": "reuse", "id": selected}
@@ -220,33 +321,55 @@ def _ask_assembly(db: Database, draft: dict[str, Any]) -> None:
         "assembly_accession": _text("Assembly accession (optional):"),
         "assembly_name": _text("Assembly name (optional):"),
         "assembly_version": _text("Assembly version (optional):", default="1"),
-        "assembly_level": _select("Assembly level:", ["complete_genome", "chromosome", "scaffold", "contig",
-                                                      questionary.Choice("Skip", value="")]),
+        "assembly_level": _select(
+            "Assembly level:",
+            [
+                "complete_genome",
+                "chromosome",
+                "scaffold",
+                "contig",
+                questionary.Choice("Skip", value=""),
+            ],
+        ),
         "assembly_method": _text("Assembly software and parameters (optional):"),
         "submitter": source.get("provider", ""),
-        "source_database": _select("Source database:",
-                                   ["RefSeq", "GenBank", "other", questionary.Choice("Skip", value="")]),
+        "source_database": _select(
+            "Source database:",
+            ["RefSeq", "GenBank", "other", questionary.Choice("Skip", value="")],
+        ),
     }
     draft["assembly"] = {"action": "create", "id": row["assembly_id"], "row": row}
 
 
 def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
-    if not _confirm("Record an annotation release?", default=bool(draft.get("annotation"))):
+    if not _confirm(
+        "Record an annotation release?", default=bool(draft.get("annotation"))
+    ):
         draft["annotation"] = None
         return
     assembly_id = draft["assembly"]["id"]
-    rows = [dict(row) for row in db.conn.execute(
-        "SELECT annotation_id, annotation_source, annotation_version FROM annotations n "
-        "WHERE assembly_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-        "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id) "
-        "ORDER BY annotation_id",
-        (assembly_id,),
-    ).fetchall()]
-    choices: list[Any] = [questionary.Choice("Create a new annotation", value="__new__")]
-    choices.extend(_choice_rows(
-        rows, "annotation_id",
-        lambda row: f"{row.get('annotation_source') or 'annotation'} v{row.get('annotation_version') or '?'}"
-    ))
+    rows = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT annotation_id, annotation_source, annotation_version FROM annotations n "
+            "WHERE assembly_id=? AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id) "
+            "ORDER BY annotation_id",
+            (assembly_id,),
+        ).fetchall()
+    ]
+    choices: list[Any] = [
+        questionary.Choice("Create a new annotation", value="__new__")
+    ]
+    choices.extend(
+        _choice_rows(
+            rows,
+            "annotation_id",
+            lambda row: (
+                f"{row.get('annotation_source') or 'annotation'} v{row.get('annotation_version') or '?'}"
+            ),
+        )
+    )
     selected = _select("Select the annotation:", choices)
     if selected != "__new__":
         draft["annotation"] = {"action": "reuse", "id": selected}
@@ -255,7 +378,9 @@ def _ask_annotation(db: Database, draft: dict[str, Any]) -> None:
     row = {
         "annotation_id": db.next_id("annotation"),
         "assembly_id": assembly_id,
-        "annotation_source": _text("Annotation pipeline or source (optional):", source.get("provider", "")),
+        "annotation_source": _text(
+            "Annotation pipeline or source (optional):", source.get("provider", "")
+        ),
         "annotation_version": _text("Annotation version (optional):", default="1"),
         "annotation_date": _text("Annotation date, YYYY-MM-DD (optional):"),
     }
@@ -275,21 +400,27 @@ def _ask_files(_db: Database, draft: dict[str, Any]) -> None:
     files: list[dict[str, str]] = []
     entries = [("Genome FASTA", "genome_fasta", "assembly")]
     if draft.get("annotation"):
-        entries.extend([
-            ("GFF3", "annotation_gff3", "annotation"),
-            ("CDS FASTA", "cds_fasta", "annotation"),
-            ("Protein FASTA", "protein_fasta", "annotation"),
-        ])
+        entries.extend(
+            [
+                ("GFF3", "annotation_gff3", "annotation"),
+                ("CDS FASTA", "cds_fasta", "annotation"),
+                ("Protein FASTA", "protein_fasta", "annotation"),
+            ]
+        )
     if draft.get("run"):
-        entries.extend([
-            ("Reads R1", "reads_r1", "run"),
-            ("Reads R2", "reads_r2", "run"),
-            ("Single-end reads", "reads_single", "run"),
-        ])
+        entries.extend(
+            [
+                ("Reads R1", "reads_r1", "run"),
+                ("Reads R2", "reads_r2", "run"),
+                ("Single-end reads", "reads_single", "run"),
+            ]
+        )
     for label, role, entity_type in entries:
         path = _ask_path(label, current.get(role, ""))
         if path:
-            files.append({"label": label, "role": role, "entity_type": entity_type, "path": path})
+            files.append(
+                {"label": label, "role": role, "entity_type": entity_type, "path": path}
+            )
     draft["files"] = files
 
 
@@ -299,29 +430,42 @@ def _warnings(db: Database, draft: dict[str, Any]) -> list[str]:
     if not draft.get("source", {}).get("record_url"):
         warnings.append("Source record URL is missing.")
     organism = draft.get("organism", {})
-    if organism.get("action") == "create" and not organism.get("row", {}).get("taxon_id"):
+    if organism.get("action") == "create" and not organism.get("row", {}).get(
+        "taxon_id"
+    ):
         warnings.append("Taxonomy ID is missing.")
     if not draft.get("run"):
         warnings.append("Sequencing provenance will not be recorded.")
     if not any(item["role"] == "genome_fasta" for item in draft.get("files", [])):
         warnings.append("Genome FASTA is missing.")
     if draft.get("annotation"):
-        for label, role in (("GFF3", "annotation_gff3"), ("CDS FASTA", "cds_fasta"),
-                            ("Protein FASTA", "protein_fasta")):
+        for label, role in (
+            ("GFF3", "annotation_gff3"),
+            ("CDS FASTA", "cds_fasta"),
+            ("Protein FASTA", "protein_fasta"),
+        ):
             if not any(item["role"] == role for item in draft.get("files", [])):
                 warnings.append(f"{label} is missing from the annotation bundle.")
     sample = draft.get("sample") or {}
     sample_id = sample.get("id")
     if sample_id and sample.get("action") == "reuse":
-        row = db.conn.execute("SELECT organism_id FROM samples WHERE sample_id=?", (sample_id,)).fetchone()
+        row = db.conn.execute(
+            "SELECT organism_id FROM samples WHERE sample_id=?", (sample_id,)
+        ).fetchone()
         if row and row["organism_id"] != draft.get("organism", {}).get("id"):
-            warnings.append("The selected sample does not belong to the selected organism.")
+            warnings.append(
+                "The selected sample does not belong to the selected organism."
+            )
     assembly = draft.get("assembly") or {}
     assembly_id = assembly.get("id")
     if assembly_id and assembly.get("action") == "reuse":
-        row = db.conn.execute("SELECT sample_id FROM assemblies WHERE assembly_id=?", (assembly_id,)).fetchone()
+        row = db.conn.execute(
+            "SELECT sample_id FROM assemblies WHERE assembly_id=?", (assembly_id,)
+        ).fetchone()
         if row and row["sample_id"] != sample_id:
-            warnings.append("The selected assembly does not belong to the selected sample.")
+            warnings.append(
+                "The selected assembly does not belong to the selected sample."
+            )
     return warnings
 
 
@@ -374,18 +518,25 @@ def _summary(db: Database, draft: dict[str, Any]) -> str:
         "insdc": "INSDC",
         "non_insdc": "non-INSDC",
     }.get(source.get("source_type"), "[missing]")
-    lines.extend([
-        "[1] Source",
-        f"    Classification: {source_type}",
-        f"    Database:       {source.get('database_name') or '[missing]'}",
-        f"    Provider:       {source.get('provider') or '[missing]'}",
-        f"    Record URL:     {source.get('record_url') or '[not provided]'}",
-        f"    Citation:       {source.get('citation') or '[not provided]'}",
-        f"    License:        {source.get('license_name') or '[not provided]'}",
-        f"    License URL:    {source.get('license_url') or '[not provided]'}",
-        "",
-    ])
-    for number, name in ((2, "organism"), (3, "sample"), (5, "assembly"), (6, "annotation")):
+    lines.extend(
+        [
+            "[1] Source",
+            f"    Classification: {source_type}",
+            f"    Database:       {source.get('database_name') or '[missing]'}",
+            f"    Provider:       {source.get('provider') or '[missing]'}",
+            f"    Record URL:     {source.get('record_url') or '[not provided]'}",
+            f"    Citation:       {source.get('citation') or '[not provided]'}",
+            f"    License:        {source.get('license_name') or '[not provided]'}",
+            f"    License URL:    {source.get('license_url') or '[not provided]'}",
+            "",
+        ]
+    )
+    for number, name in (
+        (2, "organism"),
+        (3, "sample"),
+        (5, "assembly"),
+        (6, "annotation"),
+    ):
         item = draft.get(name)
         lines.append(f"[{number}] {name.capitalize()}")
         if not item:
@@ -421,7 +572,9 @@ def _summary(db: Database, draft: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _normalized_new_rows(project: Project, draft: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
+def _normalized_new_rows(
+    project: Project, draft: dict[str, Any]
+) -> list[tuple[str, str, dict[str, Any]]]:
     schema = Schema.from_file(project.schema_path)
     rows: list[tuple[str, str, dict[str, Any]]] = []
     for entity_type in ("organism", "sample", "run", "assembly", "annotation"):
@@ -434,7 +587,9 @@ def _normalized_new_rows(project: Project, draft: dict[str, Any]) -> list[tuple[
     return rows
 
 
-def _preflight(db: Database, project: Project, draft: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
+def _preflight(
+    db: Database, project: Project, draft: dict[str, Any]
+) -> list[tuple[str, str, dict[str, Any]]]:
     source_errors = _source_validation_errors(draft)
     if source_errors:
         raise ValidationError("\n".join(source_errors))
@@ -443,13 +598,17 @@ def _preflight(db: Database, project: Project, draft: dict[str, Any]) -> list[tu
         entity_id = row[ENTITY_ID_COLUMNS[entity_type]]
         if db.entity_exists(entity_type, entity_id):
             raise ConflictError(f"planned ID already exists: {entity_type} {entity_id}")
-    blocking = [warning for warning in _warnings(db, draft) if "does not belong" in warning]
+    blocking = [
+        warning for warning in _warnings(db, draft) if "does not belong" in warning
+    ]
     if blocking:
         raise ValidationError("\n".join(blocking))
     for item in draft.get("files", []):
         entity = draft.get(item["entity_type"])
         if not entity:
-            raise ValidationError(f"{item['label']} has no target {item['entity_type']} entity")
+            raise ValidationError(
+                f"{item['label']} has no target {item['entity_type']} entity"
+            )
         source = Path(item["path"])
         digest = sha256_path(source)
         existing = db.conn.execute(
@@ -474,8 +633,16 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
     for item in draft.get("files", []):
         entity_id = draft[item["entity_type"]]["id"]
         source = Path(item["path"])
-        target = project.raw_root / raw_bucket(item["entity_type"]) / entity_id / canonical_filename(
-            entity_id, item["role"], detect_format(source, item["role"]), detect_compression(source)
+        target = (
+            project.raw_root
+            / raw_bucket(item["entity_type"])
+            / entity_id
+            / canonical_filename(
+                entity_id,
+                item["role"],
+                detect_format(source, item["role"]),
+                detect_compression(source),
+            )
         )
         if not target.exists():
             new_targets.append(target)
@@ -496,42 +663,70 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                 entity_id = row[ENTITY_ID_COLUMNS[entity_type]]
                 conn.execute(
                     "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) VALUES(?,?,?,?,?)",
-                    (entity_type, entity_id, "METADATA_VALIDATED", "created by interactive import", now_iso()),
+                    (
+                        entity_type,
+                        entity_id,
+                        "METADATA_VALIDATED",
+                        "created by interactive import",
+                        now_iso(),
+                    ),
                 )
-                db.record_change(entity_type, entity_id, None, None,
-                                 json.dumps(row, ensure_ascii=False, sort_keys=True),
-                                 "interactive dataset import", actor=actor)
+                db.record_change(
+                    entity_type,
+                    entity_id,
+                    None,
+                    None,
+                    json.dumps(row, ensure_ascii=False, sort_keys=True),
+                    "interactive dataset import",
+                    actor=actor,
+                )
             source_url = draft.get("source", {}).get("record_url") or None
             for item in draft.get("files", []):
                 entity_id = draft[item["entity_type"]]["id"]
-                file_rows.append(ingest_file(
-                    db, project, item["path"], item["entity_type"], entity_id, item["role"],
-                    source_url=source_url, actor=actor, run_id=run_id,
-                    provenance_buffer=provenance_buffer,
-                ))
+                file_rows.append(
+                    ingest_file(
+                        db,
+                        project,
+                        item["path"],
+                        item["entity_type"],
+                        entity_id,
+                        item["role"],
+                        source_url=source_url,
+                        actor=actor,
+                        run_id=run_id,
+                        provenance_buffer=provenance_buffer,
+                    )
+                )
             source_objects = [
                 (entity_type, item["id"])
                 for entity_type in ENTITY_TABLES
                 if (item := draft.get(entity_type))
             ]
             source_objects.extend(("file", row["file_id"]) for row in file_rows)
-            db.link_data_source(
-                source_id, source_objects, workflow_run_id=run_id
-            )
+            db.link_data_source(source_id, source_objects, workflow_run_id=run_id)
             db.record_change(
-                "data_source", source_id, None, None,
+                "data_source",
+                source_id,
+                None,
+                None,
                 json.dumps(source_record, ensure_ascii=False, sort_keys=True),
-                "external source linked by interactive dataset import", actor=actor,
+                "external source linked by interactive dataset import",
+                actor=actor,
             )
-            log_run(db, project, {
-                "run_id": run_id,
-                "step": "interactive_dataset_import",
-                "status": "completed",
-                "started_at": started_at,
-                "finished_at": now_iso(),
-                "tool": "operon.import_wizard",
-                "command": "import dataset",
-            }, jsonl_buffer=provenance_buffer)
+            log_run(
+                db,
+                project,
+                {
+                    "run_id": run_id,
+                    "step": "interactive_dataset_import",
+                    "status": "completed",
+                    "started_at": started_at,
+                    "finished_at": now_iso(),
+                    "tool": "operon.import_wizard",
+                    "command": "import dataset",
+                },
+                jsonl_buffer=provenance_buffer,
+            )
     except Exception as exc:
         for target in new_targets:
             if target.is_file() or target.is_symlink():
@@ -539,16 +734,20 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
             elif target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
         try:
-            log_run(db, project, {
-                "run_id": run_id,
-                "step": "interactive_dataset_import",
-                "status": "failed",
-                "started_at": started_at,
-                "finished_at": now_iso(),
-                "tool": "operon.import_wizard",
-                "command": "import dataset",
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            log_run(
+                db,
+                project,
+                {
+                    "run_id": run_id,
+                    "step": "interactive_dataset_import",
+                    "status": "failed",
+                    "started_at": started_at,
+                    "finished_at": now_iso(),
+                    "tool": "operon.import_wizard",
+                    "command": "import dataset",
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
         except Exception:  # noqa: BLE001 - best-effort failed-run bookkeeping; the original exception propagates  # pylint: disable=broad-exception-caught
             pass
         raise
@@ -556,8 +755,19 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
     return {
         "run_id": run_id,
         "source_id": source_id,
-        "entities": {name: item["id"] for name, item in draft.items() if name in ENTITY_TABLES and item},
-        "files": [{"file_id": row["file_id"], "role": row["file_role"], "sha256": row["sha256"]} for row in file_rows],
+        "entities": {
+            name: item["id"]
+            for name, item in draft.items()
+            if name in ENTITY_TABLES and item
+        },
+        "files": [
+            {
+                "file_id": row["file_id"],
+                "role": row["file_role"],
+                "sha256": row["sha256"],
+            }
+            for row in file_rows
+        ],
         "warnings": _warnings(db, draft),
     }
 
@@ -582,7 +792,10 @@ def run_dataset_wizard(db: Database, project: Project) -> dict[str, Any] | None:
         _synchronize_new_entity_links(draft)
     actions = [
         questionary.Choice("Execute import", value="execute"),
-        *[questionary.Choice(f"Edit {name}", value=name) for name, _section in sections],
+        *[
+            questionary.Choice(f"Edit {name}", value=name)
+            for name, _section in sections
+        ],
         questionary.Choice("Cancel", value="cancel"),
     ]
     by_name = dict(sections)
@@ -593,7 +806,9 @@ def run_dataset_wizard(db: Database, project: Project) -> dict[str, Any] | None:
             return None
         if action == "execute":
             _preflight(db, project, draft)
-            if _warnings(db, draft) and not _confirm("Warnings remain. Execute this import anyway?", default=False):
+            if _warnings(db, draft) and not _confirm(
+                "Warnings remain. Execute this import anyway?", default=False
+            ):
                 continue
             return _commit(db, project, draft)
         # Review edits are deliberately non-linear: edit one section, then

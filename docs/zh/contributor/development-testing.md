@@ -43,6 +43,9 @@ codacy-analysis analyze --install-dependencies --parallel-tools 4 --tool-timeout
 同时检查 `issues` 和 `errors`：工具失败或超时不代表对应文件没有问题。
 Trivy 需要访问漏洞数据库；默认镜像不可用时，可通过
 `TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db:2` 选择官方 GHCR 镜像。
+行尾的 `# noqa`、`# type: ignore` 或 `# pragma` 必须已经位于 `ruff format` 不会折行的那一行上。
+格式化会保留这类注释，但把它移到新的闭合行，随后的 `ruff check --fix` 会把移位后的注释当作未使用的抑制删掉。
+`tests/unit/test_ruff_suppression_format.py` 会格式化整棵树，并在任一这类注释发生移动时失败。
 Ruff 和 Bandit 保留项目配置模式，Pylint 使用显式托管规则。
 独立 Bandit 扫描遵循 `bandit.yml`，重复执行 Bandit 的 Prospector 包装检查被禁用。
 F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TSV 示例；

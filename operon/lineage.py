@@ -37,7 +37,13 @@ from operon.workflow import flush_run_log, log_run
 ADOPTED_SUBDIR = "adopted"
 
 MANIFEST_COLUMNS = [
-    "path", "entity_type", "entity_id", "role", "format", "compression", "derived_from",
+    "path",
+    "entity_type",
+    "entity_id",
+    "role",
+    "format",
+    "compression",
+    "derived_from",
 ]
 
 _ITEM_REQUIRED = ("path", "entity_type", "entity_id", "role", "derived_from")
@@ -55,14 +61,18 @@ def _normalize_derived_from(value: Any, index: int) -> list[str]:
         )
     items = [item for item in items if item]
     if not items:
-        raise ValidationError(f"adopt item {index}: derived_from requires at least one file_id")
+        raise ValidationError(
+            f"adopt item {index}: derived_from requires at least one file_id"
+        )
     return items
 
 
 def normalize_adopt_item(raw: dict[str, Any], index: int) -> dict[str, Any]:
     """Validate and normalize one adopt item without touching disk or DB."""
     if not isinstance(raw, dict):
-        raise ValidationError(f"adopt item {index}: must be a mapping, got {type(raw).__name__}")
+        raise ValidationError(
+            f"adopt item {index}: must be a mapping, got {type(raw).__name__}"
+        )
     for field in _ITEM_REQUIRED:
         if raw.get(field) in (None, "", []):
             raise ValidationError(f"adopt item {index}: {field!r} is required")
@@ -72,10 +82,13 @@ def normalize_adopt_item(raw: dict[str, Any], index: int) -> dict[str, Any]:
         "entity_id": str(raw["entity_id"]).strip(),
         "role": str(raw["role"]).strip(),
         "format": (str(raw["format"]).strip() or None) if raw.get("format") else None,
-        "compression": (str(raw["compression"]).strip() or None) if raw.get("compression") else None,
+        "compression": (str(raw["compression"]).strip() or None)
+        if raw.get("compression")
+        else None,
         "derived_from": _normalize_derived_from(raw["derived_from"], index),
         "workflow_run_id": (str(raw["workflow_run_id"]).strip() or None)
-        if raw.get("workflow_run_id") else None,
+        if raw.get("workflow_run_id")
+        else None,
     }
 
 
@@ -96,22 +109,34 @@ def load_adopt_manifest(path: str | Path) -> list[dict[str, Any]]:
         try:
             document = json.loads(text)
         except json.JSONDecodeError as exc:
-            raise ValidationError(f"{path}: invalid JSON adopt manifest: {exc}") from exc
+            raise ValidationError(
+                f"{path}: invalid JSON adopt manifest: {exc}"
+            ) from exc
         if not isinstance(document, list):
-            raise ValidationError(f"{path}: JSON adopt manifest must be a list of items")
+            raise ValidationError(
+                f"{path}: JSON adopt manifest must be a list of items"
+            )
         rows: list[dict[str, Any]] = document
     else:
-        rows = read_tsv(path, required_header=["path", "entity_type", "entity_id", "role",
-                                               "derived_from"])
+        rows = read_tsv(
+            path,
+            required_header=[
+                "path",
+                "entity_type",
+                "entity_id",
+                "role",
+                "derived_from",
+            ],
+        )
     return [normalize_adopt_item(row, index) for index, row in enumerate(rows, start=1)]
 
 
 def adopt_files(
-        db: Database,
-        project: Project,
-        *,
-        items: Iterable[dict[str, Any]],
-        actor: str = "adopt",
+    db: Database,
+    project: Project,
+    *,
+    items: Iterable[dict[str, Any]],
+    actor: str = "adopt",
 ) -> list[dict[str, Any]]:
     """Register derived artifacts and their lineage edges as one batch.
 
@@ -120,7 +145,9 @@ def adopt_files(
     interruption, only newly created archive targets are removed; existing
     artifacts are preserved. JSONL records are flushed after the DB commit.
     """
-    normalized = [normalize_adopt_item(item, index) for index, item in enumerate(items, start=1)]
+    normalized = [
+        normalize_adopt_item(item, index) for index, item in enumerate(items, start=1)
+    ]
     if not normalized:
         raise ValidationError("adopt requires at least one item")
 
@@ -129,7 +156,9 @@ def adopt_files(
     try:
         with db.transaction():
             _validate_adopt_batch(db, project, normalized)
-            results = _adopt_validated(db, project, normalized, actor, created_targets, jsonl_buffer)
+            results = _adopt_validated(
+                db, project, normalized, actor, created_targets, jsonl_buffer
+            )
     except BaseException:
         for target in reversed(created_targets):
             if target.is_dir() and not target.is_symlink():
@@ -141,7 +170,9 @@ def adopt_files(
     return results
 
 
-def _validate_adopt_batch(db: Database, project: Project, normalized: list[dict[str, Any]]) -> None:
+def _validate_adopt_batch(
+    db: Database, project: Project, normalized: list[dict[str, Any]]
+) -> None:
     identities: dict[tuple[str, str, str], tuple[str, int]] = {}
     for item in normalized:
         db.require_active_entity(item["entity_type"], item["entity_id"])
@@ -153,12 +184,20 @@ def _validate_adopt_batch(db: Database, project: Project, normalized: list[dict[
         item["path"] = str(source)
         item["format"] = item["format"] or detect_format(source, item["role"])
         item["compression"] = item["compression"] or detect_compression(source)
-        if (source.is_dir() != (item["format"] == "directory")
-                or (source.is_dir() and item["compression"] != "none")):
-            raise ValidationError(f"adopt item has incompatible format/compression: {source}")
+        if source.is_dir() != (item["format"] == "directory") or (
+            source.is_dir() and item["compression"] != "none"
+        ):
+            raise ValidationError(
+                f"adopt item has incompatible format/compression: {source}"
+            )
         target = archive_target(
-            project, item["entity_type"], item["entity_id"], item["role"],
-            item["format"], item["compression"], project.analysis_root / ADOPTED_SUBDIR,
+            project,
+            item["entity_type"],
+            item["entity_id"],
+            item["role"],
+            item["format"],
+            item["compression"],
+            project.analysis_root / ADOPTED_SUBDIR,
         )
         identity = (sha256_path(source), path_size_bytes(source))
         key = (item["entity_type"], item["entity_id"], item["role"])
@@ -167,10 +206,13 @@ def _validate_adopt_batch(db: Database, project: Project, normalized: list[dict[
         identities[key] = identity
         conflicts = db.conn.execute(
             "SELECT file_id FROM files WHERE entity_type=? AND entity_id=? AND file_role=? "
-            "AND (sha256<>? OR size_bytes<>?) LIMIT 1", (*key, *identity),
+            "AND (sha256<>? OR size_bytes<>?) LIMIT 1",
+            (*key, *identity),
         ).fetchone()
         if conflicts is not None:
-            raise ConflictError(f"adopt item conflicts with registered file {conflicts['file_id']}")
+            raise ConflictError(
+                f"adopt item conflicts with registered file {conflicts['file_id']}"
+            )
         existing = find_existing_file(db, *key, identity[0])
         reused = False
         if existing is not None:
@@ -178,13 +220,22 @@ def _validate_adopt_batch(db: Database, project: Project, normalized: list[dict[
             try:
                 existing_path.resolve().relative_to(project.root.resolve())
             except (ValueError, RuntimeError) as exc:
-                raise ValidationError(f"adopt manifest path escapes the project: {existing_path}") from exc
-            reused = existing_path.exists() and (
-                sha256_path(existing_path), path_size_bytes(existing_path)
-            ) == identity
+                raise ValidationError(
+                    f"adopt manifest path escapes the project: {existing_path}"
+                ) from exc
+            reused = (
+                existing_path.exists()
+                and (sha256_path(existing_path), path_size_bytes(existing_path))
+                == identity
+            )
         if not reused and (target.exists() or target.is_symlink()):
-            if not target.exists() or (sha256_path(target), path_size_bytes(target)) != identity:
-                raise ConflictError(f"adopt target is occupied by different content: {target}")
+            if (
+                not target.exists()
+                or (sha256_path(target), path_size_bytes(target)) != identity
+            ):
+                raise ConflictError(
+                    f"adopt target is occupied by different content: {target}"
+                )
         item["_target"] = target
         for input_file_id in item["derived_from"]:
             row = db.conn.execute(
@@ -197,17 +248,28 @@ def _validate_adopt_batch(db: Database, project: Project, normalized: list[dict[
                 )
 
 
-def _adopt_validated(db: Database, project: Project, normalized: list[dict[str, Any]],
-                     actor: str, created_targets: list[Path],
-                     jsonl_buffer: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _adopt_validated(
+    db: Database,
+    project: Project,
+    normalized: list[dict[str, Any]],
+    actor: str,
+    created_targets: list[Path],
+    jsonl_buffer: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for item in normalized:
         target = item["_target"]
         if not (target.exists() or target.is_symlink()):
             created_targets.append(target)
         record = ingest_file(
-            db, project, item["path"], item["entity_type"], item["entity_id"], item["role"],
-            fmt=item["format"], compression=item["compression"],
+            db,
+            project,
+            item["path"],
+            item["entity_type"],
+            item["entity_id"],
+            item["role"],
+            fmt=item["format"],
+            compression=item["compression"],
             source_url=item["path"],
             archive_root=project.analysis_root / ADOPTED_SUBDIR,
             provenance_buffer=jsonl_buffer,
@@ -218,41 +280,57 @@ def _adopt_validated(db: Database, project: Project, normalized: list[dict[str, 
                     "INSERT OR IGNORE INTO file_lineage"
                     "(derived_file_id, input_file_id, workflow_run_id, created_at) "
                     "VALUES(?,?,?,?)",
-                    (record["file_id"], input_file_id, item["workflow_run_id"], now_iso()),
+                    (
+                        record["file_id"],
+                        input_file_id,
+                        item["workflow_run_id"],
+                        now_iso(),
+                    ),
                 )
-        results.append({
-            "file_id": record["file_id"],
-            "entity_type": record["entity_type"],
-            "entity_id": record["entity_id"],
-            "role": record["file_role"],
-            "format": record["format"],
-            "compression": record["compression"],
-            "relative_path": record["relative_path"],
-            "sha256": record["sha256"],
-            "size_bytes": record["size_bytes"],
-            "derived_from": item["derived_from"],
-            "workflow_run_id": item["workflow_run_id"],
-        })
+        results.append(
+            {
+                "file_id": record["file_id"],
+                "entity_type": record["entity_type"],
+                "entity_id": record["entity_id"],
+                "role": record["file_role"],
+                "format": record["format"],
+                "compression": record["compression"],
+                "relative_path": record["relative_path"],
+                "sha256": record["sha256"],
+                "size_bytes": record["size_bytes"],
+                "derived_from": item["derived_from"],
+                "workflow_run_id": item["workflow_run_id"],
+            }
+        )
 
-    log_run(db, project, {
-        "step": "adopt",
-        "status": "completed",
-        "command": f"operon adopt ({len(results)} item(s))",
-        "tool": "operon",
-        "execution_details": json.dumps({
-            "actor": actor,
-            "items": [
+    log_run(
+        db,
+        project,
+        {
+            "step": "adopt",
+            "status": "completed",
+            "command": f"operon adopt ({len(results)} item(s))",
+            "tool": "operon",
+            "execution_details": json.dumps(
                 {
-                    "file_id": result["file_id"],
-                    "entity_type": result["entity_type"],
-                    "entity_id": result["entity_id"],
-                    "role": result["role"],
-                    "relative_path": result["relative_path"],
-                    "derived_from": result["derived_from"],
-                    "workflow_run_id": result["workflow_run_id"],
-                }
-                for result in results
-            ],
-        }, ensure_ascii=False, sort_keys=True),
-    }, jsonl_buffer=jsonl_buffer)
+                    "actor": actor,
+                    "items": [
+                        {
+                            "file_id": result["file_id"],
+                            "entity_type": result["entity_type"],
+                            "entity_id": result["entity_id"],
+                            "role": result["role"],
+                            "relative_path": result["relative_path"],
+                            "derived_from": result["derived_from"],
+                            "workflow_run_id": result["workflow_run_id"],
+                        }
+                        for result in results
+                    ],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        },
+        jsonl_buffer=jsonl_buffer,
+    )
     return results

@@ -40,8 +40,10 @@ SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI (ODR-46).
 HANDOFF_TIMEOUT = 120.0
 
-TSV_HEADER = ("entity_type\tentity_id\tqc_stage\tmetric_name\tmetric_value\t"
-              "tool\ttool_version\tparameter_set\n")
+TSV_HEADER = (
+    "entity_type\tentity_id\tqc_stage\tmetric_name\tmetric_value\t"
+    "tool\ttool_version\tparameter_set\n"
+)
 
 
 @pytest.fixture(scope="module")
@@ -64,9 +66,11 @@ def inputs(tmp_path: Path) -> Path:
         TSV_HEADER
         + "assembly\tASM_000001\tmapping\tcoverage_mean\t31.5\tbwa\t0.7.17\tdefault\n"
         + "assembly\tASM_000001\tmapping\tmapped_reads\t900000\tbwa\t0.7.17\tdefault\n",
-        encoding="utf-8")
+        encoding="utf-8",
+    )
     (directory / "missing-columns.tsv").write_text(
-        "entity_type\tentity_id\nassembly\tASM_000001\n", encoding="utf-8")
+        "entity_type\tentity_id\nassembly\tASM_000001\n", encoding="utf-8"
+    )
     return directory
 
 
@@ -84,8 +88,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     """Wait for an observable UI result; handoffs pass ``timeout=HANDOFF_TIMEOUT``."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -145,13 +150,18 @@ async def _type_path(pilot, modal: ImportQcModal, path: Path) -> None:
 async def _preview(pilot, modal: ImportQcModal) -> None:
     await _click(pilot, "#qc-import-preview-button")
     await _wait_until(
-        lambda: not modal.preview_running and modal.query_one(
-            "#qc-import-preview-button", Button).disabled is False,
-        "finish the preview", timeout=HANDOFF_TIMEOUT)
+        lambda: (
+            not modal.preview_running
+            and modal.query_one("#qc-import-preview-button", Button).disabled is False
+        ),
+        "finish the preview",
+        timeout=HANDOFF_TIMEOUT,
+    )
 
 
 def test_import_qc_requires_the_preview_then_writes_with_provenance(
-        project: Project, inputs: Path) -> None:
+    project: Project, inputs: Path
+) -> None:
     """Confirm stays locked until the preview passed; Confirm then imports."""
     before = _qc_metric_count(project)
     runs_before = _import_run_count(project)
@@ -164,7 +174,9 @@ def test_import_qc_requires_the_preview_then_writes_with_provenance(
 
             await _type_path(pilot, modal, inputs / "metrics.tsv")
             command = _static_text(modal.query_one("#modal-command", Static))
-            assert "operon import-qc --file" in command and "metrics.tsv" in command, command
+            assert "operon import-qc --file" in command and "metrics.tsv" in command, (
+                command
+            )
 
             await _preview(pilot, modal)
             status = _static_text(modal.query_one("#qc-import-status", Static))
@@ -176,11 +188,14 @@ def test_import_qc_requires_the_preview_then_writes_with_provenance(
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: not isinstance(app.screen, ImportQcModal),
-                "import modal closed", timeout=HANDOFF_TIMEOUT)
+                "import modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app)
             assert ("information", "imported 2 external QC metric(s)") in [
                 (notification.severity, notification.message)
-                for notification in app._notifications]
+                for notification in app._notifications
+            ]
 
     _run(scenario())
 
@@ -195,7 +210,9 @@ def test_import_qc_requires_the_preview_then_writes_with_provenance(
     assert json.loads(runs[-1]["execution_details"])["format"] == "tsv"
 
 
-def test_import_qc_path_edit_invalidates_the_preview(project: Project, inputs: Path) -> None:
+def test_import_qc_path_edit_invalidates_the_preview(
+    project: Project, inputs: Path
+) -> None:
     """Editing the path after a preview locks Confirm again."""
 
     async def scenario() -> None:
@@ -251,11 +268,13 @@ def test_import_qc_preview_writes_nothing(project: Project, inputs: Path) -> Non
     assert _import_run_count(project) == runs_before
 
 
-def test_import_qc_json_payload_reports_a_version_mismatch(project: Project,
-                                                           tmp_path: Path) -> None:
+def test_import_qc_json_payload_reports_a_version_mismatch(
+    project: Project, tmp_path: Path
+) -> None:
     """A qc-measure payload imports by file identity and warns on tool drift."""
-    file_row = _query(project, "SELECT * FROM files WHERE status='STANDARDIZED' "
-                               "ORDER BY file_id")[0]
+    file_row = _query(
+        project, "SELECT * FROM files WHERE status='STANDARDIZED' ORDER BY file_id"
+    )[0]
     payload = {
         "schema_version": MEASURE_SCHEMA_VERSION,
         "tool": TOOL_NAME,
@@ -267,10 +286,20 @@ def test_import_qc_json_payload_reports_a_version_mismatch(project: Project,
             "size_bytes": file_row["size_bytes"],
         },
         "metrics": [
-            {"qc_stage": "assembled", "metric_name": "tui_probe_n50", "metric_value": "1234",
-             "metric_numeric": 1234.0, "metric_unit": "bp"},
-            {"qc_stage": "assembled", "metric_name": "tui_probe_total_length",
-             "metric_value": "5000", "metric_numeric": 5000.0, "metric_unit": "bp"},
+            {
+                "qc_stage": "assembled",
+                "metric_name": "tui_probe_n50",
+                "metric_value": "1234",
+                "metric_numeric": 1234.0,
+                "metric_unit": "bp",
+            },
+            {
+                "qc_stage": "assembled",
+                "metric_name": "tui_probe_total_length",
+                "metric_value": "5000",
+                "metric_numeric": 5000.0,
+                "metric_unit": "bp",
+            },
         ],
     }
     source = tmp_path / "measured.json"
@@ -289,9 +318,15 @@ def test_import_qc_json_payload_reports_a_version_mismatch(project: Project,
 
     assert result["metric_count"] == 2
     assert "0.0.0" in result["warning"]
-    rows = _query(project, "SELECT * FROM qc_results WHERE file_id=? AND "
-                           "metric_name LIKE 'tui_probe_%'", (file_row["file_id"],))
+    rows = _query(
+        project,
+        "SELECT * FROM qc_results WHERE file_id=? AND metric_name LIKE 'tui_probe_%'",
+        (file_row["file_id"],),
+    )
     assert len(rows) == 2
     assert _qc_metric_count(project) == before + 2
     assert {row["tool"] for row in rows} == {TOOL_NAME}
-    assert {row["metric_name"] for row in rows} == {"tui_probe_n50", "tui_probe_total_length"}
+    assert {row["metric_name"] for row in rows} == {
+        "tui_probe_n50",
+        "tui_probe_total_length",
+    }

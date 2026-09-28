@@ -39,27 +39,33 @@ def test_consensus_tie_first_seen_wins_reversed():
 
 
 def test_all_gap_column():
-    assert_result_parity([
-        ("a", "A-C"),
-        ("b", "G.T"),
-        ("c", "T-A"),
-    ])
+    assert_result_parity(
+        [
+            ("a", "A-C"),
+            ("b", "G.T"),
+            ("c", "T-A"),
+        ]
+    )
 
 
 def test_dot_gaps():
-    assert_result_parity([
-        ("a", "AC.T"),
-        ("b", "A..T"),
-        ("c", "GC.A"),
-    ])
+    assert_result_parity(
+        [
+            ("a", "AC.T"),
+            ("b", "A..T"),
+            ("c", "GC.A"),
+        ]
+    )
 
 
 def test_mixed_case_and_ambiguous_residues():
-    assert_result_parity([
-        ("a", "ACGTRYSWKMBDHVNacgtn"),
-        ("b", "acgtryswkmbdhvnACGTN"),
-        ("c", "AR-N.YrXxZz*!?acgt-A"),
-    ])
+    assert_result_parity(
+        [
+            ("a", "ACGTRYSWKMBDHVNacgtn"),
+            ("b", "acgtryswkmbdhvnACGTN"),
+            ("c", "AR-N.YrXxZz*!?acgt-A"),
+        ]
+    )
 
 
 def test_single_sequence():
@@ -71,16 +77,20 @@ def test_zero_length_sequences():
 
 
 def test_non_ascii_residue_fallback():
-    assert_result_parity([
-        ("a", "ACΩT"),
-        ("b", "ACGT"),
-        ("c", "AΩ-T"),
-    ])
-    result = cy_alignment.compute_alignment_qc([
-        ("a", "ACΩT"),
-        ("b", "ACGT"),
-        ("c", "AΩ-T"),
-    ])
+    assert_result_parity(
+        [
+            ("a", "ACΩT"),
+            ("b", "ACGT"),
+            ("c", "AΩ-T"),
+        ]
+    )
+    result = cy_alignment.compute_alignment_qc(
+        [
+            ("a", "ACΩT"),
+            ("b", "ACGT"),
+            ("c", "AΩ-T"),
+        ]
+    )
     assert result.column_rows[1]["consensus"] == "C"
     assert result.column_rows[2]["distinct_residues"] == 2
 
@@ -88,18 +98,22 @@ def test_non_ascii_residue_fallback():
 def test_non_ascii_residue_tie_across_backends():
     # Ω appears first in a fallback sequence, A first in an ASCII sequence;
     # the tie must be resolved by cross-source first-seen order.
-    assert_result_parity([
-        ("a", "Ω"),
-        ("b", "A"),
-        ("c", "Ω"),
-        ("d", "A"),
-    ])
-    result = cy_alignment.compute_alignment_qc([
-        ("a", "Ω"),
-        ("b", "A"),
-        ("c", "Ω"),
-        ("d", "A"),
-    ])
+    assert_result_parity(
+        [
+            ("a", "Ω"),
+            ("b", "A"),
+            ("c", "Ω"),
+            ("d", "A"),
+        ]
+    )
+    result = cy_alignment.compute_alignment_qc(
+        [
+            ("a", "Ω"),
+            ("b", "A"),
+            ("c", "Ω"),
+            ("d", "A"),
+        ]
+    )
     assert result.column_rows[0]["consensus"] == "Ω"
 
 
@@ -138,8 +152,9 @@ def test_report_files_byte_parity(tmp_path):
     write_alignment_qc(py_result, tmp_path / "py")
     write_alignment_qc(cy_result, tmp_path / "cy")
     for name in ("sequence_qc.tsv", "column_qc.tsv", "alignment_qc.json"):
-        assert (tmp_path / "py" / name).read_bytes() == \
-            (tmp_path / "cy" / name).read_bytes()
+        assert (tmp_path / "py" / name).read_bytes() == (
+            tmp_path / "cy" / name
+        ).read_bytes()
 
 
 def test_alignment_qc_file_parity(tmp_path):

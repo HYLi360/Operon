@@ -23,11 +23,7 @@ FASTA_TEXT = (
     ">empty\n"
 )
 
-FASTQ_TEXT = (
-    "@r1\nACGTN\n+\nIIIII\n"
-    "@r2\nacgt\n+r2\nIIII\n"
-    "@r1\nACGT\n+\n!!!!\n"
-)
+FASTQ_TEXT = "@r1\nACGTN\n+\nIIIII\n@r2\nacgt\n+r2\nIIII\n@r1\nACGT\n+\n!!!!\n"
 
 GFF3_TEXT = (
     "##gff-version 3\n# comment\n"
@@ -76,23 +72,29 @@ def test_fasta_stats_parity(fasta_file):
 
 def test_fastq_stats_parity(fastq_file):
     for sample_size in (1, 2, 1000000):
-        assert py_parsers.fastq_stats(fastq_file, sample_size=sample_size) == \
-            cy_parsers.fastq_stats(fastq_file, sample_size=sample_size)
+        assert py_parsers.fastq_stats(
+            fastq_file, sample_size=sample_size
+        ) == cy_parsers.fastq_stats(fastq_file, sample_size=sample_size)
 
 
 def test_gff3_stats_parity(gff3_file, fasta_file):
-    assert py_parsers.gff3_stats(gff3_file, fasta_file) == cy_parsers.gff3_stats(gff3_file, fasta_file)
+    assert py_parsers.gff3_stats(gff3_file, fasta_file) == cy_parsers.gff3_stats(
+        gff3_file, fasta_file
+    )
     assert py_parsers.gff3_stats(gff3_file) == cy_parsers.gff3_stats(gff3_file)
 
 
 def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
     py_timings = {}
     cy_timings = {}
-    assert py_parsers.gff3_stats(gff3_file, fasta_file, timings=py_timings) == \
-        cy_parsers.gff3_stats(gff3_file, fasta_file, timings=cy_timings)
+    assert py_parsers.gff3_stats(
+        gff3_file, fasta_file, timings=py_timings
+    ) == cy_parsers.gff3_stats(gff3_file, fasta_file, timings=cy_timings)
     expected = {
-        "assembly_fasta_lengths", "assembly_fasta_length_map_prepare",
-        "gff3_scan", "gff3_finalize",
+        "assembly_fasta_lengths",
+        "assembly_fasta_length_map_prepare",
+        "gff3_scan",
+        "gff3_finalize",
     }
     assert set(py_timings) == set(cy_timings) == expected
     assert all(value >= 0.0 for value in py_timings.values())
@@ -102,12 +104,18 @@ def test_gff3_diagnostic_timing_contract(gff3_file, fasta_file):
     py_cached_timings = {}
     cy_cached_timings = {}
     assert py_parsers.gff3_stats(
-        gff3_file, timings=py_cached_timings, fasta_lengths_map=lengths,
+        gff3_file,
+        timings=py_cached_timings,
+        fasta_lengths_map=lengths,
     ) == cy_parsers.gff3_stats(
-        gff3_file, timings=cy_cached_timings, fasta_lengths_map=lengths,
+        gff3_file,
+        timings=cy_cached_timings,
+        fasta_lengths_map=lengths,
     )
     expected_cached = {
-        "assembly_fasta_length_map_prepare", "gff3_scan", "gff3_finalize",
+        "assembly_fasta_length_map_prepare",
+        "gff3_scan",
+        "gff3_finalize",
     }
     assert set(py_cached_timings) == set(cy_cached_timings) == expected_cached
 
@@ -136,25 +144,38 @@ def test_gff3_ascii_fast_path_preserves_percent_decoding_and_unicode_parity(tmp_
 
 
 def test_protein_stats_parity(protein_file):
-    assert py_parsers.protein_stats(protein_file, cds_count=4) == \
-        cy_parsers.protein_stats(protein_file, cds_count=4)
-    assert py_parsers.protein_stats(protein_file) == cy_parsers.protein_stats(protein_file)
+    assert py_parsers.protein_stats(
+        protein_file, cds_count=4
+    ) == cy_parsers.protein_stats(protein_file, cds_count=4)
+    assert py_parsers.protein_stats(protein_file) == cy_parsers.protein_stats(
+        protein_file
+    )
 
 
 def test_fasta_helpers_parity(fasta_file):
     assert py_parsers.fasta_lengths(fasta_file) == cy_parsers.fasta_lengths(fasta_file)
-    assert py_parsers.fasta_record_count(fasta_file) == cy_parsers.fasta_record_count(fasta_file)
-    assert list(py_parsers.iter_fasta(fasta_file)) == list(cy_parsers.iter_fasta(fasta_file))
+    assert py_parsers.fasta_record_count(fasta_file) == cy_parsers.fasta_record_count(
+        fasta_file
+    )
+    assert list(py_parsers.iter_fasta(fasta_file)) == list(
+        cy_parsers.iter_fasta(fasta_file)
+    )
 
 
 def test_fastq_iterator_parity(fastq_file):
-    assert list(py_parsers.iter_fastq(fastq_file)) == list(cy_parsers.iter_fastq(fastq_file))
-    assert py_parsers.fastq_record_count(fastq_file) == cy_parsers.fastq_record_count(fastq_file)
+    assert list(py_parsers.iter_fastq(fastq_file)) == list(
+        cy_parsers.iter_fastq(fastq_file)
+    )
+    assert py_parsers.fastq_record_count(fastq_file) == cy_parsers.fastq_record_count(
+        fastq_file
+    )
 
 
 def test_parse_attributes_parity():
     attribute_string = "ID=g1;Note=a%20b;empty=;noequals;x=."
-    assert py_parsers.parse_attributes(attribute_string) == cy_parsers.parse_attributes(attribute_string)
+    assert py_parsers.parse_attributes(attribute_string) == cy_parsers.parse_attributes(
+        attribute_string
+    )
 
 
 def test_gzip_inputs_parity(tmp_path, fasta_file, fastq_file):
@@ -168,13 +189,16 @@ def test_gzip_inputs_parity(tmp_path, fasta_file, fastq_file):
     assert py_parsers.fastq_stats(fastq_gz) == cy_parsers.fastq_stats(fastq_gz)
 
 
-@pytest.mark.parametrize("content,loader", [
-    ("ACGT\n>h\nACGT\n", "fasta"),          # sequence before first header
-    (">h1\nACGT\n>\nAC\n", "fasta"),        # empty header
-    ("r1\nACGT\n+\nIIII\n", "fastq"),       # header missing '@'
-    ("@r1\nACGT\n+\nIII\n", "fastq"),       # sequence/quality length mismatch
-    ("@r1\nACGT\nplus\nIIII\n", "fastq"),   # malformed plus line
-])
+@pytest.mark.parametrize(
+    "content,loader",
+    [
+        ("ACGT\n>h\nACGT\n", "fasta"),  # sequence before first header
+        (">h1\nACGT\n>\nAC\n", "fasta"),  # empty header
+        ("r1\nACGT\n+\nIIII\n", "fastq"),  # header missing '@'
+        ("@r1\nACGT\n+\nIII\n", "fastq"),  # sequence/quality length mismatch
+        ("@r1\nACGT\nplus\nIIII\n", "fastq"),  # malformed plus line
+    ],
+)
 def test_error_message_parity(tmp_path, content, loader):
     path = tmp_path / ("bad.fa" if loader == "fasta" else "bad.fq")
     path.write_text(content, encoding="utf-8")

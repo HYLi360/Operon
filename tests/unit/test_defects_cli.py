@@ -84,9 +84,7 @@ def test_main_keeps_list_and_case_insensitive_show_interfaces(tmp_path):
     assert "ODR-1" in output.getvalue()
 
     output = io.StringIO()
-    result = defects_cli.main(
-        ["show", "ODR-1"], root=tmp_path, stdout=output
-    )
+    result = defects_cli.main(["show", "ODR-1"], root=tmp_path, stdout=output)
     assert result == 0
     assert output.getvalue().startswith("ODR-1  FIXED / HIGH")
 

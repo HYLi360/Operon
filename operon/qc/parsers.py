@@ -29,7 +29,9 @@ def _open_binary(path: str | Path):
     return gzip.open(path, "rb") if is_gzip_path(path) else open(path, "rb")
 
 
-def _iter_binary_lines(path: str | Path, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+def _iter_binary_lines(
+    path: str | Path, chunk_size: int = 1024 * 1024
+) -> Iterator[bytes]:
     """Yield lines without terminators, recognizing LF, CRLF, and lone CR."""
     with _open_binary(path) as handle:
         line = bytearray()
@@ -85,7 +87,10 @@ def _require_ascii(path: Path, value: bytes, context: str) -> None:
 def _header_is_circular(header: str) -> bool:
     for token in header.lower().split():
         normalized = token.strip(",;|[](){}")
-        if normalized == "circular" or normalized in {"topology=circular", "topology:circular"}:
+        if normalized == "circular" or normalized in {
+            "topology=circular",
+            "topology:circular",
+        }:
             return True
     return False
 
@@ -259,7 +264,9 @@ class _FastqReader:
         try:
             return next(self.lines)
         except StopIteration as exc:
-            raise QCError(f"{self.path}: truncated FASTQ record near {header[:50]!r} (missing {field})") from exc
+            raise QCError(
+                f"{self.path}: truncated FASTQ record near {header[:50]!r} (missing {field})"
+            ) from exc
 
     def next_record(self) -> tuple[str, bytes, bytes] | None:
         try:
@@ -270,14 +277,18 @@ class _FastqReader:
         if not header:
             raise QCError(f"{self.path}: blank line where FASTQ header was expected")
         if not header.startswith("@"):
-            raise QCError(f"{self.path}: FASTQ header does not start with '@': {header[:50]!r}")
+            raise QCError(
+                f"{self.path}: FASTQ header does not start with '@': {header[:50]!r}"
+            )
         if not header[1:].split():
             raise QCError(f"{self.path}: empty FASTQ identifier")
         sequence = self._required_line(header, "sequence")
         plus = self._required_line(header, "plus line")
         quality = self._required_line(header, "quality")
         if not plus.startswith(b"+"):
-            raise QCError(f"{self.path}: FASTQ plus line malformed near {header[:50]!r}")
+            raise QCError(
+                f"{self.path}: FASTQ plus line malformed near {header[:50]!r}"
+            )
         _require_ascii(self.path, sequence, f"FASTQ sequence near {header[:50]!r}")
         _require_ascii(self.path, quality, f"FASTQ quality near {header[:50]!r}")
         if len(sequence) != len(quality):
@@ -287,7 +298,9 @@ class _FastqReader:
             )
         for score in quality:
             if score < 33 or score > 126:
-                raise QCError(f"{self.path}: FASTQ quality character outside ASCII 33..126 near {header[:50]!r}")
+                raise QCError(
+                    f"{self.path}: FASTQ quality character outside ASCII 33..126 near {header[:50]!r}"
+                )
         return header, sequence, quality
 
 
@@ -322,12 +335,16 @@ def fastq_record_count(path: str | Path) -> int:
     return count
 
 
-def _resolve_phred_offset(phred_offset: int | str, min_qual: int, max_qual: int) -> tuple[int, str]:
+def _resolve_phred_offset(
+    phred_offset: int | str, min_qual: int, max_qual: int
+) -> tuple[int, str]:
     if phred_offset in {33, "33"}:
         return 33, "sanger_phred33"
     if phred_offset in {64, "64"}:
         if min_qual < 64:
-            raise QCError("FASTQ quality data contains characters below the phred+64 minimum")
+            raise QCError(
+                "FASTQ quality data contains characters below the phred+64 minimum"
+            )
         return 64, "illumina_phred64"
     if phred_offset != "auto":
         raise ValueError("phred_offset must be 33, 64, or 'auto'")
@@ -338,7 +355,9 @@ def _resolve_phred_offset(phred_offset: int | str, min_qual: int, max_qual: int)
     return 33, "ambiguous_assumed_phred33"
 
 
-def _nx_from_histogram(length_counts: Counter[int], total_bases: int, fraction: float) -> tuple[float, int]:
+def _nx_from_histogram(
+    length_counts: Counter[int], total_bases: int, fraction: float
+) -> tuple[float, int]:
     if not length_counts:
         return 0.0, 0
     target = total_bases * fraction
@@ -358,10 +377,15 @@ def _nx_from_histogram(length_counts: Counter[int], total_bases: int, fraction: 
     return float(smallest), sum(length_counts.values())
 
 
-def fastq_stats(path: str | Path, sample_size: int = 1000000,
-                phred_offset: int | str = 33) -> dict[str, Any]:
+def fastq_stats(
+    path: str | Path, sample_size: int = 1000000, phred_offset: int | str = 33
+) -> dict[str, Any]:
     """Read-level QC metrics computed without external tools."""
-    if not isinstance(sample_size, int) or isinstance(sample_size, bool) or sample_size < 1:
+    if (
+        not isinstance(sample_size, int)
+        or isinstance(sample_size, bool)
+        or sample_size < 1
+    ):
         raise ValueError("sample_size must be a positive integer")
     path = Path(path)
     read_count = 0
@@ -403,11 +427,15 @@ def fastq_stats(path: str | Path, sample_size: int = 1000000,
 
     sampled_unique = len(sampled_sequences)
     duplicate_value = pct(sampled_total - sampled_unique, sampled_total)
-    overrep_count = sum(1 for count in sampled_sequences.values() if count / max(sampled_total, 1) > 0.01)
+    overrep_count = sum(
+        1
+        for count in sampled_sequences.values()
+        if count / max(sampled_total, 1) > 0.01
+    )
 
     offset, encoding = _resolve_phred_offset(phred_offset, min_qual, max_qual)
-    q20 = sum(quality_histogram[offset + 20:])
-    q30 = sum(quality_histogram[offset + 30:])
+    q20 = sum(quality_histogram[offset + 20 :])
+    q30 = sum(quality_histogram[offset + 30 :])
     read_n50, read_l50 = _nx_from_histogram(length_counts, total_bases, 0.5)
     return {
         "read_count": read_count,
@@ -448,9 +476,12 @@ def parse_attributes(attribute_string: str) -> dict[str, str]:
     return attrs
 
 
-def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
-               timings: dict[str, float] | None = None,
-               fasta_lengths_map: dict[str, int] | None = None) -> dict[str, Any]:
+def gff3_stats(
+    path: str | Path,
+    fasta_path: str | Path | None = None,
+    timings: dict[str, float] | None = None,
+    fasta_lengths_map: dict[str, int] | None = None,
+) -> dict[str, Any]:
     """Structural GFF3 validation metrics.
 
     With `fasta_path` or a precomputed `fasta_lengths_map`, seqid existence and
@@ -480,7 +511,9 @@ def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
             lengths = lengths
         finally:
             if timings is not None:
-                timings["assembly_fasta_length_map_prepare"] = perf_counter() - prepare_started
+                timings["assembly_fasta_length_map_prepare"] = (
+                    perf_counter() - prepare_started
+                )
     feature_counts: Counter[str] = Counter()
     ids: set[str] = set()
     duplicate_id = 0
@@ -511,7 +544,17 @@ def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
             if len(fields) != 9:
                 coordinate_errors += 1
                 continue
-            seqid, source, feature_type, start_s, end_s, score, strand, phase_s, attr_s = fields
+            (
+                seqid,
+                source,
+                feature_type,
+                start_s,
+                end_s,
+                score,
+                strand,
+                phase_s,
+                attr_s,
+            ) = fields
             seqids.add(seqid)
             feature_counts[feature_type] += 1
             try:
@@ -554,7 +597,9 @@ def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
 
     finalize_started = perf_counter()
     try:
-        missing_parent = sum(count for parent, count in parent_refs.items() if parent not in ids)
+        missing_parent = sum(
+            count for parent, count in parent_refs.items() if parent not in ids
+        )
         gene_count = feature_counts.get("gene", 0)
         mrna_count = feature_counts.get("mRNA", 0) + feature_counts.get("transcript", 0)
         cds_phase0 = cds_phase.get(0, 0)
@@ -573,7 +618,9 @@ def gff3_stats(path: str | Path, fasta_path: str | Path | None = None,
             "missing_id_count": missing_id,
             "duplicate_id_count": duplicate_id,
             "missing_parent_count": missing_parent,
-            "cds_length_multiple3_percent": pct(cds_count - cds_not_multiple3, cds_count),
+            "cds_length_multiple3_percent": pct(
+                cds_count - cds_not_multiple3, cds_count
+            ),
             "cds_phase0_percent": pct(cds_phase0, cds_count),
             "cds_not_multiple3_count": cds_not_multiple3,
         }

@@ -45,10 +45,7 @@ PROBE_SHELL_LINES: list[str] = [
     "printf '%s=%s\\n' os_release \"$(uname -r)\"",
     "printf '%s=%s\\n' machine \"$(uname -m)\"",
     "printf '%s=%s\\n' dockerenv \"$(test -f /.dockerenv && echo 1)\"",
-    *[
-        f"printf '%s=%s\\n' {name.lower()} \"${{{name}:-}}\""
-        for name in PROBE_ENV_VARS
-    ],
+    *[f"printf '%s=%s\\n' {name.lower()} \"${{{name}:-}}\"" for name in PROBE_ENV_VARS],
 ]
 
 
@@ -132,6 +129,7 @@ def parse_probe_output(text: str) -> dict[str, Any]:
     home = env.pop("home", "")
     if "capture_schema" in env:
         from operon.environment_capture import enrich_document
+
         return enrich_document(_redact(env, home), text)
     return _redact(env, home)
 
@@ -185,7 +183,9 @@ def environment_summary(document: dict[str, Any]) -> str:
         parts.append(str(pretty))
     else:
         source = system if isinstance(system, dict) else document
-        os_bits = " ".join(str(source[key]) for key in ("os", "os_release") if source.get(key))
+        os_bits = " ".join(
+            str(source[key]) for key in ("os", "os_release") if source.get(key)
+        )
         if os_bits:
             parts.append(os_bits)
     hardware = document.get("hardware")
@@ -193,8 +193,12 @@ def environment_summary(document: dict[str, Any]) -> str:
         cpu = hardware.get("cpu")
         if isinstance(cpu, list):
             model = next(
-                (entry for entry in cpu
-                 if isinstance(entry, str) and entry.lstrip().startswith("model name")),
+                (
+                    entry
+                    for entry in cpu
+                    if isinstance(entry, str)
+                    and entry.lstrip().startswith("model name")
+                ),
                 "",
             )
             if model:

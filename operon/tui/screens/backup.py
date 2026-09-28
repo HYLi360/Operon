@@ -68,8 +68,10 @@ class BackupModal(WriteModal):
         parts = ["operon", "backup", "create"]
         # --output is required by the parser, so an empty form keeps the flag
         # with a placeholder instead of dropping it (the RunExternalModal shape).
-        parts += ["--output",
-                  shlex.quote(values["output"]) if values["output"] else "'…'"]
+        parts += [
+            "--output",
+            shlex.quote(values["output"]) if values["output"] else "'…'",
+        ]
         if values["scope"] and values["scope"] != "control":
             parts += ["--scope", values["scope"]]
         return " ".join(parts)
@@ -95,8 +97,11 @@ class BackupModal(WriteModal):
         self.query_one("#backup-status", Static).update(
             "creating backup… (a running backup cannot be interrupted)"
         )
-        self.run_action(lambda: actions.create_backup(
-            self.project, values["output"], scope=values["scope"]))
+        self.run_action(
+            lambda: actions.create_backup(
+                self.project, values["output"], scope=values["scope"]
+            )
+        )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Input, Select"):
@@ -204,11 +209,11 @@ class VerifyBackupModal(WriteModal):
     def on_action_success(self, payload: dict[str, Any]) -> None:
         """Render the result and keep the dialog open (nothing was written)."""
         self.query_one("#backup-verify-results", Static).update(
-            backup_verify_text(payload))
+            backup_verify_text(payload)
+        )
         if payload["ok"]:
             self.app.notify(
-                f"backup {payload['path']}: OK "
-                f"({payload['checked']} file(s) checked)"
+                f"backup {payload['path']}: OK ({payload['checked']} file(s) checked)"
             )
         else:
             self.app.notify(
@@ -250,8 +255,7 @@ def backup_verify_text(payload: dict[str, Any]) -> Text:
         text.append("failures\n", style="bold underline")
         for failure in failures:
             text.append(
-                f"  {failure.get('relative_path', '-')}: "
-                f"{failure.get('error', '-')}\n",
+                f"  {failure.get('relative_path', '-')}: {failure.get('error', '-')}\n",
                 style="red",
             )
     return text

@@ -106,29 +106,57 @@ class _FakeRemoteSlurmExecutor:
     def _execute(self, argv, cwd, stdout_path, stderr_path):
         Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
         with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
-            return subprocess.run([str(a) for a in argv], stdout=out, stderr=err, cwd=cwd)
+            return subprocess.run(
+                [str(a) for a in argv], stdout=out, stderr=err, cwd=cwd
+            )
 
-    def run(self, argv, *, cwd, stdout_path, stderr_path, timeout=None, threads=None,
-            run_id=None, stage_inputs=(), expected_outputs=()):
+    def run(
+        self,
+        argv,
+        *,
+        cwd,
+        stdout_path,
+        stderr_path,
+        timeout=None,
+        threads=None,
+        run_id=None,
+        stage_inputs=(),
+        expected_outputs=(),
+    ):
         proc = self._execute(argv, cwd, stdout_path, stderr_path)
         return ExecResult(exit_code=proc.returncode, scheduler_job_id=f"job-{run_id}")
 
-    def run_array(self, tasks, *, cwd=None, threads=None, timeout=None, batch_id=None,
-                  array_concurrency=None):
-        self.array_calls.append({
-            "run_ids": [task["run_id"] for task in tasks],
-            "array_concurrency": array_concurrency,
-        })
+    def run_array(
+        self,
+        tasks,
+        *,
+        cwd=None,
+        threads=None,
+        timeout=None,
+        batch_id=None,
+        array_concurrency=None,
+    ):
+        self.array_calls.append(
+            {
+                "run_ids": [task["run_id"] for task in tasks],
+                "array_concurrency": array_concurrency,
+            }
+        )
         if self.run_array_impl is not None:
             return self.run_array_impl(tasks, cwd=cwd)
         results = []
         for index, task in enumerate(tasks, start=1):
-            proc = self._execute(shlex.split(task["command"]), cwd,
-                                 task["stdout_path"], task["stderr_path"])
+            proc = self._execute(
+                shlex.split(task["command"]),
+                cwd,
+                task["stdout_path"],
+                task["stderr_path"],
+            )
             exitcode = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
             exitcode.write_text(f"{proc.returncode}\n", encoding="utf-8")
-            results.append(ExecResult(exit_code=proc.returncode,
-                                      scheduler_job_id=f"9000_{index}"))
+            results.append(
+                ExecResult(exit_code=proc.returncode, scheduler_job_id=f"9000_{index}")
+            )
         return results
 
 
@@ -138,7 +166,19 @@ class TestAnalysisArray(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_ARR_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_ARR_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
@@ -147,7 +187,8 @@ class TestAnalysisArray(PytestAssertions):
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -156,7 +197,9 @@ class TestAnalysisArray(PytestAssertions):
             out = args[args.index('-out') + 1]
             with open(out, 'w') as handle:
                 handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_tool_config(self, executable: Path, slurm: dict | None = None):
@@ -166,9 +209,23 @@ class TestAnalysisArray(PytestAssertions):
             "format": "fasta",
             "output_subdir": "fake_nt",
             "output_suffix": ".out.tsv",
-            "arguments": ["-query", "${input}", "-out", "${output}", "-num_threads", "${threads}"],
+            "arguments": [
+                "-query",
+                "${input}",
+                "-out",
+                "${output}",
+                "-num_threads",
+                "${threads}",
+            ],
             "result_parser": "blast_tabular",
-            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+            "result_columns": [
+                "qseqid",
+                "sseqid",
+                "pident",
+                "length",
+                "evalue",
+                "bitscore",
+            ],
         }
         if slurm is not None:
             recipe["slurm"] = slurm
@@ -184,49 +241,117 @@ class TestAnalysisArray(PytestAssertions):
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_assembly(self, number: int):
-        self.db.insert_row("organisms", {"organism_id": f"ORG_{number:06d}", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"})
-        self.db.insert_row("assemblies", {"assembly_id": f"ASM_{number:06d}", "sample_id": f"SMP_{number:06d}", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": f"ORG_{number:06d}",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples",
+            {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"},
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": f"ASM_{number:06d}",
+                "sample_id": f"SMP_{number:06d}",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / f"asm{number}.fa"
         fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", f"ASM_{number:06d}", "genome_fasta")
+        return ingest_file(
+            self.db,
+            self.project,
+            fasta,
+            "assembly",
+            f"ASM_{number:06d}",
+            "genome_fasta",
+        )
 
     def _output_path(self, file_row) -> Path:
-        return (self.project.analysis_root / "fake_nt" / file_row["entity_id"]
-                / f"{file_row['file_id']}.genome_fasta.out.tsv")
+        return (
+            self.project.analysis_root
+            / "fake_nt"
+            / file_row["entity_id"]
+            / f"{file_row['file_id']}.genome_fasta.out.tsv"
+        )
 
     # -- fake Slurm backends: execute the payload locally -----------------
 
     def _fake_run(self, monkeypatch):
-        def fake_run(_executor, argv, *, cwd, stdout_path, stderr_path, timeout=None,
-                     threads=None, run_id=None, stage_inputs=(), expected_outputs=()):
+        def fake_run(
+            _executor,
+            argv,
+            *,
+            cwd,
+            stdout_path,
+            stderr_path,
+            timeout=None,
+            threads=None,
+            run_id=None,
+            stage_inputs=(),
+            expected_outputs=(),
+        ):
             self.run_calls.append({"argv": [str(a) for a in argv], "run_id": run_id})
             Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
             with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
-                proc = subprocess.run([str(a) for a in argv], stdout=out, stderr=err, cwd=cwd)
-            return ExecResult(exit_code=proc.returncode, scheduler_job_id=f"job-{run_id}")
+                proc = subprocess.run(
+                    [str(a) for a in argv], stdout=out, stderr=err, cwd=cwd
+                )
+            return ExecResult(
+                exit_code=proc.returncode, scheduler_job_id=f"job-{run_id}"
+            )
+
         monkeypatch.setattr(SlurmExecutor, "run", fake_run)
 
     def _fake_run_array(self, monkeypatch):
-        def fake_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
-                           batch_id=None, array_concurrency=None):
-            self.array_calls.append({
-                "run_ids": [task["run_id"] for task in tasks],
-                "array_concurrency": array_concurrency,
-                "threads": threads,
-            })
+        def fake_run_array(
+            _executor,
+            tasks,
+            *,
+            cwd=None,
+            threads=None,
+            timeout=None,
+            batch_id=None,
+            array_concurrency=None,
+        ):
+            self.array_calls.append(
+                {
+                    "run_ids": [task["run_id"] for task in tasks],
+                    "array_concurrency": array_concurrency,
+                    "threads": threads,
+                }
+            )
             results = []
             for index, task in enumerate(tasks, start=1):
-                exitcode_path = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
-                with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
-                    proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd)
+                exitcode_path = (
+                    Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                )
+                with (
+                    open(task["stdout_path"], "w") as out,
+                    open(task["stderr_path"], "w") as err,
+                ):
+                    proc = subprocess.run(
+                        shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd
+                    )
                 exitcode_path.write_text(f"{proc.returncode}\n", encoding="utf-8")
-                results.append(ExecResult(exit_code=proc.returncode,
-                                          scheduler_job_id=f"7000_{index}"))
+                results.append(
+                    ExecResult(
+                        exit_code=proc.returncode, scheduler_job_id=f"7000_{index}"
+                    )
+                )
             return results
+
         monkeypatch.setattr(SlurmExecutor, "run_array", fake_run_array)
 
     def _jobs(self):
@@ -234,14 +359,16 @@ class TestAnalysisArray(PytestAssertions):
 
     def _runs(self):
         return self.db.query(
-            "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt' ORDER BY rowid")
+            "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt' ORDER BY rowid"
+        )
 
     # -- tests -------------------------------------------------------------
 
     def test_array_submits_all_candidates_as_one_batch(self, monkeypatch):
         self._write_fake_blast()
-        self._write_tool_config(self.root / "fakeblast.py",
-                                slurm={"array": True, "array_concurrency": 3})
+        self._write_tool_config(
+            self.root / "fakeblast.py", slurm={"array": True, "array_concurrency": 3}
+        )
         rows = [self._add_assembly(n) for n in (1, 2, 3)]
         self._fake_run(monkeypatch)
         self._fake_run_array(monkeypatch)
@@ -260,11 +387,17 @@ class TestAnalysisArray(PytestAssertions):
         # Each file keeps its own workflow run, with the per-task array job id.
         runs = self._runs()
         self.assertEqual(len(runs), 3)
-        self.assertEqual([r["scheduler_job_id"] for r in runs], ["7000_1", "7000_2", "7000_3"])
+        self.assertEqual(
+            [r["scheduler_job_id"] for r in runs], ["7000_1", "7000_2", "7000_3"]
+        )
         self.assertEqual({r["status"] for r in runs}, {"completed"})
-        self.assertEqual({j["workflow_run_id"] for j in jobs}, {r["run_id"] for r in runs})
+        self.assertEqual(
+            {j["workflow_run_id"] for j in jobs}, {r["run_id"] for r in runs}
+        )
         for row in rows:
-            self.assertEqual(self._output_path(row).read_text(), "q1\ts1\t99.0\t100\t1e-10\t500\n")
+            self.assertEqual(
+                self._output_path(row).read_text(), "q1\ts1\t99.0\t100\t1e-10\t500\n"
+            )
 
     def test_array_mixes_cache_hits_and_submissions(self, monkeypatch):
         self._write_fake_blast()
@@ -281,8 +414,9 @@ class TestAnalysisArray(PytestAssertions):
         # Two more candidates: the cached file is skipped, the rest form one array.
         rows = [first, self._add_assembly(2), self._add_assembly(3)]
         results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
-        self.assertEqual([r["status"] for r in results],
-                         ["cached", "completed", "completed"])
+        self.assertEqual(
+            [r["status"] for r in results], ["cached", "completed", "completed"]
+        )
         self.assertEqual(len(self.array_calls), 1)
         self.assertEqual(len(self.array_calls[0]["run_ids"]), 2)
         jobs = self._jobs()
@@ -345,56 +479,99 @@ class TestAnalysisArray(PytestAssertions):
         rows = [self._add_assembly(n) for n in (1, 2, 3)]
         self._fake_run(monkeypatch)
 
-        def positional_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
-                                 batch_id=None, array_concurrency=None):
+        def positional_run_array(
+            _executor,
+            tasks,
+            *,
+            cwd=None,
+            threads=None,
+            timeout=None,
+            batch_id=None,
+            array_concurrency=None,
+        ):
             self.array_calls.append({"run_ids": [t["run_id"] for t in tasks]})
             results = []
             for index, task in enumerate(tasks, start=1):
-                exitcode_path = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                exitcode_path = (
+                    Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                )
                 if index == 2:
                     Path(task["stderr_path"]).write_text("boom\n", encoding="utf-8")
                     exitcode_path.write_text("3\n", encoding="utf-8")
-                    results.append(ExecResult(exit_code=3, scheduler_job_id=f"7000_{index}"))
+                    results.append(
+                        ExecResult(exit_code=3, scheduler_job_id=f"7000_{index}")
+                    )
                     continue
-                with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
-                    proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd)
+                with (
+                    open(task["stdout_path"], "w") as out,
+                    open(task["stderr_path"], "w") as err,
+                ):
+                    proc = subprocess.run(
+                        shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd
+                    )
                 exitcode_path.write_text(f"{proc.returncode}\n", encoding="utf-8")
-                results.append(ExecResult(exit_code=proc.returncode,
-                                          scheduler_job_id=f"7000_{index}"))
+                results.append(
+                    ExecResult(
+                        exit_code=proc.returncode, scheduler_job_id=f"7000_{index}"
+                    )
+                )
             return results
 
         monkeypatch.setattr(SlurmExecutor, "run_array", positional_run_array)
 
         results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
 
-        self.assertEqual([r["status"] for r in results],
-                         ["completed", "error", "completed"])
+        self.assertEqual(
+            [r["status"] for r in results], ["completed", "error", "completed"]
+        )
         jobs = self._jobs()
-        self.assertEqual([j["status"] for j in jobs], ["completed", "failed", "completed"])
+        self.assertEqual(
+            [j["status"] for j in jobs], ["completed", "failed", "completed"]
+        )
         self.assertIn("exit code 3", jobs[1]["error"])
         runs = self._runs()
-        self.assertEqual([r["status"] for r in runs], ["completed", "failed", "completed"])
+        self.assertEqual(
+            [r["status"] for r in runs], ["completed", "failed", "completed"]
+        )
         self.assertEqual(runs[1]["exit_code"], 3)
         # The failed file's output was never created; the others were parsed.
         self.assertFalse(self._output_path(rows[1]).exists())
         hits = self.db.query("SELECT DISTINCT file_id FROM analysis_hits")
-        self.assertEqual({h["file_id"] for h in hits},
-                         {rows[0]["file_id"], rows[2]["file_id"]})
+        self.assertEqual(
+            {h["file_id"] for h in hits}, {rows[0]["file_id"], rows[2]["file_id"]}
+        )
 
-    def test_array_interrupt_completes_finished_tasks_and_interrupts_the_rest(self, monkeypatch):
+    def test_array_interrupt_completes_finished_tasks_and_interrupts_the_rest(
+        self, monkeypatch
+    ):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
         rows = [self._add_assembly(n) for n in (1, 2)]
         self._fake_run(monkeypatch)
 
-        def interrupting_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
-                                   batch_id=None, array_concurrency=None):
+        def interrupting_run_array(
+            _executor,
+            tasks,
+            *,
+            cwd=None,
+            threads=None,
+            timeout=None,
+            batch_id=None,
+            array_concurrency=None,
+        ):
             # Task 1 finishes before the array is cancelled: its exit-code
             # file and output exist.  Task 2 never writes an exit code.
             task = tasks[0]
-            with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
-                proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd)
-            exitcode_path = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+            with (
+                open(task["stdout_path"], "w") as out,
+                open(task["stderr_path"], "w") as err,
+            ):
+                proc = subprocess.run(
+                    shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd
+                )
+            exitcode_path = (
+                Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+            )
             exitcode_path.write_text(f"{proc.returncode}\n", encoding="utf-8")
             raise ShutdownRequested(signal.SIGINT)
 
@@ -420,8 +597,10 @@ class TestAnalysisArray(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
         self.assertEqual([r["status"] for r in results], ["cached", "completed"])
         self.assertEqual(len(self.array_calls), 0)  # single candidate: per-file
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "interrupted", "completed"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()],
+            ["completed", "interrupted", "completed"],
+        )
 
     def test_array_task_without_output_is_failed_not_completed(self, monkeypatch):
         self._write_fake_blast()
@@ -430,20 +609,38 @@ class TestAnalysisArray(PytestAssertions):
         self._add_assembly(2)
         self._fake_run(monkeypatch)
 
-        def lying_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
-                            batch_id=None, array_concurrency=None):
+        def lying_run_array(
+            _executor,
+            tasks,
+            *,
+            cwd=None,
+            threads=None,
+            timeout=None,
+            batch_id=None,
+            array_concurrency=None,
+        ):
             results = []
             for index, task in enumerate(tasks, start=1):
                 if index == 1:
                     # Exit code 0 but the expected output was never produced.
                     Path(task["stdout_path"]).write_text("done\n", encoding="utf-8")
                     Path(task["stderr_path"]).write_text("", encoding="utf-8")
-                    results.append(ExecResult(exit_code=0, scheduler_job_id=f"7000_{index}"))
+                    results.append(
+                        ExecResult(exit_code=0, scheduler_job_id=f"7000_{index}")
+                    )
                     continue
-                with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
-                    proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd)
-                results.append(ExecResult(exit_code=proc.returncode,
-                                          scheduler_job_id=f"7000_{index}"))
+                with (
+                    open(task["stdout_path"], "w") as out,
+                    open(task["stderr_path"], "w") as err,
+                ):
+                    proc = subprocess.run(
+                        shlex.split(task["command"]), stdout=out, stderr=err, cwd=cwd
+                    )
+                results.append(
+                    ExecResult(
+                        exit_code=proc.returncode, scheduler_job_id=f"7000_{index}"
+                    )
+                )
             return results
 
         monkeypatch.setattr(SlurmExecutor, "run_array", lying_run_array)
@@ -479,19 +676,28 @@ class TestAnalysisArray(PytestAssertions):
                 raise Cancelled()
 
         with pytest.raises(Cancelled):
-            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                         progress_callback=cancelling)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="slurm",
+                progress_callback=cancelling,
+            )
 
         # The first task was collected before the cancellation; the remaining
         # tasks had already written their exit-code files, so they finalize
         # as completed instead of being misreported as failed.
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "completed", "completed"])
-        self.assertEqual([r["status"] for r in self._runs()],
-                         ["completed", "completed", "completed"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()], ["completed", "completed", "completed"]
+        )
+        self.assertEqual(
+            [r["status"] for r in self._runs()], ["completed", "completed", "completed"]
+        )
 
     @pytest.mark.bug("ODR-18")
-    def test_array_progress_callback_shutdown_interrupts_remaining_tasks(self, monkeypatch):
+    def test_array_progress_callback_shutdown_interrupts_remaining_tasks(
+        self, monkeypatch
+    ):
         """A KeyboardInterrupt subclass from the phase-3 callback keeps the
         interrupt path: uncollected tasks are interrupted, not failed."""
         self._write_fake_blast()
@@ -506,11 +712,17 @@ class TestAnalysisArray(PytestAssertions):
                 raise ShutdownRequested(signal.SIGINT)
 
         with pytest.raises(ShutdownRequested):
-            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                         progress_callback=cancelling)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="slurm",
+                progress_callback=cancelling,
+            )
 
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "interrupted"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()], ["completed", "interrupted"]
+        )
 
     def test_array_forwards_cancel_event_to_supporting_executors(self, monkeypatch):
         self._write_fake_blast()
@@ -520,24 +732,47 @@ class TestAnalysisArray(PytestAssertions):
         self._fake_run(monkeypatch)
         received: list = []
 
-        def aware_run_array(_executor, tasks, *, cwd=None, threads=None, timeout=None,
-                            batch_id=None, array_concurrency=None, cancel_event=None):
+        def aware_run_array(
+            _executor,
+            tasks,
+            *,
+            cwd=None,
+            threads=None,
+            timeout=None,
+            batch_id=None,
+            array_concurrency=None,
+            cancel_event=None,
+        ):
             received.append(cancel_event)
             results = []
             for index, task in enumerate(tasks, start=1):
-                exitcode_path = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
-                with open(task["stdout_path"], "w") as out, open(task["stderr_path"], "w") as err:
-                    proc = subprocess.run(shlex.split(task["command"]), stdout=out, stderr=err,
-                                          cwd=cwd, check=False)
+                exitcode_path = (
+                    Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                )
+                with (
+                    open(task["stdout_path"], "w") as out,
+                    open(task["stderr_path"], "w") as err,
+                ):
+                    proc = subprocess.run(
+                        shlex.split(task["command"]),
+                        stdout=out,
+                        stderr=err,
+                        cwd=cwd,
+                        check=False,
+                    )
                 exitcode_path.write_text(f"{proc.returncode}\n", encoding="utf-8")
-                results.append(ExecResult(exit_code=proc.returncode,
-                                          scheduler_job_id=f"7000_{index}"))
+                results.append(
+                    ExecResult(
+                        exit_code=proc.returncode, scheduler_job_id=f"7000_{index}"
+                    )
+                )
             return results
 
         monkeypatch.setattr(SlurmExecutor, "run_array", aware_run_array)
         cancel_event = threading.Event()
-        results = run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                               cancel_event=cancel_event)
+        results = run_analysis(
+            self.project, self.db, "fake_nt", backend="slurm", cancel_event=cancel_event
+        )
 
         self.assertEqual([r["status"] for r in results], ["completed", "completed"])
         self.assertEqual(received, [cancel_event])
@@ -560,13 +795,21 @@ class TestAnalysisArray(PytestAssertions):
                 cancel_event.set()
 
         with pytest.raises(ShutdownRequested):
-            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                         progress_callback=cancelling, cancel_event=cancel_event)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="slurm",
+                progress_callback=cancelling,
+                cancel_event=cancel_event,
+            )
 
         # Task 1 was collected; the set event stops collection, so the
         # remaining plans are interrupted exactly as after a signal.
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "interrupted", "interrupted"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()],
+            ["completed", "interrupted", "interrupted"],
+        )
 
     def test_two_phase_planning_stops_on_cancel_event(self, monkeypatch):
         self._write_fake_blast()
@@ -583,16 +826,24 @@ class TestAnalysisArray(PytestAssertions):
                 cancel_event.set()
 
         with pytest.raises(ShutdownRequested):
-            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                         progress_callback=cancelling, cancel_event=cancel_event)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="slurm",
+                progress_callback=cancelling,
+                cancel_event=cancel_event,
+            )
 
         # File 1 was planned (RUNNING) before the event landed; file 2 was
         # never planned.  The stale RUNNING row is swept on the next run.
         self.assertEqual([j["status"] for j in self._jobs()], ["RUNNING"])
         results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
         self.assertEqual([r["status"] for r in results], ["completed", "completed"])
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["interrupted", "completed", "completed"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()],
+            ["interrupted", "completed", "completed"],
+        )
 
     def test_two_phase_sequential_fallback_stops_on_cancel_event(self, monkeypatch):
         # A commands chain never joins an array; the two-phase path executes
@@ -605,12 +856,26 @@ class TestAnalysisArray(PytestAssertions):
             "output_subdir": "fake_nt",
             "output_suffix": ".out.tsv",
             "commands": [
-                {"arguments": [str(self.root / "fakeblast.py"),
-                               "-query", "${input}", "-out", "${output}"]},
+                {
+                    "arguments": [
+                        str(self.root / "fakeblast.py"),
+                        "-query",
+                        "${input}",
+                        "-out",
+                        "${output}",
+                    ]
+                },
                 {"arguments": [str(self.root / "fakeblast.py"), "-version"]},
             ],
             "result_parser": "blast_tabular",
-            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+            "result_columns": [
+                "qseqid",
+                "sseqid",
+                "pident",
+                "length",
+                "evalue",
+                "bitscore",
+            ],
             "slurm": {"array": True},
         }
         tool_config = {
@@ -625,7 +890,9 @@ class TestAnalysisArray(PytestAssertions):
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
         self._add_assembly(1)
         self._add_assembly(2)
         self._add_assembly(3)
@@ -638,13 +905,20 @@ class TestAnalysisArray(PytestAssertions):
                 cancel_event.set()
 
         with pytest.raises(ShutdownRequested):
-            run_analysis(self.project, self.db, "fake_nt", backend="slurm",
-                         progress_callback=cancelling, cancel_event=cancel_event)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="slurm",
+                progress_callback=cancelling,
+                cancel_event=cancel_event,
+            )
 
         # File 1 completed through the fallback; the other planned rows stay
         # RUNNING until the next run's stale sweep.
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "RUNNING", "RUNNING"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()], ["completed", "RUNNING", "RUNNING"]
+        )
 
     def test_array_planning_error_and_fallback_failure_are_per_file(self, monkeypatch):
         self._write_fake_blast()
@@ -662,7 +936,9 @@ class TestAnalysisArray(PytestAssertions):
         def failing_analysis_run(executor, argv, *, run_id=None, **kwargs):
             if run_id is None:
                 return probe_run(executor, argv, run_id=run_id, **kwargs)
-            return ExecResult(exit_code=7, error="exit code 7", scheduler_job_id=f"job-{run_id}")
+            return ExecResult(
+                exit_code=7, error="exit code 7", scheduler_job_id=f"job-{run_id}"
+            )
 
         monkeypatch.setattr(SlurmExecutor, "run", failing_analysis_run)
 
@@ -686,12 +962,16 @@ class TestAnalysisArray(PytestAssertions):
         self._fake_run(monkeypatch)
         self._fake_run_array(monkeypatch)
 
-        results = run_analysis(self.project, self.db, "fake_nt", backend="slurm", dry_run=True)
+        results = run_analysis(
+            self.project, self.db, "fake_nt", backend="slurm", dry_run=True
+        )
 
         self.assertEqual([r["status"] for r in results], ["planned", "planned"])
         self.assertEqual(len(self.array_calls), 0)
         self.assertFalse(any(call["run_id"] is not None for call in self.run_calls))
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0
+        )
 
 
 class TestAnalysisArrayRemote(PytestAssertions):
@@ -702,14 +982,27 @@ class TestAnalysisArrayRemote(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_ARRR_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_ARRR_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -718,7 +1011,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
             out = args[args.index('-out') + 1]
             with open(out, 'w') as handle:
                 handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_tool_config(self, executable: Path):
@@ -739,26 +1034,64 @@ class TestAnalysisArrayRemote(PytestAssertions):
                             "output_suffix": ".out.tsv",
                             "arguments": ["-query", "${input}", "-out", "${output}"],
                             "result_parser": "blast_tabular",
-                            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+                            "result_columns": [
+                                "qseqid",
+                                "sseqid",
+                                "pident",
+                                "length",
+                                "evalue",
+                                "bitscore",
+                            ],
                             "slurm": {"array": True, "array_concurrency": 2},
                         }
                     },
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_assembly(self, number: int):
-        self.db.insert_row("organisms", {"organism_id": f"ORG_{number:06d}", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"})
-        self.db.insert_row("assemblies", {"assembly_id": f"ASM_{number:06d}", "sample_id": f"SMP_{number:06d}", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": f"ORG_{number:06d}",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples",
+            {"sample_id": f"SMP_{number:06d}", "organism_id": f"ORG_{number:06d}"},
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": f"ASM_{number:06d}",
+                "sample_id": f"SMP_{number:06d}",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / f"asm{number}.fa"
         fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", f"ASM_{number:06d}", "genome_fasta")
+        return ingest_file(
+            self.db,
+            self.project,
+            fasta,
+            "assembly",
+            f"ASM_{number:06d}",
+            "genome_fasta",
+        )
 
     def _output_path(self, file_row) -> Path:
-        return (self.project.analysis_root / "fake_nt" / file_row["entity_id"]
-                / f"{file_row['file_id']}.genome_fasta.out.tsv")
+        return (
+            self.project.analysis_root
+            / "fake_nt"
+            / file_row["entity_id"]
+            / f"{file_row['file_id']}.genome_fasta.out.tsv"
+        )
 
     def _executor(self, monkeypatch, **kwargs) -> _FakeRemoteSlurmExecutor:
         executor = _FakeRemoteSlurmExecutor(self.project, **kwargs)
@@ -770,7 +1103,8 @@ class TestAnalysisArrayRemote(PytestAssertions):
 
     def _runs(self):
         return self.db.query(
-            "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt' ORDER BY rowid")
+            "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt' ORDER BY rowid"
+        )
 
     def _ops(self, executor, name):
         return [entry for entry in executor.transfer_log if entry[0] == name]
@@ -782,8 +1116,13 @@ class TestAnalysisArrayRemote(PytestAssertions):
         executor = self._executor(monkeypatch, concurrency=2)
 
         progress: list[tuple] = []
-        results = run_analysis(self.project, self.db, "fake_nt", backend="ssh",
-                               progress_callback=lambda *a: progress.append(a))
+        results = run_analysis(
+            self.project,
+            self.db,
+            "fake_nt",
+            backend="ssh",
+            progress_callback=lambda *a: progress.append(a),
+        )
 
         self.assertEqual([r["status"] for r in results], ["completed"] * 2)
         self.assertEqual(len(executor.array_calls), 1)
@@ -799,12 +1138,16 @@ class TestAnalysisArrayRemote(PytestAssertions):
         # Submission happens strictly after staging and backup.
         op_order = [op for op, _ in executor.transfer_log]
         self.assertEqual(op_order[:4], ["stage", "reset", "stage", "reset"])
-        self.assertEqual([r["scheduler_job_id"] for r in self._runs()], ["9000_1", "9000_2"])
+        self.assertEqual(
+            [r["scheduler_job_id"] for r in self._runs()], ["9000_1", "9000_2"]
+        )
         self.assertTrue(executor.client.sftp.closed)
         self.assertTrue(executor.closed)
         # Progress: start + final status per file, in file order.
-        self.assertEqual([p[2:] for p in progress if p[3] == "start"],
-                         [(r["file_id"], "start") for r in rows])
+        self.assertEqual(
+            [p[2:] for p in progress if p[3] == "start"],
+            [(r["file_id"], "start") for r in rows],
+        )
         completed = [p for p in progress if p[3] == "completed"]
         self.assertEqual(len(completed), 2)
 
@@ -817,17 +1160,28 @@ class TestAnalysisArrayRemote(PytestAssertions):
         def failing_impl(tasks, *, cwd):
             results = []
             for index, task in enumerate(tasks, start=1):
-                exitcode = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                exitcode = (
+                    Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                )
                 if index == 1:
                     Path(task["stderr_path"]).write_text("boom\n", encoding="utf-8")
                     exitcode.write_text("5\n", encoding="utf-8")
-                    results.append(ExecResult(exit_code=5, scheduler_job_id=f"9000_{index}"))
+                    results.append(
+                        ExecResult(exit_code=5, scheduler_job_id=f"9000_{index}")
+                    )
                     continue
-                proc = executor._execute(shlex.split(task["command"]), cwd,
-                                         task["stdout_path"], task["stderr_path"])
+                proc = executor._execute(
+                    shlex.split(task["command"]),
+                    cwd,
+                    task["stdout_path"],
+                    task["stderr_path"],
+                )
                 exitcode.write_text(f"{proc.returncode}\n", encoding="utf-8")
-                results.append(ExecResult(exit_code=proc.returncode,
-                                          scheduler_job_id=f"9000_{index}"))
+                results.append(
+                    ExecResult(
+                        exit_code=proc.returncode, scheduler_job_id=f"9000_{index}"
+                    )
+                )
             return results
 
         executor.run_array_impl = failing_impl
@@ -844,7 +1198,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
         self.assertNotEqual(dropped[0][1][0][0], failed_output)
         self.assertEqual([j["status"] for j in self._jobs()], ["failed", "completed"])
 
-    def test_remote_array_interrupt_restores_unfinished_and_completes_finished(self, monkeypatch):
+    def test_remote_array_interrupt_restores_unfinished_and_completes_finished(
+        self, monkeypatch
+    ):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py")
         rows = [self._add_assembly(n) for n in (1, 2)]
@@ -852,8 +1208,12 @@ class TestAnalysisArrayRemote(PytestAssertions):
 
         def interrupting_impl(tasks, *, cwd):
             task = tasks[0]
-            proc = executor._execute(shlex.split(task["command"]), cwd,
-                                     task["stdout_path"], task["stderr_path"])
+            proc = executor._execute(
+                shlex.split(task["command"]),
+                cwd,
+                task["stdout_path"],
+                task["stderr_path"],
+            )
             exitcode = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
             exitcode.write_text(f"{proc.returncode}\n", encoding="utf-8")
             raise ShutdownRequested(signal.SIGINT)
@@ -862,7 +1222,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
         with pytest.raises(ShutdownRequested):
             run_analysis(self.project, self.db, "fake_nt", backend="ssh")
 
-        self.assertEqual([j["status"] for j in self._jobs()], ["completed", "interrupted"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()], ["completed", "interrupted"]
+        )
         # Finished task: output pulled, backup dropped.  Unfinished task: backup restored.
         self.assertEqual(len(self._ops(executor, "pull")), 1)
         self.assertEqual(len(self._ops(executor, "drop")), 1)
@@ -871,7 +1233,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
         self.assertEqual(restored[0][1][0][0], str(self._output_path(rows[1])))
         self.assertFalse(self._output_path(rows[1]).exists())
 
-    def test_remote_array_submission_failure_fails_every_planned_file(self, monkeypatch):
+    def test_remote_array_submission_failure_fails_every_planned_file(
+        self, monkeypatch
+    ):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py")
         self._add_assembly(1)
@@ -919,10 +1283,16 @@ class TestAnalysisArrayRemote(PytestAssertions):
             # Task 1 succeeded, task 2 ran to a non-zero exit, task 3 never
             # wrote an exit code before the array was cancelled.
             first, second = tasks[0], tasks[1]
-            proc = executor._execute(shlex.split(first["command"]), cwd,
-                                     first["stdout_path"], first["stderr_path"])
+            proc = executor._execute(
+                shlex.split(first["command"]),
+                cwd,
+                first["stdout_path"],
+                first["stderr_path"],
+            )
             for task, code in ((first, proc.returncode), (second, 3)):
-                exitcode = Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                exitcode = (
+                    Path(task["stdout_path"]).parent / f"{task['run_id']}.exitcode"
+                )
                 exitcode.write_text(f"{code}\n", encoding="utf-8")
             raise ShutdownRequested(signal.SIGINT)
 
@@ -930,19 +1300,24 @@ class TestAnalysisArrayRemote(PytestAssertions):
         with pytest.raises(ShutdownRequested):
             run_analysis(self.project, self.db, "fake_nt", backend="ssh")
 
-        self.assertEqual([j["status"] for j in self._jobs()],
-                         ["completed", "failed", "interrupted"])
+        self.assertEqual(
+            [j["status"] for j in self._jobs()], ["completed", "failed", "interrupted"]
+        )
         runs = self._runs()
         self.assertEqual([r["status"] for r in runs], ["completed", "failed"])
         # Finished tasks: pulled; the failed one restored afterwards; the
         # unfinished one restored without any pull.
         self.assertEqual(len(self._ops(executor, "pull")), 1)
         restored_targets = {entry[1][0][0] for entry in self._ops(executor, "restore")}
-        self.assertEqual(restored_targets, {str(self._output_path(rows[1])),
-                                            str(self._output_path(rows[2]))})
+        self.assertEqual(
+            restored_targets,
+            {str(self._output_path(rows[1])), str(self._output_path(rows[2]))},
+        )
 
     @pytest.mark.bug("ODR-18")
-    def test_remote_array_staging_callback_cancellation_aborts_the_batch(self, monkeypatch):
+    def test_remote_array_staging_callback_cancellation_aborts_the_batch(
+        self, monkeypatch
+    ):
         """The same swallow existed at the staging-error callback: a
         cancellation raised there must propagate with the never-submitted
         plans interrupted, not failed."""
@@ -960,8 +1335,13 @@ class TestAnalysisArrayRemote(PytestAssertions):
                 raise Cancelled()
 
         with pytest.raises(Cancelled):
-            run_analysis(self.project, self.db, "fake_nt", backend="ssh",
-                         progress_callback=cancelling)
+            run_analysis(
+                self.project,
+                self.db,
+                "fake_nt",
+                backend="ssh",
+                progress_callback=cancelling,
+            )
 
         self.assertEqual([j["status"] for j in self._jobs()], ["failed", "interrupted"])
 
@@ -981,7 +1361,9 @@ class TestAnalysisArrayRemote(PytestAssertions):
         executor._pull_outputs = flaky_pull
         results = run_analysis(self.project, self.db, "fake_nt", backend="ssh")
 
-        self.assertEqual([r["status"] for r in results], ["error", "completed"])  # TODO(Incompatible with Darwin): left = ['completed', 'completed'], right = ['error', 'completed']
+        self.assertEqual(
+            [r["status"] for r in results], ["error", "completed"]
+        )  # TODO(Incompatible with Darwin): left = ['completed', 'completed'], right = ['error', 'completed']
         self.assertIn("mid-pull", results[0]["error"])
         self.assertEqual([j["status"] for j in self._jobs()], ["failed", "completed"])
         restored_targets = {entry[1][0][0] for entry in self._ops(executor, "restore")}

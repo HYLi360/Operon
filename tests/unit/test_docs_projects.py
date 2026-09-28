@@ -171,7 +171,7 @@ def test_every_workflow_builds_both_language_trees():
             command = line.strip()
             for prefix in ("- run:", "run:"):
                 if command.startswith(prefix):
-                    command = command[len(prefix):].strip()
+                    command = command[len(prefix) :].strip()
                     break
             words = command.split()
             if not words or words[0] != "sphinx-build":
@@ -205,14 +205,18 @@ def test_the_publish_workflow_gates_on_the_release_preflight() -> None:
     assert os.access(preflight, os.X_OK), f"{preflight} is not executable"
 
     publish = yaml.safe_load(
-        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(
+            encoding="utf-8"
+        )
     )
     jobs = publish["jobs"]
     verify = jobs["verify-release"]
     commands = "\n".join(
         step.get("run", "") for step in verify["steps"] if isinstance(step, dict)
     )
-    assert "release-preflight.sh" in commands, "verify-release does not run the preflight"
+    assert "release-preflight.sh" in commands, (
+        "verify-release does not run the preflight"
+    )
     assert "test.yml" in commands and "conclusion" in commands, (
         "verify-release does not assert the test workflow's conclusion for the tagged commit"
     )

@@ -38,14 +38,15 @@ def _hash_json(value: Any) -> str:
 
 def _chunks(values: list[int], size: int = 400) -> Iterable[list[int]]:
     for start in range(0, len(values), size):
-        yield values[start:start + size]
+        yield values[start : start + size]
 
 
 def _load_reference_set(
-        db: Database, project: Project, reference_set_id: str
+    db: Database, project: Project, reference_set_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], dict[str, Any]]:
     row = db.conn.execute(
-        "SELECT * FROM taxonomy_reference_sets WHERE reference_set_id=?", (reference_set_id,)
+        "SELECT * FROM taxonomy_reference_sets WHERE reference_set_id=?",
+        (reference_set_id,),
     ).fetchone()
     if not row:
         raise ValidationError(f"taxonomy reference set {reference_set_id!r} not found")
@@ -54,7 +55,10 @@ def _load_reference_set(
     if not path.is_file():
         raise ValidationError(f"reference set file is missing: {path}")
     current_sha = sha256_file(path)
-    if current_sha != reference["tsv_sha256"] or path.stat().st_size != reference["tsv_size_bytes"]:
+    if (
+        current_sha != reference["tsv_sha256"]
+        or path.stat().st_size != reference["tsv_size_bytes"]
+    ):
         raise ValidationError(f"reference set checksum or size mismatch: {path}")
     rows = read_tsv(path, required_header=["rank", "taxid", "scientific_name"])
     targets: list[dict[str, Any]] = []
@@ -66,17 +70,32 @@ def _load_reference_set(
         try:
             taxid = int(raw["taxid"])
         except (TypeError, ValueError) as exc:
-            raise ValidationError(f"reference set has invalid TaxID {raw['taxid']!r}") from exc
+            raise ValidationError(
+                f"reference set has invalid TaxID {raw['taxid']!r}"
+            ) from exc
         key = (rank, taxid)
         if key in seen:
-            raise ValidationError(f"reference set contains duplicate target {rank}:{taxid}")
+            raise ValidationError(
+                f"reference set contains duplicate target {rank}:{taxid}"
+            )
         seen.add(key)
-        targets.append({"rank": rank, "taxid": taxid, "scientific_name": str(raw["scientific_name"])})
+        targets.append(
+            {
+                "rank": rank,
+                "taxid": taxid,
+                "scientific_name": str(raw["scientific_name"]),
+            }
+        )
     targets.sort(key=lambda item: (RANK_ORDER[item["rank"]], item["taxid"]))
     profile = json.loads(reference["profile_document"])
     profile_document, profile_sha = canonical_document(profile)
-    if profile_document != reference["profile_document"] or profile_sha != reference["profile_sha256"]:
-        raise ValidationError(f"reference set {reference_set_id} has inconsistent frozen profile identity")
+    if (
+        profile_document != reference["profile_document"]
+        or profile_sha != reference["profile_sha256"]
+    ):
+        raise ValidationError(
+            f"reference set {reference_set_id} has inconsistent frozen profile identity"
+        )
     parsed = _validate_coverage_profile(reference["profile_name"], profile)
     expected_counts = {
         "family": reference["family_count"],
@@ -87,13 +106,17 @@ def _load_reference_set(
         if actual == 0:
             raise ValidationError(f"reference set denominator is empty for rank {rank}")
         if actual != int(expected_counts[rank]):
-            raise ValidationError(f"reference set {rank} row count does not match its database record")
+            raise ValidationError(
+                f"reference set {rank} row count does not match its database record"
+            )
     snapshot_row = db.conn.execute(
         "SELECT * FROM taxonomy_snapshots WHERE taxonomy_snapshot_id=? AND status='READY'",
         (reference["taxonomy_snapshot_id"],),
     ).fetchone()
     if not snapshot_row:
-        raise ValidationError(f"taxonomy snapshot {reference['taxonomy_snapshot_id']} is unavailable")
+        raise ValidationError(
+            f"taxonomy snapshot {reference['taxonomy_snapshot_id']} is unavailable"
+        )
     snapshot = dict(snapshot_row)
     _validate_reference_provenance(
         path.with_suffix(".provenance.json"),
@@ -109,28 +132,35 @@ def _load_reference_set(
 
 
 def _metadata_scope(db: Database) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
-    rows = [dict(row) for row in db.conn.execute(
-        "SELECT organism_id, scientific_name, taxon_id, taxonomy_source "
-        "FROM organisms o WHERE NOT EXISTS ("
-        "SELECT 1 FROM effective_retired_entities r "
-        "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
-        "ORDER BY organism_id"
-    ).fetchall()]
+    rows = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT organism_id, scientific_name, taxon_id, taxonomy_source "
+            "FROM organisms o WHERE NOT EXISTS ("
+            "SELECT 1 FROM effective_retired_entities r "
+            "WHERE r.entity_type='organism' AND r.entity_id=o.organism_id) "
+            "ORDER BY organism_id"
+        ).fetchall()
+    ]
     identity_rows = [
         [
-            row["organism_id"], row.get("scientific_name"),
-            row.get("taxonomy_source"), row.get("taxon_id"),
+            row["organism_id"],
+            row.get("scientific_name"),
+            row.get("taxonomy_source"),
+            row.get("taxon_id"),
         ]
         for row in rows
     ]
     membership_sha = _hash_json(identity_rows)
     for row in rows:
-        row.update({
-            "release_version": None,
-            "member_entity_ids": "",
-            "file_ids": "",
-            "file_sha256s": "",
-        })
+        row.update(
+            {
+                "release_version": None,
+                "member_entity_ids": "",
+                "file_ids": "",
+                "file_sha256s": "",
+            }
+        )
     return rows, membership_sha, {"organism_count": len(rows)}
 
 
@@ -139,9 +169,11 @@ def _indexed(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
 
 
 def _release_scope(
-        db: Database, project: Project, release_version: str
+    db: Database, project: Project, release_version: str
 ) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
-    release_row = db.conn.execute("SELECT * FROM releases WHERE version=?", (release_version,)).fetchone()
+    release_row = db.conn.execute(
+        "SELECT * FROM releases WHERE version=?", (release_version,)
+    ).fetchone()
     if not release_row:
         raise ValidationError(f"release {release_version!r} not found")
     release = dict(release_row)
@@ -151,30 +183,44 @@ def _release_scope(
     if not root.is_dir():
         raise ValidationError(f"release directory is missing: {root}")
     manifest_path = root / "manifest.tsv"
-    if not manifest_path.is_file() or sha256_file(manifest_path) != release["manifest_sha256"]:
+    if (
+        not manifest_path.is_file()
+        or sha256_file(manifest_path) != release["manifest_sha256"]
+    ):
         raise ValidationError(f"release manifest checksum mismatch: {manifest_path}")
     manifest = read_tsv(manifest_path)
-    db_members = [dict(row) for row in db.conn.execute(
-        "SELECT file_id, entity_type, entity_id, sha256, size_bytes FROM release_members "
-        "WHERE release_version=? ORDER BY file_id",
-        (release_version,),
-    ).fetchall()]
+    db_members = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT file_id, entity_type, entity_id, sha256, size_bytes FROM release_members "
+            "WHERE release_version=? ORDER BY file_id",
+            (release_version,),
+        ).fetchall()
+    ]
     manifest_identity = sorted(
         (
-            str(row["file_id"]), str(row["entity_type"]), str(row["entity_id"]),
-            str(row["sha256"]), int(row["size_bytes"]),
+            str(row["file_id"]),
+            str(row["entity_type"]),
+            str(row["entity_id"]),
+            str(row["sha256"]),
+            int(row["size_bytes"]),
         )
         for row in manifest
     )
     database_identity = sorted(
         (
-            str(row["file_id"]), str(row["entity_type"]), str(row["entity_id"]),
-            str(row["sha256"]), int(row["size_bytes"]),
+            str(row["file_id"]),
+            str(row["entity_type"]),
+            str(row["entity_id"]),
+            str(row["sha256"]),
+            int(row["size_bytes"]),
         )
         for row in db_members
     )
     if manifest_identity != database_identity:
-        raise ValidationError(f"release {release_version} manifest and release_members disagree")
+        raise ValidationError(
+            f"release {release_version} manifest and release_members disagree"
+        )
 
     table_names = ["organisms", "samples", "runs", "assemblies", "annotations"]
     tables: dict[str, list[dict[str, Any]]] = {}
@@ -182,7 +228,9 @@ def _release_scope(
     try:
         release_summary = json.loads(str(release["summary"]))
     except (TypeError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"release {release_version} has invalid summary provenance") from exc
+        raise ValidationError(
+            f"release {release_version} has invalid summary provenance"
+        ) from exc
     expected_metadata_hashes = release_summary.get("metadata_sha256")
     if not isinstance(expected_metadata_hashes, dict):
         raise ValidationError(
@@ -222,7 +270,9 @@ def _release_scope(
             return str(sample["organism_id"]) if sample else ""
         if entity_type == "annotation":
             annotation = annotations.get(entity_id)
-            assembly = assemblies.get(str(annotation["assembly_id"])) if annotation else None
+            assembly = (
+                assemblies.get(str(annotation["assembly_id"])) if annotation else None
+            )
             sample = samples.get(str(assembly["sample_id"])) if assembly else None
             return str(sample["organism_id"]) if sample else ""
         return ""
@@ -242,19 +292,23 @@ def _release_scope(
     observations: list[dict[str, Any]] = []
     for organism_id in sorted(evidence_by_organism):
         organism = organisms[organism_id]
-        evidence = sorted(evidence_by_organism[organism_id], key=lambda item: item["file_id"])
-        observations.append({
-            "organism_id": organism_id,
-            "scientific_name": organism.get("scientific_name"),
-            "taxon_id": organism.get("taxon_id"),
-            "taxonomy_source": organism.get("taxonomy_source"),
-            "release_version": release_version,
-            "member_entity_ids": ";".join(
-                f"{item['entity_type']}:{item['entity_id']}" for item in evidence
-            ),
-            "file_ids": ";".join(str(item["file_id"]) for item in evidence),
-            "file_sha256s": ";".join(str(item["sha256"]) for item in evidence),
-        })
+        evidence = sorted(
+            evidence_by_organism[organism_id], key=lambda item: item["file_id"]
+        )
+        observations.append(
+            {
+                "organism_id": organism_id,
+                "scientific_name": organism.get("scientific_name"),
+                "taxon_id": organism.get("taxon_id"),
+                "taxonomy_source": organism.get("taxonomy_source"),
+                "release_version": release_version,
+                "member_entity_ids": ";".join(
+                    f"{item['entity_type']}:{item['entity_id']}" for item in evidence
+                ),
+                "file_ids": ";".join(str(item["file_id"]) for item in evidence),
+                "file_sha256s": ";".join(str(item["sha256"]) for item in evidence),
+            }
+        )
     membership_payload = {
         "release_version": release_version,
         "manifest_sha256": release["manifest_sha256"],
@@ -262,17 +316,21 @@ def _release_scope(
         "metadata_sha256": metadata_hashes,
     }
     membership_sha = _hash_json(membership_payload)
-    return observations, membership_sha, {
-        "release_version": release_version,
-        "release_manifest_sha256": release["manifest_sha256"],
-        "release_metadata_sha256": metadata_hashes,
-        "release_member_count": len(db_members),
-        "organism_count": len(observations),
-    }
+    return (
+        observations,
+        membership_sha,
+        {
+            "release_version": release_version,
+            "release_manifest_sha256": release["manifest_sha256"],
+            "release_metadata_sha256": metadata_hashes,
+            "release_member_count": len(db_members),
+            "organism_count": len(observations),
+        },
+    )
 
 
 def _resolve_taxids(
-        db: Database, snapshot_id: str, taxids: list[int]
+    db: Database, snapshot_id: str, taxids: list[int]
 ) -> dict[int, tuple[int | None, str]]:
     resolved: dict[int, tuple[int | None, str]] = {}
     for batch in _chunks(sorted(set(taxids))):
@@ -307,7 +365,7 @@ def _resolve_taxids(
 
 
 def _lineages(
-        db: Database, snapshot_id: str, resolved_taxids: list[int]
+    db: Database, snapshot_id: str, resolved_taxids: list[int]
 ) -> dict[int, list[dict[str, Any]]]:
     result: dict[int, list[dict[str, Any]]] = {taxid: [] for taxid in resolved_taxids}
     for batch in _chunks(sorted(set(resolved_taxids)), size=250):
@@ -332,11 +390,11 @@ def _lineages(
 
 
 def _resolve_observations(
-        db: Database,
-        snapshot_id: str,
-        raw_observations: list[dict[str, Any]],
-        targets: list[dict[str, Any]],
-        parsed_profile: dict[str, Any],
+    db: Database,
+    snapshot_id: str,
+    raw_observations: list[dict[str, Any]],
+    targets: list[dict[str, Any]],
+    parsed_profile: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[tuple[str, int], set[str]]]:
     valid_taxids: list[int] = []
     preliminary_excluded: list[dict[str, Any]] = []
@@ -344,7 +402,9 @@ def _resolve_observations(
         source = str(observation.get("taxonomy_source") or "")
         raw_taxid = observation.get("taxon_id")
         if source != "NCBI":
-            preliminary_excluded.append({**observation, "reason": "UNSUPPORTED_TAXONOMY_SOURCE"})
+            preliminary_excluded.append(
+                {**observation, "reason": "UNSUPPORTED_TAXONOMY_SOURCE"}
+            )
             continue
         if raw_taxid in {None, ""}:
             preliminary_excluded.append({**observation, "reason": "MISSING_TAXID"})
@@ -355,11 +415,14 @@ def _resolve_observations(
             preliminary_excluded.append({**observation, "reason": "INVALID_TAXID"})
     resolution = _resolve_taxids(db, snapshot_id, valid_taxids)
     lineage_by_taxid = _lineages(
-        db, snapshot_id,
+        db,
+        snapshot_id,
         [current for current, _status in resolution.values() if current is not None],
     )
     target_keys = {(item["rank"], item["taxid"]) for item in targets}
-    observed_by_target: dict[tuple[str, int], set[str]] = {key: set() for key in target_keys}
+    observed_by_target: dict[tuple[str, int], set[str]] = {
+        key: set() for key in target_keys
+    }
     accepted: list[dict[str, Any]] = []
     excluded = list(preliminary_excluded)
     excluded_subtrees = set(parsed_profile["exclude_subtrees"])
@@ -382,14 +445,14 @@ def _resolve_observations(
             excluded.append({**observation, "reason": "UNKNOWN_RESOLVED_TAXID"})
             continue
         if parsed_profile["exclude_extinct"] and any(
-                item.get("is_extinct") == 1 for item in lineage
+            item.get("is_extinct") == 1 for item in lineage
         ):
             excluded.append({**observation, "reason": "EXCLUDED_EXTINCT"})
             continue
         if any(
-                pattern.search(str(item["scientific_name"]))
-                for pattern in patterns
-                for item in lineage
+            pattern.search(str(item["scientific_name"]))
+            for pattern in patterns
+            for item in lineage
         ):
             excluded.append({**observation, "reason": "EXCLUDED_NAME_PATTERN"})
             continue
@@ -417,27 +480,29 @@ def _resolve_observations(
         for rank, taxid in rank_taxids.items():
             if taxid is not None and (rank, taxid) in observed_by_target:
                 observed_by_target[(rank, taxid)].add(organism_id)
-        accepted.append({
-            "organism_id": organism_id,
-            "scientific_name": observation.get("scientific_name"),
-            "input_taxid": input_taxid,
-            "resolved_taxid": current_taxid,
-            "mapping_status": mapping_status,
-            "family_taxid": rank_taxids["family"],
-            "genus_taxid": rank_taxids["genus"],
-            "family_in_reference_set": (
+        accepted.append(
+            {
+                "organism_id": organism_id,
+                "scientific_name": observation.get("scientific_name"),
+                "input_taxid": input_taxid,
+                "resolved_taxid": current_taxid,
+                "mapping_status": mapping_status,
+                "family_taxid": rank_taxids["family"],
+                "genus_taxid": rank_taxids["genus"],
+                "family_in_reference_set": (
                     rank_taxids["family"] is not None
                     and ("family", rank_taxids["family"]) in target_keys
-            ),
-            "genus_in_reference_set": (
+                ),
+                "genus_in_reference_set": (
                     rank_taxids["genus"] is not None
                     and ("genus", rank_taxids["genus"]) in target_keys
-            ),
-            "release_version": observation.get("release_version"),
-            "member_entity_ids": observation.get("member_entity_ids", ""),
-            "file_ids": observation.get("file_ids", ""),
-            "file_sha256s": observation.get("file_sha256s", ""),
-        })
+                ),
+                "release_version": observation.get("release_version"),
+                "member_entity_ids": observation.get("member_entity_ids", ""),
+                "file_ids": observation.get("file_ids", ""),
+                "file_sha256s": observation.get("file_sha256s", ""),
+            }
+        )
     accepted.sort(key=lambda item: item["organism_id"])
     unique_excluded: dict[tuple[str, str], dict[str, Any]] = {}
     for item in excluded:
@@ -453,7 +518,10 @@ def _resolve_observations(
             "member_entity_ids": item.get("member_entity_ids", ""),
             "file_ids": item.get("file_ids", ""),
         }
-        for item in sorted(unique_excluded.values(), key=lambda row: (str(row["organism_id"]), str(row["reason"])))
+        for item in sorted(
+            unique_excluded.values(),
+            key=lambda row: (str(row["organism_id"]), str(row["reason"])),
+        )
     ]
     return accepted, excluded_rows, observed_by_target
 
@@ -470,16 +538,23 @@ def _percentage(numerator: int, denominator: int) -> float:
 def _result_hash(directory: Path) -> str:
     digest = hashlib.sha256()
     for name in (
-            "coverage_summary.tsv", "coverage_targets.tsv", "coverage_missing.tsv",
-            "coverage_observations.tsv", "coverage_excluded_observations.tsv",
+        "coverage_summary.tsv",
+        "coverage_targets.tsv",
+        "coverage_missing.tsv",
+        "coverage_observations.tsv",
+        "coverage_excluded_observations.tsv",
     ):
         path = directory / name
         data = path.read_bytes()
-        digest.update(name.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data)
+        digest.update(
+            name.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data
+        )
     return digest.hexdigest()
 
 
-def _cached_report(db: Database, project: Project, row: dict[str, Any]) -> dict[str, Any]:
+def _cached_report(
+    db: Database, project: Project, row: dict[str, Any]
+) -> dict[str, Any]:
     path = project.root / str(row["relative_path"])
     provenance_path = path / "provenance.json"
     if not path.is_dir() or not provenance_path.is_file():
@@ -503,14 +578,17 @@ def _cached_report(db: Database, project: Project, row: dict[str, Any]) -> dict[
         "decision": row["decision"],
     }
     if (
-            any(provenance.get(key) != value for key, value in expected_provenance.items())
-            or _result_hash(path) != row["result_sha256"]
+        any(provenance.get(key) != value for key, value in expected_provenance.items())
+        or _result_hash(path) != row["result_sha256"]
     ):
         raise ConflictError(f"cached coverage report has changed: {path}")
-    metrics = [dict(metric) for metric in db.conn.execute(
-        "SELECT * FROM coverage_report_metrics WHERE report_id=? ORDER BY rank",
-        (row["report_id"],),
-    ).fetchall()]
+    metrics = [
+        dict(metric)
+        for metric in db.conn.execute(
+            "SELECT * FROM coverage_report_metrics WHERE report_id=? ORDER BY rank",
+            (row["report_id"],),
+        ).fetchall()
+    ]
     return {
         **row,
         "metrics": sorted(metrics, key=lambda item: RANK_ORDER[item["rank"]]),
@@ -521,14 +599,16 @@ def _cached_report(db: Database, project: Project, row: dict[str, Any]) -> dict[
 
 
 def _report_coverage_impl(
-        db: Database,
-        project: Project,
-        reference_set_id: str,
-        *,
-        release_version: str | None = None,
+    db: Database,
+    project: Project,
+    reference_set_id: str,
+    *,
+    release_version: str | None = None,
 ) -> dict[str, Any]:
     """Compute metadata or frozen-release coverage against one compiled denominator."""
-    reference, targets, profile, parsed = _load_reference_set(db, project, reference_set_id)
+    reference, targets, profile, parsed = _load_reference_set(
+        db, project, reference_set_id
+    )
     if release_version:
         scope_kind = "release"
         scope_value = release_version
@@ -571,43 +651,60 @@ def _report_coverage_impl(
         decision = "PASS" if coverage >= threshold else "FAIL"
         if decision == "FAIL":
             reason_codes.append(f"{rank.upper()}_COVERAGE_BELOW_THRESHOLD")
-        metrics.append({
-            "rank": rank,
-            "numerator": numerator,
-            "denominator": denominator,
-            "coverage_percent": coverage,
-            "threshold_percent": threshold,
-            "decision": decision,
-        })
-    overall = "PASS" if all(metric["decision"] == "PASS" for metric in metrics) else "FAIL"
+        metrics.append(
+            {
+                "rank": rank,
+                "numerator": numerator,
+                "denominator": denominator,
+                "coverage_percent": coverage,
+                "threshold_percent": threshold,
+                "decision": decision,
+            }
+        )
+    overall = (
+        "PASS" if all(metric["decision"] == "PASS" for metric in metrics) else "FAIL"
+    )
     target_rows: list[dict[str, Any]] = []
     for target in targets:
         organisms = observed_by_target[(target["rank"], target["taxid"])]
-        target_rows.append({
-            **target,
-            "status": "COVERED" if organisms else "MISSING",
-            "organism_count": len(organisms),
-        })
+        target_rows.append(
+            {
+                **target,
+                "status": "COVERED" if organisms else "MISSING",
+                "organism_count": len(organisms),
+            }
+        )
     missing_rows = [
         {key: row[key] for key in ("rank", "taxid", "scientific_name")}
-        for row in target_rows if row["status"] == "MISSING"
+        for row in target_rows
+        if row["status"] == "MISSING"
     ]
     report_id = f"COV_{input_sha[:16].upper()}"
     reports_parent = project.reports_root / "coverage"
     reports_parent.mkdir(parents=True, exist_ok=True)
     final_dir = reports_parent / report_id
     if final_dir.exists():
-        raise ConflictError(f"coverage report target already exists without matching history: {final_dir}")
+        raise ConflictError(
+            f"coverage report target already exists without matching history: {final_dir}"
+        )
     temp_dir = Path(tempfile.mkdtemp(prefix=f".{report_id}.", dir=str(reports_parent)))
     created_at = now_iso()
     run_id = new_run_id()
     try:
         write_tsv(
             temp_dir / "coverage_summary.tsv",
-            ["rank", "numerator", "denominator", "coverage_percent", "min_coverage_percent", "decision"],
+            [
+                "rank",
+                "numerator",
+                "denominator",
+                "coverage_percent",
+                "min_coverage_percent",
+                "decision",
+            ],
             [
                 {
-                    "rank": item["rank"], "numerator": item["numerator"],
+                    "rank": item["rank"],
+                    "numerator": item["numerator"],
                     "denominator": item["denominator"],
                     "coverage_percent": f"{item['coverage_percent']:.4f}",
                     "min_coverage_percent": f"{item['threshold_percent']:.4f}",
@@ -618,27 +715,44 @@ def _report_coverage_impl(
         )
         write_tsv(
             temp_dir / "coverage_targets.tsv",
-            ["rank", "taxid", "scientific_name", "status", "organism_count"], target_rows,
+            ["rank", "taxid", "scientific_name", "status", "organism_count"],
+            target_rows,
         )
         write_tsv(
             temp_dir / "coverage_missing.tsv",
-            ["rank", "taxid", "scientific_name"], missing_rows,
+            ["rank", "taxid", "scientific_name"],
+            missing_rows,
         )
         write_tsv(
             temp_dir / "coverage_observations.tsv",
             [
-                "organism_id", "scientific_name", "input_taxid", "resolved_taxid",
-                "mapping_status", "family_taxid", "genus_taxid",
-                "family_in_reference_set", "genus_in_reference_set", "release_version",
-                "member_entity_ids", "file_ids", "file_sha256s",
+                "organism_id",
+                "scientific_name",
+                "input_taxid",
+                "resolved_taxid",
+                "mapping_status",
+                "family_taxid",
+                "genus_taxid",
+                "family_in_reference_set",
+                "genus_in_reference_set",
+                "release_version",
+                "member_entity_ids",
+                "file_ids",
+                "file_sha256s",
             ],
             accepted,
         )
         write_tsv(
             temp_dir / "coverage_excluded_observations.tsv",
             [
-                "organism_id", "scientific_name", "taxonomy_source", "taxid", "reason",
-                "release_version", "member_entity_ids", "file_ids",
+                "organism_id",
+                "scientific_name",
+                "taxonomy_source",
+                "taxid",
+                "reason",
+                "release_version",
+                "member_entity_ids",
+                "file_ids",
             ],
             excluded,
         )
@@ -685,11 +799,21 @@ def _report_coverage_impl(
                 "reason_codes, summary, relative_path, result_sha256, created_at, workflow_run_id) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    report_id, reference_set_id, reference["tsv_sha256"], scope_kind, scope_value,
-                    membership_sha, input_sha, "completed", overall,
+                    report_id,
+                    reference_set_id,
+                    reference["tsv_sha256"],
+                    scope_kind,
+                    scope_value,
+                    membership_sha,
+                    input_sha,
+                    "completed",
+                    overall,
                     json.dumps(reason_codes, ensure_ascii=False),
                     json.dumps(metrics, ensure_ascii=False, sort_keys=True),
-                    project_rel(project, final_dir), result_sha, created_at, run_id,
+                    project_rel(project, final_dir),
+                    result_sha,
+                    created_at,
+                    run_id,
                 ),
             )
             db.conn.executemany(
@@ -697,27 +821,36 @@ def _report_coverage_impl(
                 "coverage_percent, threshold_percent, decision) VALUES(?,?,?,?,?,?,?)",
                 [
                     (
-                        report_id, item["rank"], item["numerator"], item["denominator"],
-                        item["coverage_percent"], item["threshold_percent"], item["decision"],
+                        report_id,
+                        item["rank"],
+                        item["numerator"],
+                        item["denominator"],
+                        item["coverage_percent"],
+                        item["threshold_percent"],
+                        item["decision"],
                     )
                     for item in metrics
                 ],
             )
-        log_run(db, project, {
-            "run_id": run_id,
-            "entity_type": "coverage_report",
-            "entity_id": report_id,
-            "step": "coverage_report",
-            "status": "completed",
-            "started_at": created_at,
-            "finished_at": now_iso(),
-            "tool": "operon.coverage",
-            "tool_version": __version__,
-            "parameter_set": reference["profile_sha256"],
-            "input_sha256": input_sha,
-            "output_sha256": result_sha,
-            "command": f"report coverage {reference_set_id} {scope_kind}:{scope_value or ''}",
-        })
+        log_run(
+            db,
+            project,
+            {
+                "run_id": run_id,
+                "entity_type": "coverage_report",
+                "entity_id": report_id,
+                "step": "coverage_report",
+                "status": "completed",
+                "started_at": created_at,
+                "finished_at": now_iso(),
+                "tool": "operon.coverage",
+                "tool_version": __version__,
+                "parameter_set": reference["profile_sha256"],
+                "input_sha256": input_sha,
+                "output_sha256": result_sha,
+                "command": f"report coverage {reference_set_id} {scope_kind}:{scope_value or ''}",
+            },
+        )
     except Exception:
         if temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -745,11 +878,11 @@ def _report_coverage_impl(
 
 
 def report_coverage(
-        db: Database,
-        project: Project,
-        reference_set_id: str,
-        *,
-        release_version: str | None = None,
+    db: Database,
+    project: Project,
+    reference_set_id: str,
+    *,
+    release_version: str | None = None,
 ) -> dict[str, Any]:
     """Generate a report and record failed attempts as workflow provenance."""
     started_at = now_iso()
@@ -759,18 +892,22 @@ def report_coverage(
         )
     except Exception as exc:
         scope = f"release:{release_version}" if release_version else "metadata"
-        log_run(db, project, {
-            "run_id": new_run_id(),
-            "entity_type": "coverage_report",
-            "entity_id": str(reference_set_id),
-            "step": "coverage_report",
-            "status": "failed",
-            "started_at": started_at,
-            "finished_at": now_iso(),
-            "tool": "operon.coverage",
-            "tool_version": __version__,
-            "parameter_set": str(reference_set_id),
-            "command": f"report coverage {reference_set_id} {scope}",
-            "error": f"{type(exc).__name__}: {exc}",
-        })
+        log_run(
+            db,
+            project,
+            {
+                "run_id": new_run_id(),
+                "entity_type": "coverage_report",
+                "entity_id": str(reference_set_id),
+                "step": "coverage_report",
+                "status": "failed",
+                "started_at": started_at,
+                "finished_at": now_iso(),
+                "tool": "operon.coverage",
+                "tool_version": __version__,
+                "parameter_set": str(reference_set_id),
+                "command": f"report coverage {reference_set_id} {scope}",
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
         raise

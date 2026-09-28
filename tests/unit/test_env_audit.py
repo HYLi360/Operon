@@ -43,7 +43,9 @@ def test_every_environment_read_carries_an_audit_note() -> None:
     for path in _python_files():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if _ENV_READ.search(line) and ENV_MARKER not in line:
-                offenders.append(f"{path.relative_to(PACKAGE_ROOT.parent)}:{number}: {line.strip()}")
+                offenders.append(
+                    f"{path.relative_to(PACKAGE_ROOT.parent)}:{number}: {line.strip()}"
+                )
     assert not offenders, (
         "unaudited environment read(s) found — route the value through "
         "operon.config (or operon.secrets for credentials), or annotate the "
@@ -69,5 +71,7 @@ def test_user_configuration_owns_no_secret_and_no_project_key() -> None:
     from operon.config import USER_CONFIG_TYPES, has_secret_like_keys
 
     assert has_secret_like_keys({key: "x" for key in USER_CONFIG_TYPES}) == []
-    assert not any(key.startswith(("storage.", "database.", "resources.", "execution."))
-                   for key in USER_CONFIG_TYPES)
+    assert not any(
+        key.startswith(("storage.", "database.", "resources.", "execution."))
+        for key in USER_CONFIG_TYPES
+    )

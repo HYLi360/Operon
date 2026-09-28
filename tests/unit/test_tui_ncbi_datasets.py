@@ -50,7 +50,9 @@ def demo_template(tmp_path_factory) -> Project:
 @pytest.fixture
 def project(tmp_path: Path, demo_template: Project) -> Project:
     """Each test gets its own writable copy of the demo project."""
-    return Project.find(helpers.copy_project_tree(demo_template.root, tmp_path / "project"))
+    return Project.find(
+        helpers.copy_project_tree(demo_template.root, tmp_path / "project")
+    )
 
 
 def _report(accession: str = ACCESSION) -> dict:
@@ -122,8 +124,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while not predicate():
@@ -191,10 +194,14 @@ def parse_command_text(text: str):
 # ---------------------------------------------------------------------------
 
 
-def test_dry_run_offline_import_writes_nothing(project: Project, tmp_path: Path) -> None:
+def test_dry_run_offline_import_writes_nothing(
+    project: Project, tmp_path: Path
+) -> None:
     report = _write_report(tmp_path / "report.jsonl")
-    before = {table: _count(project, table)
-              for table in ("workflow_runs", "changes", "assemblies", "organisms")}
+    before = {
+        table: _count(project, table)
+        for table in ("workflow_runs", "changes", "assemblies", "organisms")
+    }
     result = actions.ncbi_datasets(project, inputs=[str(report)], dry_run=True)
     assert result["run_id"]
     assert len(result["sources"]) == 1
@@ -215,28 +222,39 @@ def test_plan_only_accession_is_offline_and_write_free(project: Project) -> None
     assert _count(project, "workflow_runs") == before_runs
 
 
-def test_real_offline_import_records_completed_run(project: Project, tmp_path: Path) -> None:
+def test_real_offline_import_records_completed_run(
+    project: Project, tmp_path: Path
+) -> None:
     report = _write_report(tmp_path / "report.jsonl")
     result = actions.ncbi_datasets(project, inputs=[str(report)])
-    rows = _query(project,
-                  "SELECT step, status, exit_code FROM workflow_runs WHERE run_id=?",
-                  (result["run_id"],))
-    assert rows == [{"step": "ncbi_datasets_import", "status": "completed", "exit_code": 0}]
+    rows = _query(
+        project,
+        "SELECT step, status, exit_code FROM workflow_runs WHERE run_id=?",
+        (result["run_id"],),
+    )
+    assert rows == [
+        {"step": "ncbi_datasets_import", "status": "completed", "exit_code": 0}
+    ]
     assert result["assembly_records"] == 1
 
 
 def test_validation_requires_some_input(project: Project) -> None:
     before = _count(project, "workflow_runs")
-    with pytest.raises(ValidationError,
-                       match="provide at least one --input, --accession, or --accession-file"):
+    with pytest.raises(
+        ValidationError,
+        match="provide at least one --input, --accession, or --accession-file",
+    ):
         actions.ncbi_datasets(project)
     assert _count(project, "workflow_runs") == before
 
 
-def test_validation_plan_only_rejects_offline_inputs(project: Project, tmp_path: Path) -> None:
+def test_validation_plan_only_rejects_offline_inputs(
+    project: Project, tmp_path: Path
+) -> None:
     report = _write_report(tmp_path / "report.jsonl")
-    with pytest.raises(ValidationError,
-                       match="--plan-only supports accession requests"):
+    with pytest.raises(
+        ValidationError, match="--plan-only supports accession requests"
+    ):
         actions.ncbi_datasets(project, inputs=[str(report)], plan_only=True)
 
 
@@ -250,18 +268,23 @@ def test_validation_rejects_unknown_include(project: Project) -> None:
         actions.ncbi_datasets(project, accessions=[ACCESSION], include=["bogus"])
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"batch_size": 0},
-    {"batch_size": 101},
-    {"download_workers": 0},
-    {"download_workers": 11},
-    {"retries": -1},
-    {"retries": 11},
-    {"retry_backoff": -0.5},
-    {"timeout": 0},
-    {"timeout": -1.0},
-])
-def test_validation_rejects_out_of_range_numbers(project: Project, kwargs: dict) -> None:
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"batch_size": 0},
+        {"batch_size": 101},
+        {"download_workers": 0},
+        {"download_workers": 11},
+        {"retries": -1},
+        {"retries": 11},
+        {"retry_backoff": -0.5},
+        {"timeout": 0},
+        {"timeout": -1.0},
+    ],
+)
+def test_validation_rejects_out_of_range_numbers(
+    project: Project, kwargs: dict
+) -> None:
     before = _count(project, "workflow_runs")
     with pytest.raises(ValidationError):
         actions.ncbi_datasets(project, accessions=[ACCESSION], plan_only=True, **kwargs)
@@ -273,25 +296,35 @@ def test_cancel_event_records_interrupted_run(project: Project) -> None:
     cancel_event.set()
     before = _count(project, "workflow_runs")
     with pytest.raises(actions.NcbiDatasetsCancelled):
-        actions.ncbi_datasets(project, accessions=[ACCESSION], cancel_event=cancel_event)
-    rows = _query(project,
-                  "SELECT step, status, exit_code FROM workflow_runs "
-                  "WHERE step='ncbi_datasets_import'")
+        actions.ncbi_datasets(
+            project, accessions=[ACCESSION], cancel_event=cancel_event
+        )
+    rows = _query(
+        project,
+        "SELECT step, status, exit_code FROM workflow_runs "
+        "WHERE step='ncbi_datasets_import'",
+    )
     assert _count(project, "workflow_runs") == before + 1
-    assert rows == [{"step": "ncbi_datasets_import", "status": "interrupted",
-                     "exit_code": 130}]
+    assert rows == [
+        {"step": "ncbi_datasets_import", "status": "interrupted", "exit_code": 130}
+    ]
 
 
-def test_shutdown_without_cancel_event_propagates(project: Project, monkeypatch) -> None:
+def test_shutdown_without_cancel_event_propagates(
+    project: Project, monkeypatch
+) -> None:
     """A signal-style interrupt not caused by the TUI's event keeps its type."""
 
     def interrupted(*args, **kwargs):
         raise ShutdownRequested(signal.SIGINT)
 
-    monkeypatch.setattr("operon.adapters.ncbi_datasets.run_ncbi_datasets_adapter", interrupted)
+    monkeypatch.setattr(
+        "operon.adapters.ncbi_datasets.run_ncbi_datasets_adapter", interrupted
+    )
     with pytest.raises(ShutdownRequested):
-        actions.ncbi_datasets(project, accessions=[ACCESSION],
-                              cancel_event=threading.Event())
+        actions.ncbi_datasets(
+            project, accessions=[ACCESSION], cancel_event=threading.Event()
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -318,21 +351,27 @@ def test_home_screen_opens_modal_and_wizard(project: Project) -> None:
             assert isinstance(app.screen.query_one("#home", HomePanel), HomePanel)
 
             await _click(pilot, "#home-ncbi-datasets")
-            await _wait_until(lambda: isinstance(app.screen, NcbiDatasetsModal),
-                              "NCBI Datasets modal to open")
+            await _wait_until(
+                lambda: isinstance(app.screen, NcbiDatasetsModal),
+                "NCBI Datasets modal to open",
+            )
             app.pop_screen()
-            await _wait_until(lambda: not isinstance(app.screen, NcbiDatasetsModal),
-                              "modal to close")
+            await _wait_until(
+                lambda: not isinstance(app.screen, NcbiDatasetsModal), "modal to close"
+            )
 
             await _click(pilot, "#home-import-wizard")
-            await _wait_until(lambda: isinstance(app.screen, ImportWizardScreen),
-                              "import wizard to open")
+            await _wait_until(
+                lambda: isinstance(app.screen, ImportWizardScreen),
+                "import wizard to open",
+            )
 
     _run(scenario())
 
 
-def test_preflight_gate_unlocks_confirm_and_real_run_writes(project: Project,
-                                                            tmp_path: Path) -> None:
+def test_preflight_gate_unlocks_confirm_and_real_run_writes(
+    project: Project, tmp_path: Path
+) -> None:
     report = _write_report(tmp_path / "report.jsonl")
 
     async def scenario() -> None:
@@ -347,28 +386,43 @@ def test_preflight_gate_unlocks_confirm_and_real_run_writes(project: Project,
 
             (await _q(modal, "#ncbi-inputs", Input)).value = str(report)
             await _click(pilot, "#ncbi-preflight-button")
-            await _wait_until(lambda: "preflight clean" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "preflight to finish")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight to finish",
+            )
             assert not confirm.disabled
 
             # Any form change locks Confirm again until the next dry run.
             (await _q(modal, "#ncbi-include", Input)).value = "genome"
             await _wait_until(lambda: confirm.disabled, "form change to lock Confirm")
-            assert "form changed" in _log_text(modal.query_one("#ncbi-preview", RichLog))
+            assert "form changed" in _log_text(
+                modal.query_one("#ncbi-preview", RichLog)
+            )
 
             await _click(pilot, "#ncbi-preflight-button")
-            await _wait_until(lambda: "preflight clean" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "second preflight to finish")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "second preflight to finish",
+            )
             assert not confirm.disabled
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
-            assert any("NCBI Datasets import" in message
-                       for _, message in _notifications(app))
+            assert any(
+                "NCBI Datasets import" in message for _, message in _notifications(app)
+            )
 
     _run(scenario())
-    rows = _query(project,
-                  "SELECT step, status FROM workflow_runs WHERE step='ncbi_datasets_import'")
+    rows = _query(
+        project,
+        "SELECT step, status FROM workflow_runs WHERE step='ncbi_datasets_import'",
+    )
     assert [row["status"] for row in rows] == ["completed"]
 
 
@@ -411,8 +465,13 @@ def test_command_text_matches_action_kwargs(project: Project, monkeypatch) -> No
             # Accession-only form: the preflight is the online plan, no writes.
             await _click(pilot, "#ncbi-preflight-button")
             await _wait_until(lambda: bool(calls), "preflight call")
-            await _wait_until(lambda: "preflight clean" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "preflight preview")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight preview",
+            )
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: len(calls) == 2, "confirm call")
@@ -446,8 +505,9 @@ def test_command_text_matches_action_kwargs(project: Project, monkeypatch) -> No
     }
 
 
-def test_invalid_number_shows_inline_error_before_preflight(project: Project,
-                                                            monkeypatch) -> None:
+def test_invalid_number_shows_inline_error_before_preflight(
+    project: Project, monkeypatch
+) -> None:
     def stub(*args, **kwargs):  # pragma: no cover - must never run
         raise AssertionError("preflight must not run with an invalid form")
 
@@ -463,9 +523,12 @@ def test_invalid_number_shows_inline_error_before_preflight(project: Project,
             (await _q(modal, "#ncbi-timeout", Input)).value = "abc"
             await _click(pilot, "#ncbi-preflight-button")
             await _wait_until(
-                lambda: "timeout must be a number"
-                        in _static_text(modal.query_one("#modal-error", Static)),
-                "inline error to appear")
+                lambda: (
+                    "timeout must be a number"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "inline error to appear",
+            )
             assert (await _q(modal, "#confirm", Button)).disabled
 
     _run(scenario())
@@ -481,10 +544,16 @@ def test_failed_preflight_keeps_confirm_locked(project: Project) -> None:
             (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
             (await _q(modal, "#ncbi-include", Input)).value = "bogus"
             await _click(pilot, "#ncbi-preflight-button")
-            await _wait_until(lambda: "dry run failed" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "preflight failure preview")
+            await _wait_until(
+                lambda: (
+                    "dry run failed"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight failure preview",
+            )
             assert "unknown NCBI include type" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog))
+                modal.query_one("#ncbi-preview", RichLog)
+            )
             assert (await _q(modal, "#confirm", Button)).disabled
 
     _run(scenario())
@@ -512,8 +581,13 @@ def test_cancel_sets_event_and_unlocks_controls(project: Project, monkeypatch) -
             await _push(pilot, modal, "#ncbi-accessions")
             (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
             await _click(pilot, "#ncbi-preflight-button")
-            await _wait_until(lambda: "preflight clean" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "preflight to finish")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight to finish",
+            )
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: modal.running, "run to start")
@@ -522,13 +596,18 @@ def test_cancel_sets_event_and_unlocks_controls(project: Project, monkeypatch) -
 
             await _click(pilot, "#cancel")
             await _wait_until(
-                lambda: "cancelled" == _static_text(modal.query_one("#ncbi-status", Static)),
-                "cancelled status")
+                lambda: (
+                    "cancelled" == _static_text(modal.query_one("#ncbi-status", Static))
+                ),
+                "cancelled status",
+            )
             assert not modal.running
             assert not (await _q(modal, "#ncbi-accessions", Input)).disabled
             assert not (await _q(modal, "#confirm", Button)).disabled
-            assert any(severity == "warning" and "cancelled" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "warning" and "cancelled" in message
+                for severity, message in _notifications(app)
+            )
 
     _run(scenario())
 
@@ -553,10 +632,17 @@ def test_stale_preflight_result_is_discarded(project: Project, monkeypatch) -> N
             await _wait_until(lambda: modal.preflight_running, "preflight to start")
 
             # The form moves on while the preflight is still in flight.
-            (await _q(modal, "#ncbi-accessions", Input)).value = f"{ACCESSION}, GCF_000008888.1"
+            (
+                await _q(modal, "#ncbi-accessions", Input)
+            ).value = f"{ACCESSION}, GCF_000008888.1"
             gate.set()
-            await _wait_until(lambda: "form changed during the dry run" in _log_text(
-                modal.query_one("#ncbi-preview", RichLog)), "stale preflight notice")
+            await _wait_until(
+                lambda: (
+                    "form changed during the dry run"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "stale preflight notice",
+            )
             assert modal.preflight is None
             assert (await _q(modal, "#confirm", Button)).disabled
 

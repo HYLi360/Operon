@@ -71,8 +71,15 @@ TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-def set_state(db: Database, entity_type: str, entity_id: str, state: str,
-              message: str | None = None, force: bool = False, actor: str | None = None) -> None:
+def set_state(
+    db: Database,
+    entity_type: str,
+    entity_id: str,
+    state: str,
+    message: str | None = None,
+    force: bool = False,
+    actor: str | None = None,
+) -> None:
     state = state.upper()
     if state not in VALID_STATES:
         raise ValueError(f"unknown state {state!r}; valid: {sorted(VALID_STATES)}")
@@ -84,14 +91,24 @@ def set_state(db: Database, entity_type: str, entity_id: str, state: str,
     db.set_entity_state(entity_type, entity_id, state, message)
     if old != state:
         db.record_change(
-            "entity_state", f"{entity_type}:{entity_id}", "state", old, state,
+            "entity_state",
+            f"{entity_type}:{entity_id}",
+            "state",
+            old,
+            state,
             reason=message or ("forced transition" if force else "workflow transition"),
             actor=actor,
         )
 
 
-def set_state_bulk(db: Database, entity_type: str, entity_id: str, state: str,
-                   message: str | None = None, actor: str | None = None) -> None:
+def set_state_bulk(
+    db: Database,
+    entity_type: str,
+    entity_id: str,
+    state: str,
+    message: str | None = None,
+    actor: str | None = None,
+) -> None:
     """Same as set_state but tolerant for batch QC loops."""
     set_state(db, entity_type, entity_id, state, message, force=True, actor=actor)
 
@@ -102,8 +119,14 @@ def set_state_bulk(db: Database, entity_type: str, entity_id: str, state: str,
 DECISION_GUARDED_STATES = {"ACCEPTED", "REVIEW", "REJECTED", "RELEASED"}
 
 
-def set_state_guarded(db: Database, entity_type: str, entity_id: str, state: str,
-                      message: str | None = None, actor: str | None = None) -> bool:
+def set_state_guarded(
+    db: Database,
+    entity_type: str,
+    entity_id: str,
+    state: str,
+    message: str | None = None,
+    actor: str | None = None,
+) -> bool:
     """set_state_bulk, except decided entities keep their lifecycle state.
 
     Returns False when the write was skipped because the entity is in a
@@ -122,32 +145,55 @@ def new_run_id() -> str:
 
 
 _WORKFLOW_RUN_COLUMNS = [
-    "run_id", "parent_run_id", "resumes_run_id", "entity_type", "entity_id", "step", "status",
-    "started_at", "finished_at", "exit_code", "command", "tool", "tool_version",
-    "parameter_set", "input_sha256", "output_sha256", "threads", "max_rss_mb",
-    "duration_seconds", "avg_rss_mb", "cpu_seconds",
-    "log_file", "stdout_file", "stderr_file", "error",
-    "executor", "scheduler_job_id", "execution_details", "environment_id",
+    "run_id",
+    "parent_run_id",
+    "resumes_run_id",
+    "entity_type",
+    "entity_id",
+    "step",
+    "status",
+    "started_at",
+    "finished_at",
+    "exit_code",
+    "command",
+    "tool",
+    "tool_version",
+    "parameter_set",
+    "input_sha256",
+    "output_sha256",
+    "threads",
+    "max_rss_mb",
+    "duration_seconds",
+    "avg_rss_mb",
+    "cpu_seconds",
+    "log_file",
+    "stdout_file",
+    "stderr_file",
+    "error",
+    "executor",
+    "scheduler_job_id",
+    "execution_details",
+    "environment_id",
 ]
 
 
 def list_runs(
-        db: Database,
-        *,
-        started_from: str | None = None,
-        started_to: str | None = None,
-        run_id: str | None = None,
-        steps: Iterable[str] = (),
-        statuses: Iterable[str] = (),
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        parent_run_id: str | None = None,
-        resumes_run_id: str | None = None,
-        tool: str | None = None,
-        executor: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        oldest_first: bool = False,
+    db: Database,
+    *,
+    started_from: str | None = None,
+    started_to: str | None = None,
+    run_id: str | None = None,
+    steps: Iterable[str] = (),
+    statuses: Iterable[str] = (),
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    parent_run_id: str | None = None,
+    resumes_run_id: str | None = None,
+    tool: str | None = None,
+    executor: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    oldest_first: bool = False,
 ) -> list[dict[str, Any]]:
     """Return workflow runs matching stable, read-only CLI filters.
 
@@ -225,12 +271,12 @@ def read_log_tail(path: Path, offset: int = 0) -> tuple[str, int]:
 
 
 def follow_run_logs(
-        status_getter: Callable[[], dict[str, Any] | None],
-        logs_root: Path,
-        run_id: str,
-        *,
-        out: TextIO | None = None,
-        poll_interval: float = 1.0,
+    status_getter: Callable[[], dict[str, Any] | None],
+    logs_root: Path,
+    run_id: str,
+    *,
+    out: TextIO | None = None,
+    poll_interval: float = 1.0,
 ) -> int:
     """Stream a run's local stdout/stderr logs to *out* until the run ends.
 
@@ -253,7 +299,9 @@ def follow_run_logs(
         text, offsets[stdout_path] = read_log_tail(stdout_path, offsets[stdout_path])
         if text:
             out.write(text)
-        err_text, offsets[stderr_path] = read_log_tail(stderr_path, offsets[stderr_path])
+        err_text, offsets[stderr_path] = read_log_tail(
+            stderr_path, offsets[stderr_path]
+        )
         for line in err_text.splitlines(keepends=True):
             if not line.endswith("\n"):
                 line += "\n"
@@ -272,8 +320,11 @@ def follow_run_logs(
             if record["status"] != "running":
                 drain()
                 exit_code = record.get("exit_code")
-                print(f"run {run_id} finished: status={record['status']} "
-                      f"exit_code={exit_code if exit_code is not None else '-'}", file=out)
+                print(
+                    f"run {run_id} finished: status={record['status']} "
+                    f"exit_code={exit_code if exit_code is not None else '-'}",
+                    file=out,
+                )
                 out.flush()
                 return 0 if record["status"] == "completed" else 1
             time.sleep(poll_interval)
@@ -290,11 +341,11 @@ def flush_run_log(project: Project, records: Iterable[dict[str, Any]]) -> None:
 
 
 def log_run(
-        db: Database,
-        project: Project,
-        record: dict[str, Any],
-        *,
-        jsonl_buffer: list[dict[str, Any]] | None = None,
+    db: Database,
+    project: Project,
+    record: dict[str, Any],
+    *,
+    jsonl_buffer: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Store a workflow run and append JSONL only after its DB write succeeds.
 
@@ -338,17 +389,17 @@ def start_run(db: Database, record: dict[str, Any]) -> dict[str, Any]:
 
 
 def finish_run(
-        db: Database,
-        project: Project,
-        run_id: str,
-        *,
-        status: str,
-        finished_at: str | None = None,
-        exit_code: int | None = None,
-        error: str | None = None,
-        output_sha256: str | None = None,
-        execution_details: str | None = None,
-        environment_id: str | None = None,
+    db: Database,
+    project: Project,
+    run_id: str,
+    *,
+    status: str,
+    finished_at: str | None = None,
+    exit_code: int | None = None,
+    error: str | None = None,
+    output_sha256: str | None = None,
+    execution_details: str | None = None,
+    environment_id: str | None = None,
 ) -> dict[str, Any]:
     """Finalize a previously started run and append its immutable JSONL record."""
     finished_at = finished_at or now_iso()
@@ -358,8 +409,16 @@ def finish_run(
             "output_sha256=COALESCE(?, output_sha256), "
             "execution_details=COALESCE(?, execution_details), "
             "environment_id=COALESCE(?, environment_id) WHERE run_id=?",
-            (status, finished_at, exit_code, error, output_sha256, execution_details,
-             environment_id, run_id),
+            (
+                status,
+                finished_at,
+                exit_code,
+                error,
+                output_sha256,
+                execution_details,
+                environment_id,
+                run_id,
+            ),
         )
         row = db.conn.execute(
             "SELECT * FROM workflow_runs WHERE run_id=?", (run_id,)
@@ -372,27 +431,27 @@ def finish_run(
 
 
 def run_external_command(
-        db: Database,
-        project: Project,
-        argv: list[str],
-        step: str,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        parameter_set: str | None = None,
-        expected_outputs: Iterable[str | Path] | None = None,
-        cwd: str | Path | None = None,
-        timeout: float | None = None,
-        tool: str | None = None,
-        tool_version: str | None = None,
-        backend: str | None = None,
-        threads: int | None = None,
-        inputs: Iterable[str | Path] = (),
-        extra_details: dict[str, Any] | None = None,
-        stage_inputs: Iterable[str | Path] = (),
-        executor: Any = None,
-        run_id: str | None = None,
-        commands: Iterable[Iterable[str]] | None = None,
-        command_details: Iterable[dict[str, Any]] | None = None,
+    db: Database,
+    project: Project,
+    argv: list[str],
+    step: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    parameter_set: str | None = None,
+    expected_outputs: Iterable[str | Path] | None = None,
+    cwd: str | Path | None = None,
+    timeout: float | None = None,
+    tool: str | None = None,
+    tool_version: str | None = None,
+    backend: str | None = None,
+    threads: int | None = None,
+    inputs: Iterable[str | Path] = (),
+    extra_details: dict[str, Any] | None = None,
+    stage_inputs: Iterable[str | Path] = (),
+    executor: Any = None,
+    run_id: str | None = None,
+    commands: Iterable[Iterable[str]] | None = None,
+    command_details: Iterable[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 
@@ -486,6 +545,7 @@ def run_external_command(
     try:
         if executor is None:
             from operon.execution import get_executor
+
             executor = get_executor(project, backend)
         record["executor"] = executor.describe()
         resolved_stage_inputs: list[Path] = []
@@ -495,7 +555,8 @@ def run_external_command(
                 path = base / path
             resolved_stage_inputs.append(path)
         if getattr(executor, "name", None) == "ssh" and getattr(
-                executor, "remote_root", ""):
+            executor, "remote_root", ""
+        ):
             # A non-shared SSH project needs every declared local input in its
             # remote mirror. Preserve explicit staging for analysis callers and
             # de-duplicate paths without changing their user-facing spelling.
@@ -519,19 +580,28 @@ def run_external_command(
             else:
                 step_stdout, step_stderr, step_run_id = stdout_file, stderr_file, run_id
             result = executor.run(
-                step_argv, cwd=cwd, stdout_path=step_stdout, stderr_path=step_stderr,
-                timeout=timeout, threads=threads, run_id=step_run_id,
+                step_argv,
+                cwd=cwd,
+                stdout_path=step_stdout,
+                stderr_path=step_stderr,
+                timeout=timeout,
+                threads=threads,
+                run_id=step_run_id,
                 stage_inputs=resolved_stage_inputs if step_index == 1 else (),
-                expected_outputs=resolved_outputs if step_index == len(argv_steps) else (),
+                expected_outputs=resolved_outputs
+                if step_index == len(argv_steps)
+                else (),
             )
             step_record = dict(step_details[step_index - 1]) if step_details else {}
-            step_record.update({
-                "index": step_index,
-                "argv": step_argv,
-                "exit_code": result.exit_code,
-                "stdout_file": str(step_stdout),
-                "stderr_file": str(step_stderr),
-            })
+            step_record.update(
+                {
+                    "index": step_index,
+                    "argv": step_argv,
+                    "exit_code": result.exit_code,
+                    "stdout_file": str(step_stdout),
+                    "stderr_file": str(step_stderr),
+                }
+            )
             if result.details.get("environment"):
                 environment = result.details["environment"]
                 with db.transaction():
@@ -540,7 +610,10 @@ def run_external_command(
             stdout_file, stderr_file = step_stdout, step_stderr
             if result.exit_code != 0 or result.error:
                 break
-        record.update(exit_code=result.exit_code, status="completed" if result.exit_code == 0 else "failed")
+        record.update(
+            exit_code=result.exit_code,
+            status="completed" if result.exit_code == 0 else "failed",
+        )
         record["scheduler_job_id"] = result.scheduler_job_id
         # Duck-typed executors may predate the resources field.
         resources = getattr(result, "resources", None)
@@ -556,7 +629,9 @@ def run_external_command(
             details["inputs"] = input_entries
         if extra_details:
             details.update(extra_details)
-        record["execution_details"] = json.dumps(details, ensure_ascii=False, sort_keys=True)
+        record["execution_details"] = json.dumps(
+            details, ensure_ascii=False, sort_keys=True
+        )
         # Slurm probes the compute side inside the job; prefer that document.
         if result.details.get("environment"):
             environment = result.details["environment"]
@@ -581,14 +656,18 @@ def run_external_command(
                     record["error"] = f"expected output missing or empty: {path}"
                     break
     except subprocess.TimeoutExpired:
-        record.update(status="failed", error=f"timeout after {timeout}s", exit_code=None)
+        record.update(
+            status="failed", error=f"timeout after {timeout}s", exit_code=None
+        )
     except OSError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
     except OperonError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
     except Exception as exc:  # noqa: BLE001 - failures are recorded as failed runs and re-raised  # pylint: disable=broad-exception-caught
         record.update(
-            status="failed", error=f"{type(exc).__name__}: {exc}", exit_code=None,
+            status="failed",
+            error=f"{type(exc).__name__}: {exc}",
+            exit_code=None,
         )
     finally:
         if owns_executor and executor is not None:
@@ -614,27 +693,27 @@ def run_external_command(
 
 
 def record_execution_result(
-        db: Database,
-        project: Project,
-        result: Any,
-        *,
-        run_id: str,
-        argv: Iterable[Any],
-        step: str,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        parameter_set: str | None = None,
-        expected_outputs: Iterable[str | Path] | None = None,
-        cwd: str | Path | None = None,
-        tool: str | None = None,
-        tool_version: str | None = None,
-        threads: int | None = None,
-        executor_name: str | None = None,
-        started_at: str | None = None,
-        duration_seconds: float | None = None,
-        stdout_file: str | Path | None = None,
-        stderr_file: str | Path | None = None,
-        extra_details: dict[str, Any] | None = None,
+    db: Database,
+    project: Project,
+    result: Any,
+    *,
+    run_id: str,
+    argv: Iterable[Any],
+    step: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    parameter_set: str | None = None,
+    expected_outputs: Iterable[str | Path] | None = None,
+    cwd: str | Path | None = None,
+    tool: str | None = None,
+    tool_version: str | None = None,
+    threads: int | None = None,
+    executor_name: str | None = None,
+    started_at: str | None = None,
+    duration_seconds: float | None = None,
+    stdout_file: str | Path | None = None,
+    stderr_file: str | Path | None = None,
+    extra_details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Record a command result produced by a batch backend (``run_array``).
 
@@ -680,7 +759,9 @@ def record_execution_result(
     details = dict(result.details)
     if extra_details:
         details.update(extra_details)
-    record["execution_details"] = json.dumps(details, ensure_ascii=False, sort_keys=True)
+    record["execution_details"] = json.dumps(
+        details, ensure_ascii=False, sort_keys=True
+    )
     # Slurm backends probe the compute side inside the job; prefer that document.
     environment = result.details.get("environment")
     if result.exit_code != 0:

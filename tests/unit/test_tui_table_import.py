@@ -54,7 +54,9 @@ def demo_template(tmp_path_factory) -> Project:
 @pytest.fixture
 def project(tmp_path: Path, demo_template: Project) -> Project:
     """Each test gets its own writable copy of the demo project."""
-    return Project.find(helpers.copy_project_tree(demo_template.root, tmp_path / "project"))
+    return Project.find(
+        helpers.copy_project_tree(demo_template.root, tmp_path / "project")
+    )
 
 
 def _csv(path: Path, columns: list[str], rows: list[dict]) -> Path:
@@ -66,18 +68,35 @@ def _csv(path: Path, columns: list[str], rows: list[dict]) -> Path:
 
 
 def _inserts_csv(path: Path) -> Path:
-    return _csv(path, ["organism_id", "scientific_name", "taxon_id"], [
-        {"organism_id": "ORG_000010", "scientific_name": "Tableius gamma",
-         "taxon_id": 100010},
-        {"organism_id": "ORG_000011", "scientific_name": "Tableius delta",
-         "taxon_id": 100011},
-    ])
+    return _csv(
+        path,
+        ["organism_id", "scientific_name", "taxon_id"],
+        [
+            {
+                "organism_id": "ORG_000010",
+                "scientific_name": "Tableius gamma",
+                "taxon_id": 100010,
+            },
+            {
+                "organism_id": "ORG_000011",
+                "scientific_name": "Tableius delta",
+                "taxon_id": 100011,
+            },
+        ],
+    )
 
 
 def _update_csv(path: Path) -> Path:
-    return _csv(path, ["organism_id", "scientific_name"], [
-        {"organism_id": "ORG_000001", "scientific_name": "Syntheticus alpha updated"},
-    ])
+    return _csv(
+        path,
+        ["organism_id", "scientific_name"],
+        [
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Syntheticus alpha updated",
+            },
+        ],
+    )
 
 
 def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
@@ -107,8 +126,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while not predicate():
@@ -172,7 +192,8 @@ def parse_command_text(text: str):
 
 
 def test_table_template_writes_csv_and_xlsx_and_validates(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     csv_result = actions.table_template(project, "organisms", str(tmp_path / "t.csv"))
     assert Path(csv_result["path"]).read_text(encoding="utf-8-sig").splitlines() == [
         "organism_id,scientific_name,taxon_id,taxonomic_rank,taxonomy_source,"
@@ -191,8 +212,10 @@ def test_table_template_writes_csv_and_xlsx_and_validates(
 
 def test_table_import_preview_is_read_only(project: Project, tmp_path: Path) -> None:
     source = _inserts_csv(tmp_path / "rows.csv")
-    before = {table: _count(project, table)
-              for table in ("organisms", "changes", "workflow_runs", "entity_state")}
+    before = {
+        table: _count(project, table)
+        for table in ("organisms", "changes", "workflow_runs", "entity_state")
+    }
     preview = actions.table_import_preview(project, "organisms", str(source))
     assert preview["table"] == "organisms"
     assert preview["insert"] == 2 and preview["update"] == 0
@@ -208,27 +231,38 @@ def test_table_import_preview_is_read_only(project: Project, tmp_path: Path) -> 
 
 
 def test_import_table_inserts_with_audit_state_and_idempotency(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _inserts_csv(tmp_path / "rows.csv")
     result = actions.import_table(
-        project, table="organisms", path=str(source), on_conflict="update")
+        project, table="organisms", path=str(source), on_conflict="update"
+    )
     assert result["inserted"] == 2 and result["updated"] == 0
     assert result["unchanged"] == 0 and result["skipped"] == 0
     assert result["table"] == "organisms" and result["source"] == str(source)
 
-    rows = _query(project, "SELECT * FROM organisms WHERE organism_id IN "
-                           "('ORG_000010', 'ORG_000011') ORDER BY organism_id")
+    rows = _query(
+        project,
+        "SELECT * FROM organisms WHERE organism_id IN "
+        "('ORG_000010', 'ORG_000011') ORDER BY organism_id",
+    )
     assert [row["scientific_name"] for row in rows] == [
-        "Tableius gamma", "Tableius delta"]
+        "Tableius gamma",
+        "Tableius delta",
+    ]
 
-    states = _query(project,
-                    "SELECT entity_id, state FROM entity_state "
-                    "WHERE entity_type='organism' AND entity_id='ORG_000010'")
+    states = _query(
+        project,
+        "SELECT entity_id, state FROM entity_state "
+        "WHERE entity_type='organism' AND entity_id='ORG_000010'",
+    )
     assert states == [{"entity_id": "ORG_000010", "state": "METADATA_VALIDATED"}]
 
-    changes = _query(project,
-                     "SELECT field, reason, evidence, actor FROM changes "
-                     "WHERE object_type='organisms' AND object_id='ORG_000010'")
+    changes = _query(
+        project,
+        "SELECT field, reason, evidence, actor FROM changes "
+        "WHERE object_type='organisms' AND object_id='ORG_000010'",
+    )
     assert len(changes) == 1
     assert changes[0]["field"] is None
     assert changes[0]["reason"] == "table import insert"
@@ -237,63 +271,99 @@ def test_import_table_inserts_with_audit_state_and_idempotency(
 
     audited = _count(project, "changes")
     again = actions.import_table(
-        project, table="organisms", path=str(source), on_conflict="update")
+        project, table="organisms", path=str(source), on_conflict="update"
+    )
     assert again["inserted"] == 0 and again["unchanged"] == 2
     assert _count(project, "changes") == audited, "re-import must not re-audit"
 
 
 def test_import_table_on_conflict_gate_and_policies(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     _inserts_csv(tmp_path / "rows.csv")
-    actions.import_table(project, table="organisms",
-                         path=str(tmp_path / "rows.csv"), on_conflict="update")
+    actions.import_table(
+        project,
+        table="organisms",
+        path=str(tmp_path / "rows.csv"),
+        on_conflict="update",
+    )
 
     # No on_conflict with rows that would change: the CLI's own gate message,
     # and nothing is written.
     audited = _count(project, "changes")
-    with pytest.raises(ValidationError,
-                       match="existing rows would change; pass --on-conflict"):
-        actions.import_table(project, table="organisms",
-                             path=str(_update_csv(tmp_path / "update.csv")))
+    with pytest.raises(
+        ValidationError, match="existing rows would change; pass --on-conflict"
+    ):
+        actions.import_table(
+            project, table="organisms", path=str(_update_csv(tmp_path / "update.csv"))
+        )
     assert _count(project, "changes") == audited
 
     # error: the core's ConflictError; skip: counted, not written.
     with pytest.raises(ConflictError, match="1 existing row\\(s\\) would be changed"):
-        actions.import_table(project, table="organisms",
-                             path=str(tmp_path / "update.csv"), on_conflict="error")
-    skipped = actions.import_table(project, table="organisms",
-                                   path=str(tmp_path / "update.csv"), on_conflict="skip")
+        actions.import_table(
+            project,
+            table="organisms",
+            path=str(tmp_path / "update.csv"),
+            on_conflict="error",
+        )
+    skipped = actions.import_table(
+        project,
+        table="organisms",
+        path=str(tmp_path / "update.csv"),
+        on_conflict="skip",
+    )
     assert skipped["skipped"] == 1 and skipped["updated"] == 0
-    assert _query(project, "SELECT scientific_name FROM organisms "
-                           "WHERE organism_id='ORG_000001'") == [
-        {"scientific_name": "Syntheticus alpha"}]
+    assert _query(
+        project, "SELECT scientific_name FROM organisms WHERE organism_id='ORG_000001'"
+    ) == [{"scientific_name": "Syntheticus alpha"}]
 
-    updated = actions.import_table(project, table="organisms",
-                                   path=str(tmp_path / "update.csv"), on_conflict="update")
+    updated = actions.import_table(
+        project,
+        table="organisms",
+        path=str(tmp_path / "update.csv"),
+        on_conflict="update",
+    )
     assert updated["updated"] == 1
-    changes = _query(project,
-                     "SELECT field, old_value, new_value, reason FROM changes "
-                     "WHERE object_type='organisms' AND object_id='ORG_000001' "
-                     "AND reason='table import update'")
+    changes = _query(
+        project,
+        "SELECT field, old_value, new_value, reason FROM changes "
+        "WHERE object_type='organisms' AND object_id='ORG_000001' "
+        "AND reason='table import update'",
+    )
     assert [(c["field"], c["old_value"], c["new_value"]) for c in changes] == [
-        ("scientific_name", "Syntheticus alpha", "Syntheticus alpha updated")]
+        ("scientific_name", "Syntheticus alpha", "Syntheticus alpha updated")
+    ]
 
-    with pytest.raises(ValidationError, match="on_conflict must be error, skip or update"):
-        actions.import_table(project, table="organisms",
-                             path=str(tmp_path / "update.csv"), on_conflict="bogus")
+    with pytest.raises(
+        ValidationError, match="on_conflict must be error, skip or update"
+    ):
+        actions.import_table(
+            project,
+            table="organisms",
+            path=str(tmp_path / "update.csv"),
+            on_conflict="bogus",
+        )
     with pytest.raises(ValidationError, match="a table input path is required"):
         actions.import_table(project, table="organisms", path="  ")
 
 
 def test_table_import_preview_surfaces_core_errors(
-        project: Project, tmp_path: Path) -> None:
-    unknown = _csv(tmp_path / "unknown.csv", ["organism_id", "mystery"],
-                   [{"organism_id": "ORG_000020", "mystery": "x"}])
+    project: Project, tmp_path: Path
+) -> None:
+    unknown = _csv(
+        tmp_path / "unknown.csv",
+        ["organism_id", "mystery"],
+        [{"organism_id": "ORG_000020", "mystery": "x"}],
+    )
     with pytest.raises(ValidationError, match="unknown field"):
         actions.table_import_preview(project, "organisms", str(unknown))
 
-    dangling = _csv(tmp_path / "dangling.csv", ["sample_id", "organism_id"],
-                    [{"sample_id": "SMP_000099", "organism_id": "ORG_999999"}])
+    dangling = _csv(
+        tmp_path / "dangling.csv",
+        ["sample_id", "organism_id"],
+        [{"sample_id": "SMP_000099", "organism_id": "ORG_999999"}],
+    )
     with pytest.raises(ValidationError, match="organism_id ORG_999999 does not exist"):
         actions.table_import_preview(project, "samples", str(dangling))
 
@@ -310,14 +380,17 @@ def test_home_screen_opens_import_table_modal(project: Project) -> None:
             await _settled(app)
             assert isinstance(app.screen.query_one("#home", HomePanel), HomePanel)
             await _click(pilot, "#home-import-table")
-            await _wait_until(lambda: isinstance(app.screen, ImportTableModal),
-                              "Import table modal to open")
+            await _wait_until(
+                lambda: isinstance(app.screen, ImportTableModal),
+                "Import table modal to open",
+            )
 
     _run(scenario())
 
 
 def test_template_mode_command_text_and_confirm(
-        project: Project, tmp_path: Path, monkeypatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     calls: list[tuple[tuple, dict]] = []
 
     def stub(*args, **kwargs):
@@ -338,9 +411,11 @@ def test_template_mode_command_text_and_confirm(
             (await _q(modal, "#table-mode", Select)).value = "template"
             await _wait_until(
                 lambda: modal.query_one("#table-preview-button", Button).disabled,
-                "preview button to disable in template mode")
+                "preview button to disable in template mode",
+            )
             (await _q(modal, "#table-template-out", Input)).value = str(
-                tmp_path / "t.csv")
+                tmp_path / "t.csv"
+            )
             await pilot.pause()
 
             ns = parse_command_text(modal.command_text())
@@ -349,17 +424,23 @@ def test_template_mode_command_text_and_confirm(
             assert ns.file is None and ns.on_conflict is None
 
             await _click(pilot, "#confirm")
-            await _wait_until(lambda: bool(dismissed), "template modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
-            assert any("template written to" in message
-                       for _severity, message in _notifications(app))
+            await _wait_until(
+                lambda: bool(dismissed),
+                "template modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
+            assert any(
+                "template written to" in message
+                for _severity, message in _notifications(app)
+            )
 
     _run(scenario())
     assert calls == [((project, "samples", str(tmp_path / "t.csv")), {})]
 
 
 def test_import_preview_gate_unlocks_confirm_and_writes(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _inserts_csv(tmp_path / "rows.csv")
 
     async def scenario() -> None:
@@ -375,9 +456,11 @@ def test_import_preview_gate_unlocks_confirm_and_writes(
             (await _q(modal, "#table-file", Input)).value = str(source)
             await _click(pilot, "#table-preview-button")
             await _wait_until(
-                lambda: "2 insert" in _static_text(
-                    modal.query_one("#table-status", Static)),
-                "preview summary")
+                lambda: (
+                    "2 insert" in _static_text(modal.query_one("#table-status", Static))
+                ),
+                "preview summary",
+            )
             table = modal.query_one("#table-preview-table", DataTable)
             assert table.row_count == 2
             assert not (await _q(modal, "#confirm", Button)).disabled
@@ -385,48 +468,67 @@ def test_import_preview_gate_unlocks_confirm_and_writes(
             # Editing the file path re-locks Confirm until the next preview.
             # (The form strips inputs, so a trailing-space edit would be a no-op.)
             (await _q(modal, "#table-file", Input)).value = str(source) + "x"
-            await _wait_until(lambda: modal.query_one("#confirm", Button).disabled,
-                              "form change to lock Confirm")
+            await _wait_until(
+                lambda: modal.query_one("#confirm", Button).disabled,
+                "form change to lock Confirm",
+            )
             # Undoing the edit does not resurrect the discarded preview: a
             # fresh preview is the only way back to Confirm.
             (await _q(modal, "#table-file", Input)).value = str(source)
             await _wait_until(
-                lambda: "run the preview again" in _static_text(
-                    modal.query_one("#table-status", Static)),
-                "invalidation notice after the edit")
+                lambda: (
+                    "run the preview again"
+                    in _static_text(modal.query_one("#table-status", Static))
+                ),
+                "invalidation notice after the edit",
+            )
             assert modal.query_one("#confirm", Button).disabled
             await _click(pilot, "#table-preview-button")
             await _wait_until(
-                lambda: "2 insert" in _static_text(
-                    modal.query_one("#table-status", Static)),
-                "second preview summary")
+                lambda: (
+                    "2 insert" in _static_text(modal.query_one("#table-status", Static))
+                ),
+                "second preview summary",
+            )
             assert not modal.query_one("#confirm", Button).disabled
             # on-conflict may be chosen after the preview without re-running it.
             (await _q(modal, "#table-on-conflict", Select)).value = "update"
             await _wait_until(
                 lambda: not modal.query_one("#confirm", Button).disabled,
-                "on-conflict choice keeps the preview valid")
+                "on-conflict choice keeps the preview valid",
+            )
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
-            assert any("table import (organisms): 2 inserted" in message
-                       for _severity, message in _notifications(app))
+            assert any(
+                "table import (organisms): 2 inserted" in message
+                for _severity, message in _notifications(app)
+            )
 
     _run(scenario())
     assert _count(project, "organisms") == 4  # 2 demo + 2 imported
-    assert _query(project,
-                  "SELECT state FROM entity_state WHERE entity_type='organism' "
-                  "AND entity_id='ORG_000010'") == [{"state": "METADATA_VALIDATED"}]
+    assert _query(
+        project,
+        "SELECT state FROM entity_state WHERE entity_type='organism' "
+        "AND entity_id='ORG_000010'",
+    ) == [{"state": "METADATA_VALIDATED"}]
 
 
 def test_import_command_text_matches_action_kwargs(
-        project: Project, tmp_path: Path, monkeypatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     calls: list[tuple[tuple, dict]] = []
 
     def stub(*args, **kwargs):
         calls.append((args, kwargs))
-        return {"inserted": 0, "updated": 1, "unchanged": 0, "skipped": 0,
-                "table": "organisms", "source": kwargs["path"]}
+        return {
+            "inserted": 0,
+            "updated": 1,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": kwargs["path"],
+        }
 
     monkeypatch.setattr(actions, "import_table", stub)
 
@@ -448,13 +550,28 @@ def test_import_command_text_matches_action_kwargs(
             assert ns.template is None and ns.yes is False
 
             # Drive the real preview through a stubbed action so the gate passes.
-            monkeypatch.setattr(actions, "table_import_preview", lambda *a, **k: {
-                "table": "organisms", "source": "/tmp/rows.csv",
-                "columns": ["organism_id"],
-                "items": [{"key": ("ORG_000001",), "action": "update",
-                           "differences": ["scientific_name"], "row": {},
-                           "current": {}, "supplied_columns": ["scientific_name"]}],
-                "insert": 0, "update": 1, "unchanged": 0})
+            monkeypatch.setattr(
+                actions,
+                "table_import_preview",
+                lambda *a, **k: {
+                    "table": "organisms",
+                    "source": "/tmp/rows.csv",
+                    "columns": ["organism_id"],
+                    "items": [
+                        {
+                            "key": ("ORG_000001",),
+                            "action": "update",
+                            "differences": ["scientific_name"],
+                            "row": {},
+                            "current": {},
+                            "supplied_columns": ["scientific_name"],
+                        }
+                    ],
+                    "insert": 0,
+                    "update": 1,
+                    "unchanged": 0,
+                },
+            )
             await _click(pilot, "#table-preview-button")
             await _wait_until(lambda: modal.preview is not None, "preview to land")
             await _click(pilot, "#confirm")
@@ -462,13 +579,19 @@ def test_import_command_text_matches_action_kwargs(
 
     _run(scenario())
     assert calls[0][0] == (project,)
-    assert calls[0][1] == {"table": "organisms", "path": "/tmp/rows.csv",
-                           "on_conflict": "update"}
+    assert calls[0][1] == {
+        "table": "organisms",
+        "path": "/tmp/rows.csv",
+        "on_conflict": "update",
+    }
 
 
 def test_preview_failure_keeps_confirm_locked(project: Project, tmp_path: Path) -> None:
-    bad = _csv(tmp_path / "bad.csv", ["organism_id", "mystery"],
-               [{"organism_id": "ORG_000020", "mystery": "x"}])
+    bad = _csv(
+        tmp_path / "bad.csv",
+        ["organism_id", "mystery"],
+        [{"organism_id": "ORG_000020", "mystery": "x"}],
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -480,11 +603,15 @@ def test_preview_failure_keeps_confirm_locked(project: Project, tmp_path: Path) 
             (await _q(modal, "#table-file", Input)).value = str(bad)
             await _click(pilot, "#table-preview-button")
             await _wait_until(
-                lambda: "preview failed" in _static_text(
-                    modal.query_one("#table-status", Static)),
-                "preview failure message")
+                lambda: (
+                    "preview failed"
+                    in _static_text(modal.query_one("#table-status", Static))
+                ),
+                "preview failure message",
+            )
             assert "unknown field" in _static_text(
-                modal.query_one("#table-status", Static))
+                modal.query_one("#table-status", Static)
+            )
             assert (await _q(modal, "#confirm", Button)).disabled
 
     _run(scenario())
@@ -495,8 +622,15 @@ def test_stale_preview_discarded(project: Project, tmp_path: Path, monkeypatch) 
 
     def blocking_preview(*args, **kwargs):
         assert gate.wait(timeout=20.0), "test never released the preview"
-        return {"table": "organisms", "source": "x", "columns": [],
-                "items": [], "insert": 0, "update": 0, "unchanged": 0}
+        return {
+            "table": "organisms",
+            "source": "x",
+            "columns": [],
+            "items": [],
+            "insert": 0,
+            "update": 0,
+            "unchanged": 0,
+        }
 
     monkeypatch.setattr(actions, "table_import_preview", blocking_preview)
 
@@ -515,9 +649,12 @@ def test_stale_preview_discarded(project: Project, tmp_path: Path, monkeypatch) 
             (await _q(modal, "#table-file", Input)).value = "/tmp/other.csv"
             gate.set()
             await _wait_until(
-                lambda: "form changed during the preview" in _static_text(
-                    modal.query_one("#table-status", Static)),
-                "stale preview notice")
+                lambda: (
+                    "form changed during the preview"
+                    in _static_text(modal.query_one("#table-status", Static))
+                ),
+                "stale preview notice",
+            )
             assert modal.preview is None
             assert (await _q(modal, "#confirm", Button)).disabled
 
@@ -525,13 +662,15 @@ def test_stale_preview_discarded(project: Project, tmp_path: Path, monkeypatch) 
 
 
 def test_on_conflict_gate_then_conflict_error_then_retry(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _update_csv(tmp_path / "update.csv")
 
     async def pause_until_confirm_enabled(modal) -> None:
         await _wait_until(
             lambda: not modal.query_one("#confirm", Button).disabled,
-            "confirm to re-enable")
+            "confirm to re-enable",
+        )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -544,15 +683,19 @@ def test_on_conflict_gate_then_conflict_error_then_retry(
             await _click(pilot, "#table-preview-button")
             await _wait_until(lambda: modal.preview is not None, "preview to land")
             assert "would change" in _static_text(
-                modal.query_one("#table-status", Static))
+                modal.query_one("#table-status", Static)
+            )
 
             # Blank on-conflict with rows that would change: the CLI's gate
             # message inline, no worker started.
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "existing rows would change; pass --on-conflict"
-                        in _static_text(modal.query_one("#modal-error", Static)),
-                "on-conflict gate error")
+                lambda: (
+                    "existing rows would change; pass --on-conflict"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "on-conflict gate error",
+            )
             assert app.screen is modal
 
             # error: the core ConflictError lands inline; the modal stays open.
@@ -560,9 +703,12 @@ def test_on_conflict_gate_then_conflict_error_then_retry(
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "would be changed" in _static_text(
-                    modal.query_one("#modal-error", Static)),
-                "conflict error")
+                lambda: (
+                    "would be changed"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "conflict error",
+            )
             assert app.screen is modal
 
             # Choosing update re-enables the still-valid preview: retry applies.
@@ -572,9 +718,9 @@ def test_on_conflict_gate_then_conflict_error_then_retry(
             await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
 
     _run(scenario())
-    assert _query(project, "SELECT scientific_name FROM organisms "
-                           "WHERE organism_id='ORG_000001'") == [
-        {"scientific_name": "Syntheticus alpha updated"}]
+    assert _query(
+        project, "SELECT scientific_name FROM organisms WHERE organism_id='ORG_000001'"
+    ) == [{"scientific_name": "Syntheticus alpha updated"}]
 
 
 def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> None:
@@ -584,8 +730,14 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
     def blocking_import(*args, **kwargs):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"inserted": 2, "updated": 0, "unchanged": 0, "skipped": 0,
-                "table": "organisms", "source": kwargs["path"]}
+        return {
+            "inserted": 2,
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": kwargs["path"],
+        }
 
     monkeypatch.setattr(actions, "import_table", blocking_import)
 
@@ -597,9 +749,19 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
             app.push_screen(modal)
             await _push(pilot, modal, "#table-file")
             (await _q(modal, "#table-file", Input)).value = "/tmp/rows.csv"
-            monkeypatch.setattr(actions, "table_import_preview", lambda *a, **k: {
-                "table": "organisms", "source": "x", "columns": [],
-                "items": [], "insert": 2, "update": 0, "unchanged": 0})
+            monkeypatch.setattr(
+                actions,
+                "table_import_preview",
+                lambda *a, **k: {
+                    "table": "organisms",
+                    "source": "x",
+                    "columns": [],
+                    "items": [],
+                    "insert": 2,
+                    "update": 0,
+                    "unchanged": 0,
+                },
+            )
             await _click(pilot, "#table-preview-button")
             await _wait_until(lambda: modal.preview is not None, "preview to land")
             await _click(pilot, "#confirm")
@@ -607,18 +769,27 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
 
             # A real Cancel click is refused while the import runs (ODR-43
             # guard): the modal stays open, the worker keeps running.
-            await _wait_until(started.is_set, "import to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "import to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _click(pilot, "#cancel")
             await _wait_until(
-                lambda: any(severity == "warning" and "cannot be interrupted" in m
-                            for severity, m in _notifications(app)),
-                "refusal notification")
+                lambda: any(
+                    severity == "warning" and "cannot be interrupted" in m
+                    for severity, m in _notifications(app)
+                ),
+                "refusal notification",
+            )
             assert app.screen is modal
 
             released.set()
-            await _wait_until(lambda: app.screen is not modal, "modal to close",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: app.screen is not modal,
+                "modal to close",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     try:
         _run(scenario())
@@ -631,8 +802,14 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
 
     def blocking_import(*args, **kwargs):
         released.wait(HANDOFF_TIMEOUT)
-        return {"inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
-                "table": "organisms", "source": kwargs["path"]}
+        return {
+            "inserted": 1,
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": kwargs["path"],
+        }
 
     monkeypatch.setattr(actions, "import_table", blocking_import)
 
@@ -644,9 +821,19 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
             app.push_screen(modal)
             await _push(pilot, modal, "#table-file")
             (await _q(modal, "#table-file", Input)).value = "/tmp/rows.csv"
-            monkeypatch.setattr(actions, "table_import_preview", lambda *a, **k: {
-                "table": "organisms", "source": "x", "columns": [],
-                "items": [], "insert": 1, "update": 0, "unchanged": 0})
+            monkeypatch.setattr(
+                actions,
+                "table_import_preview",
+                lambda *a, **k: {
+                    "table": "organisms",
+                    "source": "x",
+                    "columns": [],
+                    "items": [],
+                    "insert": 1,
+                    "update": 0,
+                    "unchanged": 0,
+                },
+            )
             await _click(pilot, "#table-preview-button")
             await _wait_until(lambda: modal.preview is not None, "preview to land")
             await _click(pilot, "#confirm")
@@ -657,11 +844,25 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
             app.pop_screen()
             await pilot.pause()
             with pytest.raises(Exception):
-                modal._action_done({"inserted": 1, "updated": 0, "unchanged": 0,
-                                    "skipped": 0, "table": "organisms"})
-            modal.apply_from_worker(modal._action_done,
-                                    {"inserted": 1, "updated": 0, "unchanged": 0,
-                                     "skipped": 0, "table": "organisms"})
+                modal._action_done(
+                    {
+                        "inserted": 1,
+                        "updated": 0,
+                        "unchanged": 0,
+                        "skipped": 0,
+                        "table": "organisms",
+                    }
+                )
+            modal.apply_from_worker(
+                modal._action_done,
+                {
+                    "inserted": 1,
+                    "updated": 0,
+                    "unchanged": 0,
+                    "skipped": 0,
+                    "table": "organisms",
+                },
+            )
             await pilot.pause()
             assert app.is_running
 
@@ -686,13 +887,19 @@ def test_modal_layout_contains_controls(project: Project) -> None:
             panes = [widget for widget in box.children if widget.display]
             for pane in panes:
                 assert pane.region.y >= box.region.y
-                assert pane.region.y + pane.region.height <= \
-                    box.region.y + box.region.height
+                assert (
+                    pane.region.y + pane.region.height
+                    <= box.region.y + box.region.height
+                )
             for index, first in enumerate(panes):
-                for second in panes[index + 1:]:
+                for second in panes[index + 1 :]:
                     a, b = first.region, second.region
-                    assert not (a.x < b.x + b.width and b.x < a.x + a.width
-                                and a.y < b.y + b.height and b.y < a.y + a.height)
+                    assert not (
+                        a.x < b.x + b.width
+                        and b.x < a.x + a.width
+                        and a.y < b.y + b.height
+                        and b.y < a.y + a.height
+                    )
             table = modal.query_one("#table-preview-table", DataTable)
             assert table.region.height >= 5
 
@@ -705,7 +912,8 @@ def test_modal_layout_contains_controls(project: Project) -> None:
 
 
 def test_confirm_gates_require_template_output_and_fresh_preview(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     """confirm()'s inline gates: template output path, fresh preview, file path."""
     source = _inserts_csv(tmp_path / "rows.csv")
 
@@ -723,7 +931,8 @@ def test_confirm_gates_require_template_output_and_fresh_preview(
             modal.confirm()
             await pilot.pause()
             assert "run the preview first" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
 
             # Preview, then clear the file input: the path is required again.
             (await _q(modal, "#table-file", Input)).value = str(source)
@@ -734,7 +943,8 @@ def test_confirm_gates_require_template_output_and_fresh_preview(
             modal.confirm()
             await pilot.pause()
             assert "a table input path is required" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
 
             # Preview with an empty file path: the button names the input.
             (await _q(modal, "#table-file", Input)).value = ""
@@ -742,7 +952,8 @@ def test_confirm_gates_require_template_output_and_fresh_preview(
             await _click(pilot, "#table-preview-button")
             await pilot.pause()
             assert "a table input path is required" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
 
             # Template mode without an output path: --template is required.
             (await _q(modal, "#table-mode", Select)).value = "template"
@@ -750,6 +961,7 @@ def test_confirm_gates_require_template_output_and_fresh_preview(
             modal.confirm()
             await pilot.pause()
             assert "a template output path is required" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
 
     _run(scenario())

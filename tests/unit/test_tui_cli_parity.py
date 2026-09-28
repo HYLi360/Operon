@@ -303,7 +303,6 @@ async def _push(pilot, modal, selector: str | None = None) -> None:
         return
 
 
-
 async def _q(modal, selector: str, *types):
     """Query a widget inside a modal, waiting until compose has created it.
 
@@ -325,12 +324,14 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     produces, and a cycle count that is generous on a fast machine runs out there
     (ODR-27).
     """
+
     def composed() -> list:
         return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
 
     try:
-        await _wait_until(lambda: len(composed()) >= count,
-                          f"{count} {selector} rows with {child}")
+        await _wait_until(
+            lambda: len(composed()) >= count, f"{count} {selector} rows with {child}"
+        )
     except TimeoutError as error:
         raise AssertionError(
             f"{selector} rows with {child}: saw {len(composed())}, wanted {count}"
@@ -560,7 +561,9 @@ def test_analyze_modal_command_text_matches_action_kwargs(
             ns = parse_command_text(modal.command_text())
             assert ns.backend == "slurm"
             modal.confirm()
-            await _wait_until(lambda: len(dismissed) == 2, "second analysis modal dismissed")
+            await _wait_until(
+                lambda: len(dismissed) == 2, "second analysis modal dismissed"
+            )
 
     _run(scenario())
     assert dismissed == [payload, payload]
@@ -698,10 +701,14 @@ def test_run_external_modal_command_text_matches_action_kwargs(
             app.push_screen(modal, dismissed.append)
             await pilot.pause()
             # Empty form: the preview keeps the CLI shape with placeholders.
-            assert modal.command_text() == "operon run-external --step '…' --command '…'"
+            assert (
+                modal.command_text() == "operon run-external --step '…' --command '…'"
+            )
 
             modal.query_one("#external-step", Input).value = "busco"
-            modal.query_one("#external-command", Input).value = "busco -i in.fa -o out -m genome"
+            modal.query_one(
+                "#external-command", Input
+            ).value = "busco -i in.fa -o out -m genome"
             modal.query_one("#external-entity-type", Select).value = "assembly"
             modal.query_one("#external-entity-id", Input).value = "ASM_000001"
             modal.query_one("#external-tool", Input).value = "busco"
@@ -729,8 +736,11 @@ def test_run_external_modal_command_text_matches_action_kwargs(
             assert ns.backend == "slurm"
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "run-external modal dismissed",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "run-external modal dismissed",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     _run(scenario())
     assert dismissed == [payload]
@@ -797,8 +807,9 @@ def test_add_modal_command_text_matches_action_kwargs(
             assert ns.field == ["organism_id=ORG_000001", "note=from the TUI"]
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "add modal dismissed",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed), "add modal dismissed", timeout=HANDOFF_TIMEOUT
+            )
 
     _run(scenario())
     assert dismissed == [payload]
@@ -820,8 +831,12 @@ def test_add_accession_modal_command_text_matches_action_kwargs(
     from operon.tui.screens.entities import AddAccessionModal
 
     payload = {
-        "internal_type": "assembly", "internal_id": "ASM_000001",
-        "namespace": "LAB", "accession": "A-9", "version": "3", "is_primary": 1,
+        "internal_type": "assembly",
+        "internal_id": "ASM_000001",
+        "namespace": "LAB",
+        "accession": "A-9",
+        "version": "3",
+        "is_primary": 1,
     }
     calls = spy_action(monkeypatch, "add_accession", payload)
     dismissed: list = []
@@ -852,8 +867,11 @@ def test_add_accession_modal_command_text_matches_action_kwargs(
             assert ns.primary is True
 
             modal.confirm()
-            await _wait_until(lambda: bool(dismissed), "add-accession modal dismissed",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "add-accession modal dismissed",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     _run(scenario())
     assert dismissed == [payload]
@@ -897,7 +915,10 @@ def test_next_id_modal_command_text_matches_action_kwargs(
             assert ns.entity_type == "file"
             modal.confirm()
             await _wait_until(
-                lambda: "FIL_000123" in _static_text(modal.query_one("#nextid-result", Static)),
+                lambda: (
+                    "FIL_000123"
+                    in _static_text(modal.query_one("#nextid-result", Static))
+                ),
                 "reserved ID to render",
             )
             assert modal.query_one("#confirm").disabled
@@ -1188,10 +1209,17 @@ def test_classify_modal_command_text_matches_action_kwargs(
     from operon.tui.screens.classify import ClassifyModal
 
     payload = {
-        "profile": "bhlh_v1", "profile_sha256": "sha", "files": 1,
-        "files_without_sequences": 0, "ignored_completed_jobs": 0, "sequences": 5,
-        "label_counts": {"A": 3, "U": 2}, "unlabeled": 0, "labels_written": 5,
-        "labels_removed": 0, "run_id": "WF_0001",
+        "profile": "bhlh_v1",
+        "profile_sha256": "sha",
+        "files": 1,
+        "files_without_sequences": 0,
+        "ignored_completed_jobs": 0,
+        "sequences": 5,
+        "label_counts": {"A": 3, "U": 2},
+        "unlabeled": 0,
+        "labels_written": 5,
+        "labels_removed": 0,
+        "run_id": "WF_0001",
     }
     calls = spy_action(monkeypatch, "run_classify", payload)
 
@@ -1199,8 +1227,9 @@ def test_classify_modal_command_text_matches_action_kwargs(
         app = OperonApp(project)
         async with app.run_test(size=(160, 50)) as pilot:
             await _settled(app)
-            modal = ClassifyModal(project, "bhlh_v1", {"applies_to": {}, "sources": {},
-                                                      "rules": []})
+            modal = ClassifyModal(
+                project, "bhlh_v1", {"applies_to": {}, "sources": {}, "rules": []}
+            )
             await _push(pilot, modal, "#classify-summary")
             ns = parse_command_text(modal.command_text())
             assert ns.profile == "bhlh_v1"
@@ -1231,7 +1260,12 @@ def test_extract_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.derived_ops import ExtractModal
 
-    payload = {"extracted": 2, "excluded": 1, "output": "/tmp/out.faa", "manifest": None}
+    payload = {
+        "extracted": 2,
+        "excluded": 1,
+        "output": "/tmp/out.faa",
+        "manifest": None,
+    }
     calls = spy_action(monkeypatch, "extract_domains", payload)
 
     async def scenario() -> None:
@@ -1266,9 +1300,16 @@ def test_extract_modal_command_text_matches_action_kwargs(
     args, kwargs = calls[0]
     assert args == (project,)
     assert kwargs == {
-        "file_id": "FIL_000001", "out": "/tmp/domains.faa", "analysis": "cdd",
-        "regions_tsv": None, "flank": 7, "min_length": 40, "best_only": False,
-        "subject_like": "bHLH%", "evalue_max": 1e-5, "manifest": "/tmp/domains.tsv",
+        "file_id": "FIL_000001",
+        "out": "/tmp/domains.faa",
+        "analysis": "cdd",
+        "regions_tsv": None,
+        "flank": 7,
+        "min_length": 40,
+        "best_only": False,
+        "subject_like": "bHLH%",
+        "evalue_max": 1e-5,
+        "manifest": "/tmp/domains.tsv",
     }
 
 
@@ -1282,8 +1323,13 @@ def test_select_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.derived_ops import SelectSequencesModal
 
-    payload = {"total": 5, "selected": 2, "excluded": 3, "output": "/tmp/sel.faa",
-               "manifest": None}
+    payload = {
+        "total": 5,
+        "selected": 2,
+        "excluded": 3,
+        "output": "/tmp/sel.faa",
+        "manifest": None,
+    }
     calls = spy_action(monkeypatch, "select_sequences", payload)
 
     async def scenario() -> None:
@@ -1318,9 +1364,16 @@ def test_select_modal_command_text_matches_action_kwargs(
     args, kwargs = calls[0]
     assert args == (project,)
     assert kwargs == {
-        "file_id": "FIL_000001", "out": "/tmp/sel.faa", "analyses": ["cdd", "pfam"],
-        "subject_like": "bHLH%", "evalue_max": None, "min_span": 20, "hit_type": None,
-        "require_hit": False, "entity_type": "annotation", "entity_id": "ANN_000001",
+        "file_id": "FIL_000001",
+        "out": "/tmp/sel.faa",
+        "analyses": ["cdd", "pfam"],
+        "subject_like": "bHLH%",
+        "evalue_max": None,
+        "min_span": 20,
+        "hit_type": None,
+        "require_hit": False,
+        "entity_type": "annotation",
+        "entity_id": "ANN_000001",
         "manifest": None,
     }
 
@@ -1342,8 +1395,9 @@ def test_adopt_modal_command_text_matches_action_kwargs(
         app = OperonApp(project)
         async with app.run_test(size=(160, 60)) as pilot:
             await _settled(app)
-            modal = AdoptModal(project, path="/tmp/derived.faa",
-                               derived_from=["FIL_000001"])
+            modal = AdoptModal(
+                project, path="/tmp/derived.faa", derived_from=["FIL_000001"]
+            )
             await _push(pilot, modal, "#adopt-preview-button")
             (await _q(modal, "#adopt-entity-type", Select)).value = "annotation"
             (await _q(modal, "#adopt-entity-id", Input)).value = "ANN_000001"
@@ -1369,11 +1423,18 @@ def test_adopt_modal_command_text_matches_action_kwargs(
     args, kwargs = calls[0]
     assert args == (project,)
     assert kwargs["actor"] == "tester"
-    assert kwargs["items"] == [{
-        "path": "/tmp/derived.faa", "entity_type": "annotation", "entity_id": "ANN_000001",
-        "role": "selected_proteins", "format": "fasta", "compression": "none",
-        "derived_from": ["FIL_000001"], "workflow_run_id": "WF_0001",
-    }]
+    assert kwargs["items"] == [
+        {
+            "path": "/tmp/derived.faa",
+            "entity_type": "annotation",
+            "entity_id": "ANN_000001",
+            "role": "selected_proteins",
+            "format": "fasta",
+            "compression": "none",
+            "derived_from": ["FIL_000001"],
+            "workflow_run_id": "WF_0001",
+        }
+    ]
 
 
 def test_fanout_modal_command_text_matches_action_kwargs(
@@ -1386,16 +1447,32 @@ def test_fanout_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.derived_ops import FanoutModal
 
-    preview = {"dry_run": True, "units": [
-        {"unit": "unitA", "sequences": 2, "role": "units:unitA", "status": "would_create"},
-    ], "duplicate_rows": 0}
+    preview = {
+        "dry_run": True,
+        "units": [
+            {
+                "unit": "unitA",
+                "sequences": 2,
+                "role": "units:unitA",
+                "status": "would_create",
+            },
+        ],
+        "duplicate_rows": 0,
+    }
     calls: list[tuple[tuple, dict]] = []
 
     def stub(*args, **kwargs):
         calls.append((args, kwargs))
-        return preview if kwargs.get("dry_run") else {
-            "created": 1, "reused": 0, "run_id": "WF_0002", "units": preview["units"],
-        }
+        return (
+            preview
+            if kwargs.get("dry_run")
+            else {
+                "created": 1,
+                "reused": 0,
+                "run_id": "WF_0002",
+                "units": preview["units"],
+            }
+        )
 
     monkeypatch.setattr(actions, "fanout", stub)
 
@@ -1437,13 +1514,19 @@ def test_fanout_modal_command_text_matches_action_kwargs(
     expected = {
         "assignments_file_id": "FIL_000002",
         "source_file_ids": ["FIL_000001", "FIL_000004"],
-        "entity_type": "annotation", "entity_id": "ANN_000001",
-        "role_prefix": "units", "unit_column": "family", "seqid_column": "seqid",
-        "parent_run_id": "WF_0001", "actor": "tester", "dry_run": False,
+        "entity_type": "annotation",
+        "entity_id": "ANN_000001",
+        "role_prefix": "units",
+        "unit_column": "family",
+        "seqid_column": "seqid",
+        "parent_run_id": "WF_0001",
+        "actor": "tester",
+        "dry_run": False,
     }
     assert run_kwargs == expected
-    assert {key: value for key, value in preview_kwargs.items() if key != "dry_run"} == \
-        {key: value for key, value in expected.items() if key != "dry_run"}
+    assert {
+        key: value for key, value in preview_kwargs.items() if key != "dry_run"
+    } == {key: value for key, value in expected.items() if key != "dry_run"}
 
 
 def test_taxonomy_import_modal_command_text_matches_action_kwargs(
@@ -1457,8 +1540,10 @@ def test_taxonomy_import_modal_command_text_matches_action_kwargs(
     from operon.tui.screens.taxonomy import TaxonomyImportModal
 
     payload = {
-        "taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
-        "node_count": 3, "reused": False,
+        "taxonomy_snapshot_id": "TAX_000001",
+        "taxonomy_version": "cov.1",
+        "node_count": 3,
+        "reused": False,
     }
     calls = spy_action(monkeypatch, "import_taxonomy", payload)
     dismissed: list = []
@@ -1470,7 +1555,9 @@ def test_taxonomy_import_modal_command_text_matches_action_kwargs(
             modal = TaxonomyImportModal(project)
             app.push_screen(modal, dismissed.append)
             await _push(pilot, modal, "#taxonomy-import-input")
-            (await _q(modal, "#taxonomy-import-input", Input)).value = "/tmp/taxonomy.jsonl"
+            (
+                await _q(modal, "#taxonomy-import-input", Input)
+            ).value = "/tmp/taxonomy.jsonl"
             (await _q(modal, "#taxonomy-import-version", Input)).value = "cov.1"
             await pilot.pause()
 
@@ -1536,8 +1623,11 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
 
     _seed_taxonomy(project, tmp_path)
     payload = {
-        "reference_set_id": "cov@cov.1", "profile_name": "cov",
-        "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
+        "reference_set_id": "cov@cov.1",
+        "profile_name": "cov",
+        "taxonomy_version": "cov.1",
+        "family_count": 1,
+        "genus_count": 1,
         "reused": False,
     }
     calls = spy_action(monkeypatch, "compile_reference_set", payload)
@@ -1551,7 +1641,9 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
             app.push_screen(modal, dismissed.append)
             await _push(pilot, modal, "#taxonomy-compile-profile")
             (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
-            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            (
+                await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            ).value = "cov.1"
             await pilot.pause()
 
             ns = parse_command_text(modal.command_text())
@@ -1624,8 +1716,12 @@ def test_backup_verify_modal_command_text_matches_action_kwargs(
     from operon.tui.screens.backup import VerifyBackupModal
 
     payload = {
-        "path": str(tmp_path / "backup"), "scope": "control", "checked": 2,
-        "unexpected": 0, "ok": True, "failures": [],
+        "path": str(tmp_path / "backup"),
+        "scope": "control",
+        "checked": 2,
+        "unexpected": 0,
+        "ok": True,
+        "failures": [],
     }
     calls = spy_action(monkeypatch, "verify_backup", payload)
 
@@ -1637,9 +1733,13 @@ def test_backup_verify_modal_command_text_matches_action_kwargs(
             app.push_screen(modal)
             await _push(pilot, modal, "#backup-verify-input")
             assert modal.command_text() == "operon backup verify --input '…'"
-            (await _q(modal, "#backup-verify-input", Input)).value = str(tmp_path / "backup")
+            (await _q(modal, "#backup-verify-input", Input)).value = str(
+                tmp_path / "backup"
+            )
             await pilot.pause()
-            assert parse_command_text(modal.command_text()).input == str(tmp_path / "backup")
+            assert parse_command_text(modal.command_text()).input == str(
+                tmp_path / "backup"
+            )
 
             modal.confirm()
             await _wait_until(lambda: len(calls) == 1, "backup verify call")
@@ -1659,16 +1759,25 @@ def test_audit_parity_add(
     capsys: pytest.CaptureFixture,
 ) -> None:
     cli_project, tui_project = _twin_projects(tmp_path, demo_template)
-    rc = cli_main([
-        "--project", str(cli_project.root), "add", "organism",
-        "--id", "ORG_000881",
-        "--field", "scientific_name=Audit Parity",
-        "--field", "taxonomy_source=NCBI",
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "add",
+            "organism",
+            "--id",
+            "ORG_000881",
+            "--field",
+            "scientific_name=Audit Parity",
+            "--field",
+            "taxonomy_source=NCBI",
+        ]
+    )
     capsys.readouterr()
     assert rc == 0
     result = actions.add_record(
-        tui_project, "organism",
+        tui_project,
+        "organism",
         {"scientific_name": "Audit Parity", "taxonomy_source": "NCBI"},
         record_id="ORG_000881",
     )
@@ -1686,9 +1795,14 @@ def test_export_qc_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.entities import ExportQcModal
 
-    payload = {"path": "/tmp/qc_results.wide.tsv", "directory": "/tmp",
-               "entity_type": "organism", "include_retired": True,
-               "files": [], "rows": 7}
+    payload = {
+        "path": "/tmp/qc_results.wide.tsv",
+        "directory": "/tmp",
+        "entity_type": "organism",
+        "include_retired": True,
+        "files": [],
+        "rows": 7,
+    }
     calls = spy_action(monkeypatch, "export_qc_report", payload)
     dismissed: list = []
 
@@ -1701,7 +1815,10 @@ def test_export_qc_modal_command_text_matches_action_kwargs(
             await _push(pilot, modal, "#qc-export-type")
             # The entity type the screen was opened on prefills the filter and
             # --export is what the dialog is for; the checkbox starts off.
-            assert modal.command_text() == "operon report qc --entity-type organism --export"
+            assert (
+                modal.command_text()
+                == "operon report qc --entity-type organism --export"
+            )
             namespace = parse_command_text(modal.command_text())
             assert namespace.entity_type == "organism"
             assert namespace.export is True
@@ -1735,7 +1852,9 @@ def test_export_qc_report_matches_the_cli_bytes(
     aggregate = project.qc_root / "aggregate"
     assert cli_main(["--project", str(project.root), "report", "qc", "--export"]) == 0
     capsys.readouterr()
-    cli_bytes = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    cli_bytes = {
+        entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))
+    }
     assert set(cli_bytes) == {"qc_results.tsv", "qc_results.wide.tsv"}
 
     shutil.rmtree(aggregate)
@@ -1747,14 +1866,29 @@ def test_export_qc_report_matches_the_cli_bytes(
         assert (aggregate / name).read_bytes() == blob, name
 
     # The entity-type filter is the CLI flag: same bytes again, filtered.
-    assert cli_main([
-        "--project", str(project.root), "report", "qc", "--export",
-        "--entity-type", "organism",
-    ]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(project.root),
+                "report",
+                "qc",
+                "--export",
+                "--entity-type",
+                "organism",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
-    filtered = {entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))}
+    filtered = {
+        entry.name: entry.read_bytes() for entry in sorted(aggregate.glob("*.tsv"))
+    }
     shutil.rmtree(aggregate)
-    assert actions.export_qc_report(project, entity_type="organism")["entity_type"] == "organism"
+    assert (
+        actions.export_qc_report(project, entity_type="organism")["entity_type"]
+        == "organism"
+    )
     for name, blob in filtered.items():
         assert (aggregate / name).read_bytes() == blob, name
     assert filtered["qc_results.tsv"] != cli_bytes["qc_results.tsv"], (
@@ -1773,8 +1907,13 @@ def test_export_metadata_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.entities import ExportMetadataModal
 
-    payload = {"path": str(tmp_path / "meta"), "include_retired": True,
-               "tables": 5, "rows": 9, "names": ["organisms.tsv"]}
+    payload = {
+        "path": str(tmp_path / "meta"),
+        "include_retired": True,
+        "tables": 5,
+        "rows": 9,
+        "names": ["organisms.tsv"],
+    }
     calls = spy_action(monkeypatch, "export_metadata_report", payload)
     dismissed: list = []
 
@@ -1858,9 +1997,19 @@ def test_export_metadata_report_matches_the_cli_bytes(
     """The export is the CLI's own: same file set, same bytes per file."""
     cli_out = tmp_path / "cli"
     tui_out = tmp_path / "tui"
-    assert cli_main([
-        "--project", str(project.root), "report", "metadata", "--output", str(cli_out),
-    ]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(project.root),
+                "report",
+                "metadata",
+                "--output",
+                str(cli_out),
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
     result = actions.export_metadata_report(project, output=str(tui_out))
     assert result["tables"] > 0
@@ -1870,13 +2019,24 @@ def test_export_metadata_report_matches_the_cli_bytes(
 
     cli_all = tmp_path / "cli-all"
     tui_all = tmp_path / "tui-all"
-    assert cli_main([
-        "--project", str(project.root), "report", "metadata",
-        "--output", str(cli_all), "--include-retired",
-    ]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(project.root),
+                "report",
+                "metadata",
+                "--output",
+                str(cli_all),
+                "--include-retired",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
     result_all = actions.export_metadata_report(
-        project, output=str(tui_all), include_retired=True)
+        project, output=str(tui_all), include_retired=True
+    )
     assert result_all["include_retired"] is True
     _assert_same_export(cli_all, tui_all)
 
@@ -1891,8 +2051,13 @@ def test_set_state_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.entities import SetStateModal
 
-    payload = {"entity_type": "organism", "entity_id": "ORG_000001",
-               "state": "DISCOVERED", "previous_state": "", "forced": False}
+    payload = {
+        "entity_type": "organism",
+        "entity_id": "ORG_000001",
+        "state": "DISCOVERED",
+        "previous_state": "",
+        "forced": False,
+    }
     calls = spy_action(monkeypatch, "set_state", payload)
     dismissed: list = []
 
@@ -1920,7 +2085,8 @@ def test_set_state_modal_command_text_matches_action_kwargs(
             (await _q(modal, "#set-state-message", Input)).value = "audit parity"
             await pilot.pause()
             assert "not a standard transition" in _static_text(
-                await _q(modal, "#set-state-hint", Static))
+                await _q(modal, "#set-state-hint", Static)
+            )
 
             (await _q(modal, "#set-state-force", Checkbox)).value = True
             await pilot.pause()
@@ -1929,7 +2095,8 @@ def test_set_state_modal_command_text_matches_action_kwargs(
             assert namespace.message == "audit parity"
             assert namespace.force is True
             assert "recorded in the audit trail" in _static_text(
-                await _q(modal, "#set-state-hint", Static))
+                await _q(modal, "#set-state-hint", Static)
+            )
 
             modal.confirm()
             await _wait_until(lambda: len(calls) == 1, "set-state call")
@@ -1952,11 +2119,14 @@ def test_set_state_modal_reports_an_illegal_transition_inline(
     from operon.tui.screens.entities import SetStateModal
 
     actions.add_record(
-        project, "organism",
+        project,
+        "organism",
         {"scientific_name": "Illegal State", "taxonomy_source": "NCBI"},
         record_id="ORG_000884",
     )
-    actions.set_state(project, "organism", "ORG_000884", "ACCEPTED", "fixture", force=True)
+    actions.set_state(
+        project, "organism", "ORG_000884", "ACCEPTED", "fixture", force=True
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -1972,7 +2142,9 @@ def test_set_state_modal_reports_an_illegal_transition_inline(
             # Without force the run reaches the core, which refuses the
             # transition; the message lands inline and the form stays open.
             modal.confirm()
-            await _wait_until(lambda: "use --force" in _static_text(error), "core refusal")
+            await _wait_until(
+                lambda: "use --force" in _static_text(error), "core refusal"
+            )
             assert _entity_state(project, "ORG_000884") == "ACCEPTED"
 
             # The deliberate second step: tick force and the same form goes through.
@@ -2034,7 +2206,8 @@ def test_set_state_modal_requires_the_message(
             await pilot.pause()
             assert calls == []
             assert "message is required" in _static_text(
-                await _q(modal, "#modal-error", Static))
+                await _q(modal, "#modal-error", Static)
+            )
 
     _run(scenario())
 
@@ -2046,27 +2219,49 @@ def test_audit_parity_set_state(
 ) -> None:
     cli_project, tui_project = _twin_projects(tmp_path, demo_template)
     fields = ["scientific_name=State Parity", "taxonomy_source=NCBI"]
-    rc = cli_main([
-        "--project", str(cli_project.root), "add", "organism", "--id", "ORG_000882",
-        *[part for field in fields for part in ("--field", field)],
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "add",
+            "organism",
+            "--id",
+            "ORG_000882",
+            *[part for field in fields for part in ("--field", field)],
+        ]
+    )
     assert rc == 0
     capsys.readouterr()
-    rc = cli_main([
-        "--project", str(cli_project.root), "set-state",
-        "--entity-type", "organism", "--entity-id", "ORG_000882",
-        "--state", "DISCOVERED", "--message", "audit parity",
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "set-state",
+            "--entity-type",
+            "organism",
+            "--entity-id",
+            "ORG_000882",
+            "--state",
+            "DISCOVERED",
+            "--message",
+            "audit parity",
+        ]
+    )
     assert rc == 0
     capsys.readouterr()
 
     actions.add_record(
-        tui_project, "organism",
+        tui_project,
+        "organism",
         {"scientific_name": "State Parity", "taxonomy_source": "NCBI"},
         record_id="ORG_000882",
     )
     result = actions.set_state(
-        tui_project, "organism", "ORG_000882", "DISCOVERED", "audit parity",
+        tui_project,
+        "organism",
+        "ORG_000882",
+        "DISCOVERED",
+        "audit parity",
     )
     assert result["state"] == "DISCOVERED"
     assert result["previous_state"] == "METADATA_VALIDATED"
@@ -2085,20 +2280,36 @@ def test_import_table_modal_command_text_matches_action_kwargs(
     from operon.tui.screens.table_import import ImportTableModal
 
     preview = {
-        "table": "organisms", "source": "/tmp/organisms.csv",
+        "table": "organisms",
+        "source": "/tmp/organisms.csv",
         "columns": ["organism_id", "scientific_name"],
-        "items": [{
-            "key": ("ORG_000010",), "action": "insert", "differences": [],
-            "row": {"organism_id": "ORG_000010", "scientific_name": "Gamma"},
-            "current": None,
-            "supplied_columns": ["organism_id", "scientific_name"],
-        }],
-        "insert": 1, "update": 0, "unchanged": 0,
+        "items": [
+            {
+                "key": ("ORG_000010",),
+                "action": "insert",
+                "differences": [],
+                "row": {"organism_id": "ORG_000010", "scientific_name": "Gamma"},
+                "current": None,
+                "supplied_columns": ["organism_id", "scientific_name"],
+            }
+        ],
+        "insert": 1,
+        "update": 0,
+        "unchanged": 0,
     }
     calls = spy_action(monkeypatch, "table_import_preview", preview)
-    run_calls = spy_action(monkeypatch, "import_table", {
-        "inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
-        "table": "organisms", "source": "/tmp/organisms.csv"})
+    run_calls = spy_action(
+        monkeypatch,
+        "import_table",
+        {
+            "inserted": 1,
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": "/tmp/organisms.csv",
+        },
+    )
     dismissed: list = []
 
     async def scenario() -> None:
@@ -2127,17 +2338,29 @@ def test_import_table_modal_command_text_matches_action_kwargs(
 
             modal.confirm()
             await _wait_until(lambda: len(run_calls) == 1, "table import call")
-            await _wait_until(lambda: bool(dismissed), "modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed), "modal dismissal", timeout=HANDOFF_TIMEOUT
+            )
 
     _run(scenario())
     assert calls[0][0] == (project, "organisms", "/tmp/organisms.csv")
     assert run_calls[0][0] == (project,)
-    assert run_calls[0][1] == {"table": "organisms", "path": "/tmp/organisms.csv",
-                               "on_conflict": "update"}
-    assert dismissed == [run_calls[0][1] and {
-        "inserted": 1, "updated": 0, "unchanged": 0, "skipped": 0,
-        "table": "organisms", "source": "/tmp/organisms.csv"}]
+    assert run_calls[0][1] == {
+        "table": "organisms",
+        "path": "/tmp/organisms.csv",
+        "on_conflict": "update",
+    }
+    assert dismissed == [
+        run_calls[0][1]
+        and {
+            "inserted": 1,
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": "/tmp/organisms.csv",
+        }
+    ]
 
 
 def test_audit_parity_import_table(
@@ -2154,33 +2377,54 @@ def test_audit_parity_import_table(
         "ORG_000010,Tableius gamma,100010,species,NCBI,demo.1\n",
         encoding="utf-8",
     )
-    rc = cli_main([
-        "--project", str(cli_project.root),
-        "import", "table", "--table", "organisms",
-        "--file", str(source), "--yes", "--on-conflict", "update",
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "import",
+            "table",
+            "--table",
+            "organisms",
+            "--file",
+            str(source),
+            "--yes",
+            "--on-conflict",
+            "update",
+        ]
+    )
     capsys.readouterr()
     assert rc == 0
     result = actions.import_table(
-        tui_project, table="organisms", path=str(source), on_conflict="update")
+        tui_project, table="organisms", path=str(source), on_conflict="update"
+    )
     assert result["inserted"] == 1
 
     # Second leg: an audited update of the row both sides now hold.
     update = tmp_path / "organisms-update.csv"
     update.write_text(
-        "organism_id,scientific_name\n"
-        "ORG_000010,Tableius gamma updated\n",
+        "organism_id,scientific_name\nORG_000010,Tableius gamma updated\n",
         encoding="utf-8",
     )
-    rc = cli_main([
-        "--project", str(cli_project.root),
-        "import", "table", "--table", "organisms",
-        "--file", str(update), "--yes", "--on-conflict", "update",
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "import",
+            "table",
+            "--table",
+            "organisms",
+            "--file",
+            str(update),
+            "--yes",
+            "--on-conflict",
+            "update",
+        ]
+    )
     capsys.readouterr()
     assert rc == 0
     result = actions.import_table(
-        tui_project, table="organisms", path=str(update), on_conflict="update")
+        tui_project, table="organisms", path=str(update), on_conflict="update"
+    )
     assert result["updated"] == 1
 
     _assert_audit_equal(cli_project, tui_project, "organisms", "entity_state")
@@ -2192,16 +2436,34 @@ def test_audit_parity_add_accession(
     capsys: pytest.CaptureFixture,
 ) -> None:
     cli_project, tui_project = _twin_projects(tmp_path, demo_template)
-    rc = cli_main([
-        "--project", str(cli_project.root), "add-accession",
-        "--internal-type", "assembly", "--internal-id", "ASM_000001",
-        "--namespace", "AUDIT", "--accession", "A-7", "--version", "4", "--primary",
-    ])
+    rc = cli_main(
+        [
+            "--project",
+            str(cli_project.root),
+            "add-accession",
+            "--internal-type",
+            "assembly",
+            "--internal-id",
+            "ASM_000001",
+            "--namespace",
+            "AUDIT",
+            "--accession",
+            "A-7",
+            "--version",
+            "4",
+            "--primary",
+        ]
+    )
     capsys.readouterr()
     assert rc == 0
     actions.add_accession(
-        tui_project, internal_type="assembly", internal_id="ASM_000001",
-        namespace="AUDIT", accession="A-7", version="4", primary=True,
+        tui_project,
+        internal_type="assembly",
+        internal_id="ASM_000001",
+        namespace="AUDIT",
+        accession="A-7",
+        version="4",
+        primary=True,
     )
     _assert_audit_equal(cli_project, tui_project, "accessions")
 

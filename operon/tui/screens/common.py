@@ -112,9 +112,14 @@ def format_duration(record: dict[str, Any]) -> str:
 
 def entity_label(record: dict[str, Any]) -> str:
     """Render the ``entity_type:entity_id`` label used in run listings."""
-    return ":".join(
-        part for part in (record.get("entity_type"), record.get("entity_id")) if part
-    ) or "-"
+    return (
+        ":".join(
+            part
+            for part in (record.get("entity_type"), record.get("entity_id"))
+            if part
+        )
+        or "-"
+    )
 
 
 def capture_table_view(table: DataTable) -> tuple[int, Offset]:
@@ -122,7 +127,9 @@ def capture_table_view(table: DataTable) -> tuple[int, Offset]:
     return table.cursor_row, table.scroll_offset
 
 
-def restore_table_view(table: DataTable, state: tuple[int, Offset], row_count: int) -> None:
+def restore_table_view(
+    table: DataTable, state: tuple[int, Offset], row_count: int
+) -> None:
     """Restore cursor row and scroll offset after repopulating a table.
 
     ``DataTable.clear()`` resets both to the origin; restoring them keeps an
@@ -332,7 +339,9 @@ class FittingSelect(Select):
             # Nothing to refresh onto before the mount: the value stands, and the
             # mount's own guard paints it (ODR-26).
             if self.is_mounted and attempt < self._mount_retry_limit:
-                self.call_after_refresh(self._paint_value_when_composed, value, attempt + 1)
+                self.call_after_refresh(
+                    self._paint_value_when_composed, value, attempt + 1
+                )
             elif self.is_mounted:
                 # Out of retries: say so once, by name, instead of leaving a
                 # control that silently shows nothing (ODR-39's shape).
@@ -469,7 +478,9 @@ class MountTracked(Vertical):
         if selector is _EMPTIED:
             self._settle()
             return True
-        present = bool(self.children) if selector is None else bool(self.query(selector))
+        present = (
+            bool(self.children) if selector is None else bool(self.query(selector))
+        )
         if present:
             self._settle()
             return True
@@ -578,7 +589,9 @@ class WorkerResults:
             return True
         return bool(key == self._request_key)
 
-    def post_to_ui(self, callback: Callable[..., None], *args: Any, key: Any = None) -> None:
+    def post_to_ui(
+        self, callback: Callable[..., None], *args: Any, key: Any = None
+    ) -> None:
         """Hand a worker result to the UI thread (call it from the worker)."""
 
         app = self.app
@@ -589,8 +602,9 @@ class WorkerResults:
         except RuntimeError:  # pragma: no cover - app is shutting down
             pass
 
-    def apply_from_worker(self, callback: Callable[..., None], *args: Any,
-                          key: Any = None) -> None:
+    def apply_from_worker(
+        self, callback: Callable[..., None], *args: Any, key: Any = None
+    ) -> None:
         """Render a worker result, or drop it once it is gone or superseded."""
 
         if not self.is_current_result(key):
@@ -674,7 +688,9 @@ class Panel(WorkerResults, VerticalScroll):
     def render_data(self, payload: Any) -> None:  # pragma: no cover - abstract stub
         raise NotImplementedError
 
-    def show_error(self, exc: BaseException) -> None:  # pragma: no cover - abstract stub
+    def show_error(
+        self, exc: BaseException
+    ) -> None:  # pragma: no cover - abstract stub
         raise NotImplementedError
 
 

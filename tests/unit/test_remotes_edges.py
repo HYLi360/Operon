@@ -33,10 +33,22 @@ def test_remote_config_validation_and_address(tmp_path):
     for config, name, message in cases:
         with pytest.raises(ValidationError, match=message):
             remotes.get_remote(project(tmp_path, config), name)
-    spec = remotes.get_remote(project(tmp_path, {"r": {
-        "host": "host", "root": "/root", "user": "user", "port": "2222",
-        "connect_timeout": "5", "insecure_accept_unknown_host": True,
-    }}), "r")
+    spec = remotes.get_remote(
+        project(
+            tmp_path,
+            {
+                "r": {
+                    "host": "host",
+                    "root": "/root",
+                    "user": "user",
+                    "port": "2222",
+                    "connect_timeout": "5",
+                    "insecure_accept_unknown_host": True,
+                }
+            },
+        ),
+        "r",
+    )
     assert spec.address == "user@host:2222"
     assert spec.connect_timeout == 5
 
@@ -54,7 +66,10 @@ def test_relative_and_local_paths_handle_backslashes_and_symlink_escape(tmp_path
     assert remotes.validate_relative_path("a\\b") == "a/b"
     root = tmp_path / "project"
     root.mkdir()
-    assert remotes.local_artifact_path(SimpleNamespace(root=root), "a/b") == root / "a" / "b"
+    assert (
+        remotes.local_artifact_path(SimpleNamespace(root=root), "a/b")
+        == root / "a" / "b"
+    )
     outside = tmp_path / "outside"
     outside.mkdir()
     (root / "link").symlink_to(outside, target_is_directory=True)
@@ -133,9 +148,15 @@ def test_connect_ssh_known_hosts_pinning_and_errors(monkeypatch):
     )
     monkeypatch.setattr(remotes, "import_paramiko", lambda: fake)
     client = remotes.connect_ssh(
-        "host", user="user", port=2222, key_file="key", host_key_sha256=f"SHA256:{expected}"
+        "host",
+        user="user",
+        port=2222,
+        key_file="key",
+        host_key_sha256=f"SHA256:{expected}",
     )
-    assert client.kwargs["username"] == "user" and client.kwargs["key_filename"] == "key"
+    assert (
+        client.kwargs["username"] == "user" and client.kwargs["key_filename"] == "key"
+    )
     client.policy.missing_host_key(client, "host", Key())
     assert client.host_keys.added
     with pytest.raises(RuntimeError, match="fingerprint mismatch"):
@@ -221,7 +242,10 @@ def test_remote_sha256_command_stream_fallback_and_errors(tmp_path):
             return self.sftp
 
     sftp = SFTP()
-    assert remotes.remote_sha256(Client(b"bad", 1, sftp), "/x") == hashlib.sha256(b"content").hexdigest()
+    assert (
+        remotes.remote_sha256(Client(b"bad", 1, sftp), "/x")
+        == hashlib.sha256(b"content").hexdigest()
+    )
     assert sftp.closed
     with pytest.raises(RemoteError, match="cannot hash remote file"):
         remotes.remote_sha256(Client(b"bad", 1), "/x")
@@ -292,7 +316,9 @@ def test_store_properties_paths_exists_and_matches(tmp_path):
     directory = root / "directory"
     directory.mkdir()
     (directory / "x").write_text("x", encoding="utf-8")
-    assert store.matches("directory", sha256_path(directory), path_size_bytes(directory))
+    assert store.matches(
+        "directory", sha256_path(directory), path_size_bytes(directory)
+    )
     store.close()
     assert store._sftp is None
 
@@ -323,6 +349,7 @@ def test_store_get_and_directory_identity_reject_special_entries(tmp_path):
     store, _client, root = _store(tmp_path)
     special = root / "fifo"
     import os
+
     os.mkfifo(special)
     assert not store.matches("fifo", "0" * 64, 0)
     with pytest.raises(RemoteError, match="unsupported remote artifact type"):
@@ -405,9 +432,13 @@ def test_manifest_lock_happy_timeout_create_and_release_failures(tmp_path, monke
 
 @pytest.mark.parametrize(
     "entry",
-    [None, {}, {"file_id": "F", "sha256": "bad", "size_bytes": 1},
-     {"file_id": "F", "sha256": "a" * 64, "size_bytes": "bad"},
-     {"file_id": "F", "sha256": "a" * 64, "size_bytes": -1}],
+    [
+        None,
+        {},
+        {"file_id": "F", "sha256": "bad", "size_bytes": 1},
+        {"file_id": "F", "sha256": "a" * 64, "size_bytes": "bad"},
+        {"file_id": "F", "sha256": "a" * 64, "size_bytes": -1},
+    ],
 )
 def test_manifest_entry_identity_validation(entry):
     with pytest.raises(RemoteError):
@@ -421,7 +452,12 @@ def test_project_manifest_and_record_identity_conflicts(tmp_path):
     assert document["project_id"] == "P1"
     with pytest.raises(ConflictError, match="belongs to project"):
         remotes._require_project_manifest(p, "r", {"project_id": "P2"})
-    record = {"file_id": "F1", "relative_path": "x", "sha256": "a" * 64, "size_bytes": 1}
+    record = {
+        "file_id": "F1",
+        "relative_path": "x",
+        "sha256": "a" * 64,
+        "size_bytes": 1,
+    }
     with pytest.raises(ConflictError, match="does not match"):
         remotes._assert_entry_matches_record(
             "r", "x", {"file_id": "F2", "sha256": "a" * 64, "size_bytes": 1}, record
@@ -463,7 +499,9 @@ def test_fetch_sftp_rejects_password_and_cleans_failed_download(tmp_path, monkey
     assert not temporary.exists()
 
 
-def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(tmp_path, monkeypatch):
+def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(
+    tmp_path, monkeypatch
+):
     configured_project = SimpleNamespace(
         root=tmp_path,
         project_id="P1",
@@ -502,7 +540,12 @@ def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(tmp_pat
     with pytest.raises(RemoteError, match="no manifest entry"):
         remotes.fetch_url_to_temp(configured_project, "remote://r/artifact")
 
-    Store.entry = {"file_id": "F1", "sha256": "a" * 64, "size_bytes": 999, "kind": "file"}
+    Store.entry = {
+        "file_id": "F1",
+        "sha256": "a" * 64,
+        "size_bytes": 999,
+        "kind": "file",
+    }
     Store.matches_result = False
     with pytest.raises(ConflictError, match="content diverges"):
         remotes.fetch_url_to_temp(configured_project, "remote://r/artifact")

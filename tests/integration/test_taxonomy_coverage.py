@@ -23,8 +23,13 @@ from tests.helpers import PytestAssertions
 
 def _taxonomy_records() -> list[dict]:
     def node(
-        taxid: int, parent: int, rank: str, name: str, *,
-        extinct: bool = False, aliases: list[int] | None = None,
+        taxid: int,
+        parent: int,
+        rank: str,
+        name: str,
+        *,
+        extinct: bool = False,
+        aliases: list[int] | None = None,
     ) -> dict:
         return {
             "taxId": taxid,
@@ -116,7 +121,8 @@ class TestTaxonomyCoverage(PytestAssertions):
             },
         }
         (self.project.profiles_dir / "plants_v1.yaml").write_text(
-            yaml.safe_dump(profile, sort_keys=False), encoding="utf-8",
+            yaml.safe_dump(profile, sort_keys=False),
+            encoding="utf-8",
         )
 
     def _db(self) -> Database:
@@ -125,14 +131,36 @@ class TestTaxonomyCoverage(PytestAssertions):
         return db
 
     def _import_and_compile(self) -> None:
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "import",
-            "--input", str(self.taxonomy_path), "--version", "test.1",
-        ]), 0)
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "plants_v1", "--taxonomy-version", "test.1",
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "import",
+                    "--input",
+                    str(self.taxonomy_path),
+                    "--version",
+                    "test.1",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "plants_v1",
+                    "--taxonomy-version",
+                    "test.1",
+                ]
+            ),
+            0,
+        )
 
     def test_compile_is_idempotent_and_profile_filters_define_denominator(self):
         self._import_and_compile()
@@ -152,17 +180,34 @@ class TestTaxonomyCoverage(PytestAssertions):
             "SELECT COUNT(*) AS n FROM changes WHERE object_type='taxonomy_reference_set'"
         )[0]["n"]
         before = reference.read_bytes()
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "plants_v1", "--taxonomy-version", "test.1",
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "plants_v1",
+                    "--taxonomy-version",
+                    "test.1",
+                ]
+            ),
+            0,
+        )
         self.assertEqual(reference.read_bytes(), before)
         self.assertEqual(
-            db.query("SELECT COUNT(*) AS n FROM changes WHERE object_type='taxonomy_reference_set'")[0]["n"],
+            db.query(
+                "SELECT COUNT(*) AS n FROM changes WHERE object_type='taxonomy_reference_set'"
+            )[0]["n"],
             first_changes,
         )
-        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"], 1)
-        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"], 1)
+        self.assertEqual(
+            db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"], 1
+        )
+        self.assertEqual(
+            db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"], 1
+        )
 
         profile_path = self.project.profiles_dir / "plants_v1.yaml"
         changed_profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
@@ -170,25 +215,62 @@ class TestTaxonomyCoverage(PytestAssertions):
         profile_path.write_text(
             yaml.safe_dump(changed_profile, sort_keys=False), encoding="utf-8"
         )
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "plants_v1", "--taxonomy-version", "test.1",
-        ]), 2)
-        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"], 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "plants_v1",
+                    "--taxonomy-version",
+                    "test.1",
+                ]
+            ),
+            2,
+        )
+        self.assertEqual(
+            db.query("SELECT COUNT(*) AS n FROM taxonomy_reference_sets")[0]["n"], 1
+        )
 
         self.taxonomy_path.write_text(
             self.taxonomy_path.read_text(encoding="utf-8") + "\n", encoding="utf-8"
         )
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "import",
-            "--input", str(self.taxonomy_path), "--version", "test.1",
-        ]), 2)
-        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"], 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "import",
+                    "--input",
+                    str(self.taxonomy_path),
+                    "--version",
+                    "test.1",
+                ]
+            ),
+            2,
+        )
+        self.assertEqual(
+            db.query("SELECT COUNT(*) AS n FROM taxonomy_snapshots")[0]["n"], 1
+        )
 
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "assembly_production_v1", "--taxonomy-version", "test.1",
-        ]), 2)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "assembly_production_v1",
+                    "--taxonomy-version",
+                    "test.1",
+                ]
+            ),
+            2,
+        )
         self.assertGreaterEqual(
             db.query(
                 "SELECT COUNT(*) AS n FROM workflow_runs "
@@ -200,10 +282,21 @@ class TestTaxonomyCoverage(PytestAssertions):
     def test_official_taxdump_archive_imports_nodes_merged_and_deleted_taxids(self):
         taxdump = self.root / "taxdump.tar.gz"
         _write_taxdump(taxdump)
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "import",
-            "--input", str(taxdump), "--version", "dump.1",
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "import",
+                    "--input",
+                    str(taxdump),
+                    "--version",
+                    "dump.1",
+                ]
+            ),
+            0,
+        )
         db = self._db()
         snapshot = db.query(
             "SELECT taxonomy_snapshot_id, node_count FROM taxonomy_snapshots "
@@ -215,14 +308,28 @@ class TestTaxonomyCoverage(PytestAssertions):
             "WHERE taxonomy_snapshot_id=? ORDER BY alias_taxid",
             (snapshot["taxonomy_snapshot_id"],),
         )
-        self.assertEqual([dict(row) for row in aliases], [
-            {"alias_taxid": 1200, "current_taxid": 12, "status": "merged"},
-            {"alias_taxid": 9999, "current_taxid": None, "status": "deleted"},
-        ])
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "plants_v1", "--taxonomy-version", "dump.1",
-        ]), 2)
+        self.assertEqual(
+            [dict(row) for row in aliases],
+            [
+                {"alias_taxid": 1200, "current_taxid": 12, "status": "merged"},
+                {"alias_taxid": 9999, "current_taxid": None, "status": "deleted"},
+            ],
+        )
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "plants_v1",
+                    "--taxonomy-version",
+                    "dump.1",
+                ]
+            ),
+            2,
+        )
         self.assertEqual(
             db.query(
                 "SELECT COUNT(*) AS n FROM workflow_runs "
@@ -233,73 +340,147 @@ class TestTaxonomyCoverage(PytestAssertions):
         profile_path = self.project.profiles_dir / "plants_v1.yaml"
         profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
         profile["filters"]["exclude_extinct"] = False
-        profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
-        self.assertEqual(main([
-            "--project", str(self.root), "taxonomy", "compile",
-            "--profile", "plants_v1", "--taxonomy-version", "dump.1",
-        ]), 0)
+        profile_path.write_text(
+            yaml.safe_dump(profile, sort_keys=False), encoding="utf-8"
+        )
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "taxonomy",
+                    "compile",
+                    "--profile",
+                    "plants_v1",
+                    "--taxonomy-version",
+                    "dump.1",
+                ]
+            ),
+            0,
+        )
         rows = read_tsv(
             self.project.taxonomy_reference_sets_dir / "plants_v1@dump.1.tsv"
         )
-        self.assertIn(("family", "20", "Fossilaceae"), {
-            (row["rank"], row["taxid"], row["scientific_name"]) for row in rows
-        })
+        self.assertIn(
+            ("family", "20", "Fossilaceae"),
+            {(row["rank"], row["taxid"], row["scientific_name"]) for row in rows},
+        )
 
     def test_metadata_and_frozen_release_scopes(self):
         self._import_and_compile()
         db = self._db()
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Alpha one",
-            "taxon_id": 1200, "taxonomy_source": "NCBI",
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000002", "scientific_name": "Missinggenus one",
-            "taxon_id": 42, "taxonomy_source": "NCBI",
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000003", "scientific_name": "Unsupported",
-            "taxon_id": 12, "taxonomy_source": "GTDB",
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000004", "scientific_name": "No taxid",
-            "taxonomy_source": "NCBI",
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000005", "scientific_name": "Fossilus",
-            "taxon_id": 21, "taxonomy_source": "NCBI",
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000006", "scientific_name": "Taxonomy root",
-            "taxon_id": 1, "taxonomy_source": "NCBI",
-        })
-        db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        db.insert_row("assemblies", {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-            "assembly_level": "contig", "assembly_version": 1,
-        })
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Alpha one",
+                "taxon_id": 1200,
+                "taxonomy_source": "NCBI",
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000002",
+                "scientific_name": "Missinggenus one",
+                "taxon_id": 42,
+                "taxonomy_source": "NCBI",
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000003",
+                "scientific_name": "Unsupported",
+                "taxon_id": 12,
+                "taxonomy_source": "GTDB",
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000004",
+                "scientific_name": "No taxid",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000005",
+                "scientific_name": "Fossilus",
+                "taxon_id": 21,
+                "taxonomy_source": "NCBI",
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000006",
+                "scientific_name": "Taxonomy root",
+                "taxon_id": 1,
+                "taxonomy_source": "NCBI",
+            },
+        )
+        db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / "alpha.fa"
         fasta.write_text(">ctg\n" + "ACGT" * 700 + "\n", encoding="utf-8")
-        archived = ingest_file(db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+        archived = ingest_file(
+            db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta"
+        )
         self.assertTrue(qc_file(db, self.project, archived["file_id"])["ok"])
         self.assertEqual(
-            evaluate_entity(db, self.project, "assembly", "ASM_000001", "assembly_production_v1")["decision"],
+            evaluate_entity(
+                db, self.project, "assembly", "ASM_000001", "assembly_production_v1"
+            )["decision"],
             "PASS",
         )
 
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "coverage",
-            "--reference-set", "plants_v1@test.1",
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "coverage",
+                    "--reference-set",
+                    "plants_v1@test.1",
+                ]
+            ),
+            0,
+        )
         metadata_report = db.query(
             "SELECT report_id, relative_path, result_sha256 FROM coverage_reports "
             "WHERE scope_kind='metadata'"
         )[0]
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "coverage",
-            "--reference-set", "plants_v1@test.1",
-        ]), 0)
         self.assertEqual(
-            db.query("SELECT COUNT(*) AS n FROM coverage_reports WHERE scope_kind='metadata'")[0]["n"],
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "coverage",
+                    "--reference-set",
+                    "plants_v1@test.1",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            db.query(
+                "SELECT COUNT(*) AS n FROM coverage_reports WHERE scope_kind='metadata'"
+            )[0]["n"],
             1,
         )
         self.assertEqual(
@@ -312,35 +493,77 @@ class TestTaxonomyCoverage(PytestAssertions):
         metadata_metric = db.query(
             "SELECT rank, numerator, denominator FROM coverage_report_metrics ORDER BY rank"
         )
-        self.assertEqual({row["rank"]: (row["numerator"], row["denominator"]) for row in metadata_metric}, {
-            "family": (2, 2), "genus": (2, 2),
-        })
-        report_row = db.query("SELECT relative_path FROM coverage_reports WHERE scope_kind='metadata'")[0]
-        excluded = read_tsv(self.root / report_row["relative_path"] / "coverage_excluded_observations.tsv")
+        self.assertEqual(
+            {
+                row["rank"]: (row["numerator"], row["denominator"])
+                for row in metadata_metric
+            },
+            {
+                "family": (2, 2),
+                "genus": (2, 2),
+            },
+        )
+        report_row = db.query(
+            "SELECT relative_path FROM coverage_reports WHERE scope_kind='metadata'"
+        )[0]
+        excluded = read_tsv(
+            self.root
+            / report_row["relative_path"]
+            / "coverage_excluded_observations.tsv"
+        )
         self.assertEqual(
             {row["reason"] for row in excluded},
-            {"UNSUPPORTED_TAXONOMY_SOURCE", "MISSING_TAXID", "EXCLUDED_EXTINCT", "MISSING_TARGET_RANK"},
+            {
+                "UNSUPPORTED_TAXONOMY_SOURCE",
+                "MISSING_TAXID",
+                "EXCLUDED_EXTINCT",
+                "MISSING_TARGET_RANK",
+            },
         )
 
-        release = create_release(db, self.project, "scope-test", "assembly_production_v1")
+        release = create_release(
+            db, self.project, "scope-test", "assembly_production_v1"
+        )
         self.assertTrue(Path(release["path"]).is_dir())
-        db.conn.execute("UPDATE organisms SET taxon_id=42 WHERE organism_id='ORG_000001'")
+        db.conn.execute(
+            "UPDATE organisms SET taxon_id=42 WHERE organism_id='ORG_000001'"
+        )
         db.conn.commit()
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "coverage",
-            "--reference-set", "plants_v1@test.1", "--release", "scope-test",
-        ]), 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "coverage",
+                    "--reference-set",
+                    "plants_v1@test.1",
+                    "--release",
+                    "scope-test",
+                ]
+            ),
+            1,
+        )
         release_metrics = db.query(
             "SELECT m.rank, m.numerator, m.denominator FROM coverage_report_metrics m "
             "JOIN coverage_reports r ON r.report_id=m.report_id WHERE r.scope_kind='release'"
         )
-        self.assertEqual({row["rank"]: (row["numerator"], row["denominator"]) for row in release_metrics}, {
-            "family": (1, 2), "genus": (1, 2),
-        })
+        self.assertEqual(
+            {
+                row["rank"]: (row["numerator"], row["denominator"])
+                for row in release_metrics
+            },
+            {
+                "family": (1, 2),
+                "genus": (1, 2),
+            },
+        )
         release_report = db.query(
             "SELECT relative_path FROM coverage_reports WHERE scope_kind='release'"
         )[0]
-        observations = read_tsv(self.root / release_report["relative_path"] / "coverage_observations.tsv")
+        observations = read_tsv(
+            self.root / release_report["relative_path"] / "coverage_observations.tsv"
+        )
         self.assertEqual(len(observations), 1)
         self.assertEqual(int(observations[0]["resolved_taxid"]), 12)
         self.assertEqual(observations[0]["mapping_status"], "MAPPED_ALIAS")
@@ -348,10 +571,21 @@ class TestTaxonomyCoverage(PytestAssertions):
         frozen_organisms.write_text(
             frozen_organisms.read_text(encoding="utf-8") + "\n", encoding="utf-8"
         )
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "coverage",
-            "--reference-set", "plants_v1@test.1", "--release", "scope-test",
-        ]), 2)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "coverage",
+                    "--reference-set",
+                    "plants_v1@test.1",
+                    "--release",
+                    "scope-test",
+                ]
+            ),
+            2,
+        )
         self.assertEqual(
             db.query(
                 "SELECT COUNT(*) AS n FROM workflow_runs "

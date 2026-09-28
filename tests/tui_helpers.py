@@ -60,8 +60,9 @@ async def click(pilot: Any, selector: str) -> None:
     widget.scroll_visible(animate=False)
     await pilot.pause()
     if isinstance(widget, Button) and widget.has_class("-active"):
-        await wait_until(lambda: not widget.has_class("-active"),
-                         f"{selector} to settle")
+        await wait_until(
+            lambda: not widget.has_class("-active"), f"{selector} to settle"
+        )
     loop = asyncio.get_running_loop()
     deadline = loop.time() + SETTLE_TIMEOUT
     while True:

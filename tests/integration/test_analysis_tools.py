@@ -26,14 +26,27 @@ class TestAnalysisTools(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_TOOL_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_TOOL_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -47,12 +60,15 @@ class TestAnalysisTools(PytestAssertions):
                 handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
                 handle.write('q1\\ts2\\t95.0\\t90\\t1e-5\\t300\\n')
                 handle.write('q2\\ts3\\t80.0\\t80\\t0.01\\t100\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_hmmsearch(self) -> Path:
         script = self.root / "fakehmm.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-h' in args:
@@ -63,12 +79,15 @@ class TestAnalysisTools(PytestAssertions):
                 handle.write('# HMMER tblout comment\\n')
                 handle.write('PF00001 - query1 - 1.2e-10 123.4 0.1 1.2e-10 123.4 0.1 1 1 0 0 1 1 1 -\\n')
                 handle.write('PF00002 - query2 - 0.01 34.5 0.2 0.01 34.5 0.2 1 1 0 0 1 1 1 -\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_busco(self) -> Path:
         script = self.root / "fakebusco.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import json
             import sys
             from pathlib import Path
@@ -120,12 +139,15 @@ class TestAnalysisTools(PytestAssertions):
             )
             (output / 'logs').mkdir()
             (output / 'logs' / 'busco.log').write_text('completed\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_directory_tool(self) -> Path:
         script = self.root / "fakedir.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             from pathlib import Path
 
@@ -139,12 +161,23 @@ class TestAnalysisTools(PytestAssertions):
             output.mkdir(parents=True, exist_ok=False)
             text = ''.join(p.read_text() for p in sorted(source.glob('*.txt')))
             (output / 'combined.txt').write_text(text)
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
-    def _write_tool_config(self, executable: Path, tool_name: str, recipe_name: str,
-                           entity_type: str, file_role: str, parser: str, database: Path,
-                           version_args: list[str] | None = None, version_pattern: str = ""):
+    def _write_tool_config(
+        self,
+        executable: Path,
+        tool_name: str,
+        recipe_name: str,
+        entity_type: str,
+        file_role: str,
+        parser: str,
+        database: Path,
+        version_args: list[str] | None = None,
+        version_pattern: str = "",
+    ):
         tool_config = {
             "version": 1,
             "conda": {"bin": "conda", "run_args": ["run", "--no-capture-output"]},
@@ -153,7 +186,9 @@ class TestAnalysisTools(PytestAssertions):
                     "description": "fake tool for tests",
                     "executable": str(executable),
                     "run_method": sys.executable,
-                    "version_args": version_args if version_args is not None else ["-version"],
+                    "version_args": version_args
+                    if version_args is not None
+                    else ["-version"],
                     "version_pattern": version_pattern or rf"{tool_name}:\s*([^\s]+)",
                     "recipes": {
                         recipe_name: {
@@ -165,32 +200,79 @@ class TestAnalysisTools(PytestAssertions):
                             "database_version": "test-db-1",
                             "output_subdir": recipe_name,
                             "output_suffix": ".out.tsv",
-                            "arguments": ["-db", "${database}", "-query", "${input}", "-out", "${output}", "-num_threads", "${threads}"],
+                            "arguments": [
+                                "-db",
+                                "${database}",
+                                "-query",
+                                "${input}",
+                                "-out",
+                                "${output}",
+                                "-num_threads",
+                                "${threads}",
+                            ],
                             "result_parser": parser,
-                            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
-                            "hit_metric_columns": ["pident", "length", "evalue", "bitscore"],
+                            "result_columns": [
+                                "qseqid",
+                                "sseqid",
+                                "pident",
+                                "length",
+                                "evalue",
+                                "bitscore",
+                            ],
+                            "hit_metric_columns": [
+                                "pident",
+                                "length",
+                                "evalue",
+                                "bitscore",
+                            ],
                             "max_hits_per_query": 2,
                         }
                     },
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_assembly(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / "asm.fa"
         fasta.write_text(">ctg1\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+        return ingest_file(
+            self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta"
+        )
 
     def _add_annotation(self):
         self._add_assembly()
-        self.db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-            "annotation_source": "test", "annotation_version": 1,
-        })
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_source": "test",
+                "annotation_version": 1,
+            },
+        )
         proteins = self.root / "proteins.faa"
         proteins.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
         return ingest_file(
@@ -202,13 +284,20 @@ class TestAnalysisTools(PytestAssertions):
         database.write_text(">ref1\nACGT\n", encoding="utf-8")
         self._write_fake_blast()
         self._write_tool_config(
-            self.root / "fakeblast.py", "fakeblast", "fake_nt",
-            "assembly", "genome_fasta", "blast_tabular", database,
+            self.root / "fakeblast.py",
+            "fakeblast",
+            "fake_nt",
+            "assembly",
+            "genome_fasta",
+            "blast_tabular",
+            database,
             version_pattern=r"fakeblast:\s*([^\s]+)",
         )
         file_row = self._add_assembly()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
         jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
         self.assertEqual(len(jobs), 1)
         self.assertEqual(jobs[0]["status"], "completed")
@@ -216,9 +305,14 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual(jobs[0]["tool_version"], "9.8.7")
         self.assertTrue(jobs[0]["output_sha256"])
 
-        hits = self.db.query("SELECT * FROM analysis_hits ORDER BY query_id, subject_id, metric_name")
+        hits = self.db.query(
+            "SELECT * FROM analysis_hits ORDER BY query_id, subject_id, metric_name"
+        )
         self.assertEqual(len(hits), 12)  # 3 query/subject pairs x 4 metrics
-        summaries = {r["metric_name"]: r["metric_value"] for r in self.db.query("SELECT * FROM analysis_results")}
+        summaries = {
+            r["metric_name"]: r["metric_value"]
+            for r in self.db.query("SELECT * FROM analysis_results")
+        }
         self.assertEqual(summaries["query_count"], "2")
         self.assertEqual(summaries["hit_count"], "3")
         self.assertEqual(summaries["query_with_hit_count"], "2")
@@ -230,58 +324,121 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual(qc[0]["file_id"], file_row["file_id"])
 
         # Identical second run is a cache hit, not a new execution.
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='completed'")[0]["n"], 1)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
+        self.assertEqual(
+            self.db.query(
+                "SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='completed'"
+            )[0]["n"],
+            1,
+        )
 
         # --force supersedes the cached row and creates a new completed job.
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt", "--force"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='completed'")[0]["n"], 1)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='superseded'")[0]["n"], 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "fake_nt",
+                    "--force",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2
+        )
+        self.assertEqual(
+            self.db.query(
+                "SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='completed'"
+            )[0]["n"],
+            1,
+        )
+        self.assertEqual(
+            self.db.query(
+                "SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='superseded'"
+            )[0]["n"],
+            1,
+        )
 
     def test_analysis_refuses_modified_raw_input(self):
         database = self.root / "nt"
         database.write_text(">ref1\nACGT\n", encoding="utf-8")
         self._write_fake_blast()
         self._write_tool_config(
-            self.root / "fakeblast.py", "fakeblast", "fake_nt",
-            "assembly", "genome_fasta", "blast_tabular", database,
+            self.root / "fakeblast.py",
+            "fakeblast",
+            "fake_nt",
+            "assembly",
+            "genome_fasta",
+            "blast_tabular",
+            database,
             version_pattern=r"fakeblast:\s*([^\s]+)",
         )
         file_row = self._add_assembly()
-        (self.project.root / file_row["relative_path"]).write_text(">ctg1\nTTTT\n", encoding="utf-8")
+        (self.project.root / file_row["relative_path"]).write_text(
+            ">ctg1\nTTTT\n", encoding="utf-8"
+        )
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 1)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 1
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0
+        )
 
     def test_hmmsearch_recipe_parses_tblout(self):
         database = self.root / "Pfam-A.hmm"
         database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
         script = self._write_fake_hmmsearch()
         self._write_tool_config(
-            script, "fakehmm", "fake_pfam", "assembly", "genome_fasta", "hmmer_tblout", database,
-            version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
+            script,
+            "fakehmm",
+            "fake_pfam",
+            "assembly",
+            "genome_fasta",
+            "hmmer_tblout",
+            database,
+            version_args=["-h"],
+            version_pattern=r"HMMER\s+([^\s]+)",
         )
         # Replace the recipe arguments: this fake expects --tblout / --cpu / db / input.
         doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
         doc["tools"]["fakehmm"]["recipes"]["fake_pfam"]["arguments"] = [
-            "--tblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
+            "--tblout",
+            "${output}",
+            "--cpu",
+            "${threads}",
+            "${database}",
+            "${input}",
         ]
-        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8"
+        )
         self._add_assembly()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam"]), 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_pfam"]), 0
+        )
         hits = self.db.query(
             "SELECT query_id, subject_id, metric_name, metric_value FROM analysis_hits "
             "ORDER BY query_id, subject_id, metric_name"
         )
-        self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits][:4], [
-            ("query1", "PF00001", "evalue"),
-            ("query1", "PF00001", "score"),
-            ("query2", "PF00002", "evalue"),
-            ("query2", "PF00002", "score"),
-        ])
+        self.assertEqual(
+            [(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits][:4],
+            [
+                ("query1", "PF00001", "evalue"),
+                ("query1", "PF00001", "score"),
+                ("query2", "PF00002", "evalue"),
+                ("query2", "PF00002", "score"),
+            ],
+        )
 
     def test_directory_input_and_output_are_hashed_cached_and_verified(self):
         script = self._write_fake_directory_tool()
@@ -289,48 +446,104 @@ class TestAnalysisTools(PytestAssertions):
         source.mkdir()
         (source / "a.txt").write_text("alpha\n", encoding="utf-8")
         (source / "b.txt").write_text("beta\n", encoding="utf-8")
-        self.db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Testus",
-            "taxonomy_source": "NCBI",
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
         file_row = ingest_file(
-            self.db, self.project, source, "organism", "ORG_000001", "other",
+            self.db,
+            self.project,
+            source,
+            "organism",
+            "ORG_000001",
+            "other",
             fmt="directory",
         )
         config = {
             "version": 1,
             "tools": {
                 "fakedir": {
-                    "executable": str(script), "run_method": sys.executable,
-                    "version_args": ["-version"], "version_pattern": r"fakedir:\s*([^\s]+)",
+                    "executable": str(script),
+                    "run_method": sys.executable,
+                    "version_args": ["-version"],
+                    "version_pattern": r"fakedir:\s*([^\s]+)",
                     "recipes": {
                         "directory_roundtrip": {
-                            "entity_type": "organism", "file_role": "other",
-                            "format": "directory", "input_kind": "directory",
-                            "output_kind": "directory", "output_subdir": "directory_roundtrip",
+                            "entity_type": "organism",
+                            "file_role": "other",
+                            "format": "directory",
+                            "input_kind": "directory",
+                            "output_kind": "directory",
+                            "output_subdir": "directory_roundtrip",
                             "output_suffix": ".results",
-                            "arguments": ["--input", "${input}", "--output", "${output}"],
+                            "arguments": [
+                                "--input",
+                                "${input}",
+                                "--output",
+                                "${output}",
+                            ],
                             "result_parser": "none",
                         }
                     },
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False)
+        )
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "directory_roundtrip"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "directory_roundtrip",
+                ]
+            ),
+            0,
+        )
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         output = self.project.root / job["output_relative_path"]
         self.assertTrue(output.is_dir())
         self.assertEqual((output / "combined.txt").read_text(), "alpha\nbeta\n")
         self.assertTrue(job["output_sha256"])
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "directory_roundtrip"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "directory_roundtrip",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
 
         archived = self.project.root / file_row["relative_path"]
         (archived / "a.txt").write_text("changed\n", encoding="utf-8")
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "directory_roundtrip"]), 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "directory_roundtrip",
+                ]
+            ),
+            1,
+        )
 
     def test_busco_directory_output_and_json_metrics(self):
         script = self._write_fake_busco()
@@ -339,20 +552,35 @@ class TestAnalysisTools(PytestAssertions):
             "version": 1,
             "tools": {
                 "busco": {
-                    "executable": str(script), "run_method": sys.executable,
-                    "version_args": ["--version"], "version_pattern": r"BUSCO\s+([^\s]+)",
+                    "executable": str(script),
+                    "run_method": sys.executable,
+                    "version_args": ["--version"],
+                    "version_pattern": r"BUSCO\s+([^\s]+)",
                     "recipes": {
                         "busco_autolineage": {
-                            "entity_type": "annotation", "file_role": "protein_fasta",
-                            "format": "fasta", "input_kind": "file",
+                            "entity_type": "annotation",
+                            "file_role": "protein_fasta",
+                            "format": "fasta",
+                            "input_kind": "file",
                             "database": "resources/busco_downloads",
-                            "database_version": "odb12.2", "database_mode": "mutable_cache",
-                            "output_subdir": "busco", "output_kind": "directory",
+                            "database_version": "odb12.2",
+                            "database_mode": "mutable_cache",
+                            "output_subdir": "busco",
+                            "output_kind": "directory",
                             "output_name": "${file_id}.busco",
                             "arguments": [
-                                "-m", "protein", "-i", "${input}", "-o", "${output_name}",
-                                "--out_path", "${output_parent}",
-                                "--download_path", "${database}", "-c", "${threads}",
+                                "-m",
+                                "protein",
+                                "-i",
+                                "${input}",
+                                "-o",
+                                "${output_name}",
+                                "--out_path",
+                                "${output_parent}",
+                                "--download_path",
+                                "${database}",
+                                "-c",
+                                "${threads}",
                                 "--auto-lineage",
                             ],
                             "result_parser": "busco_json",
@@ -362,9 +590,24 @@ class TestAnalysisTools(PytestAssertions):
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False)
+        )
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "busco_autolineage", "--threads", "8"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "busco_autolineage",
+                    "--threads",
+                    "8",
+                ]
+            ),
+            0,
+        )
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         output = self.project.root / job["output_relative_path"]
         self.assertTrue(output.is_dir())
@@ -373,12 +616,16 @@ class TestAnalysisTools(PytestAssertions):
 
         metrics = {
             row["metric_name"]: row
-            for row in self.db.query("SELECT * FROM analysis_results WHERE job_id=?", (job["job_id"],))
+            for row in self.db.query(
+                "SELECT * FROM analysis_results WHERE job_id=?", (job["job_id"],)
+            )
         }
         self.assertEqual(metrics["busco_complete_percent"]["metric_numeric"], 98.5)
         self.assertEqual(metrics["busco_complete_percent"]["metric_unit"], "percent")
         self.assertEqual(metrics["busco_duplicated_count"]["metric_numeric"], 5465.0)
-        self.assertEqual(metrics["busco_lineage_dataset"]["metric_value"], "brassicales_odb12.2")
+        self.assertEqual(
+            metrics["busco_lineage_dataset"]["metric_value"], "brassicales_odb12.2"
+        )
         self.assertEqual(metrics["busco_domain"]["metric_value"], "eukaryota")
         self.assertEqual(metrics["busco_n_markers"]["metric_numeric"], 7083.0)
         qc = self.db.query(
@@ -388,23 +635,69 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual(len(qc), 1)
         self.assertEqual(qc[0]["metric_numeric"], 1.3)
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "busco_autolineage", "--threads", "8"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "busco_autolineage",
+                    "--threads",
+                    "8",
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
 
         (output / "stale.txt").write_text("stale", encoding="utf-8")
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "busco_autolineage", "--threads", "8", "--force"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "busco_autolineage",
+                    "--threads",
+                    "8",
+                    "--force",
+                ]
+            ),
+            0,
+        )
         self.assertFalse((output / "stale.txt").exists())
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2
+        )
 
         # SEPP derives jplace names by replacing "fasta" in the full path.
         # Reject the old default <file_id>.protein_fasta.busco name up front.
         config["tools"]["busco"]["recipes"]["busco_autolineage"].pop("output_name")
-        config["tools"]["busco"]["recipes"]["busco_autolineage"]["output_suffix"] = ".busco"
-        self.project.tools_config_path.write_text(yaml.safe_dump(config, sort_keys=False))
-        self.assertEqual(main([
-            "--project", str(self.root), "analyze", "--analysis", "busco_autolineage",
-            "--threads", "8", "--dry-run",
-        ]), 1)
+        config["tools"]["busco"]["recipes"]["busco_autolineage"]["output_suffix"] = (
+            ".busco"
+        )
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False)
+        )
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "busco_autolineage",
+                    "--threads",
+                    "8",
+                    "--dry-run",
+                ]
+            ),
+            1,
+        )
 
     def test_busco_runtime_lineages_coexist_without_adopting_each_other(self):
         script = self._write_fake_busco()
@@ -413,12 +706,16 @@ class TestAnalysisTools(PytestAssertions):
             "version": 1,
             "tools": {
                 "busco": {
-                    "executable": str(script), "run_method": sys.executable,
-                    "version_args": ["--version"], "version_pattern": r"BUSCO\s+([^\s]+)",
+                    "executable": str(script),
+                    "run_method": sys.executable,
+                    "version_args": ["--version"],
+                    "version_pattern": r"BUSCO\s+([^\s]+)",
                     "recipes": {
                         "busco_lineage": {
-                            "entity_type": "annotation", "file_role": "protein_fasta",
-                            "format": "fasta", "input_kind": "file",
+                            "entity_type": "annotation",
+                            "file_role": "protein_fasta",
+                            "format": "fasta",
+                            "input_kind": "file",
                             "parameters": {
                                 "lineage_dataset": {
                                     "required": True,
@@ -426,15 +723,26 @@ class TestAnalysisTools(PytestAssertions):
                                 }
                             },
                             "database": "resources/busco_downloads",
-                            "database_version": "odb12.2", "database_mode": "mutable_cache",
-                            "output_subdir": "busco_lineage", "output_kind": "directory",
+                            "database_version": "odb12.2",
+                            "database_mode": "mutable_cache",
+                            "output_subdir": "busco_lineage",
+                            "output_kind": "directory",
                             "output_name": "${file_id}.${lineage_dataset}.busco",
                             "arguments": [
-                                "-m", "protein", "-i", "${input}", "-o", "${output_name}",
-                                "--out_path", "${output_parent}",
-                                "--download_path", "${database}",
-                                "--lineage_dataset", "${lineage_dataset}",
-                                "-c", "${threads}",
+                                "-m",
+                                "protein",
+                                "-i",
+                                "${input}",
+                                "-o",
+                                "${output_name}",
+                                "--out_path",
+                                "${output_parent}",
+                                "--download_path",
+                                "${database}",
+                                "--lineage_dataset",
+                                "${lineage_dataset}",
+                                "-c",
+                                "${threads}",
                             ],
                             "result_parser": "busco_json",
                             "result_glob": "short_summary.specific.*.json",
@@ -444,7 +752,8 @@ class TestAnalysisTools(PytestAssertions):
             },
         }
         self.project.tools_config_path.write_text(
-            yaml.safe_dump(config, sort_keys=False), encoding="utf-8",
+            yaml.safe_dump(config, sort_keys=False),
+            encoding="utf-8",
         )
 
         base = ["--project", str(self.root), "analyze", "--analysis", "busco_lineage"]
@@ -453,37 +762,48 @@ class TestAnalysisTools(PytestAssertions):
         jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
         self.assertEqual(len(jobs), 2)
         outputs = {row["output_relative_path"] for row in jobs}
-        self.assertEqual(outputs, {
-            f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.fabales_odb12.2.busco",
-            f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.poales_odb12.2.busco",
-        })
+        self.assertEqual(
+            outputs,
+            {
+                f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.fabales_odb12.2.busco",
+                f"analysis/busco_lineage/ANN_000001/{file_row['file_id']}.poales_odb12.2.busco",
+            },
+        )
         lineages = {
-            row["metric_value"] for row in self.db.query(
+            row["metric_value"]
+            for row in self.db.query(
                 "SELECT metric_value FROM analysis_results "
                 "WHERE metric_name='busco_lineage_dataset'"
             )
         }
         self.assertEqual(lineages, {"fabales_odb12.2", "poales_odb12.2"})
         stages = {
-            row["qc_stage"] for row in self.db.query(
+            row["qc_stage"]
+            for row in self.db.query(
                 "SELECT DISTINCT qc_stage FROM qc_results WHERE metric_name LIKE 'busco_%'"
             )
         }
-        self.assertEqual(stages, {
-            "analysis:busco_lineage:lineage_dataset=fabales_odb12.2",
-            "analysis:busco_lineage:lineage_dataset=poales_odb12.2",
-        })
+        self.assertEqual(
+            stages,
+            {
+                "analysis:busco_lineage:lineage_dataset=fabales_odb12.2",
+                "analysis:busco_lineage:lineage_dataset=poales_odb12.2",
+            },
+        )
 
         # Exact parameter reruns hit their own cache; a different lineage is
         # never adopted as if it were an equivalent prior output.
         self.assertEqual(main([*base, "--param", "lineage_dataset=fabales_odb12.2"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2
+        )
         self.assertEqual(main(base), 2)
         self.assertEqual(main([*base, "--param", "unknown=x"]), 2)
 
     def _write_fake_blast_coords(self) -> Path:
         script = self.root / "fakeblastc.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -495,12 +815,15 @@ class TestAnalysisTools(PytestAssertions):
                 handle.write('q1\\ts2\\t95.0\\t90\\t7\\t97\\t20\\t100\\t1e-5\\t300\\n')
                 handle.write('q1\\ts3\\t80.0\\t80\\t9\\t99\\t30\\t90\\t0.01\\t100\\n')
                 handle.write('q2\\ts4\\t88.0\\t70\\t11\\t80\\t40\\t100\\t1e-3\\t200\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_hmmsearch_domtblout(self) -> Path:
         script = self.root / "fakehmmd.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-h' in args:
@@ -513,12 +836,15 @@ class TestAnalysisTools(PytestAssertions):
                              '3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain\\n')
                 handle.write('PF00002.10 - 200 query2 - 180 0.01 34.5 0.2 1 1 '
                              '0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_hmmsearch_header_domtblout(self) -> Path:
         script = self.root / "fakehmms.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-h' in args:
@@ -531,24 +857,41 @@ class TestAnalysisTools(PytestAssertions):
                              '3.4e-33 1.5e-30 104.0 0.0 1 120 10 130 10 132 0.95 kinase domain\\n')
                 handle.write('seq2 - 180 PF00002.10 - 200 0.01 34.5 0.2 1 1 '
                              '0.008 0.009 30.2 0.1 5 150 20 165 18 170 0.90 -\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _configure_blast_coords_recipe(self):
         self._write_tool_config(
-            self.root / "fakeblastc.py", "fakeblastc", "fake_nt_coords",
-            "assembly", "genome_fasta", "blast_tabular", self.root / "nt",
+            self.root / "fakeblastc.py",
+            "fakeblastc",
+            "fake_nt_coords",
+            "assembly",
+            "genome_fasta",
+            "blast_tabular",
+            self.root / "nt",
             version_pattern=r"fakeblastc:\s*([^\s]+)",
         )
         doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
         recipe = doc["tools"]["fakeblastc"]["recipes"]["fake_nt_coords"]
         recipe["result_columns"] = [
-            "qseqid", "sseqid", "pident", "length",
-            "qstart", "qend", "sstart", "send", "evalue", "bitscore",
+            "qseqid",
+            "sseqid",
+            "pident",
+            "length",
+            "qstart",
+            "qend",
+            "sstart",
+            "send",
+            "evalue",
+            "bitscore",
         ]
         recipe["hit_metric_columns"] = ["pident", "length", "evalue", "bitscore"]
         recipe["max_hits_per_query"] = 2
-        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8"
+        )
 
     def test_blast_alignments_sync_cache_reparse_and_export(self):
         (self.root / "nt").write_text(">ref1\nACGT\n", encoding="utf-8")
@@ -556,12 +899,25 @@ class TestAnalysisTools(PytestAssertions):
         self._configure_blast_coords_recipe()
         self._add_assembly()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]), 0)
-        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
+        self.assertEqual(
+            main(
+                ["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]
+            ),
+            0,
+        )
+        rows = self.db.query(
+            "SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank"
+        )
         # Alignments are not truncated by max_hits_per_query=2 (q1 keeps all 3).
-        self.assertEqual([(r["query_id"], r["subject_id"], r["hit_rank"]) for r in rows], [
-            ("q1", "s1", 1), ("q1", "s2", 2), ("q1", "s3", 3), ("q2", "s4", 1),
-        ])
+        self.assertEqual(
+            [(r["query_id"], r["subject_id"], r["hit_rank"]) for r in rows],
+            [
+                ("q1", "s1", 1),
+                ("q1", "s2", 2),
+                ("q1", "s3", 3),
+                ("q2", "s4", 1),
+            ],
+        )
         first = rows[0]
         self.assertEqual(first["analysis_name"], "fake_nt_coords")
         self.assertEqual(first["entity_type"], "assembly")
@@ -582,50 +938,117 @@ class TestAnalysisTools(PytestAssertions):
         self.assertEqual([r["subject_id"] for r in eav], ["s1", "s2"])
 
         # Cache hit: no new execution, alignment rows preserved and not duplicated.
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4)
+        self.assertEqual(
+            main(
+                ["--project", str(self.root), "analyze", "--analysis", "fake_nt_coords"]
+            ),
+            0,
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4
+        )
 
         # Re-parsing the same job replaces rows instead of duplicating them.
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         file_row = self.db.query("SELECT * FROM files")[0]
         counts = parse_and_store_results(
-            self.db, self.project, get_recipe(self.project, "fake_nt_coords"),
-            get_tool(self.project, "fakeblastc"), job["tool_version"], file_row,
-            job["job_id"], self.project.root / job["output_relative_path"], job["output_sha256"],
+            self.db,
+            self.project,
+            get_recipe(self.project, "fake_nt_coords"),
+            get_tool(self.project, "fakeblastc"),
+            job["tool_version"],
+            file_row,
+            job["job_id"],
+            self.project.root / job["output_relative_path"],
+            job["output_sha256"],
         )
         self.assertEqual(counts[4], 4)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 4
+        )
 
         tsv_out = self.root / "hits.tsv"
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "analysis", "--hits",
-            "--format", "tsv", "--out", str(tsv_out),
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "analysis",
+                    "--hits",
+                    "--format",
+                    "tsv",
+                    "--out",
+                    str(tsv_out),
+                ]
+            ),
+            0,
+        )
         lines = tsv_out.read_text(encoding="utf-8").strip().split("\n")
-        self.assertEqual(lines[0], (
-            "analysis_name\tentity_type\tentity_id\tquery_id\tsubject_id\thit_rank\t"
-            "query_start\tquery_end\tsubject_start\tsubject_end\tevalue\tbitscore\tpercent_identity"
-        ))
+        self.assertEqual(
+            lines[0],
+            (
+                "analysis_name\tentity_type\tentity_id\tquery_id\tsubject_id\thit_rank\t"
+                "query_start\tquery_end\tsubject_start\tsubject_end\tevalue\tbitscore\tpercent_identity"
+            ),
+        )
         self.assertEqual(len(lines), 5)
         fields = lines[1].split("\t")
-        self.assertEqual(fields[:6], ["fake_nt_coords", "assembly", "ASM_000001", "q1", "s1", "1"])
+        self.assertEqual(
+            fields[:6], ["fake_nt_coords", "assembly", "ASM_000001", "q1", "s1", "1"]
+        )
         self.assertEqual(fields[6:10], ["5", "95", "10", "110"])
 
         json_out = self.root / "hits.json"
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "analysis", "--hits",
-            "--format", "json", "--evalue-max", "1e-4", "--out", str(json_out),
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "analysis",
+                    "--hits",
+                    "--format",
+                    "json",
+                    "--evalue-max",
+                    "1e-4",
+                    "--out",
+                    str(json_out),
+                ]
+            ),
+            0,
+        )
         data = json.loads(json_out.read_text(encoding="utf-8"))
-        self.assertEqual({(d["query_id"], d["subject_id"]) for d in data}, {("q1", "s1"), ("q1", "s2")})
+        self.assertEqual(
+            {(d["query_id"], d["subject_id"]) for d in data},
+            {("q1", "s1"), ("q1", "s2")},
+        )
         self.assertTrue(all(d["evalue"] <= 1e-4 for d in data))
 
         filtered = self.root / "filtered.tsv"
-        self.assertEqual(main([
-            "--project", str(self.root), "report", "analysis", "--hits",
-            "--format", "tsv", "--query-id", "q2", "--subject-id", "s4", "--out", str(filtered),
-        ]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "analysis",
+                    "--hits",
+                    "--format",
+                    "tsv",
+                    "--query-id",
+                    "q2",
+                    "--subject-id",
+                    "s4",
+                    "--out",
+                    str(filtered),
+                ]
+            ),
+            0,
+        )
         filtered_lines = filtered.read_text(encoding="utf-8").strip().split("\n")
         self.assertEqual(len(filtered_lines), 2)
         self.assertIn("q2\ts4", filtered_lines[1])
@@ -633,35 +1056,69 @@ class TestAnalysisTools(PytestAssertions):
     @pytest.mark.parametrize(
         ("writer", "tool_name", "recipe_name", "queries"),
         [
-            ("_write_fake_hmmsearch_domtblout", "fakehmmd", "fake_pfam_dom", ("query1", "query2")),
-            ("_write_fake_hmmsearch_header_domtblout", "fakehmms", "fake_pfam_search",
-             ("seq1", "seq2")),
+            (
+                "_write_fake_hmmsearch_domtblout",
+                "fakehmmd",
+                "fake_pfam_dom",
+                ("query1", "query2"),
+            ),
+            (
+                "_write_fake_hmmsearch_header_domtblout",
+                "fakehmms",
+                "fake_pfam_search",
+                ("seq1", "seq2"),
+            ),
         ],
         ids=["query-oriented", "header-oriented"],
     )
     def test_hmmsearch_domtblout_recipe_syncs_alignments(
-        self, writer, tool_name, recipe_name, queries,
+        self,
+        writer,
+        tool_name,
+        recipe_name,
+        queries,
     ):
         database = self.root / "Pfam-A.hmm"
         database.write_text("HMMER3/f fake hmm\n", encoding="utf-8")
         script = getattr(self, writer)()
         self._write_tool_config(
-            script, tool_name, recipe_name, "assembly", "genome_fasta",
-            "hmmer_domtblout", database,
-            version_args=["-h"], version_pattern=r"HMMER\s+([^\s]+)",
+            script,
+            tool_name,
+            recipe_name,
+            "assembly",
+            "genome_fasta",
+            "hmmer_domtblout",
+            database,
+            version_args=["-h"],
+            version_pattern=r"HMMER\s+([^\s]+)",
         )
         doc = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
         doc["tools"][tool_name]["recipes"][recipe_name]["arguments"] = [
-            "--domtblout", "${output}", "--cpu", "${threads}", "${database}", "${input}",
+            "--domtblout",
+            "${output}",
+            "--cpu",
+            "${threads}",
+            "${database}",
+            "${input}",
         ]
-        self.project.tools_config_path.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8"
+        )
         self._add_assembly()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", recipe_name]), 0)
-        rows = self.db.query("SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank")
-        self.assertEqual([(r["query_id"], r["subject_id"]) for r in rows], [
-            (queries[0], "PF00001.28"), (queries[1], "PF00002.10"),
-        ])
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", recipe_name]), 0
+        )
+        rows = self.db.query(
+            "SELECT * FROM analysis_alignments ORDER BY query_id, hit_rank"
+        )
+        self.assertEqual(
+            [(r["query_id"], r["subject_id"]) for r in rows],
+            [
+                (queries[0], "PF00001.28"),
+                (queries[1], "PF00002.10"),
+            ],
+        )
         first = rows[0]
         self.assertEqual(first["query_start"], 10)
         self.assertEqual(first["query_end"], 130)
@@ -669,42 +1126,60 @@ class TestAnalysisTools(PytestAssertions):
         self.assertIsNone(first["percent_identity"])
         self.assertAlmostEqual(first["evalue"], 1.5e-30)
         self.assertAlmostEqual(first["bitscore"], 104.0)
-        self.assertEqual(json.loads(first["extra_json"]), {
-            "hmm_from": "1", "hmm_to": "120", "env_from": "10", "env_to": "132",
-        })
+        self.assertEqual(
+            json.loads(first["extra_json"]),
+            {
+                "hmm_from": "1",
+                "hmm_to": "120",
+                "env_from": "10",
+                "env_to": "132",
+            },
+        )
         hits = self.db.query(
             "SELECT query_id, subject_id, metric_name FROM analysis_hits "
             "ORDER BY query_id, subject_id, metric_name"
         )
-        self.assertEqual([(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits], [
-            (queries[0], "PF00001.28", "evalue"),
-            (queries[0], "PF00001.28", "score"),
-            (queries[1], "PF00002.10", "evalue"),
-            (queries[1], "PF00002.10", "score"),
-        ])
+        self.assertEqual(
+            [(r["query_id"], r["subject_id"], r["metric_name"]) for r in hits],
+            [
+                (queries[0], "PF00001.28", "evalue"),
+                (queries[0], "PF00001.28", "score"),
+                (queries[1], "PF00002.10", "evalue"),
+                (queries[1], "PF00002.10", "score"),
+            ],
+        )
 
     def _set_environment_policy(self, recipe_name: str, policy: str):
-        config = yaml.safe_load(self.project.tools_config_path.read_text(encoding="utf-8"))
+        config = yaml.safe_load(
+            self.project.tools_config_path.read_text(encoding="utf-8")
+        )
         for tool_cfg in config["tools"].values():
             if recipe_name in tool_cfg.get("recipes", {}):
                 tool_cfg["recipes"][recipe_name]["environment_policy"] = policy
         self.project.tools_config_path.write_text(
-            yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+            yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+        )
 
     def _prepare_cached_fakeblast_job(self, policy: str | None = None):
         database = self.root / "nt"
         database.write_text(">ref1\nACGT\n", encoding="utf-8")
         self._write_fake_blast()
         self._write_tool_config(
-            self.root / "fakeblast.py", "fakeblast", "fake_nt",
-            "assembly", "genome_fasta", "blast_tabular", database,
+            self.root / "fakeblast.py",
+            "fakeblast",
+            "fake_nt",
+            "assembly",
+            "genome_fasta",
+            "blast_tabular",
+            database,
             version_pattern=r"fakeblast:\s*([^\s]+)",
         )
         if policy is not None:
             self._set_environment_policy("fake_nt", policy)
         self._add_assembly()
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         self.assertEqual(job["status"], "completed")
         return job
@@ -713,6 +1188,7 @@ class TestAnalysisTools(PytestAssertions):
         import pytest
 
         from operon.environment import relevance_fingerprint
+
         row = self.db.conn.execute(
             "SELECT document FROM execution_environments WHERE environment_id=?",
             (job["environment_id"],),
@@ -734,30 +1210,40 @@ class TestAnalysisTools(PytestAssertions):
         job = self._prepare_cached_fakeblast_job()
         changed = self._changed_environment_document(job)
         import operon.environment_capture
+
         monkeypatch.setattr(
-            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed)
+            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed
+        )
         capsys.readouterr()
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
         out = capsys.readouterr().out
         self.assertIn("environment_policy=warn", out)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
         notes = self._cache_reuse_details()
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["environment_compare"], "mismatch")
         warning = notes[0]["environment_warning"]
         self.assertNotEqual(
-            warning["cached_relevance_fingerprint"], warning["current_relevance_fingerprint"])
+            warning["cached_relevance_fingerprint"],
+            warning["current_relevance_fingerprint"],
+        )
 
     def test_environment_policy_strict_recomputes_on_change(self, capsys, monkeypatch):
         job = self._prepare_cached_fakeblast_job(policy="strict")
         changed = self._changed_environment_document(job)
         import operon.environment_capture
+
         monkeypatch.setattr(
-            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed)
+            operon.environment_capture, "capture_local", lambda *args, **kwargs: changed
+        )
         capsys.readouterr()
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
         self.assertIn("environment_policy=strict", capsys.readouterr().out)
         jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
         self.assertEqual(len(jobs), 2)
@@ -767,17 +1253,25 @@ class TestAnalysisTools(PytestAssertions):
         rerun = self.db.query("SELECT * FROM workflow_runs ORDER BY rowid")[-1]
         details = json.loads(rerun["execution_details"])
         self.assertEqual(
-            details["environment_policy_check"]["environment_compare"], "mismatch")
+            details["environment_policy_check"]["environment_compare"], "mismatch"
+        )
 
     def test_environment_policy_unavailable_for_legacy_cached_document(self):
         job = self._prepare_cached_fakeblast_job()
         with self.db.transaction():
-            legacy_id = self.db.record_environment({"hostname": "sha256:legacy", "os": "Linux"})
-            self.db.conn.execute("UPDATE analysis_jobs SET environment_id=? WHERE job_id=?",
-                                 (legacy_id, job["job_id"]))
+            legacy_id = self.db.record_environment(
+                {"hostname": "sha256:legacy", "os": "Linux"}
+            )
+            self.db.conn.execute(
+                "UPDATE analysis_jobs SET environment_id=? WHERE job_id=?",
+                (legacy_id, job["job_id"]),
+            )
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
         notes = self._cache_reuse_details()
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["environment_compare"], "unavailable")
@@ -804,10 +1298,14 @@ class TestAnalysisTools(PytestAssertions):
                 pass
 
         monkeypatch.setattr(
-            operon.execution, "get_executor", lambda *args, **kwargs: FakeSlurm())
+            operon.execution, "get_executor", lambda *args, **kwargs: FakeSlurm()
+        )
         self.assertEqual(
-            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
+            main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"]), 0
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
         notes = self._cache_reuse_details()
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0]["environment_policy_degraded"], "strict->warn")
@@ -820,14 +1318,27 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_RPS_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_RPS_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _write_fake_rpsblast(self) -> Path:
         script = self.root / "fakerpsblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             from pathlib import Path
             args = sys.argv[1:]
@@ -838,12 +1349,15 @@ class TestRpsbprocCommandChain(PytestAssertions):
             assert out.parent.is_dir(), 'work dir was not created'
             assert args[args.index('-outfmt') + 1] == '11'
             out.write_text('FAIL\\n' if '-bad' in args else 'ASN1\\n', encoding='utf-8')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_fake_rpsbproc(self) -> Path:
         script = self.root / "fakerpsbproc.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             from pathlib import Path
             args = sys.argv[1:]
@@ -867,25 +1381,51 @@ class TestRpsbprocCommandChain(PytestAssertions):
                 handle.write('ENDQUERY\\tQuery_1\\n')
                 handle.write('ENDSESSION\\t1\\n')
                 handle.write('ENDDATA\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
-    def _write_chain_config(self, rpsblast: Path, rpsbproc: Path, database: Path,
-                            step1_extra: list[str] | None = None, with_arguments: bool = False):
+    def _write_chain_config(
+        self,
+        rpsblast: Path,
+        rpsbproc: Path,
+        database: Path,
+        step1_extra: list[str] | None = None,
+        with_arguments: bool = False,
+    ):
         recipe = {
-            "entity_type": "annotation", "file_role": "protein_fasta",
+            "entity_type": "annotation",
+            "file_role": "protein_fasta",
             "format": "fasta",
-            "database": str(database), "database_version": "cdd-test",
-            "output_subdir": "rps_cdd", "output_suffix": ".rpsbproc.tsv",
+            "database": str(database),
+            "database_version": "cdd-test",
+            "output_subdir": "rps_cdd",
+            "output_suffix": ".rpsbproc.tsv",
             "commands": [
-                {"arguments": [
-                    str(rpsblast), "-query", "${input}", "-db", "${database}",
-                    "-out", "${work_dir}/hits.asn", "-outfmt", "11",
-                    "-num_threads", "${threads}", *(step1_extra or []),
-                ]},
                 {
                     "arguments": [
-                        str(rpsbproc), "-i", "${work_dir}/hits.asn", "-o", "${output}",
+                        str(rpsblast),
+                        "-query",
+                        "${input}",
+                        "-db",
+                        "${database}",
+                        "-out",
+                        "${work_dir}/hits.asn",
+                        "-outfmt",
+                        "11",
+                        "-num_threads",
+                        "${threads}",
+                        *(step1_extra or []),
+                    ]
+                },
+                {
+                    "arguments": [
+                        str(rpsbproc),
+                        "-i",
+                        "${work_dir}/hits.asn",
+                        "-o",
+                        "${output}",
                     ],
                     "version_args": ["-version"],
                     "version_pattern": r"rpsbproc:\s*([^\s]+)",
@@ -900,22 +1440,48 @@ class TestRpsbprocCommandChain(PytestAssertions):
             "version": 1,
             "tools": {
                 "rpsblast": {
-                    "executable": str(rpsblast), "run_method": sys.executable,
-                    "version_args": ["-version"], "version_pattern": r"rpsblast:\s*([^\s]+)",
+                    "executable": str(rpsblast),
+                    "run_method": sys.executable,
+                    "version_args": ["-version"],
+                    "version_pattern": r"rpsblast:\s*([^\s]+)",
                     "recipes": {"rps_cdd": recipe},
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_annotation(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
-        self.db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-            "annotation_source": "test", "annotation_version": 1,
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_source": "test",
+                "annotation_version": 1,
+            },
+        )
         proteins = self.root / "proteins.faa"
         proteins.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
         return ingest_file(
@@ -933,7 +1499,9 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self._write_chain_config(rpsblast, rpsbproc, database)
         self._add_annotation()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0
+        )
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         self.assertEqual(job["status"], "completed")
         self.assertEqual(job["tool_version"], "9.9.9")
@@ -941,15 +1509,23 @@ class TestRpsbprocCommandChain(PytestAssertions):
         parameter_set = json.loads(job["parameter_set"])
         self.assertEqual(len(parameter_set["commands"]), 2)
 
-        runs = self.db.query("SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'")
+        runs = self.db.query(
+            "SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'"
+        )
         self.assertEqual(len(runs), 1)
         details = json.loads(runs[0]["execution_details"])
         self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 0])
-        self.assertEqual(details["steps"][0]["argv"][:2], [sys.executable, str(rpsblast)])
-        self.assertEqual(details["steps"][1]["argv"][:2], [sys.executable, str(rpsbproc)])
         self.assertEqual(
-            [(step["executable"], step["tool_version"], step["version_source"])
-             for step in details["steps"]],
+            details["steps"][0]["argv"][:2], [sys.executable, str(rpsblast)]
+        )
+        self.assertEqual(
+            details["steps"][1]["argv"][:2], [sys.executable, str(rpsbproc)]
+        )
+        self.assertEqual(
+            [
+                (step["executable"], step["tool_version"], step["version_source"])
+                for step in details["steps"]
+            ],
             [(str(rpsblast), "9.9.9", "tool"), (str(rpsbproc), "0.5.0", "command")],
         )
         self.assertIn("rpsblast: 9.9.9", details["steps"][0]["tool_version_raw"])
@@ -960,43 +1536,87 @@ class TestRpsbprocCommandChain(PytestAssertions):
         )
         self.assertTrue(all(Path(s["stdout_file"]).is_file() for s in details["steps"]))
 
-        alignments = self.db.query("SELECT * FROM analysis_alignments ORDER BY hit_rank")
+        alignments = self.db.query(
+            "SELECT * FROM analysis_alignments ORDER BY hit_rank"
+        )
         self.assertEqual(
             [(r["query_id"], r["subject_id"], r["hit_rank"]) for r in alignments],
-            [("prot1|Testus|bHLH|prot1", "cd00001", 1), ("prot1|Testus|bHLH|prot1", "cl00001", 2)],
+            [
+                ("prot1|Testus|bHLH|prot1", "cd00001", 1),
+                ("prot1|Testus|bHLH|prot1", "cl00001", 2),
+            ],
         )
         first = alignments[0]
         self.assertEqual(first["query_start"], 10)
         self.assertEqual(first["query_end"], 60)
         self.assertAlmostEqual(first["evalue"], 1e-20)
         self.assertAlmostEqual(first["bitscore"], 80.5)
-        self.assertEqual(json.loads(first["extra_json"]), {
-            "hit_type": "Specific", "pssm_id": "381460", "short_name": "bHLH",
-            "incomplete": "-", "superfamily_pssm": "469605",
-            "session": "1", "rps_query_id": "Query_1",
-        })
+        self.assertEqual(
+            json.loads(first["extra_json"]),
+            {
+                "hit_type": "Specific",
+                "pssm_id": "381460",
+                "short_name": "bHLH",
+                "incomplete": "-",
+                "superfamily_pssm": "469605",
+                "session": "1",
+                "rps_query_id": "Query_1",
+            },
+        )
         hits = self.db.query("SELECT * FROM analysis_hits ORDER BY metric_name")
-        self.assertEqual([(h["metric_name"], h["hit_rank"]) for h in hits],
-                         [("bitscore", 1), ("evalue", 1)])
+        self.assertEqual(
+            [(h["metric_name"], h["hit_rank"]) for h in hits],
+            [("bitscore", 1), ("evalue", 1)],
+        )
 
         # The scratch work directory is removed once the run finishes.
         self.assertTrue((self._output_dir()).is_dir())
         self.assertEqual(list(self._output_dir().glob("*.work")), [])
 
         # Identical rerun is a cache hit: no new job, alignments not duplicated.
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 2)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 2
+        )
 
         # --force supersedes the cached row and re-executes both steps.
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd", "--force"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
         self.assertEqual(
-            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='superseded'")[0]["n"], 1)
-        completed = self.db.query("SELECT job_id FROM analysis_jobs WHERE status='completed'")[0]
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "analyze",
+                    "--analysis",
+                    "rps_cdd",
+                    "--force",
+                ]
+            ),
+            0,
+        )
         self.assertEqual(
-            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments WHERE job_id=?",
-                          (completed["job_id"],))[0]["n"], 2)
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2
+        )
+        self.assertEqual(
+            self.db.query(
+                "SELECT COUNT(*) AS n FROM analysis_jobs WHERE status='superseded'"
+            )[0]["n"],
+            1,
+        )
+        completed = self.db.query(
+            "SELECT job_id FROM analysis_jobs WHERE status='completed'"
+        )[0]
+        self.assertEqual(
+            self.db.query(
+                "SELECT COUNT(*) AS n FROM analysis_alignments WHERE job_id=?",
+                (completed["job_id"],),
+            )[0]["n"],
+            2,
+        )
         self.assertEqual(list(self._output_dir().glob("*.work")), [])
 
     def test_command_chain_second_step_failure_fails_job(self):
@@ -1007,15 +1627,21 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self._write_chain_config(rpsblast, rpsbproc, database, step1_extra=["-bad"])
         self._add_annotation()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 1)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 1
+        )
         job = self.db.query("SELECT * FROM analysis_jobs")[0]
         self.assertEqual(job["status"], "failed")
         self.assertIn("step 2/2 failed", job["error"])
-        runs = self.db.query("SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'")
+        runs = self.db.query(
+            "SELECT * FROM workflow_runs WHERE step='analysis:rps_cdd'"
+        )
         self.assertEqual(len(runs), 1)
         details = json.loads(runs[0]["execution_details"])
         self.assertEqual([s["exit_code"] for s in details["steps"]], [0, 3])
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 0)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_alignments")[0]["n"], 0
+        )
         self.assertEqual(list(self._output_dir().glob("*.work")), [])
 
     def test_command_chain_step_version_change_invalidates_cache(self):
@@ -1026,9 +1652,15 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self._write_chain_config(rpsblast, rpsbproc, database)
         self._add_annotation()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1)
-        first_sha = self.db.query("SELECT parameter_sha256 FROM analysis_jobs")[0]["parameter_sha256"]
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 1
+        )
+        first_sha = self.db.query("SELECT parameter_sha256 FROM analysis_jobs")[0][
+            "parameter_sha256"
+        ]
 
         # A later step's version upgrade must invalidate the exact cache even
         # though the recipe text, inputs and primary tool version are unchanged.
@@ -1037,7 +1669,9 @@ class TestRpsbprocCommandChain(PytestAssertions):
             encoding="utf-8",
         )
         tools_module._VERSION_CACHE.clear()  # same probe command, new answer
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 0
+        )
 
         jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
         self.assertEqual(len(jobs), 2)
@@ -1048,7 +1682,8 @@ class TestRpsbprocCommandChain(PytestAssertions):
         # instead of being recomputed, and the adoption is audited.
         self.assertEqual(jobs[1]["workflow_run_id"], jobs[0]["workflow_run_id"])
         changes = self.db.query(
-            "SELECT * FROM changes WHERE object_type='analysis_job' AND new_value='completed'")
+            "SELECT * FROM changes WHERE object_type='analysis_job' AND new_value='completed'"
+        )
         self.assertTrue(any("adopted verified output" in c["reason"] for c in changes))
 
     def test_recipe_rejects_commands_and_arguments_together(self):
@@ -1059,5 +1694,9 @@ class TestRpsbprocCommandChain(PytestAssertions):
         self._write_chain_config(rpsblast, rpsbproc, database, with_arguments=True)
         self._add_annotation()
 
-        self.assertEqual(main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 2)
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0)
+        self.assertEqual(
+            main(["--project", str(self.root), "analyze", "--analysis", "rps_cdd"]), 2
+        )
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 0
+        )

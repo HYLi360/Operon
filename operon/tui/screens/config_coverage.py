@@ -36,17 +36,29 @@ SECTION_MODELED_KEYS = {
     "taxonomy": frozenset({"source"}),
     "scope": frozenset({"root_taxids"}),
     "targets": frozenset({"ranks"}),
-    "filters": frozenset({
-        "exclude_subtrees", "exclude_extinct", "exclude_name_patterns",
-    }),
+    "filters": frozenset(
+        {
+            "exclude_subtrees",
+            "exclude_extinct",
+            "exclude_name_patterns",
+        }
+    ),
 }
 THRESHOLD_MODELED_KEYS = frozenset({"min_coverage_percent"})
 # Document-level keys the form models; every other key (``name``, …) is
 # preserved verbatim and shown as a dim note.
-COVERAGE_MODELED_KEYS = frozenset({
-    "kind", "version", "description", "taxonomy", "scope", "targets",
-    "filters", "thresholds",
-})
+COVERAGE_MODELED_KEYS = frozenset(
+    {
+        "kind",
+        "version",
+        "description",
+        "taxonomy",
+        "scope",
+        "targets",
+        "filters",
+        "thresholds",
+    }
+)
 
 
 def coverage_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
@@ -73,8 +85,8 @@ def coverage_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
         return False, "targets is not a mapping"
     ranks = targets.get("ranks")
     if not isinstance(ranks, list) or not all(
-            isinstance(rank, str) and rank.lower() in COVERAGE_RANKS
-            for rank in ranks):
+        isinstance(rank, str) and rank.lower() in COVERAGE_RANKS for rank in ranks
+    ):
         return False, "targets.ranks must be a list of family/genus names"
     filters = document.get("filters")
     if filters is not None:
@@ -85,8 +97,9 @@ def coverage_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
             return False, "filters.exclude_subtrees is not a list"
         patterns = filters.get("exclude_name_patterns")
         if patterns is not None and (
-                not isinstance(patterns, list)
-                or not all(isinstance(pattern, str) for pattern in patterns)):
+            not isinstance(patterns, list)
+            or not all(isinstance(pattern, str) for pattern in patterns)
+        ):
             return False, "filters.exclude_name_patterns is not a list of strings"
     thresholds = document.get("thresholds")
     if not isinstance(thresholds, dict):
@@ -103,8 +116,9 @@ def coverage_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
 class CoverageSaveModal(WriteModal):
     """Confirm a coverage-profile save: file path + version + snapshot."""
 
-    def __init__(self, project: Project, name: str, document: dict[str, Any],
-                 new_version: int) -> None:
+    def __init__(
+        self, project: Project, name: str, document: dict[str, Any], new_version: int
+    ) -> None:
         super().__init__(f"Save coverage profile {name}")
         self.project = project
         self.profile_name = name
@@ -121,20 +135,26 @@ class CoverageSaveModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        return (f"config/profiles/{self.profile_name}.yaml → kind taxonomy_coverage, "
-                f"version {self.new_version} + qc_profiles snapshot")
+        return (
+            f"config/profiles/{self.profile_name}.yaml → kind taxonomy_coverage, "
+            f"version {self.new_version} + qc_profiles snapshot"
+        )
 
     def confirm(self) -> None:
         self.run_action(
             lambda: actions.save_coverage_profile(
-                self.project, self.profile_name, self.document,
+                self.project,
+                self.profile_name,
+                self.document,
                 known_version=self.new_version - 1,
             )
         )
 
     def on_action_success(self, payload: Any) -> None:
         if payload.get("unchanged"):
-            self.app.notify(f"{self.profile_name}: unchanged — version {payload['version']} kept")
+            self.app.notify(
+                f"{self.profile_name}: unchanged — version {payload['version']} kept"
+            )
         else:
             self.app.notify(
                 f"saved {self.profile_name} version {payload['version']} "

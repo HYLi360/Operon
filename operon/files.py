@@ -62,7 +62,9 @@ _CHECKSUM_ADVANCE_FROM = {
 }
 
 
-def _advance_checksum_state(db: Database, entity_type: str, entity_id: str, message: str) -> None:
+def _advance_checksum_state(
+    db: Database, entity_type: str, entity_id: str, message: str
+) -> None:
     """Advance early/failure states without demoting completed QC or decisions."""
     current = db.get_entity_state(entity_type, entity_id)
     if current in _CHECKSUM_ADVANCE_FROM:
@@ -102,13 +104,21 @@ def _local_file_fingerprint(path: Path) -> dict[str, int]:
 
 
 def _same_local_fingerprint(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    return all(int(left[name]) == int(right[name]) for name in (
-        "size_bytes", "device", "inode", "mtime_ns", "ctime_ns",
-    ))
+    return all(
+        int(left[name]) == int(right[name])
+        for name in (
+            "size_bytes",
+            "device",
+            "inode",
+            "mtime_ns",
+            "ctime_ns",
+        )
+    )
 
 
-def remember_local_file_verification(db: Database, record: dict[str, Any], path: Path,
-                                     *, verified_at: str | None = None) -> None:
+def remember_local_file_verification(
+    db: Database, record: dict[str, Any], path: Path, *, verified_at: str | None = None
+) -> None:
     """Cache a completed full-file checksum against a strong stat fingerprint."""
     try:
         if not path.is_file():
@@ -128,20 +138,28 @@ def remember_local_file_verification(db: Database, record: dict[str, Any], path:
             "mtime_ns=excluded.mtime_ns, ctime_ns=excluded.ctime_ns, "
             "verified_at=excluded.verified_at",
             (
-                record["file_id"], record["sha256"], fingerprint["size_bytes"],
-                fingerprint["device"], fingerprint["inode"], fingerprint["mtime_ns"],
-                fingerprint["ctime_ns"], verified_at or now_iso(),
+                record["file_id"],
+                record["sha256"],
+                fingerprint["size_bytes"],
+                fingerprint["device"],
+                fingerprint["inode"],
+                fingerprint["mtime_ns"],
+                fingerprint["ctime_ns"],
+                verified_at or now_iso(),
             ),
         )
 
 
 def clear_local_file_verification(db: Database, file_id: str) -> None:
     with db.transaction():
-        db.conn.execute("DELETE FROM local_file_verifications WHERE file_id=?", (file_id,))
+        db.conn.execute(
+            "DELETE FROM local_file_verifications WHERE file_id=?", (file_id,)
+        )
 
 
-def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path, *,
-                               rehash: bool = False) -> tuple[bool, dict[str, Any]]:
+def verify_local_file_identity(
+    db: Database, record: dict[str, Any], path: Path, *, rehash: bool = False
+) -> tuple[bool, dict[str, Any]]:
     """Verify a local artifact, reusing a full-hash result only while its stat identity is unchanged.
 
     The cache is derived data.  Any size/device/inode/mtime/ctime change forces a full SHA-256,
@@ -175,7 +193,9 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
     try:
         before = _local_file_fingerprint(path)
     except OSError as exc:
-        info.update(verification_method="stat_error", error=f"{type(exc).__name__}: {exc}")
+        info.update(
+            verification_method="stat_error", error=f"{type(exc).__name__}: {exc}"
+        )
         clear_local_file_verification(db, str(record["file_id"]))
         return False, info
     info["size_bytes"] = before["size_bytes"]
@@ -191,10 +211,9 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
         ).fetchone()
         if cached is not None:
             cached_record = dict(cached)
-            if (
-                    str(cached_record["sha256"]).lower() == str(record["sha256"]).lower()
-                    and _same_local_fingerprint(cached_record, before)
-            ):
+            if str(cached_record["sha256"]).lower() == str(
+                record["sha256"]
+            ).lower() and _same_local_fingerprint(cached_record, before):
                 info.update(
                     sha256_match=True,
                     verification_method="cached_stat_fingerprint",
@@ -206,7 +225,9 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
         current_sha = sha256_path(path)
         after = _local_file_fingerprint(path)
     except OSError as exc:
-        info.update(verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}")
+        info.update(
+            verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}"
+        )
         clear_local_file_verification(db, str(record["file_id"]))
         return False, info
     if not _same_local_fingerprint(before, after):
@@ -230,8 +251,9 @@ def verify_local_file_identity(db: Database, record: dict[str, Any], path: Path,
     return matched, info
 
 
-def _verify_directory_identity(db: Database, record: dict[str, Any], path: Path,
-                               info: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+def _verify_directory_identity(
+    db: Database, record: dict[str, Any], path: Path, info: dict[str, Any]
+) -> tuple[bool, dict[str, Any]]:
     """Verify a directory artifact against its manifest identity.
 
     Always a full tree hash: no stat fingerprint is trustworthy for a
@@ -241,7 +263,9 @@ def _verify_directory_identity(db: Database, record: dict[str, Any], path: Path,
     try:
         current_size = path_size_bytes(path)
     except OSError as exc:
-        info.update(verification_method="stat_error", error=f"{type(exc).__name__}: {exc}")
+        info.update(
+            verification_method="stat_error", error=f"{type(exc).__name__}: {exc}"
+        )
         return False, info
     info["size_bytes"] = current_size
     if current_size != int(record["size_bytes"]):
@@ -250,7 +274,9 @@ def _verify_directory_identity(db: Database, record: dict[str, Any], path: Path,
     try:
         current_sha = sha256_path(path)
     except OSError as exc:
-        info.update(verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}")
+        info.update(
+            verification_method="sha256_error", error=f"{type(exc).__name__}: {exc}"
+        )
         return False, info
     matched = current_sha.lower() == str(record["sha256"]).lower()
     info.update(
@@ -266,8 +292,13 @@ GZIP_SUFFIXES = {".gz", ".gzip", ".bgz", ".bgzf"}
 
 def canonical_filename(entity_id: str, role: str, fmt: str, compression: str) -> str:
     for name, value in (("entity_id", entity_id), ("role", role), ("format", fmt)):
-        if (not value or value in {".", ".."}
-                or any(char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value)):
+        if (
+            not value
+            or value in {".", ".."}
+            or any(
+                char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value
+            )
+        ):
             raise ValidationError(f"invalid archive {name}: {value!r}")
     if fmt == "directory":
         return f"{entity_id}.{role}.dir"
@@ -280,14 +311,27 @@ def _require_project_path(project: Project, target: Path) -> None:
     try:
         target.resolve().relative_to(project.root.resolve())
     except (ValueError, RuntimeError) as exc:
-        raise ValidationError(f"archive target must stay inside the project root: {target}") from exc
+        raise ValidationError(
+            f"archive target must stay inside the project root: {target}"
+        ) from exc
 
 
-def archive_target(project: Project, entity_type: str, entity_id: str, role: str,
-                   fmt: str, compression: str, archive_root: str | Path | None = None) -> Path:
+def archive_target(
+    project: Project,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str,
+    compression: str,
+    archive_root: str | Path | None = None,
+) -> Path:
     """Build and validate the destination shared by ingestion and batch planning."""
     filename = canonical_filename(entity_id, role, fmt, compression)
-    root = Path(archive_root) if archive_root is not None else project.raw_root / raw_bucket(entity_type)
+    root = (
+        Path(archive_root)
+        if archive_root is not None
+        else project.raw_root / raw_bucket(entity_type)
+    )
     target = root / entity_id / filename
     _require_project_path(project, target)
     return target
@@ -317,7 +361,9 @@ def detect_compression(path: str | Path) -> str:
     if any(name.endswith(suffix) for suffix in GZIP_SUFFIXES):
         if is_gzip_path(path):
             return "gzip"
-        raise ValidationError(f"{path}: filename claims gzip but magic bytes are not gzip")
+        raise ValidationError(
+            f"{path}: filename claims gzip but magic bytes are not gzip"
+        )
     return "gzip" if is_gzip_path(path) else "none"
 
 
@@ -325,7 +371,9 @@ def raw_bucket(entity_type: str) -> str:
     return ENTITY_BUCKETS.get(entity_type, "other")
 
 
-def find_existing_file(db: Database, entity_type: str, entity_id: str, role: str, sha256: str) -> dict[str, Any] | None:
+def find_existing_file(
+    db: Database, entity_type: str, entity_id: str, role: str, sha256: str
+) -> dict[str, Any] | None:
     row = db.conn.execute(
         "SELECT * FROM files WHERE entity_type=? AND entity_id=? AND file_role=? AND sha256=? ORDER BY file_id LIMIT 1",
         (entity_type, entity_id, role, sha256),
@@ -334,20 +382,20 @@ def find_existing_file(db: Database, entity_type: str, entity_id: str, role: str
 
 
 def ingest_file(
-        db: Database,
-        project: Project,
-        source: str | Path,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
-        move: bool = False,
-        run_id: str | None = None,
-        actor: str | None = None,
-        provenance_buffer: list[dict[str, Any]] | None = None,
-        archive_root: str | Path | None = None,
+    db: Database,
+    project: Project,
+    source: str | Path,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
+    move: bool = False,
+    run_id: str | None = None,
+    actor: str | None = None,
+    provenance_buffer: list[dict[str, Any]] | None = None,
+    archive_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Archive one file or directory into raw/ and register it in the manifest.
 
@@ -372,14 +420,25 @@ def ingest_file(
 
     fmt = fmt or detect_format(source, role)
     compression = compression or detect_compression(source)
-    target = archive_target(project, entity_type, entity_id, role, fmt, compression, archive_root)
+    target = archive_target(
+        project, entity_type, entity_id, role, fmt, compression, archive_root
+    )
     if source.is_dir() and fmt != "directory":
-        raise ValidationError(f"directory input requires format=directory, got {fmt!r}: {source}")
+        raise ValidationError(
+            f"directory input requires format=directory, got {fmt!r}: {source}"
+        )
     if source.is_file() and fmt == "directory":
         raise ValidationError(f"format=directory requires a directory source: {source}")
     if source.is_dir() and compression != "none":
         raise ValidationError("directory artifacts require compression=none")
-    if compression in {"gzip", "bgzip"} and fmt not in {"fasta", "fastq", "gff3", "tsv", "txt", "json"}:
+    if compression in {"gzip", "bgzip"} and fmt not in {
+        "fasta",
+        "fastq",
+        "gff3",
+        "tsv",
+        "txt",
+        "json",
+    }:
         # Not fatal for binary formats that commonly use bgzip (bam/cram are already compressed).
         pass
 
@@ -409,7 +468,8 @@ def ingest_file(
                     # a standardized file keeps its status: re-verifying the
                     # same raw bytes must not demote it.
                     db.set_file_status(
-                        existing["file_id"], "CHECKSUM_VERIFIED",
+                        existing["file_id"],
+                        "CHECKSUM_VERIFIED",
                         reason="re-ingested identical bytes; checksum re-verified",
                         actor=actor or "operon ingest",
                     )
@@ -420,35 +480,68 @@ def ingest_file(
                 # Idempotency must also repair a missing denormalized entity
                 # link.  Older TSV round-trips could clear these columns while
                 # leaving the immutable file manifest row intact.
-                _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
+                _link_file_to_entity(
+                    db, entity_type, entity_id, role, existing["file_id"]
+                )
             existing_record = dict(existing)
             remember_local_file_verification(db, existing_record, target)
             _advance_checksum_state(
-                db, entity_type, entity_id,
+                db,
+                entity_type,
+                entity_id,
                 f"file {existing['file_id']} already archived and verified",
             )
             _workflow_log(
-                db, project, run_id, "ingest", entity_type, entity_id, "completed",
+                db,
+                project,
+                run_id,
+                "ingest",
+                entity_type,
+                entity_id,
+                "completed",
                 provenance_buffer=provenance_buffer,
-                command=f"ingest {source}", input_sha256=source_sha,
+                command=f"ingest {source}",
+                input_sha256=source_sha,
             )
             return existing_record
 
-    target = archive_target(project, entity_type, entity_id, role, fmt, compression, archive_root)
+    target = archive_target(
+        project, entity_type, entity_id, role, fmt, compression, archive_root
+    )
     if target.exists():
         target_sha = sha256_path(target)
         if target_sha == source_sha:
-            row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url,
-                                 source_sha, source_size)
+            row = _register_file(
+                db,
+                project,
+                entity_type,
+                entity_id,
+                role,
+                fmt,
+                compression,
+                target,
+                source_url,
+                source_sha,
+                source_size,
+            )
             remember_local_file_verification(db, row, target)
             _advance_checksum_state(
-                db, entity_type, entity_id,
+                db,
+                entity_type,
+                entity_id,
                 f"file {row['file_id']} matched existing target",
             )
             _workflow_log(
-                db, project, run_id, "ingest", entity_type, entity_id, "completed",
+                db,
+                project,
+                run_id,
+                "ingest",
+                entity_type,
+                entity_id,
+                "completed",
                 provenance_buffer=provenance_buffer,
-                command=f"ingest {source}", input_sha256=source_sha,
+                command=f"ingest {source}",
+                input_sha256=source_sha,
             )
             return row
         if not target.is_dir():
@@ -476,17 +569,37 @@ def ingest_file(
         else:
             target.unlink(missing_ok=True)
         raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
-    row = _register_file(db, project, entity_type, entity_id, role, fmt, compression, target, source_url, target_sha,
-                         target_size)
+    row = _register_file(
+        db,
+        project,
+        entity_type,
+        entity_id,
+        role,
+        fmt,
+        compression,
+        target,
+        source_url,
+        target_sha,
+        target_size,
+    )
     remember_local_file_verification(db, row, target)
     _advance_checksum_state(
-        db, entity_type, entity_id,
+        db,
+        entity_type,
+        entity_id,
         f"file {row['file_id']} archived and checksum verified",
     )
     _workflow_log(
-        db, project, run_id, "ingest", entity_type, entity_id, "completed",
+        db,
+        project,
+        run_id,
+        "ingest",
+        entity_type,
+        entity_id,
+        "completed",
         provenance_buffer=provenance_buffer,
-        command=f"ingest {source}", input_sha256=target_sha,
+        command=f"ingest {source}",
+        input_sha256=target_sha,
     )
     if move:
         if source.is_dir() and not source.is_symlink():
@@ -496,7 +609,9 @@ def ingest_file(
     return row
 
 
-def _resolve_occupied_target(db: Database, project: Project, target: Path, target_sha: str) -> None:
+def _resolve_occupied_target(
+    db: Database, project: Project, target: Path, target_sha: str
+) -> None:
     """Free an occupied canonical path without violating raw/ immutability.
 
     Two occupants are recoverable:
@@ -522,8 +637,10 @@ def _resolve_occupied_target(db: Database, project: Project, target: Path, targe
         # The occupant is accounted for under another role; move it to its own
         # canonical path so this role can take the name.
         new_name = canonical_filename(
-            str(claimant["entity_id"]), str(claimant["file_role"]),
-            str(claimant["format"]), str(claimant["compression"]),
+            str(claimant["entity_id"]),
+            str(claimant["file_role"]),
+            str(claimant["format"]),
+            str(claimant["compression"]),
         )
         new_path = target.parent / new_name
         if new_path == target:
@@ -544,7 +661,11 @@ def _resolve_occupied_target(db: Database, project: Project, target: Path, targe
                 (new_rel, claimant["file_id"]),
             )
         db.record_change(
-            "files", claimant["file_id"], "relative_path", rel, new_rel,
+            "files",
+            claimant["file_id"],
+            "relative_path",
+            rel,
+            new_rel,
             "relocate file left at a stale canonical path after a role rename",
             actor=resolve_actor(),
         )
@@ -552,15 +673,30 @@ def _resolve_occupied_target(db: Database, project: Project, target: Path, targe
     quarantine = target.with_name(f"{target.name}.orphan-{target_sha[:12]}")
     os.replace(target, quarantine)
     db.record_change(
-        "raw_file", rel, "quarantined", None, project_rel(project, quarantine),
+        "raw_file",
+        rel,
+        "quarantined",
+        None,
+        project_rel(project, quarantine),
         "untracked leftover (interrupted run) moved aside to archive new content",
-        evidence=target_sha, actor=resolve_actor(),
+        evidence=target_sha,
+        actor=resolve_actor(),
     )
 
 
-def _register_file(db: Database, project: Project, entity_type: str, entity_id: str, role: str,
-                   fmt: str, compression: str, target: Path, source_url: str | None,
-                   sha: str, size: int) -> dict[str, Any]:
+def _register_file(
+    db: Database,
+    project: Project,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str,
+    compression: str,
+    target: Path,
+    source_url: str | None,
+    sha: str,
+    size: int,
+) -> dict[str, Any]:
     row = db.conn.execute(
         "SELECT * FROM files WHERE relative_path=? AND sha256=? AND size_bytes=? LIMIT 1",
         (project_rel(project, target), sha, size),
@@ -594,9 +730,14 @@ def _register_file(db: Database, project: Project, entity_type: str, entity_id: 
     return record
 
 
-def _link_file_to_entity(db: Database, entity_type: str, entity_id: str, role: str, file_id: str) -> None:
+def _link_file_to_entity(
+    db: Database, entity_type: str, entity_id: str, role: str, file_id: str
+) -> None:
     if entity_type == "assembly" and role == "genome_fasta":
-        db.conn.execute("UPDATE assemblies SET fasta_file_id=? WHERE assembly_id=?", (file_id, entity_id))
+        db.conn.execute(
+            "UPDATE assemblies SET fasta_file_id=? WHERE assembly_id=?",
+            (file_id, entity_id),
+        )
     elif entity_type == "annotation":
         field = {
             "annotation_gff3": "gff_file_id",
@@ -604,14 +745,21 @@ def _link_file_to_entity(db: Database, entity_type: str, entity_id: str, role: s
             "protein_fasta": "protein_file_id",
         }.get(role)
         if field:
-            db.conn.execute(f"UPDATE annotations SET {field}=? WHERE annotation_id=?", (file_id, entity_id))  # nosec B608 # fixed record keys or role mapping; values are bound
+            db.conn.execute(
+                f"UPDATE annotations SET {field}=? WHERE annotation_id=?",
+                (file_id, entity_id),
+            )  # nosec B608 # fixed record keys or role mapping; values are bound
 
 
-def verify_files(db: Database, project: Project, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+def verify_files(
+    db: Database, project: Project, file_ids: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Verify local bytes or live-check at least one recorded remote copy."""
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
-        rows = db.conn.execute(f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids).fetchall()  # nosec B608 # fixed record keys or role mapping; values are bound
+        rows = db.conn.execute(
+            f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids
+        ).fetchall()  # nosec B608 # fixed record keys or role mapping; values are bound
     else:
         rows = db.conn.execute("SELECT * FROM files").fetchall()
     results: list[dict[str, Any]] = []
@@ -622,6 +770,7 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
         placeholder_path,
         verify_remote_record,
     )
+
     stores: dict[str, SFTPStore] = {}
     manifests: dict[str, dict[str, Any]] = {}
     connection_errors: dict[str, str] = {}
@@ -630,15 +779,20 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
             record = dict(row)
             path = project.root / record["relative_path"]
             result = {
-                "file_id": record["file_id"], "relative_path": record["relative_path"],
-                "status": "", "recorded_sha256": record["sha256"],
-                "current_sha256": None, "error": None, "remote": "",
+                "file_id": record["file_id"],
+                "relative_path": record["relative_path"],
+                "status": "",
+                "recorded_sha256": record["sha256"],
+                "current_sha256": None,
+                "error": None,
+                "remote": "",
             }
             if not path.exists():
                 clear_local_file_verification(db, record["file_id"])
                 locations = db.conn.execute(
                     "SELECT location_name FROM file_locations WHERE file_id=? AND status='AVAILABLE' "
-                    "ORDER BY verified_at DESC", (record["file_id"],),
+                    "ORDER BY verified_at DESC",
+                    (record["file_id"],),
                 ).fetchall()
                 remote_errors: list[str] = []
                 remote_verified = ""
@@ -652,11 +806,17 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                     opening_store = name not in stores
                     try:
                         if name not in stores:
-                            stores[name] = stack.enter_context(SFTPStore(get_remote(project, name)))
+                            stores[name] = stack.enter_context(
+                                SFTPStore(get_remote(project, name))
+                            )
                         if name not in manifests:
                             manifests[name] = stores[name].read_manifest()
                         verify_remote_record(
-                            project, name, record, db=db, store=stores[name],
+                            project,
+                            name,
+                            record,
+                            db=db,
+                            store=stores[name],
                             manifest=manifests[name],
                         )
                     except Exception as exc:  # noqa: BLE001 - one broken remote location must not stop the batch  # pylint: disable=broad-exception-caught
@@ -666,7 +826,10 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                             "SELECT status FROM file_locations WHERE file_id=? AND location_name=?",
                             (record["file_id"], name),
                         ).fetchone()
-                        if location_status is None or location_status["status"] == "AVAILABLE":
+                        if (
+                            location_status is None
+                            or location_status["status"] == "AVAILABLE"
+                        ):
                             unavailable = True
                         remote_errors.append(f"{name}: {type(exc).__name__}: {exc}")
                         continue
@@ -677,7 +840,8 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                     _ensure_remote_only_schema(project)
                     result.update(status="REMOTE_ONLY", remote=remote_verified)
                     db.set_file_status(
-                        record["file_id"], "REMOTE_ONLY",
+                        record["file_id"],
+                        "REMOTE_ONLY",
                         reason=f"local bytes absent; live remote copy verified on {remote_verified}",
                         actor="operon verify",
                         evidence=f"remote://{remote_verified}/{record['relative_path']}",
@@ -685,16 +849,20 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                 elif unavailable:
                     result.update(
                         status="REMOTE_UNVERIFIED",
-                        error="; ".join(remote_errors) or "recorded remote copy could not be verified",
+                        error="; ".join(remote_errors)
+                        or "recorded remote copy could not be verified",
                     )
                 else:
                     result.update(
                         status="MISSING",
-                        error=("local bytes absent and no verified remote copy remains"
-                               + (f": {'; '.join(remote_errors)}" if remote_errors else "")),
+                        error=(
+                            "local bytes absent and no verified remote copy remains"
+                            + (f": {'; '.join(remote_errors)}" if remote_errors else "")
+                        ),
                     )
                     db.set_file_status(
-                        record["file_id"], "MISSING",
+                        record["file_id"],
+                        "MISSING",
                         reason="local bytes absent and live remote verification found no usable copy",
                         actor="operon verify",
                     )
@@ -706,16 +874,20 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
                     remember_local_file_verification(db, record, path)
                     if record.get("status") != "STANDARDIZED":
                         db.set_file_status(
-                            record["file_id"], "CHECKSUM_VERIFIED",
+                            record["file_id"],
+                            "CHECKSUM_VERIFIED",
                             reason="local artifact checksum verified",
                             actor="operon verify",
                         )
                     placeholder_path(project, record["file_id"]).unlink(missing_ok=True)
                 else:
-                    result.update(status="CHECKSUM_FAILED", error="checksum differs from manifest")
+                    result.update(
+                        status="CHECKSUM_FAILED", error="checksum differs from manifest"
+                    )
                     clear_local_file_verification(db, record["file_id"])
                     db.set_file_status(
-                        record["file_id"], "CHECKSUM_FAILED",
+                        record["file_id"],
+                        "CHECKSUM_FAILED",
                         reason="local artifact checksum differs from manifest",
                         actor="operon verify",
                         evidence=f"recorded={record['sha256']}; actual={current}",
@@ -724,7 +896,9 @@ def verify_files(db: Database, project: Project, file_ids: list[str] | None = No
     return results
 
 
-def standardize_file(db: Database, project: Project, file_id: str, link_kind: str = "copy") -> dict[str, Any]:
+def standardize_file(
+    db: Database, project: Project, file_id: str, link_kind: str = "copy"
+) -> dict[str, Any]:
     """Create the standardized/ view for a verified file.
 
     raw/ remains immutable. standardized/ uses independent copies by default;
@@ -745,27 +919,45 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         raise ChecksumError(f"{record['file_id']}: source missing: {source}")
     if sha256_path(source) != record["sha256"]:
         clear_local_file_verification(db, file_id)
-        db.set_entity_state(record["entity_type"], record["entity_id"], "CHECKSUM_FAILED",
-                            f"{file_id} changed after manifest registration")
+        db.set_entity_state(
+            record["entity_type"],
+            record["entity_id"],
+            "CHECKSUM_FAILED",
+            f"{file_id} changed after manifest registration",
+        )
         raise ChecksumError(f"{file_id}: source checksum does not match manifest")
     remember_local_file_verification(db, record, source)
 
     bucket = raw_bucket(record["entity_type"])
-    target = project.standardized_root / bucket / record["entity_id"] / Path(record["relative_path"]).name
+    target = (
+        project.standardized_root
+        / bucket
+        / record["entity_id"]
+        / Path(record["relative_path"]).name
+    )
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() or target.is_symlink():
         if sha256_path(target) != record["sha256"]:
-            raise ConflictError(f"{target} exists with different content; refusing to overwrite")
+            raise ConflictError(
+                f"{target} exists with different content; refusing to overwrite"
+            )
         db.set_file_status(
-            file_id, "STANDARDIZED",
+            file_id,
+            "STANDARDIZED",
             reason="standardized target already present and verified",
             actor="operon standardize",
         )
-        if db.get_entity_state(record["entity_type"], record["entity_id"]) == "CHECKSUM_VERIFIED":
+        if (
+            db.get_entity_state(record["entity_type"], record["entity_id"])
+            == "CHECKSUM_VERIFIED"
+        ):
             # Repair the crash window between target creation and the state
             # commit; entities that already moved on are left alone.
             set_state(
-                db, record["entity_type"], record["entity_id"], "STANDARDIZED",
+                db,
+                record["entity_type"],
+                record["entity_id"],
+                "STANDARDIZED",
                 f"file {file_id} already staged in standardized/",
                 actor="operon standardize",
             )
@@ -778,14 +970,18 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
             # A symlink is published with the same temp-name + replace pattern
             # as regular files, so an interrupted operation cannot expose a
             # half-created standardized target.
-            temporary_link = target.with_name(f".{target.name}.operon-{uuid.uuid4().hex}")
+            temporary_link = target.with_name(
+                f".{target.name}.operon-{uuid.uuid4().hex}"
+            )
             os.symlink(source, temporary_link)
             os.replace(temporary_link, target)
         elif link_kind == "hardlink":
             if source.is_dir():
                 atomic_copytree(source, target)
             else:
-                temporary_link = target.with_name(f".{target.name}.operon-{uuid.uuid4().hex}")
+                temporary_link = target.with_name(
+                    f".{target.name}.operon-{uuid.uuid4().hex}"
+                )
                 try:
                     os.link(source, temporary_link)
                     os.replace(temporary_link, target)
@@ -808,17 +1004,24 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         # is removed below so a retry starts from the same filesystem state.
         with db.transaction():
             db.set_file_status(
-                file_id, "STANDARDIZED",
+                file_id,
+                "STANDARDIZED",
                 reason=f"staged in standardized/ ({link_kind})",
                 actor="operon standardize",
             )
             set_state(
-                db, record["entity_type"], record["entity_id"], "STANDARDIZED",
-                f"file {file_id} staged in standardized/", actor="operon standardize",
+                db,
+                record["entity_type"],
+                record["entity_id"],
+                "STANDARDIZED",
+                f"file {file_id} staged in standardized/",
+                actor="operon standardize",
             )
         return {"file_id": file_id, "target": str(target), "action": link_kind}
     except BaseException:
-        if temporary_link is not None and (temporary_link.exists() or temporary_link.is_symlink()):
+        if temporary_link is not None and (
+            temporary_link.exists() or temporary_link.is_symlink()
+        ):
             temporary_link.unlink(missing_ok=True)
         if created_target or target.exists() or target.is_symlink():
             if target.is_dir() and not target.is_symlink():
@@ -828,7 +1031,9 @@ def standardize_file(db: Database, project: Project, file_id: str, link_kind: st
         raise
 
 
-def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> list[dict[str, Any]]:
+def standardize_all(
+    db: Database, project: Project, link_kind: str = "copy"
+) -> list[dict[str, Any]]:
     rows = db.conn.execute(
         "SELECT file_id FROM files "
         "WHERE status IN ('CHECKSUM_VERIFIED','STANDARDIZED') "
@@ -839,25 +1044,40 @@ def standardize_all(db: Database, project: Project, link_kind: str = "copy") -> 
     results = []
     for row in rows:
         try:
-            results.append(standardize_file(db, project, row["file_id"], link_kind=link_kind))
+            results.append(
+                standardize_file(db, project, row["file_id"], link_kind=link_kind)
+            )
         except Exception as exc:  # noqa: BLE001 - one broken file should not stop the batch  # pylint: disable=broad-exception-caught
             results.append({"file_id": row["file_id"], "error": str(exc)})
     return results
 
 
-def _workflow_log(db: Database, project: Project, run_id: str | None, step: str,
-                  entity_type: str, entity_id: str, status: str,
-                  provenance_buffer: list[dict[str, Any]] | None = None,
-                  **extra: Any) -> None:
+def _workflow_log(
+    db: Database,
+    project: Project,
+    run_id: str | None,
+    step: str,
+    entity_type: str,
+    entity_id: str,
+    status: str,
+    provenance_buffer: list[dict[str, Any]] | None = None,
+    **extra: Any,
+) -> None:
     from operon.workflow import log_run, new_run_id
-    log_run(db, project, {
-        "run_id": new_run_id(),
-        "parent_run_id": run_id,
-        "entity_type": entity_type,
-        "entity_id": entity_id,
-        "step": step,
-        "status": status,
-        "started_at": now_iso(),
-        "finished_at": now_iso(),
-        **extra,
-    }, jsonl_buffer=provenance_buffer)
+
+    log_run(
+        db,
+        project,
+        {
+            "run_id": new_run_id(),
+            "parent_run_id": run_id,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "step": step,
+            "status": status,
+            "started_at": now_iso(),
+            "finished_at": now_iso(),
+            **extra,
+        },
+        jsonl_buffer=provenance_buffer,
+    )

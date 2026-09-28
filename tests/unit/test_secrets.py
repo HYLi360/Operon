@@ -114,8 +114,9 @@ def scratch(tmp_path: Path, monkeypatch) -> Path:
     # consults PATH — so on a Darwin runner "no backend" was not true and the
     # no-backend assertions went red on every macOS CI leg.  Pin the third probe
     # here, the same way the other two are pinned by the PATH strip above.
-    monkeypatch.setattr(secret_module.MacKeychainBackend, "binary",
-                        str(tmp_path / "missing-security"))
+    monkeypatch.setattr(
+        secret_module.MacKeychainBackend, "binary", str(tmp_path / "missing-security")
+    )
     return tmp_path
 
 
@@ -139,7 +140,9 @@ def with_systemd_creds(scratch: Path, monkeypatch) -> Path:
 
 def test_backend_order_and_detection(scratch: Path) -> None:
     assert [backend.name for backend in backends(config_dir=scratch)] == [
-        "secret-tool", "systemd-creds", "keychain",
+        "secret-tool",
+        "systemd-creds",
+        "keychain",
     ]
     assert active_backend(config_dir=scratch) is None  # nothing on PATH
 
@@ -149,7 +152,9 @@ def test_secret_tool_wins_when_both_are_present(with_secret_tool: Path) -> None:
     assert active_backend(config_dir=with_secret_tool).name == "secret-tool"
 
 
-def test_systemd_creds_used_when_secret_tool_is_absent(with_systemd_creds: Path) -> None:
+def test_systemd_creds_used_when_secret_tool_is_absent(
+    with_systemd_creds: Path,
+) -> None:
     assert active_backend(config_dir=with_systemd_creds).name == "systemd-creds"
 
 
@@ -167,7 +172,10 @@ def test_secret_tool_round_trip(with_secret_tool: Path) -> None:
 
 def test_store_read_resolve_through_helpers(with_secret_tool: Path) -> None:
     assert read_secret("ncbi.api_key", config_dir=with_secret_tool) is None
-    assert store_secret("ncbi.api_key", "stored-value", config_dir=with_secret_tool) == "secret-tool"
+    assert (
+        store_secret("ncbi.api_key", "stored-value", config_dir=with_secret_tool)
+        == "secret-tool"
+    )
     assert read_secret("ncbi.api_key", config_dir=with_secret_tool) == "stored-value"
     assert resolve_secret("ncbi.api_key", config_dir=with_secret_tool) == "stored-value"
     assert clear_secret("ncbi.api_key", config_dir=with_secret_tool) is True
@@ -176,14 +184,26 @@ def test_store_read_resolve_through_helpers(with_secret_tool: Path) -> None:
 
 
 def test_resolve_precedence_flag_then_environment_then_backend(
-        with_secret_tool: Path, monkeypatch) -> None:
+    with_secret_tool: Path, monkeypatch
+) -> None:
     store_secret("ncbi.api_key", "stored-value", config_dir=with_secret_tool)
     monkeypatch.setenv("NCBI_API_KEY", "env-value")
-    assert resolve_secret("ncbi.api_key", "flag-value", config_dir=with_secret_tool) == "flag-value"
-    assert resolve_secret("ncbi.api_key", None, config_dir=with_secret_tool) == "env-value"
+    assert (
+        resolve_secret("ncbi.api_key", "flag-value", config_dir=with_secret_tool)
+        == "flag-value"
+    )
+    assert (
+        resolve_secret("ncbi.api_key", None, config_dir=with_secret_tool) == "env-value"
+    )
     monkeypatch.delenv("NCBI_API_KEY")
-    assert resolve_secret("ncbi.api_key", None, config_dir=with_secret_tool) == "stored-value"
-    assert resolve_secret("ncbi.api_key", "  ", environ={}, config_dir=with_secret_tool) == "stored-value"
+    assert (
+        resolve_secret("ncbi.api_key", None, config_dir=with_secret_tool)
+        == "stored-value"
+    )
+    assert (
+        resolve_secret("ncbi.api_key", "  ", environ={}, config_dir=with_secret_tool)
+        == "stored-value"
+    )
 
 
 # --- systemd-creds backend ---------------------------------------------------
@@ -193,7 +213,10 @@ def test_systemd_creds_round_trip_and_permissions(with_systemd_creds: Path) -> N
     config_dir = with_systemd_creds / "cfg"
     backend = SystemdCredsBackend(config_dir / "secrets")
     assert backend.get("ncbi.api_key") is None
-    assert store_secret("ncbi.api_key", "systemd-value", config_dir=config_dir) == "systemd-creds"
+    assert (
+        store_secret("ncbi.api_key", "systemd-value", config_dir=config_dir)
+        == "systemd-creds"
+    )
     ciphertext = config_dir / "secrets" / "ncbi.api_key.cred"
     assert ciphertext.is_file()
     assert stat.S_IMODE(os.stat(ciphertext).st_mode) == 0o600
@@ -204,7 +227,8 @@ def test_systemd_creds_round_trip_and_permissions(with_systemd_creds: Path) -> N
 
 
 def test_systemd_creds_decrypt_failure_is_actionable(
-        with_systemd_creds: Path, monkeypatch) -> None:
+    with_systemd_creds: Path, monkeypatch
+) -> None:
     config_dir = with_systemd_creds / "cfg"
     store_secret("ncbi.api_key", "systemd-value", config_dir=config_dir)
     monkeypatch.setenv("FAKE_CREDS_FAIL", "1")
@@ -224,7 +248,9 @@ def test_mac_keychain_round_trip(tmp_path: Path, monkeypatch) -> None:
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(" ".join(command) + "\n")
         if command[1] == "find-generic-password":
-            return secret_module.subprocess.CompletedProcess(command, 1, b"", b"not found")
+            return secret_module.subprocess.CompletedProcess(
+                command, 1, b"", b"not found"
+            )
         if command[1] == "delete-generic-password":
             return secret_module.subprocess.CompletedProcess(command, 0, b"", b"")
         return secret_module.subprocess.CompletedProcess(command, 0, b"", b"")
@@ -235,11 +261,17 @@ def test_mac_keychain_round_trip(tmp_path: Path, monkeypatch) -> None:
     backend.store("ncbi.api_key", "keychain-value")
     backend.clear("ncbi.api_key")
     lines = log.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "/usr/bin/security find-generic-password -a ncbi.api_key -s operon -w"
+    assert (
+        lines[0]
+        == "/usr/bin/security find-generic-password -a ncbi.api_key -s operon -w"
+    )
     assert lines[1] == (
         "/usr/bin/security add-generic-password -a ncbi.api_key -s operon -w keychain-value -U"
     )
-    assert lines[2] == "/usr/bin/security delete-generic-password -a ncbi.api_key -s operon"
+    assert (
+        lines[2]
+        == "/usr/bin/security delete-generic-password -a ncbi.api_key -s operon"
+    )
 
 
 def test_mac_backend_is_darwin_only() -> None:
@@ -258,7 +290,10 @@ def test_no_backend_is_an_actionable_error(scratch: Path) -> None:
     # Reading degrades to "nothing stored" instead of failing every command.
     assert read_secret("ncbi.api_key", config_dir=scratch) is None
     assert resolve_secret("ncbi.api_key", environ={}, config_dir=scratch) is None
-    assert resolve_secret("ncbi.api_key", "flag-value", environ={}, config_dir=scratch) == "flag-value"
+    assert (
+        resolve_secret("ncbi.api_key", "flag-value", environ={}, config_dir=scratch)
+        == "flag-value"
+    )
 
 
 def test_empty_value_is_refused(with_secret_tool: Path) -> None:
@@ -298,16 +333,28 @@ def test_run_maps_timeout_and_failure(monkeypatch) -> None:
         SecretToolBackend().get("ncbi.api_key")
 
 
-def test_secret_status_reports_without_values(with_secret_tool: Path, monkeypatch) -> None:
+def test_secret_status_reports_without_values(
+    with_secret_tool: Path, monkeypatch
+) -> None:
     store_secret("ncbi.api_key", "stored-value", config_dir=with_secret_tool)
     monkeypatch.setenv("NCBI_API_KEY", "env-value")
-    status = secret_status(environ={"NCBI_API_KEY": "env-value"}, config_dir=with_secret_tool)
+    status = secret_status(
+        environ={"NCBI_API_KEY": "env-value"}, config_dir=with_secret_tool
+    )
     assert status["active_backend"] == "secret-tool"
-    assert [row["name"] for row in status["backends"]] == ["secret-tool", "systemd-creds", "keychain"]
+    assert [row["name"] for row in status["backends"]] == [
+        "secret-tool",
+        "systemd-creds",
+        "keychain",
+    ]
     assert status["backends"][0]["active"] is True
     row = status["secrets"][0]
-    assert row == {"name": "ncbi.api_key", "env_var": "NCBI_API_KEY",
-                   "env_set": True, "stored": True}
+    assert row == {
+        "name": "ncbi.api_key",
+        "env_var": "NCBI_API_KEY",
+        "env_set": True,
+        "stored": True,
+    }
     assert "stored-value" not in repr(status)
 
 
@@ -319,14 +366,21 @@ def test_secret_status_without_backend(scratch: Path) -> None:
 
 # --- the fake backends stay portless (ODR-49) ------------------------------
 
-_SYSTEM_TOOL = re.compile(r"(?<![\w/.])/(?:usr/)?(?:bin|sbin)/(?:mkdir|cat|rm|base64|sh)\b")
+_SYSTEM_TOOL = re.compile(
+    r"(?<![\w/.])/(?:usr/)?(?:bin|sbin)/(?:mkdir|cat|rm|base64|sh)\b"
+)
 
 
 @pytest.mark.bug("ODR-49")
 def test_the_fake_backends_call_no_absolute_system_tool() -> None:
     """A stub must run wherever Python runs, not only where /usr/bin has the tools."""
-    for name, text in (("secret-tool", SECRET_TOOL_FAKE), ("systemd-creds", SYSTEMD_CREDS_FAKE)):
-        offenders = [line.strip() for line in text.splitlines() if _SYSTEM_TOOL.search(line)]
+    for name, text in (
+        ("secret-tool", SECRET_TOOL_FAKE),
+        ("systemd-creds", SYSTEMD_CREDS_FAKE),
+    ):
+        offenders = [
+            line.strip() for line in text.splitlines() if _SYSTEM_TOOL.search(line)
+        ]
         assert offenders == [], f"{name} stub hard-codes a system tool: {offenders}"
 
 
@@ -343,6 +397,7 @@ def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
 
 # --- the no-backend premise survives a Darwin keychain (ODR-48) -------------
 
+
 class _SecurityExists(type(Path("/"))):
     """A ``pathlib.Path`` that reports only the macOS keychain binary as present."""
 
@@ -352,7 +407,8 @@ class _SecurityExists(type(Path("/"))):
 
 @pytest.mark.bug("ODR-48")
 def test_no_backend_premise_holds_where_the_keychain_exists(
-        scratch: Path, monkeypatch) -> None:
+    scratch: Path, monkeypatch
+) -> None:
     """A macOS runner has /usr/bin/security and must still read as backend-less.
 
     Reproduces the Darwin state on any host: the platform answers darwin and the

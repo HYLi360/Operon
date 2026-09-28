@@ -43,8 +43,17 @@ from operon.tui.screens.remotes import RemotesPanel
 from operon.tui.screens.runs import RunsPanel
 from operon.tui.splash import SplashScreen
 
-SCREENS = ("home", "entities", "files", "runs", "decisions", "config", "publish",
-           "coverage", "remotes")
+SCREENS = (
+    "home",
+    "entities",
+    "files",
+    "runs",
+    "decisions",
+    "config",
+    "publish",
+    "coverage",
+    "remotes",
+)
 NAV_LABELS = {
     "home": "1  Home",
     "entities": "2  Entities",
@@ -127,14 +136,19 @@ class OperonApp(App):
         super().__init__()
         self.project = project
         self._starting = True
-        self.title = f"Operon — {project.config['project'].get('name') or project.project_id}"
+        self.title = (
+            f"Operon — {project.config['project'].get('name') or project.project_id}"
+        )
         self.sub_title = f"{project.project_id} · {project.db_path}"
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="app-layout"):
             yield ListView(
-                *(ListItem(Label(label), id=f"nav-{name}") for name, label in NAV_LABELS.items()),
+                *(
+                    ListItem(Label(label), id=f"nav-{name}")
+                    for name, label in NAV_LABELS.items()
+                ),
                 id="nav",
             )
             with ContentSwitcher(initial="home", id="main"):
@@ -182,7 +196,9 @@ class OperonApp(App):
                         "startup deadline reached while panels were still loading: "
                         + ", ".join((panel.id or "data") for panel in pending)
                     )
-                splash.set_status("Loaded with errors" if failed or pending else "Ready")
+                splash.set_status(
+                    "Loaded with errors" if failed or pending else "Ready"
+                )
                 if monotonic() - started >= self.splash_minimum:
                     self._starting = False
                     self.pop_screen()

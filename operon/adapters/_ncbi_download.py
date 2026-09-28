@@ -37,16 +37,16 @@ RETRYABLE_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
 def download_ncbi_dataset(
-        accessions: Sequence[str],
-        destination: str | Path,
-        *,
-        includes: Sequence[str] = DEFAULT_INCLUDES,
-        email: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 300.0,
-        session: Any | None = None,
-        max_retries: int = 4,
-        retry_backoff: float = 1.0,
+    accessions: Sequence[str],
+    destination: str | Path,
+    *,
+    includes: Sequence[str] = DEFAULT_INCLUDES,
+    email: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 300.0,
+    session: Any | None = None,
+    max_retries: int = 4,
+    retry_backoff: float = 1.0,
 ) -> Path:
     """Download one NCBI Datasets package with explicit SSL/network retries.
 
@@ -60,7 +60,9 @@ def download_ncbi_dataset(
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
     except ImportError as exc:  # pragma: no cover - dependency installation error
-        raise ValidationError("online NCBI download requires the 'requests' dependency") from exc
+        raise ValidationError(
+            "online NCBI download requires the 'requests' dependency"
+        ) from exc
 
     canonical = [_canonical_accession(value) for value in accessions]
     if not canonical:
@@ -87,7 +89,9 @@ def download_ncbi_dataset(
     try:
         for attempt in range(max_retries + 1):
             if attempt:
-                time.sleep(retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5))
+                time.sleep(
+                    retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5)
+                )
             try:
                 return _download_ncbi_dataset_once(
                     canonical=canonical,
@@ -141,14 +145,20 @@ def _response_content_length(headers: Any) -> int | None:
         return None
 
 
-def _zip_download_precheck(destination: Path, content_length: int | None) -> tuple[int, str]:
+def _zip_download_precheck(
+    destination: Path, content_length: int | None
+) -> tuple[int, str]:
     """Reserve disk space and open the staging temp file for a ZIP download."""
     if content_length:
-        _require_disk_space(destination.parent, content_length, "download NCBI dataset package")
+        _require_disk_space(
+            destination.parent, content_length, "download NCBI dataset package"
+        )
     return tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
 
 
-def _finalize_zip_download(tmp_name: str, destination: Path, canonical: Sequence[str]) -> None:
+def _finalize_zip_download(
+    tmp_name: str, destination: Path, canonical: Sequence[str]
+) -> None:
     """Validate the staged payload as a ZIP and promote it to the destination."""
     if not zipfile.is_zipfile(tmp_name):
         retryable, detail = _zip_package_diagnostic(Path(tmp_name), canonical)
@@ -167,12 +177,12 @@ def _discard_zip_tempfile(tmp_name: str) -> None:
 
 
 def _stream_zip_to_destination(
-        destination: Path,
-        *,
-        chunks: Iterable[bytes],
-        content_length: int | None,
-        canonical: Sequence[str],
-        retryable_stream_errors: tuple[type[BaseException], ...] = (),
+    destination: Path,
+    *,
+    chunks: Iterable[bytes],
+    content_length: int | None,
+    canonical: Sequence[str],
+    retryable_stream_errors: tuple[type[BaseException], ...] = (),
 ) -> Path:
     """Write response chunks to the destination as a validated ZIP package."""
     fd, tmp_name = _zip_download_precheck(destination, content_length)
@@ -187,7 +197,9 @@ def _stream_zip_to_destination(
     except BaseException as exc:
         _discard_zip_tempfile(tmp_name)
         if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+            raise _no_space_error(
+                destination.parent, "download NCBI dataset package", exc
+            ) from exc
         if isinstance(exc, retryable_stream_errors):
             raise _RetryableDownloadError(str(exc)) from exc
         raise
@@ -195,12 +207,12 @@ def _stream_zip_to_destination(
 
 
 def _request_zip_response(
-        session: Any,
-        *,
-        joined: str,
-        params: Sequence[tuple[str, str]],
-        headers: dict[str, str],
-        timeout: float,
+    session: Any,
+    *,
+    joined: str,
+    params: Sequence[tuple[str, str]],
+    headers: dict[str, str],
+    timeout: float,
 ) -> Any:
     """GET the package from the primary API base, then the fallback on 404/410."""
     import requests
@@ -224,7 +236,9 @@ def _request_zip_response(
                 response = None
                 continue
             if response.status_code in RETRYABLE_HTTP_STATUS:
-                raise _RetryableDownloadError(f"HTTP {response.status_code} from NCBI Datasets")
+                raise _RetryableDownloadError(
+                    f"HTTP {response.status_code} from NCBI Datasets"
+                )
             try:
                 response.raise_for_status()
             except BaseException:
@@ -238,8 +252,11 @@ def _request_zip_response(
                 response = None
             if base == NCBI_DATASETS_API_FALLBACK:
                 raise
-        except (ssl.SSLError, requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as exc:
+        except (
+            ssl.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as exc:
             last_error = exc
             if response is not None:  # pragma: no cover
                 response.close()
@@ -249,20 +266,24 @@ def _request_zip_response(
 
     if response is None:  # pragma: no cover
         if last_error is None:
-            last_error = ValidationError("NCBI Datasets returned no downloadable package")
-        raise ValidationError(f"NCBI Datasets download failed: {last_error}") from last_error
+            last_error = ValidationError(
+                "NCBI Datasets returned no downloadable package"
+            )
+        raise ValidationError(
+            f"NCBI Datasets download failed: {last_error}"
+        ) from last_error
     return response
 
 
 def _download_ncbi_dataset_once(
-        *,
-        canonical: Sequence[str],
-        destination: Path,
-        includes: Sequence[str],
-        email: str | None,
-        api_key: str | None,
-        timeout: float,
-        session: Any,
+    *,
+    canonical: Sequence[str],
+    destination: Path,
+    includes: Sequence[str],
+    email: str | None,
+    api_key: str | None,
+    timeout: float,
+    session: Any,
 ) -> Path:
     """One download attempt over primary and fallback API bases."""
     import requests
@@ -271,7 +292,11 @@ def _download_ncbi_dataset_once(
     params = _download_params(includes)
     joined = ",".join(canonical)
     response = _request_zip_response(
-        session, joined=joined, params=params, headers=headers, timeout=timeout,
+        session,
+        joined=joined,
+        params=params,
+        headers=headers,
+        timeout=timeout,
     )
     try:
         return _stream_zip_to_destination(
@@ -291,19 +316,19 @@ def _download_ncbi_dataset_once(
 
 
 def download_ncbi_datasets_parallel(
-        batches: Sequence[Sequence[str]],
-        staging_dir: str | Path,
-        *,
-        includes: Sequence[str] = DEFAULT_INCLUDES,
-        email: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 300.0,
-        max_workers: int = 3,
-        max_retries: int = 4,
-        retry_backoff: float = 1.0,
-        on_complete: Any,
-        on_error: Any | None = None,
-        cancel_event: threading.Event | None = None,
+    batches: Sequence[Sequence[str]],
+    staging_dir: str | Path,
+    *,
+    includes: Sequence[str] = DEFAULT_INCLUDES,
+    email: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 300.0,
+    max_workers: int = 3,
+    max_retries: int = 4,
+    retry_backoff: float = 1.0,
+    on_complete: Any,
+    on_error: Any | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> list[Path]:
     """Download accession batches concurrently and consume each as it lands.
 
@@ -336,19 +361,21 @@ def download_ncbi_datasets_parallel(
 
     def runner() -> None:
         try:
-            asyncio.run(_download_batches_async(
-                batches=batches,
-                staging_dir=staging_dir,
-                includes=includes,
-                email=email,
-                api_key=api_key,
-                timeout=timeout,
-                max_workers=max_workers,
-                max_retries=max_retries,
-                retry_backoff=retry_backoff,
-                completed_queue=completed_queue,
-                cancel_event=cancel_event,
-            ))
+            asyncio.run(
+                _download_batches_async(
+                    batches=batches,
+                    staging_dir=staging_dir,
+                    includes=includes,
+                    email=email,
+                    api_key=api_key,
+                    timeout=timeout,
+                    max_workers=max_workers,
+                    max_retries=max_retries,
+                    retry_backoff=retry_backoff,
+                    completed_queue=completed_queue,
+                    cancel_event=cancel_event,
+                )
+            )
         except BaseException as exc:  # noqa: BLE001 - worker-thread errors are ferried to the consumer and re-raised  # pylint: disable=broad-exception-caught
             runner_errors.append(exc)
         finally:
@@ -417,22 +444,24 @@ def download_ncbi_datasets_parallel(
 
 
 async def _download_batches_async(
-        *,
-        batches: Sequence[Sequence[str]],
-        staging_dir: Path,
-        includes: Sequence[str],
-        email: str | None,
-        api_key: str | None,
-        timeout: float,
-        max_workers: int,
-        max_retries: int,
-        retry_backoff: float,
-        completed_queue: Any,
-        cancel_event: Any,
+    *,
+    batches: Sequence[Sequence[str]],
+    staging_dir: Path,
+    includes: Sequence[str],
+    email: str | None,
+    api_key: str | None,
+    timeout: float,
+    max_workers: int,
+    max_retries: int,
+    retry_backoff: float,
+    completed_queue: Any,
+    cancel_event: Any,
 ) -> None:
     semaphore = asyncio.Semaphore(max_workers)
 
-    async def one_batch(batch: Sequence[str], index: int) -> tuple[Sequence[str], Path | None, BaseException | None]:
+    async def one_batch(
+        batch: Sequence[str], index: int
+    ) -> tuple[Sequence[str], Path | None, BaseException | None]:
         if cancel_event.is_set():
             return batch, None, _DownloadCancelled("cancelled")
         destination = staging_dir / f"ncbi_dataset_{index:05d}.zip"
@@ -455,7 +484,10 @@ async def _download_batches_async(
                 return batch, None, exc
         return batch, destination, None
 
-    tasks = [asyncio.create_task(one_batch(batch, index)) for index, batch in enumerate(batches)]
+    tasks = [
+        asyncio.create_task(one_batch(batch, index))
+        for index, batch in enumerate(batches)
+    ]
     try:
         for finished in asyncio.as_completed(tasks):
             batch, zip_path, error = await finished
@@ -488,7 +520,9 @@ async def _interruptible_retry_sleep(seconds: float, cancel_event: Any) -> None:
         remaining -= step
 
 
-async def _fetch_zip_response(session: Any, urls: Sequence[str], params: Sequence[tuple[str, str]]) -> Any:
+async def _fetch_zip_response(
+    session: Any, urls: Sequence[str], params: Sequence[tuple[str, str]]
+) -> Any:
     """GET the package from the primary API base, then the fallback on 404/410."""
     import aiohttp
 
@@ -501,7 +535,9 @@ async def _fetch_zip_response(session: Any, urls: Sequence[str], params: Sequenc
                 response = None
                 continue
             if response.status in RETRYABLE_HTTP_STATUS:
-                raise _RetryableDownloadError(f"HTTP {response.status} from NCBI Datasets")
+                raise _RetryableDownloadError(
+                    f"HTTP {response.status} from NCBI Datasets"
+                )
             response.raise_for_status()
             break
         except _RetryableDownloadError:
@@ -510,8 +546,13 @@ async def _fetch_zip_response(session: Any, urls: Sequence[str], params: Sequenc
                 response = None
             if index == len(urls) - 1:
                 raise
-        except (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
-                aiohttp.ServerDisconnectedError, asyncio.TimeoutError, ssl.SSLError) as exc:
+        except (
+            aiohttp.ClientSSLError,
+            aiohttp.ClientConnectionError,
+            aiohttp.ServerDisconnectedError,
+            asyncio.TimeoutError,
+            ssl.SSLError,
+        ) as exc:
             if response is not None:  # pragma: no cover
                 response.release()
                 response = None
@@ -523,12 +564,12 @@ async def _fetch_zip_response(session: Any, urls: Sequence[str], params: Sequenc
 
 
 async def _astream_zip_to_destination(
-        destination: Path,
-        *,
-        response: Any,
-        content_length: int | None,
-        canonical: Sequence[str],
-        cancel_event: Any,
+    destination: Path,
+    *,
+    response: Any,
+    content_length: int | None,
+    canonical: Sequence[str],
+    cancel_event: Any,
 ) -> Path:
     """Write an aiohttp response body to the destination as a validated ZIP."""
     fd, tmp_name = _zip_download_precheck(destination, content_length)
@@ -544,7 +585,9 @@ async def _astream_zip_to_destination(
     except BaseException as exc:
         _discard_zip_tempfile(tmp_name)
         if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+            raise _no_space_error(
+                destination.parent, "download NCBI dataset package", exc
+            ) from exc
         raise
     return destination
 
@@ -557,13 +600,23 @@ def _classify_attempt_failure(exc: BaseException, destination: Path) -> BaseExce
         raise exc
     if isinstance(exc, _RetryableDownloadError):
         return exc
-    if isinstance(exc, (aiohttp.ClientSSLError, aiohttp.ClientConnectionError,
-                        aiohttp.ServerDisconnectedError, aiohttp.ClientPayloadError,
-                        asyncio.TimeoutError, ssl.SSLError)):
+    if isinstance(
+        exc,
+        (
+            aiohttp.ClientSSLError,
+            aiohttp.ClientConnectionError,
+            aiohttp.ServerDisconnectedError,
+            aiohttp.ClientPayloadError,
+            asyncio.TimeoutError,
+            ssl.SSLError,
+        ),
+    ):
         return exc
     if isinstance(exc, OSError):
         if exc.errno == errno.ENOSPC:
-            raise _no_space_error(destination.parent, "download NCBI dataset package", exc) from exc
+            raise _no_space_error(
+                destination.parent, "download NCBI dataset package", exc
+            ) from exc
         return exc
     if isinstance(exc, aiohttp.ClientResponseError):
         if exc.status in RETRYABLE_HTTP_STATUS:
@@ -573,16 +626,16 @@ def _classify_attempt_failure(exc: BaseException, destination: Path) -> BaseExce
 
 
 async def _download_batch_aiohttp(
-        accessions: Sequence[str],
-        destination: Path,
-        *,
-        includes: Sequence[str],
-        email: str | None,
-        api_key: str | None,
-        timeout: float,
-        max_retries: int,
-        retry_backoff: float,
-        cancel_event: Any,
+    accessions: Sequence[str],
+    destination: Path,
+    *,
+    includes: Sequence[str],
+    email: str | None,
+    api_key: str | None,
+    timeout: float,
+    max_retries: int,
+    retry_backoff: float,
+    cancel_event: Any,
 ) -> Path:
     """One concurrent download task with SSL/transient-error retries."""
     import aiohttp
@@ -611,7 +664,9 @@ async def _download_batch_aiohttp(
                 cancel_event,
             )
         try:
-            async with aiohttp.ClientSession(headers=headers, timeout=client_timeout) as session:
+            async with aiohttp.ClientSession(
+                headers=headers, timeout=client_timeout
+            ) as session:
                 response = await _fetch_zip_response(session, urls, params)
                 try:
                     return await _astream_zip_to_destination(
@@ -632,23 +687,29 @@ async def _download_batch_aiohttp(
 
 
 def fetch_entrez_assembly_reports(
-        accessions: Sequence[str], *, email: str | None, api_key: str | None = None
+    accessions: Sequence[str], *, email: str | None, api_key: str | None = None
 ) -> list[dict[str, Any]]:
     """Use Biopython Entrez as a metadata fallback for unusual packages."""
 
     if not email:
-        raise ValidationError("Biopython Entrez fallback requires --email or NCBI_EMAIL")
+        raise ValidationError(
+            "Biopython Entrez fallback requires --email or NCBI_EMAIL"
+        )
     try:
         from Bio import Entrez
     except ImportError as exc:  # pragma: no cover - dependency installation error
-        raise ValidationError("Entrez fallback requires the 'biopython' dependency") from exc
+        raise ValidationError(
+            "Entrez fallback requires the 'biopython' dependency"
+        ) from exc
     Entrez.email = email
     Entrez.api_key = api_key
     Entrez.tool = "Operon"
     reports: list[dict[str, Any]] = []
     for accession in accessions:
         canonical = _canonical_accession(accession)
-        with Entrez.esearch(db="assembly", term=f"{canonical}[Assembly Accession]", retmax=2) as handle:
+        with Entrez.esearch(
+            db="assembly", term=f"{canonical}[Assembly Accession]", retmax=2
+        ) as handle:
             found = Entrez.read(handle)
         ids = list(found.get("IdList") or [])
         if not ids:
@@ -660,24 +721,30 @@ def fetch_entrez_assembly_reports(
             continue
         doc = documents[0]
         synonym = doc.get("Synonym") or {}
-        reports.append({
-            "accession": str(doc.get("AssemblyAccession") or canonical),
-            "organism": {
-                "organismName": str(doc.get("SpeciesName") or ""),
-                "taxId": _integer_or_none(doc.get("Taxid")),
-            },
-            "assemblyInfo": {
-                "assemblyLevel": str(doc.get("AssemblyStatus") or ""),
-                "assemblyName": str(doc.get("AssemblyName") or ""),
-                "biosample": {"accession": str(doc.get("BioSampleAccn") or "")},
-                "bioprojectAccession": str(doc.get("BioProjectAccn") or ""),
-                "pairedAssembly": {
-                    "accession": str(synonym.get("Genbank") or synonym.get("RefSeq") or "")
+        reports.append(
+            {
+                "accession": str(doc.get("AssemblyAccession") or canonical),
+                "organism": {
+                    "organismName": str(doc.get("SpeciesName") or ""),
+                    "taxId": _integer_or_none(doc.get("Taxid")),
                 },
-                "refseqCategory": str(doc.get("RefSeq_category") or ""),
-                "releaseDate": str(doc.get("SubmissionDate") or ""),
-                "submitter": str(doc.get("SubmitterOrganization") or ""),
-            },
-            "sourceDatabase": "SOURCE_DATABASE_REFSEQ" if canonical.startswith("GCF_") else "SOURCE_DATABASE_GENBANK",
-        })
+                "assemblyInfo": {
+                    "assemblyLevel": str(doc.get("AssemblyStatus") or ""),
+                    "assemblyName": str(doc.get("AssemblyName") or ""),
+                    "biosample": {"accession": str(doc.get("BioSampleAccn") or "")},
+                    "bioprojectAccession": str(doc.get("BioProjectAccn") or ""),
+                    "pairedAssembly": {
+                        "accession": str(
+                            synonym.get("Genbank") or synonym.get("RefSeq") or ""
+                        )
+                    },
+                    "refseqCategory": str(doc.get("RefSeq_category") or ""),
+                    "releaseDate": str(doc.get("SubmissionDate") or ""),
+                    "submitter": str(doc.get("SubmitterOrganization") or ""),
+                },
+                "sourceDatabase": "SOURCE_DATABASE_REFSEQ"
+                if canonical.startswith("GCF_")
+                else "SOURCE_DATABASE_GENBANK",
+            }
+        )
     return reports

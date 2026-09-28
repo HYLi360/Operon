@@ -43,14 +43,18 @@ def test_prompt_wrappers_and_choice_validation(monkeypatch):
     monkeypatch.setattr(
         wizard.questionary,
         "text",
-        lambda message, **kwargs: captured.update(message=message, **kwargs) or _Prompt("  value "),
+        lambda message, **kwargs: (
+            captured.update(message=message, **kwargs) or _Prompt("  value ")
+        ),
     )
     assert wizard._text("Message", "default", required=True) == "value"
     assert captured["validate"] is wizard._required
 
     monkeypatch.setattr(wizard.questionary, "path", lambda *a, **k: _Prompt("/tmp/x"))
     monkeypatch.setattr(wizard.questionary, "confirm", lambda *a, **k: _Prompt(1))
-    monkeypatch.setattr(wizard.questionary, "select", lambda *a, **k: _Prompt("selected"))
+    monkeypatch.setattr(
+        wizard.questionary, "select", lambda *a, **k: _Prompt("selected")
+    )
     assert wizard._path("Path") == "/tmp/x"
     assert wizard._confirm("Confirm") is True
     assert wizard._select("Select", ["selected"]) == "selected"
@@ -67,7 +71,9 @@ def test_prompt_wrappers_and_choice_validation(monkeypatch):
 def test_ask_source_builds_both_source_classifications(monkeypatch):
     draft = {"source": {"database_name": "old", "source_type": "insdc"}}
     monkeypatch.setattr(wizard, "_select", lambda *_a, **_k: "non_insdc")
-    answers = iter(["DB", "Provider", "https://record", "doi:1", "CC0", "https://license"])
+    answers = iter(
+        ["DB", "Provider", "https://record", "doi:1", "CC0", "https://license"]
+    )
     required_flags = []
 
     def text(_message, default="", *, required=False):
@@ -83,30 +89,59 @@ def test_ask_source_builds_both_source_classifications(monkeypatch):
 
 def test_ask_entity_sections_cover_create_reuse_and_skip(project_db, monkeypatch):
     _project, db = project_db
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Duplicatus",
-        "taxon_id": 1, "taxonomy_source": "NCBI", "taxonomy_version": "v1",
-    })
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000002", "scientific_name": "Duplicatus",
-    })
-    db.insert_row("samples", {
-        "sample_id": "SMP_000001", "organism_id": "ORG_000001", "strain": "S1",
-    })
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_name": "A1",
-    })
-    db.insert_row("annotations", {
-        "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        "annotation_source": "Pipe", "annotation_version": "1",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Duplicatus",
+            "taxon_id": 1,
+            "taxonomy_source": "NCBI",
+            "taxonomy_version": "v1",
+        },
+    )
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000002",
+            "scientific_name": "Duplicatus",
+        },
+    )
+    db.insert_row(
+        "samples",
+        {
+            "sample_id": "SMP_000001",
+            "organism_id": "ORG_000001",
+            "strain": "S1",
+        },
+    )
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_name": "A1",
+        },
+    )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000001",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "Pipe",
+            "annotation_version": "1",
+        },
+    )
 
     draft = {"organism": {"id": "ORG_000002"}}
-    monkeypatch.setattr(wizard, "_autocomplete", lambda *a, **k: "Duplicatus [ORG_000002]")
+    monkeypatch.setattr(
+        wizard, "_autocomplete", lambda *a, **k: "Duplicatus [ORG_000002]"
+    )
     wizard._ask_organism(db, draft)
     assert draft["organism"] == {"action": "reuse", "id": "ORG_000002"}
 
-    monkeypatch.setattr(wizard, "_autocomplete", lambda *a, **k: "Create a new organism")
+    monkeypatch.setattr(
+        wizard, "_autocomplete", lambda *a, **k: "Create a new organism"
+    )
     texts = iter(["New species", "123", "species", "v2"])
     monkeypatch.setattr(wizard, "_text", lambda *a, **k: next(texts))
     monkeypatch.setattr(wizard, "_select", lambda *a, **k: "NCBI")
@@ -166,13 +201,19 @@ def test_ask_entity_sections_cover_create_reuse_and_skip(project_db, monkeypatch
 def test_annotation_prompt_default_reflects_existing_draft(project_db, monkeypatch):
     _project, db = project_db
     defaults: list[bool] = []
-    monkeypatch.setattr(wizard, "_confirm", lambda _message, default=True: defaults.append(default) or False)
+    monkeypatch.setattr(
+        wizard,
+        "_confirm",
+        lambda _message, default=True: defaults.append(default) or False,
+    )
     draft = {"assembly": {"id": "ASM_000001"}}
     wizard._ask_annotation(db, draft)
     assert defaults == [False]
 
 
-def test_ask_path_files_and_summary_cover_optional_sections(project_db, tmp_path, monkeypatch, capsys):
+def test_ask_path_files_and_summary_cover_optional_sections(
+    project_db, tmp_path, monkeypatch, capsys
+):
     _project, db = project_db
     real_file = tmp_path / "genome.fna"
     real_file.write_text(">x\nACGT\n", encoding="utf-8")
@@ -187,7 +228,11 @@ def test_ask_path_files_and_summary_cover_optional_sections(project_db, tmp_path
     monkeypatch.setattr(wizard, "_ask_path", lambda *a, **k: next(values))
     draft = {
         "source": {"source_type": "insdc", "database_name": "NCBI", "provider": "NCBI"},
-        "organism": {"action": "create", "id": "ORG_1", "row": {"scientific_name": "X"}},
+        "organism": {
+            "action": "create",
+            "id": "ORG_1",
+            "row": {"scientific_name": "X"},
+        },
         "sample": {"action": "create", "id": "SMP_1", "row": {}},
         "run": {"action": "create", "id": "RUN_1", "row": {"run_id": "RUN_1"}},
         "assembly": {"action": "create", "id": "ASM_1", "row": {}},
@@ -223,7 +268,9 @@ def test_warning_relationships_and_link_synchronization(project_db):
     }
     warnings = wizard._warnings(db, draft)
     assert "The selected sample does not belong to the selected organism." in warnings
-    assert "The selected assembly does not belong to the selected sample." not in warnings
+    assert (
+        "The selected assembly does not belong to the selected sample." not in warnings
+    )
     draft["sample"]["id"] = "SMP_2"
     warnings = wizard._warnings(db, draft)
     assert "The selected assembly does not belong to the selected sample." in warnings
@@ -252,9 +299,14 @@ def test_preflight_rejects_missing_source_existing_id_and_missing_target(
 
     base = {
         "source": {"source_type": "insdc", "database_name": "NCBI", "provider": "NCBI"},
-        "organism": {"action": "create", "id": "ORG_000001", "row": {
-            "organism_id": "ORG_000001", "scientific_name": "Example species",
-        }},
+        "organism": {
+            "action": "create",
+            "id": "ORG_000001",
+            "row": {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Example species",
+            },
+        },
         "sample": None,
         "run": None,
         "assembly": None,
@@ -262,17 +314,23 @@ def test_preflight_rejects_missing_source_existing_id_and_missing_target(
         "files": [],
     }
     assert wizard._preflight(db, project, base)[0][0] == "organism"
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Existing"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Existing"}
+    )
     with pytest.raises(ConflictError, match="planned ID already exists"):
         wizard._preflight(db, project, base)
 
     base["organism"] = {"action": "reuse", "id": "ORG_000001"}
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    base["files"] = [{
-        "label": "Genome FASTA", "entity_type": "assembly", "role": "genome_fasta",
-        "path": str(source),
-    }]
+    base["files"] = [
+        {
+            "label": "Genome FASTA",
+            "entity_type": "assembly",
+            "role": "genome_fasta",
+            "path": str(source),
+        }
+    ]
     with pytest.raises(ValidationError, match="has no target assembly"):
         wizard._preflight(db, project, base)
 
@@ -281,13 +339,24 @@ def test_preflight_rejects_same_role_different_bytes(project_db, tmp_path):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "One"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("files", {
-        "file_id": "FIL_000001", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "genome_fasta", "format": "fasta", "compression": "none",
-        "relative_path": "raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta",
-        "size_bytes": 3, "sha256": "0" * 64, "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_000001",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "genome_fasta",
+            "format": "fasta",
+            "compression": "none",
+            "relative_path": "raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta",
+            "size_bytes": 3,
+            "sha256": "0" * 64,
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
     draft = {
@@ -297,10 +366,14 @@ def test_preflight_rejects_same_role_different_bytes(project_db, tmp_path):
         "run": None,
         "assembly": {"action": "reuse", "id": "ASM_000001"},
         "annotation": None,
-        "files": [{
-            "label": "Genome FASTA", "entity_type": "assembly", "role": "genome_fasta",
-            "path": str(source),
-        }],
+        "files": [
+            {
+                "label": "Genome FASTA",
+                "entity_type": "assembly",
+                "role": "genome_fasta",
+                "path": str(source),
+            }
+        ],
     }
     with pytest.raises(ConflictError, match="already has different bytes"):
         wizard._preflight(db, project, draft)
@@ -325,9 +398,18 @@ def test_wizard_declined_warnings_reask_before_commit(project_db, monkeypatch):
     monkeypatch.setattr(wizard, "_preflight", lambda *_a: [])
     monkeypatch.setattr(wizard, "_warnings", lambda *_a: ["warning"])
     commits = []
-    monkeypatch.setattr(wizard, "_commit", lambda *_a: commits.append(1) or {"ok": True})
-    for name in ("_ask_source", "_ask_organism", "_ask_sample", "_ask_sequencing",
-                 "_ask_assembly", "_ask_annotation", "_ask_files"):
+    monkeypatch.setattr(
+        wizard, "_commit", lambda *_a: commits.append(1) or {"ok": True}
+    )
+    for name in (
+        "_ask_source",
+        "_ask_organism",
+        "_ask_sample",
+        "_ask_sequencing",
+        "_ask_assembly",
+        "_ask_annotation",
+        "_ask_files",
+    ):
         monkeypatch.setattr(wizard, name, lambda *_a: None)
     actions = iter(["execute", "execute"])
     confirms = iter([False, True])

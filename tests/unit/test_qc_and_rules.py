@@ -27,7 +27,7 @@ def _fasta_text(seqs):
     for name, seq in seqs:
         out.append(f">{name}")
         for i in range(0, len(seq), 70):
-            out.append(seq[i:i + 70])
+            out.append(seq[i : i + 70])
     return "\n".join(out) + "\n"
 
 
@@ -37,26 +37,67 @@ class TestQCAndRules(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_QC_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_QC_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _add_organism_sample_assembly(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus exemplar", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001", "sex": "unknown"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "scaffold", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus exemplar",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples",
+            {"sample_id": "SMP_000001", "organism_id": "ORG_000001", "sex": "unknown"},
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "scaffold",
+                "assembly_version": 1,
+            },
+        )
 
     def _add_annotation_inputs(self):
         self._add_organism_sample_assembly()
-        self.db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-            "annotation_version": 1,
-        })
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_version": 1,
+            },
+        )
         assembly = self.root / "annotation-assembly.fa"
-        assembly.write_text(">ctg1\n" + "A" * 120 + "\n>ctg2\n" + "C" * 80 + "\n", encoding="utf-8")
+        assembly.write_text(
+            ">ctg1\n" + "A" * 120 + "\n>ctg2\n" + "C" * 80 + "\n", encoding="utf-8"
+        )
         assembly_row = ingest_file(
-            self.db, self.project, assembly, "assembly", "ASM_000001", "genome_fasta",
+            self.db,
+            self.project,
+            assembly,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
         )
         gff = self.root / "annotation.gff3"
         gff.write_text(
@@ -67,37 +108,54 @@ class TestQCAndRules(PytestAssertions):
             encoding="utf-8",
         )
         gff_row = ingest_file(
-            self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3",
+            self.db,
+            self.project,
+            gff,
+            "annotation",
+            "ANN_000001",
+            "annotation_gff3",
         )
         protein = self.root / "annotation-proteins.faa"
         protein.write_text(">p1\nMAAAAAAAAA*\n", encoding="utf-8")
         protein_row = ingest_file(
-            self.db, self.project, protein, "annotation", "ANN_000001", "protein_fasta",
+            self.db,
+            self.project,
+            protein,
+            "annotation",
+            "ANN_000001",
+            "protein_fasta",
         )
         return assembly_row, gff_row, protein_row
 
     def test_assembly_structural_qc_and_profile(self):
         self._add_organism_sample_assembly()
         source = self.root / "asm.fa"
-        source.write_text(_fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8")
-        row = ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        source.write_text(
+            _fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8"
+        )
+        row = ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta"
+        )
         result = qc_all(self.db, self.project, entity_type="assembly")[0]
         self.assertTrue(result["ok"], result)
         metrics = self.db.latest_metrics("assembly", "ASM_000001")
         self.assertEqual(metrics["total_length"], 5000.0)
         self.assertEqual(metrics["contig_n50"], 3000.0)
-        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
+        decision = evaluate_entity(
+            self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1"
+        )
         self.assertEqual(decision["decision"], "PASS")
 
     def test_full_fasta_header_metrics_are_persisted(self):
         self._add_organism_sample_assembly()
         source = self.root / "headers.fa"
         source.write_text(
-            ">same circular chromosome\nACGT\n"
-            ">same circular chromosome\nTGCA\n",
+            ">same circular chromosome\nACGT\n>same circular chromosome\nTGCA\n",
             encoding="utf-8",
         )
-        ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta"
+        )
         result = qc_all(self.db, self.project, entity_type="assembly")[0]
         self.assertTrue(result["ok"], result)
         metrics = self.db.latest_metrics("assembly", "ASM_000001")
@@ -110,26 +168,40 @@ class TestQCAndRules(PytestAssertions):
         source = self.root / "cached.fa"
         source.write_text(_fasta_text([("ctg1", "ACGT" * 100)]), encoding="utf-8")
         row = ingest_file(
-            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta",
+            self.db,
+            self.project,
+            source,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
         )
 
-        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+        with patch(
+            "operon.files.sha256_path", wraps=files_module.sha256_path
+        ) as hasher:
             cached = qc_all(self.db, self.project, file_id=row["file_id"])[0]
             self.assertTrue(cached["ok"], cached)
             self.assertEqual(hasher.call_count, 0)
 
             rehashed = qc_all(
-                self.db, self.project, file_id=row["file_id"], force_checksum=True,
+                self.db,
+                self.project,
+                file_id=row["file_id"],
+                force_checksum=True,
             )[0]
             self.assertTrue(rehashed["ok"], rehashed)
             self.assertEqual(hasher.call_count, 1)
 
         records = [
             json.loads(line)
-            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (self.project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if '"step": "qc"' in line and row["file_id"] in line
         ]
-        self.assertEqual(records[-2]["checksum_verification_method"], "cached_stat_fingerprint")
+        self.assertEqual(
+            records[-2]["checksum_verification_method"], "cached_stat_fingerprint"
+        )
         self.assertEqual(records[-1]["checksum_verification_method"], "full_sha256")
         self.assertFalse(records[-2]["qc_timing"]["integrity"]["rehash_requested"])
         self.assertTrue(records[-1]["qc_timing"]["integrity"]["rehash_requested"])
@@ -140,10 +212,16 @@ class TestQCAndRules(PytestAssertions):
 
         self._add_organism_sample_assembly()
         source = self.root / "asm.fa"
-        source.write_text(_fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8")
-        ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        source.write_text(
+            _fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8"
+        )
+        ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta"
+        )
         self.assertTrue(qc_all(self.db, self.project, entity_type="assembly")[0]["ok"])
-        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
+        decision = evaluate_entity(
+            self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1"
+        )
         self.assertEqual(decision["decision"], "PASS")
         self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "ACCEPTED")
 
@@ -156,9 +234,18 @@ class TestQCAndRules(PytestAssertions):
 
         # Automatic re-evaluation appends a new decision row but keeps the
         # lifecycle state, even from the terminal RELEASED state.
-        set_state(self.db, "assembly", "ASM_000001", "RELEASED", "test release",
-                  force=True, actor="tester")
-        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1")
+        set_state(
+            self.db,
+            "assembly",
+            "ASM_000001",
+            "RELEASED",
+            "test release",
+            force=True,
+            actor="tester",
+        )
+        decision = evaluate_entity(
+            self.db, self.project, "assembly", "ASM_000001", "assembly_production_v1"
+        )
         self.assertEqual(decision["decision"], "PASS")
         self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "RELEASED")
         self.assertEqual(
@@ -174,17 +261,25 @@ class TestQCAndRules(PytestAssertions):
         source = self.root / "changed.fa"
         source.write_text(">ctg1\nAAAA\n", encoding="utf-8")
         row = ingest_file(
-            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta",
+            self.db,
+            self.project,
+            source,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
         )
         archived = self.project.root / row["relative_path"]
         archived.write_text(">ctg1\nTTTT\n", encoding="utf-8")
 
-        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+        with patch(
+            "operon.files.sha256_path", wraps=files_module.sha256_path
+        ) as hasher:
             result = qc_all(self.db, self.project, file_id=row["file_id"])[0]
         self.assertFalse(result["ok"])
         self.assertEqual(hasher.call_count, 1)
         cached = self.db.conn.execute(
-            "SELECT 1 FROM local_file_verifications WHERE file_id=?", (row["file_id"],),
+            "SELECT 1 FROM local_file_verifications WHERE file_id=?",
+            (row["file_id"],),
         ).fetchone()
         self.assertIsNone(cached)
 
@@ -193,7 +288,9 @@ class TestQCAndRules(PytestAssertions):
         source = self.root / "asm.fna.gz"
         with gzip.open(source, "wt", encoding="utf-8") as handle:
             handle.write(_fasta_text([("ctg1", "GATTACA" * 400)]))
-        row = ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta")
+        row = ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta"
+        )
         self.assertEqual(row["format"], "fasta")
         self.assertEqual(row["compression"], "gzip")
         result = qc_all(self.db, self.project, entity_type="assembly")[0]
@@ -203,7 +300,9 @@ class TestQCAndRules(PytestAssertions):
         self._add_organism_sample_assembly()
         source = self.root / "notes.dat"
         source.write_text("not a sequence format\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, source, "assembly", "ASM_000001", "other")
+        return ingest_file(
+            self.db, self.project, source, "assembly", "ASM_000001", "other"
+        )
 
     def test_unparsed_format_records_integrity_without_parseable(self):
         row = self._add_other_format_file()
@@ -214,54 +313,81 @@ class TestQCAndRules(PytestAssertions):
         names = {
             item["metric_name"]
             for item in self.db.conn.execute(
-                "SELECT metric_name FROM qc_results WHERE file_id=?", (row["file_id"],),
+                "SELECT metric_name FROM qc_results WHERE file_id=?",
+                (row["file_id"],),
             ).fetchall()
         }
         self.assertTrue({"file_exists", "size_bytes", "sha256_match"}.issubset(names))
         self.assertFalse("parseable" in names)
-        self.assertEqual(self.db.get_entity_state("assembly", "ASM_000001"), "QC_COMPLETE")
+        self.assertEqual(
+            self.db.get_entity_state("assembly", "ASM_000001"), "QC_COMPLETE"
+        )
 
     def test_multi_file_qc_state_uses_worst_file_and_reports_each_file(self):
         self._add_organism_sample_assembly()
         bad = self.root / "first-bad.fa"
         bad.write_text(">broken\nACGT\n", encoding="utf-8")
-        bad_row = ingest_file(self.db, self.project, bad, "assembly", "ASM_000001", "genome_fasta")
+        bad_row = ingest_file(
+            self.db, self.project, bad, "assembly", "ASM_000001", "genome_fasta"
+        )
         bad_archived = self.project.root / bad_row["relative_path"]
         bad_archived.write_text(">broken\nZZZZ\n", encoding="utf-8")
         good = self.root / "second-good.fa"
         good.write_text(">ok\nACGT\n", encoding="utf-8")
-        good_row = ingest_file(self.db, self.project, good, "assembly", "ASM_000001", "protein_fasta")
+        good_row = ingest_file(
+            self.db, self.project, good, "assembly", "ASM_000001", "protein_fasta"
+        )
 
         results = qc_all(self.db, self.project, entity_type="assembly")
-        assert [item["file_id"] for item in results] == [bad_row["file_id"], good_row["file_id"]]
+        assert [item["file_id"] for item in results] == [
+            bad_row["file_id"],
+            good_row["file_id"],
+        ]
         assert self.db.get_entity_state("assembly", "ASM_000001") == "QC_FAILED"
         final_statuses = results[-1]["file_statuses"]
         assert {item["file_id"]: item["qc_state"] for item in final_statuses} == {
-            bad_row["file_id"]: "QC_FAILED", good_row["file_id"]: "QC_COMPLETE",
+            bad_row["file_id"]: "QC_FAILED",
+            good_row["file_id"]: "QC_COMPLETE",
         }
 
     def test_unparsed_format_is_not_evaluated_by_integrity_profile(self):
         row = self._add_other_format_file()
         result = qc.qc_file(self.db, self.project, row["file_id"])
         self.assertTrue(result["ok"], result)
-        decision = evaluate_entity(self.db, self.project, "assembly", "ASM_000001", "file_integrity_v1")
+        decision = evaluate_entity(
+            self.db, self.project, "assembly", "ASM_000001", "file_integrity_v1"
+        )
         self.assertEqual(decision["decision"], "NOT_EVALUATED")
         self.assertIn("MISSING_METRIC:parseable", decision["reason_codes"])
 
     def test_paired_fastq_count_is_cached_within_qc_all(self):
-        self.db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Reads", "taxonomy_source": "NCBI",
-        })
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("runs", {
-            "run_id": "RUN_000001", "sample_id": "SMP_000001", "library_layout": "PAIRED",
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Reads",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "runs",
+            {
+                "run_id": "RUN_000001",
+                "sample_id": "SMP_000001",
+                "library_layout": "PAIRED",
+            },
+        )
         fastq = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
         for role in ("reads_r1", "reads_r2"):
             source = self.root / f"{role}.fastq"
             source.write_text(fastq, encoding="utf-8")
             ingest_file(self.db, self.project, source, "run", "RUN_000001", role)
-        with patch("operon.qc.fastq_record_count", wraps=qc.fastq_record_count) as counter:
+        with patch(
+            "operon.qc.fastq_record_count", wraps=qc.fastq_record_count
+        ) as counter:
             results = qc_all(self.db, self.project, entity_type="run")
         self.assertTrue(all(item["ok"] for item in results), results)
         self.assertEqual(counter.call_count, 1)
@@ -269,13 +395,25 @@ class TestQCAndRules(PytestAssertions):
         self.assertEqual(metrics["paired_read_count_match"], 1.0)
 
     def test_paired_fastq_mismatch_fails_file_and_entity_qc(self):
-        self.db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Reads", "taxonomy_source": "NCBI",
-        })
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("runs", {
-            "run_id": "RUN_000001", "sample_id": "SMP_000001", "library_layout": "PAIRED",
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Reads",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "runs",
+            {
+                "run_id": "RUN_000001",
+                "sample_id": "SMP_000001",
+                "library_layout": "PAIRED",
+            },
+        )
         fastq_r1 = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
         fastq_r2 = "@r1\nACGT\n+\nIIII\n"
         for role, content in (("reads_r1", fastq_r1), ("reads_r2", fastq_r2)):
@@ -288,7 +426,9 @@ class TestQCAndRules(PytestAssertions):
         self.assertTrue(all(item["ok"] for item in results), results)
         self.assertEqual(self.db.get_entity_state("run", "RUN_000001"), "QC_FAILED")
         self.assertTrue(any(item["file_qc_state"] == "QC_FAILED" for item in results))
-        self.assertEqual(self.db.latest_metrics("run", "RUN_000001")["paired_read_count_match"], 0.0)
+        self.assertEqual(
+            self.db.latest_metrics("run", "RUN_000001")["paired_read_count_match"], 0.0
+        )
 
     def test_annotation_fasta_lengths_are_cached_across_qc_runs(self):
         assembly_row, gff_row, protein_row = self._add_annotation_inputs()
@@ -299,7 +439,9 @@ class TestQCAndRules(PytestAssertions):
             self.assertTrue(second["ok"], second)
             self.assertEqual(scanner.call_count, 1)
 
-            cache_files = list((self.project.qc_root / "cache" / "fasta_lengths").glob("*.tsv"))
+            cache_files = list(
+                (self.project.qc_root / "cache" / "fasta_lengths").glob("*.tsv")
+            )
             self.assertEqual(len(cache_files), 1)
             cache_lines = cache_files[0].read_text(encoding="utf-8").splitlines()
             seqid, length = cache_lines[1].rsplit("\t", 1)
@@ -311,7 +453,9 @@ class TestQCAndRules(PytestAssertions):
 
         records = [
             json.loads(line)
-            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (self.project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if '"step": "qc"' in line and gff_row["file_id"] in line
         ]
         self.assertEqual(len(records), 3)
@@ -325,8 +469,12 @@ class TestQCAndRules(PytestAssertions):
         ]
         self.assertEqual(cache_statuses, ["built", "hit", "built"])
         self.assertIn("assembly_fasta_lengths", records[0]["stage_timings_seconds"])
-        self.assertFalse("assembly_fasta_lengths" in records[1]["stage_timings_seconds"])
-        self.assertIn("assembly_fasta_length_cache_lookup", records[1]["stage_timings_seconds"])
+        self.assertFalse(
+            "assembly_fasta_lengths" in records[1]["stage_timings_seconds"]
+        )
+        self.assertIn(
+            "assembly_fasta_length_cache_lookup", records[1]["stage_timings_seconds"]
+        )
 
         annotation_rows = self.db.conn.execute(
             "SELECT DISTINCT input_identity FROM qc_results "
@@ -334,7 +482,9 @@ class TestQCAndRules(PytestAssertions):
             (gff_row["file_id"],),
         ).fetchall()
         self.assertEqual(len(annotation_rows), 1)
-        self.assertTrue(annotation_rows[0]["input_identity"].startswith("input-set:v1:"))
+        self.assertTrue(
+            annotation_rows[0]["input_identity"].startswith("input-set:v1:")
+        )
         integrity_rows = self.db.conn.execute(
             "SELECT DISTINCT input_identity FROM qc_results "
             "WHERE file_id=? AND qc_stage='file_integrity'",
@@ -352,21 +502,31 @@ class TestQCAndRules(PytestAssertions):
     def test_annotation_rehash_covers_primary_and_related_inputs(self):
         _assembly_row, gff_row, _protein_row = self._add_annotation_inputs()
         qc_all(self.db, self.project, file_id=gff_row["file_id"])
-        with patch("operon.files.sha256_path", wraps=files_module.sha256_path) as hasher:
+        with patch(
+            "operon.files.sha256_path", wraps=files_module.sha256_path
+        ) as hasher:
             result = qc_all(
-                self.db, self.project, file_id=gff_row["file_id"], force_checksum=True,
+                self.db,
+                self.project,
+                file_id=gff_row["file_id"],
+                force_checksum=True,
             )[0]
         self.assertTrue(result["ok"], result)
         self.assertEqual(hasher.call_count, 3)
         records = [
             json.loads(line)
-            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (self.project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if '"step": "qc"' in line and gff_row["file_id"] in line
         ]
         timing = records[-1]["qc_timing"]
         self.assertTrue(timing["integrity"]["rehash_requested"])
         self.assertEqual(
-            {item["integrity"]["verification_method"] for item in timing["related_inputs"]},
+            {
+                item["integrity"]["verification_method"]
+                for item in timing["related_inputs"]
+            },
             {"full_sha256"},
         )
 
@@ -381,15 +541,20 @@ class TestQCAndRules(PytestAssertions):
         record = next(
             json.loads(line)
             for line in reversed(
-                (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+                (self.project.logs_root / "workflow.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
             )
             if gff_row["file_id"] in line and '"step": "qc"' in line
         )
         protein_input = next(
-            item for item in record["qc_timing"]["related_inputs"]
+            item
+            for item in record["qc_timing"]["related_inputs"]
             if item["kind"] == "protein_fasta"
         )
-        self.assertEqual(protein_input["integrity"]["verification_method"], "full_sha256")
+        self.assertEqual(
+            protein_input["integrity"]["verification_method"], "full_sha256"
+        )
 
     def test_annotation_qc_rejects_changed_related_assembly_before_cache_use(self):
         assembly_row, gff_row, _protein_row = self._add_annotation_inputs()
@@ -407,25 +572,56 @@ class TestQCAndRules(PytestAssertions):
         record = next(
             json.loads(line)
             for line in reversed(
-                (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+                (self.project.logs_root / "workflow.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
             )
             if gff_row["file_id"] in line and '"step": "qc"' in line
         )
         assembly_input = next(
-            item for item in record["qc_timing"]["related_inputs"]
+            item
+            for item in record["qc_timing"]["related_inputs"]
             if item["kind"] == "assembly_fasta"
         )
-        self.assertEqual(assembly_input["integrity"]["verification_method"], "full_sha256")
+        self.assertEqual(
+            assembly_input["integrity"]["verification_method"], "full_sha256"
+        )
         assert "length_cache" not in assembly_input
 
     def test_annotation_qc_finds_broken_cds_and_parent(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "scaffold", "assembly_version": 1})
-        self.db.insert_row("annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001", "annotation_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "scaffold",
+                "assembly_version": 1,
+            },
+        )
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_version": 1,
+            },
+        )
         fasta = self.root / "asm.fa"
         fasta.write_text(_fasta_text([("ctg1", "A" * 2000)]), encoding="utf-8")
-        ingest_file(self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+        ingest_file(
+            self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta"
+        )
         gff = self.root / "bad.gff3"
         gff.write_text(
             "##gff-version 3\n"
@@ -435,17 +631,26 @@ class TestQCAndRules(PytestAssertions):
             "ctg1\ttest\tmRNA\t900\t1000\t.\t-\t.\tID=orphan;Parent=ghost\n",
             encoding="utf-8",
         )
-        gff_row = ingest_file(self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3")
+        gff_row = ingest_file(
+            self.db, self.project, gff, "annotation", "ANN_000001", "annotation_gff3"
+        )
         protein = self.root / "proteins.faa"
         protein.write_text(">p1\nMPEPTIDE*\n", encoding="utf-8")
         protein_row = ingest_file(
-            self.db, self.project, protein, "annotation", "ANN_000001", "protein_fasta",
+            self.db,
+            self.project,
+            protein,
+            "annotation",
+            "ANN_000001",
+            "protein_fasta",
         )
         qc_all(self.db, self.project, entity_type="annotation")
         metrics = self.db.latest_metrics("annotation", "ANN_000001")
         self.assertEqual(metrics["cds_length_multiple3_percent"], 0.0)
         self.assertEqual(metrics["missing_parent_count"], 1.0)
-        decision = evaluate_entity(self.db, self.project, "annotation", "ANN_000001", "annotation_release_v1")
+        decision = evaluate_entity(
+            self.db, self.project, "annotation", "ANN_000001", "annotation_release_v1"
+        )
         self.assertEqual(decision["decision"], "FAIL")
         self.assertIn("CDS_NOT_MULTIPLE_OF_3", decision["reason_codes"])
 
@@ -460,10 +665,13 @@ class TestQCAndRules(PytestAssertions):
 
         records = [
             json.loads(line)
-            for line in (self.project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (self.project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
         ]
         record = next(
-            item for item in records
+            item
+            for item in records
             if item.get("step") == "qc" and item.get("file_id") == gff_row["file_id"]
         )
         self.assertEqual(record["parser_backend"], "cython")
@@ -483,19 +691,32 @@ class TestQCAndRules(PytestAssertions):
             {item["file_id"] for item in timing["related_inputs"]},
         )
         expected_stages = {
-            "state_qc_running", "file_integrity", "annotation_manifest_lookup",
-            "assembly_fasta_integrity", "assembly_fasta_length_cache_lookup",
-            "assembly_fasta_lengths", "assembly_fasta_length_cache_write",
-            "assembly_fasta_length_map_prepare", "gff3_scan", "gff3_finalize",
+            "state_qc_running",
+            "file_integrity",
+            "annotation_manifest_lookup",
+            "assembly_fasta_integrity",
+            "assembly_fasta_length_cache_lookup",
+            "assembly_fasta_lengths",
+            "assembly_fasta_length_cache_write",
+            "assembly_fasta_length_map_prepare",
+            "gff3_scan",
+            "gff3_finalize",
             "protein_manifest_lookup",
-            "protein_fasta_integrity", "protein_stats", "qc_results_write",
-            "state_qc_complete", "unattributed",
+            "protein_fasta_integrity",
+            "protein_stats",
+            "qc_results_write",
+            "state_qc_complete",
+            "unattributed",
         }
         self.assertTrue(expected_stages.issubset(timing["stages_seconds"]))
-        self.assertTrue(all(value >= 0.0 for value in timing["stages_seconds"].values()))
+        self.assertTrue(
+            all(value >= 0.0 for value in timing["stages_seconds"].values())
+        )
         self.assertEqual(record["stage_timings_seconds"], timing["stages_seconds"])
         assembly_input = next(
-            item for item in timing["related_inputs"] if item["kind"] == "assembly_fasta"
+            item
+            for item in timing["related_inputs"]
+            if item["kind"] == "assembly_fasta"
         )
         self.assertEqual(assembly_input["length_cache"]["status"], "built")
         self.assertEqual(
@@ -508,7 +729,9 @@ class TestQCAndRules(PytestAssertions):
             "AND qc_stage='annotation_basic' AND metric_name='parseable'",
             (gff_row["file_id"],),
         ).fetchone()
-        self.assertTrue(annotation_identity["input_identity"].startswith("input-set:v1:"))
+        self.assertTrue(
+            annotation_identity["input_identity"].startswith("input-set:v1:")
+        )
 
         db_record = self.db.conn.execute(
             "SELECT execution_details FROM workflow_runs "
@@ -518,63 +741,100 @@ class TestQCAndRules(PytestAssertions):
         self.assertIsNotNone(db_record)
         self.assertEqual(json.loads(db_record["execution_details"]), timing)
 
-    def _insert_busco_metrics(self, stage, lineage, complete, fragmented=1.0, duplicated=1.0):
+    def _insert_busco_metrics(
+        self, stage, lineage, complete, fragmented=1.0, duplicated=1.0
+    ):
         for name, value, numeric in [
             ("busco_lineage_dataset", lineage, None),
             ("busco_complete_percent", str(complete), complete),
             ("busco_fragmented_percent", str(fragmented), fragmented),
             ("busco_duplicated_percent", str(duplicated), duplicated),
         ]:
-            self.db.insert_qc_result({
-                "entity_type": "annotation", "entity_id": "ANN_000001",
-                "input_identity": "file:FIL_000001:test", "qc_stage": stage,
-                "metric_name": name, "metric_value": value, "metric_numeric": numeric,
-                "metric_unit": "percent" if name.endswith("_percent") else None,
-                "tool": "busco", "tool_version": "6.1.0",
-                "parameter_set": stage, "evaluated_at": now_iso(),
-            })
+            self.db.insert_qc_result(
+                {
+                    "entity_type": "annotation",
+                    "entity_id": "ANN_000001",
+                    "input_identity": "file:FIL_000001:test",
+                    "qc_stage": stage,
+                    "metric_name": name,
+                    "metric_value": value,
+                    "metric_numeric": numeric,
+                    "metric_unit": "percent" if name.endswith("_percent") else None,
+                    "tool": "busco",
+                    "tool_version": "6.1.0",
+                    "parameter_set": stage,
+                    "evaluated_at": now_iso(),
+                }
+            )
 
     def test_busco_value_by_uses_declared_qc_stage(self):
-        self.db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Testus",
-            "taxonomy_source": "NCBI",
-        })
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-            "assembly_level": "scaffold", "assembly_version": 1,
-        })
-        self.db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-            "annotation_version": 1,
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "scaffold",
+                "assembly_version": 1,
+            },
+        )
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_version": 1,
+            },
+        )
         self._insert_busco_metrics(
-            "analysis:busco_autolineage", "fabales_odb12.2", 74.0,
+            "analysis:busco_autolineage",
+            "fabales_odb12.2",
+            74.0,
         )
         # A newer fixed-lineage result must not silently replace the source
         # selected by the profile.
         self._insert_busco_metrics(
             "analysis:busco_lineage:lineage_dataset=brassicales_odb12.2",
-            "brassicales_odb12.2", 99.0,
+            "brassicales_odb12.2",
+            99.0,
         )
         decision = evaluate_entity(
-            self.db, self.project, "annotation", "ANN_000001",
+            self.db,
+            self.project,
+            "annotation",
+            "ANN_000001",
             "annotation_busco_viridiplantae_odb12_v1",
         )
         self.assertEqual(decision["decision"], "FAIL")
         self.assertIn("BUSCO_COMPLETENESS_FAIL", decision["reason_codes"])
         snapshot = json.loads(decision["observed"])
         self.assertEqual(
-            snapshot["_rule_sources"]["analysis:busco_autolineage"]
-            ["busco_complete_percent"],
+            snapshot["_rule_sources"]["analysis:busco_autolineage"][
+                "busco_complete_percent"
+            ],
             74.0,
         )
 
         self._insert_busco_metrics(
-            "analysis:busco_autolineage", "fabales_odb12.2", 80.0,
+            "analysis:busco_autolineage",
+            "fabales_odb12.2",
+            80.0,
         )
         decision = evaluate_entity(
-            self.db, self.project, "annotation", "ANN_000001",
+            self.db,
+            self.project,
+            "annotation",
+            "ANN_000001",
             "annotation_busco_viridiplantae_odb12_v1",
         )
         self.assertEqual(decision["decision"], "PASS_WITH_WARNINGS")
@@ -582,10 +842,15 @@ class TestQCAndRules(PytestAssertions):
 
     def test_busco_value_by_unknown_lineage_warns(self):
         self._insert_busco_metrics(
-            "analysis:busco_autolineage", "new_lineage_odb12.2", 99.0,
+            "analysis:busco_autolineage",
+            "new_lineage_odb12.2",
+            99.0,
         )
         decision = evaluate_entity(
-            self.db, self.project, "annotation", "ANN_000001",
+            self.db,
+            self.project,
+            "annotation",
+            "ANN_000001",
             "annotation_busco_viridiplantae_odb12_v1",
         )
         self.assertEqual(decision["decision"], "PASS_WITH_WARNINGS")

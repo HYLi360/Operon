@@ -17,10 +17,7 @@ from tests.helpers import PytestAssertions
 FASTA = ">ctg1\n" + "ACGT" * 50 + "\n>ctg2\n" + "GGGG" * 25 + "\n"
 FASTA_V2 = ">ctg1\n" + "ACGT" * 50 + "\n>ctg3\n" + "TTTT" * 10 + "\n"
 FASTQ = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
-GFF3 = (
-    "##gff-version 3\n"
-    "ctg1\ttest\tgene\t1\t120\t.\t+\t.\tID=gene1\n"
-)
+GFF3 = "##gff-version 3\nctg1\ttest\tgene\t1\t120\t.\t+\t.\tID=gene1\n"
 
 
 class TestSequences(PytestAssertions):
@@ -30,32 +27,66 @@ class TestSequences(PytestAssertions):
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
         self.assertEqual(
-            main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SEQ_001"]), 0)
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_SEQ_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
-        self.db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Testus exemplar",
-            "taxonomy_source": "NCBI",
-        })
-        self.db.insert_row("samples", {
-            "sample_id": "SMP_000001", "organism_id": "ORG_000001", "sex": "unknown",
-        })
-        self.db.insert_row("assemblies", {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-            "assembly_level": "scaffold", "assembly_version": 1,
-        })
-        self.db.insert_row("runs", {
-            "run_id": "RUN_000001", "sample_id": "SMP_000001", "library_layout": "PAIRED",
-        })
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus exemplar",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples",
+            {
+                "sample_id": "SMP_000001",
+                "organism_id": "ORG_000001",
+                "sex": "unknown",
+            },
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "scaffold",
+                "assembly_version": 1,
+            },
+        )
+        self.db.insert_row(
+            "runs",
+            {
+                "run_id": "RUN_000001",
+                "sample_id": "SMP_000001",
+                "library_layout": "PAIRED",
+            },
+        )
 
-    def _ingest(self, name: str, text: str, entity_type: str, entity_id: str, role: str) -> dict:
+    def _ingest(
+        self, name: str, text: str, entity_type: str, entity_id: str, role: str
+    ) -> dict:
         source = self.root / name
         source.write_text(text, encoding="utf-8")
         return ingest_file(self.db, self.project, source, entity_type, entity_id, role)
 
     def _sequence_rows(self, file_id: str) -> list:
-        return self.db.query("SELECT * FROM sequences WHERE file_id=? ORDER BY seqid", (file_id,))
+        return self.db.query(
+            "SELECT * FROM sequences WHERE file_id=? ORDER BY seqid", (file_id,)
+        )
 
     def test_fasta_qc_populates_sequences(self):
         row = self._ingest("asm.fa", FASTA, "assembly", "ASM_000001", "genome_fasta")
@@ -96,17 +127,25 @@ class TestSequences(PytestAssertions):
         )
 
     def test_gff3_qc_populates_assembly_sequences(self):
-        assembly = self._ingest("ann-asm.fa", FASTA, "assembly", "ASM_000001", "genome_fasta")
+        assembly = self._ingest(
+            "ann-asm.fa", FASTA, "assembly", "ASM_000001", "genome_fasta"
+        )
         self.db.conn.execute(
             "UPDATE assemblies SET fasta_file_id=? WHERE assembly_id=?",
             (assembly["file_id"], "ASM_000001"),
         )
         self.db.conn.commit()
-        self.db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-            "annotation_version": 1,
-        })
-        gff = self._ingest("ann.gff3", GFF3, "annotation", "ANN_000001", "annotation_gff3")
+        self.db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_version": 1,
+            },
+        )
+        gff = self._ingest(
+            "ann.gff3", GFF3, "annotation", "ANN_000001", "annotation_gff3"
+        )
         result = qc_file(self.db, self.project, gff["file_id"])
         self.assertTrue(result["ok"], result)
         rows = self._sequence_rows(assembly["file_id"])
@@ -123,14 +162,19 @@ class TestSequences(PytestAssertions):
         row = self._ingest("remote.fa", FASTA, "assembly", "ASM_000001", "genome_fasta")
         path = self.root / row["relative_path"]
         payload = measure_file(
-            path, file_format="fasta", file_role="genome_fasta",
+            path,
+            file_format="fasta",
+            file_role="genome_fasta",
             file_id=row["file_id"],
-            sha256=sha256_file(path), size_bytes=path.stat().st_size,
+            sha256=sha256_file(path),
+            size_bytes=path.stat().st_size,
         )
         self.assertEqual(payload["sequences"], {"ctg1": 200, "ctg2": 100})
         payload_path = self.root / "payload.json"
         payload_path.write_text(json.dumps(payload), encoding="utf-8")
-        code = main(["--project", str(self.root), "import-qc", "--file", str(payload_path)])
+        code = main(
+            ["--project", str(self.root), "import-qc", "--file", str(payload_path)]
+        )
         self.assertEqual(code, 0)
         rows = self._sequence_rows(row["file_id"])
         self.assertEqual(
@@ -164,4 +208,6 @@ class TestSequences(PytestAssertions):
         result = qc_file(self.db, self.project, row["file_id"])
         self.assertTrue(result["ok"], result)
         self.assertEqual(self._sequence_rows(row["file_id"]), [])
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM sequences")[0]["n"], 0)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM sequences")[0]["n"], 0
+        )

@@ -68,6 +68,7 @@ def _identity_cache_get(cache: dict[str, tuple[float, Any]], key: str) -> Any | 
         return None
     return value
 
+
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
 
 DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
@@ -94,18 +95,36 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "output_subdir": "blastn_nt",
                     "output_suffix": ".blastn.tsv",
                     "arguments": [
-                        "-db", "${database}",
-                        "-query", "${input}",
-                        "-out", "${output}",
+                        "-db",
+                        "${database}",
+                        "-query",
+                        "${input}",
+                        "-out",
+                        "${output}",
                         "-outfmt",
                         "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-max_target_seqs", "5",
-                        "-evalue", "1e-5",
-                        "-num_threads", "${threads}",
+                        "-max_target_seqs",
+                        "5",
+                        "-evalue",
+                        "1e-5",
+                        "-num_threads",
+                        "${threads}",
                     ],
                     "result_parser": "blast_tabular",
-                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend",
-                                       "sstart", "send", "evalue", "bitscore"],
+                    "result_columns": [
+                        "qseqid",
+                        "sseqid",
+                        "pident",
+                        "length",
+                        "mismatch",
+                        "gapopen",
+                        "qstart",
+                        "qend",
+                        "sstart",
+                        "send",
+                        "evalue",
+                        "bitscore",
+                    ],
                     "hit_metric_columns": ["pident", "length", "evalue", "bitscore"],
                     "max_hits_per_query": 5,
                 }
@@ -128,18 +147,36 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "output_subdir": "blastp_nr",
                     "output_suffix": ".blastp.tsv",
                     "arguments": [
-                        "-db", "${database}",
-                        "-query", "${input}",
-                        "-out", "${output}",
+                        "-db",
+                        "${database}",
+                        "-query",
+                        "${input}",
+                        "-out",
+                        "${output}",
                         "-outfmt",
                         "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore",
-                        "-max_target_seqs", "5",
-                        "-evalue", "1e-5",
-                        "-num_threads", "${threads}",
+                        "-max_target_seqs",
+                        "5",
+                        "-evalue",
+                        "1e-5",
+                        "-num_threads",
+                        "${threads}",
                     ],
                     "result_parser": "blast_tabular",
-                    "result_columns": ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend",
-                                       "sstart", "send", "evalue", "bitscore"],
+                    "result_columns": [
+                        "qseqid",
+                        "sseqid",
+                        "pident",
+                        "length",
+                        "mismatch",
+                        "gapopen",
+                        "qstart",
+                        "qend",
+                        "sstart",
+                        "send",
+                        "evalue",
+                        "bitscore",
+                    ],
                     "hit_metric_columns": ["pident", "length", "evalue", "bitscore"],
                     "max_hits_per_query": 5,
                 }
@@ -161,8 +198,10 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "output_subdir": "hmmsearch_pfam",
                     "output_suffix": ".hmmsearch.tblout",
                     "arguments": [
-                        "--tblout", "${output}",
-                        "--cpu", "${threads}",
+                        "--tblout",
+                        "${output}",
+                        "--cpu",
+                        "${threads}",
                         "${database}",
                         "${input}",
                     ],
@@ -192,12 +231,18 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "output_kind": "directory",
                     "output_name": "${file_id}.busco",
                     "arguments": [
-                        "-m", "protein",
-                        "-i", "${input}",
-                        "-o", "${output_name}",
-                        "--out_path", "${output_parent}",
-                        "--download_path", "${database}",
-                        "-c", "${threads}",
+                        "-m",
+                        "protein",
+                        "-i",
+                        "${input}",
+                        "-o",
+                        "${output_name}",
+                        "--out_path",
+                        "${output_parent}",
+                        "--download_path",
+                        "${database}",
+                        "-c",
+                        "${threads}",
                         "--auto-lineage",
                         "--opt-out-run-stats",
                         "--tar",
@@ -225,19 +270,26 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "output_kind": "directory",
                     "output_name": "${file_id}.${lineage_dataset}.busco",
                     "arguments": [
-                        "-m", "protein",
-                        "-i", "${input}",
-                        "-o", "${output_name}",
-                        "--out_path", "${output_parent}",
-                        "--download_path", "${database}",
-                        "--lineage_dataset", "${lineage_dataset}",
-                        "-c", "${threads}",
+                        "-m",
+                        "protein",
+                        "-i",
+                        "${input}",
+                        "-o",
+                        "${output_name}",
+                        "--out_path",
+                        "${output_parent}",
+                        "--download_path",
+                        "${database}",
+                        "--lineage_dataset",
+                        "${lineage_dataset}",
+                        "-c",
+                        "${threads}",
                         "--opt-out-run-stats",
                         "--tar",
                     ],
                     "result_parser": "busco_json",
                     "result_glob": "short_summary.specific.*.json",
-                }
+                },
             },
         },
         "rpsblast": {
@@ -260,21 +312,31 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                         {
                             "arguments": [
                                 "rpsblast",
-                                "-query", "${input}",
-                                "-db", "${database}",
-                                "-out", "${work_dir}/hits.asn",
-                                "-outfmt", "11",
-                                "-evalue", "0.001",
-                                "-num_threads", "${threads}",
+                                "-query",
+                                "${input}",
+                                "-db",
+                                "${database}",
+                                "-out",
+                                "${work_dir}/hits.asn",
+                                "-outfmt",
+                                "11",
+                                "-evalue",
+                                "0.001",
+                                "-num_threads",
+                                "${threads}",
                             ],
                         },
                         {
                             "arguments": [
                                 "rpsbproc",
-                                "-i", "${work_dir}/hits.asn",
-                                "-o", "${output}",
-                                "-e", "0.001",
-                                "-m", "rep",
+                                "-i",
+                                "${work_dir}/hits.asn",
+                                "-o",
+                                "${output}",
+                                "-e",
+                                "0.001",
+                                "-m",
+                                "rep",
                             ],
                             "version_args": ["-version"],
                             "version_pattern": r"rpsbproc:\s*([^\s]+)",
@@ -298,9 +360,9 @@ def ensure_tools_config(project: Project) -> Path:
             "# Operon external tools configuration (YAML)\n"
             "# Edit paths, conda environments and recipe arguments here.\n"
             "# run_method examples:\n"
-            "#   \"\"                         -> use executable directly\n"
-            "#   \"/opt/conda/bin/conda run --no-capture-output -n blast\"\n"
-            "#   \"singularity exec blast.sif\"\n"
+            '#   ""                         -> use executable directly\n'
+            '#   "/opt/conda/bin/conda run --no-capture-output -n blast"\n'
+            '#   "singularity exec blast.sif"\n'
             "# The rpsblast_cdd recipe chains rpsblast into rpsbproc; rpsbproc\n"
             "# flags differ between builds, so adjust the second command block\n"
             "# to your local rpsbproc version.\n"
@@ -375,7 +437,9 @@ def get_tool(project: Project, tool_name: str) -> ToolSpec:
     tools = config.get("tools", {})
     if tool_name not in tools:
         available = ", ".join(sorted(tools.keys())) or "(none)"
-        raise ValidationError(f"unknown tool {tool_name!r} in {project.tools_config_path}; available: {available}")
+        raise ValidationError(
+            f"unknown tool {tool_name!r} in {project.tools_config_path}; available: {available}"
+        )
     raw = tools[tool_name]
     if not isinstance(raw, dict):
         raise ValidationError(f"tool {tool_name!r} in tools.yaml must be a mapping")
@@ -387,16 +451,22 @@ def get_tool(project: Project, tool_name: str) -> ToolSpec:
         if mode == "conda":
             env = run_method.get("env")
             if not env:
-                raise ValidationError(f"tool {tool_name}: conda launcher requires 'env'")
+                raise ValidationError(
+                    f"tool {tool_name}: conda launcher requires 'env'"
+                )
             conda_bin = run_method.get("bin") or conda.get("bin", "conda")
-            run_args = run_method.get("args") or conda.get("run_args", ["run", "--no-capture-output"])
+            run_args = run_method.get("args") or conda.get(
+                "run_args", ["run", "--no-capture-output"]
+            )
             prefix = [str(conda_bin), *[str(x) for x in run_args], "-n", str(env)]
         elif mode == "prefix":
             prefix = [str(x) for x in run_method.get("prefix", [])]
         elif mode == "path":
             prefix = []
         else:
-            raise ValidationError(f"tool {tool_name}: unsupported launcher mode {mode!r}")
+            raise ValidationError(
+                f"tool {tool_name}: unsupported launcher mode {mode!r}"
+            )
         return ToolSpec(
             name=tool_name,
             executable=executable,
@@ -408,7 +478,9 @@ def get_tool(project: Project, tool_name: str) -> ToolSpec:
             raw=raw,
         )
     if not isinstance(run_method, str):
-        raise ValidationError(f"tool {tool_name}: run_method must be a string or mapping")
+        raise ValidationError(
+            f"tool {tool_name}: run_method must be a string or mapping"
+        )
     return ToolSpec(
         name=tool_name,
         executable=executable,
@@ -434,13 +506,18 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
             raw_version = _validate_recipe_version(analysis_name, raw)
             kinds = _normalize_recipe_kinds(analysis_name, raw)
             parameters = _normalize_recipe_parameters(analysis_name, raw)
-            commands = _normalize_recipe_commands(analysis_name, raw, raw_tool, tool_name)
+            commands = _normalize_recipe_commands(
+                analysis_name, raw, raw_tool, tool_name
+            )
             return _build_recipe(
                 analysis_name, tool_name, raw_version, raw, kinds, commands, parameters
             )
     available = sorted(
-        f"{tool}.{recipe}" for tool, tool_cfg in config.get("tools", {}).items()
-        for recipe in (tool_cfg.get("recipes", {}) if isinstance(tool_cfg, dict) else {})
+        f"{tool}.{recipe}"
+        for tool, tool_cfg in config.get("tools", {}).items()
+        for recipe in (
+            tool_cfg.get("recipes", {}) if isinstance(tool_cfg, dict) else {}
+        )
     )
     raise ValidationError(
         f"unknown analysis {analysis_name!r}; available recipes: {', '.join(available) or '(none)'}"
@@ -449,14 +526,20 @@ def get_recipe(project: Project, analysis_name: str) -> Recipe:
 
 def _validate_recipe_version(analysis_name: str, raw: dict[str, Any]) -> int:
     raw_version = raw.get("version", 1)
-    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 1:
+    if (
+        isinstance(raw_version, bool)
+        or not isinstance(raw_version, int)
+        or raw_version < 1
+    ):
         raise ValidationError(
             f"analysis {analysis_name!r}: version must be a positive integer"
         )
     return raw_version
 
 
-def _validate_recipe_environment_policy(analysis_name: str, raw: dict[str, Any]) -> None:
+def _validate_recipe_environment_policy(
+    analysis_name: str, raw: dict[str, Any]
+) -> None:
     environment_policy = str(raw.get("environment_policy", "warn") or "warn").strip()
     if environment_policy not in ENVIRONMENT_POLICIES:
         raise ValidationError(
@@ -489,7 +572,9 @@ def _normalize_recipe_kinds(
             "must not contain wildcard characters (% * ?); matching is an "
             "exact role or a prefix at a ':' boundary, not a pattern"
         )
-    input_kind = str(raw.get("input_kind", "directory" if fmt == "directory" else "file")).strip()
+    input_kind = str(
+        raw.get("input_kind", "directory" if fmt == "directory" else "file")
+    ).strip()
     output_kind = str(raw.get("output_kind", "file")).strip()
     if input_kind not in {"file", "directory"}:
         raise ValidationError(
@@ -505,7 +590,9 @@ def _normalize_recipe_kinds(
             f"analysis {analysis_name!r}: format=directory requires input_kind=directory"
         )
     default_suffix = "" if output_kind == "directory" else ".tsv"
-    output_suffix = str(raw["output_suffix"]) if "output_suffix" in raw else default_suffix
+    output_suffix = (
+        str(raw["output_suffix"]) if "output_suffix" in raw else default_suffix
+    )
     return fmt, file_role, file_role_prefix, input_kind, output_kind, output_suffix
 
 
@@ -514,7 +601,9 @@ def _normalize_recipe_parameters(
 ) -> dict[str, dict[str, Any]]:
     raw_parameters = raw.get("parameters", {}) or {}
     if not isinstance(raw_parameters, dict):
-        raise ValidationError(f"analysis {analysis_name!r}: parameters must be a mapping")
+        raise ValidationError(
+            f"analysis {analysis_name!r}: parameters must be a mapping"
+        )
     parameters: dict[str, dict[str, Any]] = {}
     for parameter_name, parameter_spec in raw_parameters.items():
         name = str(parameter_name)
@@ -588,14 +677,17 @@ def _normalize_recipe_commands(
                 f"analysis {analysis_name!r}: commands block {block_index} "
                 "version_pattern requires version_args"
             )
-        commands.append(RecipeCommand(
-            arguments=[str(x) for x in block["arguments"]],
-            version_args=(
-                [str(x) for x in raw_version_args]
-                if raw_version_args is not None else None
-            ),
-            version_pattern=raw_version_pattern,
-        ))
+        commands.append(
+            RecipeCommand(
+                arguments=[str(x) for x in block["arguments"]],
+                version_args=(
+                    [str(x) for x in raw_version_args]
+                    if raw_version_args is not None
+                    else None
+                ),
+                version_pattern=raw_version_pattern,
+            )
+        )
     # The first command is the recipe's logical owner: the job's
     # recorded tool_version and the version component of cache
     # identity describe its program. Without its own probe that
@@ -678,11 +770,17 @@ def tool_command(tool: ToolSpec, config: dict[str, Any]) -> list[str]:
     return [*launcher_prefix(tool, config), tool.executable]
 
 
-def _detect_version_record(command: list[str], pattern: str, label: str,
-                           timeout: float = 120.0, executor: Any = None) -> tuple[str, str]:
+def _detect_version_record(
+    command: list[str],
+    pattern: str,
+    label: str,
+    timeout: float = 120.0,
+    executor: Any = None,
+) -> tuple[str, str]:
     """Run a version command and return parsed and raw provenance values."""
     executor_identity = (
-        executor.cache_identity() if executor is not None and hasattr(executor, "cache_identity")
+        executor.cache_identity()
+        if executor is not None and hasattr(executor, "cache_identity")
         else (executor.describe() if executor is not None else "local")
     )
     cache_key = json.dumps(
@@ -696,17 +794,22 @@ def _detect_version_record(command: list[str], pattern: str, label: str,
     def _store(value: tuple[str, str]) -> tuple[str, str]:
         _VERSION_CACHE[cache_key] = (time.monotonic(), value)
         return value
+
     if executor is not None and executor.name != "local":
         combined = _version_output_via_executor(executor, command, timeout)
     else:
         try:
-            proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(
+                command, capture_output=True, text=True, timeout=timeout
+            )
         except FileNotFoundError as exc:
             raise ExternalToolError(
                 f"cannot launch {label}: {exc}; check config/tools.yaml launch and version settings"
             ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise ExternalToolError(f"{label} version detection timed out after {timeout}s") from exc
+            raise ExternalToolError(
+                f"{label} version detection timed out after {timeout}s"
+            ) from exc
         combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if pattern:
         match = re.search(pattern, combined, flags=re.IGNORECASE)
@@ -726,20 +829,28 @@ def _detect_version_record(command: list[str], pattern: str, label: str,
     )
 
 
-def detect_tool_version_record(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0,
-                               executor: Any = None) -> tuple[str, str]:
+def detect_tool_version_record(
+    tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0, executor: Any = None
+) -> tuple[str, str]:
     """Run a tool's version_args; return parsed and raw provenance values."""
     if not tool.version_args:
         return "unknown", "version_args not configured"
     command = [*tool_command(tool, config), *tool.version_args]
     return _detect_version_record(
-        command, tool.version_pattern, tool.name, timeout=timeout, executor=executor,
+        command,
+        tool.version_pattern,
+        tool.name,
+        timeout=timeout,
+        executor=executor,
     )
 
 
 def recipe_version_probe_command(
-        recipe: Recipe, tool: ToolSpec, config: dict[str, Any],
-        rendered_commands: list[list[str]]) -> tuple[list[str], str, str] | None:
+    recipe: Recipe,
+    tool: ToolSpec,
+    config: dict[str, Any],
+    rendered_commands: list[list[str]],
+) -> tuple[list[str], str, str] | None:
     """Version probe for the recipe's logical owner (the first chain command).
 
     Returns ``(command, pattern, label)`` when the first command block declares
@@ -759,16 +870,16 @@ def recipe_version_probe_command(
 
 
 def command_step_provenance(
-        recipe: Recipe,
-        tool: ToolSpec,
-        config: dict[str, Any],
-        rendered_commands: list[list[str]],
-        tool_version: str,
-        tool_version_raw: str,
-        *,
-        executor: Any = None,
-        dry_run: bool = False,
-        timeout: float = 120.0,
+    recipe: Recipe,
+    tool: ToolSpec,
+    config: dict[str, Any],
+    rendered_commands: list[list[str]],
+    tool_version: str,
+    tool_version_raw: str,
+    *,
+    executor: Any = None,
+    dry_run: bool = False,
+    timeout: float = 120.0,
 ) -> list[dict[str, Any]]:
     """Collect program identity and version provenance for a command chain.
 
@@ -778,11 +889,15 @@ def command_step_provenance(
     also enters the analysis cache fingerprint via ``parameter_fingerprint``.
     """
     if len(recipe.commands) != len(rendered_commands):
-        raise ValidationError(f"{recipe.name}: rendered command count does not match recipe")
+        raise ValidationError(
+            f"{recipe.name}: rendered command count does not match recipe"
+        )
     provenance: list[dict[str, Any]] = []
     launcher = launcher_prefix(tool, config)
     skip_remote_probe = (
-        dry_run and executor is not None and getattr(executor, "name", "local") != "local"
+        dry_run
+        and executor is not None
+        and getattr(executor, "name", "local") != "local"
     )
     for command_spec, rendered in zip(recipe.commands, rendered_commands):
         executable = rendered[0]
@@ -795,8 +910,11 @@ def command_step_provenance(
             else:
                 try:
                     version, version_raw = _detect_version_record(
-                        version_command, command_spec.version_pattern, executable,
-                        timeout=timeout, executor=executor,
+                        version_command,
+                        command_spec.version_pattern,
+                        executable,
+                        timeout=timeout,
+                        executor=executor,
                     )
                 except ExternalToolError as exc:
                     if not dry_run:
@@ -809,49 +927,70 @@ def command_step_provenance(
             version_raw = tool_version_raw
             version_command = (
                 [*tool_command(tool, config), *tool.version_args]
-                if tool.version_args else None
+                if tool.version_args
+                else None
             )
         else:
             source = "unconfigured"
             version = "unknown"
             version_raw = "version_args not configured for command"
             version_command = None
-        provenance.append({
-            "executable": executable,
-            "tool_version": version,
-            "tool_version_raw": version_raw,
-            "version_source": source,
-            "version_command": version_command,
-        })
+        provenance.append(
+            {
+                "executable": executable,
+                "tool_version": version,
+                "tool_version_raw": version_raw,
+                "version_source": source,
+                "version_command": version_command,
+            }
+        )
     return provenance
 
 
-def _version_output_via_executor(executor: Any, command: list[str], timeout: float) -> str:
+def _version_output_via_executor(
+    executor: Any, command: list[str], timeout: float
+) -> str:
     """Capture version output through a non-local execution backend."""
     temp_parent = getattr(getattr(executor, "project", None), "logs_root", None)
     if temp_parent is not None:
         Path(temp_parent).mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="operon-version-", dir=temp_parent) as tmpdir:
+    with tempfile.TemporaryDirectory(
+        prefix="operon-version-", dir=temp_parent
+    ) as tmpdir:
         stdout_path = Path(tmpdir) / "stdout.log"
         stderr_path = Path(tmpdir) / "stderr.log"
-        result = executor.run(command, cwd=None, stdout_path=stdout_path,
-                              stderr_path=stderr_path, timeout=timeout)
+        result = executor.run(
+            command,
+            cwd=None,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            timeout=timeout,
+        )
         if result.exit_code != 0:
             raise ExternalToolError(
                 f"version detection via {executor.describe()} failed: "
                 f"{result.error or f'exit code {result.exit_code}'}"
             )
-        return (stdout_path.read_text(encoding="utf-8", errors="replace")
-                + "\n" + stderr_path.read_text(encoding="utf-8", errors="replace"))
+        return (
+            stdout_path.read_text(encoding="utf-8", errors="replace")
+            + "\n"
+            + stderr_path.read_text(encoding="utf-8", errors="replace")
+        )
 
 
-def detect_tool_version(tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0) -> str:
+def detect_tool_version(
+    tool: ToolSpec, config: dict[str, Any], timeout: float = 120.0
+) -> str:
     """Run version_args and extract the version with the configured regex."""
     return detect_tool_version_record(tool, config, timeout=timeout)[0]
 
 
-def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None,
-                    entity_id: str | None = None) -> list[dict[str, Any]]:
+def candidate_files(
+    db: Database,
+    recipe: Recipe,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+) -> list[dict[str, Any]]:
     if recipe.file_role_prefix:
         prefix = recipe.file_role_prefix.rstrip(":")
         sql = (
@@ -860,9 +999,7 @@ def candidate_files(db: Database, recipe: Recipe, entity_type: str | None = None
         )
         params: list[Any] = [prefix, len(prefix) + 1, prefix, recipe.fmt]
     else:
-        sql = (
-            "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
-        )
+        sql = "SELECT * FROM files WHERE file_role=? AND format=? AND NOT EXISTS ("
         params = [recipe.file_role, recipe.fmt]
     sql += (
         "SELECT 1 FROM entity_supersessions s WHERE s.object_type=files.entity_type "
@@ -913,11 +1050,15 @@ def _directory_fingerprint(path: Path) -> str:
         except OSError:
             entries.append(f"{file_path.relative_to(path)}:unreadable")
             continue
-        entries.append(f"{file_path.relative_to(path)}:{stat.st_size}:{stat.st_mtime_ns}")
+        entries.append(
+            f"{file_path.relative_to(path)}:{stat.st_size}:{stat.st_mtime_ns}"
+        )
     return hashlib.sha256("\n".join(entries).encode("utf-8")).hexdigest()
 
 
-def database_identity(project: Project, recipe: Recipe, location_identity: str = "") -> str:
+def database_identity(
+    project: Project, recipe: Recipe, location_identity: str = ""
+) -> str:
     """Deterministic identity for the reference database used by a recipe.
 
     ``location_identity`` distinguishes the same logical database staged on
@@ -935,13 +1076,16 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
         raise ValidationError(
             f"{recipe.name}: mutable_cache requires an explicit database_version"
         )
-    cache_key = json.dumps({
-        "path": str(path) if path is not None else "",
-        "checksum": str(recipe.raw.get("database_checksum", "") or ""),
-        "version": recipe.database_version,
-        "mode": database_mode,
-        "location": location_identity,
-    }, sort_keys=True)
+    cache_key = json.dumps(
+        {
+            "path": str(path) if path is not None else "",
+            "checksum": str(recipe.raw.get("database_checksum", "") or ""),
+            "version": recipe.database_version,
+            "mode": database_mode,
+            "location": location_identity,
+        },
+        sort_keys=True,
+    )
     cached = _identity_cache_get(_DATABASE_IDENTITY_CACHE, cache_key)
     if cached is not None:
         return cached
@@ -970,13 +1114,16 @@ def database_identity(project: Project, recipe: Recipe, location_identity: str =
     }
     if location_identity:
         canonical["location"] = location_identity
-    identity = hashlib.sha256(json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    identity = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
     _DATABASE_IDENTITY_CACHE[cache_key] = (time.monotonic(), identity)
     return identity
 
 
-def resolve_runtime_parameters(recipe: Recipe,
-                               supplied: dict[str, str] | None = None) -> dict[str, str]:
+def resolve_runtime_parameters(
+    recipe: Recipe, supplied: dict[str, str] | None = None
+) -> dict[str, str]:
     """Validate caller-supplied values against the recipe declaration."""
     supplied = dict(supplied or {})
     unknown = sorted(set(supplied) - set(recipe.parameters))
@@ -999,7 +1146,9 @@ def resolve_runtime_parameters(recipe: Recipe,
         else:
             continue
         if isinstance(value, (dict, list)) or value is None:
-            raise ValidationError(f"{recipe.name}: parameter {name!r} must be a scalar value")
+            raise ValidationError(
+                f"{recipe.name}: parameter {name!r} must be a scalar value"
+            )
         rendered = str(value)
         choices = spec.get("choices")
         if choices is not None:
@@ -1023,12 +1172,18 @@ def resolve_runtime_parameters(recipe: Recipe,
     return resolved
 
 
-def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
-                     database_path: Path | None, threads: int,
-                     file_record: dict[str, Any],
-                     runtime_parameters: dict[str, str] | None = None,
-                     work_dir: Path | None = None,
-                     arguments: list[str] | None = None) -> list[str]:
+def render_arguments(
+    recipe: Recipe,
+    *,
+    input_path: Path,
+    output_path: Path,
+    database_path: Path | None,
+    threads: int,
+    file_record: dict[str, Any],
+    runtime_parameters: dict[str, str] | None = None,
+    work_dir: Path | None = None,
+    arguments: list[str] | None = None,
+) -> list[str]:
     context = {
         "input": str(input_path),
         "input_parent": str(input_path.parent),
@@ -1049,7 +1204,7 @@ def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
         context["work_dir"] = str(work_dir)
     context.update(runtime_parameters or {})
     rendered: list[str] = []
-    for arg in (arguments if arguments is not None else recipe.arguments):
+    for arg in arguments if arguments is not None else recipe.arguments:
         value = arg
         for key, replacement in context.items():
             value = value.replace("${" + key + "}", replacement)
@@ -1063,10 +1218,15 @@ def render_arguments(recipe: Recipe, *, input_path: Path, output_path: Path,
     return rendered
 
 
-def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_version: str,
-                          runtime_parameters: dict[str, str] | None = None,
-                          commands: list[list[str]] | None = None,
-                          command_versions: list[list[str]] | None = None) -> str:
+def parameter_fingerprint(
+    recipe: Recipe,
+    args: list[str],
+    threads: int,
+    tool_version: str,
+    runtime_parameters: dict[str, str] | None = None,
+    commands: list[list[str]] | None = None,
+    command_versions: list[list[str]] | None = None,
+) -> str:
     payload = {
         "analysis_name": recipe.name,
         "tool": recipe.tool_name,
@@ -1090,28 +1250,60 @@ def parameter_fingerprint(recipe: Recipe, args: list[str], threads: int, tool_ve
         # the primary tool version are unchanged.
         payload["command_versions"] = command_versions
     for key in (
-        "qstart_column", "qend_column", "sstart_column", "send_column",
-        "evalue_column", "bitscore_column", "pident_column", "hmmer_mode",
+        "qstart_column",
+        "qend_column",
+        "sstart_column",
+        "send_column",
+        "evalue_column",
+        "bitscore_column",
+        "pident_column",
+        "hmmer_mode",
         "environment_policy",
     ):
         if recipe.raw.get(key) is not None:
             payload[key] = str(recipe.raw[key])
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
 
 
 def _job_columns() -> list[str]:
     return [
-        "analysis_name", "entity_type", "entity_id", "file_id",
-        "tool", "tool_version", "tool_version_raw", "launcher", "command",
-        "parameter_set", "parameter_sha256", "input_sha256", "database_identity",
-        "status", "output_relative_path", "output_sha256", "stdout_file", "stderr_file",
-        "started_at", "finished_at", "error", "workflow_run_id", "environment_id",
+        "analysis_name",
+        "entity_type",
+        "entity_id",
+        "file_id",
+        "tool",
+        "tool_version",
+        "tool_version_raw",
+        "launcher",
+        "command",
+        "parameter_set",
+        "parameter_sha256",
+        "input_sha256",
+        "database_identity",
+        "status",
+        "output_relative_path",
+        "output_sha256",
+        "stdout_file",
+        "stderr_file",
+        "started_at",
+        "finished_at",
+        "error",
+        "workflow_run_id",
+        "environment_id",
         "recipe_snapshot_id",
     ]
 
 
-def find_cached_job(db: Database, analysis_name: str, file_id: str, parameter_sha: str,
-                    input_sha: str, database_id: str) -> dict[str, Any] | None:
+def find_cached_job(
+    db: Database,
+    analysis_name: str,
+    file_id: str,
+    parameter_sha: str,
+    input_sha: str,
+    database_id: str,
+) -> dict[str, Any] | None:
     row = db.conn.execute(
         "SELECT * FROM analysis_jobs WHERE analysis_name=? AND file_id=? AND parameter_sha256=? "
         "AND input_sha256=? AND database_identity=? AND status='completed' "
@@ -1121,7 +1313,9 @@ def find_cached_job(db: Database, analysis_name: str, file_id: str, parameter_sh
     return dict(row) if row else None
 
 
-def find_adoptable_job(db: Database, analysis_name: str, file_id: str) -> dict[str, Any] | None:
+def find_adoptable_job(
+    db: Database, analysis_name: str, file_id: str
+) -> dict[str, Any] | None:
     """Latest completed job for (analysis, file), ignoring the cache fingerprint."""
     row = db.conn.execute(
         "SELECT * FROM analysis_jobs WHERE analysis_name=? AND file_id=? AND status='completed' "
@@ -1136,7 +1330,9 @@ def recipe_environment_policy(recipe: Recipe) -> str:
     return str(recipe.raw.get("environment_policy", "warn") or "warn")
 
 
-def _cached_environment_document(db: Database, environment_id: Any) -> dict[str, Any] | None:
+def _cached_environment_document(
+    db: Database, environment_id: Any
+) -> dict[str, Any] | None:
     if not environment_id:
         return None
     row = db.conn.execute(
@@ -1162,12 +1358,14 @@ def _has_pre_job_probe(executor: Any) -> bool:
     return True
 
 
-def _current_environment_document(executor: Any, command: list[str],
-                                  cwd: Path) -> dict[str, Any] | None:
+def _current_environment_document(
+    executor: Any, command: list[str], cwd: Path
+) -> dict[str, Any] | None:
     """Probe the current execution side; failures degrade to None, never raise."""
     try:
         if executor.name == "local":
             from operon.environment_capture import capture_local
+
             document = capture_local(command, cwd)
         else:
             probe = getattr(executor, "probe_environment", None)
@@ -1177,9 +1375,14 @@ def _current_environment_document(executor: Any, command: list[str],
     return document if isinstance(document, dict) and document else None
 
 
-def _cache_environment_decision(db: Database, recipe: Recipe, executor: Any,
-                                cached: dict[str, Any], command: list[str],
-                                cwd: Path) -> dict[str, Any]:
+def _cache_environment_decision(
+    db: Database,
+    recipe: Recipe,
+    executor: Any,
+    cached: dict[str, Any],
+    command: list[str],
+    cwd: Path,
+) -> dict[str, Any]:
     """Judge an exact cache hit against the recipe's ``environment_policy``.
 
     Returns a dict with ``reuse`` (False means treat the hit as a miss and
@@ -1189,9 +1392,13 @@ def _cache_environment_decision(db: Database, recipe: Recipe, executor: Any,
     comparison failures never raise and never block a reuse.
     """
     from operon.environment import relevance_fingerprint
+
     policy = recipe_environment_policy(recipe)
     decision: dict[str, Any] = {
-        "policy": policy, "reuse": True, "details": None, "warning": None,
+        "policy": policy,
+        "reuse": True,
+        "details": None,
+        "warning": None,
         "environment": None,
     }
     if policy == "ignore":
@@ -1209,7 +1416,9 @@ def _cache_environment_decision(db: Database, recipe: Recipe, executor: Any,
     current_document = _current_environment_document(executor, command, cwd)
     current = relevance_fingerprint(current_document) if current_document else None
     cached_document = _cached_environment_document(db, cached.get("environment_id"))
-    cached_relevance = relevance_fingerprint(cached_document) if cached_document else None
+    cached_relevance = (
+        relevance_fingerprint(cached_document) if cached_document else None
+    )
     if current is None or cached_relevance is None:
         # An incomparable side must not silently defeat strict, nor punish warn.
         details["environment_compare"] = "unavailable"
@@ -1245,6 +1454,7 @@ def _cache_environment_decision(db: Database, recipe: Recipe, executor: Any,
 def _record_cache_reuse_note(ctx: _PlanContext) -> None:
     """Persist the environment comparison behind a cache reuse as a run record."""
     from operon.workflow import log_run
+
     db = ctx.db
     recipe = ctx.recipe
     file_record = ctx.file_record
@@ -1272,8 +1482,9 @@ def _record_cache_reuse_note(ctx: _PlanContext) -> None:
     log_run(db, ctx.project, record)
 
 
-def _find_verified_adoptee(db: Database, project: Project, analysis_name: str,
-                           file_id: str, input_sha: str) -> tuple[dict[str, Any], Path] | None:
+def _find_verified_adoptee(
+    db: Database, project: Project, analysis_name: str, file_id: str, input_sha: str
+) -> tuple[dict[str, Any], Path] | None:
     """Completed job whose recorded output still exists on disk, byte-identical.
 
     Resume tier 2: the exact cache fingerprint may change across versions or
@@ -1306,8 +1517,11 @@ def _sweep_stale_running_jobs(db: Database, analysis_name: str) -> int:
         cursor = conn.execute(
             "UPDATE analysis_jobs SET status='interrupted', finished_at=?, error=? "
             "WHERE status='RUNNING' AND analysis_name=?",
-            (now_iso(), "swept at startup: previous run terminated abnormally",
-             analysis_name),
+            (
+                now_iso(),
+                "swept at startup: previous run terminated abnormally",
+                analysis_name,
+            ),
         )
         return cursor.rowcount
 
@@ -1320,15 +1534,22 @@ def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:
         raise ShutdownRequested(signal.SIGINT)
 
 
-def run_analysis(project: Project, db: Database, analysis_name: str,
-                 entity_type: str | None = None, entity_id: str | None = None,
-                 dry_run: bool = False, force: bool = False, limit: int | None = None,
-                 threads: int | None = None, backend: str | None = None,
-                 keep_partial: bool = False,
-                 runtime_parameters: dict[str, str] | None = None,
-                 progress_callback: Callable[[int, int, str, str], None] | None = None,
-                 cancel_event: threading.Event | None = None,
-                 ) -> list[dict[str, Any]]:
+def run_analysis(
+    project: Project,
+    db: Database,
+    analysis_name: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    dry_run: bool = False,
+    force: bool = False,
+    limit: int | None = None,
+    threads: int | None = None,
+    backend: str | None = None,
+    keep_partial: bool = False,
+    runtime_parameters: dict[str, str] | None = None,
+    progress_callback: Callable[[int, int, str, str], None] | None = None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files.
 
     ``progress_callback``, when given, is invoked per file as
@@ -1345,23 +1566,30 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
     resolved_parameters = resolve_runtime_parameters(recipe, runtime_parameters)
     tool = get_tool(project, recipe.tool_name)
     config = load_tools_config(project)
-    threads = int(threads or project.config.get("resources", {}).get("default_threads", 4) or 4)
+    threads = int(
+        threads or project.config.get("resources", {}).get("default_threads", 4) or 4
+    )
     files = candidate_files(db, recipe, entity_type=entity_type, entity_id=entity_id)
     if limit is not None:
         files = files[: max(0, int(limit))]
     if not files:
         role_selector = (
             f"file_role_prefix={recipe.file_role_prefix}"
-            if recipe.file_role_prefix else f"file_role={recipe.file_role}"
+            if recipe.file_role_prefix
+            else f"file_role={recipe.file_role}"
         )
-        print(f"no candidate files for {analysis_name} "
-              f"(entity_type={recipe.entity_type or 'any'}, {role_selector}, format={recipe.fmt})")
+        print(
+            f"no candidate files for {analysis_name} "
+            f"(entity_type={recipe.entity_type or 'any'}, {role_selector}, format={recipe.fmt})"
+        )
         return []
 
     from operon.execution import get_executor
+
     recipe_slurm = recipe.raw.get("slurm")
     executor = get_executor(
-        project, backend,
+        project,
+        backend,
         slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
     )
     results: list[dict[str, Any]] = []
@@ -1379,11 +1607,20 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
             )
             if array_requested:
                 return _run_analysis_two_phase(
-                    project, db, recipe, tool, config, files, executor,
-                    force=force, threads=threads, keep_partial=keep_partial,
+                    project,
+                    db,
+                    recipe,
+                    tool,
+                    config,
+                    files,
+                    executor,
+                    force=force,
+                    threads=threads,
+                    keep_partial=keep_partial,
                     runtime_parameters=resolved_parameters,
                     array_concurrency=slurm_config.array_concurrency,
-                    progress_callback=progress_callback, cancel_event=cancel_event,
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event,
                 )
             for index, file_record in enumerate(files, start=1):
                 _raise_if_cancelled(cancel_event)
@@ -1391,9 +1628,18 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                     progress_callback(index, total, file_record["file_id"], "start")
                 try:
                     result = run_analysis_for_file(
-                        project, db, recipe, tool, config, file_record,
-                        dry_run=dry_run, force=force, threads=threads, backend=backend,
-                        executor=executor, keep_partial=keep_partial,
+                        project,
+                        db,
+                        recipe,
+                        tool,
+                        config,
+                        file_record,
+                        dry_run=dry_run,
+                        force=force,
+                        threads=threads,
+                        backend=backend,
+                        executor=executor,
+                        keep_partial=keep_partial,
                         runtime_parameters=resolved_parameters,
                     )
                 except ShutdownRequested:
@@ -1404,8 +1650,12 @@ def run_analysis(project: Project, db: Database, analysis_name: str,
                     result = _analysis_error_result(file_record, recipe, exc)
                 results.append(result)
                 if progress_callback is not None:
-                    progress_callback(index, total, file_record["file_id"],
-                                      str(result.get("status", "done")))
+                    progress_callback(
+                        index,
+                        total,
+                        file_record["file_id"],
+                        str(result.get("status", "done")),
+                    )
     finally:
         close = getattr(executor, "close", None)
         if close is not None:
@@ -1492,14 +1742,23 @@ class _PlanContext:
     started: str = ""
 
 
-def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                            config: dict[str, Any], files: list[dict[str, Any]], executor: Any,
-                            *, force: bool, threads: int, keep_partial: bool,
-                            runtime_parameters: dict[str, str] | None,
-                            array_concurrency: int | None,
-                            progress_callback: Callable[[int, int, str, str], None] | None,
-                            cancel_event: threading.Event | None = None,
-                            ) -> list[dict[str, Any]]:
+def _run_analysis_two_phase(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    config: dict[str, Any],
+    files: list[dict[str, Any]],
+    executor: Any,
+    *,
+    force: bool,
+    threads: int,
+    keep_partial: bool,
+    runtime_parameters: dict[str, str] | None,
+    array_concurrency: int | None,
+    progress_callback: Callable[[int, int, str, str], None] | None,
+    cancel_event: threading.Event | None = None,
+) -> list[dict[str, Any]]:
     """Array-enabled analyze: plan per file, submit once, collect per task.
 
     Phase 1 applies the exact per-file decisions of the sequential path
@@ -1519,8 +1778,16 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
             progress_callback(index, total, file_record["file_id"], "start")
         try:
             plan = plan_analysis_for_file(
-                project, db, recipe, tool, config, file_record,
-                dry_run=False, force=force, threads=threads, executor=executor,
+                project,
+                db,
+                recipe,
+                tool,
+                config,
+                file_record,
+                dry_run=False,
+                force=force,
+                threads=threads,
+                executor=executor,
                 runtime_parameters=runtime_parameters,
             )
         except ShutdownRequested:
@@ -1535,8 +1802,12 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
         else:
             results[index - 1] = plan
             if progress_callback is not None:
-                progress_callback(index, total, file_record["file_id"],
-                                  str(plan.get("status", "done")))
+                progress_callback(
+                    index,
+                    total,
+                    file_record["file_id"],
+                    str(plan.get("status", "done")),
+                )
     # A job array dispatches one shell line per task; multi-step command
     # chains keep the sequential per-file path.  Below two array-eligible
     # tasks the array buys nothing, so they fall back to per-file submission
@@ -1545,20 +1816,34 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
     sequential = pending
     if len(array_plans) >= 2:
         _execute_analysis_array(
-            project, db, recipe, tool, executor, array_plans, results,
-            threads=threads, array_concurrency=array_concurrency,
-            keep_partial=keep_partial, progress_callback=progress_callback, total=total,
+            project,
+            db,
+            recipe,
+            tool,
+            executor,
+            array_plans,
+            results,
+            threads=threads,
+            array_concurrency=array_concurrency,
+            keep_partial=keep_partial,
+            progress_callback=progress_callback,
+            total=total,
             cancel_event=cancel_event,
         )
         sequential = [(i, p) for i, p in pending if len(p.argv_steps) != 1]
     for index, plan in sequential:
         _raise_if_cancelled(cancel_event)
         try:
-            run_record = _execute_analysis_plan(project, db, recipe, tool, executor, plan)
-            outcome = _finalize_analysis_execution(project, db, recipe, tool, plan,
-                                                   run_record, keep_partial=keep_partial)
+            run_record = _execute_analysis_plan(
+                project, db, recipe, tool, executor, plan
+            )
+            outcome = _finalize_analysis_execution(
+                project, db, recipe, tool, plan, run_record, keep_partial=keep_partial
+            )
         except ShutdownRequested as exc:
-            _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            _interrupt_analysis_execution(
+                project, db, plan, exc, keep_partial=keep_partial
+            )
             cleanup_completed()
             raise
         except Exception as exc:
@@ -1566,8 +1851,12 @@ def _run_analysis_two_phase(project: Project, db: Database, recipe: Recipe, tool
             outcome = _analysis_error_result(plan.file_record, recipe, exc)
         results[index - 1] = outcome
         if progress_callback is not None:
-            progress_callback(index, total, plan.file_record["file_id"],
-                              str(outcome.get("status", "done")))
+            progress_callback(
+                index,
+                total,
+                plan.file_record["file_id"],
+                str(outcome.get("status", "done")),
+            )
     return [result for result in results if result is not None]
 
 
@@ -1580,14 +1869,22 @@ class _CallbackAbortedBatch(Exception):
         self.original = original
 
 
-def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                            executor: Any, indexed_plans: list[tuple[int, _AnalysisExecution]],
-                            results: list[dict[str, Any] | None],
-                            *, threads: int, array_concurrency: int | None,
-                            keep_partial: bool,
-                            progress_callback: Callable[[int, int, str, str], None] | None,
-                            total: int,
-                            cancel_event: threading.Event | None = None) -> None:
+def _execute_analysis_array(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    executor: Any,
+    indexed_plans: list[tuple[int, _AnalysisExecution]],
+    results: list[dict[str, Any] | None],
+    *,
+    threads: int,
+    array_concurrency: int | None,
+    keep_partial: bool,
+    progress_callback: Callable[[int, int, str, str], None] | None,
+    total: int,
+    cancel_event: threading.Event | None = None,
+) -> None:
     """Submit planned files as one job array and collect each task's result.
 
     ``run_array`` performs neither the input staging nor the remote output
@@ -1601,6 +1898,7 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
     during planning.)
     """
     from operon.workflow import record_execution_result
+
     logs = project.logs_root
     logs.mkdir(parents=True, exist_ok=True)
     ssh_remote = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
@@ -1629,8 +1927,18 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             raise
         except Exception as exc:
             _finalize_interrupted_array(
-                project, db, recipe, tool, executor, batch, results, finalized,
-                sftp=sftp, client=client, keep_partial=keep_partial, started=started,
+                project,
+                db,
+                recipe,
+                tool,
+                executor,
+                batch,
+                results,
+                finalized,
+                sftp=sftp,
+                client=client,
+                keep_partial=keep_partial,
+                started=started,
             )
             for _, pending_plan in indexed_plans:
                 if pending_plan.job_id in finalized:
@@ -1638,8 +1946,9 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                 if sftp is not None and pending_plan.backups:
                     executor._restore_output_backups(sftp, pending_plan.backups)
                     pending_plan.backups = []
-                _interrupt_analysis_execution(project, db, pending_plan, exc,
-                                              keep_partial=keep_partial)
+                _interrupt_analysis_execution(
+                    project, db, pending_plan, exc, keep_partial=keep_partial
+                )
             cleanup_completed()
             raise _CallbackAbortedBatch(exc) from exc
 
@@ -1652,9 +1961,13 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                     executor._stage_inputs(client, sftp, plan.stage_inputs)
                     plan.backups = executor._reset_outputs(sftp, [plan.output_path])
                 except Exception as exc:
-                    _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+                    _fail_analysis_execution(
+                        project, db, plan, exc, keep_partial=keep_partial
+                    )
                     finalized.add(plan.job_id)
-                    results[index - 1] = _analysis_error_result(plan.file_record, recipe, exc)
+                    results[index - 1] = _analysis_error_result(
+                        plan.file_record, recipe, exc
+                    )
                     report_progress(index, plan.file_record["file_id"], "error")
                 else:
                     batch.append((index, plan))
@@ -1680,13 +1993,26 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             run_array_kwargs["cancel_event"] = cancel_event
         try:
             exec_results = executor.run_array(
-                tasks, cwd=project.root, threads=threads,
-                array_concurrency=array_concurrency, **run_array_kwargs,
+                tasks,
+                cwd=project.root,
+                threads=threads,
+                array_concurrency=array_concurrency,
+                **run_array_kwargs,
             )
         except KeyboardInterrupt:
             _finalize_interrupted_array(
-                project, db, recipe, tool, executor, batch, results, finalized,
-                sftp=sftp, client=client, keep_partial=keep_partial, started=started,
+                project,
+                db,
+                recipe,
+                tool,
+                executor,
+                batch,
+                results,
+                finalized,
+                sftp=sftp,
+                client=client,
+                keep_partial=keep_partial,
+                started=started,
             )
             cleanup_completed()
             raise
@@ -1706,18 +2032,25 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                         executor._restore_output_backups(sftp, plan.backups)
                     plan.backups = []
                 run_record = record_execution_result(
-                    db, project, result,
-                    run_id=plan.run_id, argv=plan.argv_steps[0],
+                    db,
+                    project,
+                    result,
+                    run_id=plan.run_id,
+                    argv=plan.argv_steps[0],
                     step=f"analysis:{recipe.name}",
                     entity_type=plan.file_record["entity_type"],
                     entity_id=plan.file_record["entity_id"],
                     parameter_set=f"{recipe.name}:{plan.version}",
                     expected_outputs=[plan.output_path],
                     cwd=project.root,
-                    tool=tool.name, tool_version=plan.version, threads=threads,
+                    tool=tool.name,
+                    tool_version=plan.version,
+                    threads=threads,
                     executor_name=executor.describe(),
-                    started_at=started, duration_seconds=duration,
-                    stdout_file=plan.stdout_path, stderr_file=plan.stderr_path,
+                    started_at=started,
+                    duration_seconds=duration,
+                    stdout_file=plan.stdout_path,
+                    stderr_file=plan.stderr_path,
                     extra_details=_env_policy_extra_details(plan),
                 )
                 if run_record["status"] != "completed":
@@ -1726,19 +2059,29 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
                         f"{run_record.get('error') or 'unknown error'}"
                     )
                 outcome = _finalize_analysis_execution(
-                    project, db, recipe, tool, plan, run_record, keep_partial=keep_partial)
+                    project,
+                    db,
+                    recipe,
+                    tool,
+                    plan,
+                    run_record,
+                    keep_partial=keep_partial,
+                )
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
                 if sftp is not None and plan.backups:
                     executor._restore_output_backups(sftp, plan.backups)
                     plan.backups = []
-                _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+                _fail_analysis_execution(
+                    project, db, plan, exc, keep_partial=keep_partial
+                )
                 outcome = _analysis_error_result(plan.file_record, recipe, exc)
             finalized.add(plan.job_id)
             results[index - 1] = outcome
-            report_progress(index, plan.file_record["file_id"],
-                            str(outcome.get("status", "done")))
+            report_progress(
+                index, plan.file_record["file_id"], str(outcome.get("status", "done"))
+            )
     except KeyboardInterrupt as exc:
         # A shutdown during staging or collection: every plan that was never
         # finalized is the in-flight file of the sequential path.
@@ -1748,7 +2091,9 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             if sftp is not None and plan.backups:
                 executor._restore_output_backups(sftp, plan.backups)
                 plan.backups = []
-            _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
+            _interrupt_analysis_execution(
+                project, db, plan, exc, keep_partial=keep_partial
+            )
         cleanup_completed()
         raise
     except _CallbackAbortedBatch as aborted:
@@ -1774,13 +2119,21 @@ def _execute_analysis_array(project: Project, db: Database, recipe: Recipe, tool
             sftp.close()
 
 
-def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                                executor: Any,
-                                batch: list[tuple[int, _AnalysisExecution]],
-                                results: list[dict[str, Any] | None],
-                                finalized: set[int],
-                                *, sftp: Any, client: Any, keep_partial: bool,
-                                started: str) -> None:
+def _finalize_interrupted_array(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    executor: Any,
+    batch: list[tuple[int, _AnalysisExecution]],
+    results: list[dict[str, Any] | None],
+    finalized: set[int],
+    *,
+    sftp: Any,
+    client: Any,
+    keep_partial: bool,
+    started: str,
+) -> None:
     """Bookkeep a cancelled array: finished tasks complete, the rest interrupt.
 
     The executor cancels the whole array on interrupt and re-raises; which
@@ -1793,6 +2146,7 @@ def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, 
     """
     from operon.execution import ExecResult
     from operon.workflow import record_execution_result
+
     for index, plan in batch:
         if plan.job_id in finalized:
             continue
@@ -1814,18 +2168,24 @@ def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, 
                     executor._restore_output_backups(sftp, plan.backups)
                 plan.backups = []
             run_record = record_execution_result(
-                db, project, result,
-                run_id=plan.run_id, argv=plan.argv_steps[0],
+                db,
+                project,
+                result,
+                run_id=plan.run_id,
+                argv=plan.argv_steps[0],
                 step=f"analysis:{recipe.name}",
                 entity_type=plan.file_record["entity_type"],
                 entity_id=plan.file_record["entity_id"],
                 parameter_set=f"{recipe.name}:{plan.version}",
                 expected_outputs=[plan.output_path],
                 cwd=project.root,
-                tool=tool.name, tool_version=plan.version, threads=plan.threads,
+                tool=tool.name,
+                tool_version=plan.version,
+                threads=plan.threads,
                 executor_name=executor.describe(),
                 started_at=started,
-                stdout_file=plan.stdout_path, stderr_file=plan.stderr_path,
+                stdout_file=plan.stdout_path,
+                stderr_file=plan.stderr_path,
                 extra_details=_env_policy_extra_details(plan),
             )
             if run_record["status"] != "completed":
@@ -1834,14 +2194,17 @@ def _finalize_interrupted_array(project: Project, db: Database, recipe: Recipe, 
                     f"{run_record.get('error') or 'unknown error'}"
                 )
             outcome = _finalize_analysis_execution(
-                project, db, recipe, tool, plan, run_record, keep_partial=keep_partial)
+                project, db, recipe, tool, plan, run_record, keep_partial=keep_partial
+            )
         except Exception as finalize_exc:  # noqa: BLE001 - a per-task finalize failure marks the task failed  # pylint: disable=broad-exception-caught
             # A task whose exit code exists but whose result cannot be
             # finalized (lost output, parse error) is failed, not completed.
             if sftp is not None and plan.backups:
                 executor._restore_output_backups(sftp, plan.backups)
                 plan.backups = []
-            _fail_analysis_execution(project, db, plan, finalize_exc, keep_partial=keep_partial)
+            _fail_analysis_execution(
+                project, db, plan, finalize_exc, keep_partial=keep_partial
+            )
             outcome = _analysis_error_result(plan.file_record, recipe, finalize_exc)
         finalized.add(plan.job_id)
         results[index - 1] = outcome
@@ -1854,8 +2217,12 @@ def _require_artifact_kind(path: Path, kind: str, label: str) -> None:
         raise ExternalToolError(f"{label} must be a directory: {path}")
 
 
-def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path: Path,
-                        runtime_parameters: dict[str, str] | None = None) -> str:
+def _render_output_name(
+    recipe: Recipe,
+    file_record: dict[str, Any],
+    input_path: Path,
+    runtime_parameters: dict[str, str] | None = None,
+) -> str:
     if not recipe.output_name_template:
         role = recipe.file_role or str(file_record["file_role"])
         return f"{file_record['file_id']}.{role}{recipe.output_suffix}"
@@ -1876,7 +2243,11 @@ def _render_output_name(recipe: Recipe, file_record: dict[str, Any], input_path:
         raise ValidationError(
             f"{recipe.name}: unsupported placeholder(s) in output_name: {', '.join(unresolved)}"
         )
-    if not output_name or output_name in {".", ".."} or Path(output_name).name != output_name:
+    if (
+        not output_name
+        or output_name in {".", ".."}
+        or Path(output_name).name != output_name
+    ):
         raise ValidationError(
             f"{recipe.name}: output_name must render to one safe path component, got {output_name!r}"
         )
@@ -1890,31 +2261,53 @@ def _remove_output_artifact(project: Project, output_path: Path) -> None:
     analysis_root = project.analysis_root.resolve()
     resolved = output_path.resolve(strict=False)
     if resolved == analysis_root or not resolved.is_relative_to(analysis_root):
-        raise ExternalToolError(f"refusing to remove output outside analysis root: {output_path}")
+        raise ExternalToolError(
+            f"refusing to remove output outside analysis root: {output_path}"
+        )
     if output_path.is_dir() and not output_path.is_symlink():
         shutil.rmtree(output_path)
     else:
         output_path.unlink(missing_ok=True)
 
 
-def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                          config: dict[str, Any], file_record: dict[str, Any],
-                          dry_run: bool = False, force: bool = False,
-                          threads: int = 4, backend: str | None = None,
-                          executor: Any = None, keep_partial: bool = False,
-                          runtime_parameters: dict[str, str] | None = None) -> dict[str, Any]:
+def run_analysis_for_file(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    config: dict[str, Any],
+    file_record: dict[str, Any],
+    dry_run: bool = False,
+    force: bool = False,
+    threads: int = 4,
+    backend: str | None = None,
+    executor: Any = None,
+    keep_partial: bool = False,
+    runtime_parameters: dict[str, str] | None = None,
+) -> dict[str, Any]:
     if executor is None:
         from operon.execution import get_executor
+
         recipe_slurm = recipe.raw.get("slurm")
         owned_executor = get_executor(
-            project, backend,
+            project,
+            backend,
             slurm_overrides=recipe_slurm if isinstance(recipe_slurm, dict) else None,
         )
         try:
             return run_analysis_for_file(
-                project, db, recipe, tool, config, file_record,
-                dry_run=dry_run, force=force, threads=threads, backend=backend,
-                executor=owned_executor, keep_partial=keep_partial,
+                project,
+                db,
+                recipe,
+                tool,
+                config,
+                file_record,
+                dry_run=dry_run,
+                force=force,
+                threads=threads,
+                backend=backend,
+                executor=owned_executor,
+                keep_partial=keep_partial,
                 runtime_parameters=runtime_parameters,
             )
         finally:
@@ -1922,16 +2315,25 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
             if close is not None:
                 close()
     plan = plan_analysis_for_file(
-        project, db, recipe, tool, config, file_record,
-        dry_run=dry_run, force=force, threads=threads, executor=executor,
+        project,
+        db,
+        recipe,
+        tool,
+        config,
+        file_record,
+        dry_run=dry_run,
+        force=force,
+        threads=threads,
+        executor=executor,
         runtime_parameters=runtime_parameters,
     )
     if not isinstance(plan, _AnalysisExecution):
         return plan
     try:
         run_record = _execute_analysis_plan(project, db, recipe, tool, executor, plan)
-        return _finalize_analysis_execution(project, db, recipe, tool, plan, run_record,
-                                            keep_partial=keep_partial)
+        return _finalize_analysis_execution(
+            project, db, recipe, tool, plan, run_record, keep_partial=keep_partial
+        )
     except ShutdownRequested as exc:
         _interrupt_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
         cleanup_completed()
@@ -1941,12 +2343,19 @@ def run_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: 
         raise
 
 
-def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                           config: dict[str, Any], file_record: dict[str, Any],
-                           dry_run: bool = False, force: bool = False,
-                           threads: int = 4, executor: Any = None,
-                           runtime_parameters: dict[str, str] | None = None,
-                           ) -> dict[str, Any] | _AnalysisExecution:
+def plan_analysis_for_file(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    config: dict[str, Any],
+    file_record: dict[str, Any],
+    dry_run: bool = False,
+    force: bool = False,
+    threads: int = 4,
+    executor: Any = None,
+    runtime_parameters: dict[str, str] | None = None,
+) -> dict[str, Any] | _AnalysisExecution:
     """Apply every per-file decision short of execution.
 
     Returns a plain result dict for dry-run/cache-hit/adopted files, or an
@@ -1955,9 +2364,17 @@ def plan_analysis_for_file(project: Project, db: Database, recipe: Recipe, tool:
     the array path collects plans across files and submits them in one batch.
     """
     ctx = _PlanContext(
-        project=project, db=db, recipe=recipe, tool=tool, config=config,
-        file_record=file_record, dry_run=dry_run, force=force, threads=threads,
-        executor=executor, runtime_parameters=runtime_parameters,
+        project=project,
+        db=db,
+        recipe=recipe,
+        tool=tool,
+        config=config,
+        file_record=file_record,
+        dry_run=dry_run,
+        force=force,
+        threads=threads,
+        executor=executor,
+        runtime_parameters=runtime_parameters,
     )
     _verify_plan_input(ctx)
     _prepare_plan_database(ctx)
@@ -1990,7 +2407,9 @@ def _verify_plan_input(ctx: _PlanContext) -> None:
     recipe = ctx.recipe
     file_record = ctx.file_record
     executor = ctx.executor
-    ctx.remote_only = executor.name == "ssh" and bool(getattr(executor, "remote_root", ""))
+    ctx.remote_only = executor.name == "ssh" and bool(
+        getattr(executor, "remote_root", "")
+    )
     input_rel = file_record["relative_path"]
     input_path = project.root / input_rel
     ctx.input_path = input_path
@@ -2005,13 +2424,18 @@ def _verify_plan_input(ctx: _PlanContext) -> None:
             )
         if not ctx.dry_run:
             from operon.remotes import _ensure_remote_only_schema, verify_remote_record
+
             verify_remote_record(
-                project, storage_remote, file_record, db=db,
+                project,
+                storage_remote,
+                file_record,
+                db=db,
                 client=getattr(executor, "client", None),
             )
             _ensure_remote_only_schema(project)
             db.set_file_status(
-                file_record["file_id"], "REMOTE_ONLY",
+                file_record["file_id"],
+                "REMOTE_ONLY",
                 reason=f"local bytes absent; remote input verified for analysis on {storage_remote}",
                 actor="operon analyze",
                 evidence=f"remote://{storage_remote}/{input_rel}",
@@ -2019,7 +2443,9 @@ def _verify_plan_input(ctx: _PlanContext) -> None:
         input_is_remote = True
         actual_sha = manifest_sha
     else:
-        _require_artifact_kind(input_path, recipe.input_kind, f"{file_record['file_id']} input")
+        _require_artifact_kind(
+            input_path, recipe.input_kind, f"{file_record['file_id']} input"
+        )
         actual_sha = sha256_path(input_path).lower()
         if actual_sha != manifest_sha:
             raise ExternalToolError(
@@ -2039,16 +2465,31 @@ def _prepare_plan_database(ctx: _PlanContext) -> None:
     ctx.database_path = database_path
     database_mode = str(recipe.raw.get("database_mode", "reference") or "reference")
     ctx.database_mode = database_mode
-    if database_path is not None and database_mode == "mutable_cache" and not ctx.dry_run and not ctx.remote_only:
+    if (
+        database_path is not None
+        and database_mode == "mutable_cache"
+        and not ctx.dry_run
+        and not ctx.remote_only
+    ):
         database_path.mkdir(parents=True, exist_ok=True)
-    if recipe.database and database_path is not None and not database_path.exists() and not ctx.remote_only:
+    if (
+        recipe.database
+        and database_path is not None
+        and not database_path.exists()
+        and not ctx.remote_only
+    ):
         # A pure filesystem check: a dry run reports the same missing database the
         # real run would fail on instead of planning a job that cannot execute
         # (ODR-28).
         raise ExternalToolError(
             f"{recipe.name}: reference database not found: {database_path}; edit config/tools.yaml"
         )
-    if ctx.remote_only and recipe.database and database_mode == "reference" and not recipe.raw.get("database_checksum"):
+    if (
+        ctx.remote_only
+        and recipe.database
+        and database_mode == "reference"
+        and not recipe.raw.get("database_checksum")
+    ):
         raise ValidationError(
             f"{recipe.name}: remote reference databases require database_checksum so cache identity "
             "does not depend on a missing local path"
@@ -2057,12 +2498,19 @@ def _prepare_plan_database(ctx: _PlanContext) -> None:
     # command (a stat), so a dry run still fails on an unprovisioned remote
     # reference instead of planning around it (ODR-28); a mutable cache is
     # created by the run itself and has nothing to verify yet.
-    if ctx.remote_only and database_path is not None and (not ctx.dry_run or database_mode == "reference"):
+    if (
+        ctx.remote_only
+        and database_path is not None
+        and (not ctx.dry_run or database_mode == "reference")
+    ):
         executor.prepare_database(
-            database_path, mutable_cache=database_mode == "mutable_cache",
+            database_path,
+            mutable_cache=database_mode == "mutable_cache",
         )
     executor_identity = (
-        executor.cache_identity() if hasattr(executor, "cache_identity") else executor.describe()
+        executor.cache_identity()
+        if hasattr(executor, "cache_identity")
+        else executor.describe()
     )
     ctx.db_identity = database_identity(
         project, recipe, executor_identity if ctx.remote_only else ""
@@ -2077,16 +2525,21 @@ def _plan_output_paths(ctx: _PlanContext) -> None:
     output_dir = project.analysis_root / recipe.output_subdir / file_record["entity_id"]
     ctx.output_dir = output_dir
     output_name = _render_output_name(
-        recipe, file_record, ctx.input_path, runtime_parameters=ctx.runtime_parameters,
+        recipe,
+        file_record,
+        ctx.input_path,
+        runtime_parameters=ctx.runtime_parameters,
     )
     ctx.output_name = output_name
     output_path = output_dir / output_name
     ctx.output_path = output_path
     if (
-            ctx.tool.name == "busco"
-            and any(arg in {"--auto-lineage", "--auto-lineage-euk", "--auto-lineage-prok"}
-                    for arg in recipe.arguments)
-            and "fasta" in output_path.as_posix()
+        ctx.tool.name == "busco"
+        and any(
+            arg in {"--auto-lineage", "--auto-lineage-euk", "--auto-lineage-prok"}
+            for arg in recipe.arguments
+        )
+        and "fasta" in output_path.as_posix()
     ):
         raise ValidationError(
             f"{recipe.name}: BUSCO auto-lineage output path contains 'fasta', which SEPP "
@@ -2100,8 +2553,12 @@ def _render_plan_commands(ctx: _PlanContext) -> None:
     """Render the argument vector and, for chains, the per-step commands."""
     recipe = ctx.recipe
     rendered_args = render_arguments(
-        recipe, input_path=ctx.input_path, output_path=ctx.output_path,
-        database_path=ctx.database_path, threads=ctx.threads, file_record=ctx.file_record,
+        recipe,
+        input_path=ctx.input_path,
+        output_path=ctx.output_path,
+        database_path=ctx.database_path,
+        threads=ctx.threads,
+        file_record=ctx.file_record,
         runtime_parameters=ctx.runtime_parameters,
     )
     ctx.rendered_args = rendered_args
@@ -2114,9 +2571,14 @@ def _render_plan_commands(ctx: _PlanContext) -> None:
         work_dir = ctx.output_dir / f"{ctx.output_name}.work"
         rendered_commands = [
             render_arguments(
-                recipe, input_path=ctx.input_path, output_path=ctx.output_path,
-                database_path=ctx.database_path, threads=ctx.threads, file_record=ctx.file_record,
-                runtime_parameters=ctx.runtime_parameters, work_dir=work_dir,
+                recipe,
+                input_path=ctx.input_path,
+                output_path=ctx.output_path,
+                database_path=ctx.database_path,
+                threads=ctx.threads,
+                file_record=ctx.file_record,
+                runtime_parameters=ctx.runtime_parameters,
+                work_dir=work_dir,
                 arguments=block.arguments,
             )
             for block in recipe.commands
@@ -2142,10 +2604,13 @@ def _probe_plan_versions(ctx: _PlanContext) -> None:
             # The first chain command is the recipe's logical owner: its
             # declared probe, not the tool-level one, defines tool_version.
             version, version_raw = _detect_version_record(
-                *owner_probe, executor=ctx.executor,
+                *owner_probe,
+                executor=ctx.executor,
             )
         else:
-            version, version_raw = detect_tool_version_record(tool, config, executor=ctx.executor)
+            version, version_raw = detect_tool_version_record(
+                tool, config, executor=ctx.executor
+            )
     except ExternalToolError as exc:
         if not ctx.dry_run:
             raise
@@ -2155,18 +2620,30 @@ def _probe_plan_versions(ctx: _PlanContext) -> None:
     ctx.version_raw = version_raw
     step_provenance = (
         command_step_provenance(
-            recipe, tool, config, rendered_commands, version, version_raw,
-            executor=ctx.executor, dry_run=ctx.dry_run,
+            recipe,
+            tool,
+            config,
+            rendered_commands,
+            version,
+            version_raw,
+            executor=ctx.executor,
+            dry_run=ctx.dry_run,
         )
-        if rendered_commands else None
+        if rendered_commands
+        else None
     )
     ctx.step_provenance = step_provenance
     ctx.parameter_sha = parameter_fingerprint(
-        recipe, ctx.rendered_args, ctx.threads, version, runtime_parameters=ctx.runtime_parameters,
+        recipe,
+        ctx.rendered_args,
+        ctx.threads,
+        version,
+        runtime_parameters=ctx.runtime_parameters,
         commands=rendered_commands or None,
         command_versions=(
             [[step["executable"], step["tool_version"]] for step in step_provenance]
-            if step_provenance else None
+            if step_provenance
+            else None
         ),
     )
 
@@ -2180,7 +2657,12 @@ def _lookup_cached_job(ctx: _PlanContext) -> None:
     file_record = ctx.file_record
     rendered_commands = ctx.rendered_commands
     cached = find_cached_job(
-        db, recipe.name, file_record["file_id"], ctx.parameter_sha, ctx.actual_sha, ctx.db_identity
+        db,
+        recipe.name,
+        file_record["file_id"],
+        ctx.parameter_sha,
+        ctx.actual_sha,
+        ctx.db_identity,
     )
     ctx.cached = cached
     if rendered_commands:
@@ -2197,7 +2679,10 @@ def _lookup_cached_job(ctx: _PlanContext) -> None:
     env_decision: dict[str, Any] | None = None
     if cached is not None and not ctx.force and not ctx.dry_run:
         env_decision = _cache_environment_decision(
-            db, recipe, ctx.executor, cached,
+            db,
+            recipe,
+            ctx.executor,
+            cached,
             ctx.step_commands[0] if ctx.step_commands else ctx.command,
             ctx.project.root,
         )
@@ -2211,11 +2696,16 @@ def _plan_dry_run_result(ctx: _PlanContext) -> dict[str, Any]:
     file_record = ctx.file_record
     cached = ctx.cached
     adoptee = (
-        None if ctx.runtime_parameters
+        None
+        if ctx.runtime_parameters
         else find_adoptable_job(db, recipe.name, file_record["file_id"])
     )
-    adoptable = (cached is None and not ctx.force and adoptee is not None
-                 and adoptee["input_sha256"] == ctx.actual_sha)
+    adoptable = (
+        cached is None
+        and not ctx.force
+        and adoptee is not None
+        and adoptee["input_sha256"] == ctx.actual_sha
+    )
     if cached is not None and not ctx.force:
         status = "cached"
     elif adoptable:
@@ -2223,11 +2713,16 @@ def _plan_dry_run_result(ctx: _PlanContext) -> dict[str, Any]:
     else:
         status = "planned"
     return {
-        "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
-        "entity_id": file_record["entity_id"], "analysis": recipe.name,
-        "cached": cached is not None, "tool_version": ctx.version,
-        "command": ctx.command_display, "adoptable": adoptable,
-        "status": status, "output": ctx.output_rel,
+        "file_id": file_record["file_id"],
+        "entity_type": file_record["entity_type"],
+        "entity_id": file_record["entity_id"],
+        "analysis": recipe.name,
+        "cached": cached is not None,
+        "tool_version": ctx.version,
+        "command": ctx.command_display,
+        "adoptable": adoptable,
+        "status": status,
+        "output": ctx.output_rel,
         "dry_run": True,
     }
 
@@ -2242,32 +2737,49 @@ def _reuse_cached_job(ctx: _PlanContext) -> dict[str, Any] | None:
     env_decision = ctx.env_decision
     if cached is not None and not ctx.force:
         strict_miss = env_decision is not None and not env_decision["reuse"]
-        if not strict_miss and output_path.exists() and sha256_path(output_path) == cached["output_sha256"]:
+        if (
+            not strict_miss
+            and output_path.exists()
+            and sha256_path(output_path) == cached["output_sha256"]
+        ):
             if env_decision is not None and env_decision["details"]:
                 _record_cache_reuse_note(ctx)
                 if env_decision["warning"]:
                     print(f"{file_record['file_id']}: {env_decision['warning']}")
             return {
-                "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
-                "entity_id": file_record["entity_id"], "analysis": recipe.name,
-                "cached": True, "job_id": cached["job_id"],
-                "tool_version": cached["tool_version"], "command": ctx.command_display,
-                "output": ctx.output_rel, "status": "cached",
+                "file_id": file_record["file_id"],
+                "entity_type": file_record["entity_type"],
+                "entity_id": file_record["entity_id"],
+                "analysis": recipe.name,
+                "cached": True,
+                "job_id": cached["job_id"],
+                "tool_version": cached["tool_version"],
+                "command": ctx.command_display,
+                "output": ctx.output_rel,
+                "status": "cached",
             }
         if strict_miss:
-            print(f"{file_record['file_id']}: execution environment changed and "
-                  f"{recipe.name} sets environment_policy=strict; recomputing")
+            print(
+                f"{file_record['file_id']}: execution environment changed and "
+                f"{recipe.name} sets environment_policy=strict; recomputing"
+            )
         # Cached row exists but is not reusable (output deleted/modified, or a
         # strict environment mismatch): re-run and record a new job.
         with db.transaction() as conn:
-            conn.execute("UPDATE analysis_jobs SET status='superseded' WHERE job_id=?", (cached["job_id"],))
+            conn.execute(
+                "UPDATE analysis_jobs SET status='superseded' WHERE job_id=?",
+                (cached["job_id"],),
+            )
         cached = None
         ctx.cached = None
 
     if cached is not None and ctx.force:
         # Force re-run keeps the historical row but removes it from the completed cache.
         with db.transaction() as conn:
-            conn.execute("UPDATE analysis_jobs SET status='superseded' WHERE job_id=?", (cached["job_id"],))
+            conn.execute(
+                "UPDATE analysis_jobs SET status='superseded' WHERE job_id=?",
+                (cached["job_id"],),
+            )
         cached = None
         ctx.cached = None
     return None
@@ -2285,7 +2797,9 @@ def _adopt_verified_output(ctx: _PlanContext) -> dict[str, Any] | None:
         # Resume tier 2: adopt a verified existing output instead of
         # recomputing when the exact cache fingerprint changed (version
         # upgrade, recipe rename) but the input content is unchanged.
-        verified = _find_verified_adoptee(db, project, recipe.name, file_record["file_id"], ctx.actual_sha)
+        verified = _find_verified_adoptee(
+            db, project, recipe.name, file_record["file_id"], ctx.actual_sha
+        )
         if verified is not None:
             adoptee, _adoptee_output = verified
             finished = now_iso()
@@ -2298,12 +2812,18 @@ def _adopt_verified_output(ctx: _PlanContext) -> dict[str, Any] | None:
                 "tool": tool.name,
                 "tool_version": ctx.version,
                 "tool_version_raw": ctx.version_raw,
-                "launcher": tool.run_method if ctx.executor.name == "local" else f"{tool.run_method} [{ctx.executor.describe()}]",
+                "launcher": tool.run_method
+                if ctx.executor.name == "local"
+                else f"{tool.run_method} [{ctx.executor.describe()}]",
                 "command": ctx.command_display,
-                "parameter_set": json.dumps({
-                    "arguments": rendered_args, "threads": ctx.threads,
-                    "runtime_parameters": ctx.runtime_parameters or {},
-                }, ensure_ascii=False),
+                "parameter_set": json.dumps(
+                    {
+                        "arguments": rendered_args,
+                        "threads": ctx.threads,
+                        "runtime_parameters": ctx.runtime_parameters or {},
+                    },
+                    ensure_ascii=False,
+                ),
                 "parameter_sha256": ctx.parameter_sha,
                 "input_sha256": ctx.actual_sha,
                 "database_identity": ctx.db_identity,
@@ -2329,19 +2849,35 @@ def _adopt_verified_output(ctx: _PlanContext) -> dict[str, Any] | None:
                 conn.execute(
                     "INSERT INTO changes(object_type, object_id, field, old_value, new_value, "
                     "reason, evidence, actor, changed_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                    ("analysis_job", str(adopted_job_id), "status", None, "completed",
-                     f"adopted verified output from job {adoptee['job_id']} "
-                     "after cache fingerprint change",
-                     f"output_sha256={adoptee['output_sha256']}", "operon analyze", finished),
+                    (
+                        "analysis_job",
+                        str(adopted_job_id),
+                        "status",
+                        None,
+                        "completed",
+                        f"adopted verified output from job {adoptee['job_id']} "
+                        "after cache fingerprint change",
+                        f"output_sha256={adoptee['output_sha256']}",
+                        "operon analyze",
+                        finished,
+                    ),
                 )
-            print(f"{file_record['file_id']}: adopting verified output from job "
-                  f"{adoptee['job_id']} for {recipe.name} (cache fingerprint changed)")
+            print(
+                f"{file_record['file_id']}: adopting verified output from job "
+                f"{adoptee['job_id']} for {recipe.name} (cache fingerprint changed)"
+            )
             return {
-                "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
-                "entity_id": file_record["entity_id"], "analysis": recipe.name,
-                "cached": True, "adopted": True, "job_id": adopted_job_id,
-                "tool_version": ctx.version, "command": ctx.command_display,
-                "output": adoptee["output_relative_path"], "status": "adopted",
+                "file_id": file_record["file_id"],
+                "entity_type": file_record["entity_type"],
+                "entity_id": file_record["entity_id"],
+                "analysis": recipe.name,
+                "cached": True,
+                "adopted": True,
+                "job_id": adopted_job_id,
+                "tool_version": ctx.version,
+                "command": ctx.command_display,
+                "output": adoptee["output_relative_path"],
+                "status": "adopted",
             }
     return None
 
@@ -2367,13 +2903,19 @@ def _insert_running_job(ctx: _PlanContext) -> None:
         "tool": tool.name,
         "tool_version": ctx.version,
         "tool_version_raw": ctx.version_raw,
-        "launcher": tool.run_method if ctx.executor.name == "local" else f"{tool.run_method} [{ctx.executor.describe()}]",
+        "launcher": tool.run_method
+        if ctx.executor.name == "local"
+        else f"{tool.run_method} [{ctx.executor.describe()}]",
         "command": ctx.command_display,
-        "parameter_set": json.dumps({
-            "arguments": rendered_args, "threads": ctx.threads,
-            "runtime_parameters": ctx.runtime_parameters or {},
-            **({"commands": rendered_commands} if rendered_commands else {}),
-        }, ensure_ascii=False),
+        "parameter_set": json.dumps(
+            {
+                "arguments": rendered_args,
+                "threads": ctx.threads,
+                "runtime_parameters": ctx.runtime_parameters or {},
+                **({"commands": rendered_commands} if rendered_commands else {}),
+            },
+            ensure_ascii=False,
+        ),
         "parameter_sha256": ctx.parameter_sha,
         "input_sha256": ctx.actual_sha,
         "database_identity": ctx.db_identity,
@@ -2394,13 +2936,16 @@ def _insert_running_job(ctx: _PlanContext) -> None:
 def _build_analysis_execution(ctx: _PlanContext) -> _AnalysisExecution:
     """Assemble the executable plan for the RUNNING row just inserted."""
     from operon.workflow import new_run_id
+
     run_id = new_run_id()
     logs = ctx.project.logs_root
     return _AnalysisExecution(
         file_record=ctx.file_record,
         job_id=ctx.job_id,
         run_id=run_id,
-        argv_steps=[[str(a) for a in step] for step in (ctx.step_commands or [ctx.command])],
+        argv_steps=[
+            [str(a) for a in step] for step in (ctx.step_commands or [ctx.command])
+        ],
         commands=ctx.step_commands,
         command_details=ctx.step_provenance,
         command_display=ctx.command_display,
@@ -2409,7 +2954,9 @@ def _build_analysis_execution(ctx: _PlanContext) -> _AnalysisExecution:
         output_path=ctx.output_path,
         output_rel=ctx.output_rel,
         work_dir=ctx.work_dir,
-        stage_inputs=(ctx.input_path,) if ctx.executor.name == "ssh" and not ctx.input_is_remote else (),
+        stage_inputs=(ctx.input_path,)
+        if ctx.executor.name == "ssh" and not ctx.input_is_remote
+        else (),
         env_decision=ctx.env_decision,
         runtime_parameters=ctx.runtime_parameters,
         stdout_path=logs / f"{run_id}.stdout.log",
@@ -2420,24 +2967,41 @@ def _build_analysis_execution(ctx: _PlanContext) -> _AnalysisExecution:
 
 def _env_policy_extra_details(plan: _AnalysisExecution) -> dict[str, Any] | None:
     env_decision = plan.env_decision
-    if env_decision is not None and not env_decision["reuse"] and env_decision["details"]:
+    if (
+        env_decision is not None
+        and not env_decision["reuse"]
+        and env_decision["details"]
+    ):
         return {"environment_policy_check": env_decision["details"]}
     return None
 
 
-def _execute_analysis_plan(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                           executor: Any, plan: _AnalysisExecution) -> dict[str, Any]:
+def _execute_analysis_plan(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    executor: Any,
+    plan: _AnalysisExecution,
+) -> dict[str, Any]:
     """Execute one planned analysis file through the per-file executor path."""
     from operon.workflow import run_external_command
+
     if plan.work_dir is not None:
         # Drop stale intermediates from an earlier failed/interrupted run.
         _remove_output_artifact(project, plan.work_dir)
         plan.work_dir.mkdir(parents=True, exist_ok=True)
         prepare = getattr(executor, "prepare_database", None)
-        if executor.name == "ssh" and getattr(executor, "remote_root", "") and prepare is not None:
+        if (
+            executor.name == "ssh"
+            and getattr(executor, "remote_root", "")
+            and prepare is not None
+        ):
             prepare(plan.work_dir, mutable_cache=True)
     return run_external_command(
-        db, project, plan.argv_steps[0],
+        db,
+        project,
+        plan.argv_steps[0],
         step=f"analysis:{recipe.name}",
         entity_type=plan.file_record["entity_type"],
         entity_id=plan.file_record["entity_id"],
@@ -2456,17 +3020,32 @@ def _execute_analysis_plan(project: Project, db: Database, recipe: Recipe, tool:
     )
 
 
-def _finalize_analysis_execution(project: Project, db: Database, recipe: Recipe, tool: ToolSpec,
-                                 plan: _AnalysisExecution, run_record: dict[str, Any],
-                                 keep_partial: bool = False) -> dict[str, Any]:
+def _finalize_analysis_execution(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    plan: _AnalysisExecution,
+    run_record: dict[str, Any],
+    keep_partial: bool = False,
+) -> dict[str, Any]:
     """Post-run success path: validate the output, parse results, complete the job."""
     file_record = plan.file_record
-    _require_artifact_kind(plan.output_path, recipe.output_kind, f"{recipe.name} output")
+    _require_artifact_kind(
+        plan.output_path, recipe.output_kind, f"{recipe.name} output"
+    )
     output_sha = sha256_path(plan.output_path)
     hit_count, query_count, query_with_hit_count, metric_count, alignment_count = (
         parse_and_store_results(
-            db, project, recipe, tool, plan.version, file_record, plan.job_id,
-            plan.output_path, output_sha,
+            db,
+            project,
+            recipe,
+            tool,
+            plan.version,
+            file_record,
+            plan.job_id,
+            plan.output_path,
+            output_sha,
             runtime_parameters=plan.runtime_parameters,
         )
     )
@@ -2478,22 +3057,43 @@ def _finalize_analysis_execution(project: Project, db: Database, recipe: Recipe,
             "UPDATE analysis_jobs SET status='completed', output_relative_path=?, output_sha256=?, "
             "stdout_file=?, stderr_file=?, finished_at=?, workflow_run_id=?, environment_id=? "
             "WHERE job_id=?",
-            (plan.output_rel, output_sha, run_record.get("stdout_file"), run_record.get("stderr_file"),
-             finished, run_record.get("run_id"), run_record.get("environment_id"), plan.job_id),
+            (
+                plan.output_rel,
+                output_sha,
+                run_record.get("stdout_file"),
+                run_record.get("stderr_file"),
+                finished,
+                run_record.get("run_id"),
+                run_record.get("environment_id"),
+                plan.job_id,
+            ),
         )
     return {
-        "file_id": file_record["file_id"], "entity_type": file_record["entity_type"],
-        "entity_id": file_record["entity_id"], "analysis": recipe.name,
-        "cached": False, "job_id": plan.job_id, "tool_version": plan.version,
-        "command": plan.command_display, "output": plan.output_rel, "status": "completed",
-        "hit_count": hit_count, "query_count": query_count,
+        "file_id": file_record["file_id"],
+        "entity_type": file_record["entity_type"],
+        "entity_id": file_record["entity_id"],
+        "analysis": recipe.name,
+        "cached": False,
+        "job_id": plan.job_id,
+        "tool_version": plan.version,
+        "command": plan.command_display,
+        "output": plan.output_rel,
+        "status": "completed",
+        "hit_count": hit_count,
+        "query_count": query_count,
         "query_with_hit_count": query_with_hit_count,
-        "metric_count": metric_count, "alignment_count": alignment_count,
+        "metric_count": metric_count,
+        "alignment_count": alignment_count,
     }
 
 
-def _interrupt_analysis_execution(project: Project, db: Database, plan: _AnalysisExecution,
-                                  exc: BaseException, keep_partial: bool = False) -> None:
+def _interrupt_analysis_execution(
+    project: Project,
+    db: Database,
+    plan: _AnalysisExecution,
+    exc: BaseException,
+    keep_partial: bool = False,
+) -> None:
     """Graceful shutdown: finalize the job row, drop the partial output (unless
     --keep-partial).  Partial stdout/stderr logs are kept for diagnosis."""
     signum = getattr(exc, "signum", None)
@@ -2509,8 +3109,13 @@ def _interrupt_analysis_execution(project: Project, db: Database, plan: _Analysi
             _remove_output_artifact(project, plan.work_dir)
 
 
-def _fail_analysis_execution(project: Project, db: Database, plan: _AnalysisExecution,
-                             exc: BaseException, keep_partial: bool = False) -> None:
+def _fail_analysis_execution(
+    project: Project,
+    db: Database,
+    plan: _AnalysisExecution,
+    exc: BaseException,
+    keep_partial: bool = False,
+) -> None:
     with db.transaction() as conn:
         conn.execute(
             "UPDATE analysis_jobs SET status='failed', finished_at=?, error=? WHERE job_id=?",
@@ -2520,8 +3125,9 @@ def _fail_analysis_execution(project: Project, db: Database, plan: _AnalysisExec
         _remove_output_artifact(project, plan.work_dir)
 
 
-def _analysis_error_result(file_record: dict[str, Any], recipe: Recipe,
-                           exc: BaseException) -> dict[str, Any]:
+def _analysis_error_result(
+    file_record: dict[str, Any], recipe: Recipe, exc: BaseException
+) -> dict[str, Any]:
     return {
         "file_id": file_record["file_id"],
         "entity_type": file_record["entity_type"],
@@ -2533,11 +3139,18 @@ def _analysis_error_result(file_record: dict[str, Any], recipe: Recipe,
     }
 
 
-def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool: ToolSpec,
-                            tool_version: str, file_record: dict[str, Any], job_id: int,
-                            output_path: Path, output_sha: str,
-                            runtime_parameters: dict[str, str] | None = None
-                            ) -> tuple[int, int, int, int, int]:
+def parse_and_store_results(
+    db: Database,
+    project: Project,
+    recipe: Recipe,
+    tool: ToolSpec,
+    tool_version: str,
+    file_record: dict[str, Any],
+    job_id: int,
+    output_path: Path,
+    output_sha: str,
+    runtime_parameters: dict[str, str] | None = None,
+) -> tuple[int, int, int, int, int]:
     """Parse tool output and synchronize summary + top hits + alignments into SQLite."""
     hits, alignments = parse_hits(output_path, recipe)
     metrics: list[dict[str, Any]] = []
@@ -2554,8 +3167,15 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
         ]
         best_evalue = None
         for hit in hits:
-            if hit["metric_name"] in {"evalue", "E-value"} and hit["metric_numeric"] is not None:
-                best_evalue = hit["metric_numeric"] if best_evalue is None else min(best_evalue, hit["metric_numeric"])
+            if (
+                hit["metric_name"] in {"evalue", "E-value"}
+                and hit["metric_numeric"] is not None
+            ):
+                best_evalue = (
+                    hit["metric_numeric"]
+                    if best_evalue is None
+                    else min(best_evalue, hit["metric_numeric"])
+                )
         if best_evalue is not None:
             metrics.append(_result_metric("best_evalue", best_evalue))
 
@@ -2576,9 +3196,17 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
             "query_id, subject_id, metric_name, metric_value, metric_numeric, metric_unit, hit_rank) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                job_id, file_record["entity_type"], file_record["entity_id"], file_record["file_id"],
-                recipe.name, hit["query_id"], hit["subject_id"], hit["metric_name"],
-                str(hit["metric_value"]), hit["metric_numeric"], hit.get("metric_unit"),
+                job_id,
+                file_record["entity_type"],
+                file_record["entity_id"],
+                file_record["file_id"],
+                recipe.name,
+                hit["query_id"],
+                hit["subject_id"],
+                hit["metric_name"],
+                str(hit["metric_value"]),
+                hit["metric_numeric"],
+                hit.get("metric_unit"),
                 hit["rank"],
             ),
         )
@@ -2589,12 +3217,24 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
             "evalue, bitscore, percent_identity, extra_json) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                job_id, file_record["entity_type"], file_record["entity_id"], file_record["file_id"],
-                recipe.name, alignment["query_id"], alignment["subject_id"], alignment["rank"],
-                alignment["qstart"], alignment["qend"], alignment["sstart"], alignment["send"],
-                alignment["evalue"], alignment["bitscore"], alignment["pident"],
+                job_id,
+                file_record["entity_type"],
+                file_record["entity_id"],
+                file_record["file_id"],
+                recipe.name,
+                alignment["query_id"],
+                alignment["subject_id"],
+                alignment["rank"],
+                alignment["qstart"],
+                alignment["qend"],
+                alignment["sstart"],
+                alignment["send"],
+                alignment["evalue"],
+                alignment["bitscore"],
+                alignment["pident"],
                 json.dumps(alignment["extra"], ensure_ascii=False, sort_keys=True)
-                if alignment["extra"] else None,
+                if alignment["extra"]
+                else None,
             ),
         )
     db.conn.commit()
@@ -2605,30 +3245,44 @@ def parse_and_store_results(db: Database, project: Project, recipe: Recipe, tool
                 "INSERT INTO analysis_results(job_id, entity_type, entity_id, file_id, analysis_name, "
                 "metric_name, metric_value, metric_numeric, metric_unit) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
-                    job_id, file_record["entity_type"], file_record["entity_id"], file_record["file_id"],
-                    recipe.name, metric["metric_name"], metric["metric_value"],
-                    metric["metric_numeric"], metric.get("metric_unit"),
+                    job_id,
+                    file_record["entity_type"],
+                    file_record["entity_id"],
+                    file_record["file_id"],
+                    recipe.name,
+                    metric["metric_name"],
+                    metric["metric_value"],
+                    metric["metric_numeric"],
+                    metric.get("metric_unit"),
                 ),
             )
-            db.insert_qc_result({
-                "entity_type": file_record["entity_type"],
-                "entity_id": file_record["entity_id"],
-                "file_id": file_record["file_id"],
-                "file_sha256": file_record["sha256"],
-                "qc_stage": qc_stage,
-                "metric_name": metric["metric_name"],
-                "metric_value": metric["metric_value"],
-                "metric_numeric": metric["metric_numeric"],
-                "metric_unit": metric.get("metric_unit"),
-                "tool": tool.name,
-                "tool_version": tool_version,
-                "parameter_set": f"{recipe.name}:{output_sha[:16]}",
-                "evaluated_at": now_iso(),
-            })
+            db.insert_qc_result(
+                {
+                    "entity_type": file_record["entity_type"],
+                    "entity_id": file_record["entity_id"],
+                    "file_id": file_record["file_id"],
+                    "file_sha256": file_record["sha256"],
+                    "qc_stage": qc_stage,
+                    "metric_name": metric["metric_name"],
+                    "metric_value": metric["metric_value"],
+                    "metric_numeric": metric["metric_numeric"],
+                    "metric_unit": metric.get("metric_unit"),
+                    "tool": tool.name,
+                    "tool_version": tool_version,
+                    "parameter_set": f"{recipe.name}:{output_sha[:16]}",
+                    "evaluated_at": now_iso(),
+                }
+            )
     queries = {h["query_id"] for h in hits}
     query_with_hit = {h["query_id"] for h in hits if h.get("rank") == 1}
     hit_pairs = {(h["query_id"], h["subject_id"]) for h in hits}
-    return len(hit_pairs), len(queries), len(query_with_hit), len(metrics), len(alignments)
+    return (
+        len(hit_pairs),
+        len(queries),
+        len(query_with_hit),
+        len(metrics),
+        len(alignments),
+    )
 
 
 def _result_metric(name: str, value: Any, unit: str | None = None) -> dict[str, Any]:
@@ -2654,7 +3308,9 @@ def _result_metric(name: str, value: Any, unit: str | None = None) -> dict[str, 
     }
 
 
-def parse_hits(output_path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def parse_hits(
+    output_path: Path, recipe: Recipe
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Parse tool output into (EAV hit rows, structured alignment rows)."""
     parser = recipe.result_parser
     if parser in {"none", "busco_json"}:
@@ -2673,9 +3329,13 @@ def parse_hits(output_path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]],
 def _select_busco_json(output_path: Path, recipe: Recipe) -> Path:
     if output_path.is_file():
         return output_path
-    result_glob = str(recipe.raw.get("result_glob", "short_summary*.json") or "short_summary*.json")
+    result_glob = str(
+        recipe.raw.get("result_glob", "short_summary*.json") or "short_summary*.json"
+    )
     if Path(result_glob).is_absolute() or ".." in Path(result_glob).parts:
-        raise ValidationError(f"{recipe.name}: result_glob must stay within the output directory")
+        raise ValidationError(
+            f"{recipe.name}: result_glob must stay within the output directory"
+        )
     candidates = sorted(p for p in output_path.glob(result_glob) if p.is_file())
     if not candidates:
         raise ExternalToolError(
@@ -2706,22 +3366,48 @@ def _parse_busco_json(output_path: Path, recipe: Recipe) -> list[dict[str, Any]]
         with open(summary_path, encoding="utf-8") as handle:
             document = json.load(handle)
     except (OSError, json.JSONDecodeError) as exc:
-        raise ExternalToolError(f"{recipe.name}: invalid BUSCO JSON {summary_path}: {exc}") from exc
+        raise ExternalToolError(
+            f"{recipe.name}: invalid BUSCO JSON {summary_path}: {exc}"
+        ) from exc
     if not isinstance(document, dict) or not isinstance(document.get("results"), dict):
-        raise ExternalToolError(f"{recipe.name}: BUSCO JSON has no results object: {summary_path}")
+        raise ExternalToolError(
+            f"{recipe.name}: BUSCO JSON has no results object: {summary_path}"
+        )
 
     results = document["results"]
-    parameters = document.get("parameters") if isinstance(document.get("parameters"), dict) else {}
-    lineage = document.get("lineage_dataset") if isinstance(document.get("lineage_dataset"), dict) else {}
-    versions = document.get("versions") if isinstance(document.get("versions"), dict) else {}
+    parameters = (
+        document.get("parameters")
+        if isinstance(document.get("parameters"), dict)
+        else {}
+    )
+    lineage = (
+        document.get("lineage_dataset")
+        if isinstance(document.get("lineage_dataset"), dict)
+        else {}
+    )
+    versions = (
+        document.get("versions") if isinstance(document.get("versions"), dict) else {}
+    )
     metrics: list[dict[str, Any]] = []
 
     result_fields = [
         ("busco_complete_percent", ("Complete percentage",), "percent"),
         ("busco_complete_count", ("Complete BUSCOs",), "count"),
-        ("busco_single_copy_percent", ("Single copy percentage", "Single-copy percentage"), "percent"),
-        ("busco_single_copy_count", ("Single copy BUSCOs", "Single-copy BUSCOs"), "count"),
-        ("busco_duplicated_percent", ("Multi copy percentage", "Duplicated percentage"), "percent"),
+        (
+            "busco_single_copy_percent",
+            ("Single copy percentage", "Single-copy percentage"),
+            "percent",
+        ),
+        (
+            "busco_single_copy_count",
+            ("Single copy BUSCOs", "Single-copy BUSCOs"),
+            "count",
+        ),
+        (
+            "busco_duplicated_percent",
+            ("Multi copy percentage", "Duplicated percentage"),
+            "percent",
+        ),
         ("busco_duplicated_count", ("Multi copy BUSCOs", "Duplicated BUSCOs"), "count"),
         ("busco_fragmented_percent", ("Fragmented percentage",), "percent"),
         ("busco_fragmented_count", ("Fragmented BUSCOs",), "count"),
@@ -2783,12 +3469,18 @@ def _alignment_number(raw: Any, integer: bool = False) -> int | float | None:
     return int(value) if integer else value
 
 
-def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _parse_blast_tabular(
+    path: Path, recipe: Recipe
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     columns = [str(c) for c in recipe.raw.get("result_columns", [])]
     if len(columns) < 2:
-        raise ValidationError(f"{recipe.name}: result_columns must contain at least query and subject")
+        raise ValidationError(
+            f"{recipe.name}: result_columns must contain at least query and subject"
+        )
     metric_columns = [str(c) for c in recipe.raw.get("hit_metric_columns", columns[2:])]
-    numeric_columns = {str(c) for c in recipe.raw.get("numeric_columns", metric_columns)}
+    numeric_columns = {
+        str(c) for c in recipe.raw.get("numeric_columns", metric_columns)
+    }
     query_index = columns.index(recipe.raw.get("query_column", columns[0]))
     subject_index = columns.index(recipe.raw.get("subject_column", columns[1]))
     metric_indexes = [columns.index(c) for c in metric_columns if c in columns]
@@ -2802,7 +3494,10 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any
             if name in columns:
                 alignment_indexes[field] = (columns.index(name), integer)
                 break
-    structured = {index for index, _ in alignment_indexes.values()} | {query_index, subject_index}
+    structured = {index for index, _ in alignment_indexes.values()} | {
+        query_index,
+        subject_index,
+    }
     rank: dict[str, int] = {}
     hits: list[dict[str, Any]] = []
     alignments: list[dict[str, Any]] = []
@@ -2825,19 +3520,31 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any
                 "rank": rank[query_id],
                 "extra": {
                     columns[i]: fields[i].strip()
-                    for i in range(len(columns)) if i not in structured
+                    for i in range(len(columns))
+                    if i not in structured
                 },
             }
-            for field in ("qstart", "qend", "sstart", "send", "evalue", "bitscore", "pident"):
+            for field in (
+                "qstart",
+                "qend",
+                "sstart",
+                "send",
+                "evalue",
+                "bitscore",
+                "pident",
+            ):
                 mapped = alignment_indexes.get(field)
                 alignment[field] = (
                     _alignment_number(fields[mapped[0]], integer=mapped[1])
-                    if mapped is not None else None
+                    if mapped is not None
+                    else None
                 )
             alignments.append(alignment)
             if rank[query_id] > recipe.max_hits_per_query:
                 continue
-            for metric_index, metric_name in zip(metric_indexes, [columns[i] for i in metric_indexes], strict=True):
+            for metric_index, metric_name in zip(
+                metric_indexes, [columns[i] for i in metric_indexes], strict=True
+            ):
                 raw_value = fields[metric_index].strip()
                 if raw_value == "":
                     continue
@@ -2845,15 +3552,19 @@ def _parse_blast_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any
                     numeric = float(raw_value)
                 except ValueError:
                     numeric = None
-                hits.append({
-                    "query_id": query_id,
-                    "subject_id": subject_id,
-                    "metric_name": metric_name,
-                    "metric_value": raw_value,
-                    "metric_numeric": numeric if metric_name in numeric_columns else None,
-                    "metric_unit": None,
-                    "rank": rank[query_id],
-                })
+                hits.append(
+                    {
+                        "query_id": query_id,
+                        "subject_id": subject_id,
+                        "metric_name": metric_name,
+                        "metric_value": raw_value,
+                        "metric_numeric": numeric
+                        if metric_name in numeric_columns
+                        else None,
+                        "metric_unit": None,
+                        "rank": rank[query_id],
+                    }
+                )
     return hits, alignments
 
 
@@ -2914,19 +3625,23 @@ def _parse_hmmer_tblout(path: Path, recipe: Recipe) -> list[dict[str, Any]]:
                     numeric = float(raw_value)
                 except ValueError:
                     numeric = None
-                hits.append({
-                    "query_id": query_name,
-                    "subject_id": target_name,
-                    "metric_name": metric_name,
-                    "metric_value": raw_value,
-                    "metric_numeric": numeric,
-                    "metric_unit": None,
-                    "rank": rank[query_name],
-                })
+                hits.append(
+                    {
+                        "query_id": query_name,
+                        "subject_id": target_name,
+                        "metric_name": metric_name,
+                        "metric_value": raw_value,
+                        "metric_numeric": numeric,
+                        "metric_unit": None,
+                        "rank": rank[query_name],
+                    }
+                )
     return hits
 
 
-def _parse_hmmer_domtblout(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _parse_hmmer_domtblout(
+    path: Path, recipe: Recipe
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     swap = _hmmer_swap(path, recipe)
     rank: dict[str, int] = {}
     hits: list[dict[str, Any]] = []
@@ -2956,41 +3671,49 @@ def _parse_hmmer_domtblout(path: Path, recipe: Recipe) -> tuple[list[dict[str, A
                 score_numeric: float | None = float(fields[13])
             except ValueError:
                 score_numeric = None
-            alignments.append({
-                "query_id": query_name,
-                "subject_id": target_name,
-                "rank": rank[query_name],
-                "qstart": _alignment_number(fields[17], integer=True),
-                "qend": _alignment_number(fields[18], integer=True),
-                "sstart": None,
-                "send": None,
-                "evalue": evalue_numeric,
-                "bitscore": score_numeric,
-                "pident": None,
-                "extra": {
-                    "hmm_from": fields[15], "hmm_to": fields[16],
-                    "env_from": fields[19], "env_to": fields[20],
-                },
-            })
+            alignments.append(
+                {
+                    "query_id": query_name,
+                    "subject_id": target_name,
+                    "rank": rank[query_name],
+                    "qstart": _alignment_number(fields[17], integer=True),
+                    "qend": _alignment_number(fields[18], integer=True),
+                    "sstart": None,
+                    "send": None,
+                    "evalue": evalue_numeric,
+                    "bitscore": score_numeric,
+                    "pident": None,
+                    "extra": {
+                        "hmm_from": fields[15],
+                        "hmm_to": fields[16],
+                        "env_from": fields[19],
+                        "env_to": fields[20],
+                    },
+                }
+            )
             if rank[query_name] > recipe.max_hits_per_query:
                 continue
             for metric_name, raw_value, numeric in (
                 ("evalue", fields[12], evalue_numeric),
                 ("score", fields[13], score_numeric),
             ):
-                hits.append({
-                    "query_id": query_name,
-                    "subject_id": target_name,
-                    "metric_name": metric_name,
-                    "metric_value": raw_value,
-                    "metric_numeric": numeric,
-                    "metric_unit": None,
-                    "rank": rank[query_name],
-                })
+                hits.append(
+                    {
+                        "query_id": query_name,
+                        "subject_id": target_name,
+                        "metric_name": metric_name,
+                        "metric_value": raw_value,
+                        "metric_numeric": numeric,
+                        "metric_unit": None,
+                        "rank": rank[query_name],
+                    }
+                )
     return hits, alignments
 
 
-def _parse_rpsbproc_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _parse_rpsbproc_tabular(
+    path: Path, recipe: Recipe
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Parse rpsbproc tabular output (DATA/SESSION/QUERY/DOMAINS blocks).
 
     Domain rows are attributed to their enclosing QUERY block; the alignment
@@ -3064,47 +3787,52 @@ def _parse_rpsbproc_tabular(path: Path, recipe: Recipe) -> tuple[list[dict[str, 
             rank[key] = rank.get(key, 0) + 1
             evalue_numeric = _alignment_number(fields[6])
             bitscore_numeric = _alignment_number(fields[7])
-            alignments.append({
-                "query_id": definition,
-                "subject_id": fields[8].strip(),
-                "rank": rank[key],
-                "qstart": _alignment_number(fields[4], integer=True),
-                "qend": _alignment_number(fields[5], integer=True),
-                "sstart": None,
-                "send": None,
-                "evalue": evalue_numeric,
-                "bitscore": bitscore_numeric,
-                "pident": None,
-                "extra": {
-                    "hit_type": fields[2].strip(),
-                    "pssm_id": fields[3].strip(),
-                    "short_name": fields[9].strip(),
-                    "incomplete": fields[10].strip(),
-                    "superfamily_pssm": fields[11].strip(),
-                    "session": session,
-                    "rps_query_id": fields[1].strip(),
-                },
-            })
+            alignments.append(
+                {
+                    "query_id": definition,
+                    "subject_id": fields[8].strip(),
+                    "rank": rank[key],
+                    "qstart": _alignment_number(fields[4], integer=True),
+                    "qend": _alignment_number(fields[5], integer=True),
+                    "sstart": None,
+                    "send": None,
+                    "evalue": evalue_numeric,
+                    "bitscore": bitscore_numeric,
+                    "pident": None,
+                    "extra": {
+                        "hit_type": fields[2].strip(),
+                        "pssm_id": fields[3].strip(),
+                        "short_name": fields[9].strip(),
+                        "incomplete": fields[10].strip(),
+                        "superfamily_pssm": fields[11].strip(),
+                        "session": session,
+                        "rps_query_id": fields[1].strip(),
+                    },
+                }
+            )
             if rank[key] > recipe.max_hits_per_query:
                 continue
             for metric_name, raw_value, numeric in (
                 ("evalue", fields[6].strip(), evalue_numeric),
                 ("bitscore", fields[7].strip(), bitscore_numeric),
             ):
-                hits.append({
-                    "query_id": definition,
-                    "subject_id": fields[8].strip(),
-                    "metric_name": metric_name,
-                    "metric_value": raw_value,
-                    "metric_numeric": numeric,
-                    "metric_unit": None,
-                    "rank": rank[key],
-                })
+                hits.append(
+                    {
+                        "query_id": definition,
+                        "subject_id": fields[8].strip(),
+                        "metric_name": metric_name,
+                        "metric_value": raw_value,
+                        "metric_numeric": numeric,
+                        "metric_unit": None,
+                        "rank": rank[key],
+                    }
+                )
     return hits, alignments
 
 
 def print_tools_table(project: Project) -> tuple[str, bool]:
     from operon.utils import format_table
+
     config = load_tools_config(project)
     rows: list[list[str]] = []
     all_ok = True
@@ -3119,4 +3847,6 @@ def print_tools_table(project: Project) -> tuple[str, bool]:
             all_ok = False
         recipes = ", ".join(sorted(raw.get("recipes", {}).keys()))
         rows.append([tool_name, tool.run_method or "(direct)", version, recipes])
-    return format_table(["tool", "run_method", "detected_version", "recipes"], rows), all_ok
+    return format_table(
+        ["tool", "run_method", "detected_version", "recipes"], rows
+    ), all_ok

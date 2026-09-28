@@ -64,6 +64,7 @@ async def _await_notification(app: Any, needle: str = "", severity: str = "") ->
     ``app._notifications`` straight after the widgets turns a correct flow into
     an intermittent failure on a slow interpreter (ODR-51).
     """
+
     def raised() -> bool:
         return any(
             (not severity or notification.severity == severity)
@@ -84,7 +85,9 @@ def parse_command_text(text: str) -> Any:
 
 
 def spy_action(
-    monkeypatch: pytest.MonkeyPatch, name: str, result: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    result: Any,
 ) -> list[tuple[tuple, dict]]:
     """Replace ``operon.tui.actions.<name>`` with a recording stub."""
     calls: list[tuple[tuple, dict]] = []
@@ -137,13 +140,25 @@ def _static_text(widget: Any) -> str:
 def _project_with_remotes(tmp_path: Path, remotes: dict[str, Any]) -> Project:
     """A fresh project whose project.yaml carries the given remotes block."""
     root = tmp_path / "project"
-    assert cli_main(["--project", str(root), "init", str(root),
-                     "--project-id", "PRJ_TUI_REMOTES"]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(root),
+                "init",
+                str(root),
+                "--project-id",
+                "PRJ_TUI_REMOTES",
+            ]
+        )
+        == 0
+    )
     project = Project.find(root)
     config = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     config["remotes"] = remotes
     project.config_path.write_text(
-        yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
     project.config["remotes"] = remotes
     return project
 
@@ -153,35 +168,58 @@ def _ingest(project: Project, name: str, index: int = 1) -> dict[str, Any]:
     db = Database(project.db_path)
     try:
         if not db.query("SELECT 1 FROM organisms WHERE organism_id='ORG_000001'"):
-            db.insert_row("organisms", {
-                "organism_id": "ORG_000001", "scientific_name": "Testus",
-                "taxonomy_source": "NCBI"})
-            db.insert_row("samples", {
-                "sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+            db.insert_row(
+                "organisms",
+                {
+                    "organism_id": "ORG_000001",
+                    "scientific_name": "Testus",
+                    "taxonomy_source": "NCBI",
+                },
+            )
+            db.insert_row(
+                "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+            )
         assembly_id = f"ASM_{index:06d}"
         if not db.query("SELECT 1 FROM assemblies WHERE assembly_id=?", (assembly_id,)):
-            db.insert_row("assemblies", {
-                "assembly_id": assembly_id, "sample_id": "SMP_000001",
-                "assembly_level": "contig", "assembly_version": 1})
+            db.insert_row(
+                "assemblies",
+                {
+                    "assembly_id": assembly_id,
+                    "sample_id": "SMP_000001",
+                    "assembly_level": "contig",
+                    "assembly_version": 1,
+                },
+            )
         source = project.root / name
         source.write_text(f">{name}\n" + "ACGT" * 50 + "\n", encoding="utf-8")
-        return ingest_file(db, project, source, "assembly", assembly_id,
-                           "genome_fasta")
+        return ingest_file(db, project, source, "assembly", assembly_id, "genome_fasta")
     finally:
         db.close()
 
 
-def _add_location(project: Project, file_row: dict[str, Any], name: str,
-                  status: str = "VERIFIED", verified_at: str = "2026-01-01T00:00:00Z") -> None:
+def _add_location(
+    project: Project,
+    file_row: dict[str, Any],
+    name: str,
+    status: str = "VERIFIED",
+    verified_at: str = "2026-01-01T00:00:00Z",
+) -> None:
     db = Database(project.db_path)
     try:
-        db.insert_row("file_locations", {
-            "file_id": file_row["file_id"], "location_name": name,
-            "location_type": "sftp", "uri": f"sftp://fake{file_row['relative_path']}",
-            "relative_path": file_row["relative_path"],
-            "sha256": file_row["sha256"], "size_bytes": file_row["size_bytes"],
-            "status": status, "verified_at": verified_at,
-        })
+        db.insert_row(
+            "file_locations",
+            {
+                "file_id": file_row["file_id"],
+                "location_name": name,
+                "location_type": "sftp",
+                "uri": f"sftp://fake{file_row['relative_path']}",
+                "relative_path": file_row["relative_path"],
+                "sha256": file_row["sha256"],
+                "size_bytes": file_row["size_bytes"],
+                "status": status,
+                "verified_at": verified_at,
+            },
+        )
     finally:
         db.close()
 
@@ -189,13 +227,23 @@ def _add_location(project: Project, file_row: dict[str, Any], name: str,
 # -- data / action layer -------------------------------------------------------
 
 
-def test_list_remotes_reports_endpoints_and_flags_invalid_entries(tmp_path: Path) -> None:
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "user": "alice",
-                   "port": 2222, "root": "/data/operon"},
-        "broken": {"type": "sftp", "host": "hpc.example.org"},
-        "notmap": "oops",
-    })
+def test_list_remotes_reports_endpoints_and_flags_invalid_entries(
+    tmp_path: Path,
+) -> None:
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {
+                "type": "sftp",
+                "host": "hpc.example.org",
+                "user": "alice",
+                "port": 2222,
+                "root": "/data/operon",
+            },
+            "broken": {"type": "sftp", "host": "hpc.example.org"},
+            "notmap": "oops",
+        },
+    )
 
     rows = data.list_remotes(project)
     assert [row["name"] for row in rows] == ["broken", "mirror", "notmap"]
@@ -213,7 +261,9 @@ def test_list_remotes_reports_endpoints_and_flags_invalid_entries(tmp_path: Path
     assert by_name["notmap"]["status"] == "invalid"
 
 
-def test_list_locations_shares_the_cli_query(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_list_locations_shares_the_cli_query(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     project = _project_with_remotes(tmp_path, {})
     first = _ingest(project, "one.fa")
     second = _ingest(project, "two.fa", 2)
@@ -222,10 +272,16 @@ def test_list_locations_shares_the_cli_query(tmp_path: Path, capsys: pytest.Capt
 
     rows = data.list_locations(project)
     assert [row["file_id"] for row in rows] == sorted(
-        [first["file_id"], second["file_id"]])
+        [first["file_id"], second["file_id"]]
+    )
     assert set(rows[0]) == {
-        "file_id", "relative_path", "local_status", "remote", "remote_status",
-        "verified_at"}
+        "file_id",
+        "relative_path",
+        "local_status",
+        "remote",
+        "remote_status",
+        "verified_at",
+    }
     assert rows[0]["remote"] == "mirror" and rows[0]["remote_status"] == "VERIFIED"
 
     # The CLI prints exactly the table these rows describe.
@@ -233,8 +289,14 @@ def test_list_locations_shares_the_cli_query(tmp_path: Path, capsys: pytest.Capt
     assert cli_main(["--project", str(project.root), "locations"]) == 0
     printed = capsys.readouterr().out
     expected = format_table(
-        ["file_id", "relative_path", "local_status", "remote", "remote_status",
-         "verified_at"],
+        [
+            "file_id",
+            "relative_path",
+            "local_status",
+            "remote",
+            "remote_status",
+            "verified_at",
+        ],
         ([row[column] for column in row] for row in rows),
     )
     assert printed == expected + "\n"
@@ -242,30 +304,62 @@ def test_list_locations_shares_the_cli_query(tmp_path: Path, capsys: pytest.Capt
     # The repeated --file-id filter selects the same rows on both paths.
     filtered = data.list_locations(project, file_ids=[second["file_id"]])
     assert [row["file_id"] for row in filtered] == [second["file_id"]]
-    assert cli_main(["--project", str(project.root), "locations",
-                     "--file-id", second["file_id"]]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(project.root),
+                "locations",
+                "--file-id",
+                second["file_id"],
+            ]
+        )
+        == 0
+    )
     # Columns are padded per invocation, so compare against the filtered table.
-    assert capsys.readouterr().out == format_table(
-        ["file_id", "relative_path", "local_status", "remote", "remote_status",
-         "verified_at"],
-        ([row[column] for column in row] for row in filtered),
-    ) + "\n"
+    assert (
+        capsys.readouterr().out
+        == format_table(
+            [
+                "file_id",
+                "relative_path",
+                "local_status",
+                "remote",
+                "remote_status",
+                "verified_at",
+            ],
+            ([row[column] for column in row] for row in filtered),
+        )
+        + "\n"
+    )
 
 
-def test_check_remotes_probes_each_remote_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    project = _project_with_remotes(tmp_path, {
-        "down": {"type": "sftp", "host": "down.example.org", "root": "/data"},
-        "mirror": {"type": "sftp", "host": "up.example.org", "root": "/data"},
-        "broken": {"type": "sftp", "host": "up.example.org"},
-    })
+def test_check_remotes_probes_each_remote_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "down": {"type": "sftp", "host": "down.example.org", "root": "/data"},
+            "mirror": {"type": "sftp", "host": "up.example.org", "root": "/data"},
+            "broken": {"type": "sftp", "host": "up.example.org"},
+        },
+    )
     probed: list[str] = []
 
     def fake_check(project_arg: Project, name: str) -> dict[str, Any]:
         probed.append(name)
         if name == "down":
             raise OSError("connection refused")
-        return {"name": name, "type": "sftp", "address": "up.example.org:22",
-                "root": "/data", "files": 3, "status": "ok", "error": ""}
+        return {
+            "name": name,
+            "type": "sftp",
+            "address": "up.example.org:22",
+            "root": "/data",
+            "files": 3,
+            "status": "ok",
+            "error": "",
+        }
 
     monkeypatch.setattr("operon.remotes.check_remote", fake_check)
 
@@ -288,9 +382,16 @@ def test_remotes_screen_lists_mirrors_and_residency(tmp_path: Path) -> None:
 
     from operon.tui.app import OperonApp
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data/operon"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {
+                "type": "sftp",
+                "host": "hpc.example.org",
+                "root": "/data/operon",
+            },
+        },
+    )
     file_row = _ingest(project, "one.fa")
     _add_location(project, file_row, "mirror")
 
@@ -312,28 +413,42 @@ def test_remotes_screen_lists_mirrors_and_residency(tmp_path: Path) -> None:
 
             # The equivalent commands are echoed next to both sections.
             assert "operon remotes" in _static_text(
-                await _q(app.screen, "#remotes-command", Static))
+                await _q(app.screen, "#remotes-command", Static)
+            )
             assert "operon locations" in _static_text(
-                await _q(app.screen, "#locations-command", Static))
+                await _q(app.screen, "#locations-command", Static)
+            )
 
     _run(scenario())
 
 
 @pytest.mark.bug("ODR-51")
 def test_remotes_check_button_probes_and_reports_failures(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import Button, DataTable
 
     from operon.tui.app import OperonApp
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
-    rows = [{"name": "mirror", "type": "sftp", "address": "hpc.example.org:22",
-             "root": "/data", "files": "", "status": "error",
-             "error": "OSError: connection refused"}]
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
+    rows = [
+        {
+            "name": "mirror",
+            "type": "sftp",
+            "address": "hpc.example.org:22",
+            "root": "/data",
+            "files": "",
+            "status": "error",
+            "error": "OSError: connection refused",
+        }
+    ]
     calls: list[Project] = []
 
     def fake_probe(project_arg: Project) -> list[dict[str, Any]]:
@@ -353,8 +468,9 @@ def test_remotes_check_button_probes_and_reports_failures(
             await _click(pilot, "#remotes-check")
             table = await _q(app.screen, "#remotes-table", DataTable)
             await _wait_until(
-                lambda: table.row_count == 1
-                and "error" in str(table.get_row_at(0)[5]), "checked row")
+                lambda: table.row_count == 1 and "error" in str(table.get_row_at(0)[5]),
+                "checked row",
+            )
             await _wait_until(lambda: not button.disabled, "button re-enabled")
             assert calls == [project]
             await _await_notification(app, severity="error")
@@ -363,7 +479,8 @@ def test_remotes_check_button_probes_and_reports_failures(
 
 
 def test_remotes_locations_filter_maps_repeated_file_ids(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import DataTable, Input, Static
@@ -376,7 +493,9 @@ def test_remotes_locations_filter_maps_repeated_file_ids(
     seen: list[list[str] | None] = []
     real = data.list_locations
 
-    def spy(project_arg: Project, *, file_ids: Any = None, limit: int = 0) -> list[dict[str, Any]]:
+    def spy(
+        project_arg: Project, *, file_ids: Any = None, limit: int = 0
+    ) -> list[dict[str, Any]]:
         seen.append(None if file_ids is None else list(file_ids))
         return real(project_arg, file_ids=file_ids, limit=limit)
 
@@ -391,11 +510,13 @@ def test_remotes_locations_filter_maps_repeated_file_ids(
             table = await _q(app.screen, "#locations-table", DataTable)
             await _wait_until(lambda: table.row_count == 2, "unfiltered rows")
 
-            (await _q(app.screen, "#locations-filter", Input)).value = (
-                f"{second['file_id']}, {first['file_id']} {second['file_id']}")
+            (
+                await _q(app.screen, "#locations-filter", Input)
+            ).value = f"{second['file_id']}, {first['file_id']} {second['file_id']}"
             await _click(pilot, "#locations-apply")
-            await _wait_until(lambda: table.row_count == 2 and seen[-1] is not None,
-                              "filtered rows")
+            await _wait_until(
+                lambda: table.row_count == 2 and seen[-1] is not None, "filtered rows"
+            )
             # Duplicates collapse and the order the user typed is kept.
             assert seen[-1] == [second["file_id"], first["file_id"]]
             command = _static_text(await _q(app.screen, "#locations-command", Static))
@@ -425,7 +546,10 @@ def test_remotes_filter_row_stays_inside_its_parent(tmp_path: Path) -> None:
             field = await _q(app.screen, "#locations-filter", Input)
             button = await _q(app.screen, "#locations-apply", Button)
             assert row.region.contains_region(field.region), (row.region, field.region)
-            assert row.region.contains_region(button.region), (row.region, button.region)
+            assert row.region.contains_region(button.region), (
+                row.region,
+                button.region,
+            )
             assert field.region.width >= 10
             assert button.region.width >= 8
 
@@ -451,12 +575,17 @@ def kwargs_file_ids(kwargs: dict[str, Any], args: tuple = ()) -> Any:
 
 
 def test_actions_push_and_pull_pass_the_cli_arguments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Both paths hand the core the same remote name and file ids."""
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     file_row = _ingest(project, "one.fa")
     capsys.readouterr()  # discard the ``init`` banner
 
@@ -465,8 +594,14 @@ def test_actions_push_and_pull_pass_the_cli_arguments(
 
     def spy_push(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         push_calls.append((args, kwargs))
-        return [{"file_id": "FIL_000001", "relative_path": "raw/x.fa",
-                 "status": "uploaded", "error": None}]
+        return [
+            {
+                "file_id": "FIL_000001",
+                "relative_path": "raw/x.fa",
+                "status": "uploaded",
+                "error": None,
+            }
+        ]
 
     def spy_pull(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         pull_calls.append((args, kwargs))
@@ -480,8 +615,20 @@ def test_actions_push_and_pull_pass_the_cli_arguments(
     actions.pull(project, "mirror")
     tui_pull = _sync_args(pull_calls)[-1]
 
-    assert cli_main(["--project", str(project.root), "push", "--remote", "mirror",
-                     "--file-id", file_row["file_id"]]) == 0
+    assert (
+        cli_main(
+            [
+                "--project",
+                str(project.root),
+                "push",
+                "--remote",
+                "mirror",
+                "--file-id",
+                file_row["file_id"],
+            ]
+        )
+        == 0
+    )
     cli_push = _sync_args(push_calls)[-1]
     assert cli_main(["--project", str(project.root), "pull", "--remote", "mirror"]) == 0
     cli_pull = _sync_args(pull_calls)[-1]
@@ -506,7 +653,8 @@ def test_actions_push_requires_a_remote(tmp_path: Path) -> None:
 
 
 def test_push_modal_command_text_matches_action_kwargs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import Input, Select
@@ -514,12 +662,21 @@ def test_push_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PushModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     file_row = _ingest(project, "one.fa")
-    results = [{"file_id": file_row["file_id"], "relative_path": "raw/one.fa",
-                "status": "uploaded", "error": None}]
+    results = [
+        {
+            "file_id": file_row["file_id"],
+            "relative_path": "raw/one.fa",
+            "status": "uploaded",
+            "error": None,
+        }
+    ]
     calls = spy_action(monkeypatch, "push", results)
 
     async def scenario() -> None:
@@ -550,7 +707,8 @@ def test_push_modal_command_text_matches_action_kwargs(
 
 
 def test_pull_modal_command_text_matches_action_kwargs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import Select
@@ -558,9 +716,12 @@ def test_pull_modal_command_text_matches_action_kwargs(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PullModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     calls = spy_action(monkeypatch, "pull", [])
 
     async def scenario() -> None:
@@ -588,7 +749,8 @@ def test_pull_modal_command_text_matches_action_kwargs(
 
 @pytest.mark.bug("ODR-51")
 def test_push_modal_shows_plan_results_and_stays_open_on_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import DataTable, Static
@@ -596,16 +758,27 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PushModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     good = _ingest(project, "one.fa")
     bad = _ingest(project, "two.fa", 2)
     results = [
-        {"file_id": good["file_id"], "relative_path": good["relative_path"],
-         "status": "uploaded", "error": None},
-        {"file_id": bad["file_id"], "relative_path": bad["relative_path"],
-         "status": "error", "error": "RemoteError: connection reset"},
+        {
+            "file_id": good["file_id"],
+            "relative_path": good["relative_path"],
+            "status": "uploaded",
+            "error": None,
+        },
+        {
+            "file_id": bad["file_id"],
+            "relative_path": bad["relative_path"],
+            "status": "error",
+            "error": "RemoteError: connection reset",
+        },
     ]
     calls = spy_action(monkeypatch, "push", results)
     dismissed: list = []
@@ -625,8 +798,7 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
 
             modal.confirm()
             table = await _q(modal, "#sync-results", DataTable)
-            await _wait_until(
-                lambda: table.row_count == 2, "result rows")
+            await _wait_until(lambda: table.row_count == 2, "result rows")
             assert app.screen is modal, "a failed file must keep the dialog open"
             status = _static_text(await _q(modal, "#sync-status", Static))
             assert "uploaded: 1" in status and "error: 1" in status
@@ -642,7 +814,8 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
 
 @pytest.mark.bug("ODR-51")
 def test_sync_modal_refuses_to_close_while_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     import threading
@@ -650,9 +823,12 @@ def test_sync_modal_refuses_to_close_while_running(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PushModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     release = threading.Event()
     started = threading.Event()
 
@@ -691,10 +867,13 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import PullModal, PushModal
 
-    project = _project_with_remotes(tmp_path, {
-        "archive": {"type": "sftp", "host": "archive.example.org", "root": "/data"},
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "archive": {"type": "sftp", "host": "archive.example.org", "root": "/data"},
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -713,7 +892,9 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
             assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
             assert modal.command_text() == "operon push --remote mirror"
             modal.action_cancel()
-            await _wait_until(lambda: not isinstance(app.screen, PushModal), "push closed")
+            await _wait_until(
+                lambda: not isinstance(app.screen, PushModal), "push closed"
+            )
 
             await _click(pilot, "#remotes-pull")
             await _wait_until(lambda: isinstance(app.screen, PullModal), "pull dialog")
@@ -729,12 +910,16 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
 
 
 def test_evict_plan_reports_eligible_and_blocked_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The pre-flight is read-only and explains every refusal."""
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     good = _ingest(project, "one.fa")
     bad = _ingest(project, "two.fa", 2)
     calls: list[str] = []
@@ -752,12 +937,19 @@ def test_evict_plan_reports_eligible_and_blocked_files(
         def read_manifest(self) -> dict[str, Any]:
             return {"files": {}}
 
-    def fake_verify(project_arg: Project, name: str, record: dict[str, Any],
-                    db: Any = None, **kwargs: Any) -> str:
+    def fake_verify(
+        project_arg: Project,
+        name: str,
+        record: dict[str, Any],
+        db: Any = None,
+        **kwargs: Any,
+    ) -> str:
         assert db is None, "the pre-flight must not touch file_locations"
         calls.append(record["file_id"])
         if record["file_id"] == bad["file_id"]:
-            raise ConflictError("remote 'mirror' artifact diverges from its manifest: x.fa")
+            raise ConflictError(
+                "remote 'mirror' artifact diverges from its manifest: x.fa"
+            )
         return "/data/x.fa"
 
     monkeypatch.setattr("operon.remotes.SFTPStore", _Store)
@@ -785,7 +977,8 @@ def _query_locations(project: Project) -> list[dict[str, Any]]:
 
 
 def test_evict_modal_gates_confirm_on_the_verification(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import Button, DataTable, Static
@@ -793,22 +986,43 @@ def test_evict_modal_gates_confirm_on_the_verification(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import EvictModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+        },
+    )
     good = _ingest(project, "one.fa")
     bad = _ingest(project, "two.fa", 2)
     rows = [
-        {"file_id": good["file_id"], "relative_path": good["relative_path"],
-         "size_bytes": 123, "eligible": True, "reason": ""},
-        {"file_id": bad["file_id"], "relative_path": bad["relative_path"],
-         "size_bytes": 456, "eligible": False,
-         "reason": "RemoteError: remote 'mirror' has no manifest entry"},
+        {
+            "file_id": good["file_id"],
+            "relative_path": good["relative_path"],
+            "size_bytes": 123,
+            "eligible": True,
+            "reason": "",
+        },
+        {
+            "file_id": bad["file_id"],
+            "relative_path": bad["relative_path"],
+            "size_bytes": 456,
+            "eligible": False,
+            "reason": "RemoteError: remote 'mirror' has no manifest entry",
+        },
     ]
     plan_calls = spy_action(monkeypatch, "evict_plan", rows)
-    evict_calls = spy_action(monkeypatch, "evict", [{"file_id": good["file_id"],
-                                                     "relative_path": good["relative_path"],
-                                                     "status": "evicted", "error": None}])
+    evict_calls = spy_action(
+        monkeypatch,
+        "evict",
+        [
+            {
+                "file_id": good["file_id"],
+                "relative_path": good["relative_path"],
+                "status": "evicted",
+                "error": None,
+            }
+        ],
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -824,7 +1038,8 @@ def test_evict_modal_gates_confirm_on_the_verification(
             await pilot.pause()
             assert evict_calls == []
             assert "verify the remote copies first" in _static_text(
-                await _q(modal, "#modal-error", Static))
+                await _q(modal, "#modal-error", Static)
+            )
 
             await _click(pilot, "#evict-check")
             table = await _q(modal, "#evict-plan", DataTable)
@@ -839,7 +1054,8 @@ def test_evict_modal_gates_confirm_on_the_verification(
             await pilot.pause()
             assert evict_calls == []
             assert "not verified on the mirror" in _static_text(
-                await _q(modal, "#modal-error", Static))
+                await _q(modal, "#modal-error", Static)
+            )
 
             # Fix the verdict: every file eligible → Confirm opens and runs.
             plan_calls[0][1].update(rows[1])  # the stub returns the same list
@@ -847,7 +1063,8 @@ def test_evict_modal_gates_confirm_on_the_verification(
             await _click(pilot, "#evict-check")
             await _wait_until(lambda: not confirm.disabled, "Confirm to open")
             assert "all 2 file(s) verified" in _static_text(
-                await _q(modal, "#evict-gate", Static))
+                await _q(modal, "#evict-gate", Static)
+            )
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: len(evict_calls) == 1, "evict call")
@@ -860,7 +1077,8 @@ def test_evict_modal_gates_confirm_on_the_verification(
 
 
 def test_evict_modal_rearms_the_gate_when_the_selection_changes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
     from textual.widgets import Button, Input, Select, Static
@@ -868,13 +1086,23 @@ def test_evict_modal_rearms_the_gate_when_the_selection_changes(
     from operon.tui.app import OperonApp
     from operon.tui.screens.remotes import EvictModal
 
-    project = _project_with_remotes(tmp_path, {
-        "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
-        "other": {"type": "sftp", "host": "other.example.org", "root": "/data"},
-    })
+    project = _project_with_remotes(
+        tmp_path,
+        {
+            "mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"},
+            "other": {"type": "sftp", "host": "other.example.org", "root": "/data"},
+        },
+    )
     file_row = _ingest(project, "one.fa")
-    rows = [{"file_id": file_row["file_id"], "relative_path": file_row["relative_path"],
-             "size_bytes": 1, "eligible": True, "reason": ""}]
+    rows = [
+        {
+            "file_id": file_row["file_id"],
+            "relative_path": file_row["relative_path"],
+            "size_bytes": 1,
+            "eligible": True,
+            "reason": "",
+        }
+    ]
     spy_action(monkeypatch, "evict_plan", rows)
 
     async def scenario() -> None:
@@ -893,7 +1121,8 @@ def test_evict_modal_rearms_the_gate_when_the_selection_changes(
             await pilot.pause()
             assert confirm.disabled
             assert "selection changed" in _static_text(
-                await _q(modal, "#evict-gate", Static))
+                await _q(modal, "#evict-gate", Static)
+            )
 
             # So does editing the file-id filter.
             await _click(pilot, "#evict-check")

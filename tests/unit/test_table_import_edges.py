@@ -91,8 +91,13 @@ def test_xlsx_empty_invalid_shared_boolean_and_1904_dates(tmp_path):
     shared = f'''<sst xmlns="{ns}"><si><t>name</t></si><si><r><t>A</t></r><r><t>B</t></r></si></sst>'''
     styles = f'''<styleSheet xmlns="{ns}"><numFmts><numFmt numFmtId="164" formatCode="yyyy-mm-dd hh:mm"/></numFmts>
     <cellXfs><xf/><xf numFmtId="164"/></cellXfs></styleSheet>'''
-    path = _xlsx(tmp_path / "values.xlsx", book, sheet,
-                 xl__sharedStrings_xml=shared, xl__styles_xml=styles)
+    path = _xlsx(
+        tmp_path / "values.xlsx",
+        book,
+        sheet,
+        xl__sharedStrings_xml=shared,
+        xl__styles_xml=styles,
+    )
     rows = read_table_file(path)
     assert rows == [
         {"name": "AB", "flag": "true", "when": "1904-01-01T12:00:00"},
@@ -110,17 +115,25 @@ def test_xlsx_style_and_date_edge_cases(tmp_path):
         assert _xlsx_date_styles(archive) == {}
     no_cell_xfs = tmp_path / "no-xfs.zip"
     with zipfile.ZipFile(no_cell_xfs, "w") as archive:
-        archive.writestr("xl/styles.xml", '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>')
+        archive.writestr(
+            "xl/styles.xml",
+            '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+        )
     with zipfile.ZipFile(no_cell_xfs) as archive:
         assert _xlsx_date_styles(archive) == {}
     assert _excel_datetime("not-a-number", False, False) == "not-a-number"
     assert _excel_datetime("1", False, False) == "1899-12-31"
 
 
-def test_preview_rejects_invalid_tables_keys_rows_and_references(project_db, tmp_path, monkeypatch):
+def test_preview_rejects_invalid_tables_keys_rows_and_references(
+    project_db, tmp_path, monkeypatch
+):
     _project, db, schema = project_db
-    base = _csv(tmp_path / "rows.csv", ["organism_id", "scientific_name"],
-                [{"organism_id": "ORG_000001", "scientific_name": "X"}])
+    base = _csv(
+        tmp_path / "rows.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "ORG_000001", "scientific_name": "X"}],
+    )
     with pytest.raises(ValidationError, match="not importable"):
         preview_table_import(db, schema, "bad", base)
     monkeypatch.setattr(db, "_primary_keys", lambda _table: [])
@@ -128,77 +141,126 @@ def test_preview_rejects_invalid_tables_keys_rows_and_references(project_db, tmp
         preview_table_import(db, schema, "organisms", base)
     monkeypatch.undo()
 
-    unknown = _csv(tmp_path / "unknown.csv", ["organism_id", "unknown"],
-                   [{"organism_id": "ORG_000001", "unknown": "x"}])
+    unknown = _csv(
+        tmp_path / "unknown.csv",
+        ["organism_id", "unknown"],
+        [{"organism_id": "ORG_000001", "unknown": "x"}],
+    )
     with pytest.raises(ValidationError, match="unknown field"):
         preview_table_import(db, schema, "organisms", unknown)
-    duplicate = _csv(tmp_path / "duplicate.csv", ["organism_id", "scientific_name"], [
-        {"organism_id": "ORG_000001", "scientific_name": "X"},
-        {"organism_id": "ORG_000001", "scientific_name": "Y"},
-    ])
+    duplicate = _csv(
+        tmp_path / "duplicate.csv",
+        ["organism_id", "scientific_name"],
+        [
+            {"organism_id": "ORG_000001", "scientific_name": "X"},
+            {"organism_id": "ORG_000001", "scientific_name": "Y"},
+        ],
+    )
     with pytest.raises(ValidationError, match="duplicate import key"):
         preview_table_import(db, schema, "organisms", duplicate)
-    invalid_key = _csv(tmp_path / "invalid-key.csv", ["organism_id", "scientific_name"],
-                       [{"organism_id": "wrong", "scientific_name": "X"}])
+    invalid_key = _csv(
+        tmp_path / "invalid-key.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "wrong", "scientific_name": "X"}],
+    )
     with pytest.raises(ValidationError, match="field organism_id"):
         preview_table_import(db, schema, "organisms", invalid_key)
 
-    sample = _csv(tmp_path / "sample.csv", ["sample_id", "organism_id"],
-                  [{"sample_id": "SMP_000001", "organism_id": "ORG_999999"}])
+    sample = _csv(
+        tmp_path / "sample.csv",
+        ["sample_id", "organism_id"],
+        [{"sample_id": "SMP_000001", "organism_id": "ORG_999999"}],
+    )
     with pytest.raises(ValidationError, match="does not exist"):
         preview_table_import(db, schema, "samples", sample)
-    accession = _csv(tmp_path / "accession.csv", ["accession", "namespace", "internal_type", "internal_id"],
-                     [{"accession": "X1", "namespace": "NCBI", "internal_type": "sample", "internal_id": "SMP_999999"}])
+    accession = _csv(
+        tmp_path / "accession.csv",
+        ["accession", "namespace", "internal_type", "internal_id"],
+        [
+            {
+                "accession": "X1",
+                "namespace": "NCBI",
+                "internal_type": "sample",
+                "internal_id": "SMP_999999",
+            }
+        ],
+    )
     with pytest.raises(ValidationError, match="does not exist"):
         preview_table_import(db, schema, "accessions", accession)
 
 
 def test_apply_conflict_policies_and_state_updates(project_db, tmp_path):
     _project, db, schema = project_db
-    source = _csv(tmp_path / "organisms.csv", ["organism_id", "scientific_name"],
-                  [{"organism_id": "ORG_000001", "scientific_name": "Before"}])
+    source = _csv(
+        tmp_path / "organisms.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "ORG_000001", "scientific_name": "Before"}],
+    )
     preview = preview_table_import(db, schema, "organisms", source)
-    assert apply_table_import(db, schema, preview, on_conflict="update")["inserted"] == 1
+    assert (
+        apply_table_import(db, schema, preview, on_conflict="update")["inserted"] == 1
+    )
     assert db.get_entity_state("organism", "ORG_000001") == "METADATA_VALIDATED"
     with pytest.raises(ValidationError, match="on_conflict"):
         apply_table_import(db, schema, preview, on_conflict="bad")
 
-    update = _csv(tmp_path / "update.csv", ["organism_id", "scientific_name"],
-                  [{"organism_id": "ORG_000001", "scientific_name": "After"}])
+    update = _csv(
+        tmp_path / "update.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "ORG_000001", "scientific_name": "After"}],
+    )
     changed = preview_table_import(db, schema, "organisms", update)
     with pytest.raises(ConflictError, match="would be changed"):
         apply_table_import(db, schema, changed, on_conflict="error")
     skipped = apply_table_import(db, schema, changed, on_conflict="skip")
     assert skipped["skipped"] == 1
-    updated = apply_table_import(db, schema, changed, on_conflict="update", actor="tester")
+    updated = apply_table_import(
+        db, schema, changed, on_conflict="update", actor="tester"
+    )
     assert updated["updated"] == 1
     audit = db.query(
         "SELECT field, old_value, new_value, reason, actor FROM changes "
         "WHERE object_type='organisms' AND object_id='ORG_000001' "
         "AND reason='table import update'"
     )
-    assert [(row["field"], row["old_value"], row["new_value"], row["actor"]) for row in audit] == [
-        ("scientific_name", "Before", "After", "tester")
-    ]
+    assert [
+        (row["field"], row["old_value"], row["new_value"], row["actor"])
+        for row in audit
+    ] == [("scientific_name", "Before", "After", "tester")]
 
 
 def test_preview_rejects_updates_to_retired_entities(project_db, tmp_path):
     _project, db, schema = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"})
-    apply_lifecycle_event(
-        db, "organism", "ORG_000001", action="RETIRE",
-        reason_code="accidental_import", reason="mistake", actor="tester",
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"}
     )
-    source = _csv(tmp_path / "update.csv", ["organism_id", "scientific_name"],
-                  [{"organism_id": "ORG_000001", "scientific_name": "After"}])
-    with pytest.raises(ValidationError, match="is retired; restore it before table import"):
+    apply_lifecycle_event(
+        db,
+        "organism",
+        "ORG_000001",
+        action="RETIRE",
+        reason_code="accidental_import",
+        reason="mistake",
+        actor="tester",
+    )
+    source = _csv(
+        tmp_path / "update.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "ORG_000001", "scientific_name": "After"}],
+    )
+    with pytest.raises(
+        ValidationError, match="is retired; restore it before table import"
+    ):
         preview_table_import(db, schema, "organisms", source)
 
 
 def test_apply_skips_unchanged_rows_without_new_audit_rows(project_db, tmp_path):
     _project, db, schema = project_db
-    source = _csv(tmp_path / "organisms.csv", ["organism_id", "scientific_name"],
-                  [{"organism_id": "ORG_000001", "scientific_name": "Before"}])
+    source = _csv(
+        tmp_path / "organisms.csv",
+        ["organism_id", "scientific_name"],
+        [{"organism_id": "ORG_000001", "scientific_name": "Before"}],
+    )
     preview = preview_table_import(db, schema, "organisms", source)
     apply_table_import(db, schema, preview, on_conflict="update")
 
@@ -212,12 +274,20 @@ def test_apply_skips_unchanged_rows_without_new_audit_rows(project_db, tmp_path)
 
 def test_metadata_update_preserves_advanced_entity_state(project_db, tmp_path):
     project, db, schema = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Before"}
+    )
     db.set_entity_state("organism", "ORG_000001", "QC_COMPLETE", "qc complete")
-    source = _csv(tmp_path / "update-advanced.csv", ["organism_id", "scientific_name"], [
-        {"organism_id": "ORG_000001", "scientific_name": "After"},
-    ])
+    source = _csv(
+        tmp_path / "update-advanced.csv",
+        ["organism_id", "scientific_name"],
+        [
+            {"organism_id": "ORG_000001", "scientific_name": "After"},
+        ],
+    )
     preview = preview_table_import(db, schema, "organisms", source)
-    result = apply_table_import(db, schema, preview, on_conflict="update", actor="tester")
+    result = apply_table_import(
+        db, schema, preview, on_conflict="update", actor="tester"
+    )
     assert result["updated"] == 1
     assert db.get_entity_state("organism", "ORG_000001") == "QC_COMPLETE"

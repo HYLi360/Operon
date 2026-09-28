@@ -14,7 +14,16 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, Tree
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Input,
+    Label,
+    Select,
+    Static,
+    Tree,
+)
 
 from operon.config import Project, resolve_actor
 from operon.lifecycle import RETIRE_REASON_CODES
@@ -60,12 +69,12 @@ METRIC_ROW_LIMIT = 200
 
 
 def _metrics_section(
-        text: Text,
-        title: str,
-        rows: list[dict[str, Any]],
-        group_key: str,
-        *,
-        show_tool: bool,
+    text: Text,
+    title: str,
+    rows: list[dict[str, Any]],
+    group_key: str,
+    *,
+    show_tool: bool,
 ) -> None:
     text.append(f"\n{title}\n", style="bold")
     if not rows:
@@ -89,7 +98,9 @@ def _metrics_section(
 class LifecycleModal(WriteModal):
     """Plan preview + confirm for `operon retire|restore --apply`."""
 
-    def __init__(self, project: Project, entity_type: str, entity_id: str, retired: bool) -> None:
+    def __init__(
+        self, project: Project, entity_type: str, entity_id: str, retired: bool
+    ) -> None:
         self.action = "RESTORE" if retired else "RETIRE"
         super().__init__(f"{self.action.title()} {entity_type} {entity_id}")
         self.project = project
@@ -103,11 +114,14 @@ class LifecycleModal(WriteModal):
             yield Static("Reason code", classes="modal-label")
             yield Select(
                 [(code, code) for code in sorted(RETIRE_REASON_CODES)],
-                value="other", id="lifecycle-reason-code", allow_blank=False,
+                value="other",
+                id="lifecycle-reason-code",
+                allow_blank=False,
             )
         yield Input(placeholder="reason (required)", id="lifecycle-reason")
         yield Input(
-            value=resolve_actor() or "", placeholder="actor (required)",
+            value=resolve_actor() or "",
+            placeholder="actor (required)",
             id="lifecycle-actor",
         )
         yield Input(placeholder="evidence (optional)", id="lifecycle-evidence")
@@ -121,7 +135,9 @@ class LifecycleModal(WriteModal):
     def _load_plan(self) -> None:
         try:
             payload: Any = actions.lifecycle_preview(
-                self.project, self.entity_id, self.action,
+                self.project,
+                self.entity_id,
+                self.action,
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
@@ -139,13 +155,27 @@ class LifecycleModal(WriteModal):
         text.append(f"target   {target['entity_type']} {target['entity_id']}\n")
         counts = payload["entity_counts"]
         affected = {kind: n for kind, n in counts.items() if n}
-        text.append("entities " + ("  ".join(f"{kind}:{n}" for kind, n in affected.items()) or "-") + "\n")
+        text.append(
+            "entities "
+            + ("  ".join(f"{kind}:{n}" for kind, n in affected.items()) or "-")
+            + "\n"
+        )
         text.append(f"files    {payload['reference_counts']['files']} affected\n")
         references = payload["reference_counts"]
-        text.append("refs     " + "  ".join(
-            f"{key}:{references[key]}"
-            for key in ("accessions", "qc_results", "decisions", "workflow_runs", "release_members")
-        ) + "\n")
+        text.append(
+            "refs     "
+            + "  ".join(
+                f"{key}:{references[key]}"
+                for key in (
+                    "accessions",
+                    "qc_results",
+                    "decisions",
+                    "workflow_runs",
+                    "release_members",
+                )
+            )
+            + "\n"
+        )
         physical = payload["physical_changes"]
         text.append("physical ")
         first = True
@@ -172,8 +202,11 @@ class LifecycleModal(WriteModal):
 
     def command_text(self) -> str:
         parts = [
-            "operon", self.action.lower(), self.entity_id,
-            "--reason", shlex.quote(self.query_one("#lifecycle-reason", Input).value or "…"),
+            "operon",
+            self.action.lower(),
+            self.entity_id,
+            "--reason",
+            shlex.quote(self.query_one("#lifecycle-reason", Input).value or "…"),
         ]
         reason_code = self._reason_code()
         if reason_code:
@@ -188,7 +221,11 @@ class LifecycleModal(WriteModal):
         return " ".join(parts)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id in {"lifecycle-reason", "lifecycle-actor", "lifecycle-evidence"}:
+        if event.input.id in {
+            "lifecycle-reason",
+            "lifecycle-actor",
+            "lifecycle-evidence",
+        }:
             self.refresh_command()
 
     def on_select_changed(self, event: Select.Changed) -> None:
@@ -209,14 +246,21 @@ class LifecycleModal(WriteModal):
             return
         self.run_action(
             lambda: actions.lifecycle_apply(
-                self.project, self.entity_id, self.action, reason, actor,
-                reason_code=self._reason_code(), evidence=evidence,
+                self.project,
+                self.entity_id,
+                self.action,
+                reason,
+                actor,
+                reason_code=self._reason_code(),
+                evidence=evidence,
             )
         )
 
     def on_action_success(self, payload: Any) -> None:
         if payload.get("applied"):
-            self.app.notify(f"{self.action} applied to {self.entity_type} {self.entity_id}")
+            self.app.notify(
+                f"{self.action} applied to {self.entity_type} {self.entity_id}"
+            )
         else:
             self.app.notify(f"no change: {self.entity_type} {self.entity_id}")
         self.dismiss(payload)
@@ -233,8 +277,9 @@ class SetStateModal(WriteModal):
     one instead of pre-empting it.
     """
 
-    def __init__(self, project: Project, entity_type: str, entity_id: str,
-                 current_state: str) -> None:
+    def __init__(
+        self, project: Project, entity_type: str, entity_id: str, current_state: str
+    ) -> None:
         super().__init__(f"Set state: {entity_type} {entity_id}")
         self.project = project
         self.entity_type = entity_type
@@ -247,7 +292,11 @@ class SetStateModal(WriteModal):
         info = Text()
         info.append(f"current state: {current}\n")
         if self.current_state:
-            info.append("standard transitions: " + (", ".join(allowed) if allowed else "(none)") + "\n")
+            info.append(
+                "standard transitions: "
+                + (", ".join(allowed) if allowed else "(none)")
+                + "\n"
+            )
         info.append(
             "a manual change is recorded in `changes` with your message as its "
             "reason and the actor as its author"
@@ -255,9 +304,13 @@ class SetStateModal(WriteModal):
         yield Static(info, id="set-state-info", classes="modal-info")
         yield Select(
             [(state, state) for state in sorted(VALID_STATES)],
-            prompt="target state", id="set-state-state", allow_blank=True,
+            prompt="target state",
+            id="set-state-state",
+            allow_blank=True,
         )
-        yield Input(placeholder="message (required: the audit reason)", id="set-state-message")
+        yield Input(
+            placeholder="message (required: the audit reason)", id="set-state-message"
+        )
         yield Checkbox(
             "force a non-standard transition (--force; recorded as forced)",
             id="set-state-force",
@@ -296,10 +349,14 @@ class SetStateModal(WriteModal):
 
     def command_text(self) -> str:
         parts = [
-            "operon", "set-state",
-            "--entity-type", self.entity_type,
-            "--entity-id", self.entity_id,
-            "--state", self._selected_state() or "…",
+            "operon",
+            "set-state",
+            "--entity-type",
+            self.entity_type,
+            "--entity-id",
+            self.entity_id,
+            "--state",
+            self._selected_state() or "…",
         ]
         message = self.query_one("#set-state-message", Input).value.strip()
         if message:
@@ -329,11 +386,17 @@ class SetStateModal(WriteModal):
             self.show_error("select the target state")
             return
         if not message:
-            self.show_error("message is required: a manual state change is audited with its reason")
+            self.show_error(
+                "message is required: a manual state change is audited with its reason"
+            )
             return
         self.run_action(
             lambda: actions.set_state(
-                self.project, self.entity_type, self.entity_id, state, message,
+                self.project,
+                self.entity_type,
+                self.entity_id,
+                state,
+                message,
                 force=self._forced(),
             )
         )
@@ -365,7 +428,8 @@ class ExportMetadataModal(WriteModal):
             "directory; the files are byte-identical to a CLI export of the "
             "same project. Read-only: no `changes` or `workflow_runs` rows are "
             "recorded.",
-            id="metadata-info", classes="modal-info",
+            id="metadata-info",
+            classes="modal-info",
         )
         yield Input(
             placeholder="output directory (blank = reports/metadata)",
@@ -398,7 +462,9 @@ class ExportMetadataModal(WriteModal):
             lambda: actions.export_metadata_report(
                 self.project,
                 output=self.query_one("#metadata-output", Input).value.strip() or None,
-                include_retired=self.query_one("#metadata-include-retired", Checkbox).value,
+                include_retired=self.query_one(
+                    "#metadata-include-retired", Checkbox
+                ).value,
             )
         )
 
@@ -406,14 +472,21 @@ class ExportMetadataModal(WriteModal):
         self.app.notify(
             f"metadata report written to {payload['path']} "
             f"({payload['tables']} table(s), {payload['rows']} row(s)"
-            + (", retired included" if payload["include_retired"] else "") + ")"
+            + (", retired included" if payload["include_retired"] else "")
+            + ")"
         )
         self.dismiss(payload)
 
 
 RETIREMENT_COLUMNS = [
-    "entity_type", "entity_id", "retired_by_type", "retired_by_id",
-    "reason_code", "reason", "actor", "retired_at",
+    "entity_type",
+    "entity_id",
+    "retired_by_type",
+    "retired_by_id",
+    "reason_code",
+    "reason",
+    "actor",
+    "retired_at",
 ]
 
 
@@ -489,10 +562,12 @@ class RetiredModal(DismissOnce, WorkerResults, ModalScreen):
         view = capture_table_view(table)
         table.clear()
         for row in self.rows:
-            table.add_row(*[
-                "" if row.get(column) is None else str(row.get(column, ""))
-                for column in RETIREMENT_COLUMNS
-            ])
+            table.add_row(
+                *[
+                    "" if row.get(column) is None else str(row.get(column, ""))
+                    for column in RETIREMENT_COLUMNS
+                ]
+            )
         restore_table_view(table, view, len(self.rows))
         status.update(
             f"{len(self.rows)} retirement(s)" if self.rows else "no retired entities"
@@ -518,13 +593,16 @@ class ExportQcModal(WriteModal):
             "qc_results.wide.tsv (one row per entity/file) — the files are "
             "byte-identical to a CLI export with the same filter. Read-only: "
             "no `changes` or `workflow_runs` rows are recorded.",
-            id="qc-export-info", classes="modal-info",
+            id="qc-export-info",
+            classes="modal-info",
         )
         options = [("all entity types", "")] + [
             (kind, kind) for kind in sorted(ENTITY_TABLES)
         ]
         yield Select(
-            options, value=self.initial_entity_type, id="qc-export-type",
+            options,
+            value=self.initial_entity_type,
+            id="qc-export-type",
             allow_blank=False,
         )
         yield Checkbox(
@@ -559,7 +637,9 @@ class ExportQcModal(WriteModal):
             lambda: actions.export_qc_report(
                 self.project,
                 entity_type=self._entity_type() or None,
-                include_retired=self.query_one("#qc-export-include-retired", Checkbox).value,
+                include_retired=self.query_one(
+                    "#qc-export-include-retired", Checkbox
+                ).value,
             )
         )
 
@@ -567,8 +647,13 @@ class ExportQcModal(WriteModal):
         self.app.notify(
             f"QC report written to {payload['directory']} "
             f"({payload['rows']} row(s)"
-            + (f", entity type {payload['entity_type']}" if payload["entity_type"] else "")
-            + (", retired included" if payload["include_retired"] else "") + ")"
+            + (
+                f", entity type {payload['entity_type']}"
+                if payload["entity_type"]
+                else ""
+            )
+            + (", retired included" if payload["include_retired"] else "")
+            + ")"
         )
         self.dismiss(payload)
 
@@ -621,11 +706,17 @@ class AddRecordModal(WriteModal):
         yield Static("entity type", classes="modal-label")
         yield Select(
             [(name, name) for name in data.ENTITY_TYPES],
-            value=data.ENTITY_TYPES[0], id="add-entity-type", allow_blank=False,
+            value=data.ENTITY_TYPES[0],
+            id="add-entity-type",
+            allow_blank=False,
         )
-        yield Static("internal ID (blank = allocate the next ID)", classes="modal-label")
+        yield Static(
+            "internal ID (blank = allocate the next ID)", classes="modal-label"
+        )
         yield Input(placeholder="auto-allocate", id="add-record-id")
-        yield Static("fields (repeatable, like --field KEY=VALUE)", classes="modal-label")
+        yield Static(
+            "fields (repeatable, like --field KEY=VALUE)", classes="modal-label"
+        )
         yield MountTracked(id="add-fields")
         with Horizontal(classes="config-buttons"):
             yield Button("Add field", id="add-field-row")
@@ -633,7 +724,8 @@ class AddRecordModal(WriteModal):
     def on_mount(self) -> None:
         super().on_mount()
         self.query_one("#add-fields", MountTracked).mount_later(
-            FieldRow(), when_present=".field-row",
+            FieldRow(),
+            when_present=".field-row",
         )
 
     def _field_container(self) -> MountTracked:
@@ -641,8 +733,11 @@ class AddRecordModal(WriteModal):
 
     def _all_field_rows(self) -> list[FieldRow]:
         # A row on its way out answers NoMatches or blank (ODR-36): skip it.
-        return [row for row in self._field_container().query(FieldRow).results(FieldRow)
-                if not row._pruning]
+        return [
+            row
+            for row in self._field_container().query(FieldRow).results(FieldRow)
+            if not row._pruning
+        ]
 
     def _field_rows(self) -> list[FieldRow]:
         """Rows a reader may compose: a half-mounted row cannot be read (ODR-23).
@@ -679,8 +774,11 @@ class AddRecordModal(WriteModal):
         return " ".join(parts)
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id == "add-record-id" or event.input.has_class("field-key") \
-                or event.input.has_class("field-value"):
+        if (
+            event.input.id == "add-record-id"
+            or event.input.has_class("field-key")
+            or event.input.has_class("field-value")
+        ):
             self.refresh_command()
 
     def on_select_changed(self, event: Select.Changed) -> None:
@@ -721,7 +819,10 @@ class AddRecordModal(WriteModal):
             fields[key] = value
         self.run_action(
             lambda: actions.add_record(
-                self.project, entity_type, fields, record_id=record_id,
+                self.project,
+                entity_type,
+                fields,
+                record_id=record_id,
             )
         )
 
@@ -735,8 +836,12 @@ class AddRecordModal(WriteModal):
 class AddAccessionModal(WriteModal):
     """Map an external accession to an internal stable ID (``operon add-accession``)."""
 
-    def __init__(self, project: Project, entity_type: str | None = None,
-                 entity_id: str | None = None) -> None:
+    def __init__(
+        self,
+        project: Project,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+    ) -> None:
         super().__init__("Add accession mapping")
         self.project = project
         self._prefill_type = entity_type
@@ -746,13 +851,16 @@ class AddAccessionModal(WriteModal):
         yield Static("internal entity (must be active)", classes="modal-label")
         yield Select(
             [(name, name) for name in data.ENTITY_TYPES],
-            value=self._prefill_type if self._prefill_type in data.ENTITY_TYPES
+            value=self._prefill_type
+            if self._prefill_type in data.ENTITY_TYPES
             else data.ENTITY_TYPES[0],
-            id="acc-internal-type", allow_blank=False,
+            id="acc-internal-type",
+            allow_blank=False,
         )
         yield Input(
             value=self._prefill_id or "",
-            placeholder="internal id (e.g. ASM_000001)", id="acc-internal-id",
+            placeholder="internal id (e.g. ASM_000001)",
+            id="acc-internal-id",
         )
         yield Input(placeholder="namespace (e.g. NCBI_Assembly)", id="acc-namespace")
         yield Input(placeholder="accession", id="acc-accession")
@@ -764,11 +872,16 @@ class AddAccessionModal(WriteModal):
             return shlex.quote(value) if value.strip() else shlex.quote("…")
 
         parts = [
-            "operon", "add-accession",
-            "--internal-type", str(self.query_one("#acc-internal-type", Select).value),
-            "--internal-id", quoted(self.query_one("#acc-internal-id", Input).value),
-            "--namespace", quoted(self.query_one("#acc-namespace", Input).value),
-            "--accession", quoted(self.query_one("#acc-accession", Input).value),
+            "operon",
+            "add-accession",
+            "--internal-type",
+            str(self.query_one("#acc-internal-type", Select).value),
+            "--internal-id",
+            quoted(self.query_one("#acc-internal-id", Input).value),
+            "--namespace",
+            quoted(self.query_one("#acc-namespace", Input).value),
+            "--accession",
+            quoted(self.query_one("#acc-accession", Input).value),
         ]
         version = self.query_one("#acc-version", Input).value
         if version.strip():
@@ -797,18 +910,28 @@ class AddAccessionModal(WriteModal):
         version = self.query_one("#acc-version", Input).value.strip() or None
         primary = self.query_one("#acc-primary", Checkbox).value
         missing = [
-            label for label, value in (
-                ("--internal-id", internal_id), ("--namespace", namespace),
-                ("--accession", accession))
+            label
+            for label, value in (
+                ("--internal-id", internal_id),
+                ("--namespace", namespace),
+                ("--accession", accession),
+            )
             if not value
         ]
         if missing:
             self.show_error(f"required: {', '.join(missing)}")
             return
-        self.run_action(lambda: actions.add_accession(
-            self.project, internal_type=internal_type, internal_id=internal_id,
-            namespace=namespace, accession=accession, version=version, primary=primary,
-        ))
+        self.run_action(
+            lambda: actions.add_accession(
+                self.project,
+                internal_type=internal_type,
+                internal_id=internal_id,
+                namespace=namespace,
+                accession=accession,
+                version=version,
+                primary=primary,
+            )
+        )
 
     def on_action_success(self, payload: Any) -> None:
         self.app.notify(
@@ -841,7 +964,9 @@ class NextIdModal(WriteModal):
         yield Static("entity type", classes="modal-label")
         yield Select(
             [(name, name) for name in NEXT_ID_TYPES],
-            value=NEXT_ID_TYPES[0], id="nextid-entity-type", allow_blank=False,
+            value=NEXT_ID_TYPES[0],
+            id="nextid-entity-type",
+            allow_blank=False,
         )
         yield Static("", id="nextid-result")
 
@@ -855,15 +980,20 @@ class NextIdModal(WriteModal):
     def confirm(self) -> None:
         if self._reserved:
             return
-        self.run_action(lambda: actions.reserve_next_id(
-            self.project, str(self.query_one("#nextid-entity-type", Select).value)))
+        self.run_action(
+            lambda: actions.reserve_next_id(
+                self.project, str(self.query_one("#nextid-entity-type", Select).value)
+            )
+        )
 
     def on_action_success(self, payload: Any) -> None:
         self._reserved = True
-        self.query_one("#nextid-result", Static).update(Text(
-            f"reserved {payload['entity_type']} ID: {payload['entity_id']}",
-            style="bold",
-        ))
+        self.query_one("#nextid-result", Static).update(
+            Text(
+                f"reserved {payload['entity_type']} ID: {payload['entity_id']}",
+                style="bold",
+            )
+        )
         self.set_confirm_enabled(False)
         self.query_one("#cancel", Button).label = "Close"
         self.app.notify(
@@ -914,7 +1044,9 @@ class EntitiesPanel(Panel):
 
         def populate(parent: Any, nodes: list[dict[str, Any]]) -> None:
             for node in nodes:
-                self._retired_index[(node["entity_type"], node["entity_id"])] = node["retired"]
+                self._retired_index[(node["entity_type"], node["entity_id"])] = node[
+                    "retired"
+                ]
                 child = parent.add(
                     _node_label(node),
                     data=(node["entity_type"], node["entity_id"]),
@@ -925,7 +1057,9 @@ class EntitiesPanel(Panel):
         tree.root.expand()
 
     def show_error(self, exc: BaseException) -> None:
-        self.query_one("#entity-detail", Static).update(Text(f"error: {exc}", style="red"))
+        self.query_one("#entity-detail", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
 
     def action_toggle_retired(self) -> None:
         self.include_retired = not self.include_retired
@@ -1032,7 +1166,9 @@ class EntitiesPanel(Panel):
         if detail is None:
             return Text("entity not found", style="red")
         text = Text()
-        text.append(f"{detail['entity_type']} {detail['entity_id']}\n", style="bold underline")
+        text.append(
+            f"{detail['entity_type']} {detail['entity_id']}\n", style="bold underline"
+        )
         for field, value in detail["fields"].items():
             if value not in (None, ""):
                 text.append(f"  {field:<24} ")
@@ -1049,22 +1185,26 @@ class EntitiesPanel(Panel):
             text.append("\nSupersessions\n", style="bold")
             for row in supersessions:
                 if (row["object_type"], row["object_id"]) == (
-                    detail["entity_type"], detail["entity_id"],
+                    detail["entity_type"],
+                    detail["entity_id"],
                 ):
-                    line = (f"  superseded by {row['superseded_by_type']} "
-                            f"{row['superseded_by_id']}")
+                    line = (
+                        f"  superseded by {row['superseded_by_type']} "
+                        f"{row['superseded_by_id']}"
+                    )
                 else:
-                    line = (f"  supersedes {row['object_type']} "
-                            f"{row['object_id']}")
+                    line = f"  supersedes {row['object_type']} {row['object_id']}"
                 if row.get("reason"):
                     line += f"  — {row['reason']}"
                 text.append(line + f"  ({row['superseded_at']})\n")
         state = detail.get("state")
         text.append("\nState\n", style="bold")
         if state:
-            text.append(f"  {state['state']}"
-                        + (f"  — {state['message']}" if state.get("message") else "")
-                        + f"  ({state['updated_at']})\n")
+            text.append(
+                f"  {state['state']}"
+                + (f"  — {state['message']}" if state.get("message") else "")
+                + f"  ({state['updated_at']})\n"
+            )
         else:
             text.append("  (no state recorded)\n", style="dim")
         text.append("\nAccessions\n", style="bold")
@@ -1072,7 +1212,9 @@ class EntitiesPanel(Panel):
             for accession in detail["accessions"]:
                 primary = " (primary)" if accession.get("is_primary") else ""
                 version = f".{accession['version']}" if accession.get("version") else ""
-                text.append(f"  {accession['namespace']}:{accession['accession']}{version}{primary}\n")
+                text.append(
+                    f"  {accession['namespace']}:{accession['accession']}{version}{primary}\n"
+                )
         else:
             text.append("  (none)\n", style="dim")
         text.append("\nFiles\n", style="bold")
@@ -1080,16 +1222,25 @@ class EntitiesPanel(Panel):
             for record in detail["files"]:
                 text.append("  ")
                 text.append(styled_file_status(record.get("status")))
-                text.append(f"  {record['file_id']}  {record['file_role']:<18} "
-                            f"{human_size(record.get('size_bytes')):>10}  {record['relative_path']}\n")
+                text.append(
+                    f"  {record['file_id']}  {record['file_role']:<18} "
+                    f"{human_size(record.get('size_bytes')):>10}  {record['relative_path']}\n"
+                )
         else:
             text.append("  (none)\n", style="dim")
         metrics = detail.get("metrics") or {}
         _metrics_section(
-            text, "QC metrics", metrics.get("qc") or [], "qc_stage", show_tool=True,
+            text,
+            "QC metrics",
+            metrics.get("qc") or [],
+            "qc_stage",
+            show_tool=True,
         )
         _metrics_section(
-            text, "Analysis metrics", metrics.get("analysis") or [], "analysis_name",
+            text,
+            "Analysis metrics",
+            metrics.get("analysis") or [],
+            "analysis_name",
             show_tool=False,
         )
         return text

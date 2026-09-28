@@ -129,14 +129,26 @@ def _package_name(requirement: str) -> str:
     ("section", "required", "marker", "forbidden", "only"),
     [
         # Building the Cython extension needs setuptools + Cython, nothing else.
-        ("build-system", ("cython>=3.0", "setuptools>="), None, (), ("cython", "setuptools")),
+        (
+            "build-system",
+            ("cython>=3.0", "setuptools>="),
+            None,
+            (),
+            ("cython", "setuptools"),
+        ),
         # Cython is a build/test tool: it must never become a runtime dependency.
         ("dependencies", (), None, ("cython",), ()),
         ("test", ("cython>=3.0",), None, (), ()),
         ("dev", ("cython>=3.0", "tomli>=2.0"), "python_version < '3.11'", (), ()),
         ("docs", ("tomli>=2.0",), "python_version < '3.11'", (), ()),
     ],
-    ids=["build-system", "runtime-dependencies", "test-extra", "dev-extra", "docs-extra"],
+    ids=[
+        "build-system",
+        "runtime-dependencies",
+        "test-extra",
+        "dev-extra",
+        "docs-extra",
+    ],
 )
 def test_pyproject_dependency_contract(section, required, marker, forbidden, only):
     """The requirement sets that keep the package buildable and installable.
@@ -147,19 +159,24 @@ def test_pyproject_dependency_contract(section, required, marker, forbidden, onl
     requirements = _requirement_lists(_load_pyproject(), section)
     lowered = [requirement.lower() for requirement in requirements]
     for prefix in required:
-        assert any(requirement.startswith(prefix) for requirement in lowered), \
+        assert any(requirement.startswith(prefix) for requirement in lowered), (
             f"{section} must require {prefix}: {requirements}"
+        )
     for prefix in forbidden:
-        assert not any(requirement.startswith(prefix) for requirement in lowered), \
+        assert not any(requirement.startswith(prefix) for requirement in lowered), (
             f"{section} must not require {prefix}: {requirements}"
+        )
     if only:
-        assert sorted(_package_name(requirement) for requirement in requirements) == sorted(only), \
-            requirements
+        assert sorted(
+            _package_name(requirement) for requirement in requirements
+        ) == sorted(only), requirements
     if marker:
         # Python 3.10 has no stdlib tomllib, so the conditional pin must stay
         # attached to the requirement instead of installing it unconditionally.
         conditional = [r for r in requirements if _package_name(r) == "tomli"]
-        assert conditional and all(marker in requirement for requirement in conditional), requirements
+        assert conditional and all(
+            marker in requirement for requirement in conditional
+        ), requirements
 
 
 @pytest.mark.bug("ODR-17")
