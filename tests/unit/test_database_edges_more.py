@@ -56,7 +56,7 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
-@pytest.mark.bug("ODR-0012")
+@pytest.mark.bug("ODR-12")
 def test_concurrent_writable_opens_do_not_collide_on_view_rebuild(db):
     """Writable opens serialize their view rebuild on the writer lock."""
     import threading

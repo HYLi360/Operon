@@ -62,7 +62,7 @@ async def _await_notification(app: Any, needle: str = "", severity: str = "") ->
     ``App.notify`` queues a message, so a callback that has already updated its
     widgets raises the notification a message-loop turn later: reading
     ``app._notifications`` straight after the widgets turns a correct flow into
-    an intermittent failure on a slow interpreter (ODR-0051).
+    an intermittent failure on a slow interpreter (ODR-51).
     """
     def raised() -> bool:
         return any(
@@ -319,7 +319,7 @@ def test_remotes_screen_lists_mirrors_and_residency(tmp_path: Path) -> None:
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0051")
+@pytest.mark.bug("ODR-51")
 def test_remotes_check_button_probes_and_reports_failures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -586,7 +586,7 @@ def test_pull_modal_command_text_matches_action_kwargs(
     assert kwargs == {}
 
 
-@pytest.mark.bug("ODR-0051")
+@pytest.mark.bug("ODR-51")
 def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -640,7 +640,7 @@ def test_push_modal_shows_plan_results_and_stays_open_on_failure(
     assert dismissed == [results]
 
 
-@pytest.mark.bug("ODR-0051")
+@pytest.mark.bug("ODR-51")
 def test_sync_modal_refuses_to_close_while_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

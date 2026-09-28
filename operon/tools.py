@@ -2044,7 +2044,7 @@ def _prepare_plan_database(ctx: _PlanContext) -> None:
     if recipe.database and database_path is not None and not database_path.exists() and not ctx.remote_only:
         # A pure filesystem check: a dry run reports the same missing database the
         # real run would fail on instead of planning a job that cannot execute
-        # (ODR-0028).
+        # (ODR-28).
         raise ExternalToolError(
             f"{recipe.name}: reference database not found: {database_path}; edit config/tools.yaml"
         )
@@ -2055,7 +2055,7 @@ def _prepare_plan_database(ctx: _PlanContext) -> None:
         )
     # A reference database can be verified over the backend without executing a
     # command (a stat), so a dry run still fails on an unprovisioned remote
-    # reference instead of planning around it (ODR-0028); a mutable cache is
+    # reference instead of planning around it (ODR-28); a mutable cache is
     # created by the run itself and has nothing to verify yet.
     if ctx.remote_only and database_path is not None and (not ctx.dry_run or database_mode == "reference"):
         executor.prepare_database(

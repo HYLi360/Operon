@@ -776,7 +776,7 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
     assert sorted(row["profile_version"] for row in rows) == [1, 2]
 
 
-@pytest.mark.bug("ODR-0027")
+@pytest.mark.bug("ODR-27")
 def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
     """The rules editor must scroll: rule containers use height 1fr by default
     (plain Vertical), which clipped the rules to a fixed non-scrolling window."""
@@ -790,7 +790,7 @@ def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
             editor = panel.query_one("#profile-editor", VerticalScroll)
             # The rows are in the tree before the layout gives the editor its
             # content height, so wait for the growth the test is about instead
-            # of measuring in the mounting turn (ODR-0027).
+            # of measuring in the mounting turn (ODR-27).
             await _wait_until(
                 lambda: editor.virtual_size.height > editor.scrollable_content_region.height,
                 "the rules editor to grow past its viewport",
@@ -1253,7 +1253,7 @@ async def _await_notification(pilot, app, needle: str) -> None:
     A save runs on a worker and raises its notification a message-loop turn
     after the modal closes, so reading ``_notifications(app)`` right after a
     single ``pause()`` sees the list before the text is in it — on a slow
-    runner that turns a correct save into a failure (ODR-0027).
+    runner that turns a correct save into a failure (ODR-27).
     """
     await _wait_until(
         lambda: any(needle in message for _, message in _notifications(app)),
@@ -2228,7 +2228,7 @@ def test_config_screen_recipe_unknown_select_value_is_preserved(project: Project
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0024")
+@pytest.mark.bug("ODR-24")
 def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Project) -> None:
     original_bytes = project.tools_config_path.read_bytes()
 
@@ -2245,7 +2245,7 @@ def test_config_screen_recipe_file_role_prefix_conflict_blocks_save(project: Pro
             await _click(pilot, "#recipe-save")
             error_view = panel.query_one("#recipe-save-error", Static)
             # The press is a queued message: wait for the outcome it produces
-            # instead of assuming one pause() cycle handled it (ODR-0024).
+            # instead of assuming one pause() cycle handled it (ODR-24).
             await _wait_until(
                 lambda: "mutually exclusive" in _static_text(error_view),
                 "the inline conflict error",
@@ -2542,7 +2542,7 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     this file's wall-clock settle timeout rather than a fixed number of cycles: a
     loaded CI runner needs seconds to deliver the click and mount the row it
     produces, and a cycle count that is generous on a fast machine runs out there
-    (ODR-0027).
+    (ODR-27).
     """
     def composed() -> list:
         return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
@@ -2558,14 +2558,14 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
 
 
 async def _await_form_ready(pilot, panel) -> None:
-    """Wait until the editor's deferred row mounts have landed (ODR-0023).
+    """Wait until the editor's deferred row mounts have landed (ODR-23).
 
     Reads the same signal the save path uses: ``remount`` replaces an editor's
     rows a message-loop turn later, and the rows mount their own nested rows a
     turn after that, so a single ``pilot.pause()`` can still observe a form
     that is missing rows.  The budget is wall-clock, not a number of cycles: 120
     cycles of ``pause() + sleep`` is about a second on an idle machine and runs
-    out on a loaded one (ODR-0027).
+    out on a loaded one (ODR-27).
     """
     await _wait_until(
         lambda: not panel._form_mounting(),
@@ -2643,7 +2643,7 @@ def test_save_classification_profile_versions_and_validation(project: Project) -
     assert loaded["rules"][0]["when"][0]["value"] == 1e-05
 
 
-@pytest.mark.bug("ODR-0027")
+@pytest.mark.bug("ODR-27")
 def test_config_classification_editor_end_to_end(project: Project) -> None:
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
 
@@ -2667,14 +2667,14 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             assert len(list(panel.query(".bestby-row"))) == 2
             # Rows mount a message-loop turn after their container is emptied and
             # compose their inputs a turn after that: wait for the inputs before
-            # reading the form, or the composition sees half-built rows (ODR-0023).
+            # reading the form, or the composition sees half-built rows (ODR-23).
             await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
             await _await_rows(pilot, panel, ".classrule-row", 3, ".classrule-label")
             await _await_rows(pilot, panel, ".classrule-when .condition-row", 1,
                               ".condition-field")
             await _await_rows(pilot, panel, ".bestby-row", 2, ".bestby-field")
             # … and for the Selects they hold, which take their value a turn
-            # after the row composes (ODR-0026).
+            # after the row composes (ODR-26).
             await _await_form_ready(pilot, panel)
             # The form reproduces the on-disk document exactly.
             assert panel._compose_classification_document() == BHLH_PROFILE
@@ -2748,7 +2748,7 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
                            "WHERE profile_name='bhlh_tiers'")[-1]["profile_version"] == 2
 
 
-@pytest.mark.bug("ODR-0027")
+@pytest.mark.bug("ODR-27")
 def test_config_classification_editor_guards_and_readonly(project: Project) -> None:
     nested = json.loads(json.dumps(BHLH_PROFILE))
     nested["rules"][0]["when"] = [{"any": [{"not": {"field": "x", "operator": "exists"}}]}]
@@ -2771,7 +2771,7 @@ def test_config_classification_editor_guards_and_readonly(project: Project) -> N
             panel._load_profile("bhlh_tiers")
             await pilot.pause()
             # A row is in the tree a turn before its inputs are: wait for the
-            # composed row instead of reading it in the mounting turn (ODR-0023).
+            # composed row instead of reading it in the mounting turn (ODR-23).
             rows = await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
             rows[0].query_one(".source-name", Input).value = "dup"
             await _click(pilot, "#classification-add-source")
@@ -2842,7 +2842,7 @@ def test_config_screen_new_classification_profile(project: Project) -> None:
     assert created["rules"] == [{"label": "C", "default": True}]
 
 
-@pytest.mark.bug("ODR-0023")
+@pytest.mark.bug("ODR-23")
 def test_classification_save_refuses_a_form_that_is_still_mounting(project: Project) -> None:
     """Saving inside a deferred rebuild is refused with a message, not a crash.
 
@@ -2851,7 +2851,7 @@ def test_classification_save_refuses_a_form_that_is_still_mounting(project: Proj
     so the form is not readable in the turn the render returns in.  Reading it
     there used to raise ``NoMatches`` out of a button handler — or, when the
     containers were still empty, compose a document with the rows silently
-    dropped (ODR-0023).  The save reports the wait, and opens the modal once
+    dropped (ODR-23).  The save reports the wait, and opens the modal once
     the form has mounted.
     """
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
@@ -2877,7 +2877,7 @@ def test_classification_save_refuses_a_form_that_is_still_mounting(project: Proj
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0039")
+@pytest.mark.bug("ODR-39")
 def test_blocked_save_names_a_control_that_never_finished_loading(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2912,14 +2912,14 @@ def test_blocked_save_names_a_control_that_never_finished_loading(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0023")
+@pytest.mark.bug("ODR-23")
 def test_row_reports_ready_only_once_its_subtree_is_in_the_tree(project: Project) -> None:
     """A mounted row is not readable until its own subtree composed.
 
     The panel refuses a save while the form is still mounting, and the signal it
     reads is the row's own latch: mounted-but-uncomposed rows are what made a
     composition walk half-built widgets and raise ``NoMatches`` out of a button
-    handler (ODR-0023).  This pins both halves of that contract.
+    handler (ODR-23).  This pins both halves of that contract.
     """
 
     async def scenario() -> None:
@@ -2941,7 +2941,7 @@ def test_row_reports_ready_only_once_its_subtree_is_in_the_tree(project: Project
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0023")
+@pytest.mark.bug("ODR-23")
 def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
     project: Project, monkeypatch
 ) -> None:
@@ -2949,7 +2949,7 @@ def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
 
     A rebuilt layout can leave the target's centre outside the screen region,
     where ``Pilot.click`` raises ``OutOfBounds`` instead of returning False —
-    the failure that reached CI in an unrelated test (ODR-0023).  Pressing the
+    the failure that reached CI in an unrelated test (ODR-23).  Pressing the
     button is the same activation a landed click produces.
     """
 
@@ -2974,14 +2974,14 @@ def test_click_helper_reaches_a_button_whose_centre_is_off_screen(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0026")
+@pytest.mark.bug("ODR-26")
 def test_select_whose_mount_lookup_failed_adopts_its_value() -> None:
     """A Select that could not paint its label must still report its value.
 
     Textual's ``_init_selected_option`` reaches for the overlay *before* it
     stores the value it was constructed with, so the deferred mount guarded for
-    ODR-0023 left ``value`` at ``NULL`` — and a condition whose operator was
-    ``like`` composed as ``''`` (ODR-0026).
+    ODR-23 left ``value`` at ``NULL`` — and a condition whose operator was
+    ``like`` composed as ``''`` (ODR-26).
     """
     select = FittingSelect([("like", "like"), ("==", "==")], value="like", allow_blank=False)
     select._value = Select.NULL            # what the interrupted mount left behind
@@ -2991,12 +2991,12 @@ def test_select_whose_mount_lookup_failed_adopts_its_value() -> None:
     assert not select.options_ready
 
 
-@pytest.mark.bug("ODR-0026")
+@pytest.mark.bug("ODR-26")
 def test_classification_save_refuses_a_form_with_an_uninitialised_select(project: Project) -> None:
     """A Select that has not adopted its value yet is a half-built control.
 
     Reading it yields a blank operator, so the save refuses — like any other
-    not-yet-mounted part of the form (ODR-0023) — and proceeds once the Select
+    not-yet-mounted part of the form (ODR-23) — and proceeds once the Select
     reports itself ready.
     """
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
@@ -3025,12 +3025,12 @@ def test_classification_save_refuses_a_form_with_an_uninitialised_select(project
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0026")
+@pytest.mark.bug("ODR-26")
 def test_best_by_rank_map_keeps_whole_ranks_whole(project: Project) -> None:
     """A rank map of whole numbers must not be rewritten as floats.
 
     ``float`` turned ``{Specific: 0, Motif: 1}`` into ``0.0``/``1.0``, so saving
-    an untouched form rewrote the file it was read from (ODR-0026).
+    an untouched form rewrote the file it was read from (ODR-26).
     """
 
     async def scenario() -> None:
@@ -3051,20 +3051,20 @@ def test_best_by_rank_map_keeps_whole_ranks_whole(project: Project) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# The QC rule operator control (ODR-0023 / ODR-0026)
+# The QC rule operator control (ODR-23 / ODR-26)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0023")
-@pytest.mark.bug("ODR-0026")
+@pytest.mark.bug("ODR-23")
+@pytest.mark.bug("ODR-26")
 def test_rule_operator_controls_are_guarded_and_keep_their_value(project: Project) -> None:
     """The QC rule operator is the guarded Select: ready, and on its value.
 
     ``RuleRow`` is one of the rows ``remount`` rebuilds, so its operator control
     must be a ``FittingSelect``.  A bare ``Select`` there was invisible to
     ``_form_mounting``'s readiness query and carried both exposures the guarded
-    subclass exists for — Textual's own mount-phase lookups (ODR-0023) and the
+    subclass exists for — Textual's own mount-phase lookups (ODR-23) and the
     value the control was built with being lost when that setup is deferred
-    (ODR-0026).  This drives the real path: the editor is rendered twice through
+    (ODR-26).  This drives the real path: the editor is rendered twice through
     ``_load_profile``, so the second pass replaces an already populated form and
     its rows arrive while the previous generation is still retiring, and each
     pass reads the controls and the document they compose.
@@ -3103,10 +3103,10 @@ def test_rule_operator_controls_are_guarded_and_keep_their_value(project: Projec
 
 
 # --------------------------------------------------------------------------- #
-# Two editor rebuilds in one turn (ODR-0030)
+# Two editor rebuilds in one turn (ODR-30)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0030")
+@pytest.mark.bug("ODR-30")
 def test_two_editor_rebuilds_in_one_turn_leave_one_generation(project: Project) -> None:
     """Two rebuilds in one turn must not leave both generations in the form.
 
@@ -3114,7 +3114,7 @@ def test_two_editor_rebuilds_in_one_turn_leave_one_generation(project: Project) 
     lands.  The first replacement used to mount next to the second one's rows,
     so the form held two generations, the readiness check read the *old* rows as
     if the new form were ready, and a save composed a document with every rule
-    twice (ODR-0030).  The two profiles below hold 1 + 3 and 6 + 3 rules, so a
+    twice (ODR-30).  The two profiles below hold 1 + 3 and 6 + 3 rules, so a
     doubled generation is unmistakable.
     """
     first = "annotation_busco_viridiplantae_odb12_v1"
@@ -3268,7 +3268,7 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
 
             # Not-mode: an any-group body cannot seed a ``not:``, so the inner
             # condition starts empty.  Every wait reads through the editor's own
-            # composition (safe inside a replace window, ODR-0035/ODR-0036) and on
+            # composition (safe inside a replace window, ODR-35/ODR-36) and on
             # the group the replacement retired — never on a raw row, which the
             # next turn may prune out from under the test.
             editor.query_one(".condition-mode", FittingSelect).value = "not"
@@ -3276,7 +3276,7 @@ def test_classification_condition_editor_mode_and_nested_rows(project: Project) 
             await _wait_until(lambda: not body.query(".condition-group"),
                               "the retired group to go")
             # The replacement's row is in the tree a turn before its operator
-            # Select has adopted its value (ODR-0026), so this value assertion
+            # Select has adopted its value (ODR-26), so this value assertion
             # waits on the same signal the save path waits on.
             await _await_form_ready(pilot, panel)
             assert editor.editor_document() == {
@@ -3447,7 +3447,7 @@ def test_classification_form_accepts_flat_conditions(
          "rule 0 nests conditions deeper than one any:/not: level"),
     ],
 )
-@pytest.mark.bug("ODR-0034")
+@pytest.mark.bug("ODR-34")
 def test_classification_form_refuses_what_it_cannot_represent(
     document: dict, reason: str
 ) -> None:
@@ -3494,7 +3494,7 @@ def test_classification_save_of_an_unchanged_document_keeps_the_version(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0035")
+@pytest.mark.bug("ODR-35")
 def test_classification_editor_composes_while_the_body_is_between_generations(
     project: Project, monkeypatch
 ) -> None:
@@ -3507,7 +3507,7 @@ def test_classification_editor_composes_while_the_body_is_between_generations(
     hooks the body's own ``mount`` — the product calls it after the retirement has
     landed — so the read happens exactly inside the window instead of whenever a
     polling loop happens to land there, which is how the pre-fix failure surfaced as
-    a load-dependent flake (ODR-0035).
+    a load-dependent flake (ODR-35).
     """
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
 
@@ -3550,14 +3550,14 @@ def test_classification_editor_composes_while_the_body_is_between_generations(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0036")
+@pytest.mark.bug("ODR-36")
 def test_classification_editor_composes_while_a_nested_row_is_being_removed(
     project: Project,
 ) -> None:
     """A read across a nested row's removal skips the row that is going away.
 
     Textual prunes a removed row's children a turn before the row leaves the tree,
-    and the row's ``form_ready`` latch stays set (one-way by design, ODR-0023), so a
+    and the row's ``form_ready`` latch stays set (one-way by design, ODR-23), so a
     composition that lands in that turn read a row with no inputs and raised
     ``NoMatches`` — the shape the loaded-suite failure of the mode test showed.  The
     read is taken every turn from the removal until the row is gone, so the window is
@@ -3586,7 +3586,7 @@ def test_classification_editor_composes_while_a_nested_row_is_being_removed(
             reads: list[Any] = []
             victim.query_one(".condition-remove", Button).press()
             # Deliberately a bounded sample: the point is to read the document
-            # *while* the removal lands (ODR-0023's deferred rebuild), so the
+            # *while* the removal lands (ODR-23's deferred rebuild), so the
             # loop must not wait for a settled form first.
             for _ in range(40):
                 try:
@@ -3601,14 +3601,14 @@ def test_classification_editor_composes_while_a_nested_row_is_being_removed(
             assert not [read for read in reads if isinstance(read, Exception)], reads
             # The row that left carries nothing into the document, and the row that
             # stayed is composed as it stands.  (A *blank* control belongs to
-            # ODR-0026's window — a select that has not adopted its value yet — which
+            # ODR-26's window — a select that has not adopted its value yet — which
             # the readiness gate covers, not this one.)
             assert reads[-1] == {"any": [{"field": "", "operator": "==", "value": ""}]}
 
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0041")
+@pytest.mark.bug("ODR-41")
 def test_config_screen_classification_history_opens_the_selected_profile(
         project: Project) -> None:
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
@@ -3618,7 +3618,7 @@ def test_config_screen_classification_history_opens_the_selected_profile(
         async with app.run_test(size=(160, 50)) as pilot:
             panel = await _open_config(app, pilot)
             # Fresh screen: no qc profile was ever selected, so the qc-only
-            # gate used to swallow the click (ODR-0041).
+            # gate used to swallow the click (ODR-41).
             panel._load_profile("bhlh_tiers")
             await pilot.pause()
             await _click(pilot, "#classification-history")
@@ -4020,7 +4020,7 @@ def _command_rows(panel: ConfigPanel) -> list[CommandRow]:
 
     A row lands in the DOM a turn before its composed subtree exists, so both
     the waits and the reads below count only rows that report ``form_ready``
-    (ODR-0023) — otherwise a step's inputs are missing on a busy event loop.
+    (ODR-23) — otherwise a step's inputs are missing on a busy event loop.
     """
     return [row for row in panel.query(CommandRow).results(CommandRow) if row.form_ready]
 
@@ -4441,10 +4441,10 @@ def test_config_screen_recipe_parameter_flags_and_bad_pattern(project: Project) 
     assert parameters["threads"] == {"default": 8}
 
 
-# The classification source control (ODR-0050)
+# The classification source control (ODR-50)
 
 
-@pytest.mark.bug("ODR-0050")
+@pytest.mark.bug("ODR-50")
 def test_fitting_select_survives_a_paint_whose_label_has_not_composed() -> None:
     """A value assigned while the Select's label is missing must still stick.
 

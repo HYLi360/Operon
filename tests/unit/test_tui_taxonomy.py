@@ -36,7 +36,7 @@ from tests.tui_helpers import click as _click
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -840,8 +840,8 @@ def test_compile_modal_empty_project_shows_hints(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_import_modal_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
@@ -871,7 +871,7 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
             await _wait_until(lambda: modal.running, "taxonomy import to start")
 
             # Button.press() posts Button.Pressed through the real pump; before
-            # ODR-0043 the base WriteModal handler dismissed the modal here.
+            # ODR-43 the base WriteModal handler dismissed the modal here.
             await _wait_until(started.is_set, "taxonomy import to have reached the core",
                               timeout=HANDOFF_TIMEOUT)
             modal.query_one("#cancel", Button).press()
@@ -890,8 +890,8 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
         released.set()
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_compile_modal_real_cancel_click_stays_open_while_running(
         project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""

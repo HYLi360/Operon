@@ -188,7 +188,7 @@ class ConditionEditor(ComposedRows, Vertical):
         self.extras = _extras(self.original, CONDITION_MODELED_KEYS | {"any", "not"})
         self._mode = self._original_mode()
         #: The document the body was last seeded from.  A reader that lands while
-        #: a mode change is replacing the body composes this (ODR-0035).
+        #: a mode change is replacing the body composes this (ODR-35).
         self._seeded_document: dict[str, Any] = dict(condition)
 
     def compose(self) -> ComposeResult:
@@ -267,8 +267,8 @@ class ConditionEditor(ComposedRows, Vertical):
         subtree with ``_pruning`` before the children go, and the row leaves the
         tree only after Textual has pruned it.  A composition that lands in between
         would read a row whose inputs are gone — or worse, a control that still
-        answers with a blank value (ODR-0026) — and ``form_ready`` latches one-way
-        on purpose (ODR-0023), so the panel's readiness gate cannot see the window.
+        answers with a blank value (ODR-26) — and ``form_ready`` latches one-way
+        on purpose (ODR-23), so the panel's readiness gate cannot see the window.
         Such a row is on its way out: leaving it out of the document is what the
         removal asks for.
         """
@@ -281,12 +281,12 @@ class ConditionEditor(ComposedRows, Vertical):
         A mode change replaces the body through ``MountTracked.replace_children``,
         which retires the old rows and mounts the next generation a turn later:
         while that is in flight the body holds nothing to compose.  The container
-        answers "are my rows there yet" through ``mounts_settled`` (ODR-0023), so a
+        answers "are my rows there yet" through ``mounts_settled`` (ODR-23), so a
         reader that lands in the window — a save pressed in the same turn as the
         mode change — gets the document the replacement was seeded from, instead of
         a ``NoMatches`` in leaf/not mode or an empty ``any:`` group that would drop
-        the condition (ODR-0035).  A row that is being removed right now is skipped
-        rather than read (ODR-0036).
+        the condition (ODR-35).  A row that is being removed right now is skipped
+        rather than read (ODR-36).
         """
         mode_value = self.query_one(".condition-mode", Select).value
         mode = "condition" if mode_value is Select.NULL else str(mode_value)
@@ -378,7 +378,7 @@ class BestByRow(ComposedRows, Vertical):
                     continue
                 key, _, value = part.partition("=")
                 # ``float`` rewrote whole ranks as ``0.0``/``1.0``, so a form
-                # round trip did not reproduce the on-disk document (ODR-0026).
+                # round trip did not reproduce the on-disk document (ODR-26).
                 rank[key.strip()] = actions.coerce_scalar(value.strip()) if value.strip() else 0
             ordered["rank"] = rank
         if default_text:

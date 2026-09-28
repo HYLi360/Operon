@@ -3,8 +3,8 @@
 Every TUI test module used to carry its own copy of :func:`click` — and four of
 them a weaker one — so the traps it works around were only fully handled in the
 copies that happened to be fixed last: a deferred editor rebuild moving the
-target (ODR-0023), a ``Button`` keeping its 0.2 s ``-active`` press effect and
-Textual dropping a ``Pressed`` raised inside that window (ODR-0024), and a
+target (ODR-23), a ``Button`` keeping its 0.2 s ``-active`` press effect and
+Textual dropping a ``Pressed`` raised inside that window (ODR-24), and a
 clipped or obscured target that ``Pilot.click`` either reports as ``False`` or
 raises ``OutOfBounds`` for.
 
@@ -47,10 +47,10 @@ async def click(pilot: Any, selector: str) -> None:
 
     ``Pilot.click`` returns False when the target is clipped or obscured and
     *raises* ``OutOfBounds`` when the target's centre is still outside the screen
-    region, which is what a deferred editor rebuild produces (ODR-0023).  A
+    region, which is what a deferred editor rebuild produces (ODR-23).  A
     ``Button`` also keeps its ``-active`` press effect for about 0.2 s and
     Textual drops a ``Button.Pressed`` raised inside that window, so a rapid
-    second click reported ``landed=True`` and did nothing (ODR-0024): wait for
+    second click reported ``landed=True`` and did nothing (ODR-24): wait for
     the effect to clear first.  An enabled button is then pressed directly when
     the positional click cannot land — the same activation a landed click
     produces — and anything else is retried until it lands or the budget runs

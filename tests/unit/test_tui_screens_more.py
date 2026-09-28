@@ -62,7 +62,7 @@ from operon.tui.screens.runs import RunDetailScreen, RunsPanel
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -1300,7 +1300,7 @@ def test_decisions_profile_filter_survives_new_profiles(project: Project) -> Non
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0045")
+@pytest.mark.bug("ODR-45")
 def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkeypatch) -> None:
     """An earlier, slower load must not overwrite a newer, filtered one.
 
@@ -1711,7 +1711,7 @@ class _StubPanel(Panel):
         return {}
 
 
-@pytest.mark.bug("ODR-0032")
+@pytest.mark.bug("ODR-32")
 @pytest.mark.parametrize("failure", [MountError("widget tree is gone"), NoMatches("#profiles-list")])
 def test_panel_drops_a_result_whose_widgets_are_gone(failure):
     """Quitting during the initial load used to fail the app from the worker.
@@ -1720,7 +1720,7 @@ def test_panel_drops_a_result_whose_widgets_are_gone(failure):
     load delivers its payload; Textual reports that as MountError/NoMatches and
     the result simply has nowhere to go.  The drop still reports the load as
     finished — the startup screen waits for every panel to report one, so a
-    dropped first render must not hold the app behind the splash (ODR-0032).
+    dropped first render must not hold the app behind the splash (ODR-32).
     """
     panel = _StubPanel(failure)
     panel._apply({"profiles": []})
@@ -1747,10 +1747,10 @@ def test_panel_surfaces_a_failed_load_inside_the_panel():
 
 
 # --------------------------------------------------------------------------- #
-# Worker results carry the request they answer (ODR-0031)
+# Worker results carry the request they answer (ODR-31)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0031")
+@pytest.mark.bug("ODR-31")
 def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project,
                                                                 monkeypatch) -> None:
     """A read already inside its thread must not paint over a newer selection.
@@ -1758,7 +1758,7 @@ def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project
     ``exclusive=True`` cancels the previous worker's *await*, not the read the
     thread is in the middle of: that thread still posts its payload, and without
     the request stamp the pane ends up showing the row the user left behind
-    (ODR-0031).
+    (ODR-31).
     """
     held = threading.Event()
     started = threading.Event()
@@ -1823,7 +1823,7 @@ def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
+@pytest.mark.bug("ODR-31")
 def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Project,
                                                             monkeypatch) -> None:
     """The same stamp keeps the entity pane on the highlighted node."""

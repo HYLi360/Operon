@@ -388,7 +388,7 @@ def test_schema_row_duplicates_unknown_fields_and_tsv_edges(tmp_path):
     assert read_tsv(output) == [{"a": "", "b": "1"}, {"a": "2", "b": ""}]
 
 
-@pytest.mark.bug("ODR-0040")
+@pytest.mark.bug("ODR-40")
 def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
     output = tmp_path / "escaped.tsv"
     write_tsv(output, ["text", "number"], [
@@ -425,12 +425,12 @@ def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
     write_tsv(tab_cr, ["text"], [{"text": "\t5"}, {"text": "\r6"}])
     # TAB/CR still trigger the escape, and a cell containing TAB, CR, LF or the
     # quote character is quoted by write_tsv itself rather than by csv (whose
-    # rule changed in 3.11; ODR-0044).  Values containing the delimiter itself
+    # rule changed in 3.11; ODR-44).  Values containing the delimiter itself
     # are still not round-trippable through read_tsv's plain split.
     assert tab_cr.read_bytes() == b'text\n"\'\t5"\n"\'\r6"\n'
 
 
-@pytest.mark.bug("ODR-0044")
+@pytest.mark.bug("ODR-44")
 @pytest.mark.parametrize(("value", "expected"), [
     ("\t5", b'"\'\t5"'),
     ("\r6", b'"\'\r6"'),
@@ -446,7 +446,7 @@ def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
 def test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter(tmp_path, value, expected):
     """A row must serialize to the same bytes on every supported Python.
 
-    Guards ODR-0044: csv quotes a CR cell only from 3.11 on, so the writer
+    Guards ODR-44: csv quotes a CR cell only from 3.11 on, so the writer
     decides quoting itself.  With ``csv.writer`` the ``\r6`` cell was written
     unquoted on 3.10 — bytes no CSV reader could parse — and quoted from 3.11.
     """

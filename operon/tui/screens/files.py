@@ -333,7 +333,7 @@ class FilesPanel(Panel):
         already inside the thread, and that thread still posts its payload — so
         the request is stamped here, on the UI thread, and a payload a newer
         selection superseded is dropped instead of overwriting the pane
-        (ODR-0031).
+        (ODR-31).
         """
         self.begin_request(file_id)
         self._load_detail(file_id)

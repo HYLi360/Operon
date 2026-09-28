@@ -221,7 +221,7 @@ class NcbiDatasetsModal(WriteModal):
             event.prevent_default()
             self._request_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 

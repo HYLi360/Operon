@@ -124,7 +124,7 @@ def _captured(path: str) -> str:
     Capture-time redaction rewrites whole-segment home prefixes, so an assertion
     against the raw path only holds while the scratch directory lives outside
     ``$HOME`` — the shape that turned three of these tests red in a matrix leg
-    whose ``TMPDIR`` sat inside the home directory (ODR-0033).
+    whose ``TMPDIR`` sat inside the home directory (ODR-33).
     """
     return _redact_home(path, _local_home())
 
@@ -142,7 +142,7 @@ def fake_conda(tmp_path, monkeypatch):
     return [str(manager), "run", "-p", str(prefix)]
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, capsys):
     project = Project.init(tmp_path / "project")
     with closing(Database(project.db_path)) as db:
@@ -161,7 +161,7 @@ def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, 
     assert main(["--project", str(project.root), "environments", "show", "missing"]) != 0
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_slurm_probe_runs_after_setup_inside_launcher(tmp_path, fake_conda):
     probe = tmp_path / "job.env"
     script = render_slurm_script(
@@ -305,7 +305,7 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
         export_conda(document(), "unsupported")
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_direct_ssh_captures_target_and_removes_raw_probe(tmp_path, fake_conda):
     from operon.execution import SSHExecutor
     from tests.unit.test_execution import FakeSSHClient

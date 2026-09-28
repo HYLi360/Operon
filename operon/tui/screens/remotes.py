@@ -469,12 +469,12 @@ class SyncModal(WriteModal):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -628,6 +628,6 @@ class EvictModal(SyncModal):
         if event.button.id == "evict-check":
             self._check()
             return
-        # ODR-0047: the MRO dispatch would run the base handler a second time.
+        # ODR-47: the MRO dispatch would run the base handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)

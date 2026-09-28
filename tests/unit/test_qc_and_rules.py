@@ -134,7 +134,7 @@ class TestQCAndRules(PytestAssertions):
         self.assertFalse(records[-2]["qc_timing"]["integrity"]["rehash_requested"])
         self.assertTrue(records[-1]["qc_timing"]["integrity"]["rehash_requested"])
 
-    @pytest.mark.bug("ODR-0011")
+    @pytest.mark.bug("ODR-11")
     def test_rerun_qc_and_evaluate_do_not_demote_decided_entities(self):
         from operon.workflow import set_state
 

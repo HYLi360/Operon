@@ -121,7 +121,7 @@ async def _button_click(pilot, app, selector: str) -> None:
     """Click a button and wait for the app to settle afterwards.
 
     ``_click`` waits out the Button ``-active`` debounce window itself, so this
-    only adds the post-click settle (ODR-0024).
+    only adds the post-click settle (ODR-24).
     """
     await _click(pilot, selector)
     await _settled(app)

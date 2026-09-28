@@ -71,7 +71,7 @@ def compute_alignment_qc(records: Iterable[tuple[str, str]]) -> AlignmentQCResul
                 column_nongap[index] += 1
                 column_counts[index][char] += 1
         sequence_rows.append({
-            # ODR-0040: a header beginning with a spreadsheet formula trigger
+            # ODR-40: a header beginning with a spreadsheet formula trigger
             # would execute as a formula when sequence_qc.tsv is opened in a
             # spreadsheet application, so safe_id is stored already escaped.
             "safe_id": escape_formula_text(header),

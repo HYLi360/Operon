@@ -71,7 +71,7 @@ def test_backend_select_options_mirror_the_cli_flag() -> None:
 
 
 def test_selected_backend_tolerates_a_widget_that_is_not_there() -> None:
-    """A reader can run before the form mounted (ODR-0023's shape)."""
+    """A reader can run before the form mounted (ODR-23's shape)."""
     class ScreenWithoutTheWidget:
         def query_one(self, *_args: Any, **_kwargs: Any) -> Any:
             raise NoMatches("not composed yet")
@@ -134,7 +134,7 @@ def test_fitting_select_retry_tick_marks_a_healthy_control_ready() -> None:
             select = FittingSelect([("short", "x"), ("longer", "y")], value="y")
             await app.screen.mount(select)
             await pilot.pause()
-            assert select.options_ready  # the direct path (ODR-0038)
+            assert select.options_ready  # the direct path (ODR-38)
             select._options_ready = False
             select._init_options_when_composed(attempt=0)
             await pilot.pause()
@@ -148,7 +148,7 @@ def test_fitting_select_adopts_its_first_option_without_an_overlay() -> None:
     """A select that may not be blank resolves its value with no overlay.
 
     `allow_blank=False` is what makes the difference: the default constructor
-    accepts a blank, so adoption is a no-op there (ODR-0026's other half).
+    accepts a blank, so adoption is a no-op there (ODR-26's other half).
     """
     select = FittingSelect([("short", "x"), ("longer", "y")], allow_blank=False)
     select._value = Select.NULL
@@ -193,7 +193,7 @@ class _Recorder:
         self.messages.append(message)
 
 
-@pytest.mark.bug("ODR-0050")
+@pytest.mark.bug("ODR-50")
 def test_fitting_select_paint_gives_up_by_name() -> None:
     """A label that never composes is reported once, not raised every refresh."""
     recorder = _Recorder()

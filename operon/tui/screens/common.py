@@ -185,13 +185,13 @@ class FittingSelect(Select):
     queries ``SelectOverlay`` and ``SelectCurrent``'s label before its compose
     children exist when the widget is mounted through a deferred chain
     (``remount`` mounts a whole editor a message-loop turn later), which raised
-    ``NoMatches`` from inside Textual and failed the app (ODR-0023).  The work
+    ``NoMatches`` from inside Textual and failed the app (ODR-23).  The work
     is retried a turn at a time until the children are there.
 
     Until that retry lands the Select has no overlay to paint its label into,
     and Textual resolves the value *after* reaching for the overlay: the row
     would read back as blank — a condition whose operator was ``like`` came out
-    as ``''`` (ODR-0026).  The guard therefore adopts the initial value before
+    as ``''`` (ODR-26).  The guard therefore adopts the initial value before
     the retry (``_adopt_value_before_overlay``) and advertises
     :attr:`options_ready` so a form reader can wait instead of reading a
     half-initialised control.
@@ -199,7 +199,7 @@ class FittingSelect(Select):
     The same window reaches a *later* assignment: ``Select._watch_value`` stores
     the value and only then looks up ``SelectCurrent``'s ``#label`` to paint the
     collapsed control, so a row assigning during ``on_mount`` raised
-    ``NoMatches`` out of the assignment and died with it (ODR-0050).  Painting
+    ``NoMatches`` out of the assignment and died with it (ODR-50).  Painting
     is retried a turn at a time as well, from :meth:`_watch_value`.
     """
 
@@ -219,7 +219,7 @@ class FittingSelect(Select):
 
         :attr:`options_ready` stays ``False`` in that state, so a reader that only
         asks for readiness cannot tell "still coming" from "never" — the form would
-        refuse a save forever without saying why (ODR-0039).  This is the signal
+        refuse a save forever without saying why (ODR-39).  This is the signal
         that distinguishes them.
         """
         return self._options_gave_up
@@ -257,7 +257,7 @@ class FittingSelect(Select):
         if self._overlay_present():
             self._options_ready = True
         else:
-            # Textual's own handler runs beside this one (ODR-0038), so readiness
+            # Textual's own handler runs beside this one (ODR-38), so readiness
             # is read from the tree instead of from whether a lookup raised.
             self._options_ready = False
             self._adopt_value_before_overlay()
@@ -270,7 +270,7 @@ class FittingSelect(Select):
         ``_setup_options_renderables`` reached for the overlay, so a mount whose
         lookup failed leaves ``value`` at ``NULL`` — Textual stores the value
         first in ``_watch_value``, which only needs the overlay to paint the
-        label.  Resolve it here and let the retry paint it (ODR-0026).
+        label.  Resolve it here and let the retry paint it (ODR-26).
         """
         hint = self._value
         if hint == self.NULL and not self._allow_blank and self._options:
@@ -291,8 +291,8 @@ class FittingSelect(Select):
         the instance — our override, not Textual's, is what it reaches.  Swallowing
         the lookup failure here keeps Textual's dispatch from raising into the
         application, which is how this surfaced: under load the traceback reached
-        the app and ``run_test`` re-raised it at teardown (ODR-0038).  The retry
-        path above calls this again once the overlay is in the tree (ODR-0026).
+        the app and ``run_test`` re-raised it at teardown (ODR-38).  The retry
+        path above calls this again once the overlay is in the tree (ODR-26).
         """
         try:
             super()._setup_options_renderables()
@@ -319,7 +319,7 @@ class FittingSelect(Select):
         ``SelectCurrent``'s ``#label`` to paint the collapsed control, so a row
         that assigns during ``on_mount`` — the subtree still composing — got
         ``NoMatches`` out of the assignment and the row's mount died with it
-        (ODR-0050).  The value is already stored at that point; retry the paint
+        (ODR-50).  The value is already stored at that point; retry the paint
         instead of raising.  Textual posts ``Changed`` only *after* a successful
         paint, so the retry reports the value exactly once.
         """
@@ -330,12 +330,12 @@ class FittingSelect(Select):
             super()._watch_value(value)
         except NoMatches:
             # Nothing to refresh onto before the mount: the value stands, and the
-            # mount's own guard paints it (ODR-0026).
+            # mount's own guard paints it (ODR-26).
             if self.is_mounted and attempt < self._mount_retry_limit:
                 self.call_after_refresh(self._paint_value_when_composed, value, attempt + 1)
             elif self.is_mounted:
                 # Out of retries: say so once, by name, instead of leaving a
-                # control that silently shows nothing (ODR-0039's shape).
+                # control that silently shows nothing (ODR-39's shape).
                 self.log.warning(
                     f"{type(self).__name__} {self.id or '<unnamed>'} could not paint "
                     f"its value after {self._mount_retry_limit} refreshes — the value "
@@ -351,7 +351,7 @@ class FittingSelect(Select):
             self.call_after_refresh(self._init_options_when_composed, attempt + 1)
         else:
             # Out of retries: say so once, by name, instead of leaving a control
-            # that quietly answers nothing (ODR-0039).
+            # that quietly answers nothing (ODR-39).
             self._options_gave_up = True
             self.log.warning(
                 f"{type(self).__name__} {self.id or '<unnamed>'} never got its "
@@ -361,7 +361,7 @@ class FittingSelect(Select):
 
 
 #: Sentinel for a replacement that mounts nothing: that wait settles once the
-#: rows it replaced are out of the tree (ODR-0030).
+#: rows it replaced are out of the tree (ODR-30).
 _EMPTIED = object()
 
 
@@ -373,7 +373,7 @@ class MountTracked(Vertical):
     source its filter editors, a condition editor its body rows), so "the
     panel rendered" is not the same as "the form can be read": a reader that
     runs in between sees an empty container, which either raises ``NoMatches``
-    or silently drops the rows it cannot see (ODR-0023).  Readers ask
+    or silently drops the rows it cannot see (ODR-23).  Readers ask
     :attr:`mounts_settled` first; the class carries the CSS class
     ``mount-tracked`` so a panel can look its tracked containers up in one
     query instead of naming every one of them.
@@ -394,7 +394,7 @@ class MountTracked(Vertical):
         #: Number of replacements this container has been asked for; a
         #: replacement whose token is no longer the current one drops itself.
         self._generation = 0
-        #: The children the last replacement is retiring (ODR-0030).
+        #: The children the last replacement is retiring (ODR-30).
         self._retiring: tuple[Any, ...] = ()
 
     def expect_mounts(self, when_present: str | None = None) -> int:
@@ -408,7 +408,7 @@ class MountTracked(Vertical):
 
         Returns this wait's generation token: a later wait supersedes it, and
         :meth:`replace_children` drops the superseded replacement instead of
-        mounting it next to the newer rows (ODR-0030).
+        mounting it next to the newer rows (ODR-30).
         """
         self._generation += 1
         self._waiting = True
@@ -430,7 +430,7 @@ class MountTracked(Vertical):
         replacement that was superseded while it waited drops itself: two
         selections delivered in the same turn would otherwise land *both*
         editors, and a reader would compose a document holding both
-        generations' rows (ODR-0030).
+        generations' rows (ODR-30).
         """
         retiring = tuple(self.children)
         removal = self.remove_children()
@@ -463,7 +463,7 @@ class MountTracked(Vertical):
         if self._replacing():
             # The rows being replaced are still in the tree, so whatever a
             # reader sees right now belongs to the previous generation: latching
-            # here would let an old editor answer for a new one (ODR-0030).
+            # here would let an old editor answer for a new one (ODR-30).
             return False
         selector = self._wait_selector
         if selector is _EMPTIED:
@@ -493,7 +493,7 @@ def remount(container: Any, *widgets: Any) -> None:
     """Replace a container's children with ``widgets`` (atomically, from the UI).
 
     A :class:`MountTracked` container serializes the replacement and drops a
-    superseded one (ODR-0030); any other container keeps the plain deferred
+    superseded one (ODR-30); any other container keeps the plain deferred
     mount, which is enough for a container nobody reads back through a
     readiness check.
     """
@@ -513,7 +513,7 @@ class ComposedRows:
     is already in the tree may still be missing the inputs — and the inputs'
     own children — that a reader queries; only the row's ``on_mount`` runs once
     that subtree exists.  Rows latch a flag there and readers ask
-    :attr:`form_ready` (ODR-0023).  The latch is one-way on purpose: removing a
+    :attr:`form_ready` (ODR-23).  The latch is one-way on purpose: removing a
     row later (a user deleting a condition) must not make the form look like it
     is still mounting.
     """
@@ -538,7 +538,7 @@ class WorkerResults:
     A modal or a pushed screen can be dismissed while its worker still runs,
     and Textual then reports any widget lookup on the torn-down widget as
     ``NoMatches`` — raised inside the worker thread, where it escapes as
-    ``WorkerFailed`` and fails the whole application (ODR-0022).  Workers of
+    ``WorkerFailed`` and fails the whole application (ODR-22).  Workers of
     such a widget hand their result to :meth:`post_to_ui` instead of
     ``app.call_from_thread``; the result is rendered through
     :meth:`apply_from_worker` and dropped when there is nothing left to render.
@@ -549,13 +549,13 @@ class WorkerResults:
     payload is identified by the selection it was read for calls
     :meth:`begin_request` when it starts the read and passes the same key to
     :meth:`post_to_ui`; a result that a newer request superseded is then dropped
-    instead of overwriting its answer (ODR-0031).
+    instead of overwriting its answer (ODR-31).
     """
 
     #: Supplied by the concrete widget (``Widget.app``).
     app: Any
 
-    #: The key of the request this widget is currently waiting for (ODR-0031).
+    #: The key of the request this widget is currently waiting for (ODR-31).
     _request_key: Any = None
 
     def begin_request(self, key: Any) -> Any:
@@ -572,7 +572,7 @@ class WorkerResults:
 
         A result without a key and a widget that never stamped one are both
         current: the guard only drops a result that a *newer* stamped request
-        superseded (ODR-0031).
+        superseded (ODR-31).
         """
         if key is None or self._request_key is None:
             return True
@@ -614,7 +614,7 @@ class Panel(WorkerResults, VerticalScroll):
     initial_load_failed = False
 
     #: Generation of this panel's newest load; a payload from an older one is
-    #: dropped instead of rendered (ODR-0045).
+    #: dropped instead of rendered (ODR-45).
     _load_generation = 0
 
     def on_mount(self) -> None:
@@ -628,7 +628,7 @@ class Panel(WorkerResults, VerticalScroll):
         for a filter the user has just typed, restore the very rows the filter
         removed.  The generation is stamped here, on the UI thread, and travels
         into the worker with the call: a payload that a newer load superseded is
-        dropped instead of rendered (ODR-0045).
+        dropped instead of rendered (ODR-45).
         """
         self._load_generation += 1
         self._load(self._load_generation)
@@ -642,7 +642,7 @@ class Panel(WorkerResults, VerticalScroll):
         self.post_to_ui(self._apply_load, payload, generation)
 
     def _apply_load(self, payload: Any, generation: int) -> None:
-        """Render a load result unless a newer load superseded it (ODR-0045)."""
+        """Render a load result unless a newer load superseded it (ODR-45)."""
         if generation != self._load_generation:
             return
         self._apply(payload)
@@ -655,7 +655,7 @@ class Panel(WorkerResults, VerticalScroll):
         # app from a worker thread, so the result is dropped.  The drop still
         # reports a finished load: the startup screen waits for every panel to
         # report one, and a dropped first render must not leave the app behind
-        # the splash screen with no way out (ODR-0032).
+        # the splash screen with no way out (ODR-32).
         dropped = False
         try:
             if isinstance(payload, BaseException):

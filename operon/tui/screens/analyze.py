@@ -333,11 +333,11 @@ class AnalyzeModal(WriteModal):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
-            # ODR-0043: stop the MRO walk so WriteModal cannot dismiss mid-run.
+            # ODR-43: stop the MRO walk so WriteModal cannot dismiss mid-run.
             event.prevent_default()
             self._request_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 

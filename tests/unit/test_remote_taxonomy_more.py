@@ -320,7 +320,7 @@ def test_manifest_lock_is_released_when_the_owner_marker_cannot_be_written(remot
 # remotes: push/pull failure handling and audit rows
 # --------------------------------------------------------------------------
 
-@pytest.mark.bug("ODR-0004")
+@pytest.mark.bug("ODR-4")
 def test_push_reports_an_upload_that_lands_wrong_bytes(remote_env, monkeypatch):
     env = remote_env
     client = FakeSSHClient()

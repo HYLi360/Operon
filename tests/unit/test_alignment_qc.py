@@ -105,7 +105,7 @@ def random_alignment(rng: random.Random, n_sequences: int, n_columns: int):
     ]
 
 
-@pytest.mark.bug("ODR-0040")
+@pytest.mark.bug("ODR-40")
 def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
     result = compute_alignment_qc(iter([
         ("=1+1", "A"),
@@ -126,7 +126,7 @@ def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
     assert (tmp_path / "out" / "sequence_qc.tsv").read_bytes() == expected.encode("utf-8")
 
 
-@pytest.mark.bug("ODR-0040")
+@pytest.mark.bug("ODR-40")
 def test_formula_trigger_headers_match_across_backends():
     from operon.qc import _alignment as cy_alignment
     from operon.qc import alignment as py_alignment

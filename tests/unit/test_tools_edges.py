@@ -1077,7 +1077,7 @@ def test_parameter_fingerprint_includes_command_versions():
     assert v1 != v2
 
 
-@pytest.mark.bug("ODR-0016")
+@pytest.mark.bug("ODR-16")
 def test_version_and_database_identity_caches_expire_after_ttl(tmp_path, monkeypatch):
     # Version probe cache: a live entry is reused, an expired one re-probes.
     tools._VERSION_CACHE.clear()

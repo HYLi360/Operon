@@ -465,7 +465,7 @@ def _tsv_cell(value: Any) -> str:
     ``lineterminator``, and CPython 3.11 additionally started quoting every
     field containing CR or LF.  Deriving the decision from the cell itself
     keeps the bytes identical on every supported interpreter, which matters
-    because these files are hashed for provenance (ODR-0044).
+    because these files are hashed for provenance (ODR-44).
     """
     text = escape_formula_text(value)
     if not isinstance(text, str):
@@ -480,11 +480,11 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
 
     A string cell beginning with ``=``, ``+``, ``-``, ``@``, TAB or CR is
     prefixed with an apostrophe so report files cannot execute as formulas
-    when opened in a spreadsheet application (ODR-0040).  Non-string values
+    when opened in a spreadsheet application (ODR-40).  Non-string values
     are written verbatim.  A cell containing TAB, CR, LF or ``"`` is written
     quoted with its own quotes doubled; that decision is made here and not by
     ``csv.writer``, so a given row produces the same bytes on every supported
-    interpreter (ODR-0044).  This is safe for the release re-ingestion path:
+    interpreter (ODR-44).  This is safe for the release re-ingestion path:
     release-scope coverage reads back only generated identity/join columns
     (entity ids, sha256, size_bytes) that can never begin with a trigger
     character, and provenance hashes are computed over the escaped bytes at

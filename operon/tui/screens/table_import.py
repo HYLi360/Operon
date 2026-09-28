@@ -12,7 +12,7 @@ writable session — so audit rows and state transitions are identical to
 ``--yes``.  The apply is a single short transaction with no cooperative
 cancel, so a running form refuses to close (the RunExternalModal pattern;
 Cancel is additionally guarded against Textual's MRO double dispatch,
-ODR-0043).
+ODR-43).
 """
 
 from __future__ import annotations
@@ -175,12 +175,12 @@ class ImportTableModal(WriteModal):
             return
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 

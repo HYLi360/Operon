@@ -147,7 +147,7 @@ def run_pipeline(
         # The standalone `operon ingest` accepts remote URLs; the pipeline's
         # ingest stage routes them through the same fetch-and-clean-up path so
         # `run-pipeline --source sftp://...` behaves like the commands it
-        # replaces (ODR-0042).
+        # replaces (ODR-42).
         from operon.remotes import fetch_url_to_temp
 
         temp_path = fetch_url_to_temp(project, source_text)

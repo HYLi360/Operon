@@ -162,7 +162,7 @@ def test_pyproject_dependency_contract(section, required, marker, forbidden, onl
         assert conditional and all(marker in requirement for requirement in conditional), requirements
 
 
-@pytest.mark.bug("ODR-0017")
+@pytest.mark.bug("ODR-17")
 def test_pyproject_is_the_single_application_version_source():
     pyproject = _load_pyproject()
     # operon.__version__ is read from installed metadata at import time; from

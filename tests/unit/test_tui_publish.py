@@ -952,10 +952,10 @@ def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> 
 
 
 # --------------------------------------------------------------------------- #
-# Preview workers carry the request they answer (ODR-0031)
+# Preview workers carry the request they answer (ODR-31)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0031")
+@pytest.mark.bug("ODR-31")
 def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: Project,
                                                             monkeypatch) -> None:
     """The report read for the row the user left must not answer for the new one.
@@ -963,7 +963,7 @@ def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: P
     ``exclusive=True`` cancels the previous worker's *await*, not the read the
     thread is inside; that thread posts its payload afterwards, so the request
     stamp is what keeps the pane on the row the user actually selected
-    (ODR-0031).
+    (ODR-31).
     """
     import threading
 
@@ -1026,7 +1026,7 @@ def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: P
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
+@pytest.mark.bug("ODR-31")
 def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Project,
                                                                  monkeypatch) -> None:
     """A preview for the profile the user left must not answer for the new one."""
@@ -1091,7 +1091,7 @@ def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Projec
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
+@pytest.mark.bug("ODR-31")
 def test_export_preview_drops_a_read_a_newer_filter_set_superseded(project: Project,
                                                                    monkeypatch) -> None:
     """The same stamp covers the export preview's filter-driven read."""

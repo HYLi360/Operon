@@ -653,7 +653,7 @@ def test_classify_action_runs_the_profile(derived_project: Project) -> None:
         actions.run_classify(derived_project, "../escape")
 
 
-@pytest.mark.bug("ODR-0022")
+@pytest.mark.bug("ODR-22")
 def test_write_modal_drops_a_result_that_arrives_after_teardown(
     derived_project: Project,
 ) -> None:

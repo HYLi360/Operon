@@ -323,7 +323,7 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     this file's wall-clock settle timeout rather than a fixed number of cycles: a
     loaded CI runner needs seconds to deliver the click and mount the row it
     produces, and a cycle count that is generous on a fast machine runs out there
-    (ODR-0027).
+    (ODR-27).
     """
     def composed() -> list:
         return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
@@ -363,7 +363,7 @@ def parse_command_text(text: str):
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this

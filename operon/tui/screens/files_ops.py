@@ -227,7 +227,7 @@ class ImportQcModal(WriteModal):
             self.run_preview()
             return
         # Textual dispatches a message to every MRO class defining the handler
-        # (ODR-0043), so without prevent_default WriteModal's own handler
+        # (ODR-43), so without prevent_default WriteModal's own handler
         # would run the Confirm a second time.
         event.prevent_default()
         super().on_button_pressed(event)
@@ -403,7 +403,7 @@ class PipelineModal(WriteModal):
             self.run_preview()
             return
         # Textual dispatches a message to every MRO class defining the handler
-        # (ODR-0043), so without prevent_default WriteModal's own handler would
+        # (ODR-43), so without prevent_default WriteModal's own handler would
         # run the Confirm a second time.
         event.prevent_default()
         super().on_button_pressed(event)
@@ -565,12 +565,12 @@ class QcModal(WriteModal):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
-            # ODR-0043: stop the MRO walk so WriteModal cannot dismiss mid-run.
+            # ODR-43: stop the MRO walk so WriteModal cannot dismiss mid-run.
             event.prevent_default()
             if self._worker is not None:
                 self._worker.cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 

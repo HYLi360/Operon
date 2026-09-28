@@ -102,7 +102,7 @@ class Registry:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise RegistryError("registry contains a malformed defect id") from exc
-        new_id = f"ODR-{highest + 1:04d}"
+        new_id = f"ODR-{highest + 1}"
         if any(record.get("id") == new_id for record in existing):
             raise RegistryError(f"id collision on {new_id}")
 

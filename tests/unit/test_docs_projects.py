@@ -154,14 +154,14 @@ def test_readthedocs_build_files_are_all_registered():
     )
 
 
-@pytest.mark.bug("ODR-0025")
+@pytest.mark.bug("ODR-25")
 def test_every_workflow_builds_both_language_trees():
     """A workflow that builds the documentation builds every language project.
 
     ``docs/`` stopped being a Sphinx source directory when each language got
     its own project, so a workflow left on the old command fails instead of
     building anything — which is how the publish workflow's documentation job
-    broke after the split (ODR-0025).  Every ``sphinx-build`` line has to name
+    broke after the split (ODR-25).  Every ``sphinx-build`` line has to name
     the language directory it builds.
     """
 

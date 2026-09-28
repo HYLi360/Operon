@@ -240,7 +240,7 @@ class CoveragePanel(Panel):
             self._show_report(str(event.row_key.value))
 
     def _show_report(self, report_id: str) -> None:
-        """Read one coverage report, stamped with the row it answers (ODR-0031)."""
+        """Read one coverage report, stamped with the row it answers (ODR-31)."""
         self.begin_request(report_id)
         self._load_report(report_id)
 

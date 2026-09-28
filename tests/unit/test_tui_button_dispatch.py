@@ -1,4 +1,4 @@
-"""Guarded button dispatch in the TUI dialogs (ODR-0047).
+"""Guarded button dispatch in the TUI dialogs (ODR-47).
 
 Textual dispatches a ``Button.Pressed`` message to *every* class in the MRO that
 defines ``on_button_pressed``, so a subclass handler that also delegates with
@@ -10,7 +10,7 @@ record, analysis run).
 
 The guard is one ``event.prevent_default()`` on the path that delegates: it
 stops the base class's own copy of the dispatch without affecting the explicit
-``super()`` call, exactly as the ODR-0043 cancel branches already do.  This
+``super()`` call, exactly as the ODR-43 cancel branches already do.  This
 module states that contract once for the whole ``operon/tui/screens`` tree, so
 a new dialog cannot reintroduce the double dispatch unnoticed.
 """
@@ -65,11 +65,11 @@ def _unguarded_delegations() -> list[str]:
     return problems
 
 
-@pytest.mark.bug("ODR-0047")
+@pytest.mark.bug("ODR-47")
 def test_every_delegating_button_handler_guards_the_mro_dispatch() -> None:
     """A handler that calls super() must stop the base class's own dispatch first."""
     problems = _unguarded_delegations()
     assert problems == [], (
         "unguarded super().on_button_pressed(event): one Confirm click would run "
-        "the action twice (ODR-0047):\n  " + "\n  ".join(problems)
+        "the action twice (ODR-47):\n  " + "\n  ".join(problems)
     )

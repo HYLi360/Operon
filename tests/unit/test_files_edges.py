@@ -219,7 +219,7 @@ def test_verification_cache_ignores_nonfiles_and_wrong_size(project_db, tmp_path
     ]
 
 
-@pytest.mark.bug("ODR-0009")
+@pytest.mark.bug("ODR-9")
 def test_reingest_preserves_standardized_status_and_audits_transitions(project_db, tmp_path):
     project, db = project_db
     source = tmp_path / "genome.fa"
@@ -259,7 +259,7 @@ def test_reingest_preserves_standardized_status_and_audits_transitions(project_d
     assert last["actor"] == "operon ingest"
 
 
-@pytest.mark.bug("ODR-0010")
+@pytest.mark.bug("ODR-10")
 def test_standardize_goes_through_the_audited_state_machine(project_db, tmp_path):
     from operon.workflow import set_state
 
@@ -579,7 +579,7 @@ def test_ingest_rearchives_bytes_missing_for_manifest_row(project_db, tmp_path):
     assert archived.read_bytes() == source.read_bytes()
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     project, db = project_db
     directory = tmp_path / "results"
@@ -613,7 +613,7 @@ def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     assert not matched and info["verification_method"] == "size_mismatch"
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_directory_artifact_type_flip_reports_missing(project_db, tmp_path):
     project, db = project_db
     directory = tmp_path / "results"
@@ -643,7 +643,7 @@ def test_directory_artifact_type_flip_reports_missing(project_db, tmp_path):
     assert not matched and not info["exists"] and info["verification_method"] == "missing"
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
     from operon import qc
 

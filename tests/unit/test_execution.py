@@ -1254,7 +1254,7 @@ class TestShutdownCleanup(PytestAssertions):
 
         The shell creates the redirect target before the pid text lands, so waiting
         for the file to exist is not enough: a read in that turn finds no file yet,
-        and the turn after an empty one — ``int()`` raises on both (ODR-0037).  This
+        and the turn after an empty one — ``int()`` raises on both (ODR-37).  This
         waits for a pid instead.
         """
         limit = time.monotonic() + deadline
@@ -1265,7 +1265,7 @@ class TestShutdownCleanup(PytestAssertions):
                 time.sleep(0.02)
         raise AssertionError(f"{pidfile} never received a pid")
 
-    @pytest.mark.bug("ODR-0037")
+    @pytest.mark.bug("ODR-37")
     def test_local_interrupt_kills_whole_process_group(self, monkeypatch):
         # This test interrupts the payload, not the preceding environment probe.
         monkeypatch.setattr("operon.execution.capture_local", lambda *args: {})

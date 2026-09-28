@@ -119,7 +119,7 @@ async def _await_detail_text(app, needle: str) -> str:
     ``_settled`` only says that no worker is running *at that instant*: the
     detail screen starts its read from ``on_mount``, which needs a message-loop
     turn of its own, so a read straight afterwards can land on the ``loading…``
-    placeholder — the window a slow runner stops on (ODR-0029).
+    placeholder — the window a slow runner stops on (ODR-29).
     """
     await _wait_until(lambda: needle in _detail_text(app), f"run detail to show {needle!r}")
     return _detail_text(app)
@@ -553,7 +553,7 @@ def test_data_layer_never_writes(demo_project: Project, tmp_path: Path) -> None:
     The read-only pass runs on a private copy of the demo project.  SQLite
     hands the WAL side files of a read-only database that same read-only mode,
     and the shared module fixture must not carry it into every later test that
-    copies it (ODR-0021).  The copy keeps the assertion meaningful: the
+    copies it (ODR-21).  The copy keeps the assertion meaningful: the
     database it starts from is byte-identical to the demo's.
     """
     project = Project.find(
@@ -601,7 +601,7 @@ def test_data_layer_never_writes(demo_project: Project, tmp_path: Path) -> None:
     assert sha256_file(db_path) == before
 
 
-@pytest.mark.bug("ODR-0021")
+@pytest.mark.bug("ODR-21")
 def test_copied_project_stays_writable_after_a_read_only_session(
     demo_project: Project, tmp_path: Path
 ) -> None:
@@ -1344,7 +1344,7 @@ def test_splash_quit_during_minimum_display(demo_project):
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0032")
+@pytest.mark.bug("ODR-32")
 def test_splash_leaves_when_a_panel_drops_its_first_render(demo_project, monkeypatch):
     """A first render the panel cannot show must not wedge startup behind the splash.
 
@@ -1352,7 +1352,7 @@ def test_splash_leaves_when_a_panel_drops_its_first_render(demo_project, monkeyp
     not there yet, or this one was never composed); the drop used to skip the
     initial-load latch as well, and the startup worker waits for every panel to
     latch — the app then stayed on the splash screen with every panel
-    unreachable (ODR-0032).
+    unreachable (ODR-32).
     """
     import operon.tui.app as app_module
     from operon.tui.splash import SplashScreen
@@ -1380,13 +1380,13 @@ def test_splash_leaves_when_a_panel_drops_its_first_render(demo_project, monkeyp
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0032")
+@pytest.mark.bug("ODR-32")
 def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
     """A load that never reports one must not hold the splash screen forever.
 
     The readiness gate cannot cover a worker that never delivers at all (a
     hung read, a result posted after shutdown); without a deadline the app
-    would sit on the splash screen with no key able to leave it (ODR-0032).
+    would sit on the splash screen with no key able to leave it (ODR-32).
     """
     import operon.tui.app as app_module
     from operon.tui.splash import SplashScreen
@@ -1409,7 +1409,7 @@ def test_splash_leaves_after_the_startup_deadline(demo_project, monkeypatch):
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0029")
+@pytest.mark.bug("ODR-29")
 def test_run_detail_read_waits_for_the_loaded_content(demo_project, monkeypatch):
     """The run-detail read must key on the content, not on the worker set.
 
@@ -1463,14 +1463,14 @@ def test_run_detail_read_waits_for_the_loaded_content(demo_project, monkeypatch)
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0029")
+@pytest.mark.bug("ODR-29")
 def test_no_tui_test_reads_run_detail_straight_after_settling() -> None:
     """Every read of ``#run-detail`` in the TUI tests waits for its content.
 
     The window this guards is invisible to a single run: ``_settled`` reports
     the worker *set*, and the detail screen schedules its load a turn after
     ``on_mount``, so on a fast machine a raw read happens to see the loaded text
-    and on a slow one it reads the ``loading…`` placeholder (ODR-0029).
+    and on a slow one it reads the ``loading…`` placeholder (ODR-29).
     ``_await_detail_text`` is that wait; a raw
     ``= _static_text(app.screen.query_one('#run-detail' …))`` assignment is the
     shape the fix removed.
@@ -2262,7 +2262,7 @@ def test_sequence_labels_modal_and_file_detail(tmp_path: Path) -> None:
 
 
 def _overflowing_controls(root: Any) -> list[str]:
-    """Return identified row controls that overflow or are unusably narrow (ODR-0019)."""
+    """Return identified row controls that overflow or are unusably narrow (ODR-19)."""
     from textual.containers import Horizontal
     from textual.widgets import Button, Checkbox, Input, Select
 
@@ -2285,12 +2285,12 @@ def _overflowing_controls(root: Any) -> list[str]:
     return problems
 
 
-@pytest.mark.bug("ODR-0019")
+@pytest.mark.bug("ODR-19")
 def test_filter_rows_keep_their_controls_inside_the_row(
     demo_project: Project,
     tmp_path: Path,
 ) -> None:
-    """Every filter-row control fits inside its row (ODR-0019).
+    """Every filter-row control fits inside its row (ODR-19).
 
     An over-constrained ``Horizontal`` hands each child its preferred width, so a
     row without width rules pushes its trailing widgets past the right edge — the
@@ -2346,10 +2346,10 @@ def test_filter_rows_keep_their_controls_inside_the_row(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0020")
+@pytest.mark.bug("ODR-20")
 def test_analysis_jobs_modal_layout_keeps_its_panes(demo_project: Project,
                                                     tmp_path: Path) -> None:
-    """The jobs dialog's panes stay inside the box and never overlap (ODR-0020).
+    """The jobs dialog's panes stay inside the box and never overlap (ODR-20).
 
     The box used to hold no ``1fr`` child, so the surplus height went to the
     filter row: the table collapsed to one row, its rows rendered across the
@@ -2443,7 +2443,7 @@ def test_fitting_select_expands_to_the_longest_option(demo_project: Project) -> 
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0038")
+@pytest.mark.bug("ODR-38")
 def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
     demo_project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2454,7 +2454,7 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
     caught the failed overlay lookup.  Under load (the 3.11 and 3.12 legs of the
     local matrix) the traceback reached the app and ``run_test`` re-raised it at
     teardown.  The overlay is kept out of the tree here, so every retry misses too:
-    the app has to survive, the value has to be adopted before the paint (ODR-0026),
+    the app has to survive, the value has to be adopted before the paint (ODR-26),
     and readiness has to stay false rather than the app dying.
     """
     from textual.widgets import Select
@@ -2474,7 +2474,7 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
         async with app.run_test(size=(120, 40)):
             await _settled(app)
             monkeypatch.setattr(Select, "compose", without_overlay)
-            probe = FittingSelect([("short", "x"), ("longer", "y")], value="y", id="odr-0038")
+            probe = FittingSelect([("short", "x"), ("longer", "y")], value="y", id="ODR-38")
             await app.screen.mount(probe)
             monkeypatch.undo()
 
@@ -2489,7 +2489,7 @@ def test_fitting_select_mount_without_an_overlay_does_not_crash_the_app(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0039")
+@pytest.mark.bug("ODR-39")
 def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
     demo_project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2526,7 +2526,7 @@ def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
             await _settled(app)
             monkeypatch.setattr(FittingSelect, "log", property(lambda self: Recorder()))
             monkeypatch.setattr(Select, "compose", without_overlay)
-            probe = FittingSelect([("short", "x")], value="x", id="odr-0039")
+            probe = FittingSelect([("short", "x")], value="x", id="ODR-39")
             await app.screen.mount(probe)
 
             # Out of retries, with the overlay still missing.  The patches stay for
@@ -2538,6 +2538,6 @@ def test_fitting_select_reports_a_mount_that_ran_out_of_retries(
             assert not probe.options_ready
             assert probe.options_gave_up
             assert warnings, "the exhausted retry path reported nothing"
-            assert "odr-0039" in warnings[0], warnings
+            assert "ODR-39" in warnings[0], warnings
 
     _run(scenario())

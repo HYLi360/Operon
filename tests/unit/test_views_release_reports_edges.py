@@ -130,7 +130,7 @@ def test_release_rejects_unevaluated_entities_before_creating_output(project_db)
     assert not (project.releases_root / "blocked").exists()
 
 
-@pytest.mark.bug("ODR-0005")
+@pytest.mark.bug("ODR-5")
 def test_release_and_export_reject_an_unknown_profile(project_db, tmp_path):
     project, db = project_db
     _insert_graph(db)
@@ -199,7 +199,7 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
     assert (Path(result["path"]) / "data" / "organism" / "ORG_000001" / "file").read_text() == "y"
 
 
-@pytest.mark.bug("ODR-0006")
+@pytest.mark.bug("ODR-6")
 def test_release_recovers_an_interrupted_publication_on_retry(project_db):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})

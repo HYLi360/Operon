@@ -157,7 +157,7 @@ class OperonApp(App):
 
     #: The splash screen waits for the panels' first load, but not forever: a
     #: worker that never delivers a result must not leave the app with no way
-    #: past it (ODR-0032).
+    #: past it (ODR-32).
     startup_deadline = 30.0
     #: Minimum time the splash stays up, so a quick load does not flash by.
     splash_minimum = 2.0
@@ -177,7 +177,7 @@ class OperonApp(App):
                 if pending:
                     # Nothing arrived for these panels. Show what did load and
                     # say so, instead of waiting behind the splash for a result
-                    # that may never come (ODR-0032).
+                    # that may never come (ODR-32).
                     self.log.warning(
                         "startup deadline reached while panels were still loading: "
                         + ", ".join((panel.id or "data") for panel in pending)

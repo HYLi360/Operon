@@ -640,12 +640,12 @@ class AddRecordModal(WriteModal):
         return self.query_one("#add-fields", MountTracked)
 
     def _all_field_rows(self) -> list[FieldRow]:
-        # A row on its way out answers NoMatches or blank (ODR-0036): skip it.
+        # A row on its way out answers NoMatches or blank (ODR-36): skip it.
         return [row for row in self._field_container().query(FieldRow).results(FieldRow)
                 if not row._pruning]
 
     def _field_rows(self) -> list[FieldRow]:
-        """Rows a reader may compose: a half-mounted row cannot be read (ODR-0023).
+        """Rows a reader may compose: a half-mounted row cannot be read (ODR-23).
 
         ``WriteModal.on_mount`` runs a second time through Textual's MRO message
         dispatch right after ``mount_later`` registered the seeded row, while
@@ -692,7 +692,7 @@ class AddRecordModal(WriteModal):
             event.stop()
             self._field_container().mount_later(FieldRow(), when_present=".field-row")
         else:
-            # ODR-0047: the MRO dispatch would run WriteModal's handler a second
+            # ODR-47: the MRO dispatch would run WriteModal's handler a second
             # time, running the confirmed action twice per click.
             event.prevent_default()
             super().on_button_pressed(event)
@@ -1006,7 +1006,7 @@ class EntitiesPanel(Panel):
         """Read one entity's detail, stamped with the node it answers.
 
         A read already inside its thread still posts its payload when
-        ``exclusive=True`` cancelled its worker (ODR-0031): the stamp lets the
+        ``exclusive=True`` cancelled its worker (ODR-31): the stamp lets the
         panel drop the superseded entity instead of overwriting the pane.
         """
         self.begin_request((entity_type, entity_id))

@@ -23,7 +23,7 @@ def project_db(tmp_path):
         db.close()
 
 
-@pytest.mark.bug("ODR-0002")
+@pytest.mark.bug("ODR-2")
 @pytest.mark.parametrize('method', ['insert_row', 'upsert_rows'])
 def test_column_cannot_replace_insert_values(project_db, method):
     _, db = project_db
@@ -37,7 +37,7 @@ def test_column_cannot_replace_insert_values(project_db, method):
     assert db.query('SELECT * FROM organisms') == []
 
 
-@pytest.mark.bug("ODR-0002")
+@pytest.mark.bug("ODR-2")
 @pytest.mark.parametrize('method', ['table_columns', 'export_rows', 'export_active_rows', 'insert_row', 'upsert_rows'])
 def test_table_argument_is_not_sql(project_db, method):
     _, db = project_db
@@ -53,7 +53,7 @@ def test_table_argument_is_not_sql(project_db, method):
     assert db.query('SELECT * FROM organisms') == []
 
 
-@pytest.mark.bug("ODR-0001")
+@pytest.mark.bug("ODR-1")
 def test_wizard_rejects_schema_column_injection_atomically(project_db):
     project, db = project_db
     document = yaml.safe_load(project.schema_path.read_text())
@@ -78,7 +78,7 @@ def test_wizard_rejects_schema_column_injection_atomically(project_db):
     assert db.query('SELECT status FROM workflow_runs')[0][0] == 'failed'
 
 
-@pytest.mark.bug("ODR-0003")
+@pytest.mark.bug("ODR-3")
 def test_table_import_rejects_tampered_update_column(project_db, tmp_path):
     project, db = project_db
     db.insert_row('organisms', {'organism_id': 'ORG_000001', 'scientific_name': 'Original'})
@@ -95,7 +95,7 @@ def test_table_import_rejects_tampered_update_column(project_db, tmp_path):
     assert db.query('SELECT * FROM changes') == []
 
 
-@pytest.mark.bug("ODR-0003")
+@pytest.mark.bug("ODR-3")
 def test_table_import_rechecks_allowed_table(project_db):
     project, db = project_db
     with pytest.raises(ValidationError, match='not importable'):
@@ -103,8 +103,8 @@ def test_table_import_rechecks_allowed_table(project_db):
                            {'table': 'changes', 'update': 0}, on_conflict='update')
 
 
-@pytest.mark.bug("ODR-0002")
-@pytest.mark.bug("ODR-0003")
+@pytest.mark.bug("ODR-2")
+@pytest.mark.bug("ODR-3")
 def test_custom_keyword_column_and_sql_like_values_round_trip(project_db, tmp_path):
     project, db = project_db
     schema = Schema.from_file(project.schema_path)

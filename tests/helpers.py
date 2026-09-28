@@ -18,7 +18,7 @@ def copy_project_tree(source: str | Path, target: str | Path) -> Path:
     read while it was itself read-only carries side files with that read-only
     mode: SQLite gives ``operon.sqlite-shm``/``-wal`` the mode of the database
     it opened.  A copy inherits them and can no longer be written — opening it
-    raises ``attempt to write a readonly database`` (ODR-0021).  Dropping the
+    raises ``attempt to write a readonly database`` (ODR-21).  Dropping the
     shared-memory file is safe (SQLite rebuilds it from the log on the next
     open) and restoring write permission on the database, log and journal files
     makes the copy behave like the project it was copied from.

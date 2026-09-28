@@ -93,7 +93,7 @@ else:
 def _write_executable(path: Path, text: str) -> None:
     """Write one fake backend, pinned to the interpreter running the suite.
 
-    ODR-0049: the stubs used to be shell scripts calling ``/usr/bin/mkdir``,
+    ODR-49: the stubs used to be shell scripts calling ``/usr/bin/mkdir``,
     ``/usr/bin/cat``, ``/usr/bin/rm`` and ``/usr/bin/base64``.  macOS keeps the
     first three in ``/bin``, so there the stub died on its first call and every
     assertion saw a ``SecretError`` instead.  ``sys.executable`` is an absolute
@@ -109,7 +109,7 @@ def scratch(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("FAKE_SECRET_STATE", str(tmp_path / "state"))
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     (tmp_path / "bin").mkdir()
-    # ODR-0048: the PATH strip covers the two PATH-discovered backends, but the
+    # ODR-48: the PATH strip covers the two PATH-discovered backends, but the
     # macOS keychain probe asks sys.platform and /usr/bin/security and never
     # consults PATH — so on a Darwin runner "no backend" was not true and the
     # no-backend assertions went red on every macOS CI leg.  Pin the third probe
@@ -217,7 +217,7 @@ def test_systemd_creds_decrypt_failure_is_actionable(
 
 def test_mac_keychain_round_trip(tmp_path: Path, monkeypatch) -> None:
     # tmp_path, not the scratch fixture: this test drives the real binary string,
-    # while scratch pins the keychain probe off for the no-backend tests (ODR-0048).
+    # while scratch pins the keychain probe off for the no-backend tests (ODR-48).
     log = tmp_path / "keychain.log"
 
     def _run(command, *, stdin=None, check=False):
@@ -317,12 +317,12 @@ def test_secret_status_without_backend(scratch: Path) -> None:
     assert status["secrets"][0]["stored"] is None
 
 
-# --- the fake backends stay portless (ODR-0049) ------------------------------
+# --- the fake backends stay portless (ODR-49) ------------------------------
 
 _SYSTEM_TOOL = re.compile(r"(?<![\w/.])/(?:usr/)?(?:bin|sbin)/(?:mkdir|cat|rm|base64|sh)\b")
 
 
-@pytest.mark.bug("ODR-0049")
+@pytest.mark.bug("ODR-49")
 def test_the_fake_backends_call_no_absolute_system_tool() -> None:
     """A stub must run wherever Python runs, not only where /usr/bin has the tools."""
     for name, text in (("secret-tool", SECRET_TOOL_FAKE), ("systemd-creds", SYSTEMD_CREDS_FAKE)):
@@ -330,7 +330,7 @@ def test_the_fake_backends_call_no_absolute_system_tool() -> None:
         assert offenders == [], f"{name} stub hard-codes a system tool: {offenders}"
 
 
-@pytest.mark.bug("ODR-0049")
+@pytest.mark.bug("ODR-49")
 def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
     """The written stubs start with an absolute shebang, so they need no PATH."""
     _write_executable(scratch / "bin" / "secret-tool", SECRET_TOOL_FAKE)
@@ -341,7 +341,7 @@ def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
         assert "__PYTHON__" not in stub
 
 
-# --- the no-backend premise survives a Darwin keychain (ODR-0048) -------------
+# --- the no-backend premise survives a Darwin keychain (ODR-48) -------------
 
 class _SecurityExists(type(Path("/"))):
     """A ``pathlib.Path`` that reports only the macOS keychain binary as present."""
@@ -350,7 +350,7 @@ class _SecurityExists(type(Path("/"))):
         return str(self) == "/usr/bin/security"
 
 
-@pytest.mark.bug("ODR-0048")
+@pytest.mark.bug("ODR-48")
 def test_no_backend_premise_holds_where_the_keychain_exists(
         scratch: Path, monkeypatch) -> None:
     """A macOS runner has /usr/bin/security and must still read as backend-less.

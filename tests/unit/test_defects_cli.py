@@ -20,7 +20,7 @@ SPEC.loader.exec_module(defects_cli)
 
 def _record(**overrides):
     record = {
-        "id": "ODR-0001",
+        "id": "ODR-1",
         "title": "A long defect title that needs to wrap cleanly on narrow terminals",
         "reported": "2026-09-16",
         "introduced_in": None,
@@ -51,7 +51,7 @@ def test_list_uses_a_table_on_wide_terminals_and_wraps_the_title():
     rendered = defects_cli.render_list([_record()], 80)
 
     assert rendered.splitlines()[0].startswith("ID")
-    assert "ODR-0001" in rendered
+    assert "ODR-1" in rendered
     assert "cleanly on narrow" in rendered.replace("\n", " ")
     assert max(map(len, rendered.splitlines())) <= 80
 
@@ -59,7 +59,7 @@ def test_list_uses_a_table_on_wide_terminals_and_wraps_the_title():
 def test_list_uses_a_compact_layout_on_narrow_terminals():
     rendered = defects_cli.render_list([_record()], 48)
 
-    assert rendered.splitlines()[0] == "ODR-0001  FIXED / HIGH"
+    assert rendered.splitlines()[0] == "ODR-1  FIXED / HIGH"
     assert "[database]" in rendered
     assert max(map(len, rendered.splitlines())) <= 48
 
@@ -81,14 +81,14 @@ def test_main_keeps_list_and_case_insensitive_show_interfaces(tmp_path):
         ["list", "--status", "fixed"], root=tmp_path, stdout=output
     )
     assert result == 0
-    assert "ODR-0001" in output.getvalue()
+    assert "ODR-1" in output.getvalue()
 
     output = io.StringIO()
     result = defects_cli.main(
-        ["show", "odr-0001"], root=tmp_path, stdout=output
+        ["show", "ODR-1"], root=tmp_path, stdout=output
     )
     assert result == 0
-    assert output.getvalue().startswith("ODR-0001  FIXED / HIGH")
+    assert output.getvalue().startswith("ODR-1  FIXED / HIGH")
 
 
 def test_add_appends_the_next_id_with_the_existing_schema(tmp_path):
@@ -106,9 +106,9 @@ def test_add_appends_the_next_id_with_the_existing_schema(tmp_path):
     new_id, target = defects_cli.Registry(tmp_path).append(options)
 
     document = yaml.safe_load(target.read_text(encoding="utf-8"))
-    assert new_id == "ODR-0002"
+    assert new_id == "ODR-2"
     assert document["defects"][-1] == {
-        "id": "ODR-0002",
+        "id": "ODR-2",
         "title": "New defect",
         "reported": "2026-09-17",
         "introduced_in": None,
@@ -144,6 +144,6 @@ def test_add_uses_last_shard_when_root_registry_is_empty(tmp_path):
 
     new_id, written_to = defects_cli.Registry(tmp_path).append(options)
 
-    assert new_id == "ODR-0002"
+    assert new_id == "ODR-2"
     assert written_to == target
     assert (tmp_path / "defects.yml").read_text(encoding="utf-8") == ""

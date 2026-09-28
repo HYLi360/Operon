@@ -43,7 +43,7 @@ from tests.tui_helpers import click as _click
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).
+#: the screen teardown that follows it (ODR-46).
 HANDOFF_TIMEOUT = 120.0
 
 

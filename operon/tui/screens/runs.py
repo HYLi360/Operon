@@ -297,7 +297,7 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
     internally, the detail keeps a fixed column — inside a box that claims 80%
     of the screen height.  Without a ``1fr`` child the box used to hand its
     surplus height to the filter row, collapse the table to a single row and
-    overlap its panes (ODR-0020).
+    overlap its panes (ODR-20).
     """
 
     BINDINGS = [

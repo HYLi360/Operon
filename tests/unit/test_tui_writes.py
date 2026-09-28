@@ -81,7 +81,7 @@ async def _await_detail_text(app, needle: str) -> str:
     ``_settled`` only says that no worker is running *at that instant*: the
     detail screen starts its read from ``on_mount``, which needs a message-loop
     turn of its own, so a read straight afterwards can still land on the
-    ``loading…`` placeholder — the window a slow runner stops on (ODR-0029).
+    ``loading…`` placeholder — the window a slow runner stops on (ODR-29).
     Waiting for the content instead of for the worker set is what the sites in
     this module and ``test_tui.py`` do now.
     """
@@ -92,7 +92,7 @@ async def _await_detail_text(app, needle: str) -> str:
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -142,7 +142,7 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     this file's wall-clock settle timeout rather than a fixed number of cycles: a
     loaded CI runner needs seconds to deliver the click and mount the row it
     produces, and a cycle count that is generous on a fast machine runs out there
-    (ODR-0027).
+    (ODR-27).
     """
     def composed() -> list:
         return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
@@ -816,9 +816,9 @@ def test_add_record_modal_end_to_end(project: Project) -> None:
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0047")
+@pytest.mark.bug("ODR-47")
 def test_add_record_confirm_runs_the_action_once(project: Project, monkeypatch) -> None:
-    """One Confirm click must reach the action once, not twice (ODR-0047).
+    """One Confirm click must reach the action once, not twice (ODR-47).
 
     Textual dispatches ``Button.Pressed`` to every class in the MRO that defines
     ``on_button_pressed``, so a subclass handler that delegates with ``super()``
@@ -946,7 +946,7 @@ def test_add_record_modal_refuses_confirm_while_rows_mount(project: Project) -> 
             # ``pilot.pause()`` drains the whole deferred-mount chain, so the
             # gate's mid-mount window cannot be caught by real timing; force
             # the one signal it reads — a row whose on_mount has not run (the
-            # same hand-set shape as the ODR-0039 regression; the latch is
+            # same hand-set shape as the ODR-39 regression; the latch is
             # one-way, so nothing else can re-create this state).
             row._form_ready = False
             modal.confirm()
@@ -996,7 +996,7 @@ def test_add_record_modal_skips_a_row_being_removed(project: Project) -> None:
             await pilot.pause()
             rows[1].query_one(".field-remove", Button).press()
             await pilot.pause()  # remove() marks the row _pruning synchronously
-            modal.confirm()      # ...and readers skip it (ODR-0036)
+            modal.confirm()      # ...and readers skip it (ODR-36)
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -1769,8 +1769,8 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
     assert dismissed[0]["run_id"] == "WF_STUB"
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_qc_modal_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch) -> None:
     """A real Cancel click cancels the worker but must not dismiss the modal."""
@@ -1815,8 +1815,8 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
     assert dismissed[0]["ok"] == 1
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_run_external_real_cancel_click_stays_open_while_running(
         project: Project, monkeypatch) -> None:
     """A real Cancel click must not dismiss the modal mid-run."""

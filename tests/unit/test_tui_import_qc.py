@@ -37,7 +37,7 @@ from tests.tui_helpers import click as _click
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
-#: Budget for a worker result crossing back from its thread to the UI (ODR-0046).
+#: Budget for a worker result crossing back from its thread to the UI (ODR-46).
 HANDOFF_TIMEOUT = 120.0
 
 TSV_HEADER = ("entity_type\tentity_id\tqc_stage\tmetric_name\tmetric_value\t"

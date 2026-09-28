@@ -5,7 +5,7 @@ The actions mirror ``operon import table`` (validation first, writes only
 through the core, actor defaulting like the CLI), the preview is read-only,
 and the modal gates Confirm behind the mandatory preview with stale-result
 discard (the NcbiDatasetsModal/FanoutModal patterns).  The apply has no
-cooperative cancel, so a running form refuses to close (ODR-0043 guard).
+cooperative cancel, so a running form refuses to close (ODR-43 guard).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ from tests.tui_helpers import click as _click
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -605,7 +605,7 @@ def test_modal_refuses_cancel_while_running(project: Project, monkeypatch) -> No
             await _click(pilot, "#confirm")
             await _wait_until(lambda: modal.running, "import to start")
 
-            # A real Cancel click is refused while the import runs (ODR-0043
+            # A real Cancel click is refused while the import runs (ODR-43
             # guard): the modal stays open, the worker keeps running.
             await _wait_until(started.is_set, "import to have reached the core",
                               timeout=HANDOFF_TIMEOUT)
@@ -672,7 +672,7 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
 
 
 def test_modal_layout_contains_controls(project: Project) -> None:
-    """The preview table and buttons stay inside the box (ODR-0020 shape)."""
+    """The preview table and buttons stay inside the box (ODR-20 shape)."""
     dismissed: list = []
 
     async def scenario() -> None:

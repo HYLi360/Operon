@@ -235,7 +235,7 @@ class RuleRow(ComposedRows, Vertical):
     rows ``remount`` rebuilds: the guarded subclass retries Textual's own
     mount-phase lookups, adopts the value it was built with and advertises
     ``options_ready``, which ``ConfigPanel._form_mounting`` reads for every
-    ``FittingSelect`` in the form (ODR-0023, ODR-0026).  The recipe editor's and
+    ``FittingSelect`` in the form (ODR-23, ODR-26).  The recipe editor's and
     the analyze modal's selects are composed once with their screen instead of
     being replaced, so they stay bare.
     """
@@ -2317,7 +2317,7 @@ class ConfigPanel(Panel):
     #: Shown when a save arrives before a deferred form rebuild has composed.
     FORM_MOUNTING_MESSAGE = "the form is still loading — save again in a moment"
     #: Answered when a control ran out of mount retries: waiting cannot help it, so
-    #: the message names the controls and sends the reader to a reload (ODR-0039).
+    #: the message names the controls and sends the reader to a reload (ODR-39).
     FORM_STALLED_MESSAGE = (
         "a dropdown in this form never finished loading — reload the profile (r) "
         "and try again"
@@ -2339,7 +2339,7 @@ class ConfigPanel(Panel):
         by Textual while it mounts.  Reading the form inside that window walks
         half-built rows; the composition then either raises ``NoMatches`` or,
         worse, returns a document with the missing rows silently dropped, which
-        is why a save refuses instead (ODR-0023).  Two signals cover it: every
+        is why a save refuses instead (ODR-23).  Two signals cover it: every
         container that fills itself later says so through :class:`MountTracked`,
         and every row latches :attr:`ComposedRows.form_ready` in its own
         ``on_mount`` — which Textual runs only once the row's whole subtree
@@ -2347,7 +2347,7 @@ class ConfigPanel(Panel):
         one control that can still be half-alive inside a composed row: a
         ``Select`` whose own mount lookup failed reports
         :attr:`FittingSelect.options_ready` only once it has adopted its value
-        (ODR-0026).
+        (ODR-26).
         """
         for container in self.query(".mount-tracked").results(MountTracked):
             if not container.mounts_settled:
@@ -2387,7 +2387,7 @@ class ConfigPanel(Panel):
 
         A select whose mount retries ran out blocks the form exactly like one that is
         still mounting, and no amount of waiting helps it — so name those controls and
-        send the reader to a reload instead of telling them to try again (ODR-0039).
+        send the reader to a reload instead of telling them to try again (ODR-39).
         """
         stalled = [
             str(select.id or type(select).__name__)
@@ -2461,7 +2461,7 @@ class ConfigPanel(Panel):
 
         ``current_profile`` is maintained only by the qc editor path; the
         classification editor keeps its own name, so a History request must
-        resolve the name from the visible editor instead (ODR-0041).
+        resolve the name from the visible editor instead (ODR-41).
         """
         if self.query_one("#classification-editor").display:
             return self.classification_profile

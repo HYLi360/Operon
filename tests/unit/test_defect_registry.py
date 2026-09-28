@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-ID_PATTERN = re.compile(r"^ODR-\d{4}$")
+ID_PATTERN = re.compile(r"^ODR-\d+$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_FIELDS = {
     "id", "title", "reported", "introduced_in", "affected", "severity",

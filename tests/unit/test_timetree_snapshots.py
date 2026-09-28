@@ -253,7 +253,7 @@ def test_pairs_from_tsv_returns_sorted_unique_pairs(tmp_path):
 ])
 def test_pairs_from_tsv_rejects_invalid_rows(tmp_path, row, message):
     # Hand-written so malformed input reaches the reader verbatim: write_tsv
-    # now escapes a leading "-" (ODR-0040), which is writer-side behavior this
+    # now escapes a leading "-" (ODR-40), which is writer-side behavior this
     # reader test does not intend to exercise.
     path = tmp_path / "pairs.tsv"
     path.write_text("taxon_a\ttaxon_b\n" + "\t".join(row) + "\n", encoding="utf-8")
@@ -942,9 +942,9 @@ def test_cli_calibrations_without_out_does_not_write_or_announce_a_file(project,
     assert [url for url, _ in session.calls] == [f"{API}/mrca/id/3702+7227+9606/summaryjson"]
 
 
-# --- ODR-0014: no bare exceptions from snapshot loading / calibration inputs --
+# --- ODR-14: no bare exceptions from snapshot loading / calibration inputs --
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_missing_manifest_is_validation_error(tmp_path):
     root = tmp_path / "snapshot"
     root.mkdir()
@@ -952,7 +952,7 @@ def test_load_snapshot_missing_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_malformed_manifest_is_validation_error(tmp_path):
     root = tmp_path / "snapshot"
     root.mkdir()
@@ -961,7 +961,7 @@ def test_load_snapshot_malformed_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_incomplete_manifest_is_validation_error(tmp_path):
     root = write_snapshot(tmp_path / "snapshot")
     rewrite_manifest(root, lambda document: document.pop("records"))
@@ -974,7 +974,7 @@ def test_load_snapshot_incomplete_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_missing_payload_is_validation_error(tmp_path):
     root = write_snapshot(tmp_path / "snapshot")
     (root / "raw/3702_9606.summaryjson.json").unlink()
@@ -982,7 +982,7 @@ def test_load_snapshot_missing_payload_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_calibrate_tree_rejects_non_numeric_taxon_ids(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
         tmp_path, taxa=[{"leaf": "A", "taxon_id": "not-a-number"},
@@ -999,7 +999,7 @@ def test_calibrate_tree_rejects_non_numeric_taxon_ids(tmp_path, snapshot_dir):
                                 tmp_path / "out2")
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     with pytest.raises(ValidationError, match="cannot read dating tree"):

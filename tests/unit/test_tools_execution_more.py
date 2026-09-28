@@ -1151,7 +1151,7 @@ def test_run_analysis_for_file_remote_only_dry_run_skips_verification(
     assert not (project.root / record["relative_path"]).exists()
 
 
-@pytest.mark.bug("ODR-0028")
+@pytest.mark.bug("ODR-28")
 def test_dry_run_reports_a_missing_local_database_like_the_real_run(operon_project):
     project, db = operon_project
     ingest_assembly(project, db, 1)
@@ -1171,7 +1171,7 @@ def test_dry_run_reports_a_missing_local_database_like_the_real_run(operon_proje
     assert db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"] == 0
 
 
-@pytest.mark.bug("ODR-0028")
+@pytest.mark.bug("ODR-28")
 def test_dry_run_verifies_a_remote_reference_database(operon_project, tmp_path):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)

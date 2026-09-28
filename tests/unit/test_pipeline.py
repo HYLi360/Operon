@@ -175,7 +175,7 @@ def test_run_pipeline_stops_before_evaluation_when_qc_fails(
     assert not any(line.startswith("[4/4]") for line in lines), lines
 
 
-@pytest.mark.bug("ODR-0042")
+@pytest.mark.bug("ODR-42")
 def test_run_pipeline_fetches_remote_sources_like_ingest(
         project: Project, tmp_path: Path, monkeypatch) -> None:
     """`sftp://`/`remote://` sources are pre-fetched and the temporary copy removed."""

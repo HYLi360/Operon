@@ -375,7 +375,7 @@ class AdoptModal(WriteModal):
             event.stop()
             self._preview_manifest()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -530,7 +530,7 @@ class FanoutModal(WriteModal):
             event.stop()
             self.run_dry_run()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 

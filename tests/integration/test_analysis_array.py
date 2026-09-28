@@ -455,7 +455,7 @@ class TestAnalysisArray(PytestAssertions):
         self.assertIn("expected output missing or empty", jobs[0]["error"])
         self.assertEqual([r["status"] for r in self._runs()], ["failed", "completed"])
 
-    @pytest.mark.bug("ODR-0018")
+    @pytest.mark.bug("ODR-18")
     def test_array_progress_callback_cancellation_aborts_the_batch(self, monkeypatch):
         """A plain-Exception cancellation raised by the phase-3 progress
         callback (the TUI's AnalysisCancelled) must propagate with the
@@ -490,7 +490,7 @@ class TestAnalysisArray(PytestAssertions):
         self.assertEqual([r["status"] for r in self._runs()],
                          ["completed", "completed", "completed"])
 
-    @pytest.mark.bug("ODR-0018")
+    @pytest.mark.bug("ODR-18")
     def test_array_progress_callback_shutdown_interrupts_remaining_tasks(self, monkeypatch):
         """A KeyboardInterrupt subclass from the phase-3 callback keeps the
         interrupt path: uncollected tasks are interrupted, not failed."""
@@ -941,7 +941,7 @@ class TestAnalysisArrayRemote(PytestAssertions):
         self.assertEqual(restored_targets, {str(self._output_path(rows[1])),
                                             str(self._output_path(rows[2]))})
 
-    @pytest.mark.bug("ODR-0018")
+    @pytest.mark.bug("ODR-18")
     def test_remote_array_staging_callback_cancellation_aborts_the_batch(self, monkeypatch):
         """The same swallow existed at the staging-error callback: a
         cancellation raised there must propagate with the never-submitted
