@@ -100,17 +100,19 @@ from ._ncbi_plan import (
 from ._ncbi_sources import (
     _accession_from_path,
     _asset_role,
-    _format_bytes,
     _local_zip_entry_names,
-    _no_space_error,
     _open_source,
     _preserve_source,
-    _require_disk_space,
     _safe_extract_zip,
     _validate_zip_info,
     _zip_package_diagnostic,
     discover_dataset_assets,
     load_dataset_reports,
+)
+from ._ncbi_storage import (
+    _format_bytes,
+    _no_space_error,
+    _require_disk_space,
 )
 
 

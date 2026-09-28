@@ -38,9 +38,10 @@ Current version markers (must stay consistent across code and docs):
     (offline-first: JSON/JSONL, ZIP, or unpacked directories, plus optional
     online download; `ncbi_datasets.py` is the facade/run orchestration, split
     into the internal `_ncbi_model` (constants, data models and pure helpers
-    with no database access), `_ncbi_sources` (source discovery, ZIP safety,
-    disk-space guards), `_ncbi_download` (requests/aiohttp downloads, Entrez
-    fallback) and `_ncbi_plan` (import planning, include-reuse matching and
+    with no database access), `_ncbi_storage` (stateless disk-space guards
+    shared by the layers above), `_ncbi_sources` (source discovery, ZIP
+    safety), `_ncbi_download` (requests/aiohttp downloads, Entrez fallback)
+    and `_ncbi_plan` (import planning, include-reuse matching and
     persistence) submodules)
     and TimeTree (query-cache-only REST client caching the
     verbatim responses of exact queries under `adapters_cache/timetree/`;

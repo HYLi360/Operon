@@ -55,7 +55,8 @@ from ._ncbi_model import (
     _unique,
     _version_tuple,
 )
-from ._ncbi_sources import _no_space_error, _require_disk_space, _validate_zip_info
+from ._ncbi_sources import _validate_zip_info
+from ._ncbi_storage import _no_space_error, _require_disk_space
 
 _ANNOTATION_INCLUDE_ROLES = {
     "gff3": "annotation_gff3",
