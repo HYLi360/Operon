@@ -137,14 +137,8 @@ def resolve_modal(entry: ParityEntry) -> type:
 
 def strict_mode() -> bool:
     """True when ``OPERON_PARITY_STRICT`` demands zero planned gaps."""
-    return os.environ.get(
-        "OPERON_PARITY_STRICT", ""
-    ).lower() in {  # env-audit: developer switch
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    flag = os.environ.get("OPERON_PARITY_STRICT", "")  # env-audit: developer switch
+    return flag.lower() in {"1", "true", "yes", "on"}
 
 
 def strict_violations(registry: tuple[ParityEntry, ...] = ()) -> list[str]:
