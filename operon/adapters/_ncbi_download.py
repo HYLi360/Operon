@@ -28,7 +28,8 @@ from ._ncbi_model import (
     _integer_or_none,
     _RetryableDownloadError,
 )
-from ._ncbi_sources import _no_space_error, _require_disk_space, _zip_package_diagnostic
+from ._ncbi_sources import _zip_package_diagnostic
+from ._ncbi_storage import _no_space_error, _require_disk_space
 
 NCBI_DATASETS_API = "https://api.ncbi.nlm.nih.gov/datasets/v2"
 NCBI_DATASETS_API_FALLBACK = "https://api.ncbi.nlm.nih.gov/datasets/v2alpha"

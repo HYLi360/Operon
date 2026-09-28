@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import os
-import shutil
 import stat
 import zipfile
 from collections.abc import Sequence
@@ -26,53 +25,7 @@ from ._ncbi_model import (
     _read_report_handle,
     _split_accession,
 )
-
-
-def _require_disk_space(path: Path, required_bytes: int, action: str) -> None:
-    """Fail before a large write when the target filesystem is clearly full."""
-
-    path = Path(path)
-    existing = path
-    while not existing.exists() and existing != existing.parent:
-        existing = existing.parent
-    free = shutil.disk_usage(existing).free
-    # Keep a small reserve for SQLite, metadata exports and filesystem
-    # bookkeeping.  This is intentionally fixed rather than proportional so
-    # multi-gigabyte genomes do not receive an excessive safety multiplier.
-    reserve = 64 * 1024 * 1024
-    needed = max(0, int(required_bytes)) + reserve
-    if free < needed:
-        raise ValidationError(
-            f"insufficient space to {action} on filesystem containing {existing}: "
-            f"need about {_format_bytes(needed)}, only {_format_bytes(free)} available. "
-            "Free space, reduce --batch-size/--include content, or use "
-            "--no-preserve-source when the original package is already archived elsewhere."
-        )
-
-
-def _no_space_error(path: Path, action: str, exc: OSError) -> ValidationError:
-    existing = Path(path)
-    while not existing.exists() and existing != existing.parent:
-        existing = existing.parent
-    try:
-        free = shutil.disk_usage(existing).free
-        available = f" ({_format_bytes(free)} currently available)"
-    except OSError:
-        available = ""
-    return ValidationError(
-        f"filesystem ran out of space while attempting to {action} at {existing}{available}. "
-        "The NCBI adapter processes one batch at a time; free space, reduce --batch-size or "
-        "download fewer --include file types, then rerun (completed batches are idempotent)."
-    )
-
-
-def _format_bytes(value: int) -> str:
-    size = float(value)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if size < 1024.0 or unit == "TiB":
-            return f"{size:.1f} {unit}"
-        size /= 1024.0
-    return f"{size:.1f} TiB"  # pragma: no cover
+from ._ncbi_storage import _require_disk_space
 
 
 def _local_zip_entry_names(path: Path, limit: int = 200) -> list[str]:

@@ -97,7 +97,7 @@ How the principles map to implementations:
 | `operon/table_import.py` | CSV/XLSX templates, first-worksheet reading, collision preview, audited insert/patch |
 | `operon/entity_view.py` | Internal ID/accession resolution and organism-rooted entity graph expansion |
 | `operon/backup.py` | Consistent SQLite backup, control/results/full scopes, checksum manifest verification |
-| `operon/adapters/ncbi_datasets.py` | NCBI Datasets adapter facade: run orchestration plus re-exports; the internals live in `_ncbi_model` (constants/data models/pure helpers), `_ncbi_sources` (source discovery, ZIP safety, disk space), `_ncbi_download` (REST/aiohttp downloads, Entrez fallback) and `_ncbi_plan` (import planning and persistence) |
+| `operon/adapters/ncbi_datasets.py` | NCBI Datasets adapter facade: run orchestration plus re-exports; the internals live in `_ncbi_model` (constants/data models/pure helpers, no database access), `_ncbi_storage` (stateless disk-space guards), `_ncbi_sources` (source discovery, ZIP safety), `_ncbi_download` (REST/aiohttp downloads, Entrez fallback) and `_ncbi_plan` (import planning, include-reuse matching, persistence) |
 | `operon/qc/parsers.py` | Pure-Python behavioral reference implementation, used to regression-test the Cython parsers' metrics and error semantics |
 | `operon/qc/_parsers.pyx` | Cython production parsers required by built-in QC; metric output and error messages match the pure-Python reference bit for bit |
 | `operon/qc/__init__.py` | Assembles built-in QC stages, loads the Cython parsers, and writes metrics into `qc_results` |

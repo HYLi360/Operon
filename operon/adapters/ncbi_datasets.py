@@ -60,8 +60,6 @@ from ._ncbi_model import (
     _deep_merge,
     _DownloadCancelled,
     _extract_metadata,
-    _file_satisfies_include,
-    _find_archived_assembly,
     _float_or_none,
     _integer_or_none,
     _lat_lon,
@@ -72,7 +70,6 @@ from ._ncbi_model import (
     _normalize_sex,
     _normalize_source_database,
     _pick,
-    _plan_missing_downloads,
     _read_report_file,
     _read_report_handle,
     _read_report_tsv,
@@ -86,7 +83,10 @@ from ._ncbi_plan import (
     _adapter_schema,
     _apply_plan,
     _asset_sha256,
+    _file_satisfies_include,
+    _find_archived_assembly,
     _ingest_dataset_asset,
+    _plan_missing_downloads,
     _PlanBuilder,
     _preflight_assets,
     _validate_plan_rows,
@@ -94,16 +94,18 @@ from ._ncbi_plan import (
 from ._ncbi_sources import (
     _accession_from_path,
     _asset_role,
-    _format_bytes,
     _local_zip_entry_names,
-    _no_space_error,
     _open_source,
     _preserve_source,
-    _require_disk_space,
     _validate_zip_info,
     _zip_package_diagnostic,
     discover_dataset_assets,
     load_dataset_reports,
+)
+from ._ncbi_storage import (
+    _format_bytes,
+    _no_space_error,
+    _require_disk_space,
 )
 
 # Deliberate re-export surface for the CLI (operon/cli.py), the TUI

@@ -17,7 +17,7 @@ import yaml
 from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.files import ingest_file, standardize_file
+from operon.files import ingest_file, raw_bucket, standardize_file
 from operon.schema import (
     ENTITY_ID_COLUMNS,
     ENTITY_PREFIXES,
@@ -52,11 +52,200 @@ from ._ncbi_model import (
     _normalize_source_database,
     _select_canonical_assembly_accession,
     _split_accession,
-    _table_exists,
     _unique,
     _version_tuple,
 )
-from ._ncbi_sources import _no_space_error, _require_disk_space, _validate_zip_info
+from ._ncbi_sources import _validate_zip_info
+from ._ncbi_storage import _no_space_error, _require_disk_space
+
+_ANNOTATION_INCLUDE_ROLES = {
+    "gff3": "annotation_gff3",
+    "protein": "protein_fasta",
+    "cds": "cds_fasta",
+}
+
+
+def _table_exists(db: Database, table: str) -> bool:
+    return db.conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone() is not None
+
+
+def _find_archived_assembly(db: Database, accession: str) -> str | None:
+    """Resolve a requested accession to an existing assembly ID, if any.
+
+    The accessions table is the identity mapping written for every imported
+    assembly; a miss here simply means "download", which is always safe.
+    Unversioned requests match any archived version of the same accession.
+    """
+    accession = _canonical_accession(accession)
+    base, version = _split_accession(accession)
+    for namespace in ("NCBI_Assembly", _assembly_namespace(accession)):
+        if version is None:
+            row = db.conn.execute(
+                "SELECT internal_type, internal_id FROM accessions "
+                "WHERE namespace=? AND (accession=? OR accession LIKE ?) "
+                "ORDER BY accession DESC LIMIT 1",
+                (namespace, base, f"{base}.%"),
+            ).fetchone()
+        else:
+            row = db.conn.execute(
+                "SELECT internal_type, internal_id FROM accessions "
+                "WHERE namespace=? AND accession=? LIMIT 1",
+                (namespace, accession),
+            ).fetchone()
+        if row and row["internal_type"] == "assembly":
+            assembly_id = str(row["internal_id"])
+            if db.is_entity_retired("assembly", assembly_id):
+                raise ValidationError(
+                    f"accession {accession} belongs to retired assembly {assembly_id}; "
+                    f"run `operon restore {assembly_id} --reason TEXT --apply` before re-importing"
+                )
+            return assembly_id
+    return None
+
+
+def _file_satisfies_include(
+        project: Project,
+        row: Any | None,
+        *,
+        entity_type: str,
+        standardize: bool,
+) -> bool:
+    if row is None or str(row["status"]) not in {
+        "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
+    }:
+        return False
+    local_path = project.root / str(row["relative_path"])
+    if str(row["status"]) != "REMOTE_ONLY" and not local_path.exists():
+        return False
+    if standardize:
+        standardized = (
+                project.standardized_root / raw_bucket(entity_type)
+                / str(row["entity_id"]) / Path(str(row["relative_path"])).name
+        )
+        if not standardized.exists():
+            return False
+    return True
+
+
+def _missing_includes(
+        db: Database,
+        project: Project,
+        accession: str,
+        assembly_id: str,
+        includes: Sequence[str],
+        *,
+        standardize: bool,
+) -> tuple[str, ...]:
+    """Return the exact requested include subset not already verified."""
+    accession = _canonical_accession(accession)
+    assembly = db.conn.execute(
+        "SELECT assembly_accession FROM assemblies WHERE assembly_id=?", (assembly_id,)
+    ).fetchone()
+    canonical = _canonical_accession(str(assembly["assembly_accession"])) if assembly else accession
+    missing: list[str] = []
+    for include in includes:
+        if include in {"genome", "sequence-report"}:
+            base_role = "genome_fasta" if include == "genome" else "assembly_report"
+            role = _assembly_asset_role(base_role, accession, canonical)
+            row = db.conn.execute(
+                "SELECT entity_id, relative_path, status FROM files "
+                "WHERE entity_type='assembly' AND entity_id=? AND file_role=? LIMIT 1",
+                (assembly_id, role),
+            ).fetchone()
+            if not _file_satisfies_include(
+                    project, row, entity_type="assembly", standardize=standardize,
+            ):
+                missing.append(include)
+
+    requested_annotation = [
+        include for include in includes if include in _ANNOTATION_INCLUDE_ROLES
+    ]
+    if requested_annotation:
+        mapped_ids = (
+            [
+                str(row["annotation_id"])
+                for row in db.conn.execute(
+                "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
+                "WHERE n.assembly_accession=? "
+                + (
+                    "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                    "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
+                    if db.lifecycle_schema_available() else ""
+                ),  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                (accession,),
+            )
+            ]
+            if _table_exists(db, "ncbi_annotation_records") else []
+        )
+        if not mapped_ids and accession == canonical:
+            supersession_filter = (
+                "AND NOT EXISTS (SELECT 1 FROM entity_supersessions s "
+                "WHERE s.object_type='annotation' AND s.object_id=annotations.annotation_id)"
+                if _table_exists(db, "entity_supersessions") else ""
+            )
+            retirement_filter = (
+                "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                "WHERE r.entity_type='annotation' AND r.entity_id=annotations.annotation_id)"
+                if db.lifecycle_schema_available() else ""
+            )
+            mapped_ids = [
+                str(row["annotation_id"])
+                for row in db.conn.execute(
+                    "SELECT annotation_id FROM annotations WHERE assembly_id=? "
+                    + supersession_filter + retirement_filter,  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                    (assembly_id,),
+                )
+            ]
+        satisfied: set[str] = set()
+        # Roles must coexist on one annotation identity; never assemble a
+        # false complete set from unrelated ANN rows.
+        for annotation_id in mapped_ids:
+            present: set[str] = set()
+            for include in requested_annotation:
+                role = _ANNOTATION_INCLUDE_ROLES[include]
+                row = db.conn.execute(
+                    "SELECT entity_id, relative_path, status FROM files "
+                    "WHERE entity_type='annotation' AND entity_id=? AND file_role=? LIMIT 1",
+                    (annotation_id, role),
+                ).fetchone()
+                if _file_satisfies_include(
+                        project, row, entity_type="annotation", standardize=standardize,
+                ):
+                    present.add(include)
+            if len(present) > len(satisfied):
+                satisfied = present
+        missing.extend(
+            include for include in requested_annotation if include not in satisfied
+        )
+    return tuple(include for include in includes if include in set(missing))
+
+
+def _plan_missing_downloads(
+        db: Database,
+        project: Project,
+        accessions: Sequence[str],
+        includes: Sequence[str],
+        *,
+        standardize: bool,
+) -> tuple[dict[tuple[str, ...], list[str]], list[str]]:
+    """Group accessions by their exact missing include signature."""
+    groups: dict[tuple[str, ...], list[str]] = {}
+    already_archived: list[str] = []
+    for accession in accessions:
+        assembly_id = _find_archived_assembly(db, accession)
+        missing = (
+            _missing_includes(
+                db, project, accession, assembly_id, includes, standardize=standardize,
+            )
+            if assembly_id else tuple(includes)
+        )
+        if not missing:
+            already_archived.append(accession)
+        else:
+            groups.setdefault(missing, []).append(accession)
+    return groups, already_archived
 
 
 class _IdAllocator:
