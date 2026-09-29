@@ -184,8 +184,10 @@ Current version markers (must stay consistent across code and docs):
     `demo.py` (deterministic synthetic demo project), `errors.py`,
     `utils.py`.
 - `tests/` — pytest suite organized as `unit/`, `integration/`,
-  `regression/`, `compatibility/`, with shared fixtures in
-  `tests/helpers.py`.
+  `regression/`, `compatibility/`, with module-local fixtures next to their
+  tests, shared helpers in `tests/helpers.py` and `tests/tui_helpers.py`, and
+  the suite-wide premises in `tests/conftest.py` (a test-length notification
+  lifetime, ODR-53).
 - `docs/` — Sphinx documentation in two mirrored language trees, `docs/en/`
   and `docs/zh/`, each split into `overview.md`, `getting-started/`,
   `guides/`, `architecture/`, `reference/`, `operations/`, and

@@ -3112,6 +3112,31 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
     )
 
 
+@pytest.mark.bug("ODR-53")
+def test_notification_waits_survive_an_expired_toast(project: Project) -> None:
+    """A raised notification stays readable however late the test gets to it.
+
+    Textual stamps a notification with a five-second lifetime and reaps an
+    expired entry on every iteration of ``app._notifications``, so a loaded
+    runner can let a save's toast expire before the wait reads it — a correct
+    save reported as a timeout (ODR-53).  The suite's ``durable_notifications``
+    fixture widens that lifetime; ageing the toast by an hour reproduces the
+    stall the failure came from, and the message must still be found.
+    """
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.notify("saved bhlh_tiers version 2")
+            await pilot.pause()
+            for notification in app._notifications:
+                notification.raised_at -= 3600.0
+            await pilot.pause()
+            await _await_notification(pilot, app, "saved bhlh_tiers version 2")
+
+    _run(scenario())
+
+
 @pytest.mark.bug("ODR-27")
 def test_config_classification_editor_guards_and_readonly(project: Project) -> None:
     nested = json.loads(json.dumps(BHLH_PROFILE))

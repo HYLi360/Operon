@@ -1611,3 +1611,38 @@ defects:
   regression_tests:
     - tests/unit/test_ruff_suppression_format.py::test_python_files_skips_distribution_artifacts_without_git
     - tests/unit/test_ruff_suppression_format.py::test_python_files_in_a_checkout_are_the_tracked_set
+- id: ODR-53
+  title: 'A TUI test waits for a notification Textual reaped five seconds after the app raised it'
+  reported: '2026-09-29'
+  introduced_in: null
+  affected: |
+    Any test that observes a notification by polling app._notifications, which is 14 TUI test modules.
+    Textual stamps a notification with a five-second lifetime when App.notify() is called, before the
+    message is dispatched, and Notifications._reap deletes an expired entry on every iteration of the
+    rack, so a loaded runner can spend the toast's whole lifetime on the save's own post-write reload
+    and the next read then finds nothing. The wait times out on a save that succeeded. Seen once as the
+    only red leg of thirteen, pytest on ubuntu-24.04 with Python 3.13 at master 1ccd26a, run
+    36456033564, failing tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
+    while it waited for 'saved bhlh_tiers version 2'; the same instrument was green on its earlier runs.
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    python -m pytest tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end passes
+    on an idle runner. Running that test with six seconds inserted in front of its notification wait
+    fails with TimeoutError, UI did not reach the notification 'saved bhlh_tiers version 2' within
+    30.0s, at tests/unit/test_tui_config.py:131. That is the exact CI traceback, and the bhlh_tiers.yaml
+    left on disk is already version 2, which places the defect in the observation and not in the save.
+    The staged regression reproduces it with no sleep at all, by ageing the raised toast by an hour.
+  disposition: |
+    The suite now installs the premise once instead of every reader working around it. tests/conftest.py
+    carries a single autouse fixture, durable_notifications, which raises App.NOTIFICATION_TIMEOUT to a
+    test-length lifetime for the whole suite; nothing in the product or in the tests passes an explicit
+    timeout=, so the one fixture covers all fourteen modules that read the rack, including modules added
+    later. The regression test_notification_waits_survive_an_expired_toast aged a raised notification by
+    an hour and asserted the wait still found it; before the fixture landed it failed with the CI
+    traceback.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_notification_waits_survive_an_expired_toast
