@@ -152,8 +152,19 @@ Current version markers (must stay consistent across code and docs):
     `rules.py` (versioned QC profiles and the decision engine),
     `workflow.py` (state machine and run logs), `pipeline.py` (the
     four-stage ingest → standardize → QC → evaluate runner shared by
-    `run-pipeline`'s CLI and TUI), `tools.py` (external-tool
-    recipes from `config/tools.yaml`), `taxonomy.py` + `coverage.py` (frozen
+    `run-pipeline`'s CLI and TUI), `tools/` (package: the
+    `__init__.py` facade re-exports the previous `operon.tools` surface, and
+    the implementation splits by dependency chain into `_defaults.py` (the
+    default `config/tools.yaml` document: launcher defaults and software
+    recipe presets), `_config.py` (recipe/tool model, loading, validation,
+    listing), `_probe.py` (launch commands, version probing, command
+    provenance, identity-probe caches), `_inputs.py` (candidate files,
+    database identity, runtime parameters, fingerprints), `_cache.py`
+    (cached/adoptable job lookups, environment-reuse decision,
+    stale-`RUNNING` sweep), `_plan.py` (per-file planning), `_execute.py`
+    (per-file execution and finalization), `_run.py` (`run_analysis` batch and
+    Slurm-array orchestration) and `_results.py` (per-software result parsers
+    and SQLite write-back)), `taxonomy.py` + `coverage.py` (frozen
     NCBI Taxonomy snapshots and coverage denominators), `release.py` +
     `export.py` (immutable releases and selective exports), `lifecycle.py`
     (audited reversible entity retirement), `lineage.py` (adopting external
@@ -173,8 +184,10 @@ Current version markers (must stay consistent across code and docs):
     `demo.py` (deterministic synthetic demo project), `errors.py`,
     `utils.py`.
 - `tests/` — pytest suite organized as `unit/`, `integration/`,
-  `regression/`, `compatibility/`, with shared fixtures in
-  `tests/helpers.py`.
+  `regression/`, `compatibility/`, with module-local fixtures next to their
+  tests, shared helpers in `tests/helpers.py` and `tests/tui_helpers.py`, and
+  the suite-wide premises in `tests/conftest.py` (a test-length notification
+  lifetime, ODR-53).
 - `docs/` — Sphinx documentation in two mirrored language trees, `docs/en/`
   and `docs/zh/`, each split into `overview.md`, `getting-started/`,
   `guides/`, `architecture/`, `reference/`, `operations/`, and

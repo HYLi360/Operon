@@ -43,11 +43,13 @@ def _fake_project(tmp_path: Path) -> SimpleNamespace:
 def test_recipe_version_defaults_and_explicit(tmp_path, monkeypatch):
     project = _fake_project(tmp_path)
     monkeypatch.setattr(
-        tools, "load_tools_config", lambda _p: _config({"format": "fasta"})
+        tools._config,
+        "load_tools_config",
+        lambda _p: _config({"format": "fasta"}),
     )
     assert tools.get_recipe(project, "a").version == 1
     monkeypatch.setattr(
-        tools,
+        tools._config,
         "load_tools_config",
         lambda _p: _config({"format": "fasta", "version": 3}),
     )
@@ -58,7 +60,7 @@ def test_recipe_version_defaults_and_explicit(tmp_path, monkeypatch):
 def test_recipe_version_must_be_a_positive_integer(tmp_path, monkeypatch, version):
     project = _fake_project(tmp_path)
     monkeypatch.setattr(
-        tools,
+        tools._config,
         "load_tools_config",
         lambda _p: _config({"format": "fasta", "version": version}),
     )

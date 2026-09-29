@@ -46,7 +46,7 @@
 │  rules.py       YAML profile 规则引擎与判定                    │
 │  taxonomy.py    NCBI taxonomy 快照与覆盖率分母编译               │
 │  coverage.py    metadata/release 分类覆盖率报告                  │
-│  tools.py       外部分析工具配置、版本探测、缓存执行、结果同步      │
+│  tools/         外部分析工具配置、版本探测、缓存执行、结果同步      │
 │  release.py     release 快照生成                              │
 │  workflow.py    状态机、JSONL 日志、外部命令执行器               │
 │  execution.py   执行后端抽象（local/slurm/ssh）                  │
@@ -92,7 +92,7 @@
 | `operon/rules.py` | 加载 profile，计算 PASS/FAIL 等判定，保存 profile 快照与 decision 历史 |
 | `operon/taxonomy.py` | 归档/导入不可变 NCBI Taxonomy，按 coverage profile 编译冻结分母及 provenance |
 | `operon/coverage.py` | 校验 reference set，对 metadata 或 release 冻结范围计算 family/genus 覆盖率与缺失清单 |
-| `operon/tools.py` | 读取 `config/tools.yaml`，封装外部程序启动方式、版本探测、输入校验、缓存执行与结果回写 |
+| `operon/tools/` | 外部分析工具子系统包。`__init__.py` 门面重新导出原先 `operon.tools` 的全部表面（另含 `print_tools_table`）；实现按依赖链拆分：`_defaults`（默认 `config/tools.yaml` 文档：启动器默认值与各软件 recipe 预设）、`_config`（recipe/工具模型、加载、校验、列举）、`_probe`（启动命令、版本探测、命令 provenance、身份探测缓存）、`_inputs`（候选文件、数据库身份、运行时参数与指纹）、`_cache`（缓存/可收养作业查询、环境复用判定、陈旧 `RUNNING` 清扫）、`_plan`（逐文件规划）、`_execute`（逐文件执行与收尾）、`_run`（`run_analysis` 批处理与 Slurm array 编排）与 `_results`（各软件结果解析器与 SQLite 回写） |
 | `operon/workflow.py` | 合法状态迁移、`workflow.jsonl` 结构化日志、外部命令执行 |
 | `operon/execution.py` | 执行后端抽象：`local`/`slurm`/`ssh`，sbatch 脚本生成与轮询、SSH/SFTP 传输、路径映射 |
 | `operon/shutdown.py` | 把 SIGINT/SIGTERM 转换为 `ShutdownRequested`，驱动各后端进程/作业清理与二次信号强制退出 |

@@ -51,7 +51,9 @@ def project(tmp_path: Path):
 def test_tool_config_loading_and_launcher_modes(tmp_path, monkeypatch):
     p = project(tmp_path)
     p.tools_config_path.write_text("[]\n", encoding="utf-8")
-    monkeypatch.setattr(tools, "ensure_tools_config", lambda _p: p.tools_config_path)
+    monkeypatch.setattr(
+        tools._config, "ensure_tools_config", lambda _p: p.tools_config_path
+    )
     with pytest.raises(ValidationError, match="invalid tools config"):
         tools.load_tools_config(p)
 
@@ -68,7 +70,7 @@ def test_tool_config_loading_and_launcher_modes(tmp_path, monkeypatch):
     ]
     for config, name, message in configs:
         monkeypatch.setattr(
-            tools, "load_tools_config", lambda _p, config=config: config
+            tools._config, "load_tools_config", lambda _p, config=config: config
         )
         with pytest.raises(ValidationError, match=message):
             tools.get_tool(p, name)
@@ -83,7 +85,7 @@ def test_tool_config_loading_and_launcher_modes(tmp_path, monkeypatch):
             }
         },
     }
-    monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+    monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
     spec = tools.get_tool(p, "t")
     assert spec.run_method == "/conda run -n env"
     config["tools"]["t"]["run_method"] = {"mode": "prefix", "prefix": ["env", "run"]}
@@ -120,7 +122,7 @@ def test_tool_config_loading_and_launcher_modes(tmp_path, monkeypatch):
 def test_recipe_config_validation(tmp_path, monkeypatch, raw, message):
     p = project(tmp_path)
     config = {"tools": {"t": {"recipes": {"a": raw}}}}
-    monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+    monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
     with pytest.raises(ValidationError, match=message):
         tools.get_recipe(p, "a")
 
@@ -142,7 +144,7 @@ def test_recipe_defaults_listing_and_unknown_message(tmp_path, monkeypatch):
             },
         }
     }
-    monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+    monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
     directory = tools.get_recipe(p, "directory")
     assert directory.input_kind == "directory"
     assert directory.output_suffix == ""
@@ -283,7 +285,7 @@ def test_file_role_prefix_validation(tmp_path, monkeypatch):
 
     def recipe_with(raw):
         config = {"tools": {"t": {"recipes": {"a": raw}}}}
-        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+        monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
         return tools.get_recipe(p, "a")
 
     parsed = recipe_with(
@@ -424,7 +426,7 @@ def test_command_step_provenance_inherits_probes_and_marks_unknown(monkeypatch):
         captured.append((command, pattern, label))
         return "2.0", "secondary: 2.0"
 
-    monkeypatch.setattr(tools, "_detect_version_record", detect)
+    monkeypatch.setattr(tools._probe, "_detect_version_record", detect)
     details = tools.command_step_provenance(
         r,
         tool,
@@ -906,7 +908,7 @@ def test_environment_policy_validation_and_default(tmp_path, monkeypatch):
     config = {
         "tools": {"tool": {"executable": "x", "recipes": {"analysis": raw_recipe}}}
     }
-    monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+    monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
     loaded = tools.get_recipe(p, "analysis")
     assert tools.recipe_environment_policy(loaded) == "warn"
     for valid in ("ignore", "warn", "strict"):
@@ -1118,6 +1120,8 @@ def test_cache_environment_decision_probe_failure_never_raises(tmp_path, monkeyp
 def test_print_tools_table_records_detection_errors(tmp_path, monkeypatch):
     p = project(tmp_path)
     config = {"tools": {"bad": {"recipes": {"a": {}}}, "ignored": []}}
+    # ``print_tools_table`` lives in the facade and reads its own globals, so
+    # its two collaborators are patched on ``operon.tools`` itself.
     monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
     monkeypatch.setattr(tools, "get_tool", lambda *_a: tool_spec(name="bad"))
     monkeypatch.setattr(
@@ -1257,7 +1261,7 @@ def test_recipe_commands_config_validation(tmp_path, monkeypatch):
     p = project(tmp_path)
 
     def load(config):
-        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+        monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
 
     load(
         {
@@ -1331,7 +1335,7 @@ def test_recipe_commands_single_environment_and_ownership(tmp_path, monkeypatch)
     p = project(tmp_path)
 
     def load(config):
-        monkeypatch.setattr(tools, "load_tools_config", lambda _p: config)
+        monkeypatch.setattr(tools._config, "load_tools_config", lambda _p: config)
 
     # Per-step environments are rejected by design: one recipe, one environment.
     load(
@@ -1500,9 +1504,9 @@ def test_version_and_database_identity_caches_expire_after_ttl(tmp_path, monkeyp
     )
     assert tools.detect_tool_version(tool_spec(), {}) == "1.0.0"
     assert tools.detect_tool_version(tool_spec(), {}) == "1.0.0"
-    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 0)
+    monkeypatch.setattr(tools._probe, "_IDENTITY_CACHE_TTL_SECONDS", 0)
     assert tools.detect_tool_version(tool_spec(), {}) == "2.0.0"
-    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 300)
+    monkeypatch.setattr(tools._probe, "_IDENTITY_CACHE_TTL_SECONDS", 300)
     tools._VERSION_CACHE.clear()
 
     # Database identity cache: a database replaced in place is noticed after expiry.
@@ -1516,6 +1520,6 @@ def test_version_and_database_identity_caches_expire_after_ttl(tmp_path, monkeyp
     assert (
         tools.database_identity(p, recipe(database="ref.db")) == first
     )  # still within TTL
-    monkeypatch.setattr(tools, "_IDENTITY_CACHE_TTL_SECONDS", 0)
+    monkeypatch.setattr(tools._probe, "_IDENTITY_CACHE_TTL_SECONDS", 0)
     assert tools.database_identity(p, recipe(database="ref.db")) != first
     tools._DATABASE_IDENTITY_CACHE.clear()
