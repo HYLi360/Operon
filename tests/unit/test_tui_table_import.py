@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -866,6 +867,13 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
             await pilot.pause()
             assert app.is_running
 
+        # The worker is still parked on `released` here, and every assertion
+        # above has already run.  Releasing it as the scenario's last act, not
+        # from the runner's `finally` below, is what keeps this test off the
+        # handoff budget it would otherwise sleep out on every green run
+        # (ODR-54): the finally is the safety net for the failure path.
+        released.set()
+
     try:
         _run(scenario())
     finally:
@@ -965,3 +973,84 @@ def test_confirm_gates_require_template_output_and_fresh_preview(
             )
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-54")
+def test_a_parked_worker_is_released_before_the_scenario_returns(
+    project: Project, monkeypatch
+) -> None:
+    """A worker parked on a handoff event must not outlive its own test.
+
+    A stubbed core call that blocks on ``released.wait(...)`` leaves the Textual
+    worker parked for as long as it is told to wait.  When the release only
+    happens in the runner's ``finally``, the green test still pays that whole
+    budget before the worker unwinds — 124 s for the 120 s handoff budget here
+    (ODR-54), on a worker no other test can share, so no run could finish before
+    it did.
+
+    The property is the *duration*, not a flag: the scenario must leave with
+    the worker already unblocked, so leaving the ``async with`` cannot drain a
+    still-parked one.  Asserting ``released.is_set()`` right after setting it
+    would pass by construction and would survive the defect, so the budget this
+    test is nominally willing to spend is what gets measured.
+    """
+    released = threading.Event()
+
+    def blocking_import(*args, **kwargs):
+        released.wait(HANDOFF_TIMEOUT)
+        return {
+            "inserted": 1,
+            "updated": 0,
+            "unchanged": 0,
+            "skipped": 0,
+            "table": "organisms",
+            "source": kwargs["path"],
+        }
+
+    monkeypatch.setattr(actions, "import_table", blocking_import)
+    monkeypatch.setattr(
+        actions,
+        "table_import_preview",
+        lambda *a, **k: {
+            "table": "organisms",
+            "source": "x",
+            "columns": [],
+            "items": [],
+            "insert": 1,
+            "update": 0,
+            "unchanged": 0,
+        },
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = ImportTableModal(project)
+            app.push_screen(modal)
+            await _push(pilot, modal, "#table-file")
+            (await _q(modal, "#table-file", Input)).value = "/tmp/rows.csv"
+            await _click(pilot, "#table-preview-button")
+            await _wait_until(lambda: modal.preview is not None, "preview to land")
+            await _click(pilot, "#confirm")
+            await _wait_until(lambda: modal.running, "import to start")
+
+        # The scenario's last act, inside the app's lifetime: the worker is
+        # unblocked before the app shuts down and the run returns.
+        released.set()
+
+    # Time only the `_run` call.  The park inside the `finally` below is the
+    # defect being pinned: with it, the worker is still blocked when the app
+    # tears down and this teardown costs the full handoff budget.
+    start = time.monotonic()
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    teardown_seconds = time.monotonic() - start
+
+    assert teardown_seconds < HANDOFF_TIMEOUT / 2, (
+        "the scenario returned with a worker still parked on the handoff "
+        f"event: the run took {teardown_seconds:.1f}s of its "
+        f"{HANDOFF_TIMEOUT:.0f}s budget"
+    )

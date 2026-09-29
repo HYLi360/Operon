@@ -1646,3 +1646,29 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_config.py::test_notification_waits_survive_an_expired_toast
+- id: ODR-54
+  title: 'The table-import teardown test slept out its whole 120s handoff budget on every run'
+  reported: '2026-09-29'
+  introduced_in: null
+  affected: |
+    the whole suite: one worker was pinned for the full handoff budget, so no run could finish before it
+    did
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    python -m pytest tests/unit/test_tui_table_import.py::test_modal_drops_result_after_teardown
+    --durations=3 -q --no-cov reports 124.28s call for a test whose assertions all complete in under a
+    second. The stub actions.import_table blocks on released.wait(HANDOFF_TIMEOUT) and HANDOFF_TIMEOUT
+    is 120.0, but the test only sets released in its finally, so the worker sleeps out the entire budget
+    after the scenario has already finished. The full suite took 185.15s against 67.9s with this one
+    test deselected.
+  disposition: |
+    The scenario sets the release event as its last act, before it returns to the runner, and the
+    finally keeps it as a safety net for the failure path, so the worker is unblocked as soon as the
+    assertions are done instead of after them. The budget stays generous for a loaded runner, which is
+    what it exists for, but it is no longer spent on a green test.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_table_import.py::test_a_parked_worker_is_released_before_the_scenario_returns
