@@ -1573,3 +1573,41 @@ defects:
     - tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure
     - tests/unit/test_tui_remotes.py::test_remotes_check_button_probes_and_reports_failures
     - tests/unit/test_tui_remotes.py::test_sync_modal_refuses_to_close_while_running
+- id: ODR-52
+  title: 'The ruff-suppression guard lists an in-tree sdist staging tree and crashes when it vanishes'
+  reported: '2026-09-29'
+  introduced_in: null
+  affected: |
+    Every checkout under the default addopts (-n auto): the guard walks the project root while a
+    parallel worker runs
+    tests/integration/test_python_packaging.py::test_sdist_contains_complete_project_source, whose
+    build_sdist call makes setuptools stage the archive as operondbs-0.9.0/ inside that same root and
+    delete it again. Whether the walk overlaps the staging window is timing, so the failure is
+    intermittent (seen once in a local run; two full-suite runs on the same tree stayed green). A fresh
+    worktree only shifts the timing.
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    python -m pytest intermittently fails
+    tests/unit/test_ruff_suppression_format.py::test_ruff_format_does_not_move_line_suppressions with
+    FileNotFoundError: [Errno 2] No such file or directory:
+    '<root>/operondbs-0.9.0/docs/conf_common.py'. Deterministic replay: stage
+    operondbs-0.9.0/docs/conf_common.py in the root, take the old file listing (it includes the staging
+    file), remove the tree the way build_sdist does after writing the archive - its log prints "removing
+    'operondbs-0.9.0' (and everything under it)" - and read every listed path: the staging path raises
+    exactly that error.
+  disposition: |
+    _python_files() no longer treats a tree walk as the source of truth: it asks git for the tracked set
+    (git ls-files -z -- '*.py'), which is exact and cannot race a build, and keeps a shape-based walk as
+    the fallback for checkouts without git (skips PKG-INFO staging trees, *.egg-info, dist/ and the
+    editor/cache directories, and drops paths that stopped being regular files). The read loop tolerates
+    the same vanished-file race. Two regressions pin it: a tmp_path tree carrying all three artifact
+    shapes is filtered down to its one source file, and a git init scratch repository shows the tracked
+    set excludes a staged tree while keeping the source. On a clean tree the new listing covers exactly
+    the files the old walk covered.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_ruff_suppression_format.py::test_python_files_skips_distribution_artifacts_without_git
+    - tests/unit/test_ruff_suppression_format.py::test_python_files_in_a_checkout_are_the_tracked_set
