@@ -254,12 +254,15 @@ run *and* a passing `scripts/release-preflight.sh --ci --tag <tag>`; see
 The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests
 to prevent unexpected or random test results.
 
-> Running `python -m pytest` directly takes approx 35 seconds
+> Running `python -m pytest` directly takes about 70 seconds
 > (auto: 24 workers). Running the local test matrix takes about 5 minutes
 > (6 versions, 3 at a time × 7 workers by default; `MATRIX_CONCURRENCY` /
 > `MATRIX_JOBS` override the split).
 > 
-> Measured on Intel Core i7-13700HX (16c24t).
+> Measured on Intel Core i7-13700HX (16c24t). The suite is dominated by the
+> TUI tests, which build a headless Textual app per test; keep the default
+> `load` distribution (`--dist=loadfile` and `loadscope` are several times
+> slower here because one large module lands on one worker).
 
 ## Git
 

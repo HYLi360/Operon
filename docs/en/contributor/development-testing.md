@@ -68,10 +68,16 @@ The full suite takes about seven minutes serially; the loop below aims to run it
    last-failed cache before anything else.
 2. **Stop at the first failure** while iterating: `python -m pytest tests/unit -x -q --no-cov`,
    with the file or test you actually touched rather than a whole category.
-3. **Parallel execution.** On a 24-core workstation, running `python -m pytest -n 24 --dist loadfile` 
-   (with `pytest-xdist`) can reduce the execution time to 30–40 seconds. `--dist loadfile` ensures that each test file
-   is assigned to only one worker, which is required for Textual UI testing.
-   Coverages are the most resource-intensive: use `--no-cov` during iterations and run the test only once at the end.
+3. **Parallel execution.** `pyproject.toml` already selects `-n auto` with the default
+   `load` distribution, so a bare `python -m pytest` is the parallel run: about
+   70 seconds on a 24-core workstation. Coverages are the most resource-intensive:
+   use `--no-cov` during iterations and run the test only once at the end.
+   Do **not** switch to `--dist loadfile` or `--dist loadscope`, even though pinning
+   each test file to one worker sounds safer for Textual: the TUI modules are
+   large and very uneven, so file- and class-level grouping concentrates the
+   suite on a handful of workers and measures about 5.5 minutes here — roughly
+   4.6x slower than the default. Every TUI test builds its own project under
+   `tmp_path`, so the default distribution is already safe.
 4. **Cross-version matrix in one pass.** `scripts/setup-test-matrix.sh` creates uv-managed CPython 3.10-3.15
    interpreters plus one venv per version inside `.matrix/`. `scripts/run-test-matrix.sh` runs them
    `MATRIX_CONCURRENCY` at a time (three by default, so six versions go out as two waves) with

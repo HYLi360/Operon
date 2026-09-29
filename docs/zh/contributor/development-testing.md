@@ -61,9 +61,13 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
 1. **只重跑失败项。** `python -m pytest --lf -q --no-cov` 先重放 pytest 的 last-failed 缓存。
 2. **迭代时遇到首个失败即停**：`python -m pytest tests/unit -x -q --no-cov`，并只指定你改动的
    文件或用例，而不是整个类目。
-3. **并行执行。** 在 24 核工作站上，`python -m pytest -n 24 --dist loadfile`（带 `pytest-xdist`） 
-   可将耗时压到 30～40 秒。`--dist loadfile` 保证同一个测试文件只落在一个
-   worker 上，这是 Textual UI 测试所需要的。覆盖率统计最贵：迭代时用 `--no-cov`，最后只测一次。
+3. **并行执行。** `pyproject.toml` 已配置 `-n auto` 和默认的 `load` 分配策略，所以直接
+   `python -m pytest` 就是并行运行：在 24 核工作站上约 70 秒。覆盖率统计最贵：迭代时用
+   `--no-cov`，最后只测一次。
+   **不要**改用 `--dist loadfile` 或 `--dist loadscope`。虽然"同一个测试文件只落在一个
+   worker"听起来对 Textual 更稳妥，但 TUI 模块很大且极不均匀，文件级/类级分组会把
+   套件集中到少数几个 worker 上，本机实测约 5.5 分钟，比默认策略慢约 4.6 倍。每个 TUI
+   用例都在自己的 `tmp_path` 下建立项目，因此默认分配方式已经足够安全。
 4. **一次跑完跨版本矩阵。** `scripts/setup-test-matrix.sh` 用 uv 安装 CPython 3.10–3.15 并在
    `.matrix/` 下为每个版本建 venv。`scripts/run-test-matrix.sh` 每次并发 `MATRIX_CONCURRENCY`
    个版本（默认 3 个，六个版本分两波），每个版本给 `MATRIX_JOBS` 个 xdist worker；默认值把机器
