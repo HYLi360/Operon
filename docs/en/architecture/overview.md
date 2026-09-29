@@ -51,7 +51,7 @@ How the principles map to implementations:
 │  taxonomy.py    NCBI taxonomy snapshots and coverage        │
 │                 denominator compilation                     │
 │  coverage.py    metadata/release taxonomic coverage reports │
-│  tools.py       external tool configuration, version        │
+│  tools/         external tool configuration, version        │
 │                 probing, cached execution, result sync      │
 │  release.py     release snapshot generation                 │
 │  workflow.py    state machine, JSONL logs, external command │
@@ -106,7 +106,7 @@ How the principles map to implementations:
 | `operon/rules.py` | Loads profiles, computes PASS/FAIL decisions, stores profile snapshots and decision history |
 | `operon/taxonomy.py` | Archives/imports immutable NCBI Taxonomy, compiles frozen denominators and provenance per coverage profile |
 | `operon/coverage.py` | Validates reference sets, computes family/genus coverage and missing lists against frozen metadata or release scopes |
-| `operon/tools.py` | Reads `config/tools.yaml`; wraps external program launch, version probing, input validation, cached execution, and result write-back |
+| `operon/tools/` | External-tool subsystem package. The `__init__.py` facade re-exports the previous `operon.tools` surface (plus `print_tools_table`); the implementation splits by dependency chain: `_defaults` (the default `config/tools.yaml` document: launcher defaults and software recipe presets), `_config` (recipe/tool model, loading, validation, listing), `_probe` (launch commands, version probing, command provenance, identity-probe caches), `_inputs` (candidate files, database identity, runtime parameters, fingerprints), `_cache` (cached/adoptable job lookups, environment-reuse decision, stale-`RUNNING` sweep), `_plan` (per-file planning), `_execute` (per-file execution and finalization), `_run` (`run_analysis` batch and Slurm-array orchestration) and `_results` (per-software result parsers and SQLite write-back) |
 | `operon/workflow.py` | Legal state transitions, `workflow.jsonl` structured logs, external command execution |
 | `operon/execution.py` | Execution backend abstraction: `local`/`slurm`/`ssh`; sbatch script generation and polling, SSH/SFTP transfer, path mapping |
 | `operon/shutdown.py` | Converts SIGINT/SIGTERM into `ShutdownRequested`, drives per-backend process/job cleanup and second-signal forced exit |
