@@ -1668,7 +1668,7 @@ defects:
     finally keeps it as a safety net for the failure path, so the worker is unblocked as soon as the
     assertions are done instead of after them. The budget stays generous for a loaded runner, which is
     what it exists for, but it is no longer spent on a green test.
-  fix_commit: null
+  fix_commit: 'dd2572153b69f8fc6b0c31a6f468467bb02cb2b7'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_a_parked_worker_is_released_before_the_scenario_returns
