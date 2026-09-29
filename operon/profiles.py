@@ -7,12 +7,58 @@ inside the QC programs.
 
 from __future__ import annotations
 
+import copy
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from operon.errors import ValidationError
+
+#: Parsed profile documents keyed by path, each held against the
+#: ``(mtime_ns, size)`` it was parsed from.  One Config-screen render lists every
+#: profile of every kind, and the decision engine re-reads them on each
+#: evaluation, so the YAML scanner otherwise re-runs over the same unchanged
+#: files many times per screen.  Keying on file identity rather than a clock
+#: keeps an edit visible on the very next read.
+#:
+#: Only the per-file parse is cached.  A directory listing is deliberately not:
+#: one ``config/profiles`` directory holds all three profile kinds, so a cached
+#: listing for ``kind="qc"`` would answer a later ``kind="taxonomy_coverage"``
+#: request with an empty set.  The per-file cache already removes the parses
+#: that dominate, and the remaining scan is a directory walk.
+_PROFILE_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+
+def _file_identity(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def invalidate_profile_cache(directory: str | Path | None = None) -> None:
+    """Drop cached profile documents for one directory, or for all of them."""
+    if directory is None:
+        _PROFILE_CACHE.clear()
+        return
+    # A trailing separator keeps a sibling whose name merely starts with the
+    # same characters (``.../profiles`` must not clear ``.../profiles2``).
+    prefix = f"{Path(directory)}{os.sep}"
+    for key in [key for key in _PROFILE_CACHE if key.startswith(prefix)]:
+        _PROFILE_CACHE.pop(key, None)
+
+
+def _parse_profile_file(path: Path) -> dict[str, Any]:
+    """Parse one profile file, reusing the last parse while it is unchanged."""
+    key = str(path)
+    identity = _file_identity(path)
+    cached = _PROFILE_CACHE.get(key)
+    if cached is not None and cached[0] == identity:
+        return copy.deepcopy(cached[1])
+    with open(path, encoding="utf-8") as handle:
+        doc = yaml.safe_load(handle) or {}
+    _PROFILE_CACHE[key] = (identity, doc)
+    return copy.deepcopy(doc)
 
 
 def default_profiles() -> dict[str, Any]:
@@ -376,8 +422,7 @@ def load_profiles(
     if not directory.exists():
         return {}
     for path in sorted(directory.glob("*.yaml")):
-        with open(path, encoding="utf-8") as handle:
-            doc = yaml.safe_load(handle) or {}
+        doc = _parse_profile_file(path)
         if not isinstance(doc, dict) or "version" not in doc or "kind" not in doc:
             raise ValidationError(
                 f"invalid profile {path}: explicit 'kind' and 'version' are required"
@@ -396,8 +441,7 @@ def load_profile(
     path = Path(directory) / f"{name}.yaml"
     if not path.exists():
         raise ValidationError(f"profile {name!r} not found in {Path(directory)}")
-    with open(path, encoding="utf-8") as handle:
-        doc = yaml.safe_load(handle) or {}
+    doc = _parse_profile_file(path)
     if not isinstance(doc, dict) or "kind" not in doc or "version" not in doc:
         raise ValidationError(
             f"invalid profile {path}: explicit 'kind' and 'version' are required"
