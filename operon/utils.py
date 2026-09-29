@@ -86,13 +86,19 @@ def sha256_directory(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
         raise NotADirectoryError(root)
     digest = hashlib.sha256()
     for entry in iter_directory_entries(root):
-        relative = entry.relative_to(root).as_posix().encode("utf-8", errors="surrogateescape")
+        relative = (
+            entry.relative_to(root).as_posix().encode("utf-8", errors="surrogateescape")
+        )
         if entry.is_symlink():
             target = os.readlink(entry).encode("utf-8", errors="surrogateescape")
             digest.update(b"L\0" + str(len(relative)).encode("ascii") + b":" + relative)
-            digest.update(b"\0" + str(len(target)).encode("ascii") + b":" + target + b"\0")
+            digest.update(
+                b"\0" + str(len(target)).encode("ascii") + b":" + target + b"\0"
+            )
         elif entry.is_dir():
-            digest.update(b"D\0" + str(len(relative)).encode("ascii") + b":" + relative + b"\0")
+            digest.update(
+                b"D\0" + str(len(relative)).encode("ascii") + b":" + relative + b"\0"
+            )
         elif entry.is_file():
             size = entry.stat().st_size
             digest.update(b"F\0" + str(len(relative)).encode("ascii") + b":" + relative)
@@ -116,7 +122,9 @@ def sha256_path(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
         return sha256_directory(artifact, chunk_size=chunk_size)
     if artifact.is_file():
         return sha256_file(artifact, chunk_size=chunk_size)
-    raise FileNotFoundError(f"artifact does not exist or has unsupported type: {artifact}")
+    raise FileNotFoundError(
+        f"artifact does not exist or has unsupported type: {artifact}"
+    )
 
 
 def path_size_bytes(path: str | Path) -> int:
@@ -130,7 +138,9 @@ def path_size_bytes(path: str | Path) -> int:
         )
     if artifact.is_file():
         return artifact.stat().st_size
-    raise FileNotFoundError(f"artifact does not exist or has unsupported type: {artifact}")
+    raise FileNotFoundError(
+        f"artifact does not exist or has unsupported type: {artifact}"
+    )
 
 
 def path_is_nonempty(path: str | Path) -> bool:

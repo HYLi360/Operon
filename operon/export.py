@@ -30,20 +30,43 @@ from operon.workflow import log_run
 LINK_KINDS = {"copy", "hardlink", "symlink"}
 
 MANIFEST_COLUMNS = [
-    "file_id", "entity_type", "entity_id", "file_role", "format", "compression",
-    "export_relative_path", "original_relative_path", "source_url", "size_bytes",
+    "file_id",
+    "entity_type",
+    "entity_id",
+    "file_role",
+    "format",
+    "compression",
+    "export_relative_path",
+    "original_relative_path",
+    "source_url",
+    "size_bytes",
     "sha256",
 ]
 
 QC_COLUMNS = [
-    "entity_type", "entity_id", "file_id", "file_sha256", "input_identity",
-    "qc_stage", "metric_name", "metric_value", "metric_numeric", "metric_unit",
-    "tool", "tool_version", "parameter_set", "evaluated_at",
+    "entity_type",
+    "entity_id",
+    "file_id",
+    "file_sha256",
+    "input_identity",
+    "qc_stage",
+    "metric_name",
+    "metric_value",
+    "metric_numeric",
+    "metric_unit",
+    "tool",
+    "tool_version",
+    "parameter_set",
+    "evaluated_at",
 ]
 
 TAXA_COLUMNS = [
-    "file_id", "organism_id", "scientific_name", "taxon_id",
-    "taxonomy_source", "taxonomy_version",
+    "file_id",
+    "organism_id",
+    "scientific_name",
+    "taxon_id",
+    "taxonomy_source",
+    "taxonomy_version",
 ]
 
 
@@ -57,24 +80,27 @@ def _export_taxa(db: Database, members: list[dict[str, Any]]) -> list[dict[str, 
             continue
         if key not in cache:
             organism_id = _organism_for(db, *key)
-            cache[key] = dict(db.conn.execute(
-                "SELECT * FROM organisms WHERE organism_id=?", (organism_id,),
-            ).fetchone())
+            cache[key] = dict(
+                db.conn.execute(
+                    "SELECT * FROM organisms WHERE organism_id=?",
+                    (organism_id,),
+                ).fetchone()
+            )
         rows.append({"file_id": member["file_id"], **cache[key]})
     return rows
 
 
 def _select_files(
-        db: Database,
-        *,
-        entity_type: str | None,
-        entity_ids: Iterable[str],
-        file_ids: Iterable[str],
-        file_role: str | None,
-        fmt: str | None,
-        state: str | None,
-        decision: str | None,
-        profile: str | None,
+    db: Database,
+    *,
+    entity_type: str | None,
+    entity_ids: Iterable[str],
+    file_ids: Iterable[str],
+    file_role: str | None,
+    fmt: str | None,
+    state: str | None,
+    decision: str | None,
+    profile: str | None,
 ) -> list[dict[str, Any]]:
     entity_ids = list(entity_ids)
     file_ids = list(file_ids)
@@ -132,20 +158,20 @@ def _select_files(
 
 
 def export_files(
-        db: Database,
-        project: Project,
-        *,
-        output_dir: str | Path,
-        entity_type: str | None = None,
-        entity_ids: Iterable[str] = (),
-        file_ids: Iterable[str] = (),
-        file_role: str | None = None,
-        fmt: str | None = None,
-        state: str | None = None,
-        decision: str | None = None,
-        profile: str | None = None,
-        link_kind: str = "copy",
-        include_qc: bool = True,
+    db: Database,
+    project: Project,
+    *,
+    output_dir: str | Path,
+    entity_type: str | None = None,
+    entity_ids: Iterable[str] = (),
+    file_ids: Iterable[str] = (),
+    file_role: str | None = None,
+    fmt: str | None = None,
+    state: str | None = None,
+    decision: str | None = None,
+    profile: str | None = None,
+    link_kind: str = "copy",
+    include_qc: bool = True,
 ) -> dict[str, Any]:
     """Materialize an export in a recoverable workspace before publishing it."""
     requested = Path(output_dir)
@@ -154,17 +180,29 @@ def export_files(
             raise FileExistsError(f"export output directory is not empty: {requested}")
     else:
         requested.parent.mkdir(parents=True, exist_ok=True)
-    workspace = Path(tempfile.mkdtemp(
-        prefix=f".{requested.name}.operon-export-", dir=str(requested.parent),
-    ))
+    workspace = Path(
+        tempfile.mkdtemp(
+            prefix=f".{requested.name}.operon-export-",
+            dir=str(requested.parent),
+        )
+    )
     published = False
     try:
         summary = _export_files_in_workspace(
-            db, project, output_dir=workspace,
+            db,
+            project,
+            output_dir=workspace,
             output_label=requested,
-            entity_type=entity_type, entity_ids=entity_ids, file_ids=file_ids,
-            file_role=file_role, fmt=fmt, state=state, decision=decision,
-            profile=profile, link_kind=link_kind, include_qc=include_qc,
+            entity_type=entity_type,
+            entity_ids=entity_ids,
+            file_ids=file_ids,
+            file_role=file_role,
+            fmt=fmt,
+            state=state,
+            decision=decision,
+            profile=profile,
+            link_kind=link_kind,
+            include_qc=include_qc,
         )
         # Publish only after every artifact is complete. An existing empty
         # destination is removed first; rmdir fails safe if it gained content
@@ -175,19 +213,27 @@ def export_files(
         published = True
         # The run row is recorded only once the destination really exists.
         selection = summary.pop("selection")
-        log_run(db, project, {
-            "entity_type": selection["entity_type"],
-            "step": "export",
-            "status": "completed",
-            "command": f"operon export --output {requested}",
-            "output_sha256": summary["manifest_sha256"],
-            "execution_details": json.dumps({
-                "selection": selection,
-                "output_dir": str(requested),
-                "link_kind": summary["link_kind"],
-                "file_count": summary["file_count"],
-            }, ensure_ascii=False, sort_keys=True),
-        })
+        log_run(
+            db,
+            project,
+            {
+                "entity_type": selection["entity_type"],
+                "step": "export",
+                "status": "completed",
+                "command": f"operon export --output {requested}",
+                "output_sha256": summary["manifest_sha256"],
+                "execution_details": json.dumps(
+                    {
+                        "selection": selection,
+                        "output_dir": str(requested),
+                        "link_kind": summary["link_kind"],
+                        "file_count": summary["file_count"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+            },
+        )
         summary["output_dir"] = str(requested)
         return summary
     except BaseException:
@@ -200,21 +246,21 @@ def export_files(
 
 
 def _export_files_in_workspace(
-        db: Database,
-        project: Project,
-        *,
-        output_dir: str | Path,
-        output_label: str | Path | None = None,
-        entity_type: str | None = None,
-        entity_ids: Iterable[str] = (),
-        file_ids: Iterable[str] = (),
-        file_role: str | None = None,
-        fmt: str | None = None,
-        state: str | None = None,
-        decision: str | None = None,
-        profile: str | None = None,
-        link_kind: str = "copy",
-        include_qc: bool = True,
+    db: Database,
+    project: Project,
+    *,
+    output_dir: str | Path,
+    output_label: str | Path | None = None,
+    entity_type: str | None = None,
+    entity_ids: Iterable[str] = (),
+    file_ids: Iterable[str] = (),
+    file_role: str | None = None,
+    fmt: str | None = None,
+    state: str | None = None,
+    decision: str | None = None,
+    profile: str | None = None,
+    link_kind: str = "copy",
+    include_qc: bool = True,
 ) -> dict[str, Any]:
     """Materialize selected manifest files into an already isolated workspace.
 
@@ -241,15 +287,24 @@ def _export_files_in_workspace(
         "profile": profile,
     }
     members = _select_files(
-        db, entity_type=entity_type, entity_ids=entity_ids, file_ids=file_ids,
-        file_role=file_role, fmt=fmt, state=state, decision=decision, profile=profile,
+        db,
+        entity_type=entity_type,
+        entity_ids=entity_ids,
+        file_ids=file_ids,
+        file_role=file_role,
+        fmt=fmt,
+        state=state,
+        decision=decision,
+        profile=profile,
     )
 
     output_root = Path(output_dir)
     output_label = Path(output_label) if output_label is not None else output_root
     if output_root.exists():
         if not output_root.is_dir() or any(output_root.iterdir()):
-            raise FileExistsError(f"export output directory is not empty: {output_root}")
+            raise FileExistsError(
+                f"export output directory is not empty: {output_root}"
+            )
     else:
         output_root.mkdir(parents=True, exist_ok=False)
 
@@ -286,44 +341,52 @@ def _export_files_in_workspace(
                     atomic_copy(source, target)
         else:  # symlink
             os.symlink(source.resolve(), target)
-        manifest_rows.append({
-            "file_id": member["file_id"],
-            "entity_type": member["entity_type"],
-            "entity_id": member["entity_id"],
-            "file_role": member["file_role"],
-            "format": member["format"],
-            "compression": member["compression"],
-            "export_relative_path": export_rel,
-            "original_relative_path": member["relative_path"],
-            "source_url": member["source_url"],
-            "size_bytes": member["size_bytes"],
-            "sha256": sha256_path(target),
-        })
+        manifest_rows.append(
+            {
+                "file_id": member["file_id"],
+                "entity_type": member["entity_type"],
+                "entity_id": member["entity_id"],
+                "file_role": member["file_role"],
+                "format": member["format"],
+                "compression": member["compression"],
+                "export_relative_path": export_rel,
+                "original_relative_path": member["relative_path"],
+                "source_url": member["source_url"],
+                "size_bytes": member["size_bytes"],
+                "sha256": sha256_path(target),
+            }
+        )
 
     write_tsv(output_root / "manifest.tsv", MANIFEST_COLUMNS, manifest_rows)
     write_tsv(output_root / "taxa.tsv", TAXA_COLUMNS, _export_taxa(db, members))
 
     if include_qc:
-        pairs = sorted({(row["entity_type"], row["entity_id"]) for row in manifest_rows})
+        pairs = sorted(
+            {(row["entity_type"], row["entity_id"]) for row in manifest_rows}
+        )
         qc_rows: list[dict[str, Any]] = []
         # Keep both expression depth and bind parameters below SQLite's
         # conservative limits, independently of the size of the export.
         for offset in range(0, len(pairs), 200):
-            batch = pairs[offset:offset + 200]
+            batch = pairs[offset : offset + 200]
             clause = " OR ".join("(q.entity_type=? AND q.entity_id=?)" for _ in batch)
             params = [value for pair in batch for value in pair]
-            qc_rows.extend(dict(row) for row in db.conn.execute(
-                f"SELECT q.* FROM qc_results q WHERE ({clause}) "
-                "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
-                params,
-            ).fetchall())
+            qc_rows.extend(
+                dict(row)
+                for row in db.conn.execute(
+                    f"SELECT q.* FROM qc_results q WHERE ({clause}) "
+                    "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
+                    params,
+                ).fetchall()
+            )
         write_tsv(output_root / "qc.tsv", QC_COLUMNS, qc_rows)
 
     checksum_lines = [
         f"{row['sha256']}  {row['export_relative_path']}" for row in manifest_rows
     ]
     (output_root / "checksums.sha256").write_text(
-        "\n".join(checksum_lines) + ("\n" if checksum_lines else ""), encoding="utf-8",
+        "\n".join(checksum_lines) + ("\n" if checksum_lines else ""),
+        encoding="utf-8",
     )
 
     created_at = now_iso()
@@ -341,7 +404,8 @@ def _export_files_in_workspace(
         "taxa_sha256": sha256_file(output_root / "taxa.tsv"),
     }
     (output_root / "provenance.json").write_text(
-        json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+        json.dumps(provenance, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
 
     # The workflow run is logged by export_files() only after the workspace

@@ -19,7 +19,9 @@ from operon.tools import run_analysis
 from operon.workflow import follow_run_logs, log_run, read_log_tail
 
 
-def _write_run_logs(logs_root: Path, run_id: str, stdout: str = "", stderr: str = "") -> None:
+def _write_run_logs(
+    logs_root: Path, run_id: str, stdout: str = "", stderr: str = ""
+) -> None:
     logs_root.mkdir(parents=True, exist_ok=True)
     (logs_root / f"{run_id}.stdout.log").write_text(stdout, encoding="utf-8")
     (logs_root / f"{run_id}.stderr.log").write_text(stderr, encoding="utf-8")
@@ -47,7 +49,10 @@ def test_follow_finished_run_dumps_logs_and_exits(tmp_path):
     out = io.StringIO()
     rc = follow_run_logs(
         lambda: {"status": "completed", "exit_code": 0},
-        logs, "WF_X", out=out, poll_interval=0.01,
+        logs,
+        "WF_X",
+        out=out,
+        poll_interval=0.01,
     )
     assert rc == 0
     text = out.getvalue()
@@ -62,7 +67,10 @@ def test_follow_failed_run_returns_one(tmp_path):
     out = io.StringIO()
     rc = follow_run_logs(
         lambda: {"status": "failed", "exit_code": 7},
-        logs, "WF_F", out=out, poll_interval=0.01,
+        logs,
+        "WF_F",
+        out=out,
+        poll_interval=0.01,
     )
     assert rc == 1
     assert "status=failed exit_code=7" in out.getvalue()
@@ -70,8 +78,9 @@ def test_follow_failed_run_returns_one(tmp_path):
 
 def test_follow_missing_run_returns_one(tmp_path):
     out = io.StringIO()
-    rc = follow_run_logs(lambda: None, tmp_path / "logs", "WF_GONE",
-                         out=out, poll_interval=0.01)
+    rc = follow_run_logs(
+        lambda: None, tmp_path / "logs", "WF_GONE", out=out, poll_interval=0.01
+    )
     assert rc == 1
     assert "disappeared" in out.getvalue()
 
@@ -134,7 +143,9 @@ def test_workflow_show_follow_finished_run_via_cli(project_db, capsys):
     project, db = project_db
     log_run(db, project, {"run_id": "WF_DONE", "step": "selftest", "exit_code": 0})
     _write_run_logs(project.logs_root, "WF_DONE", stdout="hello\n", stderr="oops\n")
-    rc = main(["--project", str(project.root), "workflow", "show", "WF_DONE", "--follow"])
+    rc = main(
+        ["--project", str(project.root), "workflow", "show", "WF_DONE", "--follow"]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "Workflow run" in out
@@ -145,10 +156,21 @@ def test_workflow_show_follow_finished_run_via_cli(project_db, capsys):
 
 def test_workflow_show_follow_failed_run_exit_code(project_db, capsys):
     project, db = project_db
-    log_run(db, project, {"run_id": "WF_BAD", "step": "selftest",
-                          "status": "failed", "exit_code": 3, "error": "boom"})
+    log_run(
+        db,
+        project,
+        {
+            "run_id": "WF_BAD",
+            "step": "selftest",
+            "status": "failed",
+            "exit_code": 3,
+            "error": "boom",
+        },
+    )
     _write_run_logs(project.logs_root, "WF_BAD", stdout="dying\n")
-    rc = main(["--project", str(project.root), "workflow", "show", "WF_BAD", "--follow"])
+    rc = main(
+        ["--project", str(project.root), "workflow", "show", "WF_BAD", "--follow"]
+    )
     assert rc == 1
     assert "status=failed exit_code=3" in capsys.readouterr().out
 
@@ -156,8 +178,18 @@ def test_workflow_show_follow_failed_run_exit_code(project_db, capsys):
 def test_workflow_show_follow_rejects_json_format(project_db, capsys):
     project, db = project_db
     log_run(db, project, {"run_id": "WF_J", "step": "selftest"})
-    rc = main(["--project", str(project.root), "workflow", "show", "WF_J",
-               "--follow", "--format", "json"])
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "workflow",
+            "show",
+            "WF_J",
+            "--follow",
+            "--format",
+            "json",
+        ]
+    )
     assert rc == 2
     assert "--follow cannot be combined with --format json" in capsys.readouterr().err
 
@@ -167,10 +199,14 @@ def assembly_project(project_db):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "X"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
     genome = project.root / "genome.fa"
     genome.write_text(">ctg1\n" + "ACGT" * 500 + "\n", encoding="utf-8")
-    file_row = ingest_file(db, project, genome, "assembly", "ASM_000001", "genome_fasta")
+    file_row = ingest_file(
+        db, project, genome, "assembly", "ASM_000001", "genome_fasta"
+    )
     return project, db, file_row
 
 
@@ -183,7 +219,8 @@ def test_qc_cli_progress_lines(assembly_project, capsys):
 
 def _write_fake_tool(project) -> None:
     script = project.root / "faketool.py"
-    script.write_text(textwrap.dedent("""
+    script.write_text(
+        textwrap.dedent("""
         import sys
         args = sys.argv[1:]
         if '-version' in args:
@@ -192,7 +229,9 @@ def _write_fake_tool(project) -> None:
         out = args[args.index('--out') + 1]
         with open(out, 'w') as handle:
             handle.write('done\\n')
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
     document = {
         "version": 1,
         "tools": {
@@ -215,8 +254,9 @@ def _write_fake_tool(project) -> None:
             },
         },
     }
-    project.tools_config_path.write_text(yaml.safe_dump(document, sort_keys=False),
-                                         encoding="utf-8")
+    project.tools_config_path.write_text(
+        yaml.safe_dump(document, sort_keys=False), encoding="utf-8"
+    )
 
 
 def test_run_analysis_progress_callback_phases(assembly_project):
@@ -224,7 +264,9 @@ def test_run_analysis_progress_callback_phases(assembly_project):
     _write_fake_tool(project)
     events: list[tuple[int, int, str, str]] = []
     results = run_analysis(
-        project, db, "fake_recipe",
+        project,
+        db,
+        "fake_recipe",
         progress_callback=lambda i, t, fid, phase: events.append((i, t, fid, phase)),
     )
     assert results[0]["status"] == "completed"
@@ -233,7 +275,9 @@ def test_run_analysis_progress_callback_phases(assembly_project):
 
     events.clear()
     results = run_analysis(
-        project, db, "fake_recipe",
+        project,
+        db,
+        "fake_recipe",
         progress_callback=lambda i, t, fid, phase: events.append((i, t, fid, phase)),
     )
     assert results[0]["status"] == "cached"
@@ -252,8 +296,17 @@ def test_analyze_cli_progress_lines(assembly_project, capsys):
 
 def test_run_external_prints_run_id_and_watch_hint(project_db, capsys):
     project, _db = project_db
-    rc = main(["--project", str(project.root), "run-external",
-               "--step", "selftest", "--command", "true"])
+    rc = main(
+        [
+            "--project",
+            str(project.root),
+            "run-external",
+            "--step",
+            "selftest",
+            "--command",
+            "true",
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     first_line, record_line = out.strip().splitlines()[0], out.strip().splitlines()[-1]

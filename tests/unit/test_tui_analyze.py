@@ -58,7 +58,7 @@ def project(tmp_path: Path, demo_template: Project) -> Project:
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -84,7 +84,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
 
 
 async def _wait_until(
-        predicate, description: str, timeout: float = SETTLE_TIMEOUT,
+    predicate,
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
 ) -> None:
     """Wait for a real UI condition instead of a fixed number of pause() cycles."""
     loop = asyncio.get_running_loop()
@@ -107,7 +109,10 @@ def _screen_text(screen, selector: str) -> str:
 
 
 def _notifications(app) -> list[tuple[str, str]]:
-    return [(notification.severity, notification.message) for notification in app._notifications]
+    return [
+        (notification.severity, notification.message)
+        for notification in app._notifications
+    ]
 
 
 def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
@@ -118,8 +123,9 @@ def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
         db.close()
 
 
-def _write_fake_tool(project: Project, tmp_path: Path,
-                     *, slurm: dict | None = None) -> None:
+def _write_fake_tool(
+    project: Project, tmp_path: Path, *, slurm: dict | None = None
+) -> None:
     """Install a runnable fake BLAST-style tool plus a broken one.
 
     ``fake_nt`` targets the demo's three assembly genome_fasta files and
@@ -129,7 +135,8 @@ def _write_fake_tool(project: Project, tmp_path: Path,
     ``{"array": True}``) exactly like a hand-written recipe.
     """
     script = tmp_path / "fakeblast.py"
-    script.write_text(textwrap.dedent("""
+    script.write_text(
+        textwrap.dedent("""
         import sys
         args = sys.argv[1:]
         if '-version' in args:
@@ -138,7 +145,9 @@ def _write_fake_tool(project: Project, tmp_path: Path,
         out = args[args.index('-out') + 1]
         with open(out, 'w') as handle:
             handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
-    """).strip(), encoding="utf-8")
+    """).strip(),
+        encoding="utf-8",
+    )
     config = {
         "version": 1,
         "tools": {
@@ -156,11 +165,18 @@ def _write_fake_tool(project: Project, tmp_path: Path,
                         "output_subdir": "fake_nt",
                         "output_suffix": ".out.tsv",
                         "arguments": [
-                            "-query", "${input}", "-out", "${output}",
-                            "-num_threads", "${threads}",
+                            "-query",
+                            "${input}",
+                            "-out",
+                            "${output}",
+                            "-num_threads",
+                            "${threads}",
                         ],
                         "parameters": {
-                            "mode": {"choices": ["fast", "sensitive"], "default": "fast"},
+                            "mode": {
+                                "choices": ["fast", "sensitive"],
+                                "default": "fast",
+                            },
                             "marker": {"required": True},
                         },
                         "result_parser": "none",
@@ -198,7 +214,9 @@ def _write_fake_tool(project: Project, tmp_path: Path,
 # ---------------------------------------------------------------------------
 
 
-def test_run_analysis_executes_records_and_caches(project: Project, tmp_path: Path) -> None:
+def test_run_analysis_executes_records_and_caches(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
     result = actions.run_analysis(project, "fake_nt", parameters={"marker": "x"})
     assert result["analysis"] == "fake_nt"
@@ -214,36 +232,58 @@ def test_run_analysis_executes_records_and_caches(project: Project, tmp_path: Pa
     assert {job["tool_version"] for job in jobs} == {"9.8.7"}
     runs = _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
     assert len(runs) == 3
-    snapshots = _query(project, "SELECT * FROM recipe_snapshots WHERE recipe_name='fake_nt'")
+    snapshots = _query(
+        project, "SELECT * FROM recipe_snapshots WHERE recipe_name='fake_nt'"
+    )
     assert len(snapshots) == 1  # content-addressed: three runs share one snapshot
 
     # An identical second run reuses the cache instead of executing again.
     cached = actions.run_analysis(project, "fake_nt", parameters={"marker": "x"})
     assert {row["status"] for row in cached["results"]} == {"cached"}
     assert cached["succeeded"] == 3
-    assert _query(
-        project, "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'"
-    )[0]["n"] == 3
+    assert (
+        _query(
+            project,
+            "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'",
+        )[0]["n"]
+        == 3
+    )
 
     # --dry-run plans without executing or writing.
     planned = actions.run_analysis(
-        project, "fake_nt", parameters={"marker": "x"}, dry_run=True, force=True,
+        project,
+        "fake_nt",
+        parameters={"marker": "x"},
+        dry_run=True,
+        force=True,
     )
     assert planned["dry_run"] is True
     assert {row["status"] for row in planned["results"]} == {"planned"}
-    assert _query(
-        project, "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'"
-    )[0]["n"] == 3
+    assert (
+        _query(
+            project,
+            "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'",
+        )[0]["n"]
+        == 3
+    )
 
 
-def test_run_analysis_parameter_validation_writes_nothing(project: Project, tmp_path: Path) -> None:
+def test_run_analysis_parameter_validation_writes_nothing(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
     with pytest.raises(ValidationError, match="must be one of"):
-        actions.run_analysis(project, "fake_nt", parameters={"mode": "zz", "marker": "x"})
-    with pytest.raises(ValidationError, match="missing required runtime parameter 'marker'"):
+        actions.run_analysis(
+            project, "fake_nt", parameters={"mode": "zz", "marker": "x"}
+        )
+    with pytest.raises(
+        ValidationError, match="missing required runtime parameter 'marker'"
+    ):
         actions.run_analysis(project, "fake_nt", parameters={"mode": "fast"})
     with pytest.raises(ValidationError, match="undeclared runtime parameter"):
-        actions.run_analysis(project, "fake_nt", parameters={"marker": "x", "nope": "1"})
+        actions.run_analysis(
+            project, "fake_nt", parameters={"marker": "x", "nope": "1"}
+        )
     with pytest.raises(ValidationError, match="limit must be a positive integer"):
         actions.run_analysis(project, "fake_nt", parameters={"marker": "x"}, limit=0)
     with pytest.raises(ValidationError, match="threads must be a positive integer"):
@@ -254,7 +294,10 @@ def test_run_analysis_parameter_validation_writes_nothing(project: Project, tmp_
 def test_run_analysis_captures_stdout(project: Project, tmp_path: Path, capsys) -> None:
     _write_fake_tool(project, tmp_path)
     result = actions.run_analysis(
-        project, "fake_nt", entity_type="annotation", parameters={"marker": "x"},
+        project,
+        "fake_nt",
+        entity_type="annotation",
+        parameters={"marker": "x"},
     )
     assert result["total"] == 0
     assert result["results"] == []
@@ -262,12 +305,17 @@ def test_run_analysis_captures_stdout(project: Project, tmp_path: Path, capsys) 
     assert capsys.readouterr().out == ""  # core prints must not reach the terminal
 
 
-def test_run_analysis_progress_and_error_counts(project: Project, tmp_path: Path) -> None:
+def test_run_analysis_progress_and_error_counts(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
     seen: list[tuple[int, int, str, str]] = []
     result = actions.run_analysis(
-        project, "fake_broken",
-        progress=lambda index, total, file_id, phase: seen.append((index, total, file_id, phase)),
+        project,
+        "fake_broken",
+        progress=lambda index, total, file_id, phase: seen.append(
+            (index, total, file_id, phase)
+        ),
     )
     assert result["total"] == 3
     assert result["errors"] == 3
@@ -277,8 +325,9 @@ def test_run_analysis_progress_and_error_counts(project: Project, tmp_path: Path
     assert any(phase == "error" for _i, _t, _f, phase in seen)
 
 
-def test_run_analysis_forwards_backend_and_cancel_event(project: Project, tmp_path: Path,
-                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_analysis_forwards_backend_and_cancel_event(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _write_fake_tool(project, tmp_path)
     received: dict[str, Any] = {}
 
@@ -289,7 +338,10 @@ def test_run_analysis_forwards_backend_and_cancel_event(project: Project, tmp_pa
     monkeypatch.setattr("operon.tools.run_analysis", fake_core)
     cancel_event = threading.Event()
     result = actions.run_analysis(
-        project, "fake_nt", parameters={"marker": "x"}, backend="slurm",
+        project,
+        "fake_nt",
+        parameters={"marker": "x"},
+        backend="slurm",
         cancel_event=cancel_event,
     )
     assert received["cancel_event"] is cancel_event
@@ -307,7 +359,9 @@ def test_run_analysis_forwards_backend_and_cancel_event(project: Project, tmp_pa
 # ---------------------------------------------------------------------------
 
 
-def test_analyze_modal_command_text_tracks_controls(project: Project, tmp_path: Path) -> None:
+def test_analyze_modal_command_text_tracks_controls(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
 
     async def scenario() -> None:
@@ -321,15 +375,19 @@ def test_analyze_modal_command_text_tracks_controls(project: Project, tmp_path: 
 
             modal.query_one("#analyze-recipe", Select).value = "fake_nt"
             await _wait_until(
-                lambda: bool(modal.query("#analyze-param-marker"))
-                and modal.query_one("#analyze-param-mode", Select).value == "fast",
+                lambda: (
+                    bool(modal.query("#analyze-param-marker"))
+                    and modal.query_one("#analyze-param-mode", Select).value == "fast"
+                ),
                 "parameter controls mounted",
             )
             # The recipe declares entity_type assembly; it prefills the filter.
             assert modal.query_one("#analyze-entity-type", Select).value == "assembly"
             # choices -> Select prefilled with the default; required without
             # default -> empty Input, marked with a star.
-            labels = [_static_text(w) for w in modal.query("#analyze-parameters Static")]
+            labels = [
+                _static_text(w) for w in modal.query("#analyze-parameters Static")
+            ]
             assert "marker *" in labels
 
             modal.query_one("#analyze-param-marker", Input).value = "TT"
@@ -355,11 +413,16 @@ def test_analyze_modal_command_text_tracks_controls(project: Project, tmp_path: 
 
             # Unrelated widgets never rewrite the preview.
             modal.on_input_changed(Input.Changed(input=Input(id="other"), value="zzz"))
-            modal.on_select_changed(Select.Changed(Select([("A", "a")], id="other"), "a"))
-            modal.on_checkbox_changed(Checkbox.Changed(Checkbox("other", id="other-check"), True))
+            modal.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other"), "a")
+            )
+            modal.on_checkbox_changed(
+                Checkbox.Changed(Checkbox("other", id="other-check"), True)
+            )
             # Clearing the recipe picker keeps the current recipe.
-            modal.on_select_changed(Select.Changed(
-                modal.query_one("#analyze-recipe", Select), Select.NULL))
+            modal.on_select_changed(
+                Select.Changed(modal.query_one("#analyze-recipe", Select), Select.NULL)
+            )
             assert modal.command_text() == command
 
             await pilot.press("escape")
@@ -368,7 +431,9 @@ def test_analyze_modal_command_text_tracks_controls(project: Project, tmp_path: 
     _run(scenario())
 
 
-def test_analyze_modal_fixed_recipe_and_inline_validation(project: Project, tmp_path: Path) -> None:
+def test_analyze_modal_fixed_recipe_and_inline_validation(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
     dismissed: list[Any] = []
 
@@ -392,16 +457,19 @@ def test_analyze_modal_fixed_recipe_and_inline_validation(project: Project, tmp_
             modal.query_one("#analyze-limit", Input).value = "abc"
             modal.confirm()
             assert "limit must be a positive integer" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#analyze-limit", Input).value = ""
             modal.query_one("#analyze-threads", Input).value = "0"
             modal.confirm()
             assert "threads must be a positive integer" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#analyze-threads", Input).value = ""
             modal.confirm()
             assert "missing required runtime parameter 'marker'" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             assert not modal.running
             assert not modal.query_one("#confirm", Button).disabled
             assert dismissed == []
@@ -412,7 +480,9 @@ def test_analyze_modal_fixed_recipe_and_inline_validation(project: Project, tmp_
             broken = AnalyzeModal(project, recipe_name="no_such_recipe")
             app.push_screen(broken)
             await pilot.pause()
-            assert "unknown analysis" in _static_text(broken.query_one("#modal-error", Static))
+            assert "unknown analysis" in _static_text(
+                broken.query_one("#modal-error", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
 
@@ -421,7 +491,9 @@ def test_analyze_modal_fixed_recipe_and_inline_validation(project: Project, tmp_
             app.push_screen(picker)
             await pilot.pause()
             picker.confirm()
-            assert "select a recipe" in _static_text(picker.query_one("#modal-error", Static))
+            assert "select a recipe" in _static_text(
+                picker.query_one("#modal-error", Static)
+            )
             # Parameter values tolerate controls that have not mounted yet.
             picker._param_names = ["ghost"]
             assert picker._parameter_values() == {}
@@ -433,7 +505,9 @@ def test_analyze_modal_fixed_recipe_and_inline_validation(project: Project, tmp_
     assert dismissed == [None]  # escape dismisses with no result
 
 
-def test_analyze_modal_dry_run_plan_then_real_run(project: Project, tmp_path: Path) -> None:
+def test_analyze_modal_dry_run_plan_then_real_run(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
     dismissed: list[Any] = []
 
@@ -452,7 +526,10 @@ def test_analyze_modal_dry_run_plan_then_real_run(project: Project, tmp_path: Pa
             modal.query_one("#analyze-dry-run", Checkbox).value = True
             modal.confirm()
             await _wait_until(
-                lambda: "Uncheck dry-run" in _static_text(modal.query_one("#analyze-plan", Static)),
+                lambda: (
+                    "Uncheck dry-run"
+                    in _static_text(modal.query_one("#analyze-plan", Static))
+                ),
                 "dry-run plan rendering",
             )
             # The plan lists every candidate file and the modal stays open.
@@ -474,8 +551,10 @@ def test_analyze_modal_dry_run_plan_then_real_run(project: Project, tmp_path: Pa
             assert payload["total"] == 3
             assert payload["succeeded"] == 3
             assert payload["errors"] == 0
-            assert any("analysis fake_nt: 3/3 succeeded" in message
-                       for _, message in _notifications(app))
+            assert any(
+                "analysis fake_nt: 3/3 succeeded" in message
+                for _, message in _notifications(app)
+            )
 
     _run(scenario())
     jobs = _query(project, "SELECT * FROM analysis_jobs WHERE analysis_name='fake_nt'")
@@ -501,8 +580,10 @@ def test_analyze_modal_dry_run_no_candidates(project: Project, tmp_path: Path) -
             modal.query_one("#analyze-dry-run", Checkbox).value = True
             modal.confirm()
             await _wait_until(
-                lambda: "(no candidate files)" in _static_text(
-                    modal.query_one("#analyze-plan", Static)),
+                lambda: (
+                    "(no candidate files)"
+                    in _static_text(modal.query_one("#analyze-plan", Static))
+                ),
                 "empty dry-run plan",
             )
             plan_text = _static_text(modal.query_one("#analyze-plan", Static))
@@ -525,8 +606,15 @@ def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -
         if not released.wait(10):
             raise AssertionError("test never released the analysis stub")
         progress(1, 2, "FIL_000001", "start")
-        return {"results": [], "messages": "", "total": 0, "succeeded": 0,
-                "errors": 0, "dry_run": False, "analysis": analysis}
+        return {
+            "results": [],
+            "messages": "",
+            "total": 0,
+            "succeeded": 0,
+            "errors": 0,
+            "dry_run": False,
+            "analysis": analysis,
+        }
 
     def failing_run(project_arg, analysis, *, progress=None, **kwargs):
         raise RuntimeError("analysis exploded")
@@ -546,18 +634,26 @@ def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -
             modal.confirm()  # a second confirm while running is a no-op
             assert modal.running
 
-            await _wait_until(started.is_set, "the run to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "the run to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             assert modal._worker.is_cancelled
             modal.action_cancel()  # a queued escape cancels again without dismissing
             assert app.screen is modal
             released.set()
-            await _wait_until(lambda: dismissed, "cancelled analysis dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: dismissed,
+                "cancelled analysis dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             assert dismissed == [{"cancelled": True, "done": 0, "total": 0}]
-            assert any("analysis cancelled after 0/0 file(s)" in message
-                       for _severity, message in _notifications(app))
+            assert any(
+                "analysis cancelled after 0/0 file(s)" in message
+                for _severity, message in _notifications(app)
+            )
 
             # The shared callback ignores empty/cancelled payloads.
             analyze_module.analysis_finished(app, None)
@@ -584,15 +680,19 @@ def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -
             await pilot.pause()
             failing.confirm()
             await _wait_until(lambda: not failing.running, "analysis failure handling")
-            assert "analysis exploded" in _static_text(failing.query_one("#modal-error", Static))
+            assert "analysis exploded" in _static_text(
+                failing.query_one("#modal-error", Static)
+            )
             assert not failing.query_one("#confirm", Button).disabled
             assert app.screen is failing
 
             # A worker completing after the app stopped is dropped silently.
             with pytest.MonkeyPatch.context() as patch:
                 patch.setattr(type(app), "is_running", property(lambda self: False))
-                patch.setattr("textual.worker.get_current_worker",
-                              lambda: SimpleNamespace(is_cancelled=False))
+                patch.setattr(
+                    "textual.worker.get_current_worker",
+                    lambda: SimpleNamespace(is_cancelled=False),
+                )
                 app.clear_notifications()
                 AnalyzeModal._run_analysis.__wrapped__(failing)
             assert app.screen is failing
@@ -642,7 +742,8 @@ def test_config_screen_run_analysis_entry(project: Project, tmp_path: Path) -> N
             modal.query_one("#analyze-threads", Input).value = "2"
             modal.confirm()
             await _wait_until(
-                lambda: not isinstance(app.screen, AnalyzeModal), "analysis modal dismissed",
+                lambda: not isinstance(app.screen, AnalyzeModal),
+                "analysis modal dismissed",
             )
             await _settled(app)
             # Success callback: no failures, all panels reloaded, Runs screen shown.
@@ -650,12 +751,18 @@ def test_config_screen_run_analysis_entry(project: Project, tmp_path: Path) -> N
             assert app.query_one("#main", ContentSwitcher).current == "runs"
 
     _run(scenario())
-    assert _query(
-        project, "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'"
-    )[0]["n"] == 3
+    assert (
+        _query(
+            project,
+            "SELECT COUNT(*) AS n FROM analysis_jobs WHERE analysis_name='fake_nt'",
+        )[0]["n"]
+        == 3
+    )
 
 
-def test_analysis_failure_callback_shows_error_dialog(project: Project, tmp_path: Path) -> None:
+def test_analysis_failure_callback_shows_error_dialog(
+    project: Project, tmp_path: Path
+) -> None:
     _write_fake_tool(project, tmp_path)
 
     async def scenario() -> None:
@@ -673,17 +780,22 @@ def test_analysis_failure_callback_shows_error_dialog(project: Project, tmp_path
             await pilot.pause()
             modal.confirm()
             await _wait_until(
-                lambda: "cannot launch" in _screen_text(app.screen, "#error-dialog-body"),
+                lambda: (
+                    "cannot launch" in _screen_text(app.screen, "#error-dialog-body")
+                ),
                 "analysis error dialog",
             )
             assert isinstance(app.screen, ErrorDialog)
             assert "3 of 3 file(s) failed analysis" in _screen_text(
-                app.screen, "#modal-title")
+                app.screen, "#modal-title"
+            )
             await pilot.press("escape")
             await pilot.pause()
             assert app.query_one("#main", ContentSwitcher).current == "runs"
-            assert any(severity == "warning" and "0/3 succeeded" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "warning" and "0/3 succeeded" in message
+                for severity, message in _notifications(app)
+            )
 
     _run(scenario())
 
@@ -706,7 +818,10 @@ def test_backend_select_helpers_before_mount(project: Project, tmp_path: Path) -
     assert project_default_backend(project) == "local"
     assert backend_select_options(project)[0] == ("project default (local)", "")
     assert [value for _label, value in backend_select_options(project)] == [
-        "", "local", "slurm", "ssh",
+        "",
+        "local",
+        "slurm",
+        "ssh",
     ]
 
 
@@ -770,8 +885,9 @@ touch "${OPERON_FAKE_SLURM_STATE}/cancelled"
 """
 
 
-def _install_fake_slurm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-                        *, holding: bool) -> Path:
+def _install_fake_slurm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, holding: bool
+) -> Path:
     """Put fake sbatch/squeue/scancel binaries on PATH; returns the state dir.
 
     ``SlurmExecutor`` shells out to these names, so a PATH shim is what makes
@@ -805,22 +921,29 @@ def _empty_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(empty))
 
 
-def test_preflight_backend_resolves_and_validates(project: Project, tmp_path: Path,
-                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+def test_preflight_backend_resolves_and_validates(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _empty_path(tmp_path, monkeypatch)
 
-    assert actions.preflight_backend(project) == {"backend": "local", "description": "local"}
+    assert actions.preflight_backend(project) == {
+        "backend": "local",
+        "description": "local",
+    }
     assert actions.preflight_backend(project, "local")["backend"] == "local"
     with pytest.raises(ValidationError, match="unknown execution backend"):
         actions.preflight_backend(project, "kubernetes")
     with pytest.raises(ValidationError, match="requires execution.ssh.host"):
         actions.preflight_backend(project, "ssh")
-    with pytest.raises(ValidationError, match="slurm backend requires 'sbatch' in PATH"):
+    with pytest.raises(
+        ValidationError, match="slurm backend requires 'sbatch' in PATH"
+    ):
         actions.preflight_backend(project, "slurm")
 
     _install_fake_slurm(tmp_path, monkeypatch, holding=False)
     assert actions.preflight_backend(project, "slurm") == {
-        "backend": "slurm", "description": "slurm",
+        "backend": "slurm",
+        "description": "slurm",
     }
 
     # Recipe-level slurm overrides are validated by the same code path the
@@ -831,7 +954,8 @@ def test_preflight_backend_resolves_and_validates(project: Project, tmp_path: Pa
 
 
 def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A cooperative cancel while the job array is queued: one scancel, and
     the unfinished tasks land as ``interrupted`` (no workflow_runs rows)."""
     _write_fake_tool(project, tmp_path, slurm={"array": True})
@@ -852,7 +976,10 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
     try:
         with pytest.raises(actions.AnalysisCancelled):
             actions.run_analysis(
-                project, "fake_nt", parameters={"marker": "TT"}, backend="slurm",
+                project,
+                "fake_nt",
+                parameters={"marker": "TT"},
+                backend="slurm",
                 cancel_event=cancel_event,
             )
     finally:
@@ -862,11 +989,15 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
     assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
     jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
     assert [job["status"] for job in jobs] == ["interrupted"] * 3
-    assert _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'") == []
+    assert (
+        _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
+        == []
+    )
 
 
 def test_analyze_modal_backend_preflight_then_slurm_run(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The backend select preflights inline, then runs on the real executor."""
     _write_fake_tool(project, tmp_path)
     _empty_path(tmp_path, monkeypatch)
@@ -888,12 +1019,14 @@ def test_analyze_modal_backend_preflight_then_slurm_run(
             await pilot.pause()
             assert "--backend slurm" in modal.command_text()
             assert "scancel" in _static_text(
-                modal.query_one("#analyze-cancel-note", Static))
+                modal.query_one("#analyze-cancel-note", Static)
+            )
 
             # No sbatch in PATH: the preflight reports inline, no worker starts.
             modal.confirm()
             assert "slurm backend requires 'sbatch' in PATH" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             assert not modal.running
             assert not modal.query_one("#confirm", Button).disabled
             assert dismissed == []
@@ -915,7 +1048,8 @@ def test_analyze_modal_backend_preflight_then_slurm_run(
 
 
 def test_analyze_modal_cancel_mid_array_scancels_and_reports(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Cancel while the array is queued: scancel runs, the modal reports the
     cancelled batch, and tasks land as interrupted."""
     _write_fake_tool(project, tmp_path, slurm={"array": True})
@@ -940,16 +1074,22 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
             modal.confirm()
             await _wait_until(
                 lambda: (state / "array-submitted").exists(),
-                "job array submission", timeout=30,
+                "job array submission",
+                timeout=30,
             )
             assert modal.running
 
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             assert "cancelling…" in _static_text(
-                modal.query_one("#analyze-status", Static))
-            await _wait_until(lambda: dismissed, "cancelled analysis dismissal", timeout=30)
-            assert any("analysis cancelled after" in message
-                       for _severity, message in _notifications(app))
+                modal.query_one("#analyze-status", Static)
+            )
+            await _wait_until(
+                lambda: dismissed, "cancelled analysis dismissal", timeout=30
+            )
+            assert any(
+                "analysis cancelled after" in message
+                for _severity, message in _notifications(app)
+            )
             await _settled(app)
 
     _run(scenario())
@@ -957,13 +1097,17 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
     assert dismissed == [{"cancelled": True, "done": 3, "total": 3}]
     jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
     assert [job["status"] for job in jobs] == ["interrupted"] * 3
-    assert _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'") == []
+    assert (
+        _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
+        == []
+    )
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_analyze_modal_real_cancel_click_stays_open_while_running(
-        project: Project, monkeypatch) -> None:
+    project: Project, monkeypatch
+) -> None:
     """A real Cancel click must not dismiss the modal mid-run."""
     released = threading.Event()
     started = threading.Event()
@@ -987,17 +1131,23 @@ def test_analyze_modal_real_cancel_click_stays_open_while_running(
             await _wait_until(lambda: modal.running, "analysis to start")
 
             # Button.press() posts Button.Pressed through the real pump; before
-            # ODR-0043 the base WriteModal handler dismissed the modal here.
-            await _wait_until(started.is_set, "analysis to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            # ODR-43 the base WriteModal handler dismissed the modal here.
+            await _wait_until(
+                started.is_set,
+                "analysis to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "cancelled analysis dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "cancelled analysis dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:

@@ -26,10 +26,7 @@ CORE_RUNS = 5
 E2E_RUNS = 3
 
 # protein-ish alphabet: 20 amino acids + a few ambiguities, ~30% gaps
-ALPHABET = (
-    "ACDEFGHIKLMNPQRSTVWY" + "BXZ" + "acdefg"
-    + "-" * 12 + "." * 6
-)
+ALPHABET = "ACDEFGHIKLMNPQRSTVWY" + "BXZ" + "acdefg" + "-" * 12 + "." * 6
 
 
 def make_alignment(n_sequences: int, n_columns: int):
@@ -50,8 +47,10 @@ def median_time(func, runs: int) -> float:
 
 
 def main() -> None:
-    print(f"alignment QC backend benchmark (seed={SEED}, "
-          f"core median of {CORE_RUNS}, e2e median of {E2E_RUNS})")
+    print(
+        f"alignment QC backend benchmark (seed={SEED}, "
+        f"core median of {CORE_RUNS}, e2e median of {E2E_RUNS})"
+    )
     print()
     header = (
         f"{'size (seqs x cols)':>18}  {'backend':>8}  "
@@ -71,16 +70,22 @@ def main() -> None:
             size = f"{n_sequences}x{n_columns}"
 
             py_core = median_time(
-                lambda: py_alignment.compute_alignment_qc(iter(records)), CORE_RUNS)
+                lambda: py_alignment.compute_alignment_qc(iter(records)), CORE_RUNS
+            )
             cy_core = median_time(
-                lambda: cy_alignment.compute_alignment_qc(iter(records)), CORE_RUNS)
+                lambda: cy_alignment.compute_alignment_qc(iter(records)), CORE_RUNS
+            )
             py_e2e = median_time(lambda: py_alignment.alignment_qc(path), E2E_RUNS)
             cy_e2e = median_time(lambda: cy_alignment.alignment_qc(path), E2E_RUNS)
 
-            print(f"{size:>18}  {'python':>8}  {py_core:>10.4f}  {py_e2e:>10.4f}  "
-                  f"{'1.00x':>12}  {'1.00x':>11}")
-            print(f"{'':>18}  {'cython':>8}  {cy_core:>10.4f}  {cy_e2e:>10.4f}  "
-                  f"{py_core / cy_core:>11.2f}x  {py_e2e / cy_e2e:>10.2f}x")
+            print(
+                f"{size:>18}  {'python':>8}  {py_core:>10.4f}  {py_e2e:>10.4f}  "
+                f"{'1.00x':>12}  {'1.00x':>11}"
+            )
+            print(
+                f"{'':>18}  {'cython':>8}  {cy_core:>10.4f}  {cy_e2e:>10.4f}  "
+                f"{py_core / cy_core:>11.2f}x  {py_e2e / cy_e2e:>10.2f}x"
+            )
 
 
 if __name__ == "__main__":

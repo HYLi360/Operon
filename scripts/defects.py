@@ -28,6 +28,27 @@ HEADER = """# Operon defect registry (schema 1).
 # See docs/en/contributor/defect-tracking.md for the process.
 """
 
+# Long enough for an unbreakable `path::test` token plus the folded-block indent.
+# A narrower width would split those tokens, which the format guard rejects.
+LINE_WIDTH = 104
+FIELD_ORDER = (
+    "id",
+    "title",
+    "reported",
+    "introduced_in",
+    "affected",
+    "severity",
+    "component",
+    "status",
+    "reproduction",
+    "expectation",
+    "root_cause",
+    "disposition",
+    "fix_commit",
+    "fixed_in",
+    "regression_tests",
+)
+
 RESET = "\033[0m"
 BOLD = "\033[1m"
 COLORS = {
@@ -44,8 +65,124 @@ COLORS = {
 }
 
 
+class _NoDatesLoader(yaml.SafeLoader):
+    """Safe loader that keeps ISO dates as strings.
+
+    PyYAML otherwise resolves an unquoted ``2026-09-24`` into a
+    ``datetime.date``, which is the escaping defect the registry format
+    exists to prevent.
+    """
+
+
+for _first, _resolvers in list(_NoDatesLoader.yaml_implicit_resolvers.items()):
+    _NoDatesLoader.yaml_implicit_resolvers[_first] = [
+        (tag, pattern)
+        for tag, pattern in _resolvers
+        if tag != "tag:yaml.org,2002:timestamp"
+    ]
+
+
 class RegistryError(Exception):
     """A defect registry cannot be read or updated."""
+
+
+def load_document(text: str) -> dict:
+    """Load one registry document, keeping dates as strings."""
+    document = yaml.load(text, Loader=_NoDatesLoader) or {}
+    if not isinstance(document, dict):
+        raise RegistryError("registry document must be a YAML mapping")
+    return document
+
+
+def _quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _fold_lines(value: str, width: int) -> list[str]:
+    """Wrap at spaces. A paragraph break is exactly one blank line.
+
+    A single blank line is kept; a run of blank lines collapses to one, so
+    the stored text never separates paragraphs with two consecutive breaks.
+    """
+    folded: list[str] = []
+    pending: list[str] = []
+    blank = False
+
+    def flush() -> None:
+        line: list[str] = []
+        length = 0
+        for word in pending:
+            extra = len(word) if not line else len(word) + 1
+            if line and length + extra > width and len(word) <= width:
+                folded.append(" ".join(line))
+                line, length = [word], len(word)
+            else:
+                line.append(word)
+                length += extra
+        if line:
+            folded.append(" ".join(line))
+        pending.clear()
+
+    for paragraph in value.replace("\r\n", "\n").rstrip("\n").split("\n"):
+        words = paragraph.split()
+        if not words:
+            flush()
+            blank = True
+            continue
+        if blank and folded:
+            folded.append("")
+        blank = False
+        pending.extend(words)
+    flush()
+    return folded or [""]
+
+
+def _render_scalar(key: str, value: object, indent: str = "  ") -> list[str]:
+    prefix = f"{indent}{key}: "
+    if value is None:
+        return [prefix + "null"]
+    if isinstance(value, bool):
+        return [prefix + ("true" if value else "false")]
+    if isinstance(value, int):
+        return [prefix + str(value)]
+    text = str(value)
+    quoted = prefix + _quote(text)
+    if "\n" not in text and len(quoted) <= LINE_WIDTH:
+        return [quoted]
+    pad = indent + "  "
+    # `|` rather than `>`: a folded block drops the indentation of a blank
+    # line, so a paragraph break would not round-trip through a second render.
+    return [prefix + "|"] + [
+        pad + line for line in _fold_lines(text, LINE_WIDTH - len(pad))
+    ]
+
+
+def render_document(document: dict) -> str:
+    """Render a registry document in the canonical storage format.
+
+    Short strings are single-quoted (so an ISO date can never be read back
+    as a timestamp). Longer strings use a literal block wrapped at
+    ``LINE_WIDTH``, with a paragraph break kept as one blank line and never
+    two. The rendering is idempotent and does not change the loaded values
+    beyond collapsing intra-paragraph whitespace and runs of blank lines.
+    """
+    lines = [HEADER.rstrip(), f"schema: {document.get('schema', 1)}", "defects:"]
+    for record in document.get("defects") or []:
+        keys = [key for key in FIELD_ORDER if key in record]
+        keys.extend(key for key in record if key not in FIELD_ORDER)
+        for key in keys:
+            value = record[key]
+            if key == "id":
+                lines.append(f"- id: {value}")
+            elif key == "regression_tests":
+                if not value:
+                    lines.append("  regression_tests: []")
+                else:
+                    lines.append("  regression_tests:")
+                    lines.extend(f"    - {item}" for item in value)
+            else:
+                lines.extend(_render_scalar(key, value))
+    return "\n".join(lines) + "\n"
 
 
 class Registry:
@@ -69,11 +206,9 @@ class Registry:
     @staticmethod
     def _read(path: Path) -> dict:
         try:
-            document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except (OSError, yaml.YAMLError) as exc:
+            document = load_document(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError, RegistryError) as exc:
             raise RegistryError(f"cannot read {path}: {exc}") from exc
-        if not isinstance(document, dict):
-            raise RegistryError(f"{path}: expected a YAML mapping")
         records = document.get("defects") or []
         if not isinstance(records, list) or not all(
             isinstance(record, dict) for record in records
@@ -97,12 +232,10 @@ class Registry:
     def append(self, options: argparse.Namespace) -> tuple[str, Path]:
         existing = self.load_all()
         try:
-            highest = max(
-                (int(record["id"][4:]) for record in existing), default=0
-            )
+            highest = max((int(record["id"][4:]) for record in existing), default=0)
         except (KeyError, TypeError, ValueError) as exc:
             raise RegistryError("registry contains a malformed defect id") from exc
-        new_id = f"ODR-{highest + 1:04d}"
+        new_id = f"ODR-{highest + 1}"
         if any(record.get("id") == new_id for record in existing):
             raise RegistryError(f"id collision on {new_id}")
 
@@ -134,13 +267,7 @@ class Registry:
                 document = {"schema": 1, "defects": []}
         document.setdefault("defects", []).append(record)
         try:
-            target.write_text(
-                HEADER
-                + yaml.safe_dump(
-                    document, sort_keys=False, allow_unicode=True, width=4096
-                ),
-                encoding="utf-8",
-            )
+            target.write_text(render_document(document), encoding="utf-8")
         except OSError as exc:
             raise RegistryError(f"cannot write {target}: {exc}") from exc
         return new_id, target
@@ -192,7 +319,9 @@ def render_list(records: Sequence[dict], width: int, *, color: bool = False) -> 
     if width < 72:
         return _render_compact_list(records, width, color=color)
 
-    id_width = max(len("ID"), max(len(str(record.get("id", "?"))) for record in records))
+    id_width = max(
+        len("ID"), max(len(str(record.get("id", "?"))) for record in records)
+    )
     status_width = max(
         len("STATUS"), max(len(str(record.get("status", "?"))) for record in records)
     )
@@ -231,9 +360,7 @@ def render_list(records: Sequence[dict], width: int, *, color: bool = False) -> 
     return "\n".join(output)
 
 
-def _render_compact_list(
-    records: Sequence[dict], width: int, *, color: bool
-) -> str:
+def _render_compact_list(records: Sequence[dict], width: int, *, color: bool) -> str:
     output = []
     for index, record in enumerate(records):
         status = str(record.get("status", "?")).upper()
@@ -352,8 +479,7 @@ def main(
                 for record in registry.load_all()
                 if (args.status is None or record.get("status") == args.status)
                 and (
-                    args.component is None
-                    or record.get("component") == args.component
+                    args.component is None or record.get("component") == args.component
                 )
             ]
             print(

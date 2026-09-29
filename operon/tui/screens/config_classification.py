@@ -41,13 +41,25 @@ from operon.tui.screens.common import (
 # Keep in sync with operon.classify._OPERATORS (asserted in
 # tests/unit/test_tui_config.py); `like` is the case-insensitive SQL LIKE.
 CLASSIFICATION_OPERATORS = (
-    ">=", "<=", ">", "<", "==", "!=", "between", "in", "not_in", "exists", "like",
+    ">=",
+    "<=",
+    ">",
+    "<",
+    "==",
+    "!=",
+    "between",
+    "in",
+    "not_in",
+    "exists",
+    "like",
 )
 CONDITION_MODES = (("condition", "condition"), ("any of", "any"), ("not", "not"))
 BEST_BY_DIRECTIONS = ("asc", "desc")
 RULE_MODES = (("when", "when"), ("absent", "absent"), ("default", "default"))
 
-CONDITION_MODELED_KEYS = frozenset({"field", "operator", "value", "values", "min", "max"})
+CONDITION_MODELED_KEYS = frozenset(
+    {"field", "operator", "value", "values", "min", "max"}
+)
 BEST_BY_MODELED_KEYS = frozenset({"field", "direction", "rank", "default"})
 SOURCE_MODELED_KEYS = frozenset({"analysis", "filter", "best_by"})
 RULE_MODELED_KEYS = frozenset({"label", "source", "when", "absent", "default"})
@@ -115,16 +127,25 @@ class ConditionRow(ComposedRows, Vertical):
         if operator not in CLASSIFICATION_OPERATORS:
             options.append((f"{operator} (unknown, preserved)", operator))
         with Horizontal(classes="condition-inputs"):
-            yield Input(value=str(self.original.get("field", "")), placeholder="field",
-                        classes="condition-field")
-            yield FittingSelect(options, value=operator,
-                                classes="condition-operator", allow_blank=False)
-            yield Input(value=_condition_value_text(self.original),
-                        placeholder=_condition_placeholder(operator), classes="condition-value")
+            yield Input(
+                value=str(self.original.get("field", "")),
+                placeholder="field",
+                classes="condition-field",
+            )
+            yield FittingSelect(
+                options, value=operator, classes="condition-operator", allow_blank=False
+            )
+            yield Input(
+                value=_condition_value_text(self.original),
+                placeholder=_condition_placeholder(operator),
+                classes="condition-value",
+            )
             if self.removable:
                 yield Button("✕", classes="condition-remove")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="condition-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="condition-extras"
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("condition-remove"):
@@ -138,7 +159,9 @@ class ConditionRow(ComposedRows, Vertical):
         text = self.query_one(".condition-value", Input).value.strip()
         operand: dict[str, Any] = {}
         if operator in {"in", "not_in"}:
-            values = [actions.coerce_scalar(part) for part in text.split(",") if part.strip()]
+            values = [
+                actions.coerce_scalar(part) for part in text.split(",") if part.strip()
+            ]
             operand["values"] = values
         elif operator == "between":
             parts = [part.strip() for part in text.split(",")]
@@ -188,18 +211,23 @@ class ConditionEditor(ComposedRows, Vertical):
         self.extras = _extras(self.original, CONDITION_MODELED_KEYS | {"any", "not"})
         self._mode = self._original_mode()
         #: The document the body was last seeded from.  A reader that lands while
-        #: a mode change is replacing the body composes this (ODR-0035).
+        #: a mode change is replacing the body composes this (ODR-35).
         self._seeded_document: dict[str, Any] = dict(condition)
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="condition-inputs"):
-            yield FittingSelect(list(CONDITION_MODES), value=self._mode,
-                                 classes="condition-mode",
-                         allow_blank=False)
+            yield FittingSelect(
+                list(CONDITION_MODES),
+                value=self._mode,
+                classes="condition-mode",
+                allow_blank=False,
+            )
             yield Button("✕", classes="condition-remove")
         yield MountTracked(classes="condition-body")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="condition-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="condition-extras"
+            )
 
     def on_mount(self) -> None:
         self._rebuild(self._mode, self.original)
@@ -228,10 +256,13 @@ class ConditionEditor(ComposedRows, Vertical):
         elif event.button.has_class("condition-add"):
             event.stop()
             self.query_one(".condition-group", MountTracked).mount_later(
-                ConditionRow({"field": ""}), when_present=".condition-row",
+                ConditionRow({"field": ""}),
+                when_present=".condition-row",
             )
 
-    def on_condition_row_remove_requested(self, event: ConditionRow.RemoveRequested) -> None:
+    def on_condition_row_remove_requested(
+        self, event: ConditionRow.RemoveRequested
+    ) -> None:
         event.stop()
         event.row.remove()
 
@@ -244,7 +275,9 @@ class ConditionEditor(ComposedRows, Vertical):
             rows = [item for item in group if isinstance(item, dict)] or [{"field": ""}]
             remount(
                 body,
-                MountTracked(*[ConditionRow(row) for row in rows], classes="condition-group"),
+                MountTracked(
+                    *[ConditionRow(row) for row in rows], classes="condition-group"
+                ),
                 Button("add condition", classes="condition-add"),
             )
         else:
@@ -267,13 +300,16 @@ class ConditionEditor(ComposedRows, Vertical):
         subtree with ``_pruning`` before the children go, and the row leaves the
         tree only after Textual has pruned it.  A composition that lands in between
         would read a row whose inputs are gone — or worse, a control that still
-        answers with a blank value (ODR-0026) — and ``form_ready`` latches one-way
-        on purpose (ODR-0023), so the panel's readiness gate cannot see the window.
+        answers with a blank value (ODR-26) — and ``form_ready`` latches one-way
+        on purpose (ODR-23), so the panel's readiness gate cannot see the window.
         Such a row is on its way out: leaving it out of the document is what the
         removal asks for.
         """
-        return [row for row in self.query(selector).results(ConditionRow)
-                if not row._pruning and row.query(".condition-field")]
+        return [
+            row
+            for row in self.query(selector).results(ConditionRow)
+            if not row._pruning and row.query(".condition-field")
+        ]
 
     def editor_document(self) -> dict[str, Any]:
         """Compose the condition this editor edits.
@@ -281,12 +317,12 @@ class ConditionEditor(ComposedRows, Vertical):
         A mode change replaces the body through ``MountTracked.replace_children``,
         which retires the old rows and mounts the next generation a turn later:
         while that is in flight the body holds nothing to compose.  The container
-        answers "are my rows there yet" through ``mounts_settled`` (ODR-0023), so a
+        answers "are my rows there yet" through ``mounts_settled`` (ODR-23), so a
         reader that lands in the window — a save pressed in the same turn as the
         mode change — gets the document the replacement was seeded from, instead of
         a ``NoMatches`` in leaf/not mode or an empty ``any:`` group that would drop
-        the condition (ODR-0035).  A row that is being removed right now is skipped
-        rather than read (ODR-0036).
+        the condition (ODR-35).  A row that is being removed right now is skipped
+        rather than read (ODR-36).
         """
         mode_value = self.query_one(".condition-mode", Select).value
         mode = "condition" if mode_value is Select.NULL else str(mode_value)
@@ -334,20 +370,36 @@ class BestByRow(ComposedRows, Vertical):
         if direction not in BEST_BY_DIRECTIONS:
             options.append((f"{direction} (unknown, preserved)", direction))
         rank = self.original.get("rank")
-        rank_text = ", ".join(f"{key}={value}" for key, value in rank.items()) if isinstance(rank, dict) else ""
+        rank_text = (
+            ", ".join(f"{key}={value}" for key, value in rank.items())
+            if isinstance(rank, dict)
+            else ""
+        )
         default = self.original.get("default")
         with Horizontal(classes="bestby-inputs"):
-            yield Input(value=str(self.original.get("field", "")), placeholder="field",
-                        classes="bestby-field")
-            yield FittingSelect(options, value=direction,
-                                classes="bestby-direction", allow_blank=False)
-            yield Input(value=rank_text, placeholder="rank map: Value=rank, … (blank = none)",
-                        classes="bestby-rank")
-            yield Input(value="" if default is None else str(default),
-                        placeholder="default (blank = none)", classes="bestby-default")
+            yield Input(
+                value=str(self.original.get("field", "")),
+                placeholder="field",
+                classes="bestby-field",
+            )
+            yield FittingSelect(
+                options, value=direction, classes="bestby-direction", allow_blank=False
+            )
+            yield Input(
+                value=rank_text,
+                placeholder="rank map: Value=rank, … (blank = none)",
+                classes="bestby-rank",
+            )
+            yield Input(
+                value="" if default is None else str(default),
+                placeholder="default (blank = none)",
+                classes="bestby-default",
+            )
             yield Button("✕", classes="bestby-remove")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="bestby-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="bestby-extras"
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("bestby-remove"):
@@ -378,8 +430,10 @@ class BestByRow(ComposedRows, Vertical):
                     continue
                 key, _, value = part.partition("=")
                 # ``float`` rewrote whole ranks as ``0.0``/``1.0``, so a form
-                # round trip did not reproduce the on-disk document (ODR-0026).
-                rank[key.strip()] = actions.coerce_scalar(value.strip()) if value.strip() else 0
+                # round trip did not reproduce the on-disk document (ODR-26).
+                rank[key.strip()] = (
+                    actions.coerce_scalar(value.strip()) if value.strip() else 0
+                )
             ordered["rank"] = rank
         if default_text:
             ordered["default"] = actions.coerce_scalar(default_text)
@@ -407,31 +461,48 @@ class SourceRow(ComposedRows, Vertical):
 
     def compose(self) -> ComposeResult:
         with Horizontal(classes="source-inputs"):
-            yield Input(value=self.original_name, placeholder="source name",
-                        classes="source-name")
-            yield Input(value=str(self.original.get("analysis", "")), placeholder="analysis",
-                        classes="source-analysis")
+            yield Input(
+                value=self.original_name,
+                placeholder="source name",
+                classes="source-name",
+            )
+            yield Input(
+                value=str(self.original.get("analysis", "")),
+                placeholder="analysis",
+                classes="source-analysis",
+            )
             yield Button("✕", classes="source-remove")
-        yield Static("filter conditions (AND-ed; empty = all rows)", classes="modal-label")
+        yield Static(
+            "filter conditions (AND-ed; empty = all rows)", classes="modal-label"
+        )
         yield MountTracked(classes="source-filter")
         yield Button("add filter condition", classes="source-add-filter")
         yield Static("best_by (empty = hit_rank ascending)", classes="modal-label")
         yield MountTracked(classes="source-bestby")
         yield Button("add best_by entry", classes="source-add-bestby")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="source-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="source-extras"
+            )
 
     def on_mount(self) -> None:
-        filters = [item for item in self.original.get("filter") or [] if isinstance(item, dict)]
+        filters = [
+            item for item in self.original.get("filter") or [] if isinstance(item, dict)
+        ]
         if filters:
             self.query_one(".source-filter", MountTracked).mount_later(
                 *[ConditionEditor(item) for item in filters],
                 when_present=".condition-editor",
             )
-        entries = [item for item in self.original.get("best_by") or [] if isinstance(item, dict)]
+        entries = [
+            item
+            for item in self.original.get("best_by") or []
+            if isinstance(item, dict)
+        ]
         if entries:
             self.query_one(".source-bestby", MountTracked).mount_later(
-                *[BestByRow(item) for item in entries], when_present=".bestby-row",
+                *[BestByRow(item) for item in entries],
+                when_present=".bestby-row",
             )
         self.mark_form_ready()
 
@@ -442,7 +513,8 @@ class SourceRow(ComposedRows, Vertical):
         elif event.button.has_class("source-add-filter"):
             event.stop()
             self.query_one(".source-filter", MountTracked).mount_later(
-                ConditionEditor({"field": ""}), when_present=".condition-editor",
+                ConditionEditor({"field": ""}),
+                when_present=".condition-editor",
             )
         elif event.button.has_class("source-add-bestby"):
             event.stop()
@@ -451,7 +523,9 @@ class SourceRow(ComposedRows, Vertical):
                 when_present=".bestby-row",
             )
 
-    def on_condition_editor_remove_requested(self, event: ConditionEditor.RemoveRequested) -> None:
+    def on_condition_editor_remove_requested(
+        self, event: ConditionEditor.RemoveRequested
+    ) -> None:
         event.stop()
         event.editor.remove()
 
@@ -469,7 +543,9 @@ class SourceRow(ComposedRows, Vertical):
             "analysis": self.query_one(".source-analysis", Input).value.strip(),
             "filter": [
                 editor.editor_document()
-                for editor in self.query(".source-filter .condition-editor").results(ConditionEditor)
+                for editor in self.query(".source-filter .condition-editor").results(
+                    ConditionEditor
+                )
             ],
         }
         # ``best_by`` must be omitted when empty: the core defaults it to
@@ -502,18 +578,31 @@ class ClassificationRuleRow(ComposedRows, Vertical):
     def compose(self) -> ComposeResult:
         mode = self._original_mode()
         with Horizontal(classes="classrule-inputs"):
-            yield Input(value=str(self.original.get("label", "")), placeholder="label",
-                        classes="classrule-label")
-            yield FittingSelect(list(RULE_MODES), value=mode,
-                                classes="classrule-mode", allow_blank=False)
-            yield FittingSelect(self._source_options(), classes="classrule-source",
-                                allow_blank=True)
+            yield Input(
+                value=str(self.original.get("label", "")),
+                placeholder="label",
+                classes="classrule-label",
+            )
+            yield FittingSelect(
+                list(RULE_MODES),
+                value=mode,
+                classes="classrule-mode",
+                allow_blank=False,
+            )
+            yield FittingSelect(
+                self._source_options(), classes="classrule-source", allow_blank=True
+            )
             yield Button("✕", classes="classrule-remove")
-        yield Static("when (all conditions must hold)", classes="modal-label classrule-when-label")
+        yield Static(
+            "when (all conditions must hold)",
+            classes="modal-label classrule-when-label",
+        )
         yield MountTracked(classes="classrule-when")
         yield Button("add when condition", classes="classrule-add-when")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="classrule-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="classrule-extras"
+            )
 
     def _original_mode(self) -> str:
         if self.original.get("default"):
@@ -549,7 +638,9 @@ class ClassificationRuleRow(ComposedRows, Vertical):
         source = self.original.get("source")
         if source is not None:
             self.query_one(".classrule-source", Select).value = str(source)
-        conditions = [item for item in self.original.get("when") or [] if isinstance(item, dict)]
+        conditions = [
+            item for item in self.original.get("when") or [] if isinstance(item, dict)
+        ]
         if conditions:
             self.query_one(".classrule-when", MountTracked).mount_later(
                 *[ConditionEditor(item) for item in conditions],
@@ -570,10 +661,13 @@ class ClassificationRuleRow(ComposedRows, Vertical):
         elif event.button.has_class("classrule-add-when"):
             event.stop()
             self.query_one(".classrule-when", MountTracked).mount_later(
-                ConditionEditor({"field": ""}), when_present=".condition-editor",
+                ConditionEditor({"field": ""}),
+                when_present=".condition-editor",
             )
 
-    def on_condition_editor_remove_requested(self, event: ConditionEditor.RemoveRequested) -> None:
+    def on_condition_editor_remove_requested(
+        self, event: ConditionEditor.RemoveRequested
+    ) -> None:
         event.stop()
         event.editor.remove()
 
@@ -585,7 +679,9 @@ class ClassificationRuleRow(ComposedRows, Vertical):
         """A default rule takes no source/when; absent takes no when list."""
         mode = self._mode()
         self.query_one(".classrule-source", Select).disabled = mode == "default"
-        for widget in self.query(".classrule-when, .classrule-add-when, .classrule-when-label"):
+        for widget in self.query(
+            ".classrule-when, .classrule-add-when, .classrule-when-label"
+        ):
             widget.display = mode == "when"
 
     def rule_document(self) -> dict[str, Any]:
@@ -596,13 +692,17 @@ class ClassificationRuleRow(ComposedRows, Vertical):
             document["default"] = True
         else:
             source_value = self.query_one(".classrule-source", Select).value
-            document["source"] = "" if source_value is Select.NULL else str(source_value)
+            document["source"] = (
+                "" if source_value is Select.NULL else str(source_value)
+            )
             if mode == "absent":
                 document["absent"] = True
             else:
                 document["when"] = [
                     editor.editor_document()
-                    for editor in self.query(".classrule-when .condition-editor").results(ConditionEditor)
+                    for editor in self.query(
+                        ".classrule-when .condition-editor"
+                    ).results(ConditionEditor)
                 ]
         for key, value in self.extras.items():
             document.setdefault(key, value)
@@ -610,7 +710,11 @@ class ClassificationRuleRow(ComposedRows, Vertical):
 
 
 def _leaf_condition(condition: Any) -> bool:
-    return (isinstance(condition, dict) and "any" not in condition and "not" not in condition)
+    return (
+        isinstance(condition, dict)
+        and "any" not in condition
+        and "not" not in condition
+    )
 
 
 def _condition_within_depth(condition: Any) -> bool:
@@ -648,10 +752,16 @@ def classification_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
             return False, f"source {name!r} is not a mapping"
         for condition in source.get("filter") or []:
             if not _condition_within_depth(condition):
-                return False, f"source {name!r} nests conditions deeper than one any:/not: level"
+                return (
+                    False,
+                    f"source {name!r} nests conditions deeper than one any:/not: level",
+                )
         for entry in source.get("best_by") or []:
             if not isinstance(entry, dict):
-                return False, f"source {name!r} has a best_by entry that is not a mapping"
+                return (
+                    False,
+                    f"source {name!r} has a best_by entry that is not a mapping",
+                )
     rules = document.get("rules")
     if rules is None:
         rules = []
@@ -662,15 +772,19 @@ def classification_form_supported(document: dict[str, Any]) -> tuple[bool, str]:
             return False, f"rule {index} is not a mapping"
         for condition in rule.get("when") or []:
             if not _condition_within_depth(condition):
-                return False, f"rule {index} nests conditions deeper than one any:/not: level"
+                return (
+                    False,
+                    f"rule {index} nests conditions deeper than one any:/not: level",
+                )
     return True, ""
 
 
 class ClassificationSaveModal(WriteModal):
     """Confirm a classification-profile save: file path + version + snapshot."""
 
-    def __init__(self, project: Project, name: str, document: dict[str, Any],
-                 new_version: int) -> None:
+    def __init__(
+        self, project: Project, name: str, document: dict[str, Any], new_version: int
+    ) -> None:
         super().__init__(f"Save classification profile {name}")
         self.project = project
         self.profile_name = name
@@ -687,20 +801,26 @@ class ClassificationSaveModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        return (f"config/profiles/{self.profile_name}.yaml → kind sequence_classification, "
-                f"version {self.new_version} + qc_profiles snapshot")
+        return (
+            f"config/profiles/{self.profile_name}.yaml → kind sequence_classification, "
+            f"version {self.new_version} + qc_profiles snapshot"
+        )
 
     def confirm(self) -> None:
         self.run_action(
             lambda: actions.save_classification_profile(
-                self.project, self.profile_name, self.document,
+                self.project,
+                self.profile_name,
+                self.document,
                 known_version=self.new_version - 1,
             )
         )
 
     def on_action_success(self, payload: Any) -> None:
         if payload.get("unchanged"):
-            self.app.notify(f"{self.profile_name}: unchanged — version {payload['version']} kept")
+            self.app.notify(
+                f"{self.profile_name}: unchanged — version {payload['version']} kept"
+            )
         else:
             self.app.notify(
                 f"saved {self.profile_name} version {payload['version']} "

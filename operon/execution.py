@@ -52,6 +52,7 @@ def _cancel_requested(cancel_event: threading.Event | None) -> bool:
     so the existing interrupt cleanup (scancel / remote termination) runs."""
     return cancel_event is not None and cancel_event.is_set()
 
+
 VALID_BACKENDS = ("local", "slurm", "ssh")
 
 
@@ -83,7 +84,9 @@ class SlurmConfig:
     array_concurrency: int | None = field(default=None, repr=False)
 
 
-def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None) -> SlurmConfig:
+def load_slurm_config(
+    project: Project, overrides: dict[str, Any] | None = None
+) -> SlurmConfig:
     """Merge `execution.slurm` from project.yaml with per-recipe overrides."""
     execution = project.config.get("execution", {}) or {}
     raw: dict[str, Any] = dict(execution.get("slurm", {}) or {})
@@ -93,9 +96,14 @@ def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None)
     array_concurrency = raw.get("array_concurrency")
     if array_concurrency is None or array_concurrency == "":
         array_concurrency = None
-    elif (isinstance(array_concurrency, bool) or not isinstance(array_concurrency, int)
-          or array_concurrency < 1):
-        raise ValidationError("execution.slurm array_concurrency must be a positive integer")
+    elif (
+        isinstance(array_concurrency, bool)
+        or not isinstance(array_concurrency, int)
+        or array_concurrency < 1
+    ):
+        raise ValidationError(
+            "execution.slurm array_concurrency must be a positive integer"
+        )
     config = SlurmConfig(
         partition=str(raw.get("partition", "") or ""),
         time_limit=str(raw.get("time", "") or ""),
@@ -107,17 +115,25 @@ def load_slurm_config(project: Project, overrides: dict[str, Any] | None = None)
         array_concurrency=array_concurrency,
     )
     if config.mem_gb < 0 or config.poll_interval <= 0:
-        raise ValidationError("execution.slurm mem_gb must be >= 0 and poll_interval must be > 0")
+        raise ValidationError(
+            "execution.slurm mem_gb must be >= 0 and poll_interval must be > 0"
+        )
     for field_name, values in (
-            ("extra_sbatch", config.extra_sbatch), ("setup_commands", config.setup_commands),
+        ("extra_sbatch", config.extra_sbatch),
+        ("setup_commands", config.setup_commands),
     ):
         if any("\n" in value or "\r" in value for value in values):
-            raise ValidationError(f"execution.slurm.{field_name} entries must be single lines")
+            raise ValidationError(
+                f"execution.slurm.{field_name} entries must be single lines"
+            )
     return config
 
 
-def get_executor(project: Project, backend: str | None = None,
-                 slurm_overrides: dict[str, Any] | None = None) -> Any:
+def get_executor(
+    project: Project,
+    backend: str | None = None,
+    slurm_overrides: dict[str, Any] | None = None,
+) -> Any:
     """Select the execution backend (CLI flag overrides `execution.backend`)."""
     execution = project.config.get("execution", {}) or {}
     name = str(backend or execution.get("backend") or "local").strip().lower()
@@ -126,9 +142,14 @@ def get_executor(project: Project, backend: str | None = None,
     if name == "slurm":
         return SlurmExecutor(project, load_slurm_config(project, slurm_overrides))
     if name == "ssh":
-        return SSHExecutor(project, execution.get("ssh", {}) or {},
-                           load_slurm_config(project, slurm_overrides))
-    raise ValidationError(f"unknown execution backend {name!r}; valid: {', '.join(VALID_BACKENDS)}")
+        return SSHExecutor(
+            project,
+            execution.get("ssh", {}) or {},
+            load_slurm_config(project, slurm_overrides),
+        )
+    raise ValidationError(
+        f"unknown execution backend {name!r}; valid: {', '.join(VALID_BACKENDS)}"
+    )
 
 
 def rewrite_remote_path(value: str, local_root: Path, remote_root: str) -> str:
@@ -172,9 +193,15 @@ def rewrite_remote_path(value: str, local_root: Path, remote_root: str) -> str:
     raise ValidationError(f"mapped SSH path escapes remote_root {root!r}: {value}")
 
 
-def _slurm_script_preamble(*, job_name: str, stdout_path: str, stderr_path: str,
-                           threads: int | None, slurm: SlurmConfig,
-                           extra_directives: Iterable[str] = ()) -> list[str]:
+def _slurm_script_preamble(
+    *,
+    job_name: str,
+    stdout_path: str,
+    stderr_path: str,
+    threads: int | None,
+    slurm: SlurmConfig,
+    extra_directives: Iterable[str] = (),
+) -> list[str]:
     """Shared SBATCH header and setup block for single and array scripts."""
     lines = [
         "#!/bin/bash",
@@ -199,14 +226,25 @@ def _slurm_script_preamble(*, job_name: str, stdout_path: str, stderr_path: str,
     return lines
 
 
-def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
-                        stdout_path: str, stderr_path: str, exitcode_path: str,
-                        threads: int | None, slurm: SlurmConfig,
-                        probe_path: str | None = None) -> str:
+def render_slurm_script(
+    *,
+    job_name: str,
+    command_line: str,
+    cwd: str,
+    stdout_path: str,
+    stderr_path: str,
+    exitcode_path: str,
+    threads: int | None,
+    slurm: SlurmConfig,
+    probe_path: str | None = None,
+) -> str:
     """Render a self-contained sbatch script (pure, unit-testable)."""
     lines = _slurm_script_preamble(
-        job_name=job_name, stdout_path=stdout_path, stderr_path=stderr_path,
-        threads=threads, slurm=slurm,
+        job_name=job_name,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        threads=threads,
+        slurm=slurm,
     )
     lines.append(f"cd {shlex.quote(cwd)}")
     lines.append("rc=$?")
@@ -230,10 +268,18 @@ def render_slurm_script(*, job_name: str, command_line: str, cwd: str,
     return "\n".join(lines) + "\n"
 
 
-def render_slurm_array_script(*, job_name: str, manifest_path: str, cwd: str,
-                              stdout_path: str, stderr_path: str,
-                              threads: int | None, slurm: SlurmConfig,
-                              task_count: int, concurrency: int | None = None) -> str:
+def render_slurm_array_script(
+    *,
+    job_name: str,
+    manifest_path: str,
+    cwd: str,
+    stdout_path: str,
+    stderr_path: str,
+    threads: int | None,
+    slurm: SlurmConfig,
+    task_count: int,
+    concurrency: int | None = None,
+) -> str:
     """Render a self-contained sbatch array script (pure, unit-testable).
 
     The payload is dispatched from the manifest: array task N executes line N
@@ -249,18 +295,27 @@ def render_slurm_array_script(*, job_name: str, manifest_path: str, cwd: str,
     if concurrency is not None:
         array_spec += f"%{int(concurrency)}"
     lines = _slurm_script_preamble(
-        job_name=job_name, stdout_path=stdout_path, stderr_path=stderr_path,
-        threads=threads, slurm=slurm,
+        job_name=job_name,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        threads=threads,
+        slurm=slurm,
         extra_directives=[f"#SBATCH --array={array_spec}"],
     )
-    lines.append(f'line="$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {shlex.quote(manifest_path)})"')
+    lines.append(
+        f'line="$(sed -n "${{SLURM_ARRAY_TASK_ID}}p" {shlex.quote(manifest_path)})"'
+    )
     lines.append('if [ -z "$line" ]; then')
-    lines.append(f'  echo "operon array task ${{SLURM_ARRAY_TASK_ID}}: '
-                 f'no manifest line in {manifest_path}" >&2')
+    lines.append(
+        f'  echo "operon array task ${{SLURM_ARRAY_TASK_ID}}: '
+        f'no manifest line in {manifest_path}" >&2'
+    )
     lines.append("  exit 1")
     lines.append("fi")
-    lines.append("IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
-                 'task_exitcode task_probe task_command <<< "$line"')
+    lines.append(
+        "IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
+        'task_exitcode task_probe task_command <<< "$line"'
+    )
     lines.append(f"cd {shlex.quote(cwd)}")
     lines.append("rc=$?")
     lines.append("(")
@@ -298,9 +353,13 @@ class _ArrayTask:
 _ARRAY_BATCH_ID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
 
-def _prepare_array_tasks(tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None,
-                         threads: int | None,
-                         default_cwd: str) -> tuple[list[_ArrayTask], str, int | None]:
+def _prepare_array_tasks(
+    tasks: Iterable[dict[str, Any]],
+    *,
+    cwd: str | Path | None,
+    threads: int | None,
+    default_cwd: str,
+) -> tuple[list[_ArrayTask], str, int | None]:
     """Validate task dicts and derive per-task paths; uniform cwd/threads win.
 
     Tasks may carry their own ``cwd``/``threads`` copies, but every task in
@@ -319,7 +378,9 @@ def _prepare_array_tasks(tasks: Iterable[dict[str, Any]], *, cwd: str | Path | N
         if not command.strip():
             raise ValidationError(f"array task {run_id!r} is missing command")
         if "\n" in command or "\r" in command:
-            raise ValidationError(f"array task {run_id!r} command must be a single line")
+            raise ValidationError(
+                f"array task {run_id!r} command must be a single line"
+            )
         if run_id in seen_run_ids:
             raise ValidationError(f"duplicate array task run_id {run_id!r}")
         seen_run_ids.add(run_id)
@@ -327,31 +388,47 @@ def _prepare_array_tasks(tasks: Iterable[dict[str, Any]], *, cwd: str | Path | N
         if effective_cwd is None and task_cwd:
             effective_cwd = str(task_cwd)
         if task_cwd and effective_cwd and Path(str(task_cwd)) != Path(effective_cwd):
-            raise ValidationError(f"array task {run_id!r} cwd differs from the batch cwd")
+            raise ValidationError(
+                f"array task {run_id!r} cwd differs from the batch cwd"
+            )
         task_threads = task.get("threads")
         if effective_threads is None and task_threads is not None:
             effective_threads = int(task_threads)
-        if (task_threads is not None and effective_threads is not None
-                and int(task_threads) != int(effective_threads)):
-            raise ValidationError(f"array task {run_id!r} threads differ from the batch threads")
+        if (
+            task_threads is not None
+            and effective_threads is not None
+            and int(task_threads) != int(effective_threads)
+        ):
+            raise ValidationError(
+                f"array task {run_id!r} threads differ from the batch threads"
+            )
         try:
             stdout_path = Path(task["stdout_path"])
             stderr_path = Path(task["stderr_path"])
         except (KeyError, TypeError) as exc:
-            missing = exc.args[0] if isinstance(exc, KeyError) else "stdout_path/stderr_path"
-            raise ValidationError(f"array task {run_id!r} is missing {missing}") from exc
+            missing = (
+                exc.args[0] if isinstance(exc, KeyError) else "stdout_path/stderr_path"
+            )
+            raise ValidationError(
+                f"array task {run_id!r} is missing {missing}"
+            ) from exc
         for value in (run_id, str(stdout_path), str(stderr_path)):
             if "\t" in value or "\n" in value:
                 raise ValidationError(
                     f"array task {run_id!r} paths and run_id must not contain tabs or newlines"
                 )
         logs = stdout_path.parent
-        prepared.append(_ArrayTask(
-            index=index, run_id=run_id, command=command,
-            stdout_path=stdout_path, stderr_path=stderr_path,
-            exitcode_path=logs / f"{run_id}.exitcode",
-            probe_path=logs / f"{run_id}.env",
-        ))
+        prepared.append(
+            _ArrayTask(
+                index=index,
+                run_id=run_id,
+                command=command,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                exitcode_path=logs / f"{run_id}.exitcode",
+                probe_path=logs / f"{run_id}.env",
+            )
+        )
     if not prepared:
         raise ValidationError("run_array requires at least one task")
     return prepared, effective_cwd or default_cwd, effective_threads
@@ -372,10 +449,19 @@ def render_array_manifest(tasks: Iterable[_ArrayTask]) -> str:
     """
     lines = []
     for task in tasks:
-        lines.append("\t".join((
-            str(task.index), task.run_id, str(task.stdout_path), str(task.stderr_path),
-            str(task.exitcode_path), str(task.probe_path), task.command,
-        )))
+        lines.append(
+            "\t".join(
+                (
+                    str(task.index),
+                    task.run_id,
+                    str(task.stdout_path),
+                    str(task.stderr_path),
+                    str(task.exitcode_path),
+                    str(task.probe_path),
+                    task.command,
+                )
+            )
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -439,7 +525,9 @@ def _read_process_rss_mb(pid: int) -> float | None:
     return None
 
 
-def _sample_process_rss(pid: int, samples_mb: list[float], stop: threading.Event) -> None:
+def _sample_process_rss(
+    pid: int, samples_mb: list[float], stop: threading.Event
+) -> None:
     """Poll process RSS until the process exits or ``stop`` is requested.
 
     Sampling is best-effort diagnostics: unavailable procfs/ps data or a
@@ -494,10 +582,19 @@ class LocalExecutor:
         except Exception:  # noqa: BLE001 - environment probe is best-effort; failures degrade to None  # pylint: disable=broad-exception-caught
             return None
 
-    def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
-            stderr_path: Path, timeout: float | None = None, threads: int | None = None,
-            run_id: str | None = None, stage_inputs: Iterable[Any] = (),
-            expected_outputs: Iterable[Any] = ()) -> ExecResult:
+    def run(
+        self,
+        argv: Iterable[Any],
+        *,
+        cwd: str | Path | None,
+        stdout_path: Path,
+        stderr_path: Path,
+        timeout: float | None = None,
+        threads: int | None = None,
+        run_id: str | None = None,
+        stage_inputs: Iterable[Any] = (),
+        expected_outputs: Iterable[Any] = (),
+    ) -> ExecResult:
         command = [str(a) for a in argv]
         environment = capture_local(command, cwd)
         samples_mb: list[float] = []
@@ -507,11 +604,15 @@ class LocalExecutor:
             # A dedicated process group lets shutdown (or timeout) terminate
             # the tool and any children it spawned, without orphaning them.
             process = subprocess.Popen(
-                command, cwd=str(cwd) if cwd else None,
-                stdout=out, stderr=err, start_new_session=True,
+                command,
+                cwd=str(cwd) if cwd else None,
+                stdout=out,
+                stderr=err,
+                start_new_session=True,
             )
             sampler = threading.Thread(
-                target=_sample_process_rss, args=(process.pid, samples_mb, stop),
+                target=_sample_process_rss,
+                args=(process.pid, samples_mb, stop),
                 daemon=True,
             )
             sampler.start()
@@ -532,9 +633,11 @@ class LocalExecutor:
         cpu_after = _child_cpu_seconds()
         if cpu_before is not None and cpu_after is not None:
             resources["cpu_seconds"] = round(max(0.0, cpu_after - cpu_before), 3)
-        return ExecResult(exit_code=process.returncode,
-                          details={"backend": "local", "environment": environment},
-                          resources=resources)
+        return ExecResult(
+            exit_code=process.returncode,
+            details={"backend": "local", "environment": environment},
+            resources=resources,
+        )
 
 
 def _parse_sbatch_job_id(output: str) -> str:
@@ -547,9 +650,13 @@ def _parse_sbatch_job_id(output: str) -> str:
 
 
 def _submit_slurm_job(sbatch: str, script_path: Path) -> str:
-    proc = subprocess.run([sbatch, "--parsable", str(script_path)], capture_output=True, text=True)
+    proc = subprocess.run(
+        [sbatch, "--parsable", str(script_path)], capture_output=True, text=True
+    )
     if proc.returncode != 0:
-        raise ExternalToolError(f"sbatch submission failed: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise ExternalToolError(
+            f"sbatch submission failed: {proc.stderr.strip() or proc.stdout.strip()}"
+        )
     return _parse_sbatch_job_id(proc.stdout)
 
 
@@ -559,7 +666,9 @@ def _squeue_job_gone(squeue: str, job_id: str) -> bool:
         # Completed jobs disappear with "Invalid job id specified".
         if "Invalid job id" in (proc.stderr or ""):
             return True
-        raise ExternalToolError(f"squeue failed for job {job_id}: {proc.stderr.strip()}")
+        raise ExternalToolError(
+            f"squeue failed for job {job_id}: {proc.stderr.strip()}"
+        )
     return not proc.stdout.strip()
 
 
@@ -645,7 +754,9 @@ def _parse_sacct_accounting(text: str) -> dict[str, Any]:
                 # sacct reports "exit:signal"; a signal kill with a zero exit
                 # component (e.g. an OOM kill's 0:9) is a failure, so fold it
                 # into a shell-style 128+signal exit code.
-                accounting["exit_code"] = 128 + term_signal if term_signal and code == 0 else code
+                accounting["exit_code"] = (
+                    128 + term_signal if term_signal and code == 0 else code
+                )
                 if term_signal:
                     accounting["exit_signal"] = term_signal
         rss = _parse_sacct_memory_mb(max_rss_raw)
@@ -687,8 +798,9 @@ _SLURM_EXIT_CODE_RETRIES = 10
 _SLURM_EXIT_CODE_RETRY_SECONDS = 2.0
 
 
-def _read_slurm_accounting(exitcode_path: Path, job_id: str,
-                           retries: int = _SLURM_EXIT_CODE_RETRIES) -> ExecResult:
+def _read_slurm_accounting(
+    exitcode_path: Path, job_id: str, retries: int = _SLURM_EXIT_CODE_RETRIES
+) -> ExecResult:
     """Resolve a finished job's exit code and collect its sacct accounting.
 
     The exit-code file written by the batch script remains the primary exit
@@ -702,14 +814,24 @@ def _read_slurm_accounting(exitcode_path: Path, job_id: str,
             result = ExecResult(exit_code=int(exitcode_path.read_text().strip()))
             break
         except (OSError, ValueError):
-            time.sleep(_SLURM_EXIT_CODE_RETRY_SECONDS)  # wait for shared-filesystem metadata to settle
+            time.sleep(
+                _SLURM_EXIT_CODE_RETRY_SECONDS
+            )  # wait for shared-filesystem metadata to settle
     sacct = shutil.which("sacct")
     if sacct:
         try:
             proc = subprocess.run(
-                [sacct, "-n", "-p", "-o", "ExitCode,MaxRSS,AveRSS,Elapsed,TotalCPU",
-                 "-j", job_id],
-                capture_output=True, text=True,
+                [
+                    sacct,
+                    "-n",
+                    "-p",
+                    "-o",
+                    "ExitCode,MaxRSS,AveRSS,Elapsed,TotalCPU",
+                    "-j",
+                    job_id,
+                ],
+                capture_output=True,
+                text=True,
             )
             accounting = _parse_sacct_accounting(proc.stdout)
         except Exception:
@@ -721,8 +843,10 @@ def _read_slurm_accounting(exitcode_path: Path, job_id: str,
         if result is not None:
             _apply_slurm_accounting(result, accounting)
     if result is None:
-        result = ExecResult(exit_code=None,
-                            error=f"slurm job {job_id} finished but its exit code is unavailable")
+        result = ExecResult(
+            exit_code=None,
+            error=f"slurm job {job_id} finished but its exit code is unavailable",
+        )
     return result
 
 
@@ -745,11 +869,20 @@ class SlurmExecutor:
         """The compute-side environment is only probed inside the job itself."""
         return None
 
-    def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
-            stderr_path: Path, timeout: float | None = None, threads: int | None = None,
-            run_id: str | None = None, stage_inputs: Iterable[Any] = (),
-            expected_outputs: Iterable[Any] = (),
-            cancel_event: threading.Event | None = None) -> ExecResult:
+    def run(
+        self,
+        argv: Iterable[Any],
+        *,
+        cwd: str | Path | None,
+        stdout_path: Path,
+        stderr_path: Path,
+        timeout: float | None = None,
+        threads: int | None = None,
+        run_id: str | None = None,
+        stage_inputs: Iterable[Any] = (),
+        expected_outputs: Iterable[Any] = (),
+        cancel_event: threading.Event | None = None,
+    ) -> ExecResult:
         sbatch = shutil.which("sbatch")
         if not sbatch:
             raise ExternalToolError("slurm backend requires 'sbatch' in PATH")
@@ -766,8 +899,11 @@ class SlurmExecutor:
             job_name=f"operon_{label}",
             command_line=shlex.join(str(a) for a in argv),
             cwd=str(cwd) if cwd else str(self.project.root),
-            stdout_path=str(stdout_path), stderr_path=str(stderr_path),
-            exitcode_path=str(exitcode_path), threads=threads, slurm=self.slurm,
+            stdout_path=str(stdout_path),
+            stderr_path=str(stderr_path),
+            exitcode_path=str(exitcode_path),
+            threads=threads,
+            slurm=self.slurm,
             probe_path=str(probe_path),
         )
         script_path.write_text(script, encoding="utf-8")
@@ -786,9 +922,12 @@ class SlurmExecutor:
                     environment = _read_probe_environment(probe_path)
                     if environment:
                         details["environment"] = environment
-                    return ExecResult(exit_code=None,
-                                      error=f"timeout after {timeout}s waiting for slurm job {job_id}",
-                                      scheduler_job_id=job_id, details=details)
+                    return ExecResult(
+                        exit_code=None,
+                        error=f"timeout after {timeout}s waiting for slurm job {job_id}",
+                        scheduler_job_id=job_id,
+                        details=details,
+                    )
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon a queued/running cluster job.
@@ -802,11 +941,17 @@ class SlurmExecutor:
             result.details["environment"] = environment
         return result
 
-    def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
-                  threads: int | None = None, timeout: float | None = None,
-                  batch_id: str | None = None,
-                  array_concurrency: int | None = None,
-                  cancel_event: threading.Event | None = None) -> list[ExecResult]:
+    def run_array(
+        self,
+        tasks: Iterable[dict[str, Any]],
+        *,
+        cwd: str | Path | None = None,
+        threads: int | None = None,
+        timeout: float | None = None,
+        batch_id: str | None = None,
+        array_concurrency: int | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> list[ExecResult]:
         """Submit all tasks as one Slurm job array and block until it drains.
 
         Each task is a dict with ``run_id``, ``command`` (a rendered single
@@ -833,26 +978,36 @@ class SlurmExecutor:
         batch_id = batch_id or f"array_{uuid.uuid4().hex[:12]}"
         _validate_array_batch(batch_id, array_concurrency)
         prepared, effective_cwd, effective_threads = _prepare_array_tasks(
-            tasks, cwd=cwd, threads=threads, default_cwd=str(self.project.root),
+            tasks,
+            cwd=cwd,
+            threads=threads,
+            default_cwd=str(self.project.root),
         )
         logs = prepared[0].stdout_path.parent
         manifest_path = logs / f"{batch_id}.array-manifest.tsv"
         script_path = logs / f"{batch_id}.sbatch"
-        details = {"backend": "slurm", "script": str(script_path),
-                   "manifest": str(manifest_path)}
+        details = {
+            "backend": "slurm",
+            "script": str(script_path),
+            "manifest": str(manifest_path),
+        }
         for task in prepared:
             task.probe_script_path.write_text(
-                _array_probe_shell(task.command) + "\n", encoding="utf-8")
+                _array_probe_shell(task.command) + "\n", encoding="utf-8"
+            )
             task.exitcode_path.unlink(missing_ok=True)
             task.probe_path.unlink(missing_ok=True)
         manifest_path.write_text(render_array_manifest(prepared), encoding="utf-8")
         script = render_slurm_array_script(
-            job_name=f"operon_{batch_id}", manifest_path=str(manifest_path),
+            job_name=f"operon_{batch_id}",
+            manifest_path=str(manifest_path),
             cwd=effective_cwd,
             stdout_path=str(logs / f"{batch_id}.%A_%a.out"),
             stderr_path=str(logs / f"{batch_id}.%A_%a.err"),
-            threads=effective_threads, slurm=self.slurm,
-            task_count=len(prepared), concurrency=array_concurrency,
+            threads=effective_threads,
+            slurm=self.slurm,
+            task_count=len(prepared),
+            concurrency=array_concurrency,
         )
         script_path.write_text(script, encoding="utf-8")
         job_id = _submit_slurm_job(sbatch, script_path)
@@ -865,7 +1020,9 @@ class SlurmExecutor:
                     break
                 if deadline is not None and time.monotonic() > deadline:
                     _scancel_slurm_job(job_id)
-                    return self._array_timeout_results(prepared, job_id, timeout, details)
+                    return self._array_timeout_results(
+                        prepared, job_id, timeout, details
+                    )
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon queued/running cluster tasks.
@@ -883,16 +1040,22 @@ class SlurmExecutor:
             results.append(result)
         return results
 
-    def _array_timeout_results(self, prepared: list[_ArrayTask], job_id: str,
-                               timeout: float | None,
-                               details: dict[str, Any]) -> list[ExecResult]:
+    def _array_timeout_results(
+        self,
+        prepared: list[_ArrayTask],
+        job_id: str,
+        timeout: float | None,
+        details: dict[str, Any],
+    ) -> list[ExecResult]:
         """Per-task results after a cancelled array: finished tasks keep theirs."""
         results = []
         for task in prepared:
             task_job_id = f"{job_id}_{task.index}"
             result: ExecResult | None = None
             try:
-                result = ExecResult(exit_code=int(task.exitcode_path.read_text().strip()))
+                result = ExecResult(
+                    exit_code=int(task.exitcode_path.read_text().strip())
+                )
             except (OSError, ValueError):
                 pass
             if result is None:
@@ -948,8 +1111,13 @@ class SSHExecutor:
 
     name = "ssh"
 
-    def __init__(self, project: Project, ssh_config: dict[str, Any], slurm: SlurmConfig,
-                 client_factory: Any = None):
+    def __init__(
+        self,
+        project: Project,
+        ssh_config: dict[str, Any],
+        slurm: SlurmConfig,
+        client_factory: Any = None,
+    ):
         cfg = dict(ssh_config or {})
         self.project = project
         self.host = str(cfg.get("host", "") or "").strip()
@@ -959,7 +1127,9 @@ class SSHExecutor:
         self.remote_root = str(cfg.get("remote_root", "") or "").strip()
         if self.remote_root:
             if not self.remote_root.startswith("/"):
-                raise ValidationError("execution.ssh.remote_root must be an absolute POSIX path")
+                raise ValidationError(
+                    "execution.ssh.remote_root must be an absolute POSIX path"
+                )
             self.remote_root = posixpath.normpath(self.remote_root)
         self.scheduler = str(cfg.get("scheduler", "none") or "none").strip().lower()
         if self.scheduler not in {"none", "slurm"}:
@@ -975,9 +1145,12 @@ class SSHExecutor:
         self.storage_remote = str(cfg.get("storage_remote", "") or "").strip()
         self.known_hosts = str(cfg.get("known_hosts", "") or "").strip()
         self.host_key_sha256 = str(cfg.get("host_key_sha256", "") or "").strip()
-        self.insecure_accept_unknown_host = bool(cfg.get("insecure_accept_unknown_host", False))
+        self.insecure_accept_unknown_host = bool(
+            cfg.get("insecure_accept_unknown_host", False)
+        )
         if self.storage_remote:
             from operon.remotes import get_remote
+
             storage = get_remote(project, self.storage_remote)
             if self.host and self.host != storage.host:
                 raise ValidationError(
@@ -985,9 +1158,13 @@ class SSHExecutor:
                     f"{self.storage_remote!r} host {storage.host!r}"
                 )
             if self.user and storage.user and self.user != storage.user:
-                raise ValidationError("execution.ssh.user differs from storage remote user")
+                raise ValidationError(
+                    "execution.ssh.user differs from storage remote user"
+                )
             if self.port != storage.port and cfg.get("port") not in (None, "", 22):
-                raise ValidationError("execution.ssh.port differs from storage remote port")
+                raise ValidationError(
+                    "execution.ssh.port differs from storage remote port"
+                )
             storage_root = posixpath.normpath(storage.root)
             if self.remote_root and self.remote_root != storage_root:
                 raise ValidationError(
@@ -1002,7 +1179,8 @@ class SSHExecutor:
             self.known_hosts = self.known_hosts or storage.known_hosts
             self.host_key_sha256 = self.host_key_sha256 or storage.host_key_sha256
             self.insecure_accept_unknown_host = (
-                    self.insecure_accept_unknown_host or storage.insecure_accept_unknown_host
+                self.insecure_accept_unknown_host
+                or storage.insecure_accept_unknown_host
             )
         if not self.host:
             raise ValidationError(
@@ -1032,7 +1210,8 @@ class SSHExecutor:
         try:
             client = self._connect()
             _, stdout, _ = client.exec_command(
-                " ; ".join(PROBE_SHELL_LINES), timeout=self.connect_timeout,
+                " ; ".join(PROBE_SHELL_LINES),
+                timeout=self.connect_timeout,
             )
             environment = parse_probe_output(stdout.read().decode("utf-8", "replace"))
             return environment or None
@@ -1045,10 +1224,15 @@ class SSHExecutor:
                 self._client = self._client_factory(self)
             else:
                 from operon.remotes import connect_ssh
+
                 self._client = connect_ssh(
-                    self.host, user=self.user, port=self.port,
-                    key_file=self.key_file, connect_timeout=self.connect_timeout,
-                    known_hosts=self.known_hosts, host_key_sha256=self.host_key_sha256,
+                    self.host,
+                    user=self.user,
+                    port=self.port,
+                    key_file=self.key_file,
+                    connect_timeout=self.connect_timeout,
+                    known_hosts=self.known_hosts,
+                    host_key_sha256=self.host_key_sha256,
                     insecure_accept_unknown_host=self.insecure_accept_unknown_host,
                 )
         return self._client
@@ -1077,6 +1261,7 @@ class SSHExecutor:
         try:
             if mutable_cache:
                 from operon.remotes import sftp_makedirs
+
                 sftp_makedirs(sftp, remote)
             else:
                 try:
@@ -1090,11 +1275,20 @@ class SSHExecutor:
         self._prepared_databases.add(cache_key)
         return remote
 
-    def run(self, argv: Iterable[Any], *, cwd: str | Path | None, stdout_path: Path,
-            stderr_path: Path, timeout: float | None = None, threads: int | None = None,
-            run_id: str | None = None, stage_inputs: Iterable[Any] = (),
-            expected_outputs: Iterable[Any] = (),
-            cancel_event: threading.Event | None = None) -> ExecResult:
+    def run(
+        self,
+        argv: Iterable[Any],
+        *,
+        cwd: str | Path | None,
+        stdout_path: Path,
+        stderr_path: Path,
+        timeout: float | None = None,
+        threads: int | None = None,
+        run_id: str | None = None,
+        stage_inputs: Iterable[Any] = (),
+        expected_outputs: Iterable[Any] = (),
+        cancel_event: threading.Event | None = None,
+    ) -> ExecResult:
         client = self._connect()
         sftp = client.open_sftp()
         try:
@@ -1103,9 +1297,15 @@ class SSHExecutor:
             try:
                 if self.scheduler == "slurm":
                     result = self._run_via_slurm(
-                        client, sftp, [str(a) for a in argv], cwd=cwd,
-                        stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                        timeout=timeout, threads=threads, run_id=run_id,
+                        client,
+                        sftp,
+                        [str(a) for a in argv],
+                        cwd=cwd,
+                        stdout_path=Path(stdout_path),
+                        stderr_path=Path(stderr_path),
+                        timeout=timeout,
+                        threads=threads,
+                        run_id=run_id,
                         cancel_event=cancel_event,
                     )
                 else:
@@ -1113,15 +1313,21 @@ class SSHExecutor:
                     remote_probe = f"/tmp/operon-env-{uuid.uuid4().hex}"
                     try:
                         result = self._run_direct(
-                            client, command, cwd=cwd,
-                            stdout_path=Path(stdout_path), stderr_path=Path(stderr_path),
-                            timeout=timeout, run_id=run_id, probe_path=remote_probe,
+                            client,
+                            command,
+                            cwd=cwd,
+                            stdout_path=Path(stdout_path),
+                            stderr_path=Path(stderr_path),
+                            timeout=timeout,
+                            run_id=run_id,
+                            probe_path=remote_probe,
                             cancel_event=cancel_event,
                         )
                     finally:
                         environment = _read_remote_probe_environment(sftp, remote_probe)
                     result.details["environment"] = environment or {
-                        "capture_schema": 1, "capture_status": "failed",
+                        "capture_schema": 1,
+                        "capture_status": "failed",
                     }
                 if result.exit_code == 0:
                     self._pull_outputs(client, sftp, expected_outputs)
@@ -1138,14 +1344,18 @@ class SSHExecutor:
 
     # -- staging -----------------------------------------------------------
 
-    def _stage_inputs(self, client: Any, sftp: Any, stage_inputs: Iterable[Any]) -> None:
+    def _stage_inputs(
+        self, client: Any, sftp: Any, stage_inputs: Iterable[Any]
+    ) -> None:
         from operon.remotes import sftp_makedirs
+
         for item in stage_inputs:
             local = Path(item)
             if not local.exists():
                 raise RemoteError(f"cannot stage missing local input: {local}")
             if self.remote_root and not local.resolve().is_relative_to(
-                    self.project.root.resolve()):
+                self.project.root.resolve()
+            ):
                 raise ValidationError(
                     f"SSH staged input must stay under the project root: {local}"
                 )
@@ -1165,6 +1375,7 @@ class SSHExecutor:
                     f"remote input already exists with different bytes; refusing to overwrite: {remote}"
                 )
             from operon.remotes import _remove_remote_tree, remote_sha256
+
             tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
             try:
                 sftp.put(str(local), tmp)
@@ -1176,7 +1387,9 @@ class SSHExecutor:
                 _remove_remote_tree(sftp, tmp)
                 raise
 
-    def _reset_outputs(self, sftp: Any, expected_outputs: Iterable[Any]) -> list[tuple[str, str]]:
+    def _reset_outputs(
+        self, sftp: Any, expected_outputs: Iterable[Any]
+    ) -> list[tuple[str, str]]:
         """Back up existing remote outputs instead of deleting them.
 
         Returns ``(remote, backup)`` pairs; the caller drops the backups once
@@ -1184,11 +1397,14 @@ class SSHExecutor:
         failure or interrupt.
         """
         from operon.remotes import _sftp_not_found, sftp_makedirs
+
         backups: list[tuple[str, str]] = []
         try:
             for item in expected_outputs:
                 local = Path(item).resolve(strict=False)
-                if self.remote_root and not local.is_relative_to(self.project.root.resolve()):
+                if self.remote_root and not local.is_relative_to(
+                    self.project.root.resolve()
+                ):
                     raise ValidationError(
                         f"SSH expected output must stay under the project root: {local}"
                     )
@@ -1197,7 +1413,9 @@ class SSHExecutor:
                     root = posixpath.normpath(self.remote_root)
                     normalized = posixpath.normpath(remote)
                     if not normalized.startswith(root.rstrip("/") + "/"):
-                        raise ValidationError(f"SSH output escapes remote_root: {remote}")
+                        raise ValidationError(
+                            f"SSH output escapes remote_root: {remote}"
+                        )
                     backup = f"{normalized}.operon-prev-{uuid.uuid4().hex}"
                     try:
                         sftp.rename(normalized, backup)
@@ -1215,15 +1433,19 @@ class SSHExecutor:
     def _drop_output_backups(self, sftp: Any, backups: list[tuple[str, str]]) -> None:
         """Remove previous-output backups; the new outputs are already verified."""
         from operon.remotes import _remove_remote_tree
+
         for _, backup in backups:
             try:
                 _remove_remote_tree(sftp, backup)
             except Exception:  # noqa: BLE001 - best-effort cleanup on the success path; an orphaned backup dir is harmless  # pylint: disable=broad-exception-caught
                 pass
 
-    def _restore_output_backups(self, sftp: Any, backups: list[tuple[str, str]]) -> None:
+    def _restore_output_backups(
+        self, sftp: Any, backups: list[tuple[str, str]]
+    ) -> None:
         """Best-effort restore of previous remote outputs after a failed run."""
         from operon.remotes import _remove_remote_tree
+
         for remote, backup in reversed(backups):
             try:
                 _remove_remote_tree(sftp, remote)
@@ -1231,7 +1453,9 @@ class SSHExecutor:
             except Exception:
                 pass
 
-    def _stage_directory(self, client: Any, sftp: Any, local: Path, remote: str) -> None:
+    def _stage_directory(
+        self, client: Any, sftp: Any, local: Path, remote: str
+    ) -> None:
         """Stage an immutable directory artifact with a strict tree identity."""
         from operon.remotes import (
             _publish_remote,
@@ -1239,6 +1463,7 @@ class SSHExecutor:
             _remove_remote_tree,
             sftp_makedirs,
         )
+
         digest = sha256_path(local).lower()
         try:
             stat = sftp.stat(remote)
@@ -1275,8 +1500,11 @@ class SSHExecutor:
             _remove_remote_tree(sftp, tmp)
             raise
 
-    def _remote_file_matches(self, client: Any, sftp: Any, remote: str, local: Path) -> bool:
+    def _remote_file_matches(
+        self, client: Any, sftp: Any, remote: str, local: Path
+    ) -> bool:
         from operon.remotes import remote_sha256
+
         try:
             stat = sftp.stat(remote)
         except OSError:
@@ -1288,11 +1516,19 @@ class SSHExecutor:
 
     # -- direct execution --------------------------------------------------
 
-    def _run_direct(self, client: Any, argv: list[str], *, cwd: str | Path | None,
-                    stdout_path: Path, stderr_path: Path,
-                    timeout: float | None, run_id: str | None,
-                    probe_path: str | None = None,
-                    cancel_event: threading.Event | None = None) -> ExecResult:
+    def _run_direct(
+        self,
+        client: Any,
+        argv: list[str],
+        *,
+        cwd: str | Path | None,
+        stdout_path: Path,
+        stderr_path: Path,
+        timeout: float | None,
+        run_id: str | None,
+        probe_path: str | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> ExecResult:
         command = shlex.join(self._rewrite(a) for a in argv)
         if probe_path:
             probe = probe_shell([self._rewrite(a) for a in argv])
@@ -1312,10 +1548,10 @@ class SSHExecutor:
             "while kill -0 $$ 2>/dev/null; do "
             "rss=$(ps -o rss= -g $$ 2>/dev/null | "
             "awk 'NF{s+=$1; n++} END{if (n) print s}'); "
-            "if [ -n \"$rss\" ]; then "
-            "[ \"$rss\" -gt \"$max\" ] 2>/dev/null && max=$rss; "
+            'if [ -n "$rss" ]; then '
+            '[ "$rss" -gt "$max" ] 2>/dev/null && max=$rss; '
             "sum=$((sum + rss)); count=$((count + 1)); "
-            f"printf '%s %s %s\\n' \"$max\" \"$sum\" \"$count\" > {shlex.quote(statsfile)}; "
+            f'printf \'%s %s %s\\n\' "$max" "$sum" "$count" > {shlex.quote(statsfile)}; '
             "fi; "
             "sleep 1; "
             "done ) & sampler_pid=$!; "
@@ -1323,8 +1559,8 @@ class SSHExecutor:
         payload = (
             f"umask 077; echo $$ > {shlex.quote(pidfile)}; "
             f"{sampler}"
-            "trap 'kill \"$sampler_pid\" 2>/dev/null || true; "
-            "wait \"$sampler_pid\" 2>/dev/null || true; "
+            'trap \'kill "$sampler_pid" 2>/dev/null || true; '
+            'wait "$sampler_pid" 2>/dev/null || true; '
             f"rm -f {shlex.quote(pidfile)}' EXIT; {command}"
         )
         # --wait makes setsid propagate the payload's exit status even when
@@ -1346,9 +1582,15 @@ class SSHExecutor:
                     if channel.exit_status_ready():
                         break
                     if deadline is not None and time.monotonic() > deadline:
-                        signaled, termination_error = self._terminate_remote_process(client, pidfile)
+                        signaled, termination_error = self._terminate_remote_process(
+                            client, pidfile
+                        )
                         channel.close()
-                        resources = self._read_remote_stats(client, statsfile) if signaled else {}
+                        resources = (
+                            self._read_remote_stats(client, statsfile)
+                            if signaled
+                            else {}
+                        )
                         if signaled:
                             error = (
                                 f"timeout after {timeout}s; termination signals were sent to the "
@@ -1360,10 +1602,14 @@ class SSHExecutor:
                                 f"{termination_error}"
                             )
                         return ExecResult(
-                            exit_code=None, error=error,
+                            exit_code=None,
+                            error=error,
                             details={
-                                "backend": "ssh", "scheduler": "none", "host": self.host,
-                                "pidfile": pidfile, "termination_signaled": signaled,
+                                "backend": "ssh",
+                                "scheduler": "none",
+                                "host": self.host,
+                                "pidfile": pidfile,
+                                "termination_signaled": signaled,
                             },
                             resources=resources,
                         )
@@ -1404,16 +1650,18 @@ class SSHExecutor:
         command = (
             f"if test -s {shlex.quote(pidfile)}; then "
             f"pid=$(cat {shlex.quote(pidfile)}); "
-            "kill -TERM -- -\"$pid\" 2>/dev/null || kill -TERM \"$pid\" 2>/dev/null || true; "
+            'kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true; '
             "sleep 1; "
-            "if kill -0 \"$pid\" 2>/dev/null; then "
-            "kill -KILL -- -\"$pid\" 2>/dev/null || kill -KILL \"$pid\" 2>/dev/null || true; "
+            'if kill -0 "$pid" 2>/dev/null; then '
+            'kill -KILL -- -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; '
             "fi; "
             f"rm -f {shlex.quote(pidfile)}; exit 0; "
             "else exit 2; fi"
         )
         try:
-            rc, output = self._remote_exec(client, command, timeout=max(5.0, self.connect_timeout))
+            rc, output = self._remote_exec(
+                client, command, timeout=max(5.0, self.connect_timeout)
+            )
         except Exception as exc:  # noqa: BLE001 - termination errors are returned as data to the caller  # pylint: disable=broad-exception-caught
             return False, f"{type(exc).__name__}: {exc}"
         if rc == 0:
@@ -1425,6 +1673,7 @@ class SSHExecutor:
     def _sftp_write_file(self, sftp: Any, remote: str, content: str) -> None:
         """Write a remote text file atomically (temporary name + rename)."""
         from operon.remotes import _remove_remote_tree, sftp_makedirs
+
         sftp_makedirs(sftp, posixpath.dirname(remote))
         _remove_remote_tree(sftp, remote)
         tmp = f"{remote}.operon-tmp-{uuid.uuid4().hex}"
@@ -1436,12 +1685,22 @@ class SSHExecutor:
             _remove_remote_tree(sftp, tmp)
             raise
 
-    def _run_via_slurm(self, client: Any, sftp: Any, argv: list[str], *,
-                       cwd: str | Path | None, stdout_path: Path, stderr_path: Path,
-                       timeout: float | None, threads: int | None,
-                       run_id: str | None,
-                       cancel_event: threading.Event | None = None) -> ExecResult:
+    def _run_via_slurm(
+        self,
+        client: Any,
+        sftp: Any,
+        argv: list[str],
+        *,
+        cwd: str | Path | None,
+        stdout_path: Path,
+        stderr_path: Path,
+        timeout: float | None,
+        threads: int | None,
+        run_id: str | None,
+        cancel_event: threading.Event | None = None,
+    ) -> ExecResult:
         from operon.remotes import _remove_remote_tree, sftp_makedirs
+
         label = run_id or f"job_{int(time.time() * 1000)}"
         remote_stdout = self._rewrite(stdout_path)
         remote_stderr = self._rewrite(stderr_path)
@@ -1453,37 +1712,52 @@ class SSHExecutor:
             job_name=f"operon_{label}",
             command_line=shlex.join(self._rewrite(a) for a in argv),
             cwd=self._rewrite(cwd) if cwd else (self.remote_root or "."),
-            stdout_path=remote_stdout, stderr_path=remote_stderr,
-            exitcode_path=remote_exitcode, threads=threads, slurm=self.slurm,
+            stdout_path=remote_stdout,
+            stderr_path=remote_stderr,
+            exitcode_path=remote_exitcode,
+            threads=threads,
+            slurm=self.slurm,
             probe_path=remote_probe,
         )
         sftp_makedirs(sftp, remote_dir)
         _remove_remote_tree(sftp, remote_exitcode)
         _remove_remote_tree(sftp, remote_probe)
         self._sftp_write_file(sftp, remote_script, script)
-        rc, out = self._remote_exec(client, f"sbatch --parsable {shlex.quote(remote_script)}")
+        rc, out = self._remote_exec(
+            client, f"sbatch --parsable {shlex.quote(remote_script)}"
+        )
         if rc != 0:
             raise RemoteError(f"remote sbatch submission failed: {out.strip()}")
         try:
             job_id = _parse_sbatch_job_id(out)
         except ExternalToolError as exc:
             raise RemoteError(str(exc)) from exc
-        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                   "script": remote_script}
+        details = {
+            "backend": "ssh",
+            "scheduler": "slurm",
+            "host": self.host,
+            "script": remote_script,
+        }
         deadline = time.monotonic() + timeout if timeout else None
         try:
             while True:
                 if _cancel_requested(cancel_event):
                     raise ShutdownRequested(signal.SIGINT)
-                rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
+                rc, out = self._remote_exec(
+                    client, f"squeue -h -j {shlex.quote(job_id)}"
+                )
                 if rc != 0:
                     if "Invalid job id" in out:
                         break
-                    raise RemoteError(f"remote squeue failed for job {job_id}: {out.strip()}")
+                    raise RemoteError(
+                        f"remote squeue failed for job {job_id}: {out.strip()}"
+                    )
                 if not out.strip():
                     break
                 if deadline is not None and time.monotonic() > deadline:
-                    cancelled, cancellation_error = self._cancel_remote_slurm_job(client, job_id)
+                    cancelled, cancellation_error = self._cancel_remote_slurm_job(
+                        client, job_id
+                    )
                     details["cancellation_requested"] = cancelled
                     if cancellation_error:
                         details["cancellation_error"] = cancellation_error
@@ -1498,8 +1772,12 @@ class SSHExecutor:
                             "; cancellation request failed and the job may still be running: "
                             f"{cancellation_error}"
                         )
-                    return ExecResult(exit_code=None,
-                                      error=error, scheduler_job_id=job_id, details=details)
+                    return ExecResult(
+                        exit_code=None,
+                        error=error,
+                        scheduler_job_id=job_id,
+                        details=details,
+                    )
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon the queued/running remote cluster job.
@@ -1511,12 +1789,14 @@ class SSHExecutor:
         if environment:
             details["environment"] = environment
         result = self._read_remote_slurm_accounting(
-            client, remote_exitcode=remote_exitcode, job_id=job_id)
+            client, remote_exitcode=remote_exitcode, job_id=job_id
+        )
         result.details = {**details, **result.details}
         return result
 
-    def _read_remote_slurm_accounting(self, client: Any, *, remote_exitcode: str,
-                                      job_id: str) -> ExecResult:
+    def _read_remote_slurm_accounting(
+        self, client: Any, *, remote_exitcode: str, job_id: str
+    ) -> ExecResult:
         """Resolve a finished remote job's exit code and its sacct accounting.
 
         The job-side exit-code file remains the primary exit code source;
@@ -1556,11 +1836,17 @@ class SSHExecutor:
             scheduler_job_id=job_id,
         )
 
-    def run_array(self, tasks: Iterable[dict[str, Any]], *, cwd: str | Path | None = None,
-                  threads: int | None = None, timeout: float | None = None,
-                  batch_id: str | None = None,
-                  array_concurrency: int | None = None,
-                  cancel_event: threading.Event | None = None) -> list[ExecResult]:
+    def run_array(
+        self,
+        tasks: Iterable[dict[str, Any]],
+        *,
+        cwd: str | Path | None = None,
+        threads: int | None = None,
+        timeout: float | None = None,
+        batch_id: str | None = None,
+        array_concurrency: int | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> list[ExecResult]:
         """Submit all tasks as one job array on the remote Slurm cluster.
 
         Task dicts follow the same contract as ``SlurmExecutor.run_array``;
@@ -1580,8 +1866,14 @@ class SSHExecutor:
         sftp = client.open_sftp()
         try:
             return self._run_array_via_slurm(
-                client, sftp, tasks, cwd=cwd, threads=threads, timeout=timeout,
-                batch_id=batch_id, array_concurrency=array_concurrency,
+                client,
+                sftp,
+                tasks,
+                cwd=cwd,
+                threads=threads,
+                timeout=timeout,
+                batch_id=batch_id,
+                array_concurrency=array_concurrency,
                 cancel_event=cancel_event,
             )
         finally:
@@ -1599,47 +1891,76 @@ class SSHExecutor:
         stdout = self._rewrite(task.stdout_path)
         remote_dir = posixpath.dirname(stdout)
         return _ArrayTask(
-            index=task.index, run_id=task.run_id,
+            index=task.index,
+            run_id=task.run_id,
             command=shlex.join(self._rewrite(a) for a in argv),
-            stdout_path=Path(stdout), stderr_path=Path(self._rewrite(task.stderr_path)),
+            stdout_path=Path(stdout),
+            stderr_path=Path(self._rewrite(task.stderr_path)),
             exitcode_path=Path(posixpath.join(remote_dir, f"{task.run_id}.exitcode")),
             probe_path=Path(posixpath.join(remote_dir, f"{task.run_id}.env")),
         )
 
-    def _run_array_via_slurm(self, client: Any, sftp: Any, tasks: Iterable[dict[str, Any]],
-                             *, cwd: str | Path | None, threads: int | None,
-                             timeout: float | None, batch_id: str | None,
-                             array_concurrency: int | None,
-                             cancel_event: threading.Event | None = None) -> list[ExecResult]:
+    def _run_array_via_slurm(
+        self,
+        client: Any,
+        sftp: Any,
+        tasks: Iterable[dict[str, Any]],
+        *,
+        cwd: str | Path | None,
+        threads: int | None,
+        timeout: float | None,
+        batch_id: str | None,
+        array_concurrency: int | None,
+        cancel_event: threading.Event | None = None,
+    ) -> list[ExecResult]:
         from operon.remotes import _remove_remote_tree, sftp_makedirs
+
         batch_id = batch_id or f"array_{uuid.uuid4().hex[:12]}"
         _validate_array_batch(batch_id, array_concurrency)
         prepared, effective_cwd, effective_threads = _prepare_array_tasks(
-            tasks, cwd=cwd, threads=threads, default_cwd=str(self.project.root),
+            tasks,
+            cwd=cwd,
+            threads=threads,
+            default_cwd=str(self.project.root),
         )
         remote_tasks = [self._rewrite_array_task(task) for task in prepared]
         remote_dir = posixpath.dirname(str(remote_tasks[0].stdout_path))
         remote_manifest = posixpath.join(remote_dir, f"{batch_id}.array-manifest.tsv")
         remote_script = posixpath.join(remote_dir, f"{batch_id}.sbatch")
-        details = {"backend": "ssh", "scheduler": "slurm", "host": self.host,
-                   "script": remote_script, "manifest": remote_manifest}
+        details = {
+            "backend": "ssh",
+            "scheduler": "slurm",
+            "host": self.host,
+            "script": remote_script,
+            "manifest": remote_manifest,
+        }
         for task in remote_tasks:
             sftp_makedirs(sftp, posixpath.dirname(str(task.stdout_path)))
             _remove_remote_tree(sftp, str(task.exitcode_path))
             _remove_remote_tree(sftp, str(task.probe_path))
-            self._sftp_write_file(sftp, str(task.probe_script_path),
-                                  _array_probe_shell(task.command) + "\n")
-        self._sftp_write_file(sftp, remote_manifest, render_array_manifest(remote_tasks))
+            self._sftp_write_file(
+                sftp,
+                str(task.probe_script_path),
+                _array_probe_shell(task.command) + "\n",
+            )
+        self._sftp_write_file(
+            sftp, remote_manifest, render_array_manifest(remote_tasks)
+        )
         script = render_slurm_array_script(
-            job_name=f"operon_{batch_id}", manifest_path=remote_manifest,
+            job_name=f"operon_{batch_id}",
+            manifest_path=remote_manifest,
             cwd=self._rewrite(effective_cwd),
             stdout_path=posixpath.join(remote_dir, f"{batch_id}.%A_%a.out"),
             stderr_path=posixpath.join(remote_dir, f"{batch_id}.%A_%a.err"),
-            threads=effective_threads, slurm=self.slurm,
-            task_count=len(remote_tasks), concurrency=array_concurrency,
+            threads=effective_threads,
+            slurm=self.slurm,
+            task_count=len(remote_tasks),
+            concurrency=array_concurrency,
         )
         self._sftp_write_file(sftp, remote_script, script)
-        rc, out = self._remote_exec(client, f"sbatch --parsable {shlex.quote(remote_script)}")
+        rc, out = self._remote_exec(
+            client, f"sbatch --parsable {shlex.quote(remote_script)}"
+        )
         if rc != 0:
             raise RemoteError(f"remote sbatch submission failed: {out.strip()}")
         try:
@@ -1651,65 +1972,88 @@ class SSHExecutor:
             while True:
                 if _cancel_requested(cancel_event):
                     raise ShutdownRequested(signal.SIGINT)
-                rc, out = self._remote_exec(client, f"squeue -h -j {shlex.quote(job_id)}")
+                rc, out = self._remote_exec(
+                    client, f"squeue -h -j {shlex.quote(job_id)}"
+                )
                 if rc != 0:
                     if "Invalid job id" in out:
                         break
-                    raise RemoteError(f"remote squeue failed for job {job_id}: {out.strip()}")
+                    raise RemoteError(
+                        f"remote squeue failed for job {job_id}: {out.strip()}"
+                    )
                 if not out.strip():
                     break
                 if deadline is not None and time.monotonic() > deadline:
-                    cancelled, cancellation_error = self._cancel_remote_slurm_job(client, job_id)
+                    cancelled, cancellation_error = self._cancel_remote_slurm_job(
+                        client, job_id
+                    )
                     details["cancellation_requested"] = cancelled
                     if cancellation_error:
                         details["cancellation_error"] = cancellation_error
                     return self._remote_array_timeout_results(
-                        client, sftp, prepared, remote_tasks, job_id, timeout, details)
+                        client, sftp, prepared, remote_tasks, job_id, timeout, details
+                    )
                 time.sleep(max(0.1, self.slurm.poll_interval))
         except KeyboardInterrupt:
             # Shutdown must not abandon the queued/running remote array tasks.
             self._cancel_remote_slurm_job(client, job_id)
             for local_task, remote_task in zip(prepared, remote_tasks):
                 try:
-                    self._sftp_get_if_exists(sftp, str(remote_task.exitcode_path),
-                                             local_task.exitcode_path)
+                    self._sftp_get_if_exists(
+                        sftp, str(remote_task.exitcode_path), local_task.exitcode_path
+                    )
                 except Exception:
                     pass
             raise
         results = []
         for local_task, remote_task in zip(prepared, remote_tasks):
             task_job_id = f"{job_id}_{remote_task.index}"
-            self._sftp_get_if_exists(sftp, str(remote_task.stdout_path),
-                                     local_task.stdout_path)
-            self._sftp_get_if_exists(sftp, str(remote_task.stderr_path),
-                                     local_task.stderr_path)
+            self._sftp_get_if_exists(
+                sftp, str(remote_task.stdout_path), local_task.stdout_path
+            )
+            self._sftp_get_if_exists(
+                sftp, str(remote_task.stderr_path), local_task.stderr_path
+            )
             task_details = {"array_job_id": job_id, **details}
-            environment = _read_remote_probe_environment(sftp, str(remote_task.probe_path))
+            environment = _read_remote_probe_environment(
+                sftp, str(remote_task.probe_path)
+            )
             if environment:
                 task_details["environment"] = environment
             result = self._read_remote_slurm_accounting(
-                client, remote_exitcode=str(remote_task.exitcode_path), job_id=task_job_id)
+                client,
+                remote_exitcode=str(remote_task.exitcode_path),
+                job_id=task_job_id,
+            )
             result.details = {**task_details, **result.details}
             results.append(result)
         return results
 
-    def _remote_array_timeout_results(self, client: Any, sftp: Any,
-                                      local_tasks: list[_ArrayTask],
-                                      remote_tasks: list[_ArrayTask], job_id: str,
-                                      timeout: float | None,
-                                      details: dict[str, Any]) -> list[ExecResult]:
+    def _remote_array_timeout_results(
+        self,
+        client: Any,
+        sftp: Any,
+        local_tasks: list[_ArrayTask],
+        remote_tasks: list[_ArrayTask],
+        job_id: str,
+        timeout: float | None,
+        details: dict[str, Any],
+    ) -> list[ExecResult]:
         """Per-task results after a cancelled remote array; finished tasks keep theirs."""
         results = []
         for local_task, remote_task in zip(local_tasks, remote_tasks):
             task_job_id = f"{job_id}_{remote_task.index}"
-            self._sftp_get_if_exists(sftp, str(remote_task.stdout_path),
-                                     local_task.stdout_path)
-            self._sftp_get_if_exists(sftp, str(remote_task.stderr_path),
-                                     local_task.stderr_path)
+            self._sftp_get_if_exists(
+                sftp, str(remote_task.stdout_path), local_task.stdout_path
+            )
+            self._sftp_get_if_exists(
+                sftp, str(remote_task.stderr_path), local_task.stderr_path
+            )
             exit_code: int | None = None
             try:
                 rc, out = self._remote_exec(
-                    client, f"cat {shlex.quote(str(remote_task.exitcode_path))}")
+                    client, f"cat {shlex.quote(str(remote_task.exitcode_path))}"
+                )
                 if rc == 0:
                     exit_code = int(out.strip())
             except Exception:
@@ -1720,11 +2064,13 @@ class SSHExecutor:
                 result = ExecResult(
                     exit_code=None,
                     error=f"timeout after {timeout}s waiting for remote slurm "
-                          f"job array {job_id}",
+                    f"job array {job_id}",
                 )
             result.scheduler_job_id = task_job_id
             task_details = {"array_job_id": job_id, **details}
-            environment = _read_remote_probe_environment(sftp, str(remote_task.probe_path))
+            environment = _read_remote_probe_environment(
+                sftp, str(remote_task.probe_path)
+            )
             if environment:
                 task_details["environment"] = environment
             result.details = {**task_details, **result.details}
@@ -1741,14 +2087,18 @@ class SSHExecutor:
             return False, output.strip() or f"scancel exited {rc}"
         return True, ""
 
-    def _remote_exec(self, client: Any, command: str,
-                     timeout: float | None = None) -> tuple[int, str]:
+    def _remote_exec(
+        self, client: Any, command: str, timeout: float | None = None
+    ) -> tuple[int, str]:
         _, stdout, stderr = client.exec_command(
-            command, timeout=timeout if timeout is not None else self.connect_timeout,
+            command,
+            timeout=timeout if timeout is not None else self.connect_timeout,
         )
         output = stdout.read().decode("utf-8", "replace")
         error = stderr.read().decode("utf-8", "replace")
-        combined = output + (("\n" if output and error else "") + error if error else "")
+        combined = output + (
+            ("\n" if output and error else "") + error if error else ""
+        )
         return stdout.channel.recv_exit_status(), combined
 
     def _sftp_get_if_exists(self, sftp: Any, remote: str, local: Path) -> bool:
@@ -1757,7 +2107,9 @@ class SSHExecutor:
         except OSError:
             return False
         local.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{local.name}.operon-tmp-", dir=local.parent
+        )
         os.close(fd)
         tmp = Path(tmp_name)
         try:
@@ -1770,8 +2122,11 @@ class SSHExecutor:
 
     # -- output retrieval --------------------------------------------------
 
-    def _pull_outputs(self, client: Any, sftp: Any, expected_outputs: Iterable[Any]) -> None:
+    def _pull_outputs(
+        self, client: Any, sftp: Any, expected_outputs: Iterable[Any]
+    ) -> None:
         from operon.remotes import _remote_directory_identity, remote_sha256
+
         for item in expected_outputs:
             local = Path(item)
             remote = self._rewrite(local)
@@ -1814,7 +2169,9 @@ class SSHExecutor:
 
     def _pull_directory(self, sftp: Any, remote: str, local: Path) -> None:
         local.parent.mkdir(parents=True, exist_ok=True)
-        tmp = Path(tempfile.mkdtemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent))
+        tmp = Path(
+            tempfile.mkdtemp(prefix=f".{local.name}.operon-tmp-", dir=local.parent)
+        )
         try:
             self._pull_directory_into(sftp, remote, tmp)
             os.replace(tmp, local)
@@ -1836,4 +2193,6 @@ class SSHExecutor:
             elif stat_module.S_ISREG(mode):
                 sftp.get(remote_child, str(local_child))
             else:
-                raise RemoteError(f"unsupported remote output entry type: {remote_child}")
+                raise RemoteError(
+                    f"unsupported remote output entry type: {remote_child}"
+                )

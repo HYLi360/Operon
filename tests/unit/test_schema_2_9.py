@@ -25,12 +25,24 @@ class TestSchema29(PytestAssertions):
         self.assertIn("recipe_snapshot_id", self.db.table_columns("analysis_jobs"))
         self.assertEqual(
             self.db.table_columns("file_lineage"),
-            ["lineage_id", "derived_file_id", "input_file_id", "workflow_run_id", "created_at"],
+            [
+                "lineage_id",
+                "derived_file_id",
+                "input_file_id",
+                "workflow_run_id",
+                "created_at",
+            ],
         )
         self.assertEqual(
             self.db.table_columns("recipe_snapshots"),
-            ["recipe_snapshot_id", "recipe_name", "recipe_version", "recipe_sha256",
-             "recipe_document", "recorded_at"],
+            [
+                "recipe_snapshot_id",
+                "recipe_name",
+                "recipe_version",
+                "recipe_sha256",
+                "recipe_document",
+                "recorded_at",
+            ],
         )
         row = self.db.conn.execute(
             "SELECT migration_id FROM schema_migrations "
@@ -41,7 +53,9 @@ class TestSchema29(PytestAssertions):
     def test_record_recipe_is_content_addressed(self):
         document = {"tool": "blastn", "params": {"evalue": "1e-5"}}
         first = self.db.record_recipe("pangenome", 1, document)
-        second = self.db.record_recipe("pangenome", 1, dict(reversed(list(document.items()))))
+        second = self.db.record_recipe(
+            "pangenome", 1, dict(reversed(list(document.items())))
+        )
         self.assertEqual(first, second)
         rows = self.db.conn.execute("SELECT * FROM recipe_snapshots").fetchall()
         self.assertEqual(len(rows), 1)
@@ -51,10 +65,14 @@ class TestSchema29(PytestAssertions):
         self.assertTrue(rows[0]["recorded_at"])
         # A new version or a changed document records a new snapshot.
         third = self.db.record_recipe("pangenome", 2, document)
-        fourth = self.db.record_recipe("pangenome", 1, {**document, "params": {"evalue": "1e-3"}})
+        fourth = self.db.record_recipe(
+            "pangenome", 1, {**document, "params": {"evalue": "1e-3"}}
+        )
         self.assertNotEqual(first, third)
         self.assertNotEqual(first, fourth)
-        count = self.db.conn.execute("SELECT COUNT(*) AS n FROM recipe_snapshots").fetchone()
+        count = self.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM recipe_snapshots"
+        ).fetchone()
         self.assertEqual(count["n"], 3)
 
     def test_migration_backfills_dropped_2_9_objects(self):

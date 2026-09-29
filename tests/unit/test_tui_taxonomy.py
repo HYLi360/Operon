@@ -36,7 +36,7 @@ from tests.tui_helpers import click as _click
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -98,8 +98,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while not predicate():
@@ -163,7 +164,8 @@ def parse_command_text(text: str):
 
 
 def test_import_taxonomy_records_snapshot_and_provenance(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _write_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
     result = actions.import_taxonomy(project, str(source), "cov.1")
     assert result["reused"] is False
@@ -178,8 +180,7 @@ def test_import_taxonomy_records_snapshot_and_provenance(
     assert snapshots[0]["status"] == "READY"
     assert snapshots[0]["node_count"] == 3
 
-    files = _query(
-        project, "SELECT * FROM files WHERE entity_type='taxonomy_snapshot'")
+    files = _query(project, "SELECT * FROM files WHERE entity_type='taxonomy_snapshot'")
     assert len(files) == 1
     assert files[0]["entity_id"] == snapshot_id
     assert files[0]["sha256"] == result["source_sha256"]
@@ -188,18 +189,18 @@ def test_import_taxonomy_records_snapshot_and_provenance(
     assert archived.parent == project.raw_root / "metadata" / "ncbi_taxonomy"
 
     states = _query(
-        project,
-        "SELECT * FROM entity_state WHERE entity_type='taxonomy_snapshot'")
+        project, "SELECT * FROM entity_state WHERE entity_type='taxonomy_snapshot'"
+    )
     assert [row["entity_id"] for row in states] == [snapshot_id]
 
     changes = _query(
-        project, "SELECT * FROM changes WHERE object_type='taxonomy_snapshot'")
+        project, "SELECT * FROM changes WHERE object_type='taxonomy_snapshot'"
+    )
     assert len(changes) == 1
     assert changes[0]["object_id"] == snapshot_id
     assert "imported_snapshot" == changes[0]["field"]
 
-    runs = _query(
-        project, "SELECT * FROM workflow_runs WHERE step='taxonomy_import'")
+    runs = _query(project, "SELECT * FROM workflow_runs WHERE step='taxonomy_import'")
     assert len(runs) == 1
     assert runs[0]["status"] == "completed"
     assert runs[0]["entity_id"] == snapshot_id
@@ -207,7 +208,8 @@ def test_import_taxonomy_records_snapshot_and_provenance(
 
 
 def test_import_taxonomy_reuses_identical_bytes(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _write_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
     first = actions.import_taxonomy(project, str(source), "cov.1")
     second = actions.import_taxonomy(project, str(source), "cov.1")
@@ -218,7 +220,8 @@ def test_import_taxonomy_reuses_identical_bytes(
 
 
 def test_import_taxonomy_rejects_same_version_with_different_bytes(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _write_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
     actions.import_taxonomy(project, str(source), "cov.1")
     other = _write_taxonomy_jsonl(
@@ -231,7 +234,8 @@ def test_import_taxonomy_rejects_same_version_with_different_bytes(
 
 
 def test_import_taxonomy_missing_file_writes_nothing(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     runs_before = _count(project, "workflow_runs")
     with pytest.raises(ValidationError, match="must be a file"):
         actions.import_taxonomy(project, str(tmp_path / "missing.jsonl"), "cov.1")
@@ -241,7 +245,8 @@ def test_import_taxonomy_missing_file_writes_nothing(
 
 
 def test_import_taxonomy_failed_import_records_failed_run(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _write_taxonomy_jsonl(
         tmp_path / "broken.jsonl",
         [{"taxId": 10, "parents": [999], "rank": "family", "taxName": "Fam"}],
@@ -249,8 +254,7 @@ def test_import_taxonomy_failed_import_records_failed_run(
     with pytest.raises(ValidationError, match="missing parent"):
         actions.import_taxonomy(project, str(source), "cov.1")
     assert _count(project, "taxonomy_snapshots") == 0
-    runs = _query(
-        project, "SELECT * FROM workflow_runs WHERE step='taxonomy_import'")
+    runs = _query(project, "SELECT * FROM workflow_runs WHERE step='taxonomy_import'")
     assert len(runs) == 1
     assert runs[0]["status"] == "failed"
     assert "ValidationError" in runs[0]["error"]
@@ -262,11 +266,14 @@ def test_import_taxonomy_failed_import_records_failed_run(
 
 
 def test_import_modal_confirm_calls_action_with_form_values(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = _write_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
     payload = {
-        "taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
-        "node_count": 3, "reused": True,
+        "taxonomy_snapshot_id": "TAX_000001",
+        "taxonomy_version": "cov.1",
+        "node_count": 3,
+        "reused": True,
     }
     calls: list[tuple[tuple, dict]] = []
 
@@ -305,7 +312,8 @@ def test_import_modal_confirm_calls_action_with_form_values(
 
 
 def test_import_modal_real_run_notifies_and_reloads(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     source = _write_taxonomy_jsonl(tmp_path / "taxonomy.jsonl")
 
     async def scenario() -> None:
@@ -316,10 +324,13 @@ def test_import_modal_real_run_notifies_and_reloads(
             await pilot.pause()
             await _settled(app)
             panel = app.query_one(CoveragePanel)
-            assert panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 0
+            assert (
+                panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 0
+            )
 
-            panel.on_button_pressed(Button.Pressed(
-                panel.query_one("#coverage-import-taxonomy", Button)))
+            panel.on_button_pressed(
+                Button.Pressed(panel.query_one("#coverage-import-taxonomy", Button))
+            )
             await pilot.pause()
 
             await _wait_until(
@@ -334,10 +345,15 @@ def test_import_modal_real_run_notifies_and_reloads(
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "import modal to close")
             await _settled(app)
-            assert any("node(s) imported as" in message
-                       for _severity, message in _notifications(app))
+            assert any(
+                "node(s) imported as" in message
+                for _severity, message in _notifications(app)
+            )
             await _wait_until(
-                lambda: panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 1,
+                lambda: (
+                    panel.query_one("#taxonomy-snapshots-table", DataTable).row_count
+                    == 1
+                ),
                 "snapshot table reload",
             )
 
@@ -361,19 +377,24 @@ def test_import_modal_error_stays_open(project: Project, tmp_path: Path) -> None
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "--input is required" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "--input is required"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "input-required inline error",
             )
             version_input = await _q(modal, "#taxonomy-import-version", Input)
             version_input.value = ""
             (await _q(modal, "#taxonomy-import-input", Input)).value = str(
-                tmp_path / "missing.jsonl")
+                tmp_path / "missing.jsonl"
+            )
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "--version is required" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "--version is required"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "version-required inline error",
             )
             version_input.value = "cov.1"
@@ -382,8 +403,10 @@ def test_import_modal_error_stays_open(project: Project, tmp_path: Path) -> None
             # A core failure is also shown inline and the modal stays open.
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "must be a file" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "must be a file"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "inline error",
             )
             await _settled(app)
@@ -404,7 +427,8 @@ def test_import_modal_error_stays_open(project: Project, tmp_path: Path) -> None
 
 
 def test_import_modal_refuses_cancel_while_running(
-        project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
     released = threading.Event()
     started = threading.Event()
     calls: list[tuple] = []
@@ -413,8 +437,12 @@ def test_import_modal_refuses_cancel_while_running(
         calls.append((args, kwargs))
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
-                "node_count": 3, "reused": False}
+        return {
+            "taxonomy_snapshot_id": "TAX_000001",
+            "taxonomy_version": "cov.1",
+            "node_count": 3,
+            "reused": False,
+        }
 
     monkeypatch.setattr(actions, "import_taxonomy", blocking_import)
     dismissed: list = []
@@ -438,20 +466,28 @@ def test_import_modal_refuses_cancel_while_running(
             assert len(calls) == 1
 
             # Cancel and escape must not dismiss the modal mid-run.
-            await _wait_until(started.is_set, "taxonomy import to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "taxonomy import to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
             assert app.screen is modal
-            assert any(severity == "warning" and "cannot be interrupted" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "warning" and "cannot be interrupted" in message
+                for severity, message in _notifications(app)
+            )
             assert dismissed == []
             assert all(widget.disabled for widget in modal.query("Input"))
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "import modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "import modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
@@ -494,7 +530,8 @@ def _seed_taxonomy(project: Project, tmp_path: Path) -> None:
 
 
 def test_compile_reference_set_freezes_denominator(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     _seed_taxonomy(project, tmp_path)
     result = actions.compile_reference_set(project, "cov", "cov.1")
     assert result["reused"] is False
@@ -521,12 +558,12 @@ def test_compile_reference_set_freezes_denominator(
     assert provenance["row_counts"] == {"family": 1, "genus": 1}
 
     changes = _query(
-        project, "SELECT * FROM changes WHERE object_type='taxonomy_reference_set'")
+        project, "SELECT * FROM changes WHERE object_type='taxonomy_reference_set'"
+    )
     assert len(changes) == 1
     assert changes[0]["object_id"] == "cov@cov.1"
 
-    runs = _query(
-        project, "SELECT * FROM workflow_runs WHERE step='taxonomy_compile'")
+    runs = _query(project, "SELECT * FROM workflow_runs WHERE step='taxonomy_compile'")
     assert len(runs) == 1
     assert runs[0]["status"] == "completed"
     assert runs[0]["entity_id"] == "cov@cov.1"
@@ -534,7 +571,8 @@ def test_compile_reference_set_freezes_denominator(
 
 
 def test_compile_reference_set_reuses_identical_inputs(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     _seed_taxonomy(project, tmp_path)
     first = actions.compile_reference_set(project, "cov", "cov.1")
     second = actions.compile_reference_set(project, "cov", "cov.1")
@@ -542,19 +580,19 @@ def test_compile_reference_set_reuses_identical_inputs(
     assert second["reused"] is True
     assert _count(project, "taxonomy_reference_sets") == 1
     compile_runs = _query(
-        project,
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='taxonomy_compile'")
+        project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='taxonomy_compile'"
+    )
     assert compile_runs[0]["n"] == 1
 
 
 def test_compile_reference_set_unknown_profile_records_failed_run(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     _seed_taxonomy(project, tmp_path)
     with pytest.raises(ValidationError, match="profile 'nope' not found"):
         actions.compile_reference_set(project, "nope", "cov.1")
     assert _count(project, "taxonomy_reference_sets") == 0
-    runs = _query(
-        project, "SELECT * FROM workflow_runs WHERE step='taxonomy_compile'")
+    runs = _query(project, "SELECT * FROM workflow_runs WHERE step='taxonomy_compile'")
     assert len(runs) == 1
     assert runs[0]["status"] == "failed"
     assert "ValidationError" in runs[0]["error"]
@@ -583,11 +621,15 @@ def test_list_coverage_profiles(project: Project) -> None:
 
 
 def test_compile_modal_confirm_calls_action_with_selected_values(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed_taxonomy(project, tmp_path)
     payload = {
-        "reference_set_id": "cov@cov.1", "profile_name": "cov",
-        "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
+        "reference_set_id": "cov@cov.1",
+        "profile_name": "cov",
+        "taxonomy_version": "cov.1",
+        "family_count": 1,
+        "genus_count": 1,
         "reused": True,
     }
     calls: list[tuple[tuple, dict]] = []
@@ -609,7 +651,9 @@ def test_compile_modal_confirm_calls_action_with_selected_values(
 
             # Selects start blank (Textual does not auto-select the first option).
             profile_select = await _q(modal, "#taxonomy-compile-profile", Select)
-            version_select = await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            version_select = await _q(
+                modal, "#taxonomy-compile-taxonomy-version", Select
+            )
             assert profile_select.value is Select.NULL
             assert version_select.value is Select.NULL
             profile_select.value = "cov"
@@ -632,7 +676,8 @@ def test_compile_modal_confirm_calls_action_with_selected_values(
 
 
 def test_compile_modal_requires_selections(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed_taxonomy(project, tmp_path)
     calls: list[tuple[tuple, dict]] = []
 
@@ -651,13 +696,17 @@ def test_compile_modal_requires_selections(
             app.push_screen(modal, dismissed.append)
             await _push(pilot, modal, "#taxonomy-compile-profile")
             profile_select = await _q(modal, "#taxonomy-compile-profile", Select)
-            version_select = await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            version_select = await _q(
+                modal, "#taxonomy-compile-taxonomy-version", Select
+            )
 
             # Nothing selected: an inline error, no action call.
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "select a coverage profile first" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "select a coverage profile first"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "profile-required inline error",
             )
             assert calls == []
@@ -667,8 +716,10 @@ def test_compile_modal_requires_selections(
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "select a taxonomy version first" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "select a taxonomy version first"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "version-required inline error",
             )
             assert calls == []
@@ -679,8 +730,10 @@ def test_compile_modal_requires_selections(
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "select a coverage profile first" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "select a coverage profile first"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "profile-required inline error again",
             )
             assert calls == []
@@ -699,7 +752,8 @@ def test_compile_modal_requires_selections(
 
 
 def test_compile_modal_real_run_notifies_and_reloads(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     _seed_taxonomy(project, tmp_path)
 
     async def scenario() -> None:
@@ -712,8 +766,11 @@ def test_compile_modal_real_run_notifies_and_reloads(
             panel = app.query_one(CoveragePanel)
             assert panel.query_one("#reference-sets-table", DataTable).row_count == 0
 
-            panel.on_button_pressed(Button.Pressed(
-                panel.query_one("#coverage-compile-reference-set", Button)))
+            panel.on_button_pressed(
+                Button.Pressed(
+                    panel.query_one("#coverage-compile-reference-set", Button)
+                )
+            )
             await pilot.pause()
             await _wait_until(
                 lambda: isinstance(app.screen, CompileReferenceSetModal),
@@ -722,15 +779,21 @@ def test_compile_modal_real_run_notifies_and_reloads(
             modal = app.screen
             await _push(pilot, modal, "#taxonomy-compile-profile")
             (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
-            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            (
+                await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            ).value = "cov.1"
             await pilot.pause()
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "compile modal to close")
             await _settled(app)
-            assert any("reference set cov@cov.1: family 1 / genus 1 row(s)" in message
-                       for _severity, message in _notifications(app))
+            assert any(
+                "reference set cov@cov.1: family 1 / genus 1 row(s)" in message
+                for _severity, message in _notifications(app)
+            )
             await _wait_until(
-                lambda: panel.query_one("#reference-sets-table", DataTable).row_count == 1,
+                lambda: (
+                    panel.query_one("#reference-sets-table", DataTable).row_count == 1
+                ),
                 "reference set table reload",
             )
 
@@ -739,7 +802,8 @@ def test_compile_modal_real_run_notifies_and_reloads(
 
 
 def test_compile_modal_refuses_cancel_while_running(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     _seed_taxonomy(project, tmp_path)
     released = threading.Event()
     started = threading.Event()
@@ -749,9 +813,14 @@ def test_compile_modal_refuses_cancel_while_running(
         calls.append((args, kwargs))
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"reference_set_id": "cov@cov.1", "profile_name": "cov",
-                "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
-                "reused": False}
+        return {
+            "reference_set_id": "cov@cov.1",
+            "profile_name": "cov",
+            "taxonomy_version": "cov.1",
+            "family_count": 1,
+            "genus_count": 1,
+            "reused": False,
+        }
 
     monkeypatch.setattr(actions, "compile_reference_set", blocking_compile)
     dismissed: list = []
@@ -764,7 +833,9 @@ def test_compile_modal_refuses_cancel_while_running(
             app.push_screen(modal, dismissed.append)
             await _push(pilot, modal, "#taxonomy-compile-profile")
             (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
-            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            (
+                await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            ).value = "cov.1"
             await pilot.pause()
             modal.confirm()
             await _wait_until(lambda: modal.running, "reference set compile to start")
@@ -775,20 +846,28 @@ def test_compile_modal_refuses_cancel_while_running(
             assert len(calls) == 1
 
             # Cancel and escape must not dismiss the modal mid-run.
-            await _wait_until(started.is_set, "reference set compile to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "reference set compile to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
             assert app.screen is modal
-            assert any(severity == "warning" and "cannot be interrupted" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "warning" and "cannot be interrupted" in message
+                for severity, message in _notifications(app)
+            )
             assert dismissed == []
             assert all(widget.disabled for widget in modal.query("Select"))
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "compile modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "compile modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
@@ -798,7 +877,8 @@ def test_compile_modal_refuses_cancel_while_running(
 
 
 def test_compile_modal_empty_project_shows_hints(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls: list[tuple[tuple, dict]] = []
 
     def stub(*args, **kwargs):
@@ -820,19 +900,24 @@ def test_compile_modal_empty_project_shows_hints(
             await _push(pilot, modal, "#taxonomy-compile-profile")
 
             profile_select = await _q(modal, "#taxonomy-compile-profile", Select)
-            version_select = await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            version_select = await _q(
+                modal, "#taxonomy-compile-taxonomy-version", Select
+            )
             assert profile_select.value is Select.NULL
             assert version_select.value is Select.NULL
             form_text = " ".join(
-                _static_text(widget) for widget in modal.query("#modal-form Static"))
+                _static_text(widget) for widget in modal.query("#modal-form Static")
+            )
             assert "no taxonomy_coverage profiles" in form_text
             assert "no READY NCBI taxonomy snapshots" in form_text
 
             # Confirm without anything to select: inline error, no action call.
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "select a coverage profile first" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "select a coverage profile first"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "inline error",
             )
             assert calls == []
@@ -840,10 +925,11 @@ def test_compile_modal_empty_project_shows_hints(
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_import_modal_real_cancel_click_stays_open_while_running(
-        project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
     released = threading.Event()
     started = threading.Event()
@@ -851,8 +937,12 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
     def blocking_import(*args, **kwargs):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"taxonomy_snapshot_id": "TAX_000001", "taxonomy_version": "cov.1",
-                "node_count": 3, "reused": False}
+        return {
+            "taxonomy_snapshot_id": "TAX_000001",
+            "taxonomy_version": "cov.1",
+            "node_count": 3,
+            "reused": False,
+        }
 
     monkeypatch.setattr(actions, "import_taxonomy", blocking_import)
     dismissed: list = []
@@ -871,17 +961,23 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
             await _wait_until(lambda: modal.running, "taxonomy import to start")
 
             # Button.press() posts Button.Pressed through the real pump; before
-            # ODR-0043 the base WriteModal handler dismissed the modal here.
-            await _wait_until(started.is_set, "taxonomy import to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            # ODR-43 the base WriteModal handler dismissed the modal here.
+            await _wait_until(
+                started.is_set,
+                "taxonomy import to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "import modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "import modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
@@ -890,10 +986,11 @@ def test_import_modal_real_cancel_click_stays_open_while_running(
         released.set()
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_compile_modal_real_cancel_click_stays_open_while_running(
-        project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A real Cancel click must not dismiss the modal mid-run (MRO dispatch)."""
     _seed_taxonomy(project, tmp_path)
     released = threading.Event()
@@ -902,9 +999,14 @@ def test_compile_modal_real_cancel_click_stays_open_while_running(
     def blocking_compile(*args, **kwargs):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"reference_set_id": "cov@cov.1", "profile_name": "cov",
-                "taxonomy_version": "cov.1", "family_count": 1, "genus_count": 1,
-                "reused": False}
+        return {
+            "reference_set_id": "cov@cov.1",
+            "profile_name": "cov",
+            "taxonomy_version": "cov.1",
+            "family_count": 1,
+            "genus_count": 1,
+            "reused": False,
+        }
 
     monkeypatch.setattr(actions, "compile_reference_set", blocking_compile)
     dismissed: list = []
@@ -917,21 +1019,29 @@ def test_compile_modal_real_cancel_click_stays_open_while_running(
             app.push_screen(modal, dismissed.append)
             await _push(pilot, modal, "#taxonomy-compile-profile")
             (await _q(modal, "#taxonomy-compile-profile", Select)).value = "cov"
-            (await _q(modal, "#taxonomy-compile-taxonomy-version", Select)).value = "cov.1"
+            (
+                await _q(modal, "#taxonomy-compile-taxonomy-version", Select)
+            ).value = "cov.1"
             await pilot.pause()
             modal.confirm()
             await _wait_until(lambda: modal.running, "reference set compile to start")
 
-            await _wait_until(started.is_set, "reference set compile to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "reference set compile to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "compile modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "compile modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:

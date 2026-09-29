@@ -154,14 +154,14 @@ def test_readthedocs_build_files_are_all_registered():
     )
 
 
-@pytest.mark.bug("ODR-0025")
+@pytest.mark.bug("ODR-25")
 def test_every_workflow_builds_both_language_trees():
     """A workflow that builds the documentation builds every language project.
 
     ``docs/`` stopped being a Sphinx source directory when each language got
     its own project, so a workflow left on the old command fails instead of
     building anything — which is how the publish workflow's documentation job
-    broke after the split (ODR-0025).  Every ``sphinx-build`` line has to name
+    broke after the split (ODR-25).  Every ``sphinx-build`` line has to name
     the language directory it builds.
     """
 
@@ -171,7 +171,7 @@ def test_every_workflow_builds_both_language_trees():
             command = line.strip()
             for prefix in ("- run:", "run:"):
                 if command.startswith(prefix):
-                    command = command[len(prefix):].strip()
+                    command = command[len(prefix) :].strip()
                     break
             words = command.split()
             if not words or words[0] != "sphinx-build":
@@ -205,14 +205,18 @@ def test_the_publish_workflow_gates_on_the_release_preflight() -> None:
     assert os.access(preflight, os.X_OK), f"{preflight} is not executable"
 
     publish = yaml.safe_load(
-        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+        (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(
+            encoding="utf-8"
+        )
     )
     jobs = publish["jobs"]
     verify = jobs["verify-release"]
     commands = "\n".join(
         step.get("run", "") for step in verify["steps"] if isinstance(step, dict)
     )
-    assert "release-preflight.sh" in commands, "verify-release does not run the preflight"
+    assert "release-preflight.sh" in commands, (
+        "verify-release does not run the preflight"
+    )
     assert "test.yml" in commands and "conclusion" in commands, (
         "verify-release does not assert the test workflow's conclusion for the tagged commit"
     )

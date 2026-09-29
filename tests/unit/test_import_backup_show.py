@@ -26,7 +26,19 @@ from operon.workflow import log_run
 
 
 def _project(tmp_path: Path) -> tuple[object, Database]:
-    assert main(["--project", str(tmp_path), "init", str(tmp_path), "--project-id", "PRJ_NEW_001"]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(tmp_path),
+                "init",
+                str(tmp_path),
+                "--project-id",
+                "PRJ_NEW_001",
+            ]
+        )
+        == 0
+    )
     project = load_project(tmp_path)
     return project, Database(project.db_path)
 
@@ -34,15 +46,29 @@ def _project(tmp_path: Path) -> tuple[object, Database]:
 def test_show_resolves_organism_accession_and_descendants(tmp_path: Path):
     project, db = _project(tmp_path)
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Graphus testii"})
-        db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        db.insert_row(
+            "organisms",
+            {"organism_id": "ORG_000001", "scientific_name": "Graphus testii"},
+        )
+        db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
         db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
-        db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-        db.insert_row("annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"})
-        db.insert_row("accessions", {
-            "internal_type": "organism", "internal_id": "ORG_000001",
-            "namespace": "LAB", "accession": "ROOT-1",
-        })
+        db.insert_row(
+            "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+        )
+        db.insert_row(
+            "annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"}
+        )
+        db.insert_row(
+            "accessions",
+            {
+                "internal_type": "organism",
+                "internal_id": "ORG_000001",
+                "namespace": "LAB",
+                "accession": "ROOT-1",
+            },
+        )
         graph = organism_graph(db, "LAB:ROOT-1")
         assert graph["organism"]["organism_id"] == "ORG_000001"
         assert [row["run_id"] for row in graph["runs"]] == ["RUN_000001"]
@@ -52,30 +78,59 @@ def test_show_resolves_organism_accession_and_descendants(tmp_path: Path):
         db.close()
 
 
-def test_show_matched_scope_excludes_siblings_and_superseded_descendants(tmp_path: Path):
+def test_show_matched_scope_excludes_siblings_and_superseded_descendants(
+    tmp_path: Path,
+):
     _project_config, db = _project(tmp_path)
     try:
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Graphus testii",
-        })
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Graphus testii",
+            },
+        )
         for suffix in ("1", "2"):
-            db.insert_row("samples", {
-                "sample_id": f"SMP_00000{suffix}", "organism_id": "ORG_000001",
-            })
-            db.insert_row("assemblies", {
-                "assembly_id": f"ASM_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
-            })
-        db.insert_row("annotations", {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        })
-        db.insert_row("annotations", {
-            "annotation_id": "ANN_000002", "assembly_id": "ASM_000001",
-        })
-        db.insert_row("annotations", {
-            "annotation_id": "ANN_000003", "assembly_id": "ASM_000002",
-        })
+            db.insert_row(
+                "samples",
+                {
+                    "sample_id": f"SMP_00000{suffix}",
+                    "organism_id": "ORG_000001",
+                },
+            )
+            db.insert_row(
+                "assemblies",
+                {
+                    "assembly_id": f"ASM_00000{suffix}",
+                    "sample_id": f"SMP_00000{suffix}",
+                },
+            )
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+            },
+        )
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000002",
+                "assembly_id": "ASM_000001",
+            },
+        )
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": "ANN_000003",
+                "assembly_id": "ASM_000002",
+            },
+        )
         db.supersede_entity(
-            "annotation", "ANN_000001", "annotation", "ANN_000002",
+            "annotation",
+            "ANN_000001",
+            "annotation",
+            "ANN_000002",
             reason="duplicate annotation",
         )
 
@@ -88,39 +143,66 @@ def test_show_matched_scope_excludes_siblings_and_superseded_descendants(tmp_pat
 
         organism_scope = entity_graph(db, "ASM_000001", scope="organism")
         assert [row["assembly_id"] for row in organism_scope["assemblies"]] == [
-            "ASM_000001", "ASM_000002",
+            "ASM_000001",
+            "ASM_000002",
         ]
         assert [row["annotation_id"] for row in organism_scope["annotations"]] == [
-            "ANN_000002", "ANN_000003",
+            "ANN_000002",
+            "ANN_000003",
         ]
 
         history = entity_graph(
-            db, "ASM_000001", scope="organism", include_superseded=True,
+            db,
+            "ASM_000001",
+            scope="organism",
+            include_superseded=True,
         )
         assert [row["annotation_id"] for row in history["annotations"]] == [
-            "ANN_000001", "ANN_000002", "ANN_000003",
+            "ANN_000001",
+            "ANN_000002",
+            "ANN_000003",
         ]
     finally:
         db.close()
 
 
 def _insert_two_sample_graph(db) -> None:
-    db.insert_row("organisms", {
-        "organism_id": "ORG_000001", "scientific_name": "Graphus testii",
-    })
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Graphus testii",
+        },
+    )
     for suffix in ("1", "2"):
-        db.insert_row("samples", {
-            "sample_id": f"SMP_00000{suffix}", "organism_id": "ORG_000001",
-        })
-        db.insert_row("runs", {
-            "run_id": f"RUN_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
-        })
-        db.insert_row("assemblies", {
-            "assembly_id": f"ASM_00000{suffix}", "sample_id": f"SMP_00000{suffix}",
-        })
-        db.insert_row("annotations", {
-            "annotation_id": f"ANN_00000{suffix}", "assembly_id": f"ASM_00000{suffix}",
-        })
+        db.insert_row(
+            "samples",
+            {
+                "sample_id": f"SMP_00000{suffix}",
+                "organism_id": "ORG_000001",
+            },
+        )
+        db.insert_row(
+            "runs",
+            {
+                "run_id": f"RUN_00000{suffix}",
+                "sample_id": f"SMP_00000{suffix}",
+            },
+        )
+        db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": f"ASM_00000{suffix}",
+                "sample_id": f"SMP_00000{suffix}",
+            },
+        )
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": f"ANN_00000{suffix}",
+                "assembly_id": f"ASM_00000{suffix}",
+            },
+        )
 
 
 def test_entity_graph_matched_sample_keeps_only_its_own_descendants(tmp_path: Path):
@@ -165,9 +247,13 @@ def test_entity_graph_matched_annotation_traces_back_to_parent_assembly(tmp_path
 def test_show_opens_database_read_only(tmp_path: Path, capsys):
     project, db = _project(tmp_path)
     try:
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Readonly testii",
-        })
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Readonly testii",
+            },
+        )
     finally:
         db.close()
 
@@ -183,7 +269,9 @@ def test_show_opens_database_read_only(tmp_path: Path, capsys):
         os.chmod(project.db_path, original_db_mode)
 
 
-def test_organism_selection_uses_scientific_name_autocomplete(tmp_path: Path, monkeypatch):
+def test_organism_selection_uses_scientific_name_autocomplete(
+    tmp_path: Path, monkeypatch
+):
     _project_config, db = _project(tmp_path)
     captured: dict[str, object] = {}
 
@@ -197,20 +285,32 @@ def test_organism_selection_uses_scientific_name_autocomplete(tmp_path: Path, mo
         return Prompt()
 
     try:
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000001", "scientific_name": "Arabidopsis thaliana",
-            "taxon_id": 3702,
-        })
-        db.insert_row("organisms", {
-            "organism_id": "ORG_000002", "scientific_name": "Oryza sativa",
-            "taxon_id": 4530,
-        })
-        monkeypatch.setattr("operon.import_wizard.questionary.autocomplete", fake_autocomplete)
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Arabidopsis thaliana",
+                "taxon_id": 3702,
+            },
+        )
+        db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000002",
+                "scientific_name": "Oryza sativa",
+                "taxon_id": 4530,
+            },
+        )
+        monkeypatch.setattr(
+            "operon.import_wizard.questionary.autocomplete", fake_autocomplete
+        )
         draft: dict[str, object] = {}
         _ask_organism(db, draft)
         assert captured["message"] == "Select the organism:"
         assert captured["choices"] == [
-            "Create a new organism", "Arabidopsis thaliana", "Oryza sativa",
+            "Create a new organism",
+            "Arabidopsis thaliana",
+            "Oryza sativa",
         ]
         assert captured["meta_information"]["Arabidopsis thaliana"] == (
             "ORG_000001 | TaxID 3702"
@@ -230,9 +330,10 @@ def test_show_reports_orphaned_organism_reference(tmp_path: Path):
         )
         db.conn.commit()
         db.conn.execute("PRAGMA foreign_keys=ON")
-        with pytest.raises(EntityNotFoundError, match=(
-            "sample SMP_000001 refers to missing organism ORG_999999"
-        )):
+        with pytest.raises(
+            EntityNotFoundError,
+            match=("sample SMP_000001 refers to missing organism ORG_999999"),
+        ):
             organism_graph(db, "SMP_000001")
     finally:
         db.close()
@@ -266,7 +367,10 @@ def test_backup_control_scope_is_consistent_and_detects_tampering(tmp_path: Path
     backup_root = tmp_path / "backup"
     project, db = _project(project_root)
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Backupus testii"})
+        db.insert_row(
+            "organisms",
+            {"organism_id": "ORG_000001", "scientific_name": "Backupus testii"},
+        )
         result = create_backup(db, project, backup_root, scope="control")
         assert result["file_count"] > 0
     finally:
@@ -294,12 +398,17 @@ def test_log_run_rejects_duplicate_without_appending_phantom_jsonl(tmp_path: Pat
         log_run(db, project, record)
         with pytest.raises(sqlite3.IntegrityError, match="workflow_runs.run_id"):
             log_run(db, project, record)
-        assert db.conn.execute(
-            "SELECT COUNT(*) FROM workflow_runs WHERE run_id=?", (run_id,)
-        ).fetchone()[0] == 1
+        assert (
+            db.conn.execute(
+                "SELECT COUNT(*) FROM workflow_runs WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == 1
+        )
         records = [
             json.loads(line)
-            for line in (project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
         ]
         assert sum(item.get("run_id") == run_id for item in records) == 1
     finally:
@@ -326,10 +435,26 @@ def test_wizard_review_edit_returns_directly_to_summary(tmp_path: Path, monkeypa
     try:
         import operon.import_wizard as wizard
 
-        names = ["source", "organism", "sample", "sequencing", "assembly", "annotation", "files"]
+        names = [
+            "source",
+            "organism",
+            "sample",
+            "sequencing",
+            "assembly",
+            "annotation",
+            "files",
+        ]
         for name in names:
-            monkeypatch.setattr(wizard, f"_ask_{name}", lambda _db, _draft, name=name: events.append(name))
-        monkeypatch.setattr(wizard, "_summary", lambda _db, _draft: events.append("summary") or "summary")
+            monkeypatch.setattr(
+                wizard,
+                f"_ask_{name}",
+                lambda _db, _draft, name=name: events.append(name),
+            )
+        monkeypatch.setattr(
+            wizard,
+            "_summary",
+            lambda _db, _draft: events.append("summary") or "summary",
+        )
         actions = iter(["source", "cancel"])
         monkeypatch.setattr(wizard, "_select", lambda _message, _choices: next(actions))
         monkeypatch.setattr(wizard.sys, "stdin", _TTY(sys.stdin))
@@ -351,28 +476,70 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
     protein.write_text(">p1\nM\n", encoding="utf-8")
     draft = {
         "source": {
-            "source_type": "non_insdc", "database_name": "Lab Genome Portal",
-            "provider": "Lab", "record_url": "https://example.invalid/dataset/1",
-            "citation": "doi:10.0000/example", "license_name": "CC-BY-4.0",
+            "source_type": "non_insdc",
+            "database_name": "Lab Genome Portal",
+            "provider": "Lab",
+            "record_url": "https://example.invalid/dataset/1",
+            "citation": "doi:10.0000/example",
+            "license_name": "CC-BY-4.0",
             "license_url": "https://creativecommons.org/licenses/by/4.0/",
         },
-        "organism": {"action": "create", "id": "ORG_000001", "row": {
-            "organism_id": "ORG_000001", "scientific_name": "Wizardus testii", "taxonomy_source": "other",
-        }},
-        "sample": {"action": "create", "id": "SMP_000001", "row": {
-            "sample_id": "SMP_000001", "organism_id": "ORG_000001", "isolate": "W1",
-        }},
+        "organism": {
+            "action": "create",
+            "id": "ORG_000001",
+            "row": {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Wizardus testii",
+                "taxonomy_source": "other",
+            },
+        },
+        "sample": {
+            "action": "create",
+            "id": "SMP_000001",
+            "row": {
+                "sample_id": "SMP_000001",
+                "organism_id": "ORG_000001",
+                "isolate": "W1",
+            },
+        },
         "run": None,
-        "assembly": {"action": "create", "id": "ASM_000001", "row": {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_version": "1",
-        }},
-        "annotation": {"action": "create", "id": "ANN_000001", "row": {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001", "annotation_version": "1",
-        }},
+        "assembly": {
+            "action": "create",
+            "id": "ASM_000001",
+            "row": {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_version": "1",
+            },
+        },
+        "annotation": {
+            "action": "create",
+            "id": "ANN_000001",
+            "row": {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+                "annotation_version": "1",
+            },
+        },
         "files": [
-            {"label": "GFF3", "role": "annotation_gff3", "entity_type": "annotation", "path": str(gff)},
-            {"label": "CDS FASTA", "role": "cds_fasta", "entity_type": "annotation", "path": str(cds)},
-            {"label": "Protein FASTA", "role": "protein_fasta", "entity_type": "annotation", "path": str(protein)},
+            {
+                "label": "GFF3",
+                "role": "annotation_gff3",
+                "entity_type": "annotation",
+                "path": str(gff),
+            },
+            {
+                "label": "CDS FASTA",
+                "role": "cds_fasta",
+                "entity_type": "annotation",
+                "path": str(cds),
+            },
+            {
+                "label": "Protein FASTA",
+                "role": "protein_fasta",
+                "entity_type": "annotation",
+                "path": str(protein),
+            },
         ],
     }
     try:
@@ -381,8 +548,13 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
         annotation = db.query(
             "SELECT gff_file_id, cds_file_id, protein_file_id FROM annotations WHERE annotation_id='ANN_000001'"
         )[0]
-        assert all(annotation[column] for column in ("gff_file_id", "cds_file_id", "protein_file_id"))
-        ingest_runs = db.query("SELECT run_id, parent_run_id FROM workflow_runs WHERE step='ingest'")
+        assert all(
+            annotation[column]
+            for column in ("gff_file_id", "cds_file_id", "protein_file_id")
+        )
+        ingest_runs = db.query(
+            "SELECT run_id, parent_run_id FROM workflow_runs WHERE step='ingest'"
+        )
         assert len(ingest_runs) == 3
         assert len({row["run_id"] for row in ingest_runs}) == 3
         assert {row["parent_run_id"] for row in ingest_runs} == {result["run_id"]}
@@ -390,10 +562,13 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
             "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
         )[0]
         assert parent["status"] == "completed"
-        source = dict(db.query(
-            "SELECT source_id, source_type, database_name, citation, license_name "
-            "FROM data_sources WHERE source_id=?", (result["source_id"],)
-        )[0])
+        source = dict(
+            db.query(
+                "SELECT source_id, source_type, database_name, citation, license_name "
+                "FROM data_sources WHERE source_id=?",
+                (result["source_id"],),
+            )[0]
+        )
         assert source == {
             "source_id": result["source_id"],
             "source_type": "non_insdc",
@@ -414,17 +589,24 @@ def test_wizard_commit_creates_entity_chain_and_links_annotation_files(tmp_path:
 
 
 def test_non_insdc_source_requires_citation_and_license():
-    errors = _source_validation_errors({"source": {
-        "source_type": "non_insdc", "database_name": "Institutional repository",
-        "provider": "Example Institute",
-    }})
+    errors = _source_validation_errors(
+        {
+            "source": {
+                "source_type": "non_insdc",
+                "database_name": "Institutional repository",
+                "provider": "Example Institute",
+            }
+        }
+    )
     assert errors == [
         "Non-INSDC data requires a reference citation or DOI.",
         "Non-INSDC data requires a License name or SPDX identifier.",
     ]
 
 
-def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monkeypatch):
+def test_wizard_failure_discards_completed_child_provenance(
+    tmp_path: Path, monkeypatch
+):
     project, db = _project(tmp_path)
     gff = tmp_path / "input.gff3"
     cds = tmp_path / "input.cds.fna"
@@ -432,26 +614,59 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
     cds.write_text(">cds1\nATG\n", encoding="utf-8")
     draft = {
         "source": {
-            "source_type": "non_insdc", "database_name": "Lab delivery",
-            "provider": "Lab", "record_url": "",
-            "citation": "Internal delivery protocol v1", "license_name": "Proprietary",
+            "source_type": "non_insdc",
+            "database_name": "Lab delivery",
+            "provider": "Lab",
+            "record_url": "",
+            "citation": "Internal delivery protocol v1",
+            "license_name": "Proprietary",
         },
-        "organism": {"action": "create", "id": "ORG_000001", "row": {
-            "organism_id": "ORG_000001", "scientific_name": "Rollbackus testii",
-        }},
-        "sample": {"action": "create", "id": "SMP_000001", "row": {
-            "sample_id": "SMP_000001", "organism_id": "ORG_000001",
-        }},
+        "organism": {
+            "action": "create",
+            "id": "ORG_000001",
+            "row": {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Rollbackus testii",
+            },
+        },
+        "sample": {
+            "action": "create",
+            "id": "SMP_000001",
+            "row": {
+                "sample_id": "SMP_000001",
+                "organism_id": "ORG_000001",
+            },
+        },
         "run": None,
-        "assembly": {"action": "create", "id": "ASM_000001", "row": {
-            "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        }},
-        "annotation": {"action": "create", "id": "ANN_000001", "row": {
-            "annotation_id": "ANN_000001", "assembly_id": "ASM_000001",
-        }},
+        "assembly": {
+            "action": "create",
+            "id": "ASM_000001",
+            "row": {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+            },
+        },
+        "annotation": {
+            "action": "create",
+            "id": "ANN_000001",
+            "row": {
+                "annotation_id": "ANN_000001",
+                "assembly_id": "ASM_000001",
+            },
+        },
         "files": [
-            {"label": "GFF3", "role": "annotation_gff3", "entity_type": "annotation", "path": str(gff)},
-            {"label": "CDS FASTA", "role": "cds_fasta", "entity_type": "annotation", "path": str(cds)},
+            {
+                "label": "GFF3",
+                "role": "annotation_gff3",
+                "entity_type": "annotation",
+                "path": str(gff),
+            },
+            {
+                "label": "CDS FASTA",
+                "role": "cds_fasta",
+                "entity_type": "annotation",
+                "path": str(cds),
+            },
         ],
     }
     import operon.import_wizard as wizard
@@ -470,25 +685,38 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
     try:
         with pytest.raises(RuntimeError, match="forced second-file failure"):
             _commit(db, project, draft)
-        assert db.conn.execute(
-            "SELECT COUNT(*) FROM organisms WHERE organism_id='ORG_000001'"
-        ).fetchone()[0] == 0
-        assert db.conn.execute(
-            "SELECT COUNT(*) FROM files WHERE entity_id='ANN_000001'"
-        ).fetchone()[0] == 0
+        assert (
+            db.conn.execute(
+                "SELECT COUNT(*) FROM organisms WHERE organism_id='ORG_000001'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            db.conn.execute(
+                "SELECT COUNT(*) FROM files WHERE entity_id='ANN_000001'"
+            ).fetchone()[0]
+            == 0
+        )
         assert db.conn.execute("SELECT COUNT(*) FROM data_sources").fetchone()[0] == 0
         assert db.conn.execute("SELECT COUNT(*) FROM source_links").fetchone()[0] == 0
-        runs = [dict(row) for row in db.conn.execute(
-            "SELECT step, status, error FROM workflow_runs ORDER BY started_at"
-        ).fetchall()]
-        assert runs == [{
-            "step": "interactive_dataset_import",
-            "status": "failed",
-            "error": "RuntimeError: forced second-file failure",
-        }]
+        runs = [
+            dict(row)
+            for row in db.conn.execute(
+                "SELECT step, status, error FROM workflow_runs ORDER BY started_at"
+            ).fetchall()
+        ]
+        assert runs == [
+            {
+                "step": "interactive_dataset_import",
+                "status": "failed",
+                "error": "RuntimeError: forced second-file failure",
+            }
+        ]
         jsonl_records = [
             json.loads(line)
-            for line in (project.logs_root / "workflow.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (project.logs_root / "workflow.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
         ]
         assert [(item["step"], item["status"]) for item in jsonl_records] == [
             ("interactive_dataset_import", "failed")
@@ -496,5 +724,3 @@ def test_wizard_failure_discards_completed_child_provenance(tmp_path: Path, monk
         assert not any(path.is_file() for path in project.raw_root.rglob("*"))
     finally:
         db.close()
-
-

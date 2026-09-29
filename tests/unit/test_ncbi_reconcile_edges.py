@@ -26,68 +26,158 @@ def project_db(tmp_path: Path):
 
 def _file(file_id, entity_type, entity_id, role, rel, sha, source_url=""):
     return {
-        "file_id": file_id, "entity_type": entity_type, "entity_id": entity_id,
-        "file_role": role, "format": "fasta", "compression": "none",
-        "relative_path": rel, "source_url": source_url, "size_bytes": 1,
-        "sha256": sha, "status": "CHECKSUM_VERIFIED",
+        "file_id": file_id,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "file_role": role,
+        "format": "fasta",
+        "compression": "none",
+        "relative_path": rel,
+        "source_url": source_url,
+        "size_bytes": 1,
+        "sha256": sha,
+        "status": "CHECKSUM_VERIFIED",
     }
 
 
-def test_plan_reconciliation_duplicate_warnings_roles_paths_primary_and_state(project_db):
+def test_plan_reconciliation_duplicate_warnings_roles_paths_primary_and_state(
+    project_db,
+):
     _project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {
-        "assembly_id": "ASM_000001", "sample_id": "SMP_000001",
-        "assembly_accession": "GCA_000000001.1", "source_database": "GenBank",
-        "fasta_file_id": None,
-    })
-    for annotation_id in ("ANN_000001", "ANN_000002", "ANN_000003", "ANN_000004", "ANN_000005"):
-        db.insert_row("annotations", {
-            "annotation_id": annotation_id, "assembly_id": "ASM_000001",
-            "annotation_source": "NCBI", "annotation_version": 2 if annotation_id == "ANN_000005" else 1,
-        })
-    db.insert_row("files", _file(
-        "FIL_000001", "annotation", "ANN_000001", "annotation_gff3", "raw/a", "a" * 64
-    ))
-    db.insert_row("files", _file(
-        "FIL_000002", "annotation", "ANN_000002", "annotation_gff3", "raw/b", "b" * 64
-    ))
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCA_000000001.1",
+            "source_database": "GenBank",
+            "fasta_file_id": None,
+        },
+    )
+    for annotation_id in (
+        "ANN_000001",
+        "ANN_000002",
+        "ANN_000003",
+        "ANN_000004",
+        "ANN_000005",
+    ):
+        db.insert_row(
+            "annotations",
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": "ASM_000001",
+                "annotation_source": "NCBI",
+                "annotation_version": 2 if annotation_id == "ANN_000005" else 1,
+            },
+        )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000001",
+            "annotation",
+            "ANN_000001",
+            "annotation_gff3",
+            "raw/a",
+            "a" * 64,
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000002",
+            "annotation",
+            "ANN_000002",
+            "annotation_gff3",
+            "raw/b",
+            "b" * 64,
+        ),
+    )
     # ANN_3 and ANN_4 have no overlapping roles, so they can be superseded conservatively.
-    db.insert_row("files", _file(
-        "FIL_000003", "annotation", "ANN_000003", "annotation_gff3", "raw/c", "c" * 64
-    ))
-    db.insert_row("files", _file(
-        "FIL_000004", "annotation", "ANN_000004", "protein_fasta", "raw/d", "d" * 64
-    ))
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000003",
+            "annotation",
+            "ANN_000003",
+            "annotation_gff3",
+            "raw/c",
+            "c" * 64,
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000004", "annotation", "ANN_000004", "protein_fasta", "raw/d", "d" * 64
+        ),
+    )
     for accession, namespace, primary in (
         ("GCF_000000001.1", "NCBI_RefSeq_Assembly", 0),
         ("GCA_000000001.1", "NCBI_GenBank_Assembly", 1),
         ("GCF_000000001.1", "NCBI_Assembly", 0),
         ("GCA_000000001.1", "NCBI_Assembly", 1),
     ):
-        db.insert_row("accessions", {
-            "internal_type": "assembly", "internal_id": "ASM_000001",
-            "namespace": namespace, "accession": accession, "is_primary": primary,
-        })
-    db.insert_row("files", _file(
-        "FIL_000008", "assembly", "ASM_000001", "genome_fasta", "raw/plain.fa", "e" * 64,
-        "https://x/GCA_000000001.1/file",
-    ))
-    db.insert_row("files", _file(
-        "FIL_000009", "assembly", "ASM_000001", "genome_fasta_genbank",
-        "raw/wrong-name.fa", "f" * 64,
-    ))
+        db.insert_row(
+            "accessions",
+            {
+                "internal_type": "assembly",
+                "internal_id": "ASM_000001",
+                "namespace": namespace,
+                "accession": accession,
+                "is_primary": primary,
+            },
+        )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000008",
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+            "raw/plain.fa",
+            "e" * 64,
+            "https://x/GCA_000000001.1/file",
+        ),
+    )
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000009",
+            "assembly",
+            "ASM_000001",
+            "genome_fasta_genbank",
+            "raw/wrong-name.fa",
+            "f" * 64,
+        ),
+    )
     # A historical RefSeq URL chooses GCF as canonical even though the assembly row says GCA.
-    db.insert_row("files", _file(
-        "FIL_000007", "annotation", "ANN_000005", "protein_fasta", "raw/history", "7" * 64,
-        "https://x/GCF_000000001.1/file",
-    ))
-    db.insert_qc_result({
-        "entity_type": "annotation", "entity_id": "ANN_000005", "qc_stage": "s",
-        "metric_name": "m", "metric_value": "1", "metric_numeric": 1,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
+    db.insert_row(
+        "files",
+        _file(
+            "FIL_000007",
+            "annotation",
+            "ANN_000005",
+            "protein_fasta",
+            "raw/history",
+            "7" * 64,
+            "https://x/GCF_000000001.1/file",
+        ),
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "annotation",
+            "entity_id": "ANN_000005",
+            "qc_stage": "s",
+            "metric_name": "m",
+            "metric_value": "1",
+            "metric_numeric": 1,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
     db.set_entity_state("annotation", "ANN_000005", "DOWNLOADED", "old")
 
     plan = ncbi_reconcile.plan_ncbi_reconciliation(db)
@@ -98,17 +188,25 @@ def test_plan_reconciliation_duplicate_warnings_roles_paths_primary_and_state(pr
     assert plan["assembly_updates"][0]["new_accession"].startswith("GCF_")
     assert plan["file_path_repairs"]
     assert plan["accession_primary_updates"]
-    assert any(item["annotation_id"] == "ANN_000005" for item in plan["state_restorations"])
+    assert any(
+        item["annotation_id"] == "ANN_000005" for item in plan["state_restorations"]
+    )
 
 
 def test_apply_path_move_equal_missing_conflict_and_success(project_db):
     project, db = project_db
-    assert ncbi_reconcile._apply_path_move(
-        db, project, "F", "same", "same", actor=None, run_id="R", reason="x"
-    ) is True
-    assert ncbi_reconcile._apply_path_move(
-        db, project, "F", "missing", "new", actor=None, run_id="R", reason="x"
-    ) is False
+    assert (
+        ncbi_reconcile._apply_path_move(
+            db, project, "F", "same", "same", actor=None, run_id="R", reason="x"
+        )
+        is True
+    )
+    assert (
+        ncbi_reconcile._apply_path_move(
+            db, project, "F", "missing", "new", actor=None, run_id="R", reason="x"
+        )
+        is False
+    )
 
     old = project.root / "old"
     new = project.root / "new"
@@ -120,10 +218,22 @@ def test_apply_path_move_equal_missing_conflict_and_success(project_db):
         )
     new.unlink()
     db.conn.execute("PRAGMA foreign_keys=OFF")
-    db.insert_row("files", _file("FIL_000001", "organism", "ORG_000001", "other", "old", "x" * 64))
-    assert ncbi_reconcile._apply_path_move(
-        db, project, "FIL_000001", "old", "nested/new", actor="a", run_id="R", reason="x"
-    ) is True
+    db.insert_row(
+        "files", _file("FIL_000001", "organism", "ORG_000001", "other", "old", "x" * 64)
+    )
+    assert (
+        ncbi_reconcile._apply_path_move(
+            db,
+            project,
+            "FIL_000001",
+            "old",
+            "nested/new",
+            actor="a",
+            run_id="R",
+            reason="x",
+        )
+        is True
+    )
     assert (project.root / "nested" / "new").read_text() == "a"
 
 
@@ -131,8 +241,12 @@ def test_apply_reconciliation_blocks_alternate_role_conflicts(project_db, monkey
     project, db = project_db
     plan = {
         "warnings": [{"kind": "alternate_role_conflict"}],
-        "annotation_supersessions": [], "assembly_updates": [], "file_role_updates": [],
-        "file_path_repairs": [], "accession_primary_updates": [], "state_restorations": [],
+        "annotation_supersessions": [],
+        "assembly_updates": [],
+        "file_role_updates": [],
+        "file_path_repairs": [],
+        "accession_primary_updates": [],
+        "state_restorations": [],
         "summary": {},
     }
     monkeypatch.setattr(ncbi_reconcile, "plan_ncbi_reconciliation", lambda _db: plan)
@@ -142,9 +256,14 @@ def test_apply_reconciliation_blocks_alternate_role_conflicts(project_db, monkey
 
 def _plan_with_path_repairs(repairs):
     return {
-        "warnings": [], "annotation_supersessions": [], "assembly_updates": [],
-        "file_role_updates": [], "file_path_repairs": repairs,
-        "accession_primary_updates": [], "state_restorations": [], "summary": {},
+        "warnings": [],
+        "annotation_supersessions": [],
+        "assembly_updates": [],
+        "file_role_updates": [],
+        "file_path_repairs": repairs,
+        "accession_primary_updates": [],
+        "state_restorations": [],
+        "summary": {},
     }
 
 
@@ -153,10 +272,17 @@ def test_apply_reconciliation_audits_failed_run(project_db, monkeypatch):
     (project.root / "old").write_text("a", encoding="utf-8")
     (project.root / "new").write_text("b", encoding="utf-8")
     monkeypatch.setattr(
-        ncbi_reconcile, "plan_ncbi_reconciliation",
-        lambda _db: _plan_with_path_repairs([
-            {"file_id": "FIL_000001", "old_relative_path": "old", "new_relative_path": "new"},
-        ]),
+        ncbi_reconcile,
+        "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs(
+            [
+                {
+                    "file_id": "FIL_000001",
+                    "old_relative_path": "old",
+                    "new_relative_path": "new",
+                },
+            ]
+        ),
     )
     with pytest.raises(ConflictError, match="different bytes"):
         ncbi_reconcile.apply_ncbi_reconciliation(db, project)
@@ -167,19 +293,30 @@ def test_apply_reconciliation_audits_failed_run(project_db, monkeypatch):
     assert "different bytes" in run["error"]
 
 
-def test_apply_reconciliation_checks_every_destination_before_any_move(project_db, monkeypatch):
+def test_apply_reconciliation_checks_every_destination_before_any_move(
+    project_db, monkeypatch
+):
     project, db = project_db
     (project.root / "first-old").write_text("a", encoding="utf-8")
     (project.root / "second-old").write_text("b", encoding="utf-8")
     (project.root / "second-new").write_text("c", encoding="utf-8")
     monkeypatch.setattr(
-        ncbi_reconcile, "plan_ncbi_reconciliation",
-        lambda _db: _plan_with_path_repairs([
-            {"file_id": "FIL_000001", "old_relative_path": "first-old",
-             "new_relative_path": "first-new"},
-            {"file_id": "FIL_000002", "old_relative_path": "second-old",
-             "new_relative_path": "second-new"},
-        ]),
+        ncbi_reconcile,
+        "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs(
+            [
+                {
+                    "file_id": "FIL_000001",
+                    "old_relative_path": "first-old",
+                    "new_relative_path": "first-new",
+                },
+                {
+                    "file_id": "FIL_000002",
+                    "old_relative_path": "second-old",
+                    "new_relative_path": "second-new",
+                },
+            ]
+        ),
     )
     with pytest.raises(ConflictError, match="different bytes"):
         ncbi_reconcile.apply_ncbi_reconciliation(db, project)
@@ -189,14 +326,22 @@ def test_apply_reconciliation_checks_every_destination_before_any_move(project_d
     assert not (project.root / "first-new").exists()
 
 
-def test_apply_reconciliation_records_skipped_move_for_absent_local_file(project_db, monkeypatch):
+def test_apply_reconciliation_records_skipped_move_for_absent_local_file(
+    project_db, monkeypatch
+):
     project, db = project_db
     monkeypatch.setattr(
-        ncbi_reconcile, "plan_ncbi_reconciliation",
-        lambda _db: _plan_with_path_repairs([
-            {"file_id": "FIL_000001", "old_relative_path": "raw/missing.fa",
-             "new_relative_path": "raw/renamed.fa"},
-        ]),
+        ncbi_reconcile,
+        "plan_ncbi_reconciliation",
+        lambda _db: _plan_with_path_repairs(
+            [
+                {
+                    "file_id": "FIL_000001",
+                    "old_relative_path": "raw/missing.fa",
+                    "new_relative_path": "raw/renamed.fa",
+                },
+            ]
+        ),
     )
     result = ncbi_reconcile.apply_ncbi_reconciliation(db, project)
     assert result["skipped_path_moves"] == ["FIL_000001"]

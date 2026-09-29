@@ -57,21 +57,28 @@ def test_project_default_backend_reads_the_project_configuration() -> None:
     """`--backend` omitted means `execution.backend`, normalised."""
     assert project_default_backend(SimpleNamespace(config={})) == "local"
     assert project_default_backend(SimpleNamespace(config={})) == "local"
-    assert project_default_backend(
-        SimpleNamespace(config={"execution": {"backend": "  SLURM "}})) == "slurm"
+    assert (
+        project_default_backend(
+            SimpleNamespace(config={"execution": {"backend": "  SLURM "}})
+        )
+        == "slurm"
+    )
     assert project_default_backend(SimpleNamespace(config={"execution": {}})) == "local"
     assert project_default_backend(SimpleNamespace()) == "local"  # no config attribute
 
 
 def test_backend_select_options_mirror_the_cli_flag() -> None:
     """The first option is the project default and carries the empty value."""
-    options = backend_select_options(SimpleNamespace(config={"execution": {"backend": "ssh"}}))
+    options = backend_select_options(
+        SimpleNamespace(config={"execution": {"backend": "ssh"}})
+    )
     assert options[0] == ("project default (ssh)", "")
     assert [value for _label, value in options] == ["", "local", "slurm", "ssh"]
 
 
 def test_selected_backend_tolerates_a_widget_that_is_not_there() -> None:
-    """A reader can run before the form mounted (ODR-0023's shape)."""
+    """A reader can run before the form mounted (ODR-23's shape)."""
+
     class ScreenWithoutTheWidget:
         def query_one(self, *_args: Any, **_kwargs: Any) -> Any:
             raise NoMatches("not composed yet")
@@ -83,8 +90,11 @@ def test_selected_backend_reads_a_blank_select_as_the_project_default() -> None:
     async def scenario() -> None:
         app = App()
         async with app.run_test(size=(80, 24)) as pilot:
-            select: Select = Select([("local", "local"), ("slurm", "slurm")],
-                                    id="analyze-backend", allow_blank=True)
+            select: Select = Select(
+                [("local", "local"), ("slurm", "slurm")],
+                id="analyze-backend",
+                allow_blank=True,
+            )
             await app.screen.mount(select)
             await pilot.pause()
             assert selected_backend(app.screen, "analyze-backend") == ""
@@ -97,6 +107,7 @@ def test_selected_backend_reads_a_blank_select_as_the_project_default() -> None:
 
 def test_remount_replaces_and_empties_a_plain_container() -> None:
     """A container that is not `MountTracked` still gets the deferred swap."""
+
     async def scenario() -> None:
         app = App()
         async with app.run_test(size=(80, 24)) as pilot:
@@ -128,13 +139,14 @@ def test_fitting_select_fits_an_overlay_that_is_not_there_yet() -> None:
 
 def test_fitting_select_retry_tick_marks_a_healthy_control_ready() -> None:
     """The retry's landing path: the overlay is there, so readiness latches."""
+
     async def scenario() -> None:
         app = App()
         async with app.run_test(size=(80, 24)) as pilot:
             select = FittingSelect([("short", "x"), ("longer", "y")], value="y")
             await app.screen.mount(select)
             await pilot.pause()
-            assert select.options_ready  # the direct path (ODR-0038)
+            assert select.options_ready  # the direct path (ODR-38)
             select._options_ready = False
             select._init_options_when_composed(attempt=0)
             await pilot.pause()
@@ -148,7 +160,7 @@ def test_fitting_select_adopts_its_first_option_without_an_overlay() -> None:
     """A select that may not be blank resolves its value with no overlay.
 
     `allow_blank=False` is what makes the difference: the default constructor
-    accepts a blank, so adoption is a no-op there (ODR-0026's other half).
+    accepts a blank, so adoption is a no-op there (ODR-26's other half).
     """
     select = FittingSelect([("short", "x"), ("longer", "y")], allow_blank=False)
     select._value = Select.NULL
@@ -174,8 +186,9 @@ def test_fitting_select_gives_up_by_name_and_reports_it() -> None:
                 patch.setattr(FittingSelect, "_overlay_present", lambda self: False)
                 patch.setattr(FittingSelect, "log", property(lambda self: recorder))
                 await app.screen.mount(select)
-                await wait_until(lambda: select.options_gave_up,
-                                 "the mount retries to run out")
+                await wait_until(
+                    lambda: select.options_gave_up, "the mount retries to run out"
+                )
             assert not select.options_ready
             assert recorder.messages, "the give-up path must report itself"
             assert "debt-probe" in recorder.messages[0]
@@ -193,7 +206,7 @@ class _Recorder:
         self.messages.append(message)
 
 
-@pytest.mark.bug("ODR-0050")
+@pytest.mark.bug("ODR-50")
 def test_fitting_select_paint_gives_up_by_name() -> None:
     """A label that never composes is reported once, not raised every refresh."""
     recorder = _Recorder()
@@ -227,9 +240,16 @@ def test_fitting_select_paint_gives_up_by_name() -> None:
 # -- classification rows route their own messages -----------------------------
 
 
-@pytest.mark.parametrize("row_class", [
-    ConditionRow, ConditionEditor, BestByRow, SourceRow, ClassificationRuleRow,
-])
+@pytest.mark.parametrize(
+    "row_class",
+    [
+        ConditionRow,
+        ConditionEditor,
+        BestByRow,
+        SourceRow,
+        ClassificationRuleRow,
+    ],
+)
 def test_classification_rows_route_removal_to_themselves(row_class: type) -> None:
     """Textual routes a message through `control`, so it must be the row itself."""
     sentinel = object()
@@ -242,6 +262,7 @@ def test_classification_rows_route_removal_to_themselves(row_class: type) -> Non
 
 def test_condition_document_adds_a_missing_field_first() -> None:
     """A hand-written condition without `field` gets the canonical key order."""
+
     async def scenario() -> None:
         app = App()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -251,6 +272,11 @@ def test_condition_document_adds_a_missing_field_first() -> None:
             document = row.condition_document()
             # The original had no `field`, so it is appended after the keys the
             # original did carry — still before the operand and the extras.
-            assert document == {"operator": "like", "field": "", "value": "x", "extra": 1}
+            assert document == {
+                "operator": "like",
+                "field": "",
+                "value": "x",
+                "extra": 1,
+            }
 
     _run(scenario())

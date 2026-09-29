@@ -33,7 +33,7 @@ from tests.tui_helpers import click as _click
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
-#: Budget for a worker result crossing back from its thread to the UI (ODR-0046).
+#: Budget for a worker result crossing back from its thread to the UI (ODR-46).
 HANDOFF_TIMEOUT = 120.0
 
 
@@ -53,15 +53,18 @@ def _fresh_assembly(project: Project, assembly_id: str = "ASM_000900") -> None:
     """A demo-shaped assembly with no entity_state row yet (a new entity)."""
     db = Database(project.db_path)
     try:
-        db.insert_row("assemblies", {
-            "assembly_id": assembly_id,
-            "sample_id": "SMP_000001",
-            "assembly_accession": f"GCA_{assembly_id[-6:]}",
-            "assembly_version": 1,
-            "assembly_level": "contig",
-            "assembly_method": "test fixture",
-            "reference_status": "representative",
-        })
+        db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": assembly_id,
+                "sample_id": "SMP_000001",
+                "assembly_accession": f"GCA_{assembly_id[-6:]}",
+                "assembly_version": 1,
+                "assembly_level": "contig",
+                "assembly_method": "test fixture",
+                "reference_status": "representative",
+            },
+        )
     finally:
         db.close()
 
@@ -70,12 +73,20 @@ def _curate(project: Project, assembly_id: str) -> None:
     db = Database(project.db_path)
     try:
         profile = project.config["qc"]["default_profile"]
-        db.upsert_decision({
-            "entity_type": "assembly", "entity_id": assembly_id, "profile": profile,
-            "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
-            "reason_codes": "[]", "observed": "{}", "thresholds": "{}",
-            "evaluated_at": "2026-01-01T00:00:00+00:00",
-        })
+        db.upsert_decision(
+            {
+                "entity_type": "assembly",
+                "entity_id": assembly_id,
+                "profile": profile,
+                "decision": "PASS",
+                "curated_decision": "PASS",
+                "curated_by": "reviewer",
+                "reason_codes": "[]",
+                "observed": "{}",
+                "thresholds": "{}",
+                "evaluated_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
     finally:
         db.close()
 
@@ -100,8 +111,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     """Wait for an observable UI result; handoffs pass ``timeout=HANDOFF_TIMEOUT``."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -141,8 +153,13 @@ async def _open_modal(pilot, app) -> PipelineModal:
     return modal
 
 
-async def _fill(pilot, modal: PipelineModal, source: Path, entity_id: str,
-                role: str = "genome_fasta") -> None:
+async def _fill(
+    pilot,
+    modal: PipelineModal,
+    source: Path,
+    entity_id: str,
+    role: str = "genome_fasta",
+) -> None:
     field = modal.query_one("#pipeline-source", Input)
     field.focus()
     await pilot.pause()
@@ -155,13 +172,18 @@ async def _fill(pilot, modal: PipelineModal, source: Path, entity_id: str,
 async def _preview(pilot, modal: PipelineModal) -> None:
     await _click(pilot, "#pipeline-preview-button")
     await _wait_until(
-        lambda: not modal.preview_running and modal.query_one(
-            "#pipeline-preview-button", Button).disabled is False,
-        "finish the preview", timeout=HANDOFF_TIMEOUT)
+        lambda: (
+            not modal.preview_running
+            and modal.query_one("#pipeline-preview-button", Button).disabled is False
+        ),
+        "finish the preview",
+        timeout=HANDOFF_TIMEOUT,
+    )
 
 
 def test_pipeline_preview_gates_confirm_and_runs_the_four_stages(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     """A full run through the dialog: preview, Confirm, and the same artifacts."""
     _fresh_assembly(project)
 
@@ -187,28 +209,40 @@ def test_pipeline_preview_gates_confirm_and_runs_the_four_stages(
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: not isinstance(app.screen, PipelineModal),
-                "pipeline modal closed", timeout=HANDOFF_TIMEOUT)
+                "pipeline modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app)
             messages = [message for _severity, message in _notifications(app)]
-            assert any(message.startswith("pipeline complete: FIL_") for message in messages), messages
+            assert any(
+                message.startswith("pipeline complete: FIL_") for message in messages
+            ), messages
 
     _run(scenario())
 
     files = _query(project, "SELECT * FROM files WHERE entity_id='ASM_000900'")
     assert len(files) == 1
     assert files[0]["status"] == "STANDARDIZED"
-    assert _query(project, "SELECT 1 FROM qc_results WHERE file_id=?",
-                  (files[0]["file_id"],))
-    assert _query(project, "SELECT 1 FROM current_decisions WHERE entity_id='ASM_000900'")
+    assert _query(
+        project, "SELECT 1 FROM qc_results WHERE file_id=?", (files[0]["file_id"],)
+    )
+    assert _query(
+        project, "SELECT 1 FROM current_decisions WHERE entity_id='ASM_000900'"
+    )
     db = Database(project.db_path, read_only=True)
     try:
-        assert db.get_entity_state("assembly", "ASM_000900") in {"ACCEPTED", "REVIEW", "REJECTED"}
+        assert db.get_entity_state("assembly", "ASM_000900") in {
+            "ACCEPTED",
+            "REVIEW",
+            "REJECTED",
+        }
     finally:
         db.close()
 
 
 def test_pipeline_curated_decision_needs_the_explicit_rerun_box(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     """The CLI's `--yes` becomes an explicit checkbox, exactly like its prompt."""
     _fresh_assembly(project, "ASM_000901")
     _curate(project, "ASM_000901")
@@ -225,8 +259,12 @@ def test_pipeline_curated_decision_needs_the_explicit_rerun_box(
             # Without the box the Confirm refuses and stays inline.
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "curated" in _static_text(modal.query_one("#modal-error", Static)),
-                "the curated gate to appear inline", timeout=HANDOFF_TIMEOUT)
+                lambda: (
+                    "curated" in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "the curated gate to appear inline",
+                timeout=HANDOFF_TIMEOUT,
+            )
             assert isinstance(app.screen, PipelineModal)
 
             # With the box the run proceeds.
@@ -235,17 +273,22 @@ def test_pipeline_curated_decision_needs_the_explicit_rerun_box(
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: not isinstance(app.screen, PipelineModal),
-                "pipeline modal closed", timeout=HANDOFF_TIMEOUT)
+                "pipeline modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app)
             messages = [message for _severity, message in _notifications(app)]
-            assert any(message.startswith("pipeline complete:") for message in messages), messages
+            assert any(
+                message.startswith("pipeline complete:") for message in messages
+            ), messages
 
     _run(scenario())
     assert _query(project, "SELECT 1 FROM files WHERE entity_id='ASM_000901'")
 
 
-def test_pipeline_preview_requires_source_entity_and_role(project: Project,
-                                                          tmp_path: Path) -> None:
+def test_pipeline_preview_requires_source_entity_and_role(
+    project: Project, tmp_path: Path
+) -> None:
     """Missing required fields are reported inline and never unlock Confirm."""
 
     async def scenario() -> None:
@@ -257,9 +300,13 @@ def test_pipeline_preview_requires_source_entity_and_role(project: Project,
             await pilot.pause()
             await _click(pilot, "#pipeline-preview-button")
             await _wait_until(
-                lambda: "source is required" in _static_text(
-                    modal.query_one("#modal-error", Static)),
-                "the missing-source error", timeout=HANDOFF_TIMEOUT)
+                lambda: (
+                    "source is required"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "the missing-source error",
+                timeout=HANDOFF_TIMEOUT,
+            )
             assert modal.query_one("#confirm", Button).disabled
 
             modal.query_one("#pipeline-source", Input).value = str(_source(tmp_path))
@@ -272,17 +319,26 @@ def test_pipeline_preview_requires_source_entity_and_role(project: Project,
     _run(scenario())
 
 
-def test_pipeline_qc_failure_opens_the_error_dialog(project: Project, tmp_path: Path,
-                                                    monkeypatch) -> None:
+def test_pipeline_qc_failure_opens_the_error_dialog(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     """A QC stop is reported the way the CLI reports it: no evaluation, an error."""
     from operon.tui import actions
 
     _fresh_assembly(project, "ASM_000902")
-    monkeypatch.setattr(actions, "run_pipeline", lambda *_a, **_k: {
-        "qc_ok": False, "qc_error": "synthetic QC failure", "file_id": "FIL_TEST",
-        "decision": None, "reason_codes": [], "profile": "assembly_production_v1",
-        "steps": ["ingest", "standardize", "qc", "evaluate"],
-    })
+    monkeypatch.setattr(
+        actions,
+        "run_pipeline",
+        lambda *_a, **_k: {
+            "qc_ok": False,
+            "qc_error": "synthetic QC failure",
+            "file_id": "FIL_TEST",
+            "decision": None,
+            "reason_codes": [],
+            "profile": "assembly_production_v1",
+            "steps": ["ingest", "standardize", "qc", "evaluate"],
+        },
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -293,10 +349,15 @@ def test_pipeline_qc_failure_opens_the_error_dialog(project: Project, tmp_path: 
             await _click(pilot, "#confirm")
             await _wait_until(
                 lambda: isinstance(app.screen, ErrorDialog),
-                "the QC error dialog", timeout=HANDOFF_TIMEOUT)
+                "the QC error dialog",
+                timeout=HANDOFF_TIMEOUT,
+            )
             body = _static_text(app.screen.query_one("#error-dialog-body", Static))
             assert "synthetic QC failure" in body, body
-            assert not [message for _s, message in _notifications(app)
-                        if message.startswith("pipeline complete:")]
+            assert not [
+                message
+                for _s, message in _notifications(app)
+                if message.startswith("pipeline complete:")
+            ]
 
     _run(scenario())

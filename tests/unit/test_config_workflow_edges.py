@@ -48,7 +48,9 @@ def test_project_resolution_initialization_and_discovery_edges(tmp_path):
 
 def test_state_validation_illegal_transition_and_missing_run(project_db):
     project, db = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     with pytest.raises(ValueError, match="unknown state"):
         workflow.set_state(db, "organism", "ORG_000001", "not-a-state")
     workflow.set_state(db, "organism", "ORG_000001", "METADATA_FETCHED")
@@ -78,7 +80,9 @@ def test_external_command_reported_error_is_recorded(project_db):
             )
 
     with pytest.raises(RuntimeError, match="reported failure"):
-        workflow.run_external_command(db, project, ["fake"], step="edge", executor=Executor())
+        workflow.run_external_command(
+            db, project, ["fake"], step="edge", executor=Executor()
+        )
     row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
     assert row["status"] == "failed"
     assert row["error"] == "reported failure"
@@ -101,8 +105,12 @@ def test_failed_exit_code_is_not_masked_by_missing_output_check(project_db):
 
     with pytest.raises(RuntimeError, match="edge failed: exit code 3"):
         workflow.run_external_command(
-            db, project, ["fake"], step="edge",
-            expected_outputs=[project.root / "missing.out"], executor=Executor(),
+            db,
+            project,
+            ["fake"],
+            step="edge",
+            expected_outputs=[project.root / "missing.out"],
+            executor=Executor(),
         )
     row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
     assert row["status"] == "failed"
@@ -118,18 +126,29 @@ def test_command_step_details_are_aligned_and_execution_fields_are_owned(project
 
         def run(self, *_args, **_kwargs):
             return SimpleNamespace(
-                exit_code=0, error=None, scheduler_job_id=None,
+                exit_code=0,
+                error=None,
+                scheduler_job_id=None,
                 details={"backend": "fake"},
             )
 
     with pytest.raises(ValidationError, match="command_details length"):
         workflow.run_external_command(
-            db, project, ["one"], step="bad-details", executor=Executor(),
-            commands=[["one"], ["two"]], command_details=[{"tool_version": "1"}],
+            db,
+            project,
+            ["one"],
+            step="bad-details",
+            executor=Executor(),
+            commands=[["one"], ["two"]],
+            command_details=[{"tool_version": "1"}],
         )
 
     workflow.run_external_command(
-        db, project, ["one"], step="step-details", executor=Executor(),
+        db,
+        project,
+        ["one"],
+        step="step-details",
+        executor=Executor(),
         commands=[["one"], ["two"]],
         command_details=[
             {"executable": "one", "tool_version": "1", "index": 99},
@@ -140,9 +159,12 @@ def test_command_step_details_are_aligned_and_execution_fields_are_owned(project
         "SELECT execution_details FROM workflow_runs WHERE step='step-details'"
     )[0]
     details = json.loads(row["execution_details"])
-    assert [(step["index"], step["executable"], step["tool_version"], step["exit_code"])
-            for step in details["steps"]] == [
-        (1, "one", "1", 0), (2, "two", "2", 0),
+    assert [
+        (step["index"], step["executable"], step["tool_version"], step["exit_code"])
+        for step in details["steps"]
+    ] == [
+        (1, "one", "1", 0),
+        (2, "two", "2", 0),
     ]
 
 
@@ -155,7 +177,10 @@ def test_command_step_details_are_aligned_and_execution_fields_are_owned(project
     ],
 )
 def test_external_command_executor_exceptions_are_recorded_then_raised(
-    project_db, exc, timeout, expected_error,
+    project_db,
+    exc,
+    timeout,
+    expected_error,
 ):
     project, db = project_db
 
@@ -168,7 +193,12 @@ def test_external_command_executor_exceptions_are_recorded_then_raised(
 
     with pytest.raises(RuntimeError, match=re.escape(f"edge failed: {expected_error}")):
         workflow.run_external_command(
-            db, project, ["fake"], step="edge", timeout=timeout, executor=Executor(),
+            db,
+            project,
+            ["fake"],
+            step="edge",
+            timeout=timeout,
+            executor=Executor(),
         )
     row = db.query("SELECT status, error FROM workflow_runs WHERE step='edge'")[0]
     assert row["status"] == "failed"
@@ -186,7 +216,10 @@ def test_owned_executor_is_closed(project_db, monkeypatch):
 
         def run(self, *_a, **_k):
             return SimpleNamespace(
-                exit_code=0, error=None, scheduler_job_id=None, details={"backend": "fake"}
+                exit_code=0,
+                error=None,
+                scheduler_job_id=None,
+                details={"backend": "fake"},
             )
 
         def close(self):
@@ -194,5 +227,8 @@ def test_owned_executor_is_closed(project_db, monkeypatch):
 
     executor = Executor()
     monkeypatch.setattr("operon.execution.get_executor", lambda *_a, **_k: executor)
-    assert workflow.run_external_command(db, project, ["fake"], step="edge")["status"] == "completed"
+    assert (
+        workflow.run_external_command(db, project, ["fake"], step="edge")["status"]
+        == "completed"
+    )
     assert executor.closed

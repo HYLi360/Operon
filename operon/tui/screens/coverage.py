@@ -45,8 +45,9 @@ REPORT_TABS = (
 class CoverageModal(WriteModal):
     """Confirm + generate for ``operon report coverage``."""
 
-    def __init__(self, project: Project, reference_set_id: str,
-                 release_version: str | None) -> None:
+    def __init__(
+        self, project: Project, reference_set_id: str, release_version: str | None
+    ) -> None:
         super().__init__(f"Coverage report: {reference_set_id}")
         self.project = project
         self.reference_set_id = reference_set_id
@@ -66,16 +67,25 @@ class CoverageModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        parts = ["operon", "report", "coverage", "--reference-set",
-                 shlex.quote(self.reference_set_id)]
+        parts = [
+            "operon",
+            "report",
+            "coverage",
+            "--reference-set",
+            shlex.quote(self.reference_set_id),
+        ]
         if self.release_version:
             parts += ["--release", shlex.quote(self.release_version)]
         return " ".join(parts)
 
     def confirm(self) -> None:
-        self.run_action(lambda: actions.run_coverage(
-            self.project, self.reference_set_id, release_version=self.release_version,
-        ))
+        self.run_action(
+            lambda: actions.run_coverage(
+                self.project,
+                self.reference_set_id,
+                release_version=self.release_version,
+            )
+        )
 
     def on_action_success(self, payload: Any) -> None:
         metrics = "; ".join(
@@ -90,9 +100,7 @@ class CoverageModal(WriteModal):
                 severity="warning",
             )
         else:
-            self.app.notify(
-                f"coverage {payload['decision']}: {metrics}{reused}"
-            )
+            self.app.notify(f"coverage {payload['decision']}: {metrics}{reused}")
         self.dismiss(payload)
 
 
@@ -116,18 +124,26 @@ class CoveragePanel(Panel):
             yield DataTable(id="reference-sets-table", cursor_type="row")
             with Horizontal(classes="config-buttons"):
                 yield Button("Import taxonomy…", id="coverage-import-taxonomy")
-                yield Button("Compile reference set…", id="coverage-compile-reference-set")
+                yield Button(
+                    "Compile reference set…", id="coverage-compile-reference-set"
+                )
             yield Static("Generate report", classes="modal-label")
             with Horizontal(id="coverage-form"):
                 yield Select([], id="coverage-reference-set", allow_blank=True)
-                yield Select(SCOPE_OPTIONS, value="metadata", id="coverage-scope",
-                             allow_blank=False)
+                yield Select(
+                    SCOPE_OPTIONS,
+                    value="metadata",
+                    id="coverage-scope",
+                    allow_blank=False,
+                )
                 yield Select([], id="coverage-release", allow_blank=True)
                 yield Button("Generate", id="coverage-generate", variant="primary")
             yield Static("", id="coverage-error")
             yield Static("Reports", classes="modal-label")
             yield DataTable(id="coverage-reports-table", cursor_type="row")
-            yield Static("select a report", id="coverage-report-headline", classes="modal-info")
+            yield Static(
+                "select a report", id="coverage-report-headline", classes="modal-info"
+            )
             with TabbedContent(id="coverage-report-tabs"):
                 for table_name, title in REPORT_TABS:
                     with TabPane(title, id=f"tab-{table_name}"):
@@ -135,11 +151,14 @@ class CoveragePanel(Panel):
 
     def on_mount(self) -> None:
         self.query_one("#taxonomy-snapshots-table", DataTable).add_columns(
-            "snapshot", "version", "nodes", "status", "imported_at")
+            "snapshot", "version", "nodes", "status", "imported_at"
+        )
         self.query_one("#reference-sets-table", DataTable).add_columns(
-            "reference_set_id", "profile", "taxonomy", "family", "genus", "compiled_at")
+            "reference_set_id", "profile", "taxonomy", "family", "genus", "compiled_at"
+        )
         self.query_one("#coverage-reports-table", DataTable).add_columns(
-            "report", "reference set", "scope", "decision", "created_at")
+            "report", "reference set", "scope", "decision", "created_at"
+        )
         self.query_one("#coverage-release", Select).display = False
         super().on_mount()
 
@@ -163,8 +182,11 @@ class CoveragePanel(Panel):
         table.clear()
         for row in self.snapshots:
             table.add_row(
-                row["taxonomy_snapshot_id"], row["taxonomy_version"],
-                str(row["node_count"]), row["status"], str(row["imported_at"]),
+                row["taxonomy_snapshot_id"],
+                row["taxonomy_version"],
+                str(row["node_count"]),
+                row["status"],
+                str(row["imported_at"]),
                 key=str(row["taxonomy_snapshot_id"]),
             )
         table = self.query_one("#reference-sets-table", DataTable)
@@ -174,17 +196,20 @@ class CoveragePanel(Panel):
                 row["reference_set_id"],
                 f"{row['profile_name']} v{row['profile_version']}",
                 row["taxonomy_version"],
-                str(row["family_count"]), str(row["genus_count"]), str(row["compiled_at"]),
+                str(row["family_count"]),
+                str(row["genus_count"]),
+                str(row["compiled_at"]),
                 key=str(row["reference_set_id"]),
             )
         select = self.query_one("#coverage-reference-set", Select)
-        select.set_options([
-            (row["reference_set_id"], row["reference_set_id"]) for row in self.reference_sets
-        ])
+        select.set_options(
+            [
+                (row["reference_set_id"], row["reference_set_id"])
+                for row in self.reference_sets
+            ]
+        )
         select = self.query_one("#coverage-release", Select)
-        select.set_options([
-            (row["version"], row["version"]) for row in self.releases
-        ])
+        select.set_options([(row["version"], row["version"]) for row in self.releases])
         generate = self.query_one("#coverage-generate", Button)
         generate.disabled = not self.reference_sets
 
@@ -195,18 +220,26 @@ class CoveragePanel(Panel):
             if row.get("scope_value"):
                 scope += f":{row['scope_value']}"
             table.add_row(
-                row["report_id"], str(row["reference_set_id"]), scope,
-                styled_decision(row.get("decision")), str(row["created_at"]),
+                row["report_id"],
+                str(row["reference_set_id"]),
+                scope,
+                styled_decision(row.get("decision")),
+                str(row["created_at"]),
                 key=str(row["report_id"]),
             )
         if not self.reference_sets:
             self.query_one("#coverage-error", Static).update(
-                Text("no reference sets compiled yet — import a taxonomy snapshot "
-                     "and compile a reference set with the buttons above",
-                     style="dim"))
+                Text(
+                    "no reference sets compiled yet — import a taxonomy snapshot "
+                    "and compile a reference set with the buttons above",
+                    style="dim",
+                )
+            )
 
     def show_error(self, exc: BaseException) -> None:
-        self.query_one("#coverage-error", Static).update(Text(f"error: {exc}", style="red"))
+        self.query_one("#coverage-error", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
 
     # -- report generation ----------------------------------------------------
 
@@ -236,11 +269,14 @@ class CoveragePanel(Panel):
     # -- report browsing --------------------------------------------------------
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        if event.data_table.id == "coverage-reports-table" and event.row_key is not None:
+        if (
+            event.data_table.id == "coverage-reports-table"
+            and event.row_key is not None
+        ):
             self._show_report(str(event.row_key.value))
 
     def _show_report(self, report_id: str) -> None:
-        """Read one coverage report, stamped with the row it answers (ODR-0031)."""
+        """Read one coverage report, stamped with the row it answers (ODR-31)."""
         self.begin_request(report_id)
         self._load_report(report_id)
 
@@ -291,11 +327,13 @@ class CoveragePanel(Panel):
             self._generate()
         elif event.button.id == "coverage-import-taxonomy":
             self.app.push_screen(
-                TaxonomyImportModal(self.project), self._after_generate,
+                TaxonomyImportModal(self.project),
+                self._after_generate,
             )
         elif event.button.id == "coverage-compile-reference-set":
             self.app.push_screen(
-                CompileReferenceSetModal(self.project), self._after_generate,
+                CompileReferenceSetModal(self.project),
+                self._after_generate,
             )
 
     def on_select_changed(self, event: Select.Changed) -> None:

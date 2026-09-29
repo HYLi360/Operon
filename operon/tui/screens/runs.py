@@ -64,28 +64,56 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box", classes="wide"):
             yield Label("Advanced filters", id="modal-title")
-            yield Static("Time bounds (ISO-8601; naive values are local)",
-                         classes="modal-label")
-            yield Input(value=str(self.current.get("started_from") or ""),
-                        placeholder="from", id="runs-filter-from")
-            yield Input(value=str(self.current.get("started_to") or ""),
-                        placeholder="to", id="runs-filter-to")
-            yield Input(value=str(self.current.get("run_id") or ""),
-                        placeholder="run id", id="runs-filter-run-id")
-            yield Input(value=str(self.current.get("parent_run_id") or ""),
-                        placeholder="parent run id", id="runs-filter-parent-run-id")
-            yield Input(value=str(self.current.get("resumes_run_id") or ""),
-                        placeholder="resumes run id (--resumes-run-id)",
-                        id="runs-filter-resumes-run-id")
-            yield Input(value=str(self.current.get("tool") or ""),
-                        placeholder="tool", id="runs-filter-tool")
-            yield Input(value=str(self.current.get("executor") or ""),
-                        placeholder="executor", id="runs-filter-executor")
-            yield Input(value=str(self.current.get("offset") or 0), placeholder="offset",
-                        id="runs-filter-offset", type="integer", restrict=r"\\d*")
-            yield Checkbox("oldest first",
-                           value=bool(self.current.get("oldest_first")),
-                           id="runs-filter-oldest-first")
+            yield Static(
+                "Time bounds (ISO-8601; naive values are local)", classes="modal-label"
+            )
+            yield Input(
+                value=str(self.current.get("started_from") or ""),
+                placeholder="from",
+                id="runs-filter-from",
+            )
+            yield Input(
+                value=str(self.current.get("started_to") or ""),
+                placeholder="to",
+                id="runs-filter-to",
+            )
+            yield Input(
+                value=str(self.current.get("run_id") or ""),
+                placeholder="run id",
+                id="runs-filter-run-id",
+            )
+            yield Input(
+                value=str(self.current.get("parent_run_id") or ""),
+                placeholder="parent run id",
+                id="runs-filter-parent-run-id",
+            )
+            yield Input(
+                value=str(self.current.get("resumes_run_id") or ""),
+                placeholder="resumes run id (--resumes-run-id)",
+                id="runs-filter-resumes-run-id",
+            )
+            yield Input(
+                value=str(self.current.get("tool") or ""),
+                placeholder="tool",
+                id="runs-filter-tool",
+            )
+            yield Input(
+                value=str(self.current.get("executor") or ""),
+                placeholder="executor",
+                id="runs-filter-executor",
+            )
+            yield Input(
+                value=str(self.current.get("offset") or 0),
+                placeholder="offset",
+                id="runs-filter-offset",
+                type="integer",
+                restrict=r"\\d*",
+            )
+            yield Checkbox(
+                "oldest first",
+                value=bool(self.current.get("oldest_first")),
+                id="runs-filter-oldest-first",
+            )
             yield Static("", id="runs-filter-error")
             with Horizontal(id="modal-buttons"):
                 yield Button("Apply", id="runs-filter-apply", variant="primary")
@@ -95,10 +123,13 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
     def _values(self) -> dict[str, Any]:
         values: dict[str, Any] = {}
         for key, widget_id in (
-            ("started_from", "runs-filter-from"), ("started_to", "runs-filter-to"),
-            ("run_id", "runs-filter-run-id"), ("parent_run_id", "runs-filter-parent-run-id"),
+            ("started_from", "runs-filter-from"),
+            ("started_to", "runs-filter-to"),
+            ("run_id", "runs-filter-run-id"),
+            ("parent_run_id", "runs-filter-parent-run-id"),
             ("resumes_run_id", "runs-filter-resumes-run-id"),
-            ("tool", "runs-filter-tool"), ("executor", "runs-filter-executor"),
+            ("tool", "runs-filter-tool"),
+            ("executor", "runs-filter-executor"),
         ):
             text = self.query_one(f"#{widget_id}", Input).value.strip()
             if text:
@@ -127,8 +158,11 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
             for key in ("started_from", "started_to"):
                 if key in values:
                     values[key] = data.normalize_workflow_time(values[key])
-            if values.get("started_from") and values.get("started_to") \
-                    and values["started_from"] >= values["started_to"]:
+            if (
+                values.get("started_from")
+                and values.get("started_to")
+                and values["started_from"] >= values["started_to"]
+            ):
                 raise ValidationError("--from must be earlier than --to")
         except ValidationError as exc:
             error.update(Text(str(exc), style="red"))
@@ -152,12 +186,19 @@ class RunsPanel(Panel):
             with Horizontal(id="runs-filters"):
                 yield Select(
                     [(ALL_STATUSES, ALL_STATUSES)] + [(s, s) for s in RUN_STATUSES],
-                    value=ALL_STATUSES, id="runs-status", allow_blank=False,
+                    value=ALL_STATUSES,
+                    id="runs-status",
+                    allow_blank=False,
                 )
                 yield Input(placeholder="step contains", id="runs-step")
                 yield Input(placeholder="entity contains", id="runs-entity")
-                yield Input(value="100", placeholder="limit", id="runs-limit",
-                            type="integer", restrict=r"\d*")
+                yield Input(
+                    value="100",
+                    placeholder="limit",
+                    id="runs-limit",
+                    type="integer",
+                    restrict=r"\d*",
+                )
                 yield Button("More…", id="runs-more")
             with Horizontal(id="runs-actions", classes="config-buttons"):
                 yield Button("Analysis jobs", id="runs-jobs")
@@ -186,7 +227,9 @@ class RunsPanel(Panel):
     def _filters(self) -> dict[str, Any]:
         """The everyday strip plus whatever the More… dialog applied."""
         status_value = self.query_one("#runs-status", Select).value
-        statuses = [] if status_value in (ALL_STATUSES, Select.NULL) else [str(status_value)]
+        statuses = (
+            [] if status_value in (ALL_STATUSES, Select.NULL) else [str(status_value)]
+        )
         limit_text = self.query_one("#runs-limit", Input).value.strip()
         filters: dict[str, Any] = {
             "statuses": statuses,
@@ -199,7 +242,8 @@ class RunsPanel(Panel):
 
     def _open_advanced_filters(self) -> None:
         self.app.push_screen(
-            RunsFiltersModal(self.project, self.advanced), self._apply_advanced_filters,
+            RunsFiltersModal(self.project, self.advanced),
+            self._apply_advanced_filters,
         )
 
     def _apply_advanced_filters(self, payload: Any) -> None:
@@ -212,7 +256,9 @@ class RunsPanel(Panel):
     def _update_more_label(self) -> None:
         """The More… button shows how many advanced filters are active."""
         count = len(self.advanced)
-        self.query_one("#runs-more", Button).label = "More…" if not count else f"More… ({count})"
+        self.query_one("#runs-more", Button).label = (
+            "More…" if not count else f"More… ({count})"
+        )
 
     def _fetch(self) -> list[dict[str, Any]]:
         # ``list_workflow_runs`` validates the ISO bounds; a bad value lands in
@@ -249,7 +295,9 @@ class RunsPanel(Panel):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "runs-table" and event.row_key is not None:
-            self.app.push_screen(RunDetailScreen(self.project, str(event.row_key.value)))
+            self.app.push_screen(
+                RunDetailScreen(self.project, str(event.row_key.value))
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "runs-new-analysis":
@@ -270,7 +318,9 @@ class RunsPanel(Panel):
         elif event.button.id == "runs-external":
             from operon.tui.screens.run_external import RunExternalModal
 
-            self.app.push_screen(RunExternalModal(self.project), self._external_finished)
+            self.app.push_screen(
+                RunExternalModal(self.project), self._external_finished
+            )
         elif event.button.id == "runs-environments":
             from operon.tui.screens.environments import EnvironmentsModal
 
@@ -297,7 +347,7 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
     internally, the detail keeps a fixed column — inside a box that claims 80%
     of the screen height.  Without a ``1fr`` child the box used to hand its
     surplus height to the filter row, collapse the table to a single row and
-    overlap its panes (ODR-0020).
+    overlap its panes (ODR-20).
     """
 
     BINDINGS = [
@@ -317,10 +367,16 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
                 yield Input(placeholder="analysis contains", id="jobs-analysis")
                 yield Select(
                     [(name, name) for name in ANALYSIS_JOB_CHOICES],
-                    value=ALL_STATUSES, id="jobs-status",
+                    value=ALL_STATUSES,
+                    id="jobs-status",
                 )
-                yield Input(value="200", placeholder="limit", id="jobs-limit",
-                            type="integer", restrict=r"\d*")
+                yield Input(
+                    value="200",
+                    placeholder="limit",
+                    id="jobs-limit",
+                    type="integer",
+                    restrict=r"\d*",
+                )
             with Horizontal(id="jobs-body"):
                 yield DataTable(id="jobs-table", cursor_type="row")
                 with VerticalScroll(id="jobs-detail-scroll"):
@@ -330,8 +386,15 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
 
     def on_mount(self) -> None:
         table = self.query_one("#jobs-table", DataTable)
-        table.add_columns("job_id", "status", "analysis", "entity", "file_id",
-                          "scheduler_job_id", "finished_at")
+        table.add_columns(
+            "job_id",
+            "status",
+            "analysis",
+            "entity",
+            "file_id",
+            "scheduler_job_id",
+            "finished_at",
+        )
         self.reload()
 
     def reload(self) -> None:
@@ -344,8 +407,9 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
     def _filters(self) -> tuple[str, list[str], int]:
         analysis = self.query_one("#jobs-analysis", Input).value.strip()
         status_value = self.query_one("#jobs-status", Select).value
-        statuses = ([] if status_value in (ALL_STATUSES, Select.NULL)
-                    else [str(status_value)])
+        statuses = (
+            [] if status_value in (ALL_STATUSES, Select.NULL) else [str(status_value)]
+        )
         limit_text = self.query_one("#jobs-limit", Input).value.strip()
         limit = int(limit_text) if limit_text.isdigit() and int(limit_text) > 0 else 200
         return analysis, statuses, limit
@@ -367,7 +431,10 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
         analysis, statuses, limit = self._filters()
         try:
             payload: Any = data.list_analysis_jobs(
-                self.project, analysis=analysis, statuses=statuses, limit=limit,
+                self.project,
+                analysis=analysis,
+                statuses=statuses,
+                limit=limit,
             )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
@@ -402,7 +469,9 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
             return
         index = event.cursor_row
         if 0 <= index < len(self.jobs):
-            self.query_one("#jobs-detail", Static).update(self._detail_text(self.jobs[index]))
+            self.query_one("#jobs-detail", Static).update(
+                self._detail_text(self.jobs[index])
+            )
 
     def _detail_text(self, job: dict[str, Any] | None) -> Text:
         text = Text()
@@ -470,8 +539,9 @@ class RunDetailScreen(WorkerResults, Screen):
         with Vertical(id="run-detail-layout"):
             with VerticalScroll(id="run-detail-scroll"):
                 yield Static("loading…", id="run-detail", classes="body")
-            yield Checkbox("Follow logs (while the run is running)", id="run-follow",
-                           disabled=True)
+            yield Checkbox(
+                "Follow logs (while the run is running)", id="run-follow", disabled=True
+            )
             yield Static("", id="run-follow-note", classes="modal-info")
             yield RichLog(id="run-follow-log", max_lines=500, wrap=True, markup=False)
 
@@ -533,7 +603,9 @@ class RunDetailScreen(WorkerResults, Screen):
         self.query_one("#run-follow-log", RichLog).clear()
         self._follow_tick()
         if self._following and self._follow_timer is None:
-            self._follow_timer = self.set_interval(self.FOLLOW_INTERVAL, self._follow_tick)
+            self._follow_timer = self.set_interval(
+                self.FOLLOW_INTERVAL, self._follow_tick
+            )
 
     def _stop_following(self) -> None:
         self._following = False
@@ -591,46 +663,60 @@ class RunDetailScreen(WorkerResults, Screen):
                 text.append(f"  {label:<18} {rendered}\n")
             text.append("\n")
 
-        section("Workflow run", [
-            ("run_id", record["run_id"]),
-            ("status", record["status"]),
-            ("step", record["step"]),
-            ("entity", entity_label(record)),
-            ("parent_run_id", record.get("parent_run_id")),
-            ("resumes_run_id", record.get("resumes_run_id")),
-        ])
-        section("Timing and resources", [
-            ("started_at", record.get("started_at")),
-            ("finished_at", record.get("finished_at")),
-            ("duration", format_duration(record)),
-            ("threads", record.get("threads")),
-            ("max_rss_mb", record.get("max_rss_mb")),
-            ("avg_rss_mb", record.get("avg_rss_mb")),
-            ("cpu_seconds", record.get("cpu_seconds")),
-        ])
-        section("Execution", [
-            ("command", record.get("command")),
-            ("tool", record.get("tool")),
-            ("tool_version", record.get("tool_version")),
-            ("parameter_set", record.get("parameter_set")),
-            ("executor", record.get("executor")),
-            ("scheduler_job_id", record.get("scheduler_job_id")),
-            ("exit_code", record.get("exit_code")),
-            ("environment_id", record.get("environment_id")),
-            ("environment", record.get("environment_summary")),
-        ])
-        section("Artifacts and logs", [
-            ("input_sha256", record.get("input_sha256")),
-            ("output_sha256", record.get("output_sha256")),
-            ("log_file", record.get("log_file")),
-            ("stdout_file", record.get("stdout_file")),
-            ("stderr_file", record.get("stderr_file")),
-        ])
+        section(
+            "Workflow run",
+            [
+                ("run_id", record["run_id"]),
+                ("status", record["status"]),
+                ("step", record["step"]),
+                ("entity", entity_label(record)),
+                ("parent_run_id", record.get("parent_run_id")),
+                ("resumes_run_id", record.get("resumes_run_id")),
+            ],
+        )
+        section(
+            "Timing and resources",
+            [
+                ("started_at", record.get("started_at")),
+                ("finished_at", record.get("finished_at")),
+                ("duration", format_duration(record)),
+                ("threads", record.get("threads")),
+                ("max_rss_mb", record.get("max_rss_mb")),
+                ("avg_rss_mb", record.get("avg_rss_mb")),
+                ("cpu_seconds", record.get("cpu_seconds")),
+            ],
+        )
+        section(
+            "Execution",
+            [
+                ("command", record.get("command")),
+                ("tool", record.get("tool")),
+                ("tool_version", record.get("tool_version")),
+                ("parameter_set", record.get("parameter_set")),
+                ("executor", record.get("executor")),
+                ("scheduler_job_id", record.get("scheduler_job_id")),
+                ("exit_code", record.get("exit_code")),
+                ("environment_id", record.get("environment_id")),
+                ("environment", record.get("environment_summary")),
+            ],
+        )
+        section(
+            "Artifacts and logs",
+            [
+                ("input_sha256", record.get("input_sha256")),
+                ("output_sha256", record.get("output_sha256")),
+                ("log_file", record.get("log_file")),
+                ("stdout_file", record.get("stdout_file")),
+                ("stderr_file", record.get("stderr_file")),
+            ],
+        )
         section("Outcome", [("error", record.get("error"))])
         text.append("Execution details\n", style="bold underline")
         details = record.get("execution_details")
         if isinstance(details, (dict, list)):
-            text.append(json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+            text.append(
+                json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+            )
         else:
             text.append("-" if details in (None, "") else str(details))
             text.append("\n")

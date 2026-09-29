@@ -43,6 +43,7 @@ STUDY_EVIDENCE = {"hit_records": [{"study_id": 1, "reference": "Kumar et al. 202
 
 # --- HTTP fakes --------------------------------------------------------------
 
+
 class FakeResponse:
     """Minimal requests.Response stand-in carrying verbatim bytes."""
 
@@ -128,12 +129,22 @@ def pair_url(a: int, b: int, flag: str) -> str:
     return f"{API}/pairwise/{a}/{b}/{flag}"
 
 
-def pair_routes(a: int = 3702, b: int = 9606, *, summary=None, studies=None) -> dict[str, object]:
-    summary = {**SUMMARY_3702_9606, "taxon_a_id": a, "taxon_b_id": b} if summary is None else summary
+def pair_routes(
+    a: int = 3702, b: int = 9606, *, summary=None, studies=None
+) -> dict[str, object]:
+    summary = (
+        {**SUMMARY_3702_9606, "taxon_a_id": a, "taxon_b_id": b}
+        if summary is None
+        else summary
+    )
     studies = STUDY_EVIDENCE if studies is None else studies
     return {
-        pair_url(a, b, "summaryjson"): FakeResponse(json.dumps(summary), url=pair_url(a, b, "summaryjson")),
-        pair_url(a, b, "json"): FakeResponse(json.dumps(studies), url=pair_url(a, b, "json")),
+        pair_url(a, b, "summaryjson"): FakeResponse(
+            json.dumps(summary), url=pair_url(a, b, "summaryjson")
+        ),
+        pair_url(a, b, "json"): FakeResponse(
+            json.dumps(studies), url=pair_url(a, b, "json")
+        ),
     }
 
 
@@ -147,10 +158,14 @@ def write_snapshot(root: Path, records=None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / "raw").mkdir()
     entries = []
-    for a, b in records if records is not None else [(3702, 9606), (3702, 7227), (9606, 10090)]:
+    for a, b in (
+        records if records is not None else [(3702, 9606), (3702, 7227), (9606, 10090)]
+    ):
         responses = {}
-        for flag, payload in (("summaryjson", {**SUMMARY_3702_9606, "taxon_a_id": a, "taxon_b_id": b}),
-                              ("json", STUDY_EVIDENCE)):
+        for flag, payload in (
+            ("summaryjson", {**SUMMARY_3702_9606, "taxon_a_id": a, "taxon_b_id": b}),
+            ("json", STUDY_EVIDENCE),
+        ):
             name = f"raw/{a}_{b}.{flag}.json"
             (root / name).write_bytes(json.dumps(payload).encode("utf-8"))
             responses[flag] = {
@@ -183,6 +198,7 @@ def rewrite_manifest(root: Path, mutate) -> None:
 
 # --- new_directory -----------------------------------------------------------
 
+
 def test_new_directory_publishes_complete_artifact(tmp_path):
     destination = tmp_path / "nested" / "deeper" / "artifact"
     with timetree.new_directory(destination) as work:
@@ -212,7 +228,11 @@ def test_new_directory_refuses_destination_created_during_run(tmp_path):
             destination.mkdir()  # a racing publisher won the rename
     assert destination.is_dir()
     assert list(destination.iterdir()) == []
-    assert [entry.name for entry in tmp_path.iterdir() if entry.name.startswith(".artifact-")] == []
+    assert [
+        entry.name
+        for entry in tmp_path.iterdir()
+        if entry.name.startswith(".artifact-")
+    ] == []
 
 
 def test_new_directory_removes_temporary_after_body_failure(tmp_path):
@@ -227,6 +247,7 @@ def test_new_directory_removes_temporary_after_body_failure(tmp_path):
 
 # --- positive ----------------------------------------------------------------
 
+
 def test_positive_accepts_numbers_and_numeric_strings():
     assert timetree.positive(3, "timeout") == 3.0
     assert timetree.positive("2.5", "timeout") == 2.5
@@ -234,26 +255,34 @@ def test_positive_accepts_numbers_and_numeric_strings():
 
 @pytest.mark.parametrize("value", [0, -1, "abc", None, float("nan"), float("inf")])
 def test_positive_rejects_nonpositive_or_nonfinite(value):
-    with pytest.raises(ValidationError, match="timeout must be a positive finite number"):
+    with pytest.raises(
+        ValidationError, match="timeout must be a positive finite number"
+    ):
         timetree.positive(value, "timeout")
 
 
 # --- pairs_from_tsv ----------------------------------------------------------
 
+
 def test_pairs_from_tsv_returns_sorted_unique_pairs(tmp_path):
-    path = write_pairs(tmp_path / "pairs.tsv", [(9606, 3702), (3702, 9606), (3702, 7227)])
+    path = write_pairs(
+        tmp_path / "pairs.tsv", [(9606, 3702), (3702, 9606), (3702, 7227)]
+    )
     assert timetree.pairs_from_tsv(path) == [(3702, 7227), (3702, 9606)]
 
 
-@pytest.mark.parametrize("row, message", [
-    (("3702", "abc"), "require NCBI taxonomy integer IDs"),
-    (("0", "5"), "require two different positive NCBI IDs"),
-    (("-3", "5"), "require two different positive NCBI IDs"),
-    (("5", "5"), "require two different positive NCBI IDs"),
-])
+@pytest.mark.parametrize(
+    "row, message",
+    [
+        (("3702", "abc"), "require NCBI taxonomy integer IDs"),
+        (("0", "5"), "require two different positive NCBI IDs"),
+        (("-3", "5"), "require two different positive NCBI IDs"),
+        (("5", "5"), "require two different positive NCBI IDs"),
+    ],
+)
 def test_pairs_from_tsv_rejects_invalid_rows(tmp_path, row, message):
     # Hand-written so malformed input reaches the reader verbatim: write_tsv
-    # now escapes a leading "-" (ODR-0040), which is writer-side behavior this
+    # now escapes a leading "-" (ODR-40), which is writer-side behavior this
     # reader test does not intend to exercise.
     path = tmp_path / "pairs.tsv"
     path.write_text("taxon_a\ttaxon_b\n" + "\t".join(row) + "\n", encoding="utf-8")
@@ -276,7 +305,10 @@ def test_pairs_from_tsv_requires_both_columns(tmp_path):
 
 # --- fetch_snapshot ----------------------------------------------------------
 
-def test_fetch_snapshot_writes_manifest_raw_files_and_candidates(tmp_path, patch_network):
+
+def test_fetch_snapshot_writes_manifest_raw_files_and_candidates(
+    tmp_path, patch_network
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     session = patch_network(pair_routes())
     destination = tmp_path / "snapshot"
@@ -289,10 +321,15 @@ def test_fetch_snapshot_writes_manifest_raw_files_and_candidates(tmp_path, patch
         "snapshot_sha256": sha256_file(destination / "snapshot.json"),
     }
     assert [call for call, _ in session.calls] == [
-        pair_url(3702, 9606, "summaryjson"), pair_url(3702, 9606, "json")]
+        pair_url(3702, 9606, "summaryjson"),
+        pair_url(3702, 9606, "json"),
+    ]
     assert all(timeout == 12 for _, timeout in session.calls)
     assert session.closed is True
-    assert session.headers["User-Agent"] == "Operon-TimeTree-snapshot (research; selected taxon pairs)"
+    assert (
+        session.headers["User-Agent"]
+        == "Operon-TimeTree-snapshot (research; selected taxon pairs)"
+    )
 
     manifest = json.loads((destination / "snapshot.json").read_text())
     assert manifest["schema"] == "operon-timetree-snapshot-1"
@@ -304,7 +341,9 @@ def test_fetch_snapshot_writes_manifest_raw_files_and_candidates(tmp_path, patch
     assert manifest["pairs_sha256"] == sha256_file(pairs)
     [record] = manifest["records"]
     assert (record["taxon_a"], record["taxon_b"]) == (3702, 9606)
-    assert record["responses"]["summaryjson"]["path"] == "raw/3702_9606.summaryjson.json"
+    assert (
+        record["responses"]["summaryjson"]["path"] == "raw/3702_9606.summaryjson.json"
+    )
     assert record["responses"]["json"]["path"] == "raw/3702_9606.json.json"
     for flag in ("summaryjson", "json"):
         item = record["responses"][flag]
@@ -313,26 +352,52 @@ def test_fetch_snapshot_writes_manifest_raw_files_and_candidates(tmp_path, patch
         assert item["response_url"] == pair_url(3702, 9606, flag)
         assert item["retrieved_at"]
     assert (destination / "raw/3702_9606.summaryjson.json").read_bytes() == json.dumps(
-        SUMMARY_3702_9606).encode("utf-8")
+        SUMMARY_3702_9606
+    ).encode("utf-8")
     assert (destination / "raw/3702_9606.json.json").read_bytes() == json.dumps(
-        STUDY_EVIDENCE).encode("utf-8")
+        STUDY_EVIDENCE
+    ).encode("utf-8")
 
     header = (destination / "candidates.tsv").read_text().splitlines()[0].split("\t")
     assert header == [
-        "taxon_a", "taxon_b", "name_a", "name_b", "age_ma", "reported_ci_low_ma",
-        "reported_ci_high_ma", "adjusted_age", "studies", "calibration_type", "approved"]
-    assert read_tsv(destination / "candidates.tsv") == [{
-        "taxon_a": "3702", "taxon_b": "9606",
-        "name_a": "Arabidopsis thaliana", "name_b": "Homo sapiens",
-        "age_ma": "1496.0", "reported_ci_low_ma": "1350.0", "reported_ci_high_ma": "1650.0",
-        "adjusted_age": "1496.0", "studies": "42",
-        "calibration_type": "secondary", "approved": "no",
-    }]
-    assert [entry.name for entry in tmp_path.iterdir() if entry.name.startswith(".snapshot-")] == []
+        "taxon_a",
+        "taxon_b",
+        "name_a",
+        "name_b",
+        "age_ma",
+        "reported_ci_low_ma",
+        "reported_ci_high_ma",
+        "adjusted_age",
+        "studies",
+        "calibration_type",
+        "approved",
+    ]
+    assert read_tsv(destination / "candidates.tsv") == [
+        {
+            "taxon_a": "3702",
+            "taxon_b": "9606",
+            "name_a": "Arabidopsis thaliana",
+            "name_b": "Homo sapiens",
+            "age_ma": "1496.0",
+            "reported_ci_low_ma": "1350.0",
+            "reported_ci_high_ma": "1650.0",
+            "adjusted_age": "1496.0",
+            "studies": "42",
+            "calibration_type": "secondary",
+            "approved": "no",
+        }
+    ]
+    assert [
+        entry.name
+        for entry in tmp_path.iterdir()
+        if entry.name.startswith(".snapshot-")
+    ] == []
 
 
 def test_fetch_snapshot_deduplicates_and_sorts_pairs(tmp_path, patch_network):
-    pairs = write_pairs(tmp_path / "pairs.tsv", [(9606, 3702), (3702, 9606), (3702, 7227)])
+    pairs = write_pairs(
+        tmp_path / "pairs.tsv", [(9606, 3702), (3702, 9606), (3702, 7227)]
+    )
     routes = {**pair_routes(3702, 9606), **pair_routes(3702, 7227)}
     patch_network(routes)
     destination = tmp_path / "snapshot"
@@ -341,17 +406,26 @@ def test_fetch_snapshot_deduplicates_and_sorts_pairs(tmp_path, patch_network):
 
     assert result["pairs"] == 2
     manifest = json.loads((destination / "snapshot.json").read_text())
-    assert [(r["taxon_a"], r["taxon_b"]) for r in manifest["records"]] == [(3702, 7227), (3702, 9606)]
+    assert [(r["taxon_a"], r["taxon_b"]) for r in manifest["records"]] == [
+        (3702, 7227),
+        (3702, 9606),
+    ]
     assert len(read_tsv(destination / "candidates.tsv")) == 2
 
 
-def test_fetch_snapshot_retries_transient_failure_with_backoff(tmp_path, patch_network, sleep_calls):
+def test_fetch_snapshot_retries_transient_failure_with_backoff(
+    tmp_path, patch_network, sleep_calls
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    session = patch_network({
-        **pair_routes(),
-        pair_url(3702, 9606, "summaryjson"): [
-            requests.exceptions.Timeout("slow"), FakeResponse(json.dumps(SUMMARY_3702_9606))],
-    })
+    session = patch_network(
+        {
+            **pair_routes(),
+            pair_url(3702, 9606, "summaryjson"): [
+                requests.exceptions.Timeout("slow"),
+                FakeResponse(json.dumps(SUMMARY_3702_9606)),
+            ],
+        }
+    )
     destination = tmp_path / "snapshot"
 
     result = timetree.fetch_snapshot(pairs, destination, retries=3, delay=1.0)
@@ -366,56 +440,78 @@ def test_fetch_snapshot_retries_transient_failure_with_backoff(tmp_path, patch_n
     assert (destination / "raw/3702_9606.summaryjson.json").exists()
 
 
-def test_fetch_snapshot_backoff_doubles_with_attempt(tmp_path, patch_network, sleep_calls):
+def test_fetch_snapshot_backoff_doubles_with_attempt(
+    tmp_path, patch_network, sleep_calls
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    patch_network({
-        **pair_routes(),
-        pair_url(3702, 9606, "summaryjson"): [
-            requests.exceptions.Timeout("first"),
-            FakeResponse("boom", status=503),
-            FakeResponse(json.dumps(SUMMARY_3702_9606)),
-        ],
-    })
+    patch_network(
+        {
+            **pair_routes(),
+            pair_url(3702, 9606, "summaryjson"): [
+                requests.exceptions.Timeout("first"),
+                FakeResponse("boom", status=503),
+                FakeResponse(json.dumps(SUMMARY_3702_9606)),
+            ],
+        }
+    )
 
     timetree.fetch_snapshot(pairs, tmp_path / "snapshot", retries=3, delay=1.0)
 
     assert sleep_calls == [1.0, 2.0, 1.0, 1.0]
 
 
-def test_fetch_snapshot_fails_after_exhausting_retries(tmp_path, patch_network, sleep_calls):
+def test_fetch_snapshot_fails_after_exhausting_retries(
+    tmp_path, patch_network, sleep_calls
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    session = patch_network({
-        **pair_routes(),
-        pair_url(3702, 9606, "summaryjson"): requests.exceptions.ConnectionError("down"),
-    })
+    session = patch_network(
+        {
+            **pair_routes(),
+            pair_url(3702, 9606, "summaryjson"): requests.exceptions.ConnectionError(
+                "down"
+            ),
+        }
+    )
     destination = tmp_path / "snapshot"
 
-    with pytest.raises(ValidationError,
-                       match=f"TimeTree request failed: {pair_url(3702, 9606, 'summaryjson')}"):
+    with pytest.raises(
+        ValidationError,
+        match=f"TimeTree request failed: {pair_url(3702, 9606, 'summaryjson')}",
+    ):
         timetree.fetch_snapshot(pairs, destination, retries=2, delay=1.0)
 
-    assert [url for url, _ in session.calls] == [pair_url(3702, 9606, "summaryjson")] * 2
+    assert [url for url, _ in session.calls] == [
+        pair_url(3702, 9606, "summaryjson")
+    ] * 2
     assert sleep_calls == [1.0]
     assert not destination.exists()
-    assert [entry.name for entry in tmp_path.iterdir() if entry.name.startswith(".snapshot-")] == []
+    assert [
+        entry.name
+        for entry in tmp_path.iterdir()
+        if entry.name.startswith(".snapshot-")
+    ] == []
 
 
 def test_fetch_snapshot_reports_http_error_status(tmp_path, patch_network):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    patch_network({
-        **pair_routes(),
-        pair_url(3702, 9606, "summaryjson"): FakeResponse("gone", status=404),
-    })
+    patch_network(
+        {
+            **pair_routes(),
+            pair_url(3702, 9606, "summaryjson"): FakeResponse("gone", status=404),
+        }
+    )
     with pytest.raises(ValidationError, match="TimeTree request failed: .*HTTP 404"):
         timetree.fetch_snapshot(pairs, tmp_path / "snapshot", retries=1, delay=0)
 
 
 def test_fetch_snapshot_requires_a_json_object(tmp_path, patch_network):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    patch_network({
-        **pair_routes(),
-        pair_url(3702, 9606, "summaryjson"): FakeResponse("[1, 2, 3]"),
-    })
+    patch_network(
+        {
+            **pair_routes(),
+            pair_url(3702, 9606, "summaryjson"): FakeResponse("[1, 2, 3]"),
+        }
+    )
     with pytest.raises(ValidationError, match="expected a JSON object"):
         timetree.fetch_snapshot(pairs, tmp_path / "snapshot", retries=1, delay=0)
 
@@ -423,26 +519,39 @@ def test_fetch_snapshot_requires_a_json_object(tmp_path, patch_network):
 def test_fetch_snapshot_rejects_taxon_id_mismatch(tmp_path, patch_network):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     patch_network(pair_routes(summary={**SUMMARY_3702_9606, "taxon_b_id": 7227}))
-    with pytest.raises(ValidationError,
-                       match="TimeTree returned different/missing taxon IDs for 3702/9606"):
+    with pytest.raises(
+        ValidationError,
+        match="TimeTree returned different/missing taxon IDs for 3702/9606",
+    ):
         timetree.fetch_snapshot(pairs, tmp_path / "snapshot", delay=0)
 
 
 def test_fetch_snapshot_rejects_missing_age(tmp_path, patch_network):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
-    patch_network(pair_routes(summary={k: v for k, v in SUMMARY_3702_9606.items()
-                                      if k != "precomputed_age"}))
-    with pytest.raises(ValidationError,
-                       match="TimeTree age for 3702/9606 must be a positive finite number"):
+    patch_network(
+        pair_routes(
+            summary={
+                k: v for k, v in SUMMARY_3702_9606.items() if k != "precomputed_age"
+            }
+        )
+    )
+    with pytest.raises(
+        ValidationError,
+        match="TimeTree age for 3702/9606 must be a positive finite number",
+    ):
         timetree.fetch_snapshot(pairs, tmp_path / "snapshot", delay=0)
 
 
 @pytest.mark.parametrize("studies", [{"hit_records": []}, {"hit_records": "nope"}, {}])
-def test_fetch_snapshot_rejects_missing_study_evidence(tmp_path, patch_network, studies):
+def test_fetch_snapshot_rejects_missing_study_evidence(
+    tmp_path, patch_network, studies
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     session = patch_network(pair_routes(studies=studies))
     destination = tmp_path / "snapshot"
-    with pytest.raises(ValidationError, match="TimeTree returned no study evidence for 3702/9606"):
+    with pytest.raises(
+        ValidationError, match="TimeTree returned no study evidence for 3702/9606"
+    ):
         timetree.fetch_snapshot(pairs, destination, delay=0)
     assert not destination.exists()
     assert session.closed is True
@@ -461,18 +570,25 @@ def test_fetch_snapshot_validates_pairs_before_network(tmp_path, patch_network):
 def test_fetch_snapshot_rejects_nonpositive_timeout(tmp_path, patch_network):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     session = patch_network(pair_routes())
-    with pytest.raises(ValidationError, match="timeout must be a positive finite number"):
+    with pytest.raises(
+        ValidationError, match="timeout must be a positive finite number"
+    ):
         timetree.fetch_snapshot(pairs, tmp_path / "snapshot", timeout=0, delay=0)
     assert session.calls == []
 
 
-@pytest.mark.parametrize("kwargs, message", [
-    ({"retries": 0}, "retries must be 1..10"),
-    ({"retries": 11}, "retries must be 1..10"),
-    ({"retries": 1, "delay": -1.0}, "retries must be 1..10"),
-    ({"retries": 1, "delay": float("nan")}, "retries must be 1..10"),
-])
-def test_fetch_snapshot_rejects_invalid_retry_policy(tmp_path, patch_network, kwargs, message):
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"retries": 0}, "retries must be 1..10"),
+        ({"retries": 11}, "retries must be 1..10"),
+        ({"retries": 1, "delay": -1.0}, "retries must be 1..10"),
+        ({"retries": 1, "delay": float("nan")}, "retries must be 1..10"),
+    ],
+)
+def test_fetch_snapshot_rejects_invalid_retry_policy(
+    tmp_path, patch_network, kwargs, message
+):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     session = patch_network(pair_routes())
     with pytest.raises(ValidationError, match=message):
@@ -494,6 +610,7 @@ def test_fetch_snapshot_refuses_existing_output_directory(tmp_path, patch_networ
 
 # --- load_snapshot -----------------------------------------------------------
 
+
 def test_load_snapshot_returns_manifest_and_sorted_pairs(tmp_path):
     root = write_snapshot(tmp_path / "snapshot")
     document, pairs = timetree.load_snapshot(root)
@@ -501,14 +618,19 @@ def test_load_snapshot_returns_manifest_and_sorted_pairs(tmp_path):
     assert pairs == {(3702, 7227), (3702, 9606), (9606, 10090)}
 
 
-@pytest.mark.parametrize("field, value", [
-    ("schema", "operon-timetree-snapshot-2"),
-    ("age_unit", "years"),
-])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("schema", "operon-timetree-snapshot-2"),
+        ("age_unit", "years"),
+    ],
+)
 def test_load_snapshot_rejects_unsupported_schema_or_unit(tmp_path, field, value):
     root = write_snapshot(tmp_path / "snapshot")
     rewrite_manifest(root, lambda document: document.__setitem__(field, value))
-    with pytest.raises(ValidationError, match="unsupported TimeTree snapshot schema or time unit"):
+    with pytest.raises(
+        ValidationError, match="unsupported TimeTree snapshot schema or time unit"
+    ):
         timetree.load_snapshot(root)
 
 
@@ -524,7 +646,9 @@ def test_load_snapshot_rejects_path_escape(tmp_path, escape):
     root = write_snapshot(tmp_path / "snapshot")
     rewrite_manifest(
         root,
-        lambda document: document["records"][0]["responses"]["summaryjson"].__setitem__("path", escape),
+        lambda document: document["records"][0]["responses"]["summaryjson"].__setitem__(
+            "path", escape
+        ),
     )
     with pytest.raises(ValidationError, match="checksum mismatch or path escape"):
         timetree.load_snapshot(root)
@@ -541,7 +665,8 @@ def test_load_snapshot_rejects_symlink_escape(tmp_path):
     rewrite_manifest(
         root,
         lambda document: document["records"][0]["responses"]["summaryjson"].__setitem__(
-            "sha256", sha256_file(outside)),
+            "sha256", sha256_file(outside)
+        ),
     )
     with pytest.raises(ValidationError, match="checksum mismatch or path escape"):
         timetree.load_snapshot(root)
@@ -550,15 +675,27 @@ def test_load_snapshot_rejects_symlink_escape(tmp_path):
 # --- calibrate_tree ----------------------------------------------------------
 
 DEFAULT_TREE = "((A:1,B:1):1,C:1);"
-CONSTRAINT_COLUMNS = ["taxon_a", "taxon_b", "members", "min_ma", "max_ma", "approved", "rationale"]
+CONSTRAINT_COLUMNS = [
+    "taxon_a",
+    "taxon_b",
+    "members",
+    "min_ma",
+    "max_ma",
+    "approved",
+    "rationale",
+]
 DEFAULT_TAXA = [
     {"leaf": "A", "taxon_id": 3702},
     {"leaf": "B", "taxon_id": 9606},
     {"leaf": "C", "taxon_id": 7227},
 ]
 DEFAULT_CONSTRAINT = {
-    "taxon_a": 3702, "taxon_b": 9606, "members": "A,B",
-    "min_ma": 100, "max_ma": 200, "approved": "yes",
+    "taxon_a": 3702,
+    "taxon_b": 9606,
+    "members": "A,B",
+    "min_ma": 100,
+    "max_ma": 200,
+    "approved": "yes",
     "rationale": "reviewed fossil calibration from the primary literature",
 }
 
@@ -569,14 +706,21 @@ def constraint(**overrides) -> dict:
     return row
 
 
-def write_calibration_inputs(tmp_path, *, tree=DEFAULT_TREE, taxa=None, constraints=None):
+def write_calibration_inputs(
+    tmp_path, *, tree=DEFAULT_TREE, taxa=None, constraints=None
+):
     tree_file = tmp_path / "tree.nwk"
     tree_file.write_text(tree if tree.endswith("\n") else tree + "\n")
     taxa_file = tmp_path / "taxa.tsv"
-    write_tsv(taxa_file, ["leaf", "taxon_id"], list(DEFAULT_TAXA if taxa is None else taxa))
+    write_tsv(
+        taxa_file, ["leaf", "taxon_id"], list(DEFAULT_TAXA if taxa is None else taxa)
+    )
     constraints_file = tmp_path / "constraints.tsv"
-    write_tsv(constraints_file, CONSTRAINT_COLUMNS,
-              list([DEFAULT_CONSTRAINT] if constraints is None else constraints))
+    write_tsv(
+        constraints_file,
+        CONSTRAINT_COLUMNS,
+        list([DEFAULT_CONSTRAINT] if constraints is None else constraints),
+    )
     return tree_file, taxa_file, constraints_file
 
 
@@ -589,13 +733,17 @@ def test_calibrate_tree_writes_paml_tree_and_provenance(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     destination = tmp_path / "calibrated"
 
-    result = timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+    result = timetree.calibrate_tree(
+        snapshot_dir, tree_file, taxa_file, constraints_file, destination
+    )
 
     assert result == {"output": str(destination), "calibrations": 1, "unit_ma": 100.0}
     calibrated = (destination / "calibrated.tree").read_text()
     assert calibrated == "3 1\n((A,B)'B(1,2)',C);\n"
     assert ":" not in calibrated  # branch lengths are stripped for MCMCTree
-    assert (destination / "constraints.tsv").read_bytes() == constraints_file.read_bytes()
+    assert (
+        destination / "constraints.tsv"
+    ).read_bytes() == constraints_file.read_bytes()
     evidence = json.loads((destination / "provenance.json").read_text())
     assert evidence == {
         "calibration_type": "secondary",
@@ -612,11 +760,14 @@ def test_calibrate_tree_scales_bounds_by_unit_ma(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     destination = tmp_path / "calibrated"
 
-    result = timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                     destination, unit_ma=10)
+    result = timetree.calibrate_tree(
+        snapshot_dir, tree_file, taxa_file, constraints_file, destination, unit_ma=10
+    )
 
     assert result["unit_ma"] == 10.0
-    assert (destination / "calibrated.tree").read_text() == "3 1\n((A,B)'B(10,20)',C);\n"
+    assert (
+        destination / "calibrated.tree"
+    ).read_text() == "3 1\n((A,B)'B(10,20)',C);\n"
     assert json.loads((destination / "provenance.json").read_text())["unit_ma"] == 10.0
 
 
@@ -624,17 +775,24 @@ def test_calibrate_tree_labels_root_and_internal_nodes(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
         tmp_path,
         constraints=[
-            constraint(taxon_a=3702, taxon_b=9606, members="A,B", min_ma=100, max_ma=200),
-            constraint(taxon_a=3702, taxon_b=7227, members="A,B,C", min_ma=300, max_ma=400),
+            constraint(
+                taxon_a=3702, taxon_b=9606, members="A,B", min_ma=100, max_ma=200
+            ),
+            constraint(
+                taxon_a=3702, taxon_b=7227, members="A,B,C", min_ma=300, max_ma=400
+            ),
         ],
     )
     destination = tmp_path / "calibrated"
 
-    result = timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+    result = timetree.calibrate_tree(
+        snapshot_dir, tree_file, taxa_file, constraints_file, destination
+    )
 
     assert result["calibrations"] == 2
-    assert (destination / "calibrated.tree").read_text() == \
-        "3 1\n((A,B)'B(1,2)',C)'B(3,4)';\n"
+    assert (
+        destination / "calibrated.tree"
+    ).read_text() == "3 1\n((A,B)'B(1,2)',C)'B(3,4)';\n"
 
 
 def test_calibrate_tree_refuses_existing_output(tmp_path, snapshot_dir):
@@ -642,172 +800,338 @@ def test_calibrate_tree_refuses_existing_output(tmp_path, snapshot_dir):
     destination = tmp_path / "calibrated"
     destination.mkdir()
     with pytest.raises(ValidationError, match=f"output already exists: {destination}"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, destination
+        )
 
 
 @pytest.mark.parametrize("unit_ma", [0, -1, "abc", float("inf")])
 def test_calibrate_tree_rejects_invalid_unit_ma(tmp_path, unit_ma):
     # Validation happens before the snapshot is even opened.
-    with pytest.raises(ValidationError, match="unit_ma must be a positive finite number"):
-        timetree.calibrate_tree(tmp_path / "missing-snapshot", tmp_path / "missing.nwk",
-                                tmp_path / "missing.tsv", tmp_path / "missing.tsv",
-                                tmp_path / "out", unit_ma=unit_ma)
+    with pytest.raises(
+        ValidationError, match="unit_ma must be a positive finite number"
+    ):
+        timetree.calibrate_tree(
+            tmp_path / "missing-snapshot",
+            tmp_path / "missing.nwk",
+            tmp_path / "missing.tsv",
+            tmp_path / "missing.tsv",
+            tmp_path / "out",
+            unit_ma=unit_ma,
+        )
     assert not (tmp_path / "out").exists()
 
 
 def test_calibrate_tree_rejects_duplicate_leaf_labels(tmp_path, snapshot_dir):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, tree="((A:1,A:1):1,C:1);")
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, tree="((A:1,A:1):1,C:1);"
+    )
     destination = tmp_path / "calibrated"
-    with pytest.raises(ValidationError, match="dating tree must have unique nonempty leaf labels"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+    with pytest.raises(
+        ValidationError, match="dating tree must have unique nonempty leaf labels"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, destination
+        )
     assert not destination.exists()
 
 
 def test_calibrate_tree_rejects_missing_leaf_labels(tmp_path, snapshot_dir):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, tree="((:1,B:1):1,C:1);")
-    with pytest.raises(ValidationError, match="dating tree must have unique nonempty leaf labels"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, tree="((:1,B:1):1,C:1);"
+    )
+    with pytest.raises(
+        ValidationError, match="dating tree must have unique nonempty leaf labels"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_rejects_non_bifurcating_tree(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, tree="((A:1,B:1,C:1):1,D:1);")
-    with pytest.raises(ValidationError, match="dating tree must be rooted and strictly bifurcating"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        tmp_path, tree="((A:1,B:1,C:1):1,D:1);"
+    )
+    with pytest.raises(
+        ValidationError, match="dating tree must be rooted and strictly bifurcating"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_rejects_duplicate_leaf_in_taxa_table(tmp_path, snapshot_dir):
-    taxa = [{"leaf": "A", "taxon_id": 3702}, {"leaf": "A", "taxon_id": 9606},
-            {"leaf": "B", "taxon_id": 9606}, {"leaf": "C", "taxon_id": 7227}]
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, taxa=taxa)
+    taxa = [
+        {"leaf": "A", "taxon_id": 3702},
+        {"leaf": "A", "taxon_id": 9606},
+        {"leaf": "B", "taxon_id": 9606},
+        {"leaf": "C", "taxon_id": 7227},
+    ]
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, taxa=taxa
+    )
     with pytest.raises(ValidationError, match="duplicate leaf in taxa table"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
-@pytest.mark.parametrize("taxa, message", [
-    ([{"leaf": "A", "taxon_id": 3702}, {"leaf": "B", "taxon_id": 9606}],
-     "taxa table must map every tree leaf to one unique positive NCBI ID"),
-    ([{"leaf": "A", "taxon_id": 3702}, {"leaf": "B", "taxon_id": 3702}, {"leaf": "C", "taxon_id": 7227}],
-     "taxa table must map every tree leaf to one unique positive NCBI ID"),
-    ([{"leaf": "A", "taxon_id": 0}, {"leaf": "B", "taxon_id": 9606}, {"leaf": "C", "taxon_id": 7227}],
-     "taxa table must map every tree leaf to one unique positive NCBI ID"),
-    ([{"leaf": "Z", "taxon_id": 3702}, {"leaf": "B", "taxon_id": 9606}, {"leaf": "C", "taxon_id": 7227}],
-     "taxa table must map every tree leaf to one unique positive NCBI ID"),
-])
-def test_calibrate_tree_requires_taxa_table_to_match_leaves(tmp_path, snapshot_dir, taxa, message):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, taxa=taxa)
+@pytest.mark.parametrize(
+    "taxa, message",
+    [
+        (
+            [{"leaf": "A", "taxon_id": 3702}, {"leaf": "B", "taxon_id": 9606}],
+            "taxa table must map every tree leaf to one unique positive NCBI ID",
+        ),
+        (
+            [
+                {"leaf": "A", "taxon_id": 3702},
+                {"leaf": "B", "taxon_id": 3702},
+                {"leaf": "C", "taxon_id": 7227},
+            ],
+            "taxa table must map every tree leaf to one unique positive NCBI ID",
+        ),
+        (
+            [
+                {"leaf": "A", "taxon_id": 0},
+                {"leaf": "B", "taxon_id": 9606},
+                {"leaf": "C", "taxon_id": 7227},
+            ],
+            "taxa table must map every tree leaf to one unique positive NCBI ID",
+        ),
+        (
+            [
+                {"leaf": "Z", "taxon_id": 3702},
+                {"leaf": "B", "taxon_id": 9606},
+                {"leaf": "C", "taxon_id": 7227},
+            ],
+            "taxa table must map every tree leaf to one unique positive NCBI ID",
+        ),
+    ],
+)
+def test_calibrate_tree_requires_taxa_table_to_match_leaves(
+    tmp_path, snapshot_dir, taxa, message
+):
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, taxa=taxa
+    )
     with pytest.raises(ValidationError, match=message):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
-@pytest.mark.parametrize("row, message", [
-    (constraint(taxon_a=9606, taxon_b=7227, members="B,C"),
-     "constraint pair is absent from snapshot or target taxa"),
-    (constraint(taxon_a=9606, taxon_b=10090, members="B,D"),
-     "constraint pair is absent from snapshot or target taxa"),
-])
-def test_calibrate_tree_rejects_constraint_pairs_outside_snapshot_or_taxa(tmp_path, snapshot_dir, row, message):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, constraints=[row])
+@pytest.mark.parametrize(
+    "row, message",
+    [
+        (
+            constraint(taxon_a=9606, taxon_b=7227, members="B,C"),
+            "constraint pair is absent from snapshot or target taxa",
+        ),
+        (
+            constraint(taxon_a=9606, taxon_b=10090, members="B,D"),
+            "constraint pair is absent from snapshot or target taxa",
+        ),
+    ],
+)
+def test_calibrate_tree_rejects_constraint_pairs_outside_snapshot_or_taxa(
+    tmp_path, snapshot_dir, row, message
+):
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[row]
+    )
     with pytest.raises(ValidationError, match=message):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
-@pytest.mark.parametrize("row", [
-    constraint(approved="no"),
-    constraint(approved="YES "),  # trailing space is not "yes"
-    constraint(approved="yes", rationale="   "),
-])
+@pytest.mark.parametrize(
+    "row",
+    [
+        constraint(approved="no"),
+        constraint(approved="YES "),  # trailing space is not "yes"
+        constraint(approved="yes", rationale="   "),
+    ],
+)
 def test_calibrate_tree_requires_approval_and_rationale(tmp_path, snapshot_dir, row):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, constraints=[row])
-    with pytest.raises(ValidationError,
-                       match="each constraint requires approved=yes and a scientific rationale"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[row]
+    )
+    with pytest.raises(
+        ValidationError,
+        match="each constraint requires approved=yes and a scientific rationale",
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_accepts_approved_case_insensitively(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, constraints=[constraint(approved="Yes")])
+        tmp_path, constraints=[constraint(approved="Yes")]
+    )
     destination = tmp_path / "calibrated"
-    assert timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                   destination)["calibrations"] == 1
+    assert (
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, destination
+        )["calibrations"]
+        == 1
+    )
 
 
 def test_calibrate_tree_rejects_member_mismatch(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, constraints=[constraint(members="A,C")])
-    with pytest.raises(ValidationError,
-                       match="constraint members do not equal the target MRCA clade"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        tmp_path, constraints=[constraint(members="A,C")]
+    )
+    with pytest.raises(
+        ValidationError, match="constraint members do not equal the target MRCA clade"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_rejects_duplicate_mrca_constraints(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, constraints=[constraint(), constraint(rationale="second row for the same MRCA")])
-    with pytest.raises(ValidationError,
-                       match="multiple constraints map to the same MRCA; review and consolidate them"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        tmp_path,
+        constraints=[
+            constraint(),
+            constraint(rationale="second row for the same MRCA"),
+        ],
+    )
+    with pytest.raises(
+        ValidationError,
+        match="multiple constraints map to the same MRCA; review and consolidate them",
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
-@pytest.mark.parametrize("row, message", [
-    (constraint(min_ma=300, max_ma=200), "min_ma must be less than max_ma"),
-    (constraint(min_ma=200, max_ma=200), "min_ma must be less than max_ma"),
-    (constraint(min_ma=0), "min_ma must be a positive finite number"),
-    (constraint(min_ma="soon"), "min_ma must be a positive finite number"),
-    (constraint(max_ma=0), "max_ma must be a positive finite number"),
-])
+@pytest.mark.parametrize(
+    "row, message",
+    [
+        (constraint(min_ma=300, max_ma=200), "min_ma must be less than max_ma"),
+        (constraint(min_ma=200, max_ma=200), "min_ma must be less than max_ma"),
+        (constraint(min_ma=0), "min_ma must be a positive finite number"),
+        (constraint(min_ma="soon"), "min_ma must be a positive finite number"),
+        (constraint(max_ma=0), "max_ma must be a positive finite number"),
+    ],
+)
 def test_calibrate_tree_rejects_invalid_bounds(tmp_path, snapshot_dir, row, message):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, constraints=[row])
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[row]
+    )
     with pytest.raises(ValidationError, match=message):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_requires_at_least_one_constraint(tmp_path, snapshot_dir):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, constraints=[])
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[]
+    )
     destination = tmp_path / "calibrated"
-    with pytest.raises(ValidationError, match="at least one reviewed calibration is required"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+    with pytest.raises(
+        ValidationError, match="at least one reviewed calibration is required"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, destination
+        )
     assert not destination.exists()
 
 
-def test_calibrate_tree_rejects_contradictory_ancestor_descendant_bounds(tmp_path, snapshot_dir):
+def test_calibrate_tree_rejects_contradictory_ancestor_descendant_bounds(
+    tmp_path, snapshot_dir
+):
     taxa = DEFAULT_TAXA + [{"leaf": "D", "taxon_id": 10090}]
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
         tmp_path,
         tree="(((A:1,B:1):1,C:1):1,D:1);",
         taxa=taxa,
         constraints=[
-            constraint(taxon_a=3702, taxon_b=9606, members="A,B", min_ma=300, max_ma=400),
-            constraint(taxon_a=3702, taxon_b=7227, members="A,B,C", min_ma=100, max_ma=200),
+            constraint(
+                taxon_a=3702, taxon_b=9606, members="A,B", min_ma=300, max_ma=400
+            ),
+            constraint(
+                taxon_a=3702, taxon_b=7227, members="A,B,C", min_ma=100, max_ma=200
+            ),
         ],
     )
-    with pytest.raises(ValidationError,
-                       match="calibration bounds contradict ancestor/descendant time ordering"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "calibrated")
+    with pytest.raises(
+        ValidationError,
+        match="calibration bounds contradict ancestor/descendant time ordering",
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tree_file,
+            taxa_file,
+            constraints_file,
+            tmp_path / "calibrated",
+        )
 
 
 def test_calibrate_tree_rejects_unsafe_paml_leaf_label(tmp_path, snapshot_dir):
-    taxa = [{"leaf": "A*", "taxon_id": 3702}, {"leaf": "B", "taxon_id": 9606},
-            {"leaf": "C", "taxon_id": 7227}]
+    taxa = [
+        {"leaf": "A*", "taxon_id": 3702},
+        {"leaf": "B", "taxon_id": 9606},
+        {"leaf": "C", "taxon_id": 7227},
+    ]
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, tree="((A*:1,B:1):1,C:1);", taxa=taxa,
-        constraints=[constraint(members="A*,B")])
+        tmp_path,
+        tree="((A*:1,B:1):1,C:1);",
+        taxa=taxa,
+        constraints=[constraint(members="A*,B")],
+    )
     destination = tmp_path / "calibrated"
     with pytest.raises(ValidationError, match=r"unsafe PAML leaf label: A\*"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file, destination)
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, destination
+        )
     assert not destination.exists()
 
 
-def test_calibrate_tree_loads_snapshot_written_by_fetch_snapshot(tmp_path, patch_network):
+def test_calibrate_tree_loads_snapshot_written_by_fetch_snapshot(
+    tmp_path, patch_network
+):
     """fetch_snapshot output is directly consumable by calibrate_tree."""
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     patch_network(pair_routes())
@@ -818,20 +1142,35 @@ def test_calibrate_tree_loads_snapshot_written_by_fetch_snapshot(tmp_path, patch
 
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     destination = tmp_path / "calibrated"
-    result = timetree.calibrate_tree(snapshot, tree_file, taxa_file, constraints_file, destination)
+    result = timetree.calibrate_tree(
+        snapshot, tree_file, taxa_file, constraints_file, destination
+    )
     assert result["calibrations"] == 1
     assert (destination / "calibrated.tree").read_text() == "3 1\n((A,B)'B(1,2)',C);\n"
 
 
 # --- run_cli dispatch --------------------------------------------------------
 
+
 def test_cli_fetch_dispatch_publishes_snapshot(tmp_path, patch_network, capsys):
     pairs = write_pairs(tmp_path / "pairs.tsv", [(3702, 9606)])
     patch_network(pair_routes())
     destination = tmp_path / "snapshot"
 
-    exit_code = main(["timetree", "fetch", "--pairs", str(pairs), "--output", str(destination),
-                      "--timeout", "5", "--retries", "1"])
+    exit_code = main(
+        [
+            "timetree",
+            "fetch",
+            "--pairs",
+            str(pairs),
+            "--output",
+            str(destination),
+            "--timeout",
+            "5",
+            "--retries",
+            "1",
+        ]
+    )
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -844,8 +1183,16 @@ def test_cli_fetch_dispatch_publishes_snapshot(tmp_path, patch_network, capsys):
 
 def test_cli_fetch_dispatch_reports_validation_error(tmp_path, capsys):
     pairs = write_pairs(tmp_path / "pairs.tsv", [])
-    exit_code = main(["timetree", "fetch", "--pairs", str(pairs),
-                      "--output", str(tmp_path / "snapshot")])
+    exit_code = main(
+        [
+            "timetree",
+            "fetch",
+            "--pairs",
+            str(pairs),
+            "--output",
+            str(tmp_path / "snapshot"),
+        ]
+    )
     assert exit_code == 2
     out, err = capsys.readouterr()
     assert out == ""
@@ -857,23 +1204,56 @@ def test_cli_calibrate_dispatch_writes_outputs(tmp_path, snapshot_dir, capsys):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     destination = tmp_path / "calibrated"
 
-    exit_code = main(["timetree", "calibrate", "--snapshot", str(snapshot_dir),
-                      "--tree", str(tree_file), "--taxa", str(taxa_file),
-                      "--constraints", str(constraints_file), "--output", str(destination),
-                      "--unit-ma", "50"])
+    exit_code = main(
+        [
+            "timetree",
+            "calibrate",
+            "--snapshot",
+            str(snapshot_dir),
+            "--tree",
+            str(tree_file),
+            "--taxa",
+            str(taxa_file),
+            "--constraints",
+            str(constraints_file),
+            "--output",
+            str(destination),
+            "--unit-ma",
+            "50",
+        ]
+    )
 
     assert exit_code == 0
     assert json.loads(capsys.readouterr().out) == {
-        "output": str(destination), "calibrations": 1, "unit_ma": 50.0}
+        "output": str(destination),
+        "calibrations": 1,
+        "unit_ma": 50.0,
+    }
     assert (destination / "calibrated.tree").read_text() == "3 1\n((A,B)'B(2,4)',C);\n"
 
 
-def test_cli_calibrate_dispatch_reports_validation_error(tmp_path, snapshot_dir, capsys):
-    tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path, constraints=[])
-    exit_code = main(["timetree", "calibrate", "--snapshot", str(snapshot_dir),
-                      "--tree", str(tree_file), "--taxa", str(taxa_file),
-                      "--constraints", str(constraints_file),
-                      "--output", str(tmp_path / "calibrated")])
+def test_cli_calibrate_dispatch_reports_validation_error(
+    tmp_path, snapshot_dir, capsys
+):
+    tree_file, taxa_file, constraints_file = write_calibration_inputs(
+        tmp_path, constraints=[]
+    )
+    exit_code = main(
+        [
+            "timetree",
+            "calibrate",
+            "--snapshot",
+            str(snapshot_dir),
+            "--tree",
+            str(tree_file),
+            "--taxa",
+            str(taxa_file),
+            "--constraints",
+            str(constraints_file),
+            "--output",
+            str(tmp_path / "calibrated"),
+        ]
+    )
     assert exit_code == 2
     out, err = capsys.readouterr()
     assert out == ""
@@ -881,6 +1261,7 @@ def test_cli_calibrate_dispatch_reports_validation_error(tmp_path, snapshot_dir,
 
 
 # --- CLI query-command validation branches -----------------------------------
+
 
 @pytest.fixture
 def project(tmp_path):
@@ -893,8 +1274,17 @@ def _run_cli(project: Project, *argv: str) -> int:
 
 def test_cli_pairwise_rejects_more_than_two_taxa(project, patch_network, capsys):
     session = patch_network({})
-    exit_code = _run_cli(project, "timetree", "pairwise",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--taxon-id", "7227")
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "pairwise",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+    )
     assert exit_code == 2
     assert "pairwise needs exactly two distinct taxa" in capsys.readouterr().err
     assert session.calls == []
@@ -902,8 +1292,9 @@ def test_cli_pairwise_rejects_more_than_two_taxa(project, patch_network, capsys)
 
 def test_cli_timeline_rejects_more_than_one_taxon(project, patch_network, capsys):
     session = patch_network({})
-    exit_code = _run_cli(project, "timetree", "timeline",
-                         "--taxon-id", "3702", "--taxon-id", "9606")
+    exit_code = _run_cli(
+        project, "timetree", "timeline", "--taxon-id", "3702", "--taxon-id", "9606"
+    )
     assert exit_code == 2
     assert "timeline needs exactly one taxon" in capsys.readouterr().err
     assert session.calls == []
@@ -918,33 +1309,64 @@ def test_cli_requires_minimum_distinct_taxa(project, patch_network, capsys):
 
 
 def test_cli_mrca_deduplicates_repeated_taxon_ids(project, patch_network, capsys):
-    session = patch_network({
-        f"{API}/mrca/id/3702+9606/summaryjson": FakeResponse(json.dumps(SUMMARY_3702_9606)),
-    })
-    exit_code = _run_cli(project, "timetree", "mrca",
-                         "--taxon-id", "3702", "--taxon-id", "3702", "--taxon-id", "9606")
+    session = patch_network(
+        {
+            f"{API}/mrca/id/3702+9606/summaryjson": FakeResponse(
+                json.dumps(SUMMARY_3702_9606)
+            ),
+        }
+    )
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "mrca",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+    )
     assert exit_code == 0
     assert [url for url, _ in session.calls] == [f"{API}/mrca/id/3702+9606/summaryjson"]
     assert "3702,9606" in capsys.readouterr().out
 
 
-def test_cli_calibrations_without_out_does_not_write_or_announce_a_file(project, patch_network, capsys):
-    session = patch_network({
-        f"{API}/mrca/id/3702+7227+9606/summaryjson": FakeResponse(json.dumps(SUMMARY_3702_9606)),
-    })
-    exit_code = _run_cli(project, "timetree", "calibrations",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--taxon-id", "7227")
+def test_cli_calibrations_without_out_does_not_write_or_announce_a_file(
+    project, patch_network, capsys
+):
+    session = patch_network(
+        {
+            f"{API}/mrca/id/3702+7227+9606/summaryjson": FakeResponse(
+                json.dumps(SUMMARY_3702_9606)
+            ),
+        }
+    )
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "calibrations",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+    )
     assert exit_code == 0
     out, err = capsys.readouterr()
     assert "mrca(3 taxa)" in out
     assert "wrote" not in err
     assert "cite: " in err
-    assert [url for url, _ in session.calls] == [f"{API}/mrca/id/3702+7227+9606/summaryjson"]
+    assert [url for url, _ in session.calls] == [
+        f"{API}/mrca/id/3702+7227+9606/summaryjson"
+    ]
 
 
-# --- ODR-0014: no bare exceptions from snapshot loading / calibration inputs --
+# --- ODR-14: no bare exceptions from snapshot loading / calibration inputs --
 
-@pytest.mark.bug("ODR-0014")
+
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_missing_manifest_is_validation_error(tmp_path):
     root = tmp_path / "snapshot"
     root.mkdir()
@@ -952,7 +1374,7 @@ def test_load_snapshot_missing_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_malformed_manifest_is_validation_error(tmp_path):
     root = tmp_path / "snapshot"
     root.mkdir()
@@ -961,7 +1383,7 @@ def test_load_snapshot_malformed_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_incomplete_manifest_is_validation_error(tmp_path):
     root = write_snapshot(tmp_path / "snapshot")
     rewrite_manifest(root, lambda document: document.pop("records"))
@@ -974,7 +1396,7 @@ def test_load_snapshot_incomplete_manifest_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_load_snapshot_missing_payload_is_validation_error(tmp_path):
     root = write_snapshot(tmp_path / "snapshot")
     (root / "raw/3702_9606.summaryjson.json").unlink()
@@ -982,31 +1404,50 @@ def test_load_snapshot_missing_payload_is_validation_error(tmp_path):
         timetree.load_snapshot(root)
 
 
-@pytest.mark.bug("ODR-0014")
+@pytest.mark.bug("ODR-14")
 def test_calibrate_tree_rejects_non_numeric_taxon_ids(tmp_path, snapshot_dir):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, taxa=[{"leaf": "A", "taxon_id": "not-a-number"},
-                        {"leaf": "B", "taxon_id": 9606},
-                        {"leaf": "C", "taxon_id": 7227}])
-    with pytest.raises(ValidationError, match="taxon_id values must be NCBI taxonomy integer IDs"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "out")
+        tmp_path,
+        taxa=[
+            {"leaf": "A", "taxon_id": "not-a-number"},
+            {"leaf": "B", "taxon_id": 9606},
+            {"leaf": "C", "taxon_id": 7227},
+        ],
+    )
+    with pytest.raises(
+        ValidationError, match="taxon_id values must be NCBI taxonomy integer IDs"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, tmp_path / "out"
+        )
 
     tree_file, taxa_file, constraints_file = write_calibration_inputs(
-        tmp_path, constraints=[constraint(taxon_a="3702.5")])
-    with pytest.raises(ValidationError, match="constraint pairs require NCBI taxonomy integer IDs"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "out2")
+        tmp_path, constraints=[constraint(taxon_a="3702.5")]
+    )
+    with pytest.raises(
+        ValidationError, match="constraint pairs require NCBI taxonomy integer IDs"
+    ):
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, tmp_path / "out2"
+        )
 
 
-@pytest.mark.bug("ODR-0014")
-def test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error(tmp_path, snapshot_dir):
+@pytest.mark.bug("ODR-14")
+def test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error(
+    tmp_path, snapshot_dir
+):
     tree_file, taxa_file, constraints_file = write_calibration_inputs(tmp_path)
     with pytest.raises(ValidationError, match="cannot read dating tree"):
-        timetree.calibrate_tree(snapshot_dir, tmp_path / "absent.nwk", taxa_file,
-                                constraints_file, tmp_path / "out")
+        timetree.calibrate_tree(
+            snapshot_dir,
+            tmp_path / "absent.nwk",
+            taxa_file,
+            constraints_file,
+            tmp_path / "out",
+        )
 
     tree_file.write_text("((A:1,B:1):1,C:1", encoding="utf-8")  # unbalanced newick
     with pytest.raises(ValidationError, match="cannot read dating tree"):
-        timetree.calibrate_tree(snapshot_dir, tree_file, taxa_file, constraints_file,
-                                tmp_path / "out2")
+        timetree.calibrate_tree(
+            snapshot_dir, tree_file, taxa_file, constraints_file, tmp_path / "out2"
+        )

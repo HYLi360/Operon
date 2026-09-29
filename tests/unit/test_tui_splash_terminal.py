@@ -16,20 +16,26 @@ from operon.tui.splash_terminal import (
 )
 
 
-@pytest.mark.parametrize("env, expected", [
-    ({}, "text"), ({"TERM": "linux", "COLORTERM": "truecolor"}, "text"),
-    ({"TERM": "dumb"}, "text"), ({"TERM": "vt100", "SSH_CONNECTION": "yes"}, "text"),
-    ({"TERM": "xterm"}, "text"), ({"TERM": "xterm-256color"}, "blocks"),
-    ({"TERM": "xterm", "COLORTERM": "truecolor"}, "blocks"),
-    ({"TERM": "xterm-kitty", "SSH_CONNECTION": "yes"}, "kitty"),
-    ({"TERM": "xterm-kitty", "NO_COLOR": ""}, "text"),
-    ({"TERM": "xterm-kitty", "TMUX": "yes"}, "text"),
-    ({"TERM": "screen-256color", "STY": "yes"}, "blocks"),
-    ({"TERM": "xterm-kitty", "OPERON_SPLASH": "text"}, "text"),
-    ({"TERM": "xterm", "OPERON_SPLASH": "kitty"}, "kitty"),
-    ({"TERM": "linux", "OPERON_SPLASH": "blocks"}, "blocks"),
-    ({"TERM": "linux", "OPERON_SPLASH": "invalid"}, "text"),
-])
+@pytest.mark.parametrize(
+    "env, expected",
+    [
+        ({}, "text"),
+        ({"TERM": "linux", "COLORTERM": "truecolor"}, "text"),
+        ({"TERM": "dumb"}, "text"),
+        ({"TERM": "vt100", "SSH_CONNECTION": "yes"}, "text"),
+        ({"TERM": "xterm"}, "text"),
+        ({"TERM": "xterm-256color"}, "blocks"),
+        ({"TERM": "xterm", "COLORTERM": "truecolor"}, "blocks"),
+        ({"TERM": "xterm-kitty", "SSH_CONNECTION": "yes"}, "kitty"),
+        ({"TERM": "xterm-kitty", "NO_COLOR": ""}, "text"),
+        ({"TERM": "xterm-kitty", "TMUX": "yes"}, "text"),
+        ({"TERM": "screen-256color", "STY": "yes"}, "blocks"),
+        ({"TERM": "xterm-kitty", "OPERON_SPLASH": "text"}, "text"),
+        ({"TERM": "xterm", "OPERON_SPLASH": "kitty"}, "kitty"),
+        ({"TERM": "linux", "OPERON_SPLASH": "blocks"}, "blocks"),
+        ({"TERM": "linux", "OPERON_SPLASH": "invalid"}, "text"),
+    ],
+)
 def test_terminal_selection(env, expected):
     assert splash_mode(env) == expected
 
@@ -86,12 +92,14 @@ def test_kitty_widget_lifecycle(monkeypatch):
         async with app.run_test(size=(80, 24)) as pilot:
             art = app.screen.query_one(LakeArt)
             real_driver = app._driver
+
             def display():
                 app._driver = wire
                 try:
                     art.display_image()
                 finally:
                     app._driver = real_driver
+
             display()
             assert art._uploaded
             assert "a=t,t=d,f=100" in output[0]
@@ -130,6 +138,7 @@ def test_kitty_output_failure_preserves_usable_text(monkeypatch):
     from textual.app import App
 
     from operon.tui.splash import LakeArt, SplashScreen
+
     monkeypatch.setenv("OPERON_SPLASH", "kitty")
 
     def disconnected(data):
@@ -150,6 +159,7 @@ def test_kitty_output_failure_preserves_usable_text(monkeypatch):
             assert art.mode == "text"
             assert not art._uploaded
             assert "D" in art.render().plain
+
     asyncio.run(scenario())
 
 
@@ -157,6 +167,7 @@ def test_text_screen_restores_palette(monkeypatch):
     from textual.app import App
 
     from operon.tui.splash import SplashScreen
+
     monkeypatch.setenv("OPERON_SPLASH", "text")
 
     async def scenario():
@@ -169,4 +180,5 @@ def test_text_screen_restores_palette(monkeypatch):
             app.pop_screen()
             await pilot.pause()
             assert app.ansi_color == previous
+
     asyncio.run(scenario())

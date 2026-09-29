@@ -25,8 +25,12 @@ from operon.tui.screens.common import WriteModal
 class ClassifyModal(WriteModal):
     """Confirm + run for `operon classify-sequences`."""
 
-    def __init__(self, project: Project, profile_name: str,
-                 document: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        project: Project,
+        profile_name: str,
+        document: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(f"Run classify {profile_name}")
         self.project = project
         self.profile_name = profile_name

@@ -17,39 +17,51 @@ from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, WriteModal
 HEALTHY_VERIFY_STATUSES = frozenset({"CHECKSUM_VERIFIED", "REMOTE_ONLY"})
 
 #: The `operon standardize --link` choices, shown by :class:`StandardizeModal`.
-LINK_KIND_OPTIONS = [("copy (independent copy)", "copy"),
-                     ("hardlink", "hardlink"),
-                     ("symlink", "symlink")]
+LINK_KIND_OPTIONS = [
+    ("copy (independent copy)", "copy"),
+    ("hardlink", "hardlink"),
+    ("symlink", "symlink"),
+]
 
 #: `operon run-pipeline --entity-type` choices (narrower than ingest's).
-PIPELINE_ENTITY_TYPE_OPTIONS = [("assembly", "assembly"),
-                                ("annotation", "annotation"),
-                                ("run", "run")]
+PIPELINE_ENTITY_TYPE_OPTIONS = [
+    ("assembly", "assembly"),
+    ("annotation", "annotation"),
+    ("run", "run"),
+]
 
 
 class IngestModal(WriteModal):
     """Form + confirm for `operon ingest`.  ConflictError stays inline."""
 
-    def __init__(self, project: Project, selected: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, project: Project, selected: dict[str, Any] | None = None
+    ) -> None:
         super().__init__("Ingest file")
         self.project = project
         self.selected = selected or {}
 
     def compose_form(self) -> Iterable[Any]:
-        yield Input(placeholder="source path or sftp:// / remote:// URL (required)", id="ingest-source")
+        yield Input(
+            placeholder="source path or sftp:// / remote:// URL (required)",
+            id="ingest-source",
+        )
         yield Static("Entity type", classes="modal-label")
         yield Select(
             ENTITY_TYPE_OPTIONS,
             value=self.selected.get("entity_type") or "assembly",
-            id="ingest-entity-type", allow_blank=False,
+            id="ingest-entity-type",
+            allow_blank=False,
         )
         yield Input(
             value=str(self.selected.get("entity_id") or ""),
-            placeholder="entity id (required)", id="ingest-entity-id",
+            placeholder="entity id (required)",
+            id="ingest-entity-id",
         )
         yield Input(
             value=str(self.selected.get("file_role") or ""),
-            placeholder="role (required)", id="ingest-role",
+            placeholder="role (required)",
+            id="ingest-role",
         )
         yield Input(placeholder="format (auto-detect)", id="ingest-format")
         yield Input(placeholder="compression (auto-detect)", id="ingest-compression")
@@ -64,17 +76,24 @@ class IngestModal(WriteModal):
             "entity_id": self.query_one("#ingest-entity-id", Input).value.strip(),
             "role": self.query_one("#ingest-role", Input).value.strip(),
             "fmt": self.query_one("#ingest-format", Input).value.strip() or None,
-            "compression": self.query_one("#ingest-compression", Input).value.strip() or None,
-            "source_url": self.query_one("#ingest-source-url", Input).value.strip() or None,
+            "compression": self.query_one("#ingest-compression", Input).value.strip()
+            or None,
+            "source_url": self.query_one("#ingest-source-url", Input).value.strip()
+            or None,
             "move": self.query_one("#ingest-move", Checkbox).value,
         }
 
     def command_text(self) -> str:
         values = self._values()
         parts = ["operon", "ingest", "--source", shlex.quote(values["source"] or "…")]
-        for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
-                            ("role", "--role"), ("fmt", "--format"),
-                            ("compression", "--compression"), ("source_url", "--source-url")):
+        for field, flag in (
+            ("entity_type", "--entity-type"),
+            ("entity_id", "--entity-id"),
+            ("role", "--role"),
+            ("fmt", "--format"),
+            ("compression", "--compression"),
+            ("source_url", "--source-url"),
+        ):
             if values[field]:
                 parts += [flag, shlex.quote(str(values[field]))]
         if values["move"]:
@@ -95,14 +114,20 @@ class IngestModal(WriteModal):
 
     def confirm(self) -> None:
         values = self._values()
-        for field, label in (("source", "source"), ("entity_id", "entity id"), ("role", "role")):
+        for field, label in (
+            ("source", "source"),
+            ("entity_id", "entity id"),
+            ("role", "role"),
+        ):
             if not values[field]:
                 self.show_error(f"{label} is required")
                 return
         self.run_action(lambda: actions.ingest(self.project, **values))
 
     def on_action_success(self, payload: Any) -> None:
-        self.app.notify(f"registered {payload['file_id']} -> {payload['relative_path']}")
+        self.app.notify(
+            f"registered {payload['file_id']} -> {payload['relative_path']}"
+        )
         self.dismiss(payload)
 
 
@@ -119,8 +144,10 @@ class VerifyModal(WriteModal):
         if self.file_id:
             text = f"Verify file {self.file_id}?  SHA-256 is recomputed and statuses are updated."
         else:
-            text = (f"Verify all {self.total} files?  SHA-256 is recomputed for every local "
-                    "artifact and recorded remotes are live-checked.")
+            text = (
+                f"Verify all {self.total} files?  SHA-256 is recomputed for every local "
+                "artifact and recorded remotes are live-checked."
+            )
         yield Static(text, classes="modal-info")
 
     def command_text(self) -> str:
@@ -139,7 +166,9 @@ class VerifyModal(WriteModal):
 class StandardizeModal(WriteModal):
     """Link-kind choice + confirm for `operon standardize` (one file or all)."""
 
-    def __init__(self, project: Project, file_id: str | None, link_kind: str = "copy") -> None:
+    def __init__(
+        self, project: Project, file_id: str | None, link_kind: str = "copy"
+    ) -> None:
         super().__init__("Standardize files")
         self.project = project
         self.file_id = file_id
@@ -147,15 +176,23 @@ class StandardizeModal(WriteModal):
 
     def compose_form(self) -> Iterable[Any]:
         if self.file_id:
-            text = (f"Stage {self.file_id} into standardized/?  raw/ stays immutable; "
-                    "the source checksum is verified first.")
+            text = (
+                f"Stage {self.file_id} into standardized/?  raw/ stays immutable; "
+                "the source checksum is verified first."
+            )
         else:
-            text = ("Stage every verified file into standardized/?  raw/ stays immutable; "
-                    "each source checksum is verified first.")
+            text = (
+                "Stage every verified file into standardized/?  raw/ stays immutable; "
+                "each source checksum is verified first."
+            )
         yield Static(text, classes="modal-info")
         yield Static("Link kind", classes="modal-label")
-        yield Select(LINK_KIND_OPTIONS, value=self.link_kind,
-                     id="standardize-link", allow_blank=False)
+        yield Select(
+            LINK_KIND_OPTIONS,
+            value=self.link_kind,
+            id="standardize-link",
+            allow_blank=False,
+        )
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "standardize-link":
@@ -167,7 +204,9 @@ class StandardizeModal(WriteModal):
         return f"operon standardize{scope} --link {self.link_kind}"
 
     def confirm(self) -> None:
-        self.run_action(lambda: actions.standardize(self.project, self.file_id, self.link_kind))
+        self.run_action(
+            lambda: actions.standardize(self.project, self.file_id, self.link_kind)
+        )
 
     def on_action_success(self, payload: Any) -> None:
         self.dismiss(payload)
@@ -192,8 +231,10 @@ class ImportQcModal(WriteModal):
         self.preview_running = False
 
     def compose_form(self) -> Iterable[Any]:
-        yield Input(placeholder="qc-measure JSON payload or external TSV (required)",
-                    id="qc-import-path")
+        yield Input(
+            placeholder="qc-measure JSON payload or external TSV (required)",
+            id="qc-import-path",
+        )
         yield Button("Preview import", id="qc-import-preview-button")
         yield Static("", id="qc-import-status", classes="modal-info")
 
@@ -218,7 +259,8 @@ class ImportQcModal(WriteModal):
         self.preview = None
         self.set_confirm_enabled(False)
         self.query_one("#qc-import-status", Static).update(
-            Text("path changed — run the preview again", style="yellow"))
+            Text("path changed — run the preview again", style="yellow")
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "qc-import-preview-button":
@@ -227,7 +269,7 @@ class ImportQcModal(WriteModal):
             self.run_preview()
             return
         # Textual dispatches a message to every MRO class defining the handler
-        # (ODR-0043), so without prevent_default WriteModal's own handler
+        # (ODR-43), so without prevent_default WriteModal's own handler
         # would run the Confirm a second time.
         event.prevent_default()
         super().on_button_pressed(event)
@@ -273,10 +315,13 @@ class ImportQcModal(WriteModal):
         if payload["format"] == "json":
             lines.append(
                 f"file: {payload['file_id']} "
-                f"({payload['entity_type']} {payload['entity_id']})")
+                f"({payload['entity_type']} {payload['entity_id']})"
+            )
         else:
-            lines.append("entities: " + ", ".join(
-                f"{kind} {ident}" for kind, ident in payload["entities"]))
+            lines.append(
+                "entities: "
+                + ", ".join(f"{kind} {ident}" for kind, ident in payload["entities"])
+            )
         lines.append("stages: " + ", ".join(payload["stages"]))
         if payload.get("warning"):
             lines.append(f"warning: {payload['warning']}")
@@ -304,7 +349,9 @@ class PipelineModal(WriteModal):
     the CLI's ``--yes`` (a non-tty CLI run refuses instead).
     """
 
-    def __init__(self, project: Project, selected: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, project: Project, selected: dict[str, Any] | None = None
+    ) -> None:
         super().__init__("Run pipeline")
         self.project = project
         self.selected = selected or {}
@@ -319,28 +366,50 @@ class PipelineModal(WriteModal):
 
         names = sorted({self._default_profile(), *list_profiles(self.project)})
         return [
-            (f"{name} (project default)" if name == self._default_profile() else name, name)
+            (
+                f"{name} (project default)"
+                if name == self._default_profile()
+                else name,
+                name,
+            )
             for name in names
         ]
 
     def compose_form(self) -> Iterable[Any]:
-        yield Input(placeholder="source path or sftp:// / remote:// URL (required)",
-                    id="pipeline-source")
+        yield Input(
+            placeholder="source path or sftp:// / remote:// URL (required)",
+            id="pipeline-source",
+        )
         yield Static("Entity type", classes="modal-label")
-        yield Select(PIPELINE_ENTITY_TYPE_OPTIONS,
-                     value=self.selected.get("entity_type") or "assembly",
-                     id="pipeline-entity-type", allow_blank=False)
-        yield Input(value=str(self.selected.get("entity_id") or ""),
-                    placeholder="entity id (required)", id="pipeline-entity-id")
-        yield Input(value=str(self.selected.get("file_role") or ""),
-                    placeholder="role (required)", id="pipeline-role")
+        yield Select(
+            PIPELINE_ENTITY_TYPE_OPTIONS,
+            value=self.selected.get("entity_type") or "assembly",
+            id="pipeline-entity-type",
+            allow_blank=False,
+        )
+        yield Input(
+            value=str(self.selected.get("entity_id") or ""),
+            placeholder="entity id (required)",
+            id="pipeline-entity-id",
+        )
+        yield Input(
+            value=str(self.selected.get("file_role") or ""),
+            placeholder="role (required)",
+            id="pipeline-role",
+        )
         yield Static("QC profile", classes="modal-label")
-        yield Select(self._profile_options(), value=self._default_profile(),
-                     id="pipeline-profile", allow_blank=False)
+        yield Select(
+            self._profile_options(),
+            value=self._default_profile(),
+            id="pipeline-profile",
+            allow_blank=False,
+        )
         yield Input(placeholder="format (auto-detect)", id="pipeline-format")
         yield Input(placeholder="compression (auto-detect)", id="pipeline-compression")
         yield Input(placeholder="source url (optional)", id="pipeline-source-url")
-        yield Checkbox("Re-run evaluation over a curated decision (--yes)", id="pipeline-yes")
+        yield Checkbox(
+            "Re-run evaluation over a curated decision (--yes)", id="pipeline-yes"
+        )
         yield Button("Preview pipeline", id="pipeline-preview-button")
         yield Static("", id="pipeline-status", classes="modal-info")
 
@@ -353,21 +422,36 @@ class PipelineModal(WriteModal):
         profile = self.query_one("#pipeline-profile", Select).value
         return {
             "source": self.query_one("#pipeline-source", Input).value.strip(),
-            "entity_type": "assembly" if entity_type is Select.NULL else str(entity_type),
+            "entity_type": "assembly"
+            if entity_type is Select.NULL
+            else str(entity_type),
             "entity_id": self.query_one("#pipeline-entity-id", Input).value.strip(),
             "role": self.query_one("#pipeline-role", Input).value.strip(),
             "profile": None if profile is Select.NULL else str(profile),
             "fmt": self.query_one("#pipeline-format", Input).value.strip() or None,
-            "compression": self.query_one("#pipeline-compression", Input).value.strip() or None,
-            "source_url": self.query_one("#pipeline-source-url", Input).value.strip() or None,
+            "compression": self.query_one("#pipeline-compression", Input).value.strip()
+            or None,
+            "source_url": self.query_one("#pipeline-source-url", Input).value.strip()
+            or None,
         }
 
     def command_text(self) -> str:
         values = self._values()
-        parts = ["operon", "run-pipeline", "--source", shlex.quote(values["source"] or "…")]
-        for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
-                            ("role", "--role"), ("profile", "--profile"), ("fmt", "--format"),
-                            ("compression", "--compression"), ("source_url", "--source-url")):
+        parts = [
+            "operon",
+            "run-pipeline",
+            "--source",
+            shlex.quote(values["source"] or "…"),
+        ]
+        for field, flag in (
+            ("entity_type", "--entity-type"),
+            ("entity_id", "--entity-id"),
+            ("role", "--role"),
+            ("profile", "--profile"),
+            ("fmt", "--format"),
+            ("compression", "--compression"),
+            ("source_url", "--source-url"),
+        ):
             if values[field]:
                 parts += [flag, shlex.quote(str(values[field]))]
         if self.query_one("#pipeline-yes", Checkbox).value:
@@ -394,7 +478,8 @@ class PipelineModal(WriteModal):
         self.preview = None
         self.set_confirm_enabled(False)
         self.query_one("#pipeline-status", Static).update(
-            Text("form changed — run the preview again", style="yellow"))
+            Text("form changed — run the preview again", style="yellow")
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "pipeline-preview-button":
@@ -403,7 +488,7 @@ class PipelineModal(WriteModal):
             self.run_preview()
             return
         # Textual dispatches a message to every MRO class defining the handler
-        # (ODR-0043), so without prevent_default WriteModal's own handler would
+        # (ODR-43), so without prevent_default WriteModal's own handler would
         # run the Confirm a second time.
         event.prevent_default()
         super().on_button_pressed(event)
@@ -412,7 +497,11 @@ class PipelineModal(WriteModal):
 
     def run_preview(self) -> None:
         values = self._values()
-        for field, label in (("source", "source"), ("entity_id", "entity id"), ("role", "role")):
+        for field, label in (
+            ("source", "source"),
+            ("entity_id", "entity id"),
+            ("role", "role"),
+        ):
             if not values[field]:
                 self.show_error(f"{label} is required")
                 return
@@ -456,7 +545,8 @@ class PipelineModal(WriteModal):
         if payload["curated_targets"]:
             lines.append(
                 "warning: evaluation will re-use a curated decision — "
-                "tick the re-run box to confirm")
+                "tick the re-run box to confirm"
+            )
         return Text("\n".join(lines))
 
     def confirm(self) -> None:
@@ -464,8 +554,13 @@ class PipelineModal(WriteModal):
             self.show_error("run the preview first")
             return
         values = self._values()
-        if self.preview["curated_targets"] and not self.query_one("#pipeline-yes", Checkbox).value:
-            self.show_error("evaluation will re-use a curated decision; tick the re-run box")
+        if (
+            self.preview["curated_targets"]
+            and not self.query_one("#pipeline-yes", Checkbox).value
+        ):
+            self.show_error(
+                "evaluation will re-use a curated decision; tick the re-run box"
+            )
             return
         self.run_action(lambda: actions.run_pipeline(self.project, **values))
 
@@ -500,9 +595,15 @@ class QcModal(WriteModal):
         yield Static(scope, id="qc-scope", classes="modal-info")
         yield Static("FASTQ sample size (reads)", classes="modal-label")
         yield Input(value="1000000", id="qc-sample-size")
-        yield Static("FASTQ Phred offset (auto assumes 33 when ambiguous)", classes="modal-label")
-        yield Select([("33", "33"), ("64", "64"), ("auto", "auto")],
-                     value="33", allow_blank=False, id="qc-phred-offset")
+        yield Static(
+            "FASTQ Phred offset (auto assumes 33 when ambiguous)", classes="modal-label"
+        )
+        yield Select(
+            [("33", "33"), ("64", "64"), ("auto", "auto")],
+            value="33",
+            allow_blank=False,
+            id="qc-phred-offset",
+        )
         yield Checkbox("Recompute input SHA-256 (--rehash)", id="qc-rehash")
         yield ProgressBar(total=max(self.total, 1), id="qc-progress")
         yield Static("", id="qc-status", classes="modal-info")
@@ -565,12 +666,12 @@ class QcModal(WriteModal):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
-            # ODR-0043: stop the MRO walk so WriteModal cannot dismiss mid-run.
+            # ODR-43: stop the MRO walk so WriteModal cannot dismiss mid-run.
             event.prevent_default()
             if self._worker is not None:
                 self._worker.cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -594,7 +695,10 @@ class QcModal(WriteModal):
 
         try:
             payload: Any = actions.run_qc(
-                self.project, file_id=self.file_id, progress=progress, **self._qc_options,
+                self.project,
+                file_id=self.file_id,
+                progress=progress,
+                **self._qc_options,
             )
         except Exception as exc:  # noqa: BLE001 - routed to _qc_done  # pylint: disable=broad-exception-caught
             payload = exc
@@ -605,7 +709,9 @@ class QcModal(WriteModal):
         self.total = total
         self.query_one("#qc-progress", ProgressBar).update(total=total, progress=done)
         marker = "" if result.get("ok") else "  (FAILED)"
-        self.query_one("#qc-status", Static).update(f"{done}/{total} · {result['file_id']}{marker}")
+        self.query_one("#qc-status", Static).update(
+            f"{done}/{total} · {result['file_id']}{marker}"
+        )
 
     def _qc_done(self, payload: Any) -> None:
         self.running = False
@@ -623,5 +729,7 @@ class QcModal(WriteModal):
             return
         ok = sum(1 for result in payload if result["ok"])
         failures = [result for result in payload if not result["ok"]]
-        self.app.notify(f"QC complete: {ok}/{len(payload)} file(s) passed built-in stages")
+        self.app.notify(
+            f"QC complete: {ok}/{len(payload)} file(s) passed built-in stages"
+        )
         self.dismiss({"ok": ok, "total": len(payload), "failures": failures})

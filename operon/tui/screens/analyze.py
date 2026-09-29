@@ -63,7 +63,9 @@ class AnalyzeModal(WriteModal):
     """
 
     def __init__(self, project: Project, recipe_name: str | None = None) -> None:
-        super().__init__(f"Run analysis — {recipe_name}" if recipe_name else "Run analysis")
+        super().__init__(
+            f"Run analysis — {recipe_name}" if recipe_name else "Run analysis"
+        )
         self.project = project
         self.fixed_recipe = recipe_name
         self.recipes = [] if recipe_name else data.list_recipes(project)
@@ -88,13 +90,17 @@ class AnalyzeModal(WriteModal):
         return backend_select_options(self.project)
 
     def _resolved_backend(self) -> str:
-        return (selected_backend(self, "analyze-backend")
-                or project_default_backend(self.project))
+        return selected_backend(self, "analyze-backend") or project_default_backend(
+            self.project
+        )
 
     def _update_cancel_note(self) -> None:
         """Describe cancel semantics for the selected backend."""
-        note = (LOCAL_CANCEL_NOTE if self._resolved_backend() == "local"
-                else SCHEDULER_CANCEL_NOTE)
+        note = (
+            LOCAL_CANCEL_NOTE
+            if self._resolved_backend() == "local"
+            else SCHEDULER_CANCEL_NOTE
+        )
         try:
             self.query_one("#analyze-cancel-note", Static).update(note)
         except NoMatches:  # not mounted yet
@@ -107,21 +113,28 @@ class AnalyzeModal(WriteModal):
             yield Static("Recipe", classes="modal-label")
             yield Select(
                 [(f"{row['tool']}.{row['name']}", row["name"]) for row in self.recipes],
-                prompt="select a recipe", id="analyze-recipe", allow_blank=True,
+                prompt="select a recipe",
+                id="analyze-recipe",
+                allow_blank=True,
             )
         yield Static("Entity type (blank = recipe default)", classes="modal-label")
         yield Select(ENTITY_TYPE_OPTIONS, id="analyze-entity-type", allow_blank=True)
         yield Input(placeholder="entity id (blank = all)", id="analyze-entity-id")
         yield Input(placeholder="limit (blank = all files)", id="analyze-limit")
-        yield Input(placeholder="threads (blank = project default)", id="analyze-threads")
+        yield Input(
+            placeholder="threads (blank = project default)", id="analyze-threads"
+        )
         yield Static("Execution backend", classes="modal-label")
         yield FittingSelect(self._backend_options(), value="", id="analyze-backend")
         yield Vertical(id="analyze-parameters")
-        yield Checkbox("Dry run (plan only — nothing is executed or written)",
-                       id="analyze-dry-run")
+        yield Checkbox(
+            "Dry run (plan only — nothing is executed or written)", id="analyze-dry-run"
+        )
         yield Checkbox("Force re-run (--force)", id="analyze-force")
-        yield Checkbox("Keep partial outputs on interrupt (--keep-partial)",
-                       id="analyze-keep-partial")
+        yield Checkbox(
+            "Keep partial outputs on interrupt (--keep-partial)",
+            id="analyze-keep-partial",
+        )
         yield Static(LOCAL_CANCEL_NOTE, id="analyze-cancel-note", classes="modal-info")
         yield ProgressBar(total=1, id="analyze-progress")
         yield Static("", id="analyze-status", classes="modal-info")
@@ -165,16 +178,22 @@ class AnalyzeModal(WriteModal):
             widget_id = f"analyze-param-{param_name}"
             if isinstance(choices, list) and choices:
                 options = [(str(choice), str(choice)) for choice in choices]
-                widgets.append(Select(
-                    options,
-                    value=str(default) if default is not None else Select.NULL,
-                    id=widget_id, allow_blank=default is None,
-                ))
+                widgets.append(
+                    Select(
+                        options,
+                        value=str(default) if default is not None else Select.NULL,
+                        id=widget_id,
+                        allow_blank=default is None,
+                    )
+                )
             else:
-                widgets.append(Input(
-                    value="" if default is None else str(default),
-                    placeholder=param_name, id=widget_id,
-                ))
+                widgets.append(
+                    Input(
+                        value="" if default is None else str(default),
+                        placeholder=param_name,
+                        id=widget_id,
+                    )
+                )
             self._param_names.append(str(param_name))
         if widgets:
             container.mount(*widgets)
@@ -217,16 +236,28 @@ class AnalyzeModal(WriteModal):
 
     def command_text(self) -> str:
         values = self._form_values()
-        parts = ["operon", "analyze", "--analysis", shlex.quote(values["analysis"] or "…")]
+        parts = [
+            "operon",
+            "analyze",
+            "--analysis",
+            shlex.quote(values["analysis"] or "…"),
+        ]
         for name, value in values["parameters"].items():
             parts += ["--param", shlex.quote(f"{name}={value}")]
-        for field, flag in (("entity_type", "--entity-type"), ("entity_id", "--entity-id"),
-                            ("limit", "--limit"), ("threads", "--threads"),
-                            ("backend", "--backend")):
+        for field, flag in (
+            ("entity_type", "--entity-type"),
+            ("entity_id", "--entity-id"),
+            ("limit", "--limit"),
+            ("threads", "--threads"),
+            ("backend", "--backend"),
+        ):
             if values[field]:
                 parts += [flag, shlex.quote(values[field])]
-        for field, flag in (("dry_run", "--dry-run"), ("force", "--force"),
-                            ("keep_partial", "--keep-partial")):
+        for field, flag in (
+            ("dry_run", "--dry-run"),
+            ("force", "--force"),
+            ("keep_partial", "--keep-partial"),
+        ):
             if values[field]:
                 parts.append(flag)
         return " ".join(parts)
@@ -277,10 +308,12 @@ class AnalyzeModal(WriteModal):
             # including the execution backend: a missing sbatch or an
             # incomplete SSH block is an inline error, not a failed run.
             from operon.tools import get_recipe, resolve_runtime_parameters
+
             recipe = get_recipe(self.project, values["analysis"])
             resolve_runtime_parameters(recipe, values["parameters"])
             backend_info = actions.preflight_backend(
-                self.project, values["backend"] or None,
+                self.project,
+                values["backend"] or None,
                 recipe_name=values["analysis"],
             )
         except ValidationError as exc:
@@ -324,8 +357,11 @@ class AnalyzeModal(WriteModal):
             self._cancel_event.set()
         if self._worker is not None:
             self._worker.cancel()
-        note = ("cancelling… (the submitted job is cancelled at the next scheduler poll)"
-                if self._executor_name != "local" else "cancelling…")
+        note = (
+            "cancelling… (the submitted job is cancelled at the next scheduler poll)"
+            if self._executor_name != "local"
+            else "cancelling…"
+        )
         try:
             self.query_one("#analyze-status", Static).update(note)
         except NoMatches:  # pragma: no cover - modal teardown race
@@ -333,11 +369,11 @@ class AnalyzeModal(WriteModal):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
-            # ODR-0043: stop the MRO walk so WriteModal cannot dismiss mid-run.
+            # ODR-43: stop the MRO walk so WriteModal cannot dismiss mid-run.
             event.prevent_default()
             self._request_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -360,8 +396,11 @@ class AnalyzeModal(WriteModal):
 
         try:
             payload: Any = actions.run_analysis(
-                self.project, self._analysis_name, progress=progress,
-                cancel_event=self._cancel_event, **self._options,
+                self.project,
+                self._analysis_name,
+                progress=progress,
+                cancel_event=self._cancel_event,
+                **self._options,
             )
         except Exception as exc:  # noqa: BLE001 - routed to _analysis_done  # pylint: disable=broad-exception-caught
             payload = exc
@@ -370,8 +409,12 @@ class AnalyzeModal(WriteModal):
     def _progress(self, index: int, total: int, file_id: str, phase: str) -> None:
         self.done = index
         self.total = total
-        self.query_one("#analyze-progress", ProgressBar).update(total=total, progress=index)
-        self.query_one("#analyze-status", Static).update(f"{index}/{total} · {file_id}: {phase}")
+        self.query_one("#analyze-progress", ProgressBar).update(
+            total=total, progress=index
+        )
+        self.query_one("#analyze-status", Static).update(
+            f"{index}/{total} · {file_id}: {phase}"
+        )
 
     def _analysis_done(self, payload: Any) -> None:
         self.running = False
@@ -424,7 +467,8 @@ def analysis_finished(app: Any, payload: Any) -> None:
     if not payload or payload.get("cancelled"):
         return
     failures = [
-        result for result in payload.get("results", [])
+        result
+        for result in payload.get("results", [])
         if result.get("status") in FAILURE_STATUSES
     ]
     if failures:
@@ -432,8 +476,11 @@ def analysis_finished(app: Any, payload: Any) -> None:
             f"{result['file_id']}: {result.get('error') or result.get('status')}"
             for result in failures[:20]
         )
-        app.push_screen(ErrorDialog(
-            f"{len(failures)} of {payload['total']} file(s) failed analysis", lines,
-        ))
+        app.push_screen(
+            ErrorDialog(
+                f"{len(failures)} of {payload['total']} file(s) failed analysis",
+                lines,
+            )
+        )
     app.reload_after_write()
     app.action_switch_screen("runs")

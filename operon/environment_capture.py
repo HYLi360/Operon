@@ -3,6 +3,7 @@
 Only selected metadata is persisted. Package URLs are stripped of credentials;
 installed files are not asserted to match their original package archives.
 """
+
 from __future__ import annotations
 
 import base64
@@ -29,25 +30,46 @@ CAPTURE_LINES = [
     *PROBE_SHELL_LINES,
     "printf 'capture_schema=1\\n'",
     _encoded("distribution", "cat /etc/os-release"),
-    _encoded("cpu", "LC_ALL=C awk -F: '/^(vendor_id|model name|flags|Features|CPU implementer|CPU architecture|CPU part)[ \\t]*:/ {print}' /proc/cpuinfo | LC_ALL=C sort -u"),
+    _encoded(
+        "cpu",
+        "LC_ALL=C awk -F: '/^(vendor_id|model name|flags|Features|CPU implementer|CPU architecture|CPU part)[ \\t]*:/ {print}' /proc/cpuinfo | LC_ALL=C sort -u",
+    ),
     _encoded("libc", "getconf GNU_LIBC_VERSION"),
-    _encoded("affinity", "sed -n 's/^Cpus_allowed_list:[[:space:]]*//p' /proc/self/status"),
+    _encoded(
+        "affinity", "sed -n 's/^Cpus_allowed_list:[[:space:]]*//p' /proc/self/status"
+    ),
     _encoded("memory", "sed -n 's/^MemTotal:[[:space:]]*//p' /proc/meminfo"),
-    _encoded("gpu", "if command -v nvidia-smi >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then timeout 5 nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader; fi"),
-    *[_encoded("setting_" + name, f'printf %s "${{{name}:-}}"') for name in (
-        "LANG", "LC_ALL", "LC_COLLATE", "LC_NUMERIC", "TZ", "OMP_NUM_THREADS",
-        "OMP_DYNAMIC", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "CUDA_VISIBLE_DEVICES",
-    )],
-    "if [ -n \"${CONDA_PREFIX:-}\" ] && [ -d \"$CONDA_PREFIX/conda-meta\" ]; then "
+    _encoded(
+        "gpu",
+        "if command -v nvidia-smi >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then timeout 5 nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader; fi",
+    ),
+    *[
+        _encoded("setting_" + name, f'printf %s "${{{name}:-}}"')
+        for name in (
+            "LANG",
+            "LC_ALL",
+            "LC_COLLATE",
+            "LC_NUMERIC",
+            "TZ",
+            "OMP_NUM_THREADS",
+            "OMP_DYNAMIC",
+            "MKL_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "CUDA_VISIBLE_DEVICES",
+        )
+    ],
+    'if [ -n "${CONDA_PREFIX:-}" ] && [ -d "$CONDA_PREFIX/conda-meta" ]; then '
     "printf 'conda_present=1\\n'; "
-    "for operon_meta in \"$CONDA_PREFIX\"/conda-meta/*.json; do "
-    "[ -f \"$operon_meta\" ] || continue; "
-    + _encoded("package", 'cat "$operon_meta"') + "; done; "
+    'for operon_meta in "$CONDA_PREFIX"/conda-meta/*.json; do '
+    '[ -f "$operon_meta" ] || continue; '
+    + _encoded("package", 'cat "$operon_meta"')
+    + "; done; "
     # Mark pip/local modifications as outside the explicit Conda contract.
-    "for operon_installer in \"$CONDA_PREFIX\"/lib/python*/site-packages/*.dist-info/INSTALLER; do "
-    "[ -f \"$operon_installer\" ] || continue; "
-    "if [ \"$(cat \"$operon_installer\")\" = pip ]; then "
-    + _encoded("pip_distribution", 'basename "$(dirname "$operon_installer")"') + "; fi; done; "
+    'for operon_installer in "$CONDA_PREFIX"/lib/python*/site-packages/*.dist-info/INSTALLER; do '
+    '[ -f "$operon_installer" ] || continue; '
+    'if [ "$(cat "$operon_installer")" = pip ]; then '
+    + _encoded("pip_distribution", 'basename "$(dirname "$operon_installer")"')
+    + "; fi; done; "
     "else printf 'conda_present=0\\n'; fi",
     "printf 'capture_complete=1\\n'",
 ]
@@ -76,13 +98,32 @@ def probe_command(argv: list[str]) -> list[str] | None:
             return None
         while index < len(argv):
             token = argv[index]
-            if token in {"-n", "--name", "-p", "--prefix", "--cwd", "-r", "--root-prefix"}:
+            if token in {
+                "-n",
+                "--name",
+                "-p",
+                "--prefix",
+                "--cwd",
+                "-r",
+                "--root-prefix",
+            }:
                 if index + 1 >= len(argv):
                     return None
                 index += 2
-            elif token in {"--no-capture-output", "--live-stream", "--no-rc", "--no-env"} or any(token.startswith(option + "=") for option in (
-                "--name", "--prefix", "--cwd", "--root-prefix",
-            )):
+            elif token in {
+                "--no-capture-output",
+                "--live-stream",
+                "--no-rc",
+                "--no-env",
+            } or any(
+                token.startswith(option + "=")
+                for option in (
+                    "--name",
+                    "--prefix",
+                    "--cwd",
+                    "--root-prefix",
+                )
+            ):
                 index += 1
             elif token == "--":
                 index += 1
@@ -95,7 +136,14 @@ def probe_command(argv: list[str]) -> list[str] | None:
             return None
         prefix = argv[:index]
     elif argv and Path(argv[0]).name in {
-        "sh", "bash", "zsh", "env", "docker", "podman", "singularity", "apptainer",
+        "sh",
+        "bash",
+        "zsh",
+        "env",
+        "docker",
+        "podman",
+        "singularity",
+        "apptainer",
     }:
         return None
     return [*prefix, "sh", "-c", "\n".join(CAPTURE_LINES)]
@@ -112,30 +160,44 @@ def bounded_shell(command: list[str], limit_seconds: int = 30) -> str:
     quoted = shlex.join(command)
     return (
         "if command -v timeout >/dev/null 2>&1; then timeout "
-        + str(int(limit_seconds)) + " " + quoted + "; else "
-        + quoted + " & operon_probe_pid=$!; "
-        + "( sleep " + str(int(limit_seconds)) + " && kill -TERM \"$operon_probe_pid\" 2>/dev/null ) "
+        + str(int(limit_seconds))
+        + " "
+        + quoted
+        + "; else "
+        + quoted
+        + " & operon_probe_pid=$!; "
+        + "( sleep "
+        + str(int(limit_seconds))
+        + ' && kill -TERM "$operon_probe_pid" 2>/dev/null ) '
         + ">/dev/null 2>&1 & operon_guard_pid=$!; "
-        "wait \"$operon_probe_pid\"; operon_probe_status=$?; "
-        "kill -TERM \"$operon_guard_pid\" 2>/dev/null; "
-        "exit \"$operon_probe_status\"; fi"
+        'wait "$operon_probe_pid"; operon_probe_status=$?; '
+        'kill -TERM "$operon_guard_pid" 2>/dev/null; '
+        'exit "$operon_probe_status"; fi'
     )
 
 
 def probe_shell(argv: list[str]) -> str:
     command = probe_command(argv)
     if command is None:
-        command = ["sh", "-c", "\n".join(CAPTURE_LINES) + "\nprintf 'capture_unsupported=1\\n'"]
+        command = [
+            "sh",
+            "-c",
+            "\n".join(CAPTURE_LINES) + "\nprintf 'capture_unsupported=1\\n'",
+        ]
     # Bound the complete probe, including activation hooks, so a stuck launcher
     # cannot hang a scheduler job.
     return bounded_shell(command)
 
 
 _LOCAL_CAPTURE_TTL_SECONDS = 300
-_local_capture_cache: dict[tuple[tuple[str, ...] | None, str], tuple[float, dict[str, Any]]] = {}
+_local_capture_cache: dict[
+    tuple[tuple[str, ...] | None, str], tuple[float, dict[str, Any]]
+] = {}
 
 
-def _local_capture_key(argv: list[str], cwd: str | Path | None) -> tuple[tuple[str, ...] | None, str]:
+def _local_capture_key(
+    argv: list[str], cwd: str | Path | None
+) -> tuple[tuple[str, ...] | None, str]:
     """Cache identity of a local capture: the launcher and working directory.
 
     Commands that differ only in the payload share a launcher, so a batch pays
@@ -145,8 +207,11 @@ def _local_capture_key(argv: list[str], cwd: str | Path | None) -> tuple[tuple[s
     """
     probe = probe_command(argv)
     launcher = tuple(probe[:-3]) if probe is not None else None
-    working = (os.path.normpath(os.path.abspath(os.fspath(cwd)))
-               if cwd is not None else os.path.normpath(os.getcwd()))
+    working = (
+        os.path.normpath(os.path.abspath(os.fspath(cwd)))
+        if cwd is not None
+        else os.path.normpath(os.getcwd())
+    )
     return (launcher, working)
 
 
@@ -167,21 +232,34 @@ def capture_local(argv: list[str], cwd: str | Path | None = None) -> dict[str, A
     cannot pollute the cache.
     """
     from operon.environment import parse_probe_output
+
     key = _local_capture_key(argv, cwd)
     now = time.monotonic()
     cached = _local_capture_cache.get(key)
     if cached is not None and now - cached[0] < _LOCAL_CAPTURE_TTL_SECONDS:
         return dict(cached[1])
     try:
-        proc = subprocess.run(["sh", "-c", probe_shell(argv)], cwd=cwd,
-                              capture_output=True, text=True, timeout=35)
+        proc = subprocess.run(
+            ["sh", "-c", probe_shell(argv)],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=35,
+        )
         document = parse_probe_output(proc.stdout)
         if proc.returncode or not document:
-            return {"capture_schema": 1, "capture_status": "failed",
-                    "reason": "probe failed or timed out", "probe_exit_code": proc.returncode}
+            return {
+                "capture_schema": 1,
+                "capture_status": "failed",
+                "reason": "probe failed or timed out",
+                "probe_exit_code": proc.returncode,
+            }
     except (OSError, subprocess.TimeoutExpired):
-        return {"capture_schema": 1, "capture_status": "failed",
-                "reason": "probe unavailable or timed out"}
+        return {
+            "capture_schema": 1,
+            "capture_status": "failed",
+            "reason": "probe unavailable or timed out",
+        }
     if document.get("capture_status") != "failed":
         _local_capture_cache[key] = (now, document)
     return dict(document)
@@ -197,18 +275,30 @@ def _safe_url(value: str) -> str:
     return urlunsplit((parts.scheme, host, path, "", ""))
 
 
-def _decode_records(env: dict[str, Any], text: str, errors: list[str]) -> dict[str, list[str]]:
+def _decode_records(
+    env: dict[str, Any], text: str, errors: list[str]
+) -> dict[str, list[str]]:
     """Decode the selected base64 probe records and drop their raw keys from ``env``."""
     decoded: dict[str, list[str]] = {}
     for line in text.splitlines():
         key, separator, value = line.partition("=")
-        if key not in {"distribution", "cpu", "libc", "affinity", "memory", "gpu",
-                       "package", "pip_distribution"} and not key.startswith("setting_"):
+        if key not in {
+            "distribution",
+            "cpu",
+            "libc",
+            "affinity",
+            "memory",
+            "gpu",
+            "package",
+            "pip_distribution",
+        } and not key.startswith("setting_"):
             continue
         env.pop(key, None)
         if separator:
             try:
-                decoded.setdefault(key, []).append(base64.b64decode(value, validate=True).decode("utf-8"))
+                decoded.setdefault(key, []).append(
+                    base64.b64decode(value, validate=True).decode("utf-8")
+                )
             except (ValueError, UnicodeError):
                 errors.append(f"invalid {key} record")
     return decoded
@@ -227,44 +317,69 @@ def _distribution_info(decoded: dict[str, list[str]]) -> dict[str, str]:
     return distribution
 
 
-def _system_section(env: dict[str, Any], distribution: dict[str, str],
-                    decoded: dict[str, list[str]]) -> dict[str, Any]:
+def _system_section(
+    env: dict[str, Any], distribution: dict[str, str], decoded: dict[str, list[str]]
+) -> dict[str, Any]:
     system = {key: env[key] for key in ("os", "os_release", "machine") if key in env}
     system.update(distribution=distribution, libc=_first_record(decoded, "libc"))
     return system
 
 
 def _hardware_section(decoded: dict[str, list[str]]) -> dict[str, Any]:
-    return {"cpu": sorted(set(_first_record(decoded, "cpu").splitlines())),
-            "memory_total": _first_record(decoded, "memory"),
-            "nvidia_gpus": sorted(set(_first_record(decoded, "gpu").splitlines()))}
+    return {
+        "cpu": sorted(set(_first_record(decoded, "cpu").splitlines())),
+        "memory_total": _first_record(decoded, "memory"),
+        "nvidia_gpus": sorted(set(_first_record(decoded, "gpu").splitlines())),
+    }
 
 
 def _runtime_settings(decoded: dict[str, list[str]]) -> dict[str, str]:
-    return {key.removeprefix("setting_"): values[0] for key, values in decoded.items()
-            if key.startswith("setting_") and values and values[0]}
+    return {
+        key.removeprefix("setting_"): values[0]
+        for key, values in decoded.items()
+        if key.startswith("setting_") and values and values[0]
+    }
 
 
 def _hardware_capture_status(hardware: dict[str, Any]) -> dict[str, str]:
-    return {"cpu": "captured" if hardware["cpu"] else "unavailable",
-            "gpu": "captured" if hardware["nvidia_gpus"] else "unavailable_or_absent"}
+    return {
+        "cpu": "captured" if hardware["cpu"] else "unavailable",
+        "gpu": "captured" if hardware["nvidia_gpus"] else "unavailable_or_absent",
+    }
 
 
-def _parse_packages(decoded: dict[str, list[str]], errors: list[str]) -> list[dict[str, Any]]:
+def _parse_packages(
+    decoded: dict[str, list[str]], errors: list[str]
+) -> list[dict[str, Any]]:
     packages = []
     for raw in decoded.get("package", []):
         try:
             record = json.loads(raw)
-            if not isinstance(record, dict) or not all(record.get(k) for k in ("name", "version", "build")):
+            if not isinstance(record, dict) or not all(
+                record.get(k) for k in ("name", "version", "build")
+            ):
                 raise ValueError("missing identity")
-            package = {key: record[key] for key in (
-                "name", "version", "build", "build_number", "subdir", "sha256", "md5", "depends",
-            ) if key in record}
+            package = {
+                key: record[key]
+                for key in (
+                    "name",
+                    "version",
+                    "build",
+                    "build_number",
+                    "subdir",
+                    "sha256",
+                    "md5",
+                    "depends",
+                )
+                if key in record
+            }
             package["url"] = _safe_url(str(record.get("url", "")))
             packages.append(package)
         except (ValueError, TypeError):
             errors.append("invalid Conda package record")
-    packages.sort(key=lambda record: (record["name"], record["version"], record["build"]))
+    packages.sort(
+        key=lambda record: (record["name"], record["version"], record["build"])
+    )
     return packages
 
 
@@ -272,8 +387,14 @@ def _explicit_artifacts(packages: list[dict[str, Any]]) -> tuple[list[str], list
     explicit = []
     missing = []
     for package in packages:
-        checksum = next((str(package[key]) for key, length in (("sha256", 64), ("md5", 32))
-                         if re.fullmatch(r"[0-9a-fA-F]{%d}" % length, str(package.get(key, "")))), "")
+        checksum = next(
+            (
+                str(package[key])
+                for key, length in (("sha256", 64), ("md5", 32))
+                if re.fullmatch(r"[0-9a-fA-F]{%d}" % length, str(package.get(key, "")))
+            ),
+            "",
+        )
         if package["url"] and checksum:
             explicit.append(package["url"] + "#" + checksum.lower())
         else:
@@ -281,22 +402,31 @@ def _explicit_artifacts(packages: list[dict[str, Any]]) -> tuple[list[str], list
     return explicit, missing
 
 
-def _conda_section(decoded: dict[str, list[str]], complete: bool,
-                   errors: list[str]) -> dict[str, Any]:
+def _conda_section(
+    decoded: dict[str, list[str]], complete: bool, errors: list[str]
+) -> dict[str, Any]:
     packages = _parse_packages(decoded, errors)
     explicit, missing = _explicit_artifacts(packages)
-    conda = {"status": "captured" if complete and not errors and not missing and packages else "partial",
-             "packages": packages, "package_fingerprint": environment_fingerprint(packages),
-             "missing_artifacts": missing,
-             "pip_distributions": sorted({value.strip() for value in decoded.get("pip_distribution", [])}),
-             "scope": "Conda package artifacts only; pip/local edits and activation scripts are not restored"}
+    conda = {
+        "status": "captured"
+        if complete and not errors and not missing and packages
+        else "partial",
+        "packages": packages,
+        "package_fingerprint": environment_fingerprint(packages),
+        "missing_artifacts": missing,
+        "pip_distributions": sorted(
+            {value.strip() for value in decoded.get("pip_distribution", [])}
+        ),
+        "scope": "Conda package artifacts only; pip/local edits and activation scripts are not restored",
+    }
     if conda["status"] == "captured":
         conda["explicit"] = "@EXPLICIT\n" + "\n".join(explicit) + "\n"
     return conda
 
 
-def _apply_capture_status(env: dict[str, Any], complete: bool,
-                          errors: list[str], unsupported: bool) -> None:
+def _apply_capture_status(
+    env: dict[str, Any], complete: bool, errors: list[str], unsupported: bool
+) -> None:
     env["capture_status"] = "complete" if complete and not errors else "partial"
     if errors:
         env["capture_errors"] = sorted(set(errors))
@@ -314,7 +444,11 @@ def enrich_document(env: dict[str, Any], text: str) -> dict[str, Any]:
     decoded = _decode_records(env, text, errors)
     unsupported = bool(env.pop("capture_unsupported", None))
     if env.pop("capture_unavailable", None):
-        return {"capture_schema": 1, "capture_status": "unavailable", "reason": "timeout utility unavailable"}
+        return {
+            "capture_schema": 1,
+            "capture_status": "unavailable",
+            "reason": "timeout utility unavailable",
+        }
     complete = env.pop("capture_complete", None) == "1"
     present = env.pop("conda_present", None) == "1"
     env["capture_schema"] = 1
@@ -340,14 +474,25 @@ def export_conda(document: dict[str, Any], fmt: str = "explicit") -> str:
     conda = document.get("conda", {})
     if fmt == "explicit":
         if not conda.get("explicit"):
-            raise ValidationError("snapshot has no complete Conda explicit specification")
+            raise ValidationError(
+                "snapshot has no complete Conda explicit specification"
+            )
         return conda["explicit"]
     if fmt != "yaml":
         raise ValidationError(f"unknown environment format: {fmt}")
     if conda.get("status") != "captured":
         raise ValidationError("snapshot has no complete Conda package inventory")
     import yaml
+
     channels = sorted({item["url"].rsplit("/", 2)[0] for item in conda["packages"]})
-    return yaml.safe_dump({"name": "operon-restored", "channels": channels,
-                           "dependencies": [f"{item['name']}={item['version']}={item['build']}"
-                                            for item in conda["packages"]]}, sort_keys=False)
+    return yaml.safe_dump(
+        {
+            "name": "operon-restored",
+            "channels": channels,
+            "dependencies": [
+                f"{item['name']}={item['version']}={item['build']}"
+                for item in conda["packages"]
+            ],
+        },
+        sort_keys=False,
+    )

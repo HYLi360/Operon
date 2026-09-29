@@ -32,9 +32,18 @@ def project_db(tmp_path: Path):
 def test_profile_writing_loading_filtering_and_rejection(tmp_path):
     directory = tmp_path / "profiles"
     profiles.write_default_profiles(directory)
-    assert profiles.load_profile(directory, "file_integrity_v1", expected_kind="qc")["version"] == 1
-    assert "coverage_viridiplantae_v1" not in profiles.load_profiles(directory, kind="qc")
-    assert "coverage_viridiplantae_v1" in profiles.load_profiles(directory, kind="taxonomy_coverage")
+    assert (
+        profiles.load_profile(directory, "file_integrity_v1", expected_kind="qc")[
+            "version"
+        ]
+        == 1
+    )
+    assert "coverage_viridiplantae_v1" not in profiles.load_profiles(
+        directory, kind="qc"
+    )
+    assert "coverage_viridiplantae_v1" in profiles.load_profiles(
+        directory, kind="taxonomy_coverage"
+    )
     assert profiles.load_profiles(tmp_path / "missing") == {}
     for name in ("", "../x", ".", ".."):
         with pytest.raises(ValidationError, match="invalid profile name"):
@@ -42,7 +51,9 @@ def test_profile_writing_loading_filtering_and_rejection(tmp_path):
     with pytest.raises(ValidationError, match="not found"):
         profiles.load_profile(directory, "missing", expected_kind="qc")
     with pytest.raises(ValidationError, match="has kind"):
-        profiles.load_profile(directory, "coverage_viridiplantae_v1", expected_kind="qc")
+        profiles.load_profile(
+            directory, "coverage_viridiplantae_v1", expected_kind="qc"
+        )
     invalid = directory / "invalid.yaml"
     invalid.write_text("[]\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="invalid profile"):
@@ -82,19 +93,29 @@ def test_backup_scope_destination_and_manifest_validation(project_db, tmp_path):
 
     candidate.parent.mkdir(parents=True, exist_ok=True)
     candidate.write_text("wrong-size", encoding="utf-8")
-    assert "size mismatch" in {item["error"] for item in backup.verify_backup(target)["failures"]}
+    assert "size mismatch" in {
+        item["error"] for item in backup.verify_backup(target)["failures"]
+    }
     candidate.write_bytes(b"x" * int(first["size_bytes"]))
-    assert "checksum mismatch" in {item["error"] for item in backup.verify_backup(target)["failures"]}
+    assert "checksum mismatch" in {
+        item["error"] for item in backup.verify_backup(target)["failures"]
+    }
 
-    manifest["files"].append({"relative_path": "../escape", "size_bytes": 1, "sha256": "x"})
+    manifest["files"].append(
+        {"relative_path": "../escape", "size_bytes": 1, "sha256": "x"}
+    )
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    assert "unsafe path" in {item["error"] for item in backup.verify_backup(target)["failures"]}
+    assert "unsafe path" in {
+        item["error"] for item in backup.verify_backup(target)["failures"]
+    }
 
 
 def test_backup_staging_is_removed_on_failure(project_db, tmp_path, monkeypatch):
     project, db = project_db
     monkeypatch.setattr(
-        backup, "_copy_known_path", lambda *_a: (_ for _ in ()).throw(RuntimeError("fail"))
+        backup,
+        "_copy_known_path",
+        lambda *_a: (_ for _ in ()).throw(RuntimeError("fail")),
     )
     with pytest.raises(RuntimeError):
         backup.create_backup(db, project, tmp_path / "failed")
@@ -102,9 +123,13 @@ def test_backup_staging_is_removed_on_failure(project_db, tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("directory", [False, True])
-def test_full_backup_links_survive_project_and_backup_moves(project_db, tmp_path, directory):
+def test_full_backup_links_survive_project_and_backup_moves(
+    project_db, tmp_path, directory
+):
     project, db = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     source = tmp_path / "artifact"
     if directory:
         source.mkdir()
@@ -132,7 +157,10 @@ def test_full_backup_links_survive_project_and_backup_moves(project_db, tmp_path
     assert utils.sha256_path(moved / member["relative_path"]) == member["sha256"]
     view.unlink()
     view.symlink_to("wrong-target")
-    assert any(f["error"] == "symlink target mismatch" for f in backup.verify_backup(moved)["failures"])
+    assert any(
+        f["error"] == "symlink target mismatch"
+        for f in backup.verify_backup(moved)["failures"]
+    )
 
 
 def test_backup_verifies_legacy_file_manifests(project_db, tmp_path):
@@ -148,14 +176,25 @@ def test_backup_verifies_legacy_file_manifests(project_db, tmp_path):
 
 def test_report_queries_wide_pivot_and_reason_rendering(project_db):
     project, db = project_db
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "file_id": None,
-        "input_identity": "entity:organism:ORG_000001", "qc_stage": "x",
-        "metric_name": "m", "metric_value": "1", "metric_numeric": 1,
-        "tool": "t", "tool_version": "1", "parameter_set": "p",
-        "evaluated_at": "now",
-    })
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "file_id": None,
+            "input_identity": "entity:organism:ORG_000001",
+            "qc_stage": "x",
+            "metric_name": "m",
+            "metric_value": "1",
+            "metric_numeric": 1,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
     db.set_entity_state("organism", "ORG_000001", "METADATA_VALIDATED", "ok")
     assert len(reports.qc_rows(db, entity_type="organism", entity_id="ORG_000001")) == 1
     columns, rows = reports.qc_wide(db, "organism")
@@ -177,7 +216,9 @@ def test_filesystem_identity_and_opening_paths(tmp_path):
     (root / "empty").mkdir()
     (root / "file").write_text("abc", encoding="utf-8")
     (root / "link").symlink_to("file")
-    entries = [p.relative_to(root).as_posix() for p in utils.iter_directory_entries(root)]
+    entries = [
+        p.relative_to(root).as_posix() for p in utils.iter_directory_entries(root)
+    ]
     assert entries == ["empty", "file", "link"]
     # Golden digests: the directory hash covers relative paths, the empty
     # directory, file bytes/sizes and the symlink target (but not mtimes), and
@@ -186,8 +227,11 @@ def test_filesystem_identity_and_opening_paths(tmp_path):
         "17e5dec18b35f5b60b12b1d96badd4607421099f081a8f3d88f20e9648012490"
     )
     assert utils.sha256_path(root) == utils.sha256_directory(root)
-    assert utils.sha256_path(root / "file") == (
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"  # sha256("abc")
+    assert (
+        utils.sha256_path(root / "file")
+        == (
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"  # sha256("abc")
+        )
     )
     assert utils.path_size_bytes(root) == 3
     assert utils.path_size_bytes(root / "file") == 3
@@ -228,7 +272,9 @@ def test_atomic_helpers_cleanup_temporary_files(tmp_path, monkeypatch):
         utils.atomic_copytree(target, tmp_path / "bad")
 
     real_replace = os.replace
-    monkeypatch.setattr(utils.os, "replace", lambda *_a: (_ for _ in ()).throw(OSError("replace")))
+    monkeypatch.setattr(
+        utils.os, "replace", lambda *_a: (_ for _ in ()).throw(OSError("replace"))
+    )
     with pytest.raises(OSError):
         utils.atomic_write_text(tmp_path / "failed-text", "x")
     with pytest.raises(OSError):
@@ -247,7 +293,10 @@ def test_table_and_numeric_utility_edges():
     none_table = utils.format_table(["a"], [[None]])
     assert "None" not in none_table
     assert none_table.splitlines()[:2] == ["a", "-"]
-    assert utils.parse_key_values(["--a=1", "b=two=parts"]) == {"a": "1", "b": "two=parts"}
+    assert utils.parse_key_values(["--a=1", "b=two=parts"]) == {
+        "a": "1",
+        "b": "two=parts",
+    }
     with pytest.raises(ValueError, match="expected key=value"):
         utils.parse_key_values(["bad"])
     with pytest.raises(ValueError, match="empty field name"):

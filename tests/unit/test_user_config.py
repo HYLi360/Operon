@@ -36,8 +36,14 @@ def _isolated_home(monkeypatch, tmp_path: Path):
     """Every test runs against a throwaway HOME and XDG config directory."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    for variable in ("OPERON_ACTOR", "USER", "LOGNAME", "USERNAME", "NCBI_EMAIL",
-                     "OPERON_SPLASH"):
+    for variable in (
+        "OPERON_ACTOR",
+        "USER",
+        "LOGNAME",
+        "USERNAME",
+        "NCBI_EMAIL",
+        "OPERON_SPLASH",
+    ):
         monkeypatch.delenv(variable, raising=False)
     config_module.reset_user_config()
     yield tmp_path
@@ -60,7 +66,10 @@ def test_config_path_follows_xdg(tmp_path: Path, monkeypatch) -> None:
     assert user_config_path() == tmp_path / "xdg" / "operon" / USER_CONFIG_FILENAME
 
     monkeypatch.delenv("XDG_CONFIG_HOME")
-    assert user_config_path() == tmp_path / "home" / ".config" / "operon" / USER_CONFIG_FILENAME
+    assert (
+        user_config_path()
+        == tmp_path / "home" / ".config" / "operon" / USER_CONFIG_FILENAME
+    )
     # The home-directory shortcut is never used.
     assert user_config_path().name != ".operon"
     assert user_config_path().parent.name == "operon"
@@ -68,7 +77,10 @@ def test_config_path_follows_xdg(tmp_path: Path, monkeypatch) -> None:
 
 def test_config_path_ignores_blank_xdg_override(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", "   ")
-    assert user_config_path() == tmp_path / "home" / ".config" / "operon" / USER_CONFIG_FILENAME
+    assert (
+        user_config_path()
+        == tmp_path / "home" / ".config" / "operon" / USER_CONFIG_FILENAME
+    )
 
 
 # --- loading -----------------------------------------------------------------
@@ -83,7 +95,8 @@ def test_missing_file_yields_defaults_without_writing() -> None:
 def test_load_merges_defaults_and_keeps_unknown_keys(tmp_path: Path) -> None:
     path = tmp_path / "config.yml"
     path.write_text(
-        "identity:\n  actor: alice\nfuture:\n  flag: true\n", encoding="utf-8",
+        "identity:\n  actor: alice\nfuture:\n  flag: true\n",
+        encoding="utf-8",
     )
     data = UserConfig(path).load()
     assert data["identity"]["actor"] == "alice"
@@ -122,7 +135,9 @@ def test_init_writes_permissions_and_refuses_overwrite(tmp_path: Path) -> None:
     assert written.is_file()
     assert stat.S_IMODE(os.stat(written).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(written.parent).st_mode) == 0o700
-    assert yaml.safe_load(written.read_text(encoding="utf-8"))["identity"]["actor"] == ""
+    assert (
+        yaml.safe_load(written.read_text(encoding="utf-8"))["identity"]["actor"] == ""
+    )
 
     with pytest.raises(ConfigError, match="already exists"):
         instance.init()
@@ -135,7 +150,9 @@ def test_set_get_unset_round_trip(tmp_path: Path) -> None:
     assert instance.set("ui.splash", "kitty") == "kitty"
     assert instance.set("schema_version", "2") == 2  # argv strings coerce for ints
     path = instance.path
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["identity"]["actor"] == "alice"
+    assert (
+        yaml.safe_load(path.read_text(encoding="utf-8"))["identity"]["actor"] == "alice"
+    )
 
     assert instance.unset("identity.actor") == ""
     assert instance.get("identity.actor") == ""
@@ -150,7 +167,9 @@ def test_set_get_unset_round_trip(tmp_path: Path) -> None:
         ("", "x", "must not be empty"),
     ],
 )
-def test_set_rejects_invalid_input(tmp_path: Path, key: str, value: str, message: str) -> None:
+def test_set_rejects_invalid_input(
+    tmp_path: Path, key: str, value: str, message: str
+) -> None:
     instance = UserConfig(tmp_path / "config.yml")
     with pytest.raises(ConfigError, match=message):
         instance.set(key, value)
@@ -192,7 +211,9 @@ def test_typed_accessors(tmp_path: Path) -> None:
     instance.set("ncbi.email", "alice@example.org")
     instance.set("ui.splash", "text")
     assert (instance.actor, instance.ncbi_email, instance.splash) == (
-        "alice", "alice@example.org", "text",
+        "alice",
+        "alice@example.org",
+        "text",
     )
 
 
@@ -209,11 +230,21 @@ def test_actor_precedence(monkeypatch, tmp_path: Path) -> None:
     env = {"USER": "env-user", "OPERON_ACTOR": "env-actor"}
     assert resolve_actor("flag-actor", environ=env, config=instance) == "flag-actor"
     assert resolve_actor(None, environ=env, config=instance) == "env-actor"
-    assert resolve_actor(None, environ={"USER": "env-user"}, config=instance) == "env-user"
-    assert resolve_actor(None, environ={"LOGNAME": "env-logname"}, config=instance) == "env-logname"
-    assert resolve_actor(None, environ={"USERNAME": "env-username"}, config=instance) == "env-username"
+    assert (
+        resolve_actor(None, environ={"USER": "env-user"}, config=instance) == "env-user"
+    )
+    assert (
+        resolve_actor(None, environ={"LOGNAME": "env-logname"}, config=instance)
+        == "env-logname"
+    )
+    assert (
+        resolve_actor(None, environ={"USERNAME": "env-username"}, config=instance)
+        == "env-username"
+    )
     # Blank values (containers, cron) are skipped, never recorded as an actor.
-    assert resolve_actor(None, environ={"USER": "   "}, config=instance) == "config-actor"
+    assert (
+        resolve_actor(None, environ={"USER": "   "}, config=instance) == "config-actor"
+    )
     assert resolve_actor(None, environ={}, config=instance) == "config-actor"
     assert calls  # the local account is consulted before the configuration
 
@@ -234,8 +265,10 @@ def test_actor_falls_back_to_the_local_account(monkeypatch, tmp_path: Path) -> N
 
 def test_actor_none_when_nothing_is_available(monkeypatch, tmp_path: Path) -> None:
     instance = UserConfig(tmp_path / "config.yml")
+
     def _raise() -> str:
         raise KeyError("USER")
+
     monkeypatch.setattr(config_module.getpass, "getuser", _raise)
     assert resolve_actor(None, environ={}, config=instance) is None
 
@@ -243,26 +276,48 @@ def test_actor_none_when_nothing_is_available(monkeypatch, tmp_path: Path) -> No
 def test_email_precedence(tmp_path: Path) -> None:
     instance = UserConfig(tmp_path / "config.yml")
     instance.set("ncbi.email", "config@example.org")
-    assert resolve_ncbi_email("flag@example.org", environ={"NCBI_EMAIL": "env@example.org"},
-                              config=instance) == "flag@example.org"
-    assert resolve_ncbi_email(None, environ={"NCBI_EMAIL": "env@example.org"},
-                              config=instance) == "env@example.org"
+    assert (
+        resolve_ncbi_email(
+            "flag@example.org",
+            environ={"NCBI_EMAIL": "env@example.org"},
+            config=instance,
+        )
+        == "flag@example.org"
+    )
+    assert (
+        resolve_ncbi_email(
+            None, environ={"NCBI_EMAIL": "env@example.org"}, config=instance
+        )
+        == "env@example.org"
+    )
     assert resolve_ncbi_email(None, environ={}, config=instance) == "config@example.org"
-    assert resolve_ncbi_email(None, environ={}, config=UserConfig(tmp_path / "other.yml")) is None
+    assert (
+        resolve_ncbi_email(None, environ={}, config=UserConfig(tmp_path / "other.yml"))
+        is None
+    )
 
 
 def test_splash_precedence_and_degradation(tmp_path: Path) -> None:
     instance = UserConfig(tmp_path / "config.yml")
     instance.set("ui.splash", "kitty")
-    assert resolve_splash(None, environ={"OPERON_SPLASH": "text"}, config=instance) == "text"
-    assert resolve_splash(None, environ={"OPERON_SPLASH": "bogus"}, config=instance) == "kitty"
+    assert (
+        resolve_splash(None, environ={"OPERON_SPLASH": "text"}, config=instance)
+        == "text"
+    )
+    assert (
+        resolve_splash(None, environ={"OPERON_SPLASH": "bogus"}, config=instance)
+        == "kitty"
+    )
     assert resolve_splash(None, environ={}, config=instance) == "kitty"
     assert resolve_splash("blocks", environ={}, config=instance) == "blocks"
     # A malformed configuration must not keep the UI from starting.
     broken = tmp_path / "broken.yml"
     broken.write_text("ui: [oops\n", encoding="utf-8")
     assert resolve_splash(None, environ={}, config=UserConfig(broken)) == "auto"
-    assert resolve_splash(None, environ={}, config=UserConfig(tmp_path / "absent.yml")) == "auto"
+    assert (
+        resolve_splash(None, environ={}, config=UserConfig(tmp_path / "absent.yml"))
+        == "auto"
+    )
 
 
 def test_effective_config_reports_sources(tmp_path: Path, monkeypatch) -> None:
@@ -270,15 +325,27 @@ def test_effective_config_reports_sources(tmp_path: Path, monkeypatch) -> None:
     instance.set("identity.actor", "config-actor")
     instance.set("ncbi.email", "config@example.org")
     rows = effective_config(environ={"USER": "env-user"}, config=instance)
-    assert rows["identity.actor"] == {"value": "env-user", "source": "environment (USER)"}
+    assert rows["identity.actor"] == {
+        "value": "env-user",
+        "source": "environment (USER)",
+    }
     assert rows["ncbi.email"]["value"] == "config@example.org"
     assert rows["ui.splash"]["source"] == "terminal detection"
 
-    rows = effective_config(environ={"OPERON_ACTOR": "env-actor", "NCBI_EMAIL": "env@example.org",
-                                     "OPERON_SPLASH": "blocks"}, config=instance)
+    rows = effective_config(
+        environ={
+            "OPERON_ACTOR": "env-actor",
+            "NCBI_EMAIL": "env@example.org",
+            "OPERON_SPLASH": "blocks",
+        },
+        config=instance,
+    )
     assert rows["identity.actor"]["source"] == "environment (OPERON_ACTOR)"
     assert rows["ncbi.email"]["source"] == "environment (NCBI_EMAIL)"
-    assert rows["ui.splash"] == {"value": "blocks", "source": "environment (OPERON_SPLASH)"}
+    assert rows["ui.splash"] == {
+        "value": "blocks",
+        "source": "environment (OPERON_SPLASH)",
+    }
 
     def _raise() -> str:
         raise KeyError("USER")
@@ -320,6 +387,7 @@ def test_module_singleton_is_used_when_no_instance_is_passed(monkeypatch) -> Non
 def test_sys_module_name_is_not_shadowed() -> None:
     """``operon.secrets`` must not shadow the standard library module."""
     import importlib
+
     stdlib_secrets = importlib.import_module("secrets")
     operon_secrets = importlib.import_module("operon.secrets")
     assert stdlib_secrets is not operon_secrets

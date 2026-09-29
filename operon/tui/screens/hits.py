@@ -30,8 +30,13 @@ from operon.tui.screens.common import (
 )
 
 LOOKUP_WIDGETS = (
-    "hits-analysis", "hits-entity-type", "hits-entity-id",
-    "hits-query-id", "hits-subject-id", "hits-evalue-max", "hits-limit",
+    "hits-analysis",
+    "hits-entity-type",
+    "hits-entity-id",
+    "hits-query-id",
+    "hits-subject-id",
+    "hits-evalue-max",
+    "hits-limit",
 )
 RELOAD_WIDGETS = (*LOOKUP_WIDGETS, "hits-include-retired")
 
@@ -57,22 +62,33 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
                 yield Input(placeholder="analysis name", id="hits-analysis")
                 yield Input(placeholder="entity type", id="hits-entity-type")
                 yield Input(placeholder="entity id", id="hits-entity-id")
-                yield Input(value="20", placeholder="limit", id="hits-limit",
-                            type="integer", restrict=r"\d*")
+                yield Input(
+                    value="20",
+                    placeholder="limit",
+                    id="hits-limit",
+                    type="integer",
+                    restrict=r"\d*",
+                )
             with Horizontal(id="hits-filters-2"):
                 yield Input(placeholder="query id", id="hits-query-id")
                 yield Input(placeholder="subject id", id="hits-subject-id")
-                yield Input(placeholder="evalue max", id="hits-evalue-max",
-                            restrict=r"[0-9eE.+-]*")
+                yield Input(
+                    placeholder="evalue max",
+                    id="hits-evalue-max",
+                    restrict=r"[0-9eE.+-]*",
+                )
                 yield Checkbox("include retired", id="hits-include-retired")
             yield DataTable(id="hits-table", cursor_type="row")
             with Horizontal(id="hits-export"):
                 yield Select(
                     [("text", "text"), ("tsv", "tsv"), ("json", "json")],
-                    value="text", id="hits-format",
+                    value="text",
+                    id="hits-format",
                 )
-                yield Input(placeholder="export path (same rows as the current query)",
-                            id="hits-out")
+                yield Input(
+                    placeholder="export path (same rows as the current query)",
+                    id="hits-out",
+                )
                 yield Button("Export", id="hits-export-button")
             yield Static("", id="hits-status")
             with Horizontal(id="modal-buttons"):
@@ -103,7 +119,9 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
             "query_id": text("hits-query-id"),
             "subject_id": text("hits-subject-id"),
             "evalue_max": float(evalue_text) if evalue_text else None,
-            "limit": int(limit_text) if limit_text.isdigit() and int(limit_text) > 0 else 20,
+            "limit": int(limit_text)
+            if limit_text.isdigit() and int(limit_text) > 0
+            else 20,
             "include_retired": self.query_one("#hits-include-retired", Checkbox).value,
         }
 
@@ -140,10 +158,12 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
         view = capture_table_view(table)
         table.clear()
         for row in self.hits:
-            table.add_row(*[
-                "" if row[column] is None else str(row[column])
-                for column in data.ANALYSIS_HIT_COLUMNS
-            ])
+            table.add_row(
+                *[
+                    "" if row[column] is None else str(row[column])
+                    for column in data.ANALYSIS_HIT_COLUMNS
+                ]
+            )
         restore_table_view(table, view, len(self.hits))
         status.update(f"{len(self.hits)} hit row(s)")
 
@@ -166,7 +186,8 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
     def _export(self, out_path: str, fmt: str, filters: dict[str, Any]) -> None:
         try:
             payload: Any = actions.write_analysis_report(
-                self.project, out=out_path, fmt=fmt, **filters)
+                self.project, out=out_path, fmt=fmt, **filters
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._apply_export, payload)

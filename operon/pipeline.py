@@ -52,12 +52,15 @@ def reason_list(reason_codes: Any) -> list[str]:
             value = json.loads(reason_codes)
         except json.JSONDecodeError:
             return [reason_codes]
-        return [str(item) for item in value] if isinstance(value, list) else [reason_codes]
+        return (
+            [str(item) for item in value] if isinstance(value, list) else [reason_codes]
+        )
     return []
 
 
-def curated_targets(db: Database, entity_type: str, entity_id: str,
-                    profile_name: str) -> list[tuple[str, str]]:
+def curated_targets(
+    db: Database, entity_type: str, entity_id: str, profile_name: str
+) -> list[tuple[str, str]]:
     """Entities whose curated decision a re-evaluation would overwrite."""
     current = db.conn.execute(
         "SELECT curated_decision FROM current_decisions "
@@ -70,17 +73,17 @@ def curated_targets(db: Database, entity_type: str, entity_id: str,
 
 
 def plan_pipeline(
-        db: Database,
-        project,
-        *,
-        source: str | Path,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        profile: str | None = None,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
+    db: Database,
+    project,
+    *,
+    source: str | Path,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    profile: str | None = None,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
 ) -> dict[str, Any]:
     """Validate the pipeline's own preconditions without writing anything.
 
@@ -116,25 +119,26 @@ def plan_pipeline(
         "curated_targets": targets,
         "steps": list(PIPELINE_STEPS),
         "source_exists": (
-            None if source_text.startswith(("sftp://", "remote://"))
+            None
+            if source_text.startswith(("sftp://", "remote://"))
             else Path(source_text).exists()
         ),
     }
 
 
 def run_pipeline(
-        db: Database,
-        project,
-        *,
-        source: str | Path,
-        entity_type: str,
-        entity_id: str,
-        role: str,
-        profile: str | None = None,
-        fmt: str | None = None,
-        compression: str | None = None,
-        source_url: str | None = None,
-        progress: Callable[[str], None] | None = None,
+    db: Database,
+    project,
+    *,
+    source: str | Path,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    profile: str | None = None,
+    fmt: str | None = None,
+    compression: str | None = None,
+    source_url: str | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the four stages in order; a QC failure stops before evaluation."""
     emit = progress if progress is not None else (lambda _line: None)
@@ -147,7 +151,7 @@ def run_pipeline(
         # The standalone `operon ingest` accepts remote URLs; the pipeline's
         # ingest stage routes them through the same fetch-and-clean-up path so
         # `run-pipeline --source sftp://...` behaves like the commands it
-        # replaces (ODR-0042).
+        # replaces (ODR-42).
         from operon.remotes import fetch_url_to_temp
 
         temp_path = fetch_url_to_temp(project, source_text)
@@ -156,8 +160,17 @@ def run_pipeline(
     else:
         local_source = source_text
     try:
-        import_row = ingest_file(db, project, local_source, entity_type, entity_id, role,
-                                 fmt=fmt, compression=compression, source_url=source_url)
+        import_row = ingest_file(
+            db,
+            project,
+            local_source,
+            entity_type,
+            entity_id,
+            role,
+            fmt=fmt,
+            compression=compression,
+            source_url=source_url,
+        )
     finally:
         if temp_path is not None:
             if temp_path.is_dir() and not temp_path.is_symlink():

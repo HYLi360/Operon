@@ -42,6 +42,7 @@ test = [
     "pytest>=8.0",
     "pytest-cov>=7.0",
     "pytest-xdist>=3.8",
+    "ruff>=0.16.9,<0.17.0",
     "setuptools>=77",
     "textual>=8.0",
 ]
@@ -57,6 +58,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=7.0",
     "pytest-xdist>=3.8",
+    "ruff>=0.16.9,<0.17.0",
     "setuptools>=77",
     "tomli>=2.0; python_version < '3.11'",
     "Sphinx>=7.4,<9",

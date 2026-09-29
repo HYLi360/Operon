@@ -23,14 +23,23 @@ from operon.tui.screens.common import (
 )
 
 ALL = "ALL"
-DECISION_VALUES = ["PASS", "PASS_WITH_WARNINGS", "ACCEPT_WITH_WARNING", "REVIEW", "FAIL", "EXCLUDED"]
+DECISION_VALUES = [
+    "PASS",
+    "PASS_WITH_WARNINGS",
+    "ACCEPT_WITH_WARNING",
+    "REVIEW",
+    "FAIL",
+    "EXCLUDED",
+]
 FILTER_DECISIONS = DECISION_VALUES + ["NOT_EVALUATED"]
 
 
 class EvaluateModal(WriteModal):
     """Preview + confirm for `operon evaluate`."""
 
-    def __init__(self, project: Project, selected: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, project: Project, selected: dict[str, Any] | None = None
+    ) -> None:
         super().__init__("Evaluate decisions")
         self.project = project
         self.selected = selected
@@ -45,12 +54,16 @@ class EvaluateModal(WriteModal):
         yield Static("Scope", classes="modal-label")
         yield Select(scope_options, value="all", id="evaluate-scope", allow_blank=False)
         yield Static("Profile", classes="modal-label")
-        default = self.default_profile if self.default_profile in self.profiles else (
-            self.profiles[0] if self.profiles else self.default_profile
+        default = (
+            self.default_profile
+            if self.default_profile in self.profiles
+            else (self.profiles[0] if self.profiles else self.default_profile)
         )
         yield Select(
             [(name, name) for name in self.profiles] or [(default, default)],
-            value=default, id="evaluate-profile", allow_blank=False,
+            value=default,
+            id="evaluate-profile",
+            allow_blank=False,
         )
 
     def _profile(self) -> str:
@@ -59,10 +72,16 @@ class EvaluateModal(WriteModal):
 
     def command_text(self) -> str:
         parts = ["operon", "evaluate", "--profile", self._profile()]
-        if (self.selected
-                and self.query_one("#evaluate-scope", Select).value == "selected"):
-            parts += ["--entity-type", self.selected["entity_type"],
-                      "--entity-id", self.selected["entity_id"]]
+        if (
+            self.selected
+            and self.query_one("#evaluate-scope", Select).value == "selected"
+        ):
+            parts += [
+                "--entity-type",
+                self.selected["entity_type"],
+                "--entity-id",
+                self.selected["entity_id"],
+            ]
         return " ".join(parts)
 
     def on_select_changed(self, event: Select.Changed) -> None:
@@ -71,14 +90,20 @@ class EvaluateModal(WriteModal):
 
     def confirm(self) -> None:
         profile = self._profile()
-        if self.selected and self.query_one("#evaluate-scope", Select).value == "selected":
+        if (
+            self.selected
+            and self.query_one("#evaluate-scope", Select).value == "selected"
+        ):
             entity_type: str | None = self.selected["entity_type"]
             entity_id: str | None = self.selected["entity_id"]
         else:
             entity_type = entity_id = None
         self.run_action(
             lambda: actions.evaluate(
-                self.project, entity_type=entity_type, entity_id=entity_id, profile=profile,
+                self.project,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                profile=profile,
             )
         )
 
@@ -115,7 +140,8 @@ class CurateModal(WriteModal):
         preview = f"{current} → {'?' if initial is Select.NULL else current}"
         yield Static(preview, id="curate-preview", classes="modal-info")
         yield Input(
-            value=resolve_actor() or "", placeholder="reviewer (required)",
+            value=resolve_actor() or "",
+            placeholder="reviewer (required)",
             id="curate-reviewer",
         )
         yield Input(placeholder="reason (required)", id="curate-reason")
@@ -131,13 +157,20 @@ class CurateModal(WriteModal):
 
     def command_text(self) -> str:
         parts = [
-            "operon", "curate",
-            "--entity-type", self.row["entity_type"],
-            "--entity-id", self.row["entity_id"],
-            "--profile", self.row["profile"],
-            "--decision", self._decision() or "…",
-            "--reviewer", shlex.quote(self.query_one("#curate-reviewer", Input).value or "…"),
-            "--reason", shlex.quote(self.query_one("#curate-reason", Input).value or "…"),
+            "operon",
+            "curate",
+            "--entity-type",
+            self.row["entity_type"],
+            "--entity-id",
+            self.row["entity_id"],
+            "--profile",
+            self.row["profile"],
+            "--decision",
+            self._decision() or "…",
+            "--reviewer",
+            shlex.quote(self.query_one("#curate-reviewer", Input).value or "…"),
+            "--reason",
+            shlex.quote(self.query_one("#curate-reason", Input).value or "…"),
         ]
         evidence = self.query_one("#curate-evidence", Input).value.strip()
         if evidence:
@@ -170,8 +203,14 @@ class CurateModal(WriteModal):
         row = self.row
         self.run_action(
             lambda: actions.curate(
-                self.project, row["entity_type"], row["entity_id"], row["profile"],
-                decision, reviewer, reason, evidence=evidence,
+                self.project,
+                row["entity_type"],
+                row["entity_id"],
+                row["profile"],
+                decision,
+                reviewer,
+                reason,
+                evidence=evidence,
             )
         )
 
@@ -200,10 +239,14 @@ class DecisionsPanel(Panel):
     def compose(self) -> ComposeResult:
         with Vertical(id="decisions-layout"):
             with Horizontal(id="decisions-filters"):
-                yield Select([(ALL, ALL)], value=ALL, id="decisions-profile", allow_blank=False)
+                yield Select(
+                    [(ALL, ALL)], value=ALL, id="decisions-profile", allow_blank=False
+                )
                 yield Select(
                     [(ALL, ALL)] + [(value, value) for value in FILTER_DECISIONS],
-                    value=ALL, id="decisions-decision", allow_blank=False,
+                    value=ALL,
+                    id="decisions-decision",
+                    allow_blank=False,
                 )
                 yield Input(placeholder="filter by entity", id="decisions-filter")
                 yield Checkbox(
@@ -214,7 +257,9 @@ class DecisionsPanel(Panel):
 
     def on_mount(self) -> None:
         table = self.query_one("#decisions-table", DataTable)
-        table.add_columns("entity", "profile", "decision", "reason_codes", "evaluated_at")
+        table.add_columns(
+            "entity", "profile", "decision", "reason_codes", "evaluated_at"
+        )
         super().on_mount()
 
     def _filters(self) -> tuple[str | None, str | None, str]:
@@ -229,8 +274,13 @@ class DecisionsPanel(Panel):
         profile, decision, text = self._filters()
         return {
             "decisions": data.list_decisions(
-                self.project, profile=profile, decision=decision, text=text,
-                include_retired=self.query_one("#decisions-include-retired", Checkbox).value,
+                self.project,
+                profile=profile,
+                decision=decision,
+                text=text,
+                include_retired=self.query_one(
+                    "#decisions-include-retired", Checkbox
+                ).value,
             ),
             "profiles": data.list_profiles(self.project),
         }
@@ -249,12 +299,18 @@ class DecisionsPanel(Panel):
         view = capture_table_view(table)
         table.clear()
         for record in self.decisions:
-            effective = str(record.get("curated_decision") or record.get("decision") or "-")
+            effective = str(
+                record.get("curated_decision") or record.get("decision") or "-"
+            )
             cell = styled_decision(effective)
-            if record.get("curated_decision") and record["curated_decision"] != record.get("decision"):
+            if record.get("curated_decision") and record[
+                "curated_decision"
+            ] != record.get("decision"):
                 cell.append(" ✎curated", style="cyan")
             try:
-                reasons = ", ".join(json.loads(record.get("reason_codes") or "[]")) or "-"
+                reasons = (
+                    ", ".join(json.loads(record.get("reason_codes") or "[]")) or "-"
+                )
             except json.JSONDecodeError:
                 reasons = str(record.get("reason_codes") or "-")
             table.add_row(
@@ -296,7 +352,8 @@ class DecisionsPanel(Panel):
 
     def action_evaluate(self) -> None:
         self.app.push_screen(
-            EvaluateModal(self.project, self._selected_row()), self._after_write,
+            EvaluateModal(self.project, self._selected_row()),
+            self._after_write,
         )
 
     def action_curate(self) -> None:

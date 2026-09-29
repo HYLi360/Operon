@@ -121,7 +121,7 @@ async def _button_click(pilot, app, selector: str) -> None:
     """Click a button and wait for the app to settle afterwards.
 
     ``_click`` waits out the Button ``-active`` debounce window itself, so this
-    only adds the post-click settle (ODR-0024).
+    only adds the post-click settle (ODR-24).
     """
     await _click(pilot, selector)
     await _settled(app)
@@ -130,8 +130,13 @@ async def _button_click(pilot, app, selector: str) -> None:
 
 def _source_dict() -> dict:
     return {
-        "source_type": "insdc", "database_name": "TestDB", "provider": "TestProvider",
-        "record_url": "", "citation": "", "license_name": "", "license_url": "",
+        "source_type": "insdc",
+        "database_name": "TestDB",
+        "provider": "TestProvider",
+        "record_url": "",
+        "citation": "",
+        "license_name": "",
+        "license_url": "",
     }
 
 
@@ -140,35 +145,53 @@ def _draft(project: Project, fasta: Path) -> dict:
     return {
         "source": _source_dict(),
         "organism": {
-            "action": "create", "id": ids["organism"],
+            "action": "create",
+            "id": ids["organism"],
             "row": {
-                "organism_id": ids["organism"], "scientific_name": "Syntheticus gamma",
-                "taxon_id": "12345", "taxonomic_rank": "species",
-                "taxonomy_source": "NCBI", "taxonomy_version": "v1",
+                "organism_id": ids["organism"],
+                "scientific_name": "Syntheticus gamma",
+                "taxon_id": "12345",
+                "taxonomic_rank": "species",
+                "taxonomy_source": "NCBI",
+                "taxonomy_version": "v1",
             },
         },
         "sample": {
-            "action": "create", "id": ids["sample"],
+            "action": "create",
+            "id": ids["sample"],
             "row": {
-                "sample_id": ids["sample"], "organism_id": ids["organism"],
-                "biosample_accession": "", "strain": "T1", "isolate": "",
+                "sample_id": ids["sample"],
+                "organism_id": ids["organism"],
+                "biosample_accession": "",
+                "strain": "T1",
+                "isolate": "",
                 "source_record": "",
             },
         },
         "run": None,
         "assembly": {
-            "action": "create", "id": ids["assembly"],
+            "action": "create",
+            "id": ids["assembly"],
             "row": {
-                "assembly_id": ids["assembly"], "sample_id": ids["sample"],
-                "assembly_accession": "", "assembly_name": "gamma-asm",
-                "assembly_version": "1", "assembly_level": "", "assembly_method": "",
-                "submitter": "TestProvider", "source_database": "",
+                "assembly_id": ids["assembly"],
+                "sample_id": ids["sample"],
+                "assembly_accession": "",
+                "assembly_name": "gamma-asm",
+                "assembly_version": "1",
+                "assembly_level": "",
+                "assembly_method": "",
+                "submitter": "TestProvider",
+                "source_database": "",
             },
         },
         "annotation": None,
         "files": [
-            {"label": "Genome FASTA", "role": "genome_fasta",
-             "entity_type": "assembly", "path": str(fasta)},
+            {
+                "label": "Genome FASTA",
+                "role": "genome_fasta",
+                "entity_type": "assembly",
+                "path": str(fasta),
+            },
         ],
     }
 
@@ -178,7 +201,9 @@ async def _open_wizard(pilot, app, project: Project) -> ImportWizardScreen:
     wizard = ImportWizardScreen(project)
     app.push_screen(wizard)
     await pilot.pause()
-    await _wait_until(lambda: bool(wizard.reserved_ids), "reserve the wizard entity ids")
+    await _wait_until(
+        lambda: bool(wizard.reserved_ids), "reserve the wizard entity ids"
+    )
     return wizard
 
 
@@ -187,7 +212,9 @@ async def _open_wizard(pilot, app, project: Project) -> ImportWizardScreen:
 # ---------------------------------------------------------------------------
 
 
-def test_profile_document_validation_rejects_malformed_documents(project: Project) -> None:
+def test_profile_document_validation_rejects_malformed_documents(
+    project: Project,
+) -> None:
     """The document guard rails save_profile relies on reject each defect."""
     with pytest.raises(ValidationError, match="document must be a mapping"):
         actions._validate_profile_document("demo", ["not", "a", "mapping"])
@@ -215,7 +242,9 @@ def test_profile_document_validation_rejects_malformed_documents(project: Projec
 
     # Nothing above may have touched the on-disk profile.
     still = yaml.safe_load(
-        (project.profiles_dir / "assembly_production_v1.yaml").read_text(encoding="utf-8")
+        (project.profiles_dir / "assembly_production_v1.yaml").read_text(
+            encoding="utf-8"
+        )
     )
     assert still["version"] == 1
     assert still["applies_to"] == ["assembly"]
@@ -225,7 +254,10 @@ def test_save_profile_rejects_unusable_existing_files(project: Project) -> None:
     broken = project.profiles_dir / "broken_v1.yaml"
     broken.write_text("- just\n- a list\n", encoding="utf-8")
     qc_document = {
-        "kind": "qc", "applies_to": ["assembly"], "required": [], "warnings": [],
+        "kind": "qc",
+        "applies_to": ["assembly"],
+        "required": [],
+        "warnings": [],
     }
     with pytest.raises(ValidationError, match="existing file is not a YAML mapping"):
         actions.save_profile(project, "broken_v1", qc_document)
@@ -244,11 +276,25 @@ def test_save_profile_coerces_numeric_rule_values(project: Project) -> None:
         "kind": "qc",
         "applies_to": ["assembly"],
         "required": [
-            {"metric": "total_length", "operator": ">=", "value": "2500", "code": "SHORT"},
-            {"metric": "gc_percent", "operator": "between", "min": "40.5",
-             "max": "not-a-number", "code": "GC_ODD"},
-            {"metric": "contig_count", "operator": "in",
-             "values": ["", "1", "2.5", "plain", 7], "code": "COUNT"},
+            {
+                "metric": "total_length",
+                "operator": ">=",
+                "value": "2500",
+                "code": "SHORT",
+            },
+            {
+                "metric": "gc_percent",
+                "operator": "between",
+                "min": "40.5",
+                "max": "not-a-number",
+                "code": "GC_ODD",
+            },
+            {
+                "metric": "contig_count",
+                "operator": "in",
+                "values": ["", "1", "2.5", "plain", 7],
+                "code": "COUNT",
+            },
         ],
         "warnings": [],
     }
@@ -279,11 +325,15 @@ def test_save_recipe_rejects_malformed_tools_config(project: Project) -> None:
         yaml.safe_dump({"tools": {"blastn": "not-a-mapping"}}, sort_keys=False),
         encoding="utf-8",
     )
-    with pytest.raises(ValidationError, match="tool 'blastn' in tools.yaml must be a mapping"):
+    with pytest.raises(
+        ValidationError, match="tool 'blastn' in tools.yaml must be a mapping"
+    ):
         actions.save_recipe(project, "blastn", "tui_new", document)
 
     path.write_text(
-        yaml.safe_dump({"tools": {"blastn": {"recipes": "not-a-mapping"}}}, sort_keys=False),
+        yaml.safe_dump(
+            {"tools": {"blastn": {"recipes": "not-a-mapping"}}}, sort_keys=False
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValidationError, match="recipes must be a mapping"):
@@ -296,7 +346,9 @@ def test_save_recipe_rejects_malformed_tools_config(project: Project) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ValidationError, match="recipe 'tui_new' in tools.yaml must be a mapping"):
+    with pytest.raises(
+        ValidationError, match="recipe 'tui_new' in tools.yaml must be a mapping"
+    ):
         actions.save_recipe(project, "blastn", "tui_new", document)
 
 
@@ -306,8 +358,11 @@ def test_save_recipe_new_recipe_starts_at_version_one(project: Project) -> None:
 
     result = actions.save_recipe(project, info["tool"], "tui_new_recipe", document)
     assert result == {
-        "name": "tui_new_recipe", "tool": "blastn", "version": 1,
-        "snapshot_id": result["snapshot_id"], "unchanged": False,
+        "name": "tui_new_recipe",
+        "tool": "blastn",
+        "version": 1,
+        "snapshot_id": result["snapshot_id"],
+        "unchanged": False,
     }
     assert result["snapshot_id"] is not None
 
@@ -317,22 +372,28 @@ def test_save_recipe_new_recipe_starts_at_version_one(project: Project) -> None:
     assert [row["version"] for row in history] == [1]
 
 
-def test_check_tools_skips_non_mapping_tool_entries(project: Project, tmp_path: Path) -> None:
+def test_check_tools_skips_non_mapping_tool_entries(
+    project: Project, tmp_path: Path
+) -> None:
     fake = tmp_path / "faketool"
     fake.write_text("#!/bin/sh\necho 'faketool 1.2.3'\n", encoding="utf-8")
     fake.chmod(0o755)
     project.tools_config_path.write_text(
-        yaml.safe_dump({
-            "tools": {
-                "broken": "not-a-mapping",
-                "faketool": {
-                    "executable": str(fake), "run_method": "",
-                    "version_args": ["--version"],
-                    "version_pattern": r"faketool\s+([^\s]+)",
-                    "recipes": {},
-                },
-            }
-        }, sort_keys=False),
+        yaml.safe_dump(
+            {
+                "tools": {
+                    "broken": "not-a-mapping",
+                    "faketool": {
+                        "executable": str(fake),
+                        "run_method": "",
+                        "version_args": ["--version"],
+                        "version_pattern": r"faketool\s+([^\s]+)",
+                        "recipes": {},
+                    },
+                }
+            },
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
 
@@ -359,7 +420,11 @@ def test_ingest_remote_url_fetches_to_temp_and_cleans_up(
 
     monkeypatch.setattr("operon.remotes.fetch_url_to_temp", fake_fetch)
     row = actions.ingest(
-        project, "sftp://host/remote.fasta", "assembly", "ASM_000001", "remote_fasta",
+        project,
+        "sftp://host/remote.fasta",
+        "assembly",
+        "ASM_000001",
+        "remote_fasta",
     )
     assert requested == ["sftp://host/remote.fasta"]
     assert row["file_role"] == "remote_fasta"
@@ -372,7 +437,11 @@ def test_ingest_remote_url_fetches_to_temp_and_cleans_up(
     # An explicit --source-url wins over the transport URL...
     fetched.write_text(">remote2\nACGTACGTACGTAC\n", encoding="utf-8")
     other = actions.ingest(
-        project, "remote://mirror/other.fasta", "assembly", "ASM_000001", "remote_other",
+        project,
+        "remote://mirror/other.fasta",
+        "assembly",
+        "ASM_000001",
+        "remote_other",
         source_url="https://example.invalid/record",
     )
     stored = _query(
@@ -385,9 +454,15 @@ def test_ingest_remote_url_fetches_to_temp_and_cleans_up(
     staging = tmp_path / "staging"
     (staging / "nested").mkdir(parents=True)
     (staging / "nested" / "x.fasta").write_text(">x\nACGT\n", encoding="utf-8")
-    monkeypatch.setattr("operon.remotes.fetch_url_to_temp", lambda _project, _url: staging)
+    monkeypatch.setattr(
+        "operon.remotes.fetch_url_to_temp", lambda _project, _url: staging
+    )
     bundle = actions.ingest(
-        project, "sftp://host/bundle", "assembly", "ASM_000001", "remote_bundle",
+        project,
+        "sftp://host/bundle",
+        "assembly",
+        "ASM_000001",
+        "remote_bundle",
     )
     assert bundle["file_role"] == "remote_bundle"
     assert bundle["format"] == "directory"
@@ -410,8 +485,12 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
             draft = wizard.draft
 
             draft["source"] = {
-                "source_type": "non_insdc", "database_name": "TestDB", "provider": "Provider",
-                "record_url": "https://record", "citation": "doi:1", "license_name": "CC0",
+                "source_type": "non_insdc",
+                "database_name": "TestDB",
+                "provider": "Provider",
+                "record_url": "https://record",
+                "citation": "doi:1",
+                "license_name": "CC0",
                 "license_url": "https://license",
             }
             wizard._goto(0)
@@ -430,37 +509,55 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
             draft["organism"] = {"action": "reuse", "id": "ORG_000002"}
             wizard._goto(1)
             await _wait_until(
-                lambda: wizard.query_one("#iw-organism-choice", Select).value == "ORG_000002",
+                lambda: (
+                    wizard.query_one("#iw-organism-choice", Select).value
+                    == "ORG_000002"
+                ),
                 "repopulate the reused organism",
             )
             draft["organism"] = {
-                "action": "create", "id": "ORG_000099",
+                "action": "create",
+                "id": "ORG_000099",
                 "row": {
-                    "scientific_name": "Populated species", "taxon_id": 42,
-                    "taxonomic_rank": "strain", "taxonomy_version": "v7",
+                    "scientific_name": "Populated species",
+                    "taxon_id": 42,
+                    "taxonomic_rank": "strain",
+                    "taxonomy_version": "v7",
                 },
             }
             wizard._goto(1)
             await _wait_until(
-                lambda: wizard.query_one("#iw-organism-name", Input).value == "Populated species",
+                lambda: (
+                    wizard.query_one("#iw-organism-name", Input).value
+                    == "Populated species"
+                ),
                 "repopulate the new organism",
             )
             assert wizard.query_one("#iw-organism-choice", Select).value == CREATE_NEW
             assert wizard.query_one("#iw-organism-taxon-id", Input).value == "42"
             assert wizard.query_one("#iw-organism-rank", Input).value == "strain"
-            assert wizard.query_one("#iw-organism-taxonomy-version", Input).value == "v7"
+            assert (
+                wizard.query_one("#iw-organism-taxonomy-version", Input).value == "v7"
+            )
 
             # Sample: reuse, then create.
             draft["organism"] = {"action": "reuse", "id": "ORG_000001"}
             draft["sample"] = {"action": "reuse", "id": "SMP_000003"}
             wizard._goto(2)
             await _wait_until(
-                lambda: wizard.query_one("#iw-sample-choice", Select).value == "SMP_000003",
+                lambda: (
+                    wizard.query_one("#iw-sample-choice", Select).value == "SMP_000003"
+                ),
                 "repopulate the reused sample",
             )
             draft["sample"] = {
-                "action": "create", "id": "SMP_000099",
-                "row": {"biosample_accession": "SAMN9", "strain": "S9", "isolate": "iso-1"},
+                "action": "create",
+                "id": "SMP_000099",
+                "row": {
+                    "biosample_accession": "SAMN9",
+                    "strain": "S9",
+                    "isolate": "iso-1",
+                },
             }
             wizard._goto(2)
             await _wait_until(
@@ -480,9 +577,11 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
                 "clear the sequencing section",
             )
             draft["run"] = {
-                "action": "create", "id": "RUN_000099",
+                "action": "create",
+                "id": "RUN_000099",
                 "row": {
-                    "run_accession": "SRR9", "experiment_accession": "ERX9",
+                    "run_accession": "SRR9",
+                    "experiment_accession": "ERX9",
                     "instrument_model": "NovaSeq",
                 },
             }
@@ -499,19 +598,28 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
             draft["assembly"] = {"action": "reuse", "id": "ASM_000001"}
             wizard._goto(4)
             await _wait_until(
-                lambda: wizard.query_one("#iw-assembly-choice", Select).value == "ASM_000001",
+                lambda: (
+                    wizard.query_one("#iw-assembly-choice", Select).value
+                    == "ASM_000001"
+                ),
                 "repopulate the reused assembly",
             )
             draft["assembly"] = {
-                "action": "create", "id": "ASM_000099",
+                "action": "create",
+                "id": "ASM_000099",
                 "row": {
-                    "assembly_accession": "GCA_9", "assembly_name": "populated-asm",
-                    "assembly_version": "5", "assembly_method": "assembler 2",
+                    "assembly_accession": "GCA_9",
+                    "assembly_name": "populated-asm",
+                    "assembly_version": "5",
+                    "assembly_method": "assembler 2",
                 },
             }
             wizard._goto(4)
             await _wait_until(
-                lambda: wizard.query_one("#iw-assembly-name", Input).value == "populated-asm",
+                lambda: (
+                    wizard.query_one("#iw-assembly-name", Input).value
+                    == "populated-asm"
+                ),
                 "repopulate the new assembly",
             )
             assert wizard.query_one("#iw-assembly-choice", Select).value == CREATE_NEW
@@ -524,26 +632,35 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
             draft["annotation"] = None
             wizard._goto(5)
             await _wait_until(
-                lambda: wizard.query_one("#iw-annotation-enabled", Checkbox).value is False,
+                lambda: (
+                    wizard.query_one("#iw-annotation-enabled", Checkbox).value is False
+                ),
                 "clear the annotation section",
             )
             draft["annotation"] = {"action": "reuse", "id": "ANN_000001"}
             wizard._goto(5)
             await _wait_until(
-                lambda: wizard.query_one("#iw-annotation-choice", Select).value == "ANN_000001",
+                lambda: (
+                    wizard.query_one("#iw-annotation-choice", Select).value
+                    == "ANN_000001"
+                ),
                 "repopulate the reused annotation",
             )
             assert wizard.query_one("#iw-annotation-enabled", Checkbox).value is True
             draft["annotation"] = {
-                "action": "create", "id": "ANN_000099",
+                "action": "create",
+                "id": "ANN_000099",
                 "row": {
-                    "annotation_source": "Pipe", "annotation_version": "3",
+                    "annotation_source": "Pipe",
+                    "annotation_version": "3",
                     "annotation_date": "2025-02-03",
                 },
             }
             wizard._goto(5)
             await _wait_until(
-                lambda: wizard.query_one("#iw-annotation-source", Input).value == "Pipe",
+                lambda: (
+                    wizard.query_one("#iw-annotation-source", Input).value == "Pipe"
+                ),
                 "repopulate the new annotation",
             )
             assert wizard.query_one("#iw-annotation-choice", Select).value == CREATE_NEW
@@ -554,8 +671,10 @@ def test_import_wizard_populates_every_page_from_draft(project: Project) -> None
             draft["files"] = [{"role": "genome_fasta", "path": "/tmp/populated.fasta"}]
             wizard._goto(6)
             await _wait_until(
-                lambda: wizard.query_one("#iw-file-genome-fasta", Input).value
-                == "/tmp/populated.fasta",
+                lambda: (
+                    wizard.query_one("#iw-file-genome-fasta", Input).value
+                    == "/tmp/populated.fasta"
+                ),
                 "repopulate the files page",
             )
             assert wizard.query_one("#iw-file-reads-r1", Input).value == ""
@@ -601,7 +720,9 @@ def test_import_wizard_collects_reuse_new_and_optional_sections(
             assert wizard.draft["sample"] == {"action": "reuse", "id": "SMP_000002"}
 
             wizard._goto(3)
-            await _wait_until(lambda: pages.current == "page-sequencing", "show sequencing")
+            await _wait_until(
+                lambda: pages.current == "page-sequencing", "show sequencing"
+            )
             wizard.query_one("#iw-run-enabled", Checkbox).value = True
             wizard.query_one("#iw-run-accession", Input).value = "SRR9"
             wizard.query_one("#iw-run-experiment", Input).value = "ERX9"
@@ -628,7 +749,9 @@ def test_import_wizard_collects_reuse_new_and_optional_sections(
             # Jump back to the assembly holding an annotation for the picker.
             wizard.draft["assembly"] = {"action": "reuse", "id": "ASM_000001"}
             wizard._goto(5)
-            await _wait_until(lambda: pages.current == "page-annotation", "show annotation")
+            await _wait_until(
+                lambda: pages.current == "page-annotation", "show annotation"
+            )
             wizard.query_one("#iw-annotation-enabled", Checkbox).value = True
             wizard.query_one("#iw-annotation-choice", Select).value = "ANN_000001"
             assert wizard._collect("annotation") is None
@@ -758,11 +881,15 @@ def test_import_wizard_surfaces_worker_failures(project: Project, monkeypatch) -
             def broken_reserve(*_args, **_kwargs):
                 raise ValidationError("id reservation offline")
 
-            monkeypatch.setattr(wizard_screen.actions, "reserve_entity_ids", broken_reserve)
+            monkeypatch.setattr(
+                wizard_screen.actions, "reserve_entity_ids", broken_reserve
+            )
             orphan = ImportWizardScreen(project)
             app.push_screen(orphan)
             await _wait_until(
-                lambda: "id reservation offline" in _queried_text(orphan, "#wizard-error"),
+                lambda: (
+                    "id reservation offline" in _queried_text(orphan, "#wizard-error")
+                ),
                 "show the startup failure",
             )
             assert orphan.reserved_ids == {}
@@ -778,7 +905,10 @@ def test_import_wizard_surfaces_worker_failures(project: Project, monkeypatch) -
             wizard.draft = {"source": _source_dict(), "files": []}
             wizard._goto(7)
             await _wait_until(
-                lambda: "summary service unavailable" in _queried_text(wizard, "#wizard-error"),
+                lambda: (
+                    "summary service unavailable"
+                    in _queried_text(wizard, "#wizard-error")
+                ),
                 "show the summary failure",
             )
             assert isinstance(app.screen, ImportWizardScreen)
@@ -820,16 +950,22 @@ def test_import_wizard_execute_failure_keeps_the_screen_open(
             assert isinstance(app.screen, ImportWizardScreen)
             assert wizard._executing is False
             assert wizard.query_one("#wizard-execute", Button).disabled is False
-            assert wizard.draft["organism"]["row"]["scientific_name"] == "Syntheticus gamma"
+            assert (
+                wizard.draft["organism"]["row"]["scientific_name"]
+                == "Syntheticus gamma"
+            )
             await pilot.press("escape")
             await pilot.pause()
 
     _run(scenario())
     assert _query(project, "SELECT COUNT(*) AS n FROM organisms")[0]["n"] == 2
-    assert _query(
-        project,
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='interactive_dataset_import'",
-    )[0]["n"] == 0
+    assert (
+        _query(
+            project,
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='interactive_dataset_import'",
+        )[0]["n"]
+        == 0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -838,15 +974,21 @@ def test_import_wizard_execute_failure_keeps_the_screen_open(
 
 
 def test_release_modal_command_text_variants(project: Project) -> None:
-    copy_modal = CreateReleaseModal(project, "2099.1", "assembly_production_v1", False, "copy")
+    copy_modal = CreateReleaseModal(
+        project, "2099.1", "assembly_production_v1", False, "copy"
+    )
     assert copy_modal.command_text() == (
         "operon release --version 2099.1 --profile assembly_production_v1"
     )
 
-    link_modal = CreateReleaseModal(project, "2099.1", "assembly_production_v1", False, "hardlink")
+    link_modal = CreateReleaseModal(
+        project, "2099.1", "assembly_production_v1", False, "hardlink"
+    )
     assert link_modal.command_text().endswith("--link hardlink")
 
-    files_modal = CreateReleaseModal(project, "2099.1", "assembly_production_v1", True, "hardlink")
+    files_modal = CreateReleaseModal(
+        project, "2099.1", "assembly_production_v1", True, "hardlink"
+    )
     assert files_modal.command_text().endswith("--copy-files")
 
 
@@ -861,7 +1003,8 @@ def test_publish_release_validation_hardlink_and_cancel(
             await _settled(app)
             reload_now = app.reload_after_write
             monkeypatch.setattr(
-                app, "reload_after_write",
+                app,
+                "reload_after_write",
                 lambda: (reloads.append(1), reload_now())[1],
             )
             app.action_switch_screen("publish")
@@ -936,7 +1079,9 @@ def test_publish_release_validation_hardlink_and_cancel(
 
     release_root = project.releases_root / "2099.05.link"
     assert (release_root / "manifest.tsv").is_file()
-    provenance = json.loads((release_root / "provenance.json").read_text(encoding="utf-8"))
+    provenance = json.loads(
+        (release_root / "provenance.json").read_text(encoding="utf-8")
+    )
     assert provenance["storage_mode"] == "hardlink"
     assert not (project.releases_root / "2099.05.cancelled").exists()
     rows = _query(project, "SELECT version FROM releases ORDER BY version")
@@ -948,7 +1093,9 @@ def test_publish_release_validation_hardlink_and_cancel(
 # ---------------------------------------------------------------------------
 
 
-def test_publish_export_validation_and_symlink_command(project: Project, tmp_path: Path) -> None:
+def test_publish_export_validation_and_symlink_command(
+    project: Project, tmp_path: Path
+) -> None:
     output = tmp_path / "export-out"
 
     async def scenario() -> None:
@@ -1008,8 +1155,10 @@ def test_publish_export_validation_and_symlink_command(project: Project, tmp_pat
     assert provenance["link_kind"] == "symlink"
     assert provenance["file_count"] == 2
     linked = sorted(path for path in (output / "data").rglob("*") if path.is_symlink())
-    assert [path.name for path in linked] == ["ASM_000001.genome_fasta.fasta",
-                                              "ASM_000002.genome_fasta.fasta"]
+    assert [path.name for path in linked] == [
+        "ASM_000001.genome_fasta.fasta",
+        "ASM_000002.genome_fasta.fasta",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1166,9 @@ def test_publish_export_validation_and_symlink_command(project: Project, tmp_pat
 # ---------------------------------------------------------------------------
 
 
-def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch) -> None:
+def test_publish_preview_failures_and_reason_codes(
+    project: Project, monkeypatch
+) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -1028,18 +1179,28 @@ def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch
             panel = app.query_one(PublishPanel)
 
             # A release row whose summary is not a mapping renders placeholders.
-            panel.render_data({
-                "releases": [{
-                    "version": "2099.09.corrupt", "created_at": "2099-09-01",
-                    "profile": "assembly_production_v1", "summary": "corrupt",
-                }],
-                "profiles": ["assembly_production_v1"],
-            })
+            panel.render_data(
+                {
+                    "releases": [
+                        {
+                            "version": "2099.09.corrupt",
+                            "created_at": "2099-09-01",
+                            "profile": "assembly_production_v1",
+                            "summary": "corrupt",
+                        }
+                    ],
+                    "profiles": ["assembly_production_v1"],
+                }
+            )
             await pilot.pause()
             table = panel.query_one("#releases-table", DataTable)
             assert table.row_count == 1
             assert [str(cell) for cell in table.get_row_at(0)] == [
-                "2099.09.corrupt", "2099-09-01", "assembly_production_v1", "?", "?",
+                "2099.09.corrupt",
+                "2099-09-01",
+                "assembly_production_v1",
+                "?",
+                "?",
             ]
 
             def broken_release_preview(*_args, **_kwargs):
@@ -1050,16 +1211,22 @@ def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch
             )
             panel.query_one("#release-profile", Select).value = "assembly_production_v1"
             await _wait_until(
-                lambda: "release preview exploded"
-                in _static_text(panel.query_one("#release-error", Static)),
+                lambda: (
+                    "release preview exploded"
+                    in _static_text(panel.query_one("#release-error", Static))
+                ),
                 "show the release preview failure",
             )
-            assert _static_text(panel.query_one("#release-preview-summary", Static)) == ""
+            assert (
+                _static_text(panel.query_one("#release-preview-summary", Static)) == ""
+            )
 
             def broken_export_preview(*_args, **_kwargs):
                 raise ValidationError("export preview exploded")
 
-            monkeypatch.setattr(publish_screen.data, "export_preview", broken_export_preview)
+            monkeypatch.setattr(
+                publish_screen.data, "export_preview", broken_export_preview
+            )
             panel.query_one("#publish-tabs", TabbedContent).active = "tab-export"
             await pilot.pause()
             panel.query_one("#export-entity-type", Select).value = "assembly"
@@ -1068,31 +1235,56 @@ def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch
             assert "export preview exploded" in _static_text(
                 panel.query_one("#export-error", Static)
             )
-            assert _static_text(panel.query_one("#export-preview-summary", Static)) == ""
+            assert (
+                _static_text(panel.query_one("#export-preview-summary", Static)) == ""
+            )
 
             # Exclusion reason codes: JSON list, undecodable text, and missing.
-            panel._apply_release_preview({
-                "members": [], "member_bytes": 0,
-                "exclusions": [
-                    {"entity_type": "assembly", "entity_id": "ASM_000009",
-                     "effective_decision": "FAIL", "exclusion_reason": "stale decision",
-                     "reason_codes": json.dumps(["LOW_CONTIGUITY", "STALE"])},
-                    {"entity_type": "annotation", "entity_id": "ANN_000009",
-                     "effective_decision": "REVIEW", "exclusion_reason": "not a list",
-                     "reason_codes": '{"broken": true}'},
-                    {"entity_type": "run", "entity_id": "RUN_000009",
-                     "effective_decision": None, "exclusion_reason": "no codes",
-                     "reason_codes": "{not json"},
-                    {"entity_type": "sample", "entity_id": "SMP_000009",
-                     "effective_decision": "PASS", "exclusion_reason": "codes absent",
-                     "reason_codes": None},
-                ],
-            })
+            panel._apply_release_preview(
+                {
+                    "members": [],
+                    "member_bytes": 0,
+                    "exclusions": [
+                        {
+                            "entity_type": "assembly",
+                            "entity_id": "ASM_000009",
+                            "effective_decision": "FAIL",
+                            "exclusion_reason": "stale decision",
+                            "reason_codes": json.dumps(["LOW_CONTIGUITY", "STALE"]),
+                        },
+                        {
+                            "entity_type": "annotation",
+                            "entity_id": "ANN_000009",
+                            "effective_decision": "REVIEW",
+                            "exclusion_reason": "not a list",
+                            "reason_codes": '{"broken": true}',
+                        },
+                        {
+                            "entity_type": "run",
+                            "entity_id": "RUN_000009",
+                            "effective_decision": None,
+                            "exclusion_reason": "no codes",
+                            "reason_codes": "{not json",
+                        },
+                        {
+                            "entity_type": "sample",
+                            "entity_id": "SMP_000009",
+                            "effective_decision": "PASS",
+                            "exclusion_reason": "codes absent",
+                            "reason_codes": None,
+                        },
+                    ],
+                }
+            )
             await pilot.pause()
             exclusions = panel.query_one("#release-exclusions-table", DataTable)
             assert exclusions.row_count == 4
-            assert [str(cell) for cell in exclusions.get_row_at(0)][0] == "assembly:ASM_000009"
-            assert [str(cell) for cell in exclusions.get_row_at(0)][3] == "LOW_CONTIGUITY, STALE"
+            assert [str(cell) for cell in exclusions.get_row_at(0)][
+                0
+            ] == "assembly:ASM_000009"
+            assert [str(cell) for cell in exclusions.get_row_at(0)][
+                3
+            ] == "LOW_CONTIGUITY, STALE"
             assert [str(cell) for cell in exclusions.get_row_at(1)][3] == ""
             assert [str(cell) for cell in exclusions.get_row_at(2)][3] == "{not json"
             assert [str(cell) for cell in exclusions.get_row_at(3)][3] == ""
@@ -1104,7 +1296,9 @@ def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch
             await _click(pilot, "#ghost-button")
             await pilot.pause()
             assert type(app.screen).__name__ == "Screen"
-            assert _static_text(panel.query_one("#release-error", Static)) == error_before
+            assert (
+                _static_text(panel.query_one("#release-error", Static)) == error_before
+            )
 
             # A failing panel load renders in both inline error areas.
             def broken_listing(*_args, **_kwargs):
@@ -1113,8 +1307,11 @@ def test_publish_preview_failures_and_reason_codes(project: Project, monkeypatch
             monkeypatch.setattr(publish_screen.data, "list_releases", broken_listing)
             panel.reload()
             await _wait_until(
-                lambda: "release listing offline" in _queried_text(panel, "#release-error")
-                and "release listing offline" in _queried_text(panel, "#export-error"),
+                lambda: (
+                    "release listing offline" in _queried_text(panel, "#release-error")
+                    and "release listing offline"
+                    in _queried_text(panel, "#export-error")
+                ),
                 "show the panel load failure",
             )
 

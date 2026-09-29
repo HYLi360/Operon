@@ -166,30 +166,32 @@ class Project:
 
     def ensure_dirs(self) -> None:
         for directory in (
-                self.metadata_dir,
-                self.schema_path.parent,
-                self.profiles_dir,
-                self.raw_root / "reads",
-                self.raw_root / "assemblies",
-                self.raw_root / "annotations",
-                self.standardized_root / "reads",
-                self.standardized_root / "assemblies",
-                self.standardized_root / "annotations",
-                self.qc_root / "reads",
-                self.qc_root / "assemblies",
-                self.qc_root / "annotations",
-                self.qc_root / "aggregate",
-                self.qc_root / "cache" / "fasta_lengths",
-                self.analysis_root,
-                self.reports_root,
-                self.logs_root,
-                self.releases_root,
-                self.taxonomy_reference_sets_dir,
+            self.metadata_dir,
+            self.schema_path.parent,
+            self.profiles_dir,
+            self.raw_root / "reads",
+            self.raw_root / "assemblies",
+            self.raw_root / "annotations",
+            self.standardized_root / "reads",
+            self.standardized_root / "assemblies",
+            self.standardized_root / "annotations",
+            self.qc_root / "reads",
+            self.qc_root / "assemblies",
+            self.qc_root / "annotations",
+            self.qc_root / "aggregate",
+            self.qc_root / "cache" / "fasta_lengths",
+            self.analysis_root,
+            self.reports_root,
+            self.logs_root,
+            self.releases_root,
+            self.taxonomy_reference_sets_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
     @classmethod
-    def init(cls, root: str | Path, project_id: str = "PRJ_000001", name: str = "") -> Project:
+    def init(
+        cls, root: str | Path, project_id: str = "PRJ_000001", name: str = ""
+    ) -> Project:
         root = Path(root).resolve()
         config_path = root / "project.yaml"
         if config_path.exists():
@@ -212,16 +214,20 @@ class Project:
             encoding="utf-8",
         )
         from operon.profiles import write_default_profiles
+
         write_default_profiles(project.profiles_dir)
         from operon.metadata_files import initialize_metadata_directory
+
         initialize_metadata_directory(project.metadata_dir)
         from operon.tools import ensure_tools_config
+
         ensure_tools_config(project)
         # A freshly initialized project must be immediately usable by
         # read-only preview commands.  Create the current empty database as
         # part of init instead of relying on the first later write command to
         # materialize it as a side effect.
         from operon.database import Database
+
         database = Database(project.db_path)
         database.close()
         return project
@@ -290,7 +296,9 @@ USER_CONFIG_CHOICES: dict[str, tuple[str, ...]] = {
 ACTOR_ENV_VARS: tuple[str, ...] = ("OPERON_ACTOR", "USER", "LOGNAME", "USERNAME")
 """Environment variables consulted for the audit actor, in precedence order."""
 
-_SECRET_LIKE_KEY_RE = re.compile(r"(?i)(api[_-]?key|token|secret|password|passwd|credential)")
+_SECRET_LIKE_KEY_RE = re.compile(
+    r"(?i)(api[_-]?key|token|secret|password|passwd|credential)"
+)
 
 
 def _environ(environ: Mapping[str, str] | None) -> Mapping[str, str]:
@@ -371,13 +379,17 @@ def normalize_user_value(key: str, value: Any) -> Any:
         if isinstance(value, bool) or not isinstance(value, int):
             raise ConfigError(f"{key} expects an integer, got {type(value).__name__}")
     elif not isinstance(value, expected):
-        raise ConfigError(f"{key} expects {expected.__name__}, got {type(value).__name__}")
+        raise ConfigError(
+            f"{key} expects {expected.__name__}, got {type(value).__name__}"
+        )
     choices = USER_CONFIG_CHOICES.get(key)
     if choices:
         if isinstance(value, str):
             value = value.strip().lower()
         if value not in choices:
-            raise ConfigError(f"{key} must be one of {', '.join(choices)}; got {value!r}")
+            raise ConfigError(
+                f"{key} must be one of {', '.join(choices)}; got {value!r}"
+            )
     return value
 
 
@@ -446,7 +458,9 @@ class UserConfig:
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(path.parent, 0o700)
-        atomic_write_text(path, yaml.safe_dump(self.data, sort_keys=False, allow_unicode=True))
+        atomic_write_text(
+            path, yaml.safe_dump(self.data, sort_keys=False, allow_unicode=True)
+        )
         os.chmod(path, 0o600)
 
     def init(self, *, force: bool = False) -> Path:
@@ -515,7 +529,7 @@ def reset_user_config() -> None:
 
 
 def _resolve_actor_with_source(
-        environ: Mapping[str, str] | None, config: UserConfig | None
+    environ: Mapping[str, str] | None, config: UserConfig | None
 ) -> tuple[str | None, str]:
     env = _environ(environ)
     for variable in ACTOR_ENV_VARS:
@@ -534,9 +548,12 @@ def _resolve_actor_with_source(
     return None, "unset"
 
 
-def resolve_actor(explicit: str | None = None, *,
-                  environ: Mapping[str, str] | None = None,
-                  config: UserConfig | None = None) -> str | None:
+def resolve_actor(
+    explicit: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    config: UserConfig | None = None,
+) -> str | None:
     """The audit actor of an operation.
 
     ``--actor`` > ``OPERON_ACTOR`` > ``USER`` > ``LOGNAME`` > ``USERNAME`` >
@@ -550,9 +567,12 @@ def resolve_actor(explicit: str | None = None, *,
     return _resolve_actor_with_source(environ, config)[0]
 
 
-def resolve_ncbi_email(explicit: str | None = None, *,
-                       environ: Mapping[str, str] | None = None,
-                       config: UserConfig | None = None) -> str | None:
+def resolve_ncbi_email(
+    explicit: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    config: UserConfig | None = None,
+) -> str | None:
     """The NCBI contact address: ``--email`` > ``NCBI_EMAIL`` > ``ncbi.email``."""
     candidate = (explicit or "").strip()
     if candidate:
@@ -563,9 +583,12 @@ def resolve_ncbi_email(explicit: str | None = None, *,
     return ((config or user_config()).ncbi_email or "").strip() or None
 
 
-def resolve_splash(explicit: str | None = None, *,
-                   environ: Mapping[str, str] | None = None,
-                   config: UserConfig | None = None) -> str:
+def resolve_splash(
+    explicit: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    config: UserConfig | None = None,
+) -> str:
     """The terminal-graphics override: ``OPERON_SPLASH`` > ``ui.splash`` > ``auto``.
 
     ``auto`` leaves capability detection in ``operon.tui.splash_terminal`` in
@@ -573,7 +596,9 @@ def resolve_splash(explicit: str | None = None, *,
     is cosmetic and must never keep the UI from starting.
     """
     choices = USER_CONFIG_CHOICES["ui.splash"]
-    candidate = (explicit or _environ(environ).get("OPERON_SPLASH") or "").strip().lower()
+    candidate = (
+        (explicit or _environ(environ).get("OPERON_SPLASH") or "").strip().lower()
+    )
     if candidate in choices:
         return candidate
     try:
@@ -583,8 +608,9 @@ def resolve_splash(explicit: str | None = None, *,
     return stored if stored in choices else "auto"
 
 
-def effective_config(*, environ: Mapping[str, str] | None = None,
-                     config: UserConfig | None = None) -> dict[str, dict[str, Any]]:
+def effective_config(
+    *, environ: Mapping[str, str] | None = None, config: UserConfig | None = None
+) -> dict[str, dict[str, Any]]:
     """Every user-level setting with the value that wins and where it comes from."""
     env = _environ(environ)
     resolved = config or user_config()
@@ -597,7 +623,8 @@ def effective_config(*, environ: Mapping[str, str] | None = None,
         email_row = {
             "value": stored_email,
             "source": f"user configuration ({user_config_path(env)})"
-            if stored_email else "unset",
+            if stored_email
+            else "unset",
         }
     requested = (env.get("OPERON_SPLASH") or "").strip().lower()
     splash = resolve_splash(environ=env, config=resolved)

@@ -81,18 +81,20 @@ async def _await_detail_text(app, needle: str) -> str:
     ``_settled`` only says that no worker is running *at that instant*: the
     detail screen starts its read from ``on_mount``, which needs a message-loop
     turn of its own, so a read straight afterwards can still land on the
-    ``loading…`` placeholder — the window a slow runner stops on (ODR-0029).
+    ``loading…`` placeholder — the window a slow runner stops on (ODR-29).
     Waiting for the content instead of for the worker set is what the sites in
     this module and ``test_tui.py`` do now.
     """
-    await _wait_until(lambda: needle in _detail_text(app), f"run detail to show {needle!r}")
+    await _wait_until(
+        lambda: needle in _detail_text(app), f"run detail to show {needle!r}"
+    )
     return _detail_text(app)
 
 
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -142,14 +144,16 @@ async def _await_rows(pilot, root, selector: str, count: int, child: str) -> lis
     this file's wall-clock settle timeout rather than a fixed number of cycles: a
     loaded CI runner needs seconds to deliver the click and mount the row it
     produces, and a cycle count that is generous on a fast machine runs out there
-    (ODR-0027).
+    (ODR-27).
     """
+
     def composed() -> list:
         return [row for row in root.query(selector) if len(list(row.query(child))) > 0]
 
     try:
-        await _wait_until(lambda: len(composed()) >= count,
-                          f"{count} {selector} rows with {child}")
+        await _wait_until(
+            lambda: len(composed()) >= count, f"{count} {selector} rows with {child}"
+        )
     except TimeoutError as error:
         raise AssertionError(
             f"{selector} rows with {child}: saw {len(composed())}, wanted {count}"
@@ -243,53 +247,87 @@ def test_lifecycle_actor_required(project: Project, monkeypatch, tmp_path) -> No
 
 
 def test_lifecycle_actor_falls_back_to_the_user_configuration(
-        project: Project, monkeypatch, tmp_path) -> None:
+    project: Project, monkeypatch, tmp_path
+) -> None:
     _without_any_identity(monkeypatch, tmp_path)
     target = config_module.user_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("identity:\n  actor: config-actor\n", encoding="utf-8")
     config_module.reset_user_config()
     result = actions.lifecycle_apply(
-        project, "ASM_000001", "RETIRE", reason="x", actor="", reason_code="other",
+        project,
+        "ASM_000001",
+        "RETIRE",
+        reason="x",
+        actor="",
+        reason_code="other",
     )
     assert result["applied"] is True
-    rows = _query(project, "SELECT actor FROM entity_lifecycle_events ORDER BY event_id DESC LIMIT 1")
+    rows = _query(
+        project,
+        "SELECT actor FROM entity_lifecycle_events ORDER BY event_id DESC LIMIT 1",
+    )
     assert rows[0]["actor"] == "config-actor"
 
 
 def test_lifecycle_bad_action(project: Project) -> None:
     with pytest.raises(ValidationError, match="unsupported lifecycle action"):
-        actions.lifecycle_apply(project, "ASM_000001", "DELETE", reason="x", actor="tester")
+        actions.lifecycle_apply(
+            project, "ASM_000001", "DELETE", reason="x", actor="tester"
+        )
 
 
 def test_curate_retired_entity_raises(project: Project) -> None:
     actions.lifecycle_apply(
-        project, "ASM_000001", "RETIRE", reason="gone", actor="tester",
+        project,
+        "ASM_000001",
+        "RETIRE",
+        reason="gone",
+        actor="tester",
         reason_code="duplicate",
     )
     with pytest.raises(ValidationError, match="retired"):
         actions.curate(
-            project, "assembly", "ASM_000001", "assembly_production_v1",
-            "FAIL", reviewer="tester", reason="cannot curate retired",
+            project,
+            "assembly",
+            "ASM_000001",
+            "assembly_production_v1",
+            "FAIL",
+            reviewer="tester",
+            reason="cannot curate retired",
         )
 
 
 def test_run_qc_without_progress_callback(project: Project) -> None:
-    first = _query(project, "SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0]["file_id"]
+    first = _query(project, "SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0][
+        "file_id"
+    ]
     results = actions.run_qc(project, file_id=first)
     assert len(results) == 1 and results[0]["ok"] is True
 
 
 def test_curate_updates_decision_audit_and_state(project: Project) -> None:
     cases = [
-        ("assembly", "ASM_000002", "assembly_production_v1", "ACCEPT_WITH_WARNING", "ACCEPTED"),
+        (
+            "assembly",
+            "ASM_000002",
+            "assembly_production_v1",
+            "ACCEPT_WITH_WARNING",
+            "ACCEPTED",
+        ),
         ("annotation", "ANN_000003", "annotation_release_v1", "FAIL", "REJECTED"),
         ("assembly", "ASM_000001", "assembly_production_v1", "REVIEW", "REVIEW"),
     ]
     for entity_type, entity_id, profile, decision, expected_state in cases:
         actions.curate(
-            project, entity_type, entity_id, profile, decision,
-            reviewer="tester", reason=f"manual {decision}", evidence="ticket-1",
+            project,
+            entity_type,
+            entity_id,
+            profile,
+            decision,
+            reviewer="tester",
+            reason=f"manual {decision}",
+            evidence="ticket-1",
         )
         row = _query(
             project,
@@ -318,8 +356,13 @@ def test_curate_updates_decision_audit_and_state(project: Project) -> None:
 def test_curate_without_automatic_decision_raises(project: Project) -> None:
     with pytest.raises(ValidationError, match="no automatic decision"):
         actions.curate(
-            project, "organism", "ORG_000001", "assembly_production_v1",
-            "FAIL", reviewer="tester", reason="no decision exists",
+            project,
+            "organism",
+            "ORG_000001",
+            "assembly_production_v1",
+            "FAIL",
+            reviewer="tester",
+            reason="no decision exists",
         )
 
 
@@ -333,8 +376,13 @@ def test_lifecycle_retire_restore_roundtrip(project: Project) -> None:
     assert preview["physical_changes"]["artifact_bytes_deleted"] == 0
 
     result = actions.lifecycle_apply(
-        project, "ASM_000001", "RETIRE", reason="superseded in demo test",
-        actor="tester", reason_code="duplicate", evidence="ticket-9",
+        project,
+        "ASM_000001",
+        "RETIRE",
+        reason="superseded in demo test",
+        actor="tester",
+        reason_code="duplicate",
+        evidence="ticket-9",
     )
     assert result["applied"] is True
     assert result["effectively_retired"] is True
@@ -349,7 +397,10 @@ def test_lifecycle_retire_restore_roundtrip(project: Project) -> None:
     assert [(e["action"], e["reason_code"], e["actor"]) for e in events] == [
         ("RETIRE", "duplicate", "tester")
     ]
-    runs = _query(project, "SELECT step, status, command FROM workflow_runs WHERE step='lifecycle_retire'")
+    runs = _query(
+        project,
+        "SELECT step, status, command FROM workflow_runs WHERE step='lifecycle_retire'",
+    )
     assert len(runs) == 1
     assert runs[0]["status"] == "completed"
     assert runs[0]["command"] == "operon retire ASM_000001"
@@ -367,7 +418,11 @@ def test_lifecycle_retire_restore_roundtrip(project: Project) -> None:
     )
 
     restore = actions.lifecycle_apply(
-        project, "ASM_000001", "RESTORE", reason="mistake", actor="tester",
+        project,
+        "ASM_000001",
+        "RESTORE",
+        reason="mistake",
+        actor="tester",
     )
     assert restore["applied"] is True
     assert restore["effectively_retired"] is False
@@ -378,7 +433,9 @@ def test_lifecycle_retire_restore_roundtrip(project: Project) -> None:
         "WHERE object_type='assembly' AND object_id='ASM_000001'",
     )
     assert [row["action"] for row in current] == ["RESTORE"]
-    runs = _query(project, "SELECT step FROM workflow_runs WHERE step='lifecycle_restore'")
+    runs = _query(
+        project, "SELECT step FROM workflow_runs WHERE step='lifecycle_restore'"
+    )
     assert len(runs) == 1
 
 
@@ -390,11 +447,19 @@ def _walk(node: dict):
 
 def test_lifecycle_noop_and_blocker(project: Project) -> None:
     actions.lifecycle_apply(
-        project, "ASM_000001", "RETIRE", reason="first", actor="tester",
+        project,
+        "ASM_000001",
+        "RETIRE",
+        reason="first",
+        actor="tester",
         reason_code="duplicate",
     )
     result = actions.lifecycle_apply(
-        project, "ASM_000001", "RETIRE", reason="second", actor="tester",
+        project,
+        "ASM_000001",
+        "RETIRE",
+        reason="second",
+        actor="tester",
         reason_code="duplicate",
     )
     assert result["applied"] is False
@@ -406,15 +471,23 @@ def test_lifecycle_noop_and_blocker(project: Project) -> None:
     assert events[0]["n"] == 1
     with pytest.raises(ValidationError, match="already active"):
         actions.lifecycle_apply(
-            project, "ASM_000002", "RESTORE", reason="nothing to do", actor="tester",
+            project,
+            "ASM_000002",
+            "RESTORE",
+            reason="nothing to do",
+            actor="tester",
         )
 
 
 def test_lifecycle_invalid_reason_code_raises(project: Project) -> None:
     with pytest.raises(ValidationError, match="reason_code"):
         actions.lifecycle_apply(
-            project, "ASM_000001", "RETIRE", reason="bad code",
-            actor="tester", reason_code="not_a_code",
+            project,
+            "ASM_000001",
+            "RETIRE",
+            reason="bad code",
+            actor="tester",
+            reason_code="not_a_code",
         )
 
 
@@ -425,7 +498,9 @@ def test_ingest_idempotent_and_conflict(project: Project) -> None:
     assert row["file_role"] == "extra_fasta"
     assert row["entity_id"] == "ASM_000001"
 
-    again = actions.ingest(project, str(source), "assembly", "ASM_000001", "extra_fasta")
+    again = actions.ingest(
+        project, str(source), "assembly", "ASM_000001", "extra_fasta"
+    )
     assert again["file_id"] == row["file_id"]
 
     count = _query(project, "SELECT COUNT(*) AS n FROM files")[0]["n"]
@@ -438,40 +513,60 @@ def test_ingest_idempotent_and_conflict(project: Project) -> None:
 
 def test_ingest_missing_source_raises(project: Project) -> None:
     with pytest.raises(ValidationError, match="does not exist"):
-        actions.ingest(project, str(project.root / "nope.fasta"), "assembly", "ASM_000001", "x")
+        actions.ingest(
+            project, str(project.root / "nope.fasta"), "assembly", "ASM_000001", "x"
+        )
 
 
 def test_verify_marks_deleted_file_missing(project: Project) -> None:
-    record = _query(project, "SELECT file_id, relative_path, status FROM files LIMIT 1")[0]
+    record = _query(
+        project, "SELECT file_id, relative_path, status FROM files LIMIT 1"
+    )[0]
     (project.root / record["relative_path"]).unlink()
     results = actions.verify(project, [record["file_id"]])
     assert results[0]["file_id"] == record["file_id"]
     assert results[0]["status"] == "MISSING"
-    row = _query(project, "SELECT status FROM files WHERE file_id=?", (record["file_id"],))[0]
+    row = _query(
+        project, "SELECT status FROM files WHERE file_id=?", (record["file_id"],)
+    )[0]
     assert row["status"] == "MISSING"
 
 
 def test_run_qc_writes_results_and_reports_progress(project: Project) -> None:
-    first = _query(project, "SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0]["file_id"]
+    first = _query(project, "SELECT file_id FROM files ORDER BY file_id LIMIT 1")[0][
+        "file_id"
+    ]
     # qc_results upserts on input identity; the appended workflow run is the
     # reliable sign that QC actually ran again for the file.
-    before = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[0]["n"]
+    before = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[
+        0
+    ]["n"]
     events: list[tuple[int, int, str]] = []
     results = actions.run_qc(
-        project, file_id=first,
-        progress=lambda done, total, result: events.append((done, total, result["file_id"])),
+        project,
+        file_id=first,
+        progress=lambda done, total, result: events.append(
+            (done, total, result["file_id"])
+        ),
     )
     assert len(results) == 1 and results[0]["ok"] is True
     assert events == [(1, 1, first)]
-    after = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[0]["n"]
+    after = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[
+        0
+    ]["n"]
     assert after == before + 1
-    metrics = _query(project, "SELECT COUNT(*) AS n FROM qc_results WHERE file_id=?", (first,))
+    metrics = _query(
+        project, "SELECT COUNT(*) AS n FROM qc_results WHERE file_id=?", (first,)
+    )
     assert metrics[0]["n"] > 0
 
     events.clear()
     results = actions.run_qc(
-        project, entity_type="assembly",
-        progress=lambda done, total, result: events.append((done, total, result["file_id"])),
+        project,
+        entity_type="assembly",
+        progress=lambda done, total, result: events.append(
+            (done, total, result["file_id"])
+        ),
     )
     assert len(results) == 3
     assert [done for done, _, _ in events] == [1, 2, 3]
@@ -495,7 +590,9 @@ def test_decisions_screen_and_curate_end_to_end(project: Project) -> None:
             assert table.row_count == 6
 
             index = next(
-                i for i, row in enumerate(panel.decisions) if row["entity_id"] == "ASM_000002"
+                i
+                for i, row in enumerate(panel.decisions)
+                if row["entity_id"] == "ASM_000002"
             )
             table.focus()
             table.move_cursor(row=index, animate=False)
@@ -504,14 +601,22 @@ def test_decisions_screen_and_curate_end_to_end(project: Project) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, CurateModal)
-            assert "operon curate" in _static_text(modal.query_one("#modal-command", Static))
+            assert "operon curate" in _static_text(
+                modal.query_one("#modal-command", Static)
+            )
             assert "FAIL →" in _static_text(modal.query_one("#curate-preview", Static))
 
             modal.query_one("#curate-decision", Select).value = "ACCEPT_WITH_WARNING"
-            modal.query_one("#curate-reason", Input).value = "contiguity acceptable for demo"
+            modal.query_one(
+                "#curate-reason", Input
+            ).value = "contiguity acceptable for demo"
             await pilot.pause()
-            assert "ACCEPT_WITH_WARNING" in _static_text(modal.query_one("#curate-preview", Static))
-            assert "contiguity acceptable" in _static_text(modal.query_one("#modal-command", Static))
+            assert "ACCEPT_WITH_WARNING" in _static_text(
+                modal.query_one("#curate-preview", Static)
+            )
+            assert "contiguity acceptable" in _static_text(
+                modal.query_one("#modal-command", Static)
+            )
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
@@ -534,7 +639,9 @@ def test_curate_empty_reason_stays_open_without_writing(project: Project) -> Non
             panel = app.query_one(DecisionsPanel)
             table = panel.query_one("#decisions-table", DataTable)
             index = next(
-                i for i, row in enumerate(panel.decisions) if row["entity_id"] == "ASM_000002"
+                i
+                for i, row in enumerate(panel.decisions)
+                if row["entity_id"] == "ASM_000002"
             )
             table.focus()
             table.move_cursor(row=index, animate=False)
@@ -548,13 +655,17 @@ def test_curate_empty_reason_stays_open_without_writing(project: Project) -> Non
             await pilot.pause()
             await _settled(app)
             assert isinstance(app.screen, CurateModal)
-            assert "reason is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "reason is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, CurateModal)
 
     _run(scenario())
-    changes = _query(project, "SELECT COUNT(*) AS n FROM changes WHERE object_type='decision'")
+    changes = _query(
+        project, "SELECT COUNT(*) AS n FROM changes WHERE object_type='decision'"
+    )
     assert changes[0]["n"] == 0
 
 
@@ -574,13 +685,18 @@ def test_evaluate_modal_end_to_end(project: Project) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, EvaluateModal)
-            assert "operon evaluate" in _static_text(modal.query_one("#modal-command", Static))
+            assert "operon evaluate" in _static_text(
+                modal.query_one("#modal-command", Static)
+            )
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, EvaluateModal)
-            assert _query(project, "SELECT COUNT(*) AS n FROM decisions")[0]["n"] == before + 3
+            assert (
+                _query(project, "SELECT COUNT(*) AS n FROM decisions")[0]["n"]
+                == before + 3
+            )
 
     _run(scenario())
 
@@ -589,16 +705,22 @@ def test_evaluate_modal_end_to_end(project: Project) -> None:
 # Data layer: add record
 # ---------------------------------------------------------------------------
 
+
 def test_add_record_action_adds_state_and_audit_rows(project: Project) -> None:
     result = actions.add_record(
-        project, "organism", {"scientific_name": "TUI added species"},
+        project,
+        "organism",
+        {"scientific_name": "TUI added species"},
         record_id="ORG_000901",
     )
     assert result["entity_type"] == "organism"
     assert result["entity_id"] == "ORG_000901"
     assert result["warnings"] == []
-    rows = _query(project, "SELECT scientific_name FROM organisms WHERE organism_id=?",
-                  ("ORG_000901",))
+    rows = _query(
+        project,
+        "SELECT scientific_name FROM organisms WHERE organism_id=?",
+        ("ORG_000901",),
+    )
     assert rows == [{"scientific_name": "TUI added species"}]
     state = _query(
         project,
@@ -617,43 +739,64 @@ def test_add_record_action_adds_state_and_audit_rows(project: Project) -> None:
 def test_add_record_action_allocates_next_id_when_blank(project: Project) -> None:
     result = actions.add_record(project, "run", {"sample_id": "SMP_000001"})
     assert result["entity_id"].startswith("RUN_")
-    rows = _query(project, "SELECT COUNT(*) AS n FROM runs WHERE run_id=?",
-                  (result["entity_id"],))
+    rows = _query(
+        project, "SELECT COUNT(*) AS n FROM runs WHERE run_id=?", (result["entity_id"],)
+    )
     assert rows == [{"n": 1}]
 
 
-def test_add_record_action_rolls_back_id_reservation_on_failure(project: Project) -> None:
-    before = _query(project, "SELECT next_number FROM id_counters WHERE entity_type='sample'")
+def test_add_record_action_rolls_back_id_reservation_on_failure(
+    project: Project,
+) -> None:
+    before = _query(
+        project, "SELECT next_number FROM id_counters WHERE entity_type='sample'"
+    )
     before_n = before[0]["next_number"] if before else None
     # ORG_000099 matches the schema's ID pattern but references no organism,
     # so the failure surfaces at the foreign-key check, after ID reservation.
     with pytest.raises(EntityNotFoundError, match="ORG_000099"):
         actions.add_record(project, "sample", {"organism_id": "ORG_000099"})
-    after = _query(project, "SELECT next_number FROM id_counters WHERE entity_type='sample'")
+    after = _query(
+        project, "SELECT next_number FROM id_counters WHERE entity_type='sample'"
+    )
     after_n = after[0]["next_number"] if after else None
     assert after_n == before_n
-    assert not _query(project, "SELECT 1 FROM samples WHERE organism_id=?", ("ORG_000099",))
+    assert not _query(
+        project, "SELECT 1 FROM samples WHERE organism_id=?", ("ORG_000099",)
+    )
 
 
 def test_add_record_action_rejects_unknown_fields(project: Project) -> None:
     with pytest.raises(ValidationError, match="unknown field"):
-        actions.add_record(project, "organism", {"no_such_field": "x"},
-                           record_id="ORG_000902")
-    assert not _query(project, "SELECT 1 FROM organisms WHERE organism_id=?", ("ORG_000902",))
+        actions.add_record(
+            project, "organism", {"no_such_field": "x"}, record_id="ORG_000902"
+        )
+    assert not _query(
+        project, "SELECT 1 FROM organisms WHERE organism_id=?", ("ORG_000902",)
+    )
 
 
 # ---------------------------------------------------------------------------
 # Data layer: add accession
 # ---------------------------------------------------------------------------
 
+
 def test_add_accession_action_maps_and_audits(project: Project) -> None:
     row = actions.add_accession(
-        project, internal_type="assembly", internal_id="ASM_000001",
-        namespace="TUI", accession="ASM-MAP-1", version="2", primary=True,
+        project,
+        internal_type="assembly",
+        internal_id="ASM_000001",
+        namespace="TUI",
+        accession="ASM-MAP-1",
+        version="2",
+        primary=True,
     )
     assert row["is_primary"] == 1
-    rows = _query(project, "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
-                  ("TUI", "ASM-MAP-1"))
+    rows = _query(
+        project,
+        "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
+        ("TUI", "ASM-MAP-1"),
+    )
     assert rows == [{"internal_id": "ASM_000001"}]
     changes = _query(
         project,
@@ -665,13 +808,19 @@ def test_add_accession_action_maps_and_audits(project: Project) -> None:
 
 def test_add_accession_action_requires_active_target(project: Project) -> None:
     with pytest.raises(EntityNotFoundError, match="ASM_MISSING"):
-        actions.add_accession(project, internal_type="assembly",
-                              internal_id="ASM_MISSING", namespace="TUI", accession="X-1")
+        actions.add_accession(
+            project,
+            internal_type="assembly",
+            internal_id="ASM_MISSING",
+            namespace="TUI",
+            accession="X-1",
+        )
 
 
 # ---------------------------------------------------------------------------
 # Data layer: reserve next ID
 # ---------------------------------------------------------------------------
+
 
 def test_reserve_next_id_consumes_ids(project: Project) -> None:
     first = actions.reserve_next_id(project, "organism")
@@ -713,7 +862,9 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             assert "RETIRE" in plan_text
             assert "ASM_000001" in plan_text
             assert not modal.query_one("#confirm", Button).disabled
-            modal.query_one("#lifecycle-reason", Input).value = "retire from the TUI test"
+            modal.query_one(
+                "#lifecycle-reason", Input
+            ).value = "retire from the TUI test"
             await pilot.pause()
             assert "operon retire ASM_000001" in _static_text(
                 modal.query_one("#modal-command", Static)
@@ -724,7 +875,9 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             await pilot.pause()
             assert not isinstance(app.screen, LifecycleModal)
 
-            retired = _query(project, "SELECT entity_id FROM effective_retired_entities")
+            retired = _query(
+                project, "SELECT entity_id FROM effective_retired_entities"
+            )
             assert "ASM_000001" in {row["entity_id"] for row in retired}
 
             # Retired entities stay visible (dimmed) by default; select it directly.
@@ -742,7 +895,9 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert "RESTORE" in _static_text(modal.query_one("#lifecycle-plan", Static))
-            modal.query_one("#lifecycle-reason", Input).value = "restore from the TUI test"
+            modal.query_one(
+                "#lifecycle-reason", Input
+            ).value = "restore from the TUI test"
             await pilot.pause()
             await _click(pilot, "#confirm")
             await pilot.pause()
@@ -750,7 +905,9 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
             await pilot.pause()
             assert not isinstance(app.screen, LifecycleModal)
 
-            retired = _query(project, "SELECT entity_id FROM effective_retired_entities")
+            retired = _query(
+                project, "SELECT entity_id FROM effective_retired_entities"
+            )
             assert "ASM_000001" not in {row["entity_id"] for row in retired}
 
     _run(scenario())
@@ -759,6 +916,7 @@ def test_lifecycle_modal_retire_and_restore(project: Project) -> None:
 # ---------------------------------------------------------------------------
 # Headless UI: add record modal
 # ---------------------------------------------------------------------------
+
 
 def test_add_record_modal_end_to_end(project: Project) -> None:
     async def scenario() -> None:
@@ -788,8 +946,11 @@ def test_add_record_modal_end_to_end(project: Project) -> None:
             await pilot.pause()
             await _click(pilot, "#add-field-row")
             rows = await _await_rows(
-                pilot, modal.query_one("#add-fields", MountTracked),
-                ".field-row", 2, ".field-key",
+                pilot,
+                modal.query_one("#add-fields", MountTracked),
+                ".field-row",
+                2,
+                ".field-key",
             )
             rows[1].query_one(".field-key", Input).value = "taxonomy_source"
             rows[1].query_one(".field-value", Input).value = "other"
@@ -810,15 +971,17 @@ def test_add_record_modal_end_to_end(project: Project) -> None:
                 "SELECT scientific_name, taxonomy_source FROM organisms WHERE organism_id=?",
                 ("ORG_000910",),
             )
-            assert rows == [{"scientific_name": "Modal Added", "taxonomy_source": "other"}]
+            assert rows == [
+                {"scientific_name": "Modal Added", "taxonomy_source": "other"}
+            ]
             assert _find_tree_node(tree, "organism", "ORG_000910") is not None
 
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0047")
+@pytest.mark.bug("ODR-47")
 def test_add_record_confirm_runs_the_action_once(project: Project, monkeypatch) -> None:
-    """One Confirm click must reach the action once, not twice (ODR-0047).
+    """One Confirm click must reach the action once, not twice (ODR-47).
 
     Textual dispatches ``Button.Pressed`` to every class in the MRO that defines
     ``on_button_pressed``, so a subclass handler that delegates with ``super()``
@@ -832,8 +995,11 @@ def test_add_record_confirm_runs_the_action_once(project: Project, monkeypatch) 
 
     def _spy(target, entity_type, fields, *, record_id=None):
         calls.append((entity_type, fields, record_id))
-        return {"entity_type": entity_type, "entity_id": record_id or "ORG_000910",
-                "warnings": []}
+        return {
+            "entity_type": entity_type,
+            "entity_id": record_id or "ORG_000910",
+            "warnings": [],
+        }
 
     monkeypatch.setattr(actions, "add_record", _spy)
 
@@ -862,7 +1028,9 @@ def test_add_record_confirm_runs_the_action_once(project: Project, monkeypatch) 
             await pilot.pause()
 
     _run(scenario())
-    assert len(calls) == 1, f"one Confirm click ran actions.add_record {len(calls)} times"
+    assert len(calls) == 1, (
+        f"one Confirm click ran actions.add_record {len(calls)} times"
+    )
 
 
 def test_add_record_modal_shows_reference_errors_inline(project: Project) -> None:
@@ -894,11 +1062,13 @@ def test_add_record_modal_shows_reference_errors_inline(project: Project) -> Non
     _run(scenario())
 
 
-def test_add_record_modal_rejects_duplicate_fields_inline(project: Project,
-                                                          monkeypatch) -> None:
+def test_add_record_modal_rejects_duplicate_fields_inline(
+    project: Project, monkeypatch
+) -> None:
     called: list = []
     monkeypatch.setattr(
-        actions, "add_record",
+        actions,
+        "add_record",
         lambda *args, **kwargs: called.append((args, kwargs)) or {},
     )
 
@@ -920,15 +1090,20 @@ def test_add_record_modal_rejects_duplicate_fields_inline(project: Project,
             await pilot.pause()
             await _click(pilot, "#add-field-row")
             rows = await _await_rows(
-                pilot, modal.query_one("#add-fields", MountTracked),
-                ".field-row", 2, ".field-key",
+                pilot,
+                modal.query_one("#add-fields", MountTracked),
+                ".field-row",
+                2,
+                ".field-key",
             )
             rows[1].query_one(".field-key", Input).value = "scientific_name"
             await pilot.pause()
             await _click(pilot, "#confirm")
             await pilot.pause()
             assert isinstance(app.screen, AddRecordModal)
-            assert "duplicate field" in _static_text(modal.query_one("#modal-error", Static))
+            assert "duplicate field" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
     _run(scenario())
     assert called == []
@@ -946,11 +1121,13 @@ def test_add_record_modal_refuses_confirm_while_rows_mount(project: Project) -> 
             # ``pilot.pause()`` drains the whole deferred-mount chain, so the
             # gate's mid-mount window cannot be caught by real timing; force
             # the one signal it reads — a row whose on_mount has not run (the
-            # same hand-set shape as the ODR-0039 regression; the latch is
+            # same hand-set shape as the ODR-39 regression; the latch is
             # one-way, so nothing else can re-create this state).
             row._form_ready = False
             modal.confirm()
-            assert "still loading" in _static_text(modal.query_one("#modal-error", Static))
+            assert "still loading" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             row.mark_form_ready()
             row.query_one(".field-key", Input).value = "scientific_name"
             row.query_one(".field-value", Input).value = "Gated Add"
@@ -962,8 +1139,9 @@ def test_add_record_modal_refuses_confirm_while_rows_mount(project: Project) -> 
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, AddRecordModal)
-            assert _query(project, "SELECT 1 FROM organisms WHERE organism_id=?",
-                          ("ORG_000911",))
+            assert _query(
+                project, "SELECT 1 FROM organisms WHERE organism_id=?", ("ORG_000911",)
+            )
 
     _run(scenario())
 
@@ -988,15 +1166,18 @@ def test_add_record_modal_skips_a_row_being_removed(project: Project) -> None:
             await pilot.pause()
             await _click(pilot, "#add-field-row")
             rows = await _await_rows(
-                pilot, modal.query_one("#add-fields", MountTracked),
-                ".field-row", 2, ".field-key",
+                pilot,
+                modal.query_one("#add-fields", MountTracked),
+                ".field-row",
+                2,
+                ".field-key",
             )
             rows[1].query_one(".field-key", Input).value = "taxonomy_source"
             rows[1].query_one(".field-value", Input).value = "SHOULD-BE-DROPPED"
             await pilot.pause()
             rows[1].query_one(".field-remove", Button).press()
             await pilot.pause()  # remove() marks the row _pruning synchronously
-            modal.confirm()      # ...and readers skip it (ODR-0036)
+            modal.confirm()  # ...and readers skip it (ODR-36)
             await pilot.pause()
             await _settled(app)
             await pilot.pause()
@@ -1014,6 +1195,7 @@ def test_add_record_modal_skips_a_row_being_removed(project: Project) -> None:
 # ---------------------------------------------------------------------------
 # Headless UI: add accession modal
 # ---------------------------------------------------------------------------
+
 
 def test_add_accession_modal_end_to_end(project: Project) -> None:
     async def scenario() -> None:
@@ -1050,19 +1232,23 @@ def test_add_accession_modal_end_to_end(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, AddAccessionModal)
-            rows = _query(project,
-                          "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
-                          ("TUI", "ASM-MAP-UI-1"))
+            rows = _query(
+                project,
+                "SELECT internal_id FROM accessions WHERE namespace=? AND accession=?",
+                ("TUI", "ASM-MAP-UI-1"),
+            )
             assert rows == [{"internal_id": "ASM_000001"}]
 
     _run(scenario())
 
 
-def test_add_accession_modal_requires_fields_inline(project: Project,
-                                                    monkeypatch) -> None:
+def test_add_accession_modal_requires_fields_inline(
+    project: Project, monkeypatch
+) -> None:
     called: list = []
     monkeypatch.setattr(
-        actions, "add_accession",
+        actions,
+        "add_accession",
         lambda *args, **kwargs: called.append((args, kwargs)) or {},
     )
 
@@ -1085,6 +1271,7 @@ def test_add_accession_modal_requires_fields_inline(project: Project,
 # ---------------------------------------------------------------------------
 # Headless UI: next-id modal
 # ---------------------------------------------------------------------------
+
 
 def test_next_id_modal_reserves_and_stays_open(project: Project) -> None:
     async def scenario() -> None:
@@ -1155,7 +1342,9 @@ def test_ingest_modal_end_to_end(project: Project) -> None:
             modal.query_one("#ingest-entity-id", Input).value = "ASM_000001"
             modal.query_one("#ingest-role", Input).value = "ui_extra_fasta"
             await pilot.pause()
-            assert "operon ingest" in _static_text(modal.query_one("#modal-command", Static))
+            assert "operon ingest" in _static_text(
+                modal.query_one("#modal-command", Static)
+            )
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _wait_until(
@@ -1167,7 +1356,9 @@ def test_ingest_modal_end_to_end(project: Project) -> None:
             assert table.row_count == before + 1
 
     _run(scenario())
-    rows = _query(project, "SELECT file_id, file_role FROM files WHERE file_role='ui_extra_fasta'")
+    rows = _query(
+        project, "SELECT file_id, file_role FROM files WHERE file_role='ui_extra_fasta'"
+    )
     assert len(rows) == 1
 
 
@@ -1201,8 +1392,8 @@ def test_ingest_conflict_stays_open_without_writing(project: Project) -> None:
             await _click(pilot, "#confirm")
             await pilot.pause()
             await _wait_until(
-                lambda: "sha256" in _static_text(
-                    modal.query_one("#modal-error", Static)
+                lambda: (
+                    "sha256" in _static_text(modal.query_one("#modal-error", Static))
                 ),
                 "show the ingest conflict",
             )
@@ -1233,7 +1424,9 @@ def test_qc_modal_single_file_with_progress(project: Project) -> None:
             panel = app.query_one(FilesPanel)
             table = panel.query_one("#files-table", DataTable)
             file_id = panel.files[0]["file_id"]
-            before = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[0]["n"]
+            before = _query(
+                project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'"
+            )[0]["n"]
 
             table.focus()
             table.move_cursor(row=0, animate=False)
@@ -1251,7 +1444,9 @@ def test_qc_modal_single_file_with_progress(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, QcModal)
-            after = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'")[0]["n"]
+            after = _query(
+                project, "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='qc'"
+            )[0]["n"]
             assert after == before + 1
 
     _run(scenario())
@@ -1360,11 +1555,13 @@ def test_verify_modal_end_to_end(project: Project) -> None:
             assert f"{file_id}: CHECKSUM_FAILED" in body
             await pilot.press("escape")
             await _wait_until(
-                lambda: not isinstance(app.screen, VerifyModal), "verify modal closed")
+                lambda: not isinstance(app.screen, VerifyModal), "verify modal closed"
+            )
 
     _run(scenario())
     row = _query(
-        project, "SELECT status FROM files WHERE file_id=?", (verified["file_id"],))[0]
+        project, "SELECT status FROM files WHERE file_id=?", (verified["file_id"],)
+    )[0]
     assert row["status"] == "CHECKSUM_FAILED"
 
 
@@ -1389,7 +1586,9 @@ def test_ingest_modal_inline_validation(project: Project) -> None:
             await _click(pilot, "#confirm")
             await pilot.pause()
             assert isinstance(app.screen, IngestModal)
-            assert "source is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "source is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
             modal.query_one("#ingest-source", Input).value = "/tmp/whatever.fasta"
             await pilot.pause()
@@ -1407,7 +1606,9 @@ def test_ingest_modal_inline_validation(project: Project) -> None:
             await pilot.pause()
             await _settled(app)
             assert isinstance(app.screen, IngestModal)
-            assert "does not exist" in _static_text(modal.query_one("#modal-error", Static))
+            assert "does not exist" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
             assert not isinstance(app.screen, IngestModal)
@@ -1425,7 +1626,9 @@ def test_evaluate_modal_selected_entity_scope(project: Project) -> None:
             panel = app.query_one(DecisionsPanel)
             table = panel.query_one("#decisions-table", DataTable)
             index = next(
-                i for i, row in enumerate(panel.decisions) if row["entity_id"] == "ASM_000001"
+                i
+                for i, row in enumerate(panel.decisions)
+                if row["entity_id"] == "ASM_000001"
             )
             table.focus()
             table.move_cursor(row=index, animate=False)
@@ -1445,40 +1648,74 @@ def test_evaluate_modal_selected_entity_scope(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert not isinstance(app.screen, EvaluateModal)
-            assert _query(project, "SELECT COUNT(*) AS n FROM decisions")[0]["n"] == before + 1
+            assert (
+                _query(project, "SELECT COUNT(*) AS n FROM decisions")[0]["n"]
+                == before + 1
+            )
 
     _run(scenario())
 
 
 @pytest.mark.parametrize("phred", ["33", "64", "auto"])
-def test_qc_options_match_cli_metrics_and_provenance(project: Project, tmp_path: Path, phred: str) -> None:
+def test_qc_options_match_cli_metrics_and_provenance(
+    project: Project, tmp_path: Path, phred: str
+) -> None:
     import json
 
     from operon.cli import main
 
     source = tmp_path / "reads.fastq"
     source.write_text("@r1\nACGT\n+\nIIII\n@r2\nAAAA\n+\nHHHH\n@r3\nGGGG\n+\nIIII\n")
-    record = actions.ingest(project, str(source), "run", "RUN_000001", "option_test", fmt="fastq")
+    record = actions.ingest(
+        project, str(source), "run", "RUN_000001", "option_test", fmt="fastq"
+    )
     cli_root = tmp_path / "cli-project"
     shutil.copytree(project.root, cli_root)
     cli_project = Project.find(cli_root)
-    result = actions.run_qc(project, file_id=record["file_id"], sample_size=2,
-                            phred_offset=phred, rehash=True)
+    result = actions.run_qc(
+        project,
+        file_id=record["file_id"],
+        sample_size=2,
+        phred_offset=phred,
+        rehash=True,
+    )
     assert result[0]["ok"]
-    assert main(["--project", str(cli_root), "qc", "--file-id", record["file_id"],
-                 "--sample-size", "2", "--phred-offset", phred, "--rehash"]) == 0
-    sql = ("SELECT metric_name, metric_value, metric_numeric, parameter_set FROM qc_results "
-           "WHERE file_id=? ORDER BY metric_name")
+    assert (
+        main(
+            [
+                "--project",
+                str(cli_root),
+                "qc",
+                "--file-id",
+                record["file_id"],
+                "--sample-size",
+                "2",
+                "--phred-offset",
+                phred,
+                "--rehash",
+            ]
+        )
+        == 0
+    )
+    sql = (
+        "SELECT metric_name, metric_value, metric_numeric, parameter_set FROM qc_results "
+        "WHERE file_id=? ORDER BY metric_name"
+    )
     metrics = _query(project, sql, (record["file_id"],))
     assert metrics == _query(cli_project, sql, (record["file_id"],))
     assert any(f":sample_2:phred_{phred}" in row["parameter_set"] for row in metrics)
-    run = _query(project, "SELECT execution_details FROM workflow_runs WHERE step='qc' "
-                 "ORDER BY rowid DESC LIMIT 1")[0]
+    run = _query(
+        project,
+        "SELECT execution_details FROM workflow_runs WHERE step='qc' "
+        "ORDER BY rowid DESC LIMIT 1",
+    )[0]
     details = json.loads(run["execution_details"])
     assert details["integrity"]["rehash_requested"] is True
 
 
-@pytest.mark.parametrize("options", [{"sample_size": 0}, {"sample_size": -1}, {"phred_offset": "42"}])
+@pytest.mark.parametrize(
+    "options", [{"sample_size": 0}, {"sample_size": -1}, {"phred_offset": "42"}]
+)
 def test_qc_invalid_options_do_not_write(project: Project, options: dict) -> None:
     before = _query(project, "SELECT COUNT(*) AS n FROM workflow_runs")
     with pytest.raises(ValidationError):
@@ -1486,8 +1723,11 @@ def test_qc_invalid_options_do_not_write(project: Project, options: dict) -> Non
     assert _query(project, "SELECT COUNT(*) AS n FROM workflow_runs") == before
 
 
-def test_qc_modal_options_validation_and_worker_values(project: Project, monkeypatch) -> None:
+def test_qc_modal_options_validation_and_worker_values(
+    project: Project, monkeypatch
+) -> None:
     from textual.widgets import Checkbox
+
     captured = []
 
     def run(project_, *, file_id, progress, **options):
@@ -1508,7 +1748,9 @@ def test_qc_modal_options_validation_and_worker_values(project: Project, monkeyp
             for invalid in ("", "abc", "0", "-1", "1.5"):
                 modal.query_one("#qc-sample-size", Input).value = invalid
                 modal.confirm()
-                assert "positive integer" in _static_text(modal.query_one("#modal-error", Static))
+                assert "positive integer" in _static_text(
+                    modal.query_one("#modal-error", Static)
+                )
                 assert not modal.running
             assert captured == []
             modal.query_one("#qc-sample-size", Input).value = "2"
@@ -1516,7 +1758,8 @@ def test_qc_modal_options_validation_and_worker_values(project: Project, monkeyp
             modal.query_one("#qc-rehash", Checkbox).value = True
             await pilot.pause()
             assert "--sample-size 2 --phred-offset 64 --rehash" in _static_text(
-                modal.query_one("#modal-command", Static))
+                modal.query_one("#modal-command", Static)
+            )
             # The fixed footer remains reachable in a small terminal.
             assert await pilot.click("#confirm")
             await pilot.pause()
@@ -1524,7 +1767,9 @@ def test_qc_modal_options_validation_and_worker_values(project: Project, monkeyp
             assert not isinstance(app.screen, QcModal)
 
     _run(scenario())
-    assert captured == [("FIL_000001", {"sample_size": 2, "phred_offset": "64", "rehash": True})]
+    assert captured == [
+        ("FIL_000001", {"sample_size": 2, "phred_offset": "64", "rehash": True})
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1540,29 +1785,38 @@ def _write_marker_script(tmp_path: Path) -> Path:
     """
     script = tmp_path / "marker_step.sh"
     script.write_text(
-        '#!/usr/bin/env bash\necho ok > "$2"\nexit "$1"\n', encoding="utf-8")
+        '#!/usr/bin/env bash\necho ok > "$2"\nexit "$1"\n', encoding="utf-8"
+    )
     script.chmod(0o755)
     return script
 
 
-def test_run_external_action_success_failure_and_validation(project: Project,
-                                                            tmp_path: Path) -> None:
+def test_run_external_action_success_failure_and_validation(
+    project: Project, tmp_path: Path
+) -> None:
     import yaml
 
     script = _write_marker_script(tmp_path)
     out = tmp_path / "step_out.txt"
 
     result = actions.run_external(
-        project, "marker_step", shlex.join([str(script), "0", str(out)]),
-        expected_outputs=[str(out)], threads=2, timeout=60,
+        project,
+        "marker_step",
+        shlex.join([str(script), "0", str(out)]),
+        expected_outputs=[str(out)],
+        threads=2,
+        timeout=60,
     )
     assert result["status"] == "completed"
     assert result["exit_code"] == 0
     assert result["run_id"].startswith("WF_")
     # The CLI's pre-run note is captured, not printed over the screen.
-    assert f"watch: operon workflow show {result['run_id']} --follow" in result["messages"]
+    assert (
+        f"watch: operon workflow show {result['run_id']} --follow" in result["messages"]
+    )
     row = _query(
-        project, "SELECT * FROM workflow_runs WHERE run_id=?", (result["run_id"],))[0]
+        project, "SELECT * FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+    )[0]
     assert row["step"] == "marker_step"
     assert row["executor"] == "local"
     assert row["threads"] == 2
@@ -1570,35 +1824,56 @@ def test_run_external_action_success_failure_and_validation(project: Project,
     # A command that ran but failed is a *recorded* outcome, not an error.
     failed_out = tmp_path / "failed_out.txt"
     failed = actions.run_external(
-        project, "marker_step", shlex.join([str(script), "3", str(failed_out)]),
+        project,
+        "marker_step",
+        shlex.join([str(script), "3", str(failed_out)]),
         expected_outputs=[str(failed_out)],
     )
     assert failed["status"] == "failed"
     assert "exit code 3" in failed["error"]
     failed_row = _query(
-        project, "SELECT * FROM workflow_runs WHERE run_id=?", (failed["run_id"],))[0]
+        project, "SELECT * FROM workflow_runs WHERE run_id=?", (failed["run_id"],)
+    )[0]
     assert failed_row["status"] == "failed"
     assert failed_row["exit_code"] == 3
 
     # Tool provenance mirrors the CLI: an unconfigured name records no version,
     # and a failed detection only warns (into the captured messages).
     unconfigured = actions.run_external(
-        project, "marker_step", shlex.join([str(script), "0", str(out)]),
+        project,
+        "marker_step",
+        shlex.join([str(script), "0", str(out)]),
         tool="no_such_tool",
     )
-    assert _query(project, "SELECT tool FROM workflow_runs WHERE run_id=?",
-                  (unconfigured["run_id"],))[0]["tool"] == "no_such_tool"
-    project.tools_config_path.write_text(yaml.safe_dump({
-        "version": 1,
-        "tools": {"broken": {
-            "executable": str(tmp_path / "definitely-missing"),
-            "version_args": ["--version"],
-            "version_pattern": r"([0-9.]+)",
-            "recipes": {},
-        }},
-    }, sort_keys=False), encoding="utf-8")
+    assert (
+        _query(
+            project,
+            "SELECT tool FROM workflow_runs WHERE run_id=?",
+            (unconfigured["run_id"],),
+        )[0]["tool"]
+        == "no_such_tool"
+    )
+    project.tools_config_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "tools": {
+                    "broken": {
+                        "executable": str(tmp_path / "definitely-missing"),
+                        "version_args": ["--version"],
+                        "version_pattern": r"([0-9.]+)",
+                        "recipes": {},
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     warned = actions.run_external(
-        project, "marker_step", shlex.join([str(script), "0", str(out)]),
+        project,
+        "marker_step",
+        shlex.join([str(script), "0", str(out)]),
         tool="broken",
     )
     assert warned["status"] == "completed"
@@ -1611,8 +1886,9 @@ def test_run_external_action_success_failure_and_validation(project: Project,
     with pytest.raises(ValidationError, match="unknown execution backend"):
         actions.run_external(project, "marker_step", "true", backend="kubernetes")
     with pytest.raises(ValidationError, match="declared input does not exist"):
-        actions.run_external(project, "marker_step", "true",
-                             inputs=[str(tmp_path / "nope.fa")])
+        actions.run_external(
+            project, "marker_step", "true", inputs=[str(tmp_path / "nope.fa")]
+        )
     with pytest.raises(ValidationError, match="timeout must be a positive number"):
         actions.run_external(project, "marker_step", "true", timeout=0)
     with pytest.raises(ValidationError, match="threads must be a positive integer"):
@@ -1620,7 +1896,9 @@ def test_run_external_action_success_failure_and_validation(project: Project,
     assert len(_query(project, "SELECT * FROM workflow_runs")) == before
 
 
-def test_run_external_modal_preview_run_and_detail(project: Project, tmp_path: Path) -> None:
+def test_run_external_modal_preview_run_and_detail(
+    project: Project, tmp_path: Path
+) -> None:
     script = _write_marker_script(tmp_path)
     out = tmp_path / "ui_out.txt"
 
@@ -1636,36 +1914,47 @@ def test_run_external_modal_preview_run_and_detail(project: Project, tmp_path: P
             modal = app.screen
             assert isinstance(modal, RunExternalModal)
             assert "allocated at submission" in _static_text(
-                modal.query_one("#external-run-note", Static))
+                modal.query_one("#external-run-note", Static)
+            )
 
             # Inline validation: nothing runs until the form is valid.
             modal.confirm()
-            assert "step is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "step is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#external-step", Input).value = "marker_step"
             modal.confirm()
-            assert "command is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "command is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#external-command", Input).value = shlex.join(
-                [str(script), "0", str(out)])
+                [str(script), "0", str(out)]
+            )
             modal.query_one("#external-expected-outputs", Input).value = str(out)
             modal.query_one("#external-threads", Input).value = "-1"
             modal.confirm()
             assert "threads must be a positive integer" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#external-threads", Input).value = ""
             modal.query_one("#external-timeout", Input).value = "abc"
             modal.confirm()
             assert "timeout must be a positive number" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#external-timeout", Input).value = ""
             await pilot.pause()
             assert modal.command_text().startswith(
-                "operon run-external --step marker_step --command ")
+                "operon run-external --step marker_step --command "
+            )
             assert f"--expected-output {out}" in modal.command_text()
             assert not modal.running
 
             await _click(pilot, "#confirm")
-            await _wait_until(lambda: not isinstance(app.screen, RunExternalModal),
-                              "external modal dismissal")
+            await _wait_until(
+                lambda: not isinstance(app.screen, RunExternalModal),
+                "external modal dismissal",
+            )
             await _settled(app)
             # The success callback opens the finished run's record.
             detail = await _await_detail_text(app, "marker_step")
@@ -1679,7 +1968,9 @@ def test_run_external_modal_preview_run_and_detail(project: Project, tmp_path: P
     assert out.read_text(encoding="utf-8").strip() == "ok"
 
 
-def test_run_external_modal_failed_command_opens_record(project: Project, tmp_path: Path) -> None:
+def test_run_external_modal_failed_command_opens_record(
+    project: Project, tmp_path: Path
+) -> None:
     script = _write_marker_script(tmp_path)
     out = tmp_path / "failed_ui_out.txt"
 
@@ -1696,16 +1987,22 @@ def test_run_external_modal_failed_command_opens_record(project: Project, tmp_pa
             assert isinstance(modal, RunExternalModal)
             modal.query_one("#external-step", Input).value = "marker_step"
             modal.query_one("#external-command", Input).value = shlex.join(
-                [str(script), "3", str(out)])
+                [str(script), "3", str(out)]
+            )
             await pilot.pause()
             await _click(pilot, "#confirm")
-            await _wait_until(lambda: not isinstance(app.screen, RunExternalModal),
-                              "failed external dismissal")
+            await _wait_until(
+                lambda: not isinstance(app.screen, RunExternalModal),
+                "failed external dismissal",
+            )
             await _settled(app)
             assert isinstance(app.screen, RunDetailScreen)
-            assert any(severity == "error" and "failed" in message
-                       for severity, message in
-                       [(n.severity, n.message) for n in app._notifications])
+            assert any(
+                severity == "error" and "failed" in message
+                for severity, message in [
+                    (n.severity, n.message) for n in app._notifications
+                ]
+            )
             assert "exit code 3" in await _await_detail_text(app, "exit code 3")
 
     _run(scenario())
@@ -1713,8 +2010,9 @@ def test_run_external_modal_failed_command_opens_record(project: Project, tmp_pa
     assert row["status"] == "failed"
 
 
-def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
-                                                              monkeypatch) -> None:
+def test_run_external_modal_cannot_be_cancelled_while_running(
+    project: Project, monkeypatch
+) -> None:
     """A running external command has no cooperative cancel: the modal stays."""
     released = threading.Event()
     started = threading.Event()
@@ -1724,16 +2022,25 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
         started.set()
         if not released.wait(10):
             raise AssertionError("test never released the run stub")
-        return {"run_id": "WF_STUB", "step": step, "status": "completed",
-                "exit_code": 0, "finished_at": None, "error": None,
-                "stdout_file": "", "stderr_file": "", "messages": ""}
+        return {
+            "run_id": "WF_STUB",
+            "step": step,
+            "status": "completed",
+            "exit_code": 0,
+            "finished_at": None,
+            "error": None,
+            "stdout_file": "",
+            "stderr_file": "",
+            "messages": "",
+        }
 
     async def scenario() -> None:
         app = OperonApp(project)
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
-            monkeypatch.setattr("operon.tui.screens.run_external.actions.run_external",
-                                blocking_run)
+            monkeypatch.setattr(
+                "operon.tui.screens.run_external.actions.run_external", blocking_run
+            )
             modal = RunExternalModal(project)
             app.push_screen(modal, dismissed.append)
             await pilot.pause()
@@ -1742,19 +2049,27 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
             await pilot.pause()
             modal.confirm()
             await _wait_until(lambda: modal.running, "running external command")
-            assert any("running…" in _static_text(
-                modal.query_one("#external-status", Static)) for _ in [0])
+            assert any(
+                "running…" in _static_text(modal.query_one("#external-status", Static))
+                for _ in [0]
+            )
 
             # Cancel and escape must not dismiss the modal mid-run.
-            await _wait_until(started.is_set, "running external command to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "running external command to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             modal.action_cancel()
             await pilot.pause()
             assert app.screen is modal
-            assert any(severity == "warning" and "cannot be interrupted" in message
-                       for severity, message in
-                       [(n.severity, n.message) for n in app._notifications])
+            assert any(
+                severity == "warning" and "cannot be interrupted" in message
+                for severity, message in [
+                    (n.severity, n.message) for n in app._notifications
+                ]
+            )
             assert dismissed == []
             assert all(widget.disabled for widget in modal.query("Input, Select"))
 
@@ -1769,10 +2084,11 @@ def test_run_external_modal_cannot_be_cancelled_while_running(project: Project,
     assert dismissed[0]["run_id"] == "WF_STUB"
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_qc_modal_real_cancel_click_stays_open_while_running(
-        project: Project, monkeypatch) -> None:
+    project: Project, monkeypatch
+) -> None:
     """A real Cancel click cancels the worker but must not dismiss the modal."""
     released = threading.Event()
     started = threading.Event()
@@ -1795,8 +2111,11 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
             modal.confirm()
             await _wait_until(lambda: modal.running, "qc run to start")
 
-            await _wait_until(started.is_set, "qc run to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "qc run to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
@@ -1804,8 +2123,9 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
             assert modal._worker.is_cancelled
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "qc modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed), "qc modal dismissal", timeout=HANDOFF_TIMEOUT
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:
@@ -1815,10 +2135,11 @@ def test_qc_modal_real_cancel_click_stays_open_while_running(
     assert dismissed[0]["ok"] == 1
 
 
-@pytest.mark.bug("ODR-0043")
-@pytest.mark.bug("ODR-0046")
+@pytest.mark.bug("ODR-43")
+@pytest.mark.bug("ODR-46")
 def test_run_external_real_cancel_click_stays_open_while_running(
-        project: Project, monkeypatch) -> None:
+    project: Project, monkeypatch
+) -> None:
     """A real Cancel click must not dismiss the modal mid-run."""
     released = threading.Event()
     started = threading.Event()
@@ -1826,9 +2147,17 @@ def test_run_external_real_cancel_click_stays_open_while_running(
     def blocking_run(*args, **kwargs):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"run_id": "WF_STUB", "step": "marker_step", "status": "completed",
-                "exit_code": 0, "finished_at": None, "error": None,
-                "stdout_file": "", "stderr_file": "", "messages": ""}
+        return {
+            "run_id": "WF_STUB",
+            "step": "marker_step",
+            "status": "completed",
+            "exit_code": 0,
+            "finished_at": None,
+            "error": None,
+            "stdout_file": "",
+            "stderr_file": "",
+            "messages": "",
+        }
 
     monkeypatch.setattr(actions, "run_external", blocking_run)
     dismissed: list = []
@@ -1846,16 +2175,22 @@ def test_run_external_real_cancel_click_stays_open_while_running(
             modal.confirm()
             await _wait_until(lambda: modal.running, "external run to start")
 
-            await _wait_until(started.is_set, "external run to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "external run to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.query_one("#cancel", Button).press()
             await pilot.pause()
             assert app.screen is modal
             assert dismissed == []
 
             released.set()
-            await _wait_until(lambda: bool(dismissed), "external modal dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: bool(dismissed),
+                "external modal dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _settled(app, timeout=HANDOFF_TIMEOUT)
 
     try:

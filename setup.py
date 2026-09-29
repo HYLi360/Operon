@@ -19,5 +19,5 @@ setup(
             Extension("operon.qc._alignment", ["operon/qc/_alignment.pyx"]),
         ],
         language_level=3,
-    )
+    ),
 )

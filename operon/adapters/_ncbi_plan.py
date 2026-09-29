@@ -66,9 +66,12 @@ _ANNOTATION_INCLUDE_ROLES = {
 
 
 def _table_exists(db: Database, table: str) -> bool:
-    return db.conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone() is not None
+    return (
+        db.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        is not None
+    )
 
 
 def _find_archived_assembly(db: Database, accession: str) -> str | None:
@@ -106,14 +109,16 @@ def _find_archived_assembly(db: Database, accession: str) -> str | None:
 
 
 def _file_satisfies_include(
-        project: Project,
-        row: Any | None,
-        *,
-        entity_type: str,
-        standardize: bool,
+    project: Project,
+    row: Any | None,
+    *,
+    entity_type: str,
+    standardize: bool,
 ) -> bool:
     if row is None or str(row["status"]) not in {
-        "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
+        "CHECKSUM_VERIFIED",
+        "STANDARDIZED",
+        "REMOTE_ONLY",
     }:
         return False
     local_path = project.root / str(row["relative_path"])
@@ -121,8 +126,10 @@ def _file_satisfies_include(
         return False
     if standardize:
         standardized = (
-                project.standardized_root / raw_bucket(entity_type)
-                / str(row["entity_id"]) / Path(str(row["relative_path"])).name
+            project.standardized_root
+            / raw_bucket(entity_type)
+            / str(row["entity_id"])
+            / Path(str(row["relative_path"])).name
         )
         if not standardized.exists():
             return False
@@ -130,20 +137,24 @@ def _file_satisfies_include(
 
 
 def _missing_includes(
-        db: Database,
-        project: Project,
-        accession: str,
-        assembly_id: str,
-        includes: Sequence[str],
-        *,
-        standardize: bool,
+    db: Database,
+    project: Project,
+    accession: str,
+    assembly_id: str,
+    includes: Sequence[str],
+    *,
+    standardize: bool,
 ) -> tuple[str, ...]:
     """Return the exact requested include subset not already verified."""
     accession = _canonical_accession(accession)
     assembly = db.conn.execute(
         "SELECT assembly_accession FROM assemblies WHERE assembly_id=?", (assembly_id,)
     ).fetchone()
-    canonical = _canonical_accession(str(assembly["assembly_accession"])) if assembly else accession
+    canonical = (
+        _canonical_accession(str(assembly["assembly_accession"]))
+        if assembly
+        else accession
+    )
     missing: list[str] = []
     for include in includes:
         if include in {"genome", "sequence-report"}:
@@ -155,7 +166,10 @@ def _missing_includes(
                 (assembly_id, role),
             ).fetchone()
             if not _file_satisfies_include(
-                    project, row, entity_type="assembly", standardize=standardize,
+                project,
+                row,
+                entity_type="assembly",
+                standardize=standardize,
             ):
                 missing.append(include)
 
@@ -167,34 +181,39 @@ def _missing_includes(
             [
                 str(row["annotation_id"])
                 for row in db.conn.execute(
-                "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
-                "WHERE n.assembly_accession=? "
-                + (
-                    "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
-                    "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
-                    if db.lifecycle_schema_available() else ""
-                ),  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
-                (accession,),
-            )
+                    "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
+                    "WHERE n.assembly_accession=? "
+                    + (
+                        "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+                        "WHERE r.entity_type='annotation' AND r.entity_id=n.annotation_id)"
+                        if db.lifecycle_schema_available()
+                        else ""
+                    ),  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                    (accession,),
+                )
             ]
-            if _table_exists(db, "ncbi_annotation_records") else []
+            if _table_exists(db, "ncbi_annotation_records")
+            else []
         )
         if not mapped_ids and accession == canonical:
             supersession_filter = (
                 "AND NOT EXISTS (SELECT 1 FROM entity_supersessions s "
                 "WHERE s.object_type='annotation' AND s.object_id=annotations.annotation_id)"
-                if _table_exists(db, "entity_supersessions") else ""
+                if _table_exists(db, "entity_supersessions")
+                else ""
             )
             retirement_filter = (
                 "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
                 "WHERE r.entity_type='annotation' AND r.entity_id=annotations.annotation_id)"
-                if db.lifecycle_schema_available() else ""
+                if db.lifecycle_schema_available()
+                else ""
             )
             mapped_ids = [
                 str(row["annotation_id"])
                 for row in db.conn.execute(
                     "SELECT annotation_id FROM annotations WHERE assembly_id=? "
-                    + supersession_filter + retirement_filter,  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                    + supersession_filter
+                    + retirement_filter,  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                     (assembly_id,),
                 )
             ]
@@ -211,7 +230,10 @@ def _missing_includes(
                     (annotation_id, role),
                 ).fetchone()
                 if _file_satisfies_include(
-                        project, row, entity_type="annotation", standardize=standardize,
+                    project,
+                    row,
+                    entity_type="annotation",
+                    standardize=standardize,
                 ):
                     present.add(include)
             if len(present) > len(satisfied):
@@ -223,12 +245,12 @@ def _missing_includes(
 
 
 def _plan_missing_downloads(
-        db: Database,
-        project: Project,
-        accessions: Sequence[str],
-        includes: Sequence[str],
-        *,
-        standardize: bool,
+    db: Database,
+    project: Project,
+    accessions: Sequence[str],
+    includes: Sequence[str],
+    *,
+    standardize: bool,
 ) -> tuple[dict[tuple[str, ...], list[str]], list[str]]:
     """Group accessions by their exact missing include signature."""
     groups: dict[tuple[str, ...], list[str]] = {}
@@ -237,9 +259,15 @@ def _plan_missing_downloads(
         assembly_id = _find_archived_assembly(db, accession)
         missing = (
             _missing_includes(
-                db, project, accession, assembly_id, includes, standardize=standardize,
+                db,
+                project,
+                accession,
+                assembly_id,
+                includes,
+                standardize=standardize,
             )
-            if assembly_id else tuple(includes)
+            if assembly_id
+            else tuple(includes)
         )
         if not missing:
             already_archived.append(accession)
@@ -289,7 +317,9 @@ class _PlanBuilder:
             table: {} for table in self.plan.tables
         }
 
-    def build(self, records: Sequence[dict[str, Any]], assets: Sequence[DatasetAsset]) -> ImportPlan:
+    def build(
+        self, records: Sequence[dict[str, Any]], assets: Sequence[DatasetAsset]
+    ) -> ImportPlan:
         normalized_records = _deduplicate_reports(records)
         for record in normalized_records:
             self._add_record(record)
@@ -302,7 +332,8 @@ class _PlanBuilder:
                 # within this plan.
                 base = _split_accession(full)[0]
                 candidates = {
-                    aid for key, aid in self.plan.assembly_ids.items()
+                    aid
+                    for key, aid in self.plan.assembly_ids.items()
                     if _split_accession(key)[0] == base
                 }
                 if len(candidates) == 1:
@@ -320,15 +351,17 @@ class _PlanBuilder:
             else:
                 canonical = self.plan.canonical_accessions[assembly_id]
                 asset_role = _assembly_asset_role(asset.role, full, canonical)
-            self.plan.assets.append(DatasetAsset(
-                path=asset.path,
-                accession=full,
-                role=(asset.role if target_type == "annotation" else asset_role),
-                source_url=asset.source_url,
-                archive_path=asset.archive_path,
-                archive_member=asset.archive_member,
-                size_bytes=asset.size_bytes,
-            ))
+            self.plan.assets.append(
+                DatasetAsset(
+                    path=asset.path,
+                    accession=full,
+                    role=(asset.role if target_type == "annotation" else asset_role),
+                    source_url=asset.source_url,
+                    archive_path=asset.archive_path,
+                    archive_member=asset.archive_member,
+                    size_bytes=asset.size_bytes,
+                )
+            )
             # Store target identity without adding another public dataclass;
             # the maps remain authoritative when assets are ingested.
             if target_type == "annotation":
@@ -342,10 +375,13 @@ class _PlanBuilder:
         primary = meta["accession"]
         if not primary:
             raise ValidationError("NCBI Datasets record has no assembly accession")
-        related = _unique([primary, meta.get("current_accession"), meta.get("paired_accession")])
+        related = _unique(
+            [primary, meta.get("current_accession"), meta.get("paired_accession")]
+        )
 
         existing_assembly_ids = {
-            value for accession in related
+            value
+            for accession in related
             if (value := self._find_assembly(accession)) is not None
         }
         if len(existing_assembly_ids) > 1:
@@ -363,22 +399,27 @@ class _PlanBuilder:
         sample_id = self._ensure_sample(meta, organism_id, assembly_id)
         current = self._current("assemblies", assembly_id)
         canonical = _select_canonical_assembly_accession(current, related, primary)
-        assembly_row = _merge_nonempty(current, {
-            "assembly_id": assembly_id,
-            "sample_id": sample_id,
-            "assembly_accession": canonical,
-            "assembly_name": meta.get("assembly_name"),
-            "assembly_version": _accession_version(canonical) or 1,
-            "assembly_level": _normalize_assembly_level(meta.get("assembly_level")),
-            "assembly_method": meta.get("assembly_method"),
-            "submitter": meta.get("submitter"),
-            "release_date": _date_only(meta.get("release_date")),
-            "reference_status": _normalize_reference_status(meta.get("reference_status")),
-            "bioproject_accession": meta.get("bioproject_accession"),
-            "source_database": _normalize_source_database(None, canonical),
-            "assembly_status": meta.get("assembly_status"),
-            "assembly_type": meta.get("assembly_type"),
-        })
+        assembly_row = _merge_nonempty(
+            current,
+            {
+                "assembly_id": assembly_id,
+                "sample_id": sample_id,
+                "assembly_accession": canonical,
+                "assembly_name": meta.get("assembly_name"),
+                "assembly_version": _accession_version(canonical) or 1,
+                "assembly_level": _normalize_assembly_level(meta.get("assembly_level")),
+                "assembly_method": meta.get("assembly_method"),
+                "submitter": meta.get("submitter"),
+                "release_date": _date_only(meta.get("release_date")),
+                "reference_status": _normalize_reference_status(
+                    meta.get("reference_status")
+                ),
+                "bioproject_accession": meta.get("bioproject_accession"),
+                "source_database": _normalize_source_database(None, canonical),
+                "assembly_status": meta.get("assembly_status"),
+                "assembly_type": meta.get("assembly_type"),
+            },
+        )
         self._put("assemblies", assembly_id, assembly_row)
         self.plan.canonical_accessions[assembly_id] = canonical
 
@@ -388,29 +429,54 @@ class _PlanBuilder:
             accession = _canonical_accession(accession)
             self.plan.assembly_ids[accession] = assembly_id
             namespace = _assembly_namespace(accession)
-            self._put_accession("assembly", assembly_id, namespace, accession,
-                                _accession_version(accession), accession == canonical)
-            self.plan.assembly_records.append({
-                "accession": accession,
-                "assembly_id": assembly_id,
-                "source_database": _normalize_source_database(None, accession),
-                "is_canonical": 1 if accession == canonical else 0,
-                "metadata_sha256": _metadata_identity(meta, accession),
-            })
-        self._put_accession("assembly", assembly_id, "NCBI_Assembly", canonical,
-                            _accession_version(canonical), True)
+            self._put_accession(
+                "assembly",
+                assembly_id,
+                namespace,
+                accession,
+                _accession_version(accession),
+                accession == canonical,
+            )
+            self.plan.assembly_records.append(
+                {
+                    "accession": accession,
+                    "assembly_id": assembly_id,
+                    "source_database": _normalize_source_database(None, accession),
+                    "is_canonical": 1 if accession == canonical else 0,
+                    "metadata_sha256": _metadata_identity(meta, accession),
+                }
+            )
+        self._put_accession(
+            "assembly",
+            assembly_id,
+            "NCBI_Assembly",
+            canonical,
+            _accession_version(canonical),
+            True,
+        )
         annotation = meta.get("annotation") or {}
         if any(annotation.values()):
             annotation_id = self._ensure_annotation(assembly_id, primary, annotation)
             row = self._current("annotations", annotation_id)
             source_db = "RefSeq" if primary.startswith("GCF_") else "GenBank"
-            self._put("annotations", annotation_id, _merge_nonempty(row, {
-                "annotation_id": annotation_id,
-                "assembly_id": assembly_id,
-                "annotation_source": annotation.get("provider") or f"NCBI {source_db}",
-                "annotation_version": _integer_or_none(annotation.get("version")) or 1,
-                "annotation_date": _date_only(annotation.get("release_date")),
-            }))
+            self._put(
+                "annotations",
+                annotation_id,
+                _merge_nonempty(
+                    row,
+                    {
+                        "annotation_id": annotation_id,
+                        "assembly_id": assembly_id,
+                        "annotation_source": annotation.get("provider")
+                        or f"NCBI {source_db}",
+                        "annotation_version": _integer_or_none(
+                            annotation.get("version")
+                        )
+                        or 1,
+                        "annotation_date": _date_only(annotation.get("release_date")),
+                    },
+                ),
+            )
 
     def _find_assembly(self, accession: str | None) -> str | None:
         if not accession:
@@ -423,12 +489,15 @@ class _PlanBuilder:
                 self._require_active_existing("assembly", assembly_id)
                 return assembly_id
         base, version = _split_accession(accession)
-        for assembly_id, row in {**self.rows["assemblies"], **self.planned["assemblies"]}.items():
+        for assembly_id, row in {
+            **self.rows["assemblies"],
+            **self.planned["assemblies"],
+        }.items():
             stored = str(row.get("assembly_accession") or "").upper()
             stored_base, stored_version = _split_accession(stored)
             explicit_version = _integer_or_none(row.get("assembly_version"))
             if stored == accession or (
-                    stored_base == base and (stored_version or explicit_version) == version
+                stored_base == base and (stored_version or explicit_version) == version
             ):
                 self._require_active_existing("assembly", assembly_id)
                 return assembly_id
@@ -442,36 +511,59 @@ class _PlanBuilder:
             if acc and acc["internal_type"] == "organism":
                 organism_id = str(acc["internal_id"])
             else:
-                organism_id = next((
-                    oid for oid, row in {**self.rows["organisms"], **self.planned["organisms"]}.items()
-                    if _integer_or_none(row.get("taxon_id")) == taxon_id
-                ), "")
+                organism_id = next(
+                    (
+                        oid
+                        for oid, row in {
+                            **self.rows["organisms"],
+                            **self.planned["organisms"],
+                        }.items()
+                        if _integer_or_none(row.get("taxon_id")) == taxon_id
+                    ),
+                    "",
+                )
         else:
             organism_id = ""
         if not organism_id and scientific_name:
             folded = scientific_name.casefold()
-            organism_id = next((
-                oid for oid, row in {**self.rows["organisms"], **self.planned["organisms"]}.items()
-                if str(row.get("scientific_name") or "").casefold() == folded
-            ), "")
+            organism_id = next(
+                (
+                    oid
+                    for oid, row in {
+                        **self.rows["organisms"],
+                        **self.planned["organisms"],
+                    }.items()
+                    if str(row.get("scientific_name") or "").casefold() == folded
+                ),
+                "",
+            )
         if not organism_id:
             if not scientific_name:
-                raise ValidationError("NCBI Datasets record has neither organism name nor taxon ID")
+                raise ValidationError(
+                    "NCBI Datasets record has neither organism name nor taxon ID"
+                )
             organism_id = self.ids.allocate("organism")
             self.plan.new_ids["organism"] += 1
         self._require_active_existing("organism", organism_id)
-        row = _merge_nonempty(self._current("organisms", organism_id), {
-            "organism_id": organism_id,
-            "scientific_name": scientific_name,
-            "taxon_id": taxon_id,
-            "taxonomy_source": "NCBI",
-        })
+        row = _merge_nonempty(
+            self._current("organisms", organism_id),
+            {
+                "organism_id": organism_id,
+                "scientific_name": scientific_name,
+                "taxon_id": taxon_id,
+                "taxonomy_source": "NCBI",
+            },
+        )
         self._put("organisms", organism_id, row)
         if taxon_id is not None:
-            self._put_accession("organism", organism_id, "NCBI_Taxonomy", str(taxon_id), None, True)
+            self._put_accession(
+                "organism", organism_id, "NCBI_Taxonomy", str(taxon_id), None, True
+            )
         return organism_id
 
-    def _ensure_sample(self, meta: dict[str, Any], organism_id: str, assembly_id: str) -> str:
+    def _ensure_sample(
+        self, meta: dict[str, Any], organism_id: str, assembly_id: str
+    ) -> str:
         biosample = str(meta.get("biosample_accession") or "").strip().upper()
         sample_id = ""
         if biosample:
@@ -479,10 +571,18 @@ class _PlanBuilder:
             if acc and acc["internal_type"] == "sample":
                 sample_id = str(acc["internal_id"])
             if not sample_id:
-                sample_id = next((
-                    sid for sid, row in {**self.rows["samples"], **self.planned["samples"]}.items()
-                    if str(row.get("biosample_accession") or "").upper() == biosample
-                ), "")
+                sample_id = next(
+                    (
+                        sid
+                        for sid, row in {
+                            **self.rows["samples"],
+                            **self.planned["samples"],
+                        }.items()
+                        if str(row.get("biosample_accession") or "").upper()
+                        == biosample
+                    ),
+                    "",
+                )
         if not sample_id:
             existing_assembly = self._current("assemblies", assembly_id)
             sample_id = str(existing_assembly.get("sample_id") or "")
@@ -490,34 +590,40 @@ class _PlanBuilder:
             sample_id = self.ids.allocate("sample")
             self.plan.new_ids["sample"] += 1
         self._require_active_existing("sample", sample_id)
-        sample_row = _merge_nonempty(self._current("samples", sample_id), {
-            "sample_id": sample_id,
-            "organism_id": organism_id,
-            "biosample_accession": biosample or None,
-            "strain": meta.get("strain"),
-            "isolate": meta.get("isolate"),
-            "cultivar": meta.get("cultivar"),
-            "sex": _normalize_sex(meta.get("sex")),
-            "collection_date": _date_only(meta.get("collection_date")),
-            "country": meta.get("country"),
-            "latitude": _float_or_none(meta.get("latitude")),
-            "longitude": _float_or_none(meta.get("longitude")),
-            "host": meta.get("host"),
-            "source_record": (
-                f"https://www.ncbi.nlm.nih.gov/biosample/{biosample}" if biosample
-                else f"https://www.ncbi.nlm.nih.gov/datasets/genome/{meta['accession']}"
-            ),
-        })
+        sample_row = _merge_nonempty(
+            self._current("samples", sample_id),
+            {
+                "sample_id": sample_id,
+                "organism_id": organism_id,
+                "biosample_accession": biosample or None,
+                "strain": meta.get("strain"),
+                "isolate": meta.get("isolate"),
+                "cultivar": meta.get("cultivar"),
+                "sex": _normalize_sex(meta.get("sex")),
+                "collection_date": _date_only(meta.get("collection_date")),
+                "country": meta.get("country"),
+                "latitude": _float_or_none(meta.get("latitude")),
+                "longitude": _float_or_none(meta.get("longitude")),
+                "host": meta.get("host"),
+                "source_record": (
+                    f"https://www.ncbi.nlm.nih.gov/biosample/{biosample}"
+                    if biosample
+                    else f"https://www.ncbi.nlm.nih.gov/datasets/genome/{meta['accession']}"
+                ),
+            },
+        )
         self._put("samples", sample_id, sample_row)
         if biosample:
-            self._put_accession("sample", sample_id, "NCBI_BioSample", biosample, None, True)
+            self._put_accession(
+                "sample", sample_id, "NCBI_BioSample", biosample, None, True
+            )
         return sample_id
 
     def _ensure_annotation(
-            self,
-            assembly_id: str,
-            accession: str,
-            annotation: dict[str, Any],
+        self,
+        assembly_id: str,
+        accession: str,
+        annotation: dict[str, Any],
     ) -> str:
         accession = _canonical_accession(accession)
         if accession in self.plan.annotation_ids:
@@ -527,14 +633,19 @@ class _PlanBuilder:
         version = _integer_or_none(annotation.get("version")) or 1
         release_date = _date_only(annotation.get("release_date"))
         identity_sha256 = _annotation_identity(
-            assembly_id, accession, provider, version, release_date,
+            assembly_id,
+            accession,
+            provider,
+            version,
+            release_date,
         )
         mapped = (
             self.db.conn.execute(
                 "SELECT annotation_id FROM ncbi_annotation_records WHERE identity_sha256=?",
                 (identity_sha256,),
             ).fetchone()
-            if _table_exists(self.db, "ncbi_annotation_records") else None
+            if _table_exists(self.db, "ncbi_annotation_records")
+            else None
         )
         annotation_id = str(mapped["annotation_id"]) if mapped else ""
         if not annotation_id:
@@ -549,7 +660,8 @@ class _PlanBuilder:
                 # reusing the paired source's annotation would collide at
                 # ingest time (and break re-import idempotency).
                 claimed: set[str] = {
-                    aid for other, aid in self.plan.annotation_ids.items()
+                    aid
+                    for other, aid in self.plan.annotation_ids.items()
                     if other != accession
                 }
                 if _table_exists(self.db, "ncbi_annotation_records"):
@@ -559,40 +671,52 @@ class _PlanBuilder:
                             "SELECT annotation_id, assembly_accession "
                             "FROM ncbi_annotation_records"
                         )
-                        if _canonical_accession(str(rec["assembly_accession"])) != accession
+                        if _canonical_accession(str(rec["assembly_accession"]))
+                        != accession
                     )
-                annotation_id = next((
-                    aid for aid, row in {
-                    **self.rows["annotations"], **self.planned["annotations"],
-                }.items()
-                    if aid not in claimed
-                       and row.get("assembly_id") == assembly_id
-                       and str(row.get("annotation_source") or "").strip().casefold()
-                       == provider.casefold()
-                       and (_integer_or_none(row.get("annotation_version")) or 1) == version
-                       and _date_only(row.get("annotation_date")) == release_date
-                ), "")
+                annotation_id = next(
+                    (
+                        aid
+                        for aid, row in {
+                            **self.rows["annotations"],
+                            **self.planned["annotations"],
+                        }.items()
+                        if aid not in claimed
+                        and row.get("assembly_id") == assembly_id
+                        and str(row.get("annotation_source") or "").strip().casefold()
+                        == provider.casefold()
+                        and (_integer_or_none(row.get("annotation_version")) or 1)
+                        == version
+                        and _date_only(row.get("annotation_date")) == release_date
+                    ),
+                    "",
+                )
         if not annotation_id:
             annotation_id = self.ids.allocate("annotation")
             self.plan.new_ids["annotation"] += 1
         self._require_active_existing("annotation", annotation_id)
-        row = _merge_nonempty(self._current("annotations", annotation_id), {
-            "annotation_id": annotation_id,
-            "assembly_id": assembly_id,
-            "annotation_source": provider,
-            "annotation_version": version,
-            "annotation_date": release_date,
-        })
+        row = _merge_nonempty(
+            self._current("annotations", annotation_id),
+            {
+                "annotation_id": annotation_id,
+                "assembly_id": assembly_id,
+                "annotation_source": provider,
+                "annotation_version": version,
+                "annotation_date": release_date,
+            },
+        )
         self._put("annotations", annotation_id, row)
         self.plan.annotation_ids[accession] = annotation_id
-        self.plan.annotation_records.append({
-            "identity_sha256": identity_sha256,
-            "annotation_id": annotation_id,
-            "assembly_accession": accession,
-            "provider": provider,
-            "annotation_version": version,
-            "annotation_date": release_date,
-        })
+        self.plan.annotation_records.append(
+            {
+                "identity_sha256": identity_sha256,
+                "annotation_id": annotation_id,
+                "assembly_accession": accession,
+                "provider": provider,
+                "annotation_version": version,
+                "annotation_date": release_date,
+            }
+        )
         return annotation_id
 
     def _current(self, table: str, key: str) -> dict[str, Any]:
@@ -600,7 +724,9 @@ class _PlanBuilder:
 
     def _require_active_existing(self, entity_type: str, entity_id: str) -> None:
         table = ENTITY_TABLES[entity_type]
-        if entity_id in self.rows[table] and self.db.is_entity_retired(entity_type, entity_id):
+        if entity_id in self.rows[table] and self.db.is_entity_retired(
+            entity_type, entity_id
+        ):
             raise ValidationError(
                 f"NCBI import resolved to retired {entity_type} {entity_id}; "
                 f"run `operon restore {entity_id} --reason TEXT --apply` before re-importing"
@@ -613,31 +739,43 @@ class _PlanBuilder:
         key = f"{namespace}\0{accession}"
         return self.planned["accessions"].get(key) or self.rows["accessions"].get(key)
 
-    def _put_accession(self, internal_type: str, internal_id: str, namespace: str,
-                       accession: str, version: int | str | None, primary: bool) -> None:
+    def _put_accession(
+        self,
+        internal_type: str,
+        internal_id: str,
+        namespace: str,
+        accession: str,
+        version: int | str | None,
+        primary: bool,
+    ) -> None:
         accession = str(accession).strip()
         key = f"{namespace}\0{accession}"
         current = self._accession(namespace, accession)
         if current and (
-                current.get("internal_type") != internal_type
-                or current.get("internal_id") != internal_id
+            current.get("internal_type") != internal_type
+            or current.get("internal_id") != internal_id
         ):
             raise ConflictError(
                 f"{namespace}:{accession} already maps to "
                 f"{current.get('internal_type')} {current.get('internal_id')}, "
                 f"not {internal_type} {internal_id}"
             )
-        self.planned["accessions"][key] = _merge_nonempty(current or {}, {
-            "internal_type": internal_type,
-            "internal_id": internal_id,
-            "namespace": namespace,
-            "accession": accession,
-            "version": str(version) if version is not None else None,
-            "is_primary": 1 if primary else None,
-        })
+        self.planned["accessions"][key] = _merge_nonempty(
+            current or {},
+            {
+                "internal_type": internal_type,
+                "internal_id": internal_id,
+                "namespace": namespace,
+                "accession": accession,
+                "version": str(version) if version is not None else None,
+                "is_primary": 1 if primary else None,
+            },
+        )
 
 
-def _validate_plan_rows(schema: Schema, plan: ImportPlan) -> dict[str, list[dict[str, Any]]]:
+def _validate_plan_rows(
+    schema: Schema, plan: ImportPlan
+) -> dict[str, list[dict[str, Any]]]:
     normalized: dict[str, list[dict[str, Any]]] = {}
     for table, rows in plan.tables.items():
         if not rows:
@@ -646,19 +784,21 @@ def _validate_plan_rows(schema: Schema, plan: ImportPlan) -> dict[str, list[dict
         columns = set(schema.columns(table))
         # TODO(1.0): remove this field projection with old project-schema
         # support; validated 1.4+ schemas contain every adapter-owned field.
-        compatible_rows = [{key: value for key, value in row.items() if key in columns} for row in rows]
+        compatible_rows = [
+            {key: value for key, value in row.items() if key in columns} for row in rows
+        ]
         normalized[table], _ = schema.validate_and_normalize(table, compatible_rows)
     return normalized
 
 
 def _apply_plan(
-        db: Database,
-        project: Project,
-        plan: ImportPlan,
-        schema: Schema,
-        *,
-        workflow_run_id: str,
-        normalized: dict[str, list[dict[str, Any]]],
+    db: Database,
+    project: Project,
+    plan: ImportPlan,
+    schema: Schema,
+    *,
+    workflow_run_id: str,
+    normalized: dict[str, list[dict[str, Any]]],
 ) -> None:
     """Persist one batch's plan rows.
 
@@ -670,7 +810,13 @@ def _apply_plan(
     """
     with db.transaction() as conn:
         db.ensure_metadata_columns(schema)
-        for table in ("organisms", "samples", "assemblies", "annotations", "accessions"):
+        for table in (
+            "organisms",
+            "samples",
+            "assemblies",
+            "annotations",
+            "accessions",
+        ):
             rows = normalized[table]
             if not rows:
                 continue
@@ -678,7 +824,8 @@ def _apply_plan(
             keys = db._primary_keys(table)
             assignments = ", ".join(
                 f"{quote_identifier(col)}=excluded.{quote_identifier(col)}"
-                for col in columns if col not in keys
+                for col in columns
+                if col not in keys
             )
             sql = (
                 f"INSERT INTO {quote_identifier(table)} ({', '.join(quote_identifier(c) for c in columns)}) "
@@ -688,7 +835,8 @@ def _apply_plan(
             for row in rows:
                 where = " AND ".join(f"{key}=?" for key in keys)
                 existing = conn.execute(
-                    f"SELECT * FROM {table} WHERE {where}", [row.get(key) for key in keys]  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                    f"SELECT * FROM {table} WHERE {where}",
+                    [row.get(key) for key in keys],  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                 ).fetchone()
                 conn.execute(sql, [row.get(col) for col in columns])
                 before = dict(existing) if existing else {}
@@ -704,11 +852,16 @@ def _apply_plan(
                         "actor, changed_at, workflow_run_id, reverts_change_id) "
                         "VALUES(?,?,?,?,?,?,?,?,?,?,NULL)",
                         (
-                            table, object_id, column,
+                            table,
+                            object_id,
+                            column,
                             str(old_value) if old_value is not None else None,
                             str(new_value) if new_value is not None else None,
-                            "NCBI Datasets metadata import", None, resolve_actor(),
-                            now_iso(), workflow_run_id,
+                            "NCBI Datasets metadata import",
+                            None,
+                            resolve_actor(),
+                            now_iso(),
+                            workflow_run_id,
                         ),
                     )
         timestamp = now_iso()
@@ -722,8 +875,13 @@ def _apply_plan(
                 "metadata_sha256=excluded.metadata_sha256, workflow_run_id=excluded.workflow_run_id, "
                 "updated_at=excluded.updated_at",
                 (
-                    record["accession"], record["assembly_id"], record["source_database"],
-                    record["is_canonical"], record["metadata_sha256"], workflow_run_id, timestamp,
+                    record["accession"],
+                    record["assembly_id"],
+                    record["source_database"],
+                    record["is_canonical"],
+                    record["metadata_sha256"],
+                    workflow_run_id,
+                    timestamp,
                 ),
             )
         for record in plan.annotation_records:
@@ -734,10 +892,14 @@ def _apply_plan(
                 "ON CONFLICT(identity_sha256) DO UPDATE SET annotation_id=excluded.annotation_id, "
                 "workflow_run_id=excluded.workflow_run_id",
                 (
-                    record["identity_sha256"], record["annotation_id"],
-                    record["assembly_accession"], record["provider"],
-                    record["annotation_version"], record["annotation_date"],
-                    workflow_run_id, timestamp,
+                    record["identity_sha256"],
+                    record["annotation_id"],
+                    record["assembly_accession"],
+                    record["provider"],
+                    record["annotation_version"],
+                    record["annotation_date"],
+                    workflow_run_id,
+                    timestamp,
                 ),
             )
         for entity_type, table in ENTITY_TABLES.items():
@@ -748,8 +910,13 @@ def _apply_plan(
                 conn.execute(
                     "INSERT INTO entity_state(entity_type, entity_id, state, message, updated_at) "
                     "VALUES(?,?,?,?,?) ON CONFLICT(entity_type, entity_id) DO NOTHING",
-                    (entity_type, row[id_col], "METADATA_VALIDATED",
-                     "metadata imported by NCBI Datasets adapter", timestamp),
+                    (
+                        entity_type,
+                        row[id_col],
+                        "METADATA_VALIDATED",
+                        "metadata imported by NCBI Datasets adapter",
+                        timestamp,
+                    ),
                 )
 
 
@@ -763,13 +930,17 @@ def _adapter_schema(project: Project, *, persist: bool) -> Schema:
     try:
         document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8")) or {}
     except OSError as exc:
-        raise ValidationError(f"cannot read project metadata schema: {project.schema_path}") from exc
+        raise ValidationError(
+            f"cannot read project metadata schema: {project.schema_path}"
+        ) from exc
     if not isinstance(document.get("tables"), dict):
         raise ValidationError("schema document must contain a 'tables' mapping")
     try:
         assembly_fields = document["tables"]["assemblies"]["fields"]
     except (KeyError, TypeError) as exc:
-        raise ValidationError("project schema has no assemblies.fields mapping") from exc
+        raise ValidationError(
+            "project schema has no assemblies.fields mapping"
+        ) from exc
     defaults = default_schemas()["tables"]["assemblies"]["fields"]
     changed = False
     for name in NCBI_ASSEMBLY_SCHEMA_FIELDS:
@@ -779,12 +950,16 @@ def _adapter_schema(project: Project, *, persist: bool) -> Schema:
     try:
         allowed_roles = document["tables"]["files"]["fields"]["file_role"]["allowed"]
     except (KeyError, TypeError) as exc:
-        raise ValidationError("project schema has no files.file_role.allowed list") from exc
+        raise ValidationError(
+            "project schema has no files.file_role.allowed list"
+        ) from exc
     for role in NCBI_SOURCE_FILE_ROLES:
         if role not in allowed_roles:
             allowed_roles.append(role)
             changed = True
-    if _version_tuple(document.get("schema_version")) < _version_tuple(METADATA_SCHEMA_VERSION):
+    if _version_tuple(document.get("schema_version")) < _version_tuple(
+        METADATA_SCHEMA_VERSION
+    ):
         document["schema_version"] = METADATA_SCHEMA_VERSION
         changed = True
     if persist and changed:
@@ -838,7 +1013,9 @@ def _asset_sha256(asset: DatasetAsset) -> str:
     if asset.path is not None:
         return sha256_file(asset.path)
     if asset.archive_path is None or asset.archive_member is None:
-        raise ValidationError(f"NCBI asset has no readable source: {asset.display_path}")
+        raise ValidationError(
+            f"NCBI asset has no readable source: {asset.display_path}"
+        )
     digest = hashlib.sha256()
     try:
         with zipfile.ZipFile(asset.archive_path) as archive:
@@ -848,19 +1025,21 @@ def _asset_sha256(asset: DatasetAsset) -> str:
                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                     digest.update(chunk)
     except (KeyError, zipfile.BadZipFile, OSError) as exc:
-        raise ValidationError(f"cannot read NCBI ZIP asset {asset.display_path}: {exc}") from exc
+        raise ValidationError(
+            f"cannot read NCBI ZIP asset {asset.display_path}: {exc}"
+        ) from exc
     return digest.hexdigest()
 
 
 def _ingest_dataset_asset(
-        db: Database,
-        project: Project,
-        asset: DatasetAsset,
-        entity_type: str,
-        entity_id: str,
-        *,
-        run_id: str,
-        standardize: bool,
+    db: Database,
+    project: Project,
+    asset: DatasetAsset,
+    entity_type: str,
+    entity_id: str,
+    *,
+    run_id: str,
+    standardize: bool,
 ) -> dict[str, Any]:
     """Ingest one asset while bounding temporary storage to one member."""
 
@@ -870,19 +1049,30 @@ def _ingest_dataset_asset(
     try:
         if source is None:
             if asset.archive_path is None or asset.archive_member is None:
-                raise ValidationError(f"NCBI asset has no readable source: {asset.display_path}")
+                raise ValidationError(
+                    f"NCBI asset has no readable source: {asset.display_path}"
+                )
             staging_parent = project.raw_root / ".ncbi_datasets_staging"
             staging_parent.mkdir(parents=True, exist_ok=True)
             required = int(asset.size_bytes or 0) * (2 if standardize else 1)
-            _require_disk_space(staging_parent, required, f"archive {asset.archive_member}")
-            staging = tempfile.TemporaryDirectory(prefix="asset-", dir=str(staging_parent))
+            _require_disk_space(
+                staging_parent, required, f"archive {asset.archive_member}"
+            )
+            staging = tempfile.TemporaryDirectory(
+                prefix="asset-", dir=str(staging_parent)
+            )
             source = Path(staging.name) / PurePosixPath(asset.archive_member).name
             try:
                 with zipfile.ZipFile(asset.archive_path) as archive:
                     info = archive.getinfo(asset.archive_member)
                     _validate_zip_info(info)
-                    with archive.open(info) as input_handle, open(source, "wb") as output_handle:
-                        shutil.copyfileobj(input_handle, output_handle, length=1024 * 1024)
+                    with (
+                        archive.open(info) as input_handle,
+                        open(source, "wb") as output_handle,
+                    ):
+                        shutil.copyfileobj(
+                            input_handle, output_handle, length=1024 * 1024
+                        )
                     if source.stat().st_size != info.file_size:
                         raise ValidationError(
                             f"truncated NCBI ZIP member {asset.display_path}: "
@@ -890,13 +1080,19 @@ def _ingest_dataset_asset(
                         )
             except (KeyError, zipfile.BadZipFile, OSError) as exc:
                 if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
-                    raise _no_space_error(staging_parent, f"extract {asset.archive_member}", exc) from exc
-                raise ValidationError(f"cannot extract NCBI ZIP asset {asset.display_path}: {exc}") from exc
+                    raise _no_space_error(
+                        staging_parent, f"extract {asset.archive_member}", exc
+                    ) from exc
+                raise ValidationError(
+                    f"cannot extract NCBI ZIP asset {asset.display_path}: {exc}"
+                ) from exc
             # Staging and raw live on the same filesystem, so ingest can
             # atomically move the extracted member instead of copying it.
             move = True
         else:
-            required = int(asset.size_bytes or source.stat().st_size) * (2 if standardize else 1)
+            required = int(asset.size_bytes or source.stat().st_size) * (
+                2 if standardize else 1
+            )
             _require_disk_space(project.raw_root, required, f"archive {source.name}")
 
         row = ingest_file(

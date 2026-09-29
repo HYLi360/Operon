@@ -33,7 +33,7 @@ def _ordered_ids(db: Database, sql: str, params: Iterable[Any]) -> list[str]:
 
 
 def entity_subtree(
-        db: Database, entity_type: str, entity_id: str
+    db: Database, entity_type: str, entity_id: str
 ) -> dict[str, list[str]]:
     """Return the target and every ownership descendant in stable order."""
     db.require_entity(entity_type, entity_id)
@@ -94,13 +94,13 @@ def _pairs(subtree: dict[str, list[str]]) -> list[tuple[str, str]]:
 
 
 def _rows_for_pairs(
-        db: Database,
-        table: str,
-        type_column: str,
-        id_column: str,
-        pairs: Iterable[tuple[str, str]],
-        *,
-        columns: str = "*",
+    db: Database,
+    table: str,
+    type_column: str,
+    id_column: str,
+    pairs: Iterable[tuple[str, str]],
+    *,
+    columns: str = "*",
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[str]] = defaultdict(list)
     for entity_type, entity_id in pairs:
@@ -108,7 +108,7 @@ def _rows_for_pairs(
     rows: list[dict[str, Any]] = []
     for entity_type, entity_ids in grouped.items():
         for start in range(0, len(entity_ids), 500):
-            chunk = entity_ids[start:start + 500]
+            chunk = entity_ids[start : start + 500]
             placeholders = ", ".join("?" for _ in chunk)
             found = db.conn.execute(
                 f"SELECT {columns} FROM {table} WHERE {type_column}=? "
@@ -120,29 +120,26 @@ def _rows_for_pairs(
 
 
 def _rows_for_ids(
-        db: Database,
-        table: str,
-        id_column: str,
-        ids: list[str],
-        *,
-        columns: str = "*",
+    db: Database,
+    table: str,
+    id_column: str,
+    ids: list[str],
+    *,
+    columns: str = "*",
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for start in range(0, len(ids), 500):
-        chunk = ids[start:start + 500]
+        chunk = ids[start : start + 500]
         placeholders = ", ".join("?" for _ in chunk)
         found = db.conn.execute(
-            f"SELECT {columns} FROM {table} "
-            f"WHERE {id_column} IN ({placeholders})",  # nosec B608 # fixed internal table/column arguments; IDs are bound
+            f"SELECT {columns} FROM {table} WHERE {id_column} IN ({placeholders})",  # nosec B608 # fixed internal table/column arguments; IDs are bound
             chunk,
         ).fetchall()
         rows.extend(dict(row) for row in found)
     return rows
 
 
-def lifecycle_plan(
-        db: Database, identifier: str, *, action: str
-) -> dict[str, Any]:
+def lifecycle_plan(db: Database, identifier: str, *, action: str) -> dict[str, Any]:
     """Build a read-only retirement/restoration impact plan."""
     action = action.upper()
     if action not in {"RETIRE", "RESTORE"}:
@@ -155,7 +152,11 @@ def lifecycle_plan(
     subtree = entity_subtree(db, entity_type, entity_id)
     entity_pairs = _pairs(subtree)
     files = _rows_for_pairs(
-        db, "files", "entity_type", "entity_id", entity_pairs,
+        db,
+        "files",
+        "entity_type",
+        "entity_id",
+        entity_pairs,
         columns="file_id, entity_type, entity_id, file_role, status, relative_path, sha256, size_bytes",
     )
     files.sort(key=lambda row: str(row["file_id"]))
@@ -168,58 +169,106 @@ def lifecycle_plan(
         blocker = None
     else:
         will_change = current is not None and current["action"] == "RETIRE"
-        blocker = None if will_change else (
-            "target has no current direct RETIRE event; restore the owning retirement root"
-            if effective else "target is already active"
+        blocker = (
+            None
+            if will_change
+            else (
+                "target has no current direct RETIRE event; restore the owning retirement root"
+                if effective
+                else "target is already active"
+            )
         )
 
     accessions = _rows_for_pairs(
-        db, "accessions", "internal_type", "internal_id", entity_pairs,
+        db,
+        "accessions",
+        "internal_type",
+        "internal_id",
+        entity_pairs,
         columns="namespace, accession, internal_type, internal_id",
     )
     qc_results = _rows_for_pairs(
-        db, "qc_results", "entity_type", "entity_id", entity_pairs,
+        db,
+        "qc_results",
+        "entity_type",
+        "entity_id",
+        entity_pairs,
         columns="qc_result_id",
     )
     decisions = _rows_for_pairs(
-        db, "decisions", "entity_type", "entity_id", entity_pairs,
+        db,
+        "decisions",
+        "entity_type",
+        "entity_id",
+        entity_pairs,
         columns="decision_id",
     )
     analysis_jobs = _rows_for_pairs(
-        db, "analysis_jobs", "entity_type", "entity_id", entity_pairs,
+        db,
+        "analysis_jobs",
+        "entity_type",
+        "entity_id",
+        entity_pairs,
         columns="job_id",
     )
     workflow_runs = _rows_for_pairs(
-        db, "workflow_runs", "entity_type", "entity_id", entity_pairs,
+        db,
+        "workflow_runs",
+        "entity_type",
+        "entity_id",
+        entity_pairs,
         columns="run_id",
     )
     source_links = _rows_for_pairs(
-        db, "source_links", "object_type", "object_id", entity_pairs,
+        db,
+        "source_links",
+        "object_type",
+        "object_id",
+        entity_pairs,
         columns="source_id, object_type, object_id, relationship",
     )
     if file_ids:
-        source_links.extend(_rows_for_pairs(
-            db, "source_links", "object_type", "object_id",
-            [("file", file_id) for file_id in file_ids],
-            columns="source_id, object_type, object_id, relationship",
-        ))
-    remote_locations = _rows_for_ids(
-        db, "file_locations", "file_id", file_ids,
-        columns="file_id, location_name, status",
-    ) if file_ids else []
-    release_members = _rows_for_ids(
-        db, "release_members", "file_id", file_ids,
-        columns="release_version, file_id",
-    ) if file_ids else []
+        source_links.extend(
+            _rows_for_pairs(
+                db,
+                "source_links",
+                "object_type",
+                "object_id",
+                [("file", file_id) for file_id in file_ids],
+                columns="source_id, object_type, object_id, relationship",
+            )
+        )
+    remote_locations = (
+        _rows_for_ids(
+            db,
+            "file_locations",
+            "file_id",
+            file_ids,
+            columns="file_id, location_name, status",
+        )
+        if file_ids
+        else []
+    )
+    release_members = (
+        _rows_for_ids(
+            db,
+            "release_members",
+            "file_id",
+            file_ids,
+            columns="release_version, file_id",
+        )
+        if file_ids
+        else []
+    )
     release_versions = sorted({str(row["release_version"]) for row in release_members})
 
     effective_after = action == "RETIRE"
     if action == "RESTORE" and will_change:
         effective_after = any(
             not (
-                    row["retired_by_type"] == entity_type
-                    and row["retired_by_id"] == entity_id
-                    and int(row["event_id"]) == int(current["event_id"])
+                row["retired_by_type"] == entity_type
+                and row["retired_by_id"] == entity_id
+                and int(row["event_id"]) == int(current["event_id"])
             )
             for row in effective
         )
@@ -260,16 +309,16 @@ def lifecycle_plan(
 
 
 def apply_lifecycle_event(
-        db: Database,
-        entity_type: str,
-        entity_id: str,
-        *,
-        action: str,
-        reason: str,
-        actor: str,
-        reason_code: str | None = None,
-        evidence: str | None = None,
-        workflow_run_id: str | None = None,
+    db: Database,
+    entity_type: str,
+    entity_id: str,
+    *,
+    action: str,
+    reason: str,
+    actor: str,
+    reason_code: str | None = None,
+    evidence: str | None = None,
+    workflow_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Append one direct RETIRE/RESTORE event and its changes audit row."""
     action = action.upper()
@@ -320,8 +369,16 @@ def apply_lifecycle_event(
             "workflow_run_id, occurred_at, reverts_event_id, change_id) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,NULL)",
             (
-                entity_type, entity_id, action, normalized_code, reason, evidence,
-                actor, workflow_run_id, now_iso(), reverts_event_id,
+                entity_type,
+                entity_id,
+                action,
+                normalized_code,
+                reason,
+                evidence,
+                actor,
+                workflow_run_id,
+                now_iso(),
+                reverts_event_id,
             ),
         )
         event_id = int(cursor.lastrowid)
@@ -348,7 +405,7 @@ def apply_lifecycle_event(
 
 
 def list_retired_entities(
-        db: Database, *, direct_only: bool = False
+    db: Database, *, direct_only: bool = False
 ) -> list[dict[str, Any]]:
     """List current direct retirements or their full effective descendant set."""
     if not db.lifecycle_schema_available():

@@ -9,18 +9,34 @@ from __future__ import annotations
 
 import ast
 import datetime
+import importlib.util
 import re
 from pathlib import Path
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[2]
-ID_PATTERN = re.compile(r"^ODR-\d{4}$")
+_DEFECTS_SPEC = importlib.util.spec_from_file_location(
+    "operon_defects_format", ROOT / "scripts" / "defects.py"
+)
+assert _DEFECTS_SPEC and _DEFECTS_SPEC.loader
+defects_format = importlib.util.module_from_spec(_DEFECTS_SPEC)
+_DEFECTS_SPEC.loader.exec_module(defects_format)
+
+ID_PATTERN = re.compile(r"^ODR-\d+$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_FIELDS = {
-    "id", "title", "reported", "introduced_in", "affected", "severity",
-    "component", "status", "reproduction", "disposition", "fix_commit",
-    "fixed_in", "regression_tests",
+    "id",
+    "title",
+    "reported",
+    "introduced_in",
+    "affected",
+    "severity",
+    "component",
+    "status",
+    "reproduction",
+    "disposition",
+    "fix_commit",
+    "fixed_in",
+    "regression_tests",
 }
 SEVERITIES = {"low", "medium", "high", "critical"}
 STATUSES = {"open", "confirmed", "fixed", "verified", "wontfix", "duplicate"}
@@ -40,7 +56,7 @@ def _registry_sources() -> list[Path]:
 def _load_registry() -> list[dict]:
     defects: list[dict] = []
     for path in _registry_sources():
-        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        doc = defects_format.load_document(path.read_text(encoding="utf-8"))
         for record in doc.get("defects") or []:
             record["_source"] = path.name
             defects.append(record)
@@ -100,6 +116,56 @@ def test_registry_schema():
             assert record["fixed_in"], f"{where}: verified requires fixed_in"
 
 
+def test_registry_storage_format():
+    """The on-disk registry is exactly what the formatter would write.
+
+    That pins the rules the formatter enforces: ISO dates stay single-quoted
+    strings, long text is folded at one width, and a paragraph break is one
+    blank line rather than two. A hand edit that drifts from the format fails
+    here instead of landing silently.
+    """
+    for path in _registry_sources():
+        text = path.read_text(encoding="utf-8")
+        rendered = defects_format.render_document(defects_format.load_document(text))
+        assert text == rendered, (
+            f"{path.name} is not in the canonical registry format; "
+            "rewrite it with scripts/defects.py's render_document"
+        )
+
+
+def test_registry_format_quotes_dates_and_folds_long_text():
+    raw = (
+        "schema: 1\n"
+        "defects:\n"
+        "- id: ODR-1\n"
+        "  reported: 2026-09-24\n"
+        "  title: " + ("word " * 40) + "\n"
+        "  reproduction: |\n"
+        "    a paragraph\n"
+        "\n"
+        "\n"
+        "    that was split by a double break\n"
+        "  note: >\n"
+        "    kept\n"
+        "\n"
+        "    apart\n"
+    )
+    rendered = defects_format.render_document(defects_format.load_document(raw))
+
+    assert "reported: '2026-09-24'" in rendered
+    assert not any(
+        line.startswith("  reported:") and "'" not in line
+        for line in rendered.splitlines()
+    )
+    assert "\n\n\n" not in rendered
+    assert "a paragraph\n    \n    that was split" in rendered
+    assert max(len(line) for line in rendered.splitlines()) <= defects_format.LINE_WIDTH
+    assert (
+        defects_format.render_document(defects_format.load_document(rendered))
+        == rendered
+    )
+
+
 def test_regression_test_closure():
     defects = {record["id"]: record for record in _load_registry()}
     marked = _bug_markers()
@@ -117,5 +183,5 @@ def test_regression_test_closure():
             test_name = test_part.split("::")[-1]
             key = f"{file_part}::{test_name}"
             assert key in marked and defect_id in marked[key], (
-                f"{defect_id}: {key} must carry @pytest.mark.bug(\"{defect_id}\")"
+                f'{defect_id}: {key} must carry @pytest.mark.bug("{defect_id}")'
             )

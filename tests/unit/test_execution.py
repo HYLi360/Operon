@@ -62,7 +62,7 @@ class _FakeChannel:
         return self._out_pos < len(self._proc.stdout)
 
     def recv(self, n: int) -> bytes:
-        chunk = self._proc.stdout[self._out_pos:self._out_pos + n]
+        chunk = self._proc.stdout[self._out_pos : self._out_pos + n]
         self._out_pos += len(chunk)
         return chunk
 
@@ -70,7 +70,7 @@ class _FakeChannel:
         return self._err_pos < len(self._proc.stderr)
 
     def recv_stderr(self, n: int) -> bytes:
-        chunk = self._proc.stderr[self._err_pos:self._err_pos + n]
+        chunk = self._proc.stderr[self._err_pos : self._err_pos + n]
         self._err_pos += len(chunk)
         return chunk
 
@@ -113,13 +113,21 @@ class FakeSSHClient:
             # fake executes that Linux-side payload on the CI host, where
             # macOS has no setsid, so emulate only the session boundary.
             proc = subprocess.run(
-                argv[2:], capture_output=True, timeout=timeout,
+                argv[2:],
+                capture_output=True,
+                timeout=timeout,
                 start_new_session=True,
             )
         else:
-            proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
+            proc = subprocess.run(
+                command, shell=True, capture_output=True, timeout=timeout
+            )
         channel = _FakeChannel(proc)
-        return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+        return (
+            None,
+            _FakeStream(proc.stdout, channel),
+            _FakeStream(proc.stderr, channel),
+        )
 
     def close(self) -> None:
         self.close_calls += 1
@@ -168,6 +176,7 @@ class FakeSFTP:
 
     def posix_rename(self, src: str, dst: str) -> None:
         import os
+
         os.replace(src, dst)
 
     def mkdir(self, path: str) -> None:
@@ -184,6 +193,7 @@ class FakeSFTP:
 
     def readlink(self, path: str) -> str:
         import os
+
         return os.readlink(path)
 
     def open(self, path: str, mode: str = "r"):
@@ -212,7 +222,19 @@ class TestExecutionConfig(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_EXEC_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_EXEC_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
@@ -246,18 +268,22 @@ class TestExecutionConfig(PytestAssertions):
     def test_ssh_backend_rejects_storage_and_execution_root_mismatch(self):
         self.project.config["remotes"] = {
             "mirror": {
-                "type": "sftp", "host": "hpc.example.org", "root": "/data/project",
+                "type": "sftp",
+                "host": "hpc.example.org",
+                "root": "/data/project",
             },
         }
         cfg = {
-            "storage_remote": "mirror", "remote_root": "/scratch/different-project",
+            "storage_remote": "mirror",
+            "remote_root": "/scratch/different-project",
         }
         with self.assertRaisesRegex(ValidationError, "differs from storage remote"):
             SSHExecutor(self.project, cfg, SlurmConfig())
 
     def test_sbatch_parser_tolerates_warnings_and_cluster_suffix(self):
         self.assertEqual(
-            _parse_sbatch_job_id("warning: using default account\n4242;cluster-a\n"), "4242"
+            _parse_sbatch_job_id("warning: using default account\n4242;cluster-a\n"),
+            "4242",
         )
         self.assertEqual(_parse_sbatch_job_id("4242_7\n"), "4242_7")
         with self.assertRaisesRegex(Exception, "could not parse"):
@@ -266,23 +292,38 @@ class TestExecutionConfig(PytestAssertions):
     def test_local_backend_does_not_load_paramiko(self, monkeypatch):
         monkeypatch.setattr(
             "operon.remotes.import_paramiko",
-            lambda: (_ for _ in ()).throw(AssertionError("Paramiko should not be loaded")),
+            lambda: (_ for _ in ()).throw(
+                AssertionError("Paramiko should not be loaded")
+            ),
         )
         stdout = self.root / "logs" / "local-no-paramiko.stdout.log"
         stderr = self.root / "logs" / "local-no-paramiko.stderr.log"
         stdout.parent.mkdir(exist_ok=True)
         result = LocalExecutor().run(
-            ["true"], cwd=self.root, stdout_path=stdout, stderr_path=stderr,
+            ["true"],
+            cwd=self.root,
+            stdout_path=stdout,
+            stderr_path=stderr,
         )
         self.assertEqual(result.exit_code, 0)
 
     def test_render_slurm_script(self):
-        slurm = SlurmConfig(partition="long", time_limit="12:00:00", mem_gb=16,
-                            extra_sbatch=["--gres=gpu:1"], setup_commands=["module load blast/2.15"])
+        slurm = SlurmConfig(
+            partition="long",
+            time_limit="12:00:00",
+            mem_gb=16,
+            extra_sbatch=["--gres=gpu:1"],
+            setup_commands=["module load blast/2.15"],
+        )
         script = render_slurm_script(
-            job_name="operon_WF_1", command_line="blastn -query /p/in.fa -out /p/out.tsv",
-            cwd="/work dir", stdout_path="/p/logs/WF_1.stdout.log", stderr_path="/p/logs/WF_1.stderr.log",
-            exitcode_path="/p/logs/WF_1.exitcode", threads=8, slurm=slurm,
+            job_name="operon_WF_1",
+            command_line="blastn -query /p/in.fa -out /p/out.tsv",
+            cwd="/work dir",
+            stdout_path="/p/logs/WF_1.stdout.log",
+            stderr_path="/p/logs/WF_1.stderr.log",
+            exitcode_path="/p/logs/WF_1.exitcode",
+            threads=8,
+            slurm=slurm,
         )
         self.assertIn("#SBATCH --job-name=operon_WF_1", script)
         self.assertIn("#SBATCH --output=/p/logs/WF_1.stdout.log", script)
@@ -300,9 +341,14 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_render_slurm_script_minimal(self):
         script = render_slurm_script(
-            job_name="j", command_line="echo hi", cwd="/p",
-            stdout_path="/o", stderr_path="/e", exitcode_path="/x",
-            threads=None, slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
+            job_name="j",
+            command_line="echo hi",
+            cwd="/p",
+            stdout_path="/o",
+            stderr_path="/e",
+            exitcode_path="/x",
+            threads=None,
+            slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
         )
         self.assertIn("#SBATCH --cpus-per-task=1", script)
         self.assertFalse("--time=" in script)
@@ -312,10 +358,16 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_render_slurm_script_with_probe(self):
         from operon.environment_capture import probe_shell
+
         script = render_slurm_script(
-            job_name="j", command_line="echo hi", cwd="/work dir",
-            stdout_path="/o", stderr_path="/e", exitcode_path="/x",
-            threads=None, slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
+            job_name="j",
+            command_line="echo hi",
+            cwd="/work dir",
+            stdout_path="/o",
+            stderr_path="/e",
+            exitcode_path="/x",
+            threads=None,
+            slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
             probe_path="/p/logs/WF_1.env",
         )
         self.assertIn(probe_shell(["echo", "hi"]), script)
@@ -325,13 +377,23 @@ class TestExecutionConfig(PytestAssertions):
         self.assertTrue(script.index("hostname") < script.index("echo hi"))
 
     def test_render_slurm_array_script(self):
-        slurm = SlurmConfig(partition="long", time_limit="12:00:00", mem_gb=16,
-                            extra_sbatch=["--gres=gpu:1"], setup_commands=["module load blast/2.15"])
+        slurm = SlurmConfig(
+            partition="long",
+            time_limit="12:00:00",
+            mem_gb=16,
+            extra_sbatch=["--gres=gpu:1"],
+            setup_commands=["module load blast/2.15"],
+        )
         script = render_slurm_array_script(
-            job_name="operon_batch1", manifest_path="/p/logs/batch1.array-manifest.tsv",
-            cwd="/work dir", stdout_path="/p/logs/batch1.%A_%a.out",
-            stderr_path="/p/logs/batch1.%A_%a.err", threads=8, slurm=slurm,
-            task_count=3, concurrency=2,
+            job_name="operon_batch1",
+            manifest_path="/p/logs/batch1.array-manifest.tsv",
+            cwd="/work dir",
+            stdout_path="/p/logs/batch1.%A_%a.out",
+            stderr_path="/p/logs/batch1.%A_%a.err",
+            threads=8,
+            slurm=slurm,
+            task_count=3,
+            concurrency=2,
         )
         self.assertIn("#SBATCH --job-name=operon_batch1", script)
         self.assertIn("#SBATCH --output=/p/logs/batch1.%A_%a.out", script)
@@ -348,10 +410,15 @@ class TestExecutionConfig(PytestAssertions):
         self.assertTrue(script.index("--array=1-3%2") < script.index("--time=12:00:00"))
         # Manifest dispatch: task N runs manifest line N; the command is the
         # last tab-separated field and is eval'd verbatim into per-task logs.
-        self.assertIn('line="$(sed -n "${SLURM_ARRAY_TASK_ID}p" /p/logs/batch1.array-manifest.tsv)"',
-                      script)
-        self.assertIn("IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
-                      'task_exitcode task_probe task_command <<< "$line"', script)
+        self.assertIn(
+            'line="$(sed -n "${SLURM_ARRAY_TASK_ID}p" /p/logs/batch1.array-manifest.tsv)"',
+            script,
+        )
+        self.assertIn(
+            "IFS=$'\\t' read -r task_index task_run_id task_stdout task_stderr "
+            'task_exitcode task_probe task_command <<< "$line"',
+            script,
+        )
         self.assertIn("cd '/work dir'", script)
         # The per-task probe runs from the sibling "<probe>.sh" script and
         # lands in the per-task probe path, never affecting the payload.
@@ -363,8 +430,12 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_render_slurm_array_script_minimal(self):
         script = render_slurm_array_script(
-            job_name="j", manifest_path="/m", cwd="/p",
-            stdout_path="/o", stderr_path="/e", threads=None,
+            job_name="j",
+            manifest_path="/m",
+            cwd="/p",
+            stdout_path="/o",
+            stderr_path="/e",
+            threads=None,
             slurm=SlurmConfig(partition="", time_limit="", mem_gb=0),
             task_count=2,
         )
@@ -378,21 +449,38 @@ class TestExecutionConfig(PytestAssertions):
     def test_render_array_manifest(self):
         tasks, _, _ = execution._prepare_array_tasks(
             [
-                {"run_id": "WF_1", "command": "echo 'a b' > /p/o1",
-                 "stdout_path": Path("/p/logs/WF_1.out"), "stderr_path": Path("/p/logs/WF_1.err")},
-                {"run_id": "WF_2", "command": "printf 'x\ty'",
-                 "stdout_path": Path("/p/logs/WF_2.out"), "stderr_path": Path("/p/logs/WF_2.err")},
+                {
+                    "run_id": "WF_1",
+                    "command": "echo 'a b' > /p/o1",
+                    "stdout_path": Path("/p/logs/WF_1.out"),
+                    "stderr_path": Path("/p/logs/WF_1.err"),
+                },
+                {
+                    "run_id": "WF_2",
+                    "command": "printf 'x\ty'",
+                    "stdout_path": Path("/p/logs/WF_2.out"),
+                    "stderr_path": Path("/p/logs/WF_2.err"),
+                },
             ],
-            cwd=None, threads=None, default_cwd="/p",
+            cwd=None,
+            threads=None,
+            default_cwd="/p",
         )
         text = render_array_manifest(tasks)
         lines = text.splitlines()
         self.assertEqual(len(lines), 2)
         fields = lines[0].split("\t")
-        self.assertEqual(fields[:6], [
-            "1", "WF_1", "/p/logs/WF_1.out", "/p/logs/WF_1.err",
-            "/p/logs/WF_1.exitcode", "/p/logs/WF_1.env",
-        ])
+        self.assertEqual(
+            fields[:6],
+            [
+                "1",
+                "WF_1",
+                "/p/logs/WF_1.out",
+                "/p/logs/WF_1.err",
+                "/p/logs/WF_1.exitcode",
+                "/p/logs/WF_1.env",
+            ],
+        )
         # The command is the last field, stored verbatim (tabs and all).
         self.assertEqual(lines[0].split("\t", 6)[6], "echo 'a b' > /p/o1")
         self.assertEqual(lines[1].split("\t", 6)[6], "printf 'x\ty'")
@@ -406,10 +494,13 @@ class TestExecutionConfig(PytestAssertions):
         self.assertIn("python_version", env)
 
     def test_run_external_command_records_environment(self):
-        record = run_external_command(self.db, self.project, ["true"], step="test:environment")
+        record = run_external_command(
+            self.db, self.project, ["true"], step="test:environment"
+        )
         self.assertIsNotNone(record.get("environment_id"))
         row = self.db.conn.execute(
-            "SELECT environment_id FROM workflow_runs WHERE run_id=?", (record["run_id"],),
+            "SELECT environment_id FROM workflow_runs WHERE run_id=?",
+            (record["run_id"],),
         ).fetchone()
         self.assertEqual(row["environment_id"], record["environment_id"])
         env_row = self.db.conn.execute(
@@ -418,12 +509,17 @@ class TestExecutionConfig(PytestAssertions):
         ).fetchone()
         self.assertIsNotNone(env_row)
         import json as _json
+
         document = _json.loads(env_row["document"])
         self.assertEqual(document["hostname"], _hashed_hostname(socket.gethostname()))
         # A second run in the same environment reuses the row.
-        second = run_external_command(self.db, self.project, ["true"], step="test:environment2")
+        second = run_external_command(
+            self.db, self.project, ["true"], step="test:environment2"
+        )
         self.assertEqual(second["environment_id"], record["environment_id"])
-        count = self.db.conn.execute("SELECT COUNT(*) AS n FROM execution_environments").fetchone()
+        count = self.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM execution_environments"
+        ).fetchone()
         self.assertEqual(count["n"], 1)
 
     def test_rewrite_remote_path(self):
@@ -432,15 +528,21 @@ class TestExecutionConfig(PytestAssertions):
             rewrite_remote_path(str(root / "raw/x.fa"), root, "/remote/proj"),
             "/remote/proj/raw/x.fa",
         )
-        self.assertEqual(rewrite_remote_path(str(root), root, "/remote/proj"), "/remote/proj")
         self.assertEqual(
-            rewrite_remote_path("/etc/other", root, "/remote/proj"), "/etc/other",
+            rewrite_remote_path(str(root), root, "/remote/proj"), "/remote/proj"
+        )
+        self.assertEqual(
+            rewrite_remote_path("/etc/other", root, "/remote/proj"),
+            "/etc/other",
         )
         self.assertEqual(rewrite_remote_path("--flag", root, "/remote/proj"), "--flag")
         self.assertEqual(
-            rewrite_remote_path(str(root / "raw/x.fa"), root, ""), str(root / "raw/x.fa"),
+            rewrite_remote_path(str(root / "raw/x.fa"), root, ""),
+            str(root / "raw/x.fa"),
         )
-        self.assertEqual(rewrite_remote_path(str(root / "raw/x.fa"), root, "/"), "/raw/x.fa")
+        self.assertEqual(
+            rewrite_remote_path(str(root / "raw/x.fa"), root, "/"), "/raw/x.fa"
+        )
         with self.assertRaisesRegex(ValidationError, "escapes the project root"):
             rewrite_remote_path(str(root / ".." / "escape.fa"), root, "/remote/proj")
         link = root / "link"
@@ -461,8 +563,12 @@ class TestExecutionConfig(PytestAssertions):
     def test_run_external_command_local_default_unchanged(self):
         output = self.root / "out.txt"
         record = run_external_command(
-            self.db, self.project, ["bash", "-c", f"echo hello > {output}"],
-            step="test:local", expected_outputs=[output], cwd=self.root,
+            self.db,
+            self.project,
+            ["bash", "-c", f"echo hello > {output}"],
+            step="test:local",
+            expected_outputs=[output],
+            cwd=self.root,
         )
         self.assertEqual(record["status"], "completed")
         self.assertEqual(record["exit_code"], 0)
@@ -471,7 +577,11 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_run_external_command_records_threads(self):
         run_external_command(
-            self.db, self.project, ["true"], step="test:threads", threads=7,
+            self.db,
+            self.project,
+            ["true"],
+            step="test:threads",
+            threads=7,
         )
         row = self.db.conn.execute(
             "SELECT threads FROM workflow_runs WHERE step='test:threads'"
@@ -479,10 +589,13 @@ class TestExecutionConfig(PytestAssertions):
         self.assertEqual(row["threads"], 7)
 
     def test_run_external_command_records_executor_provenance(self):
-        record = run_external_command(self.db, self.project, ["true"], step="test:provenance")
+        record = run_external_command(
+            self.db, self.project, ["true"], step="test:provenance"
+        )
         row = self.db.conn.execute(
             "SELECT executor, scheduler_job_id, execution_details FROM workflow_runs "
-            "WHERE run_id=?", (record["run_id"],),
+            "WHERE run_id=?",
+            (record["run_id"],),
         ).fetchone()
         self.assertEqual(row["executor"], "local")
         self.assertIsNone(row["scheduler_job_id"])
@@ -493,7 +606,10 @@ class TestExecutionConfig(PytestAssertions):
         err_log = self.root / "logs" / "deg.stderr.log"
         # A failing command still returns resources without raising.
         result = LocalExecutor().run(
-            ["false"], cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+            ["false"],
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
         )
         self.assertEqual(result.exit_code, 1)
         # Sampling is best-effort: the run must still report a consistent
@@ -506,14 +622,19 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_run_external_command_records_resource_usage(self):
         record = run_external_command(
-            self.db, self.project,
-            [sys.executable, "-c",
-             "x = bytearray(20 << 20)\nimport time\ntime.sleep(0.8)"],
+            self.db,
+            self.project,
+            [
+                sys.executable,
+                "-c",
+                "x = bytearray(20 << 20)\nimport time\ntime.sleep(0.8)",
+            ],
             step="test:resources",
         )
         row = self.db.conn.execute(
             "SELECT duration_seconds, max_rss_mb, avg_rss_mb, cpu_seconds "
-            "FROM workflow_runs WHERE run_id=?", (record["run_id"],),
+            "FROM workflow_runs WHERE run_id=?",
+            (record["run_id"],),
         ).fetchone()
         self.assertIsNotNone(row["duration_seconds"])
         self.assertGreaterEqual(row["duration_seconds"], 0.7)
@@ -525,7 +646,9 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_run_external_command_failed_run_records_failure_and_duration(self):
         with self.assertRaisesRegex(RuntimeError, "test:failed-resources"):
-            run_external_command(self.db, self.project, ["false"], step="test:failed-resources")
+            run_external_command(
+                self.db, self.project, ["false"], step="test:failed-resources"
+            )
         row = self.db.conn.execute(
             "SELECT status, exit_code, error, duration_seconds FROM workflow_runs "
             "WHERE step='test:failed-resources'"
@@ -538,10 +661,17 @@ class TestExecutionConfig(PytestAssertions):
 
     def test_version_cache_is_scoped_to_executor_identity(self):
         import operon.tools as tools_module
+
         tools_module._VERSION_CACHE.clear()
         tool = ToolSpec(
-            name="fake", executable="fake", run_method="", version_args=["--version"],
-            version_pattern=r"fake\s+([^\s]+)", description="", recipes={}, raw={},
+            name="fake",
+            executable="fake",
+            run_method="",
+            version_args=["--version"],
+            version_pattern=r"fake\s+([^\s]+)",
+            description="",
+            recipes={},
+            raw={},
         )
 
         class VersionExecutor:
@@ -562,8 +692,12 @@ class TestExecutionConfig(PytestAssertions):
                 stderr_path.write_text("", encoding="utf-8")
                 return ExecResult(0)
 
-        first = detect_tool_version_record(tool, {}, executor=VersionExecutor("one", "1.0"))[0]
-        second = detect_tool_version_record(tool, {}, executor=VersionExecutor("two", "2.0"))[0]
+        first = detect_tool_version_record(
+            tool, {}, executor=VersionExecutor("one", "1.0")
+        )[0]
+        second = detect_tool_version_record(
+            tool, {}, executor=VersionExecutor("two", "2.0")
+        )[0]
         self.assertEqual(first, "1.0")
         self.assertEqual(second, "2.0")
 
@@ -579,15 +713,18 @@ class TestSlurmArrayExecutor(PytestAssertions):
         self.logs = self.root / "logs"
         self.logs.mkdir()
         self.executor = SlurmExecutor(
-            SimpleNamespace(root=self.root), SlurmConfig(poll_interval=0.01))
+            SimpleNamespace(root=self.root), SlurmConfig(poll_interval=0.01)
+        )
 
     def _tasks(self, count: int) -> list[dict]:
         return [
             {
-                "run_id": f"WF_A{i}", "command": f"echo task-{i}",
+                "run_id": f"WF_A{i}",
+                "command": f"echo task-{i}",
                 "stdout_path": self.logs / f"WF_A{i}.stdout.log",
                 "stderr_path": self.logs / f"WF_A{i}.stderr.log",
-                "cwd": self.root, "threads": 4,
+                "cwd": self.root,
+                "threads": 4,
             }
             for i in range(1, count + 1)
         ]
@@ -600,8 +737,9 @@ class TestSlurmArrayExecutor(PytestAssertions):
             # Two finished tasks, one with a probe document.
             (self.logs / "WF_A1.exitcode").write_text("0", encoding="utf-8")
             (self.logs / "WF_A2.exitcode").write_text("3", encoding="utf-8")
-            (self.logs / "WF_A1.env").write_text("hostname=compute-01\nos=Linux\n",
-                                                 encoding="utf-8")
+            (self.logs / "WF_A1.env").write_text(
+                "hostname=compute-01\nos=Linux\n", encoding="utf-8"
+            )
             return "4242"
 
         sacct_jobs: list[str] = []
@@ -616,8 +754,11 @@ class TestSlurmArrayExecutor(PytestAssertions):
         monkeypatch.setattr(execution, "_squeue_job_gone", lambda *_a: True)
         monkeypatch.setattr(execution.subprocess, "run", fake_run)
         results = self.executor.run_array(
-            self._tasks(2), cwd=self.root, threads=4,
-            batch_id="batchX", array_concurrency=5,
+            self._tasks(2),
+            cwd=self.root,
+            threads=4,
+            batch_id="batchX",
+            array_concurrency=5,
         )
         self.assertEqual([r.exit_code for r in results], [0, 3])
         self.assertEqual([r.scheduler_job_id for r in results], ["4242_1", "4242_2"])
@@ -629,8 +770,10 @@ class TestSlurmArrayExecutor(PytestAssertions):
             self.assertEqual(result.resources["max_rss_mb"], 256.0)
             self.assertEqual(result.resources["cpu_seconds"], 30.0)
         # The probe document attaches per task; a missing probe file degrades.
-        self.assertEqual(results[0].details["environment"]["hostname"],
-                         _hashed_hostname("compute-01"))
+        self.assertEqual(
+            results[0].details["environment"]["hostname"],
+            _hashed_hostname("compute-01"),
+        )
         self.assertFalse("environment" in results[1].details)
         self.assertFalse((self.logs / "WF_A1.env").exists())
         manifest = (self.logs / "batchX.array-manifest.tsv").read_text(encoding="utf-8")
@@ -638,9 +781,15 @@ class TestSlurmArrayExecutor(PytestAssertions):
         self.assertEqual(len(lines), 2)
         self.assertEqual(
             lines[0].split("\t"),
-            ["1", "WF_A1", str(self.logs / "WF_A1.stdout.log"),
-             str(self.logs / "WF_A1.stderr.log"), str(self.logs / "WF_A1.exitcode"),
-             str(self.logs / "WF_A1.env"), "echo task-1"],
+            [
+                "1",
+                "WF_A1",
+                str(self.logs / "WF_A1.stdout.log"),
+                str(self.logs / "WF_A1.stderr.log"),
+                str(self.logs / "WF_A1.exitcode"),
+                str(self.logs / "WF_A1.env"),
+                "echo task-1",
+            ],
         )
         script = submitted["script"]
         self.assertIn("#SBATCH --array=1-2%5", script)
@@ -663,7 +812,9 @@ class TestSlurmArrayExecutor(PytestAssertions):
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
             self.executor.run_array(
-                self._tasks(2), cwd=self.root, batch_id="batchC",
+                self._tasks(2),
+                cwd=self.root,
+                batch_id="batchC",
                 cancel_event=cancel_event,
             )
         self.assertEqual(scancelled, ["4242"])
@@ -675,17 +826,41 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SSH_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_SSH_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
-    def _executor(self, remote_root: str = "", scheduler: str = "none",
-                  client: FakeSSHClient | None = None) -> SSHExecutor:
-        cfg = {"host": "fake.example.org", "user": "tester", "remote_root": remote_root,
-               "scheduler": scheduler}
-        return SSHExecutor(self.project, cfg, SlurmConfig(poll_interval=0.05),
-                           client_factory=lambda _self: client or FakeSSHClient())
+    def _executor(
+        self,
+        remote_root: str = "",
+        scheduler: str = "none",
+        client: FakeSSHClient | None = None,
+    ) -> SSHExecutor:
+        cfg = {
+            "host": "fake.example.org",
+            "user": "tester",
+            "remote_root": remote_root,
+            "scheduler": scheduler,
+        }
+        return SSHExecutor(
+            self.project,
+            cfg,
+            SlurmConfig(poll_interval=0.05),
+            client_factory=lambda _self: client or FakeSSHClient(),
+        )
 
     def test_direct_execution_shared_filesystem(self):
         client = FakeSSHClient()
@@ -695,7 +870,9 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         output = self.root / "result.txt"
         result = executor.run(
             ["bash", "-c", f"echo remote-run > {output}"],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
             expected_outputs=[output],
         )
         self.assertEqual(result.exit_code, 0)
@@ -708,7 +885,9 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         err_log = self.root / "logs" / "f.stderr.log"
         result = executor.run(
             ["bash", "-c", "echo oops >&2; exit 3"],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
         )
         self.assertEqual(result.exit_code, 3)
         self.assertEqual(err_log.read_text().strip(), "oops")
@@ -719,21 +898,32 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         out_log = self.root / "logs" / "stats.stdout.log"
         err_log = self.root / "logs" / "stats.stderr.log"
         result = executor.run(
-            [sys.executable, "-c",
-             "x = bytearray(20 << 20)\nimport time\ntime.sleep(2.5)"],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+            [
+                sys.executable,
+                "-c",
+                "x = bytearray(20 << 20)\nimport time\ntime.sleep(2.5)",
+            ],
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
         )
         self.assertEqual(result.exit_code, 0)
         # The fake client executes the payload locally, so the remote sampler
         # really ran and its stats file was read back over "SSH".
         self.assertGreater(result.resources["max_rss_mb"], 10)
         self.assertGreater(result.resources["avg_rss_mb"], 0)
-        self.assertLessEqual(result.resources["avg_rss_mb"], result.resources["max_rss_mb"])
-        self.assertFalse("cpu_seconds" in result.resources)  # unavailable in direct mode
+        self.assertLessEqual(
+            result.resources["avg_rss_mb"], result.resources["max_rss_mb"]
+        )
+        self.assertFalse(
+            "cpu_seconds" in result.resources
+        )  # unavailable in direct mode
         # Both the pidfile and the stats file are cleaned up afterwards.
         stats_commands = [c for c in client.commands if ".stats" in c]
         self.assertTrue(stats_commands)
-        self.assertTrue(any(c.startswith("cat ") and "rm -f" in c for c in stats_commands))
+        self.assertTrue(
+            any(c.startswith("cat ") and "rm -f" in c for c in stats_commands)
+        )
 
     def test_direct_timeout_attempts_remote_process_group_termination(self):
         class HangingChannel:
@@ -765,24 +955,34 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 return None, stream, stream
             proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
         result = self._executor(client=client).run(
-            ["sleep", "30"], cwd=self.root,
+            ["sleep", "30"],
+            cwd=self.root,
             stdout_path=self.root / "logs" / "timeout.stdout.log",
             stderr_path=self.root / "logs" / "timeout.stderr.log",
-            timeout=0.001, run_id="WF_TIMEOUT",
+            timeout=0.001,
+            run_id="WF_TIMEOUT",
         )
         self.assertIsNone(result.exit_code)
         self.assertIn("termination signals were sent", result.error)
         self.assertTrue(hanging.closed)
         self.assertTrue(any("kill -TERM" in command for command in client.commands))
         self.assertEqual(result.details["termination_signaled"], True)
-        self.assertTrue(any(
-            command.startswith("cat ") and ".stats" in command and "rm -f" in command
-            for command in client.commands
-        ))
+        self.assertTrue(
+            any(
+                command.startswith("cat ")
+                and ".stats" in command
+                and "rm -f" in command
+                for command in client.commands
+            )
+        )
         # setsid must wait for the payload so its exit status is propagated
         # even when setsid itself is already a process group leader.
         setsid_commands = [c for c in client.commands if c.startswith("setsid ")]
@@ -800,11 +1000,15 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
 
         cfg = {"host": "fake.example.org", "scheduler": "none"}
         executor = SSHExecutor(
-            self.project, cfg, SlurmConfig(poll_interval=0.05), client_factory=factory,
+            self.project,
+            cfg,
+            SlurmConfig(poll_interval=0.05),
+            client_factory=factory,
         )
         for suffix in ("one", "two"):
             result = executor.run(
-                ["true"], cwd=self.root,
+                ["true"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / f"{suffix}.stdout.log",
                 stderr_path=self.root / "logs" / f"{suffix}.stderr.log",
             )
@@ -836,14 +1040,21 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         # "remotely" (locally in the fake), and the output is pulled back.
         result = executor.run(
             ["cp", str(staged), str(output)],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
-            stage_inputs=[staged], expected_outputs=[output],
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
+            stage_inputs=[staged],
+            expected_outputs=[output],
         )
         self.assertEqual(result.exit_code, 0)
-        self.assertEqual((remote_root / "inputs" / "data.txt").read_text(), "staged-bytes")
+        self.assertEqual(
+            (remote_root / "inputs" / "data.txt").read_text(), "staged-bytes"
+        )
         self.assertEqual(output.read_text(), "staged-bytes")
         # The command the fake received must reference rewritten mirror paths.
-        self.assertTrue(any(str(remote_root / "analysis" / "out.txt") in c for c in client.commands))
+        self.assertTrue(
+            any(str(remote_root / "analysis" / "out.txt") in c for c in client.commands)
+        )
 
     def test_declared_workflow_input_is_staged_with_remote_root(self):
         remote_root = self.root / "remote-declared-input"
@@ -856,15 +1067,20 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         output = self.root / "analysis" / "declared-output.txt"
 
         record = run_external_command(
-            self.db, self.project, ["cp", str(staged), str(output)],
-            step="test:declared-ssh-input", cwd=self.root,
-            inputs=[Path("inputs/declared.txt")], expected_outputs=[output],
+            self.db,
+            self.project,
+            ["cp", str(staged), str(output)],
+            step="test:declared-ssh-input",
+            cwd=self.root,
+            inputs=[Path("inputs/declared.txt")],
+            expected_outputs=[output],
             executor=executor,
         )
 
         self.assertEqual(record["status"], "completed")
         self.assertEqual(
-            (remote_root / "inputs" / "declared.txt").read_text(), "declared-input",
+            (remote_root / "inputs" / "declared.txt").read_text(),
+            "declared-input",
         )
         self.assertEqual(output.read_text(), "declared-input")
 
@@ -876,9 +1092,12 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.addCleanup(outside.unlink, missing_ok=True)
         executor = self._executor(remote_root=str(remote_root), client=FakeSSHClient())
 
-        with self.assertRaisesRegex(ValidationError, "must stay under the project root"):
+        with self.assertRaisesRegex(
+            ValidationError, "must stay under the project root"
+        ):
             executor.run(
-                ["true"], cwd=self.root,
+                ["true"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "outside.stdout.log",
                 stderr_path=self.root / "logs" / "outside.stderr.log",
                 stage_inputs=[outside],
@@ -893,7 +1112,8 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         executor = self._executor(remote_root=str(remote_root), client=client)
         local_output = self.root / "analysis" / "out.txt"
         result = executor.run(
-            ["true"], cwd=self.root,
+            ["true"],
+            cwd=self.root,
             stdout_path=self.root / "logs" / "stale.stdout.log",
             stderr_path=self.root / "logs" / "stale.stderr.log",
             expected_outputs=[local_output],
@@ -919,11 +1139,19 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         # Path argv elements are rewritten into the remote mirror, so the
         # failing payload really overwrites the remote output first.
         result = executor.run(
-            ["bash", "-c", 'cp "$1" "$2"; exit 3', "bash", str(staged), str(local_output)],
+            [
+                "bash",
+                "-c",
+                'cp "$1" "$2"; exit 3',
+                "bash",
+                str(staged),
+                str(local_output),
+            ],
             cwd=self.root,
             stdout_path=self.root / "logs" / "fail.stdout.log",
             stderr_path=self.root / "logs" / "fail.stderr.log",
-            stage_inputs=[staged], expected_outputs=[local_output],
+            stage_inputs=[staged],
+            expected_outputs=[local_output],
         )
         self.assertEqual(result.exit_code, 3)
         # The partial new output is replaced by the restored previous one.
@@ -943,10 +1171,12 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         staged.write_text("new-result", encoding="utf-8")
         local_output = self.root / "analysis" / "out.txt"
         result = executor.run(
-            ["cp", str(staged), str(local_output)], cwd=self.root,
+            ["cp", str(staged), str(local_output)],
+            cwd=self.root,
             stdout_path=self.root / "logs" / "ok.stdout.log",
             stderr_path=self.root / "logs" / "ok.stderr.log",
-            stage_inputs=[staged], expected_outputs=[local_output],
+            stage_inputs=[staged],
+            expected_outputs=[local_output],
         )
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(local_output.read_text().strip(), "new-result")
@@ -968,7 +1198,11 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 return None, stream, stream
             proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
 
@@ -979,7 +1213,8 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         executor = self._executor(remote_root=str(remote_root), client=client)
         with self.assertRaises(ShutdownRequested):
             executor.run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "int.stdout.log",
                 stderr_path=self.root / "logs" / "int.stderr.log",
                 expected_outputs=[self.root / "analysis" / "out.txt"],
@@ -994,7 +1229,8 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         executor = self._executor(remote_root=str(remote_root), client=client)
         local_output = self.root / "analysis" / "out.txt"
         result = executor.run(
-            ["false"], cwd=self.root,
+            ["false"],
+            cwd=self.root,
             stdout_path=self.root / "logs" / "noop.stdout.log",
             stderr_path=self.root / "logs" / "noop.stderr.log",
             expected_outputs=[local_output],
@@ -1003,7 +1239,9 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertFalse(local_output.exists())
         self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
 
-    def test_remote_database_contract_requires_reference_and_creates_mutable_cache(self):
+    def test_remote_database_contract_requires_reference_and_creates_mutable_cache(
+        self,
+    ):
         remote_root = self.root / "remote-database"
         remote_root.mkdir()
         executor = self._executor(remote_root=str(remote_root), client=FakeSSHClient())
@@ -1018,7 +1256,9 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         remote_root = self.root / "remote-slurm"
         remote_root.mkdir()
         client = FakeSSHClient()
-        executor = self._executor(remote_root=str(remote_root), scheduler="slurm", client=client)
+        executor = self._executor(
+            remote_root=str(remote_root), scheduler="slurm", client=client
+        )
         staged = self.root / "inputs" / "reads.txt"
         staged.parent.mkdir(exist_ok=True)
         staged.write_text("via-slurm", encoding="utf-8")
@@ -1033,6 +1273,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         monkeypatch.setattr("operon.execution.time.sleep", sleep_calls.append)
         queue_checks = 0
         exitcode_checks = 0
+
         # Fake remote: sbatch executes the script synchronously, squeue says
         # the job is gone; both are just shell commands to the fake client.
         def fake_exec(command, timeout=None):
@@ -1050,7 +1291,10 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 with open(out, "wb") as o, open(err, "wb") as e:
                     subprocess.run(["bash", script], stdout=o, stderr=e)
                 proc = subprocess.CompletedProcess(
-                    command, 0, b"warning: default account selected\n4242;cluster-a\n", b""
+                    command,
+                    0,
+                    b"warning: default account selected\n4242;cluster-a\n",
+                    b"",
                 )
             elif command.startswith("squeue "):
                 queue_checks += 1
@@ -1059,20 +1303,33 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
             elif command.startswith("cat ") and command.endswith(".exitcode"):
                 exitcode_checks += 1
                 if exitcode_checks < 3:
-                    proc = subprocess.CompletedProcess(command, 1, b"", b"not visible yet")
+                    proc = subprocess.CompletedProcess(
+                        command, 1, b"", b"not visible yet"
+                    )
                 else:
                     proc = subprocess.CompletedProcess(
                         command, 0, stale_exitcode.read_bytes(), b""
                     )
             else:
-                proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
+                proc = subprocess.run(
+                    command, shell=True, capture_output=True, timeout=timeout
+                )
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
+
         client.exec_command = fake_exec
         result = executor.run(
             ["cp", str(staged), str(output)],
-            cwd=self.root, stdout_path=out_log, stderr_path=err_log,
-            stage_inputs=[staged], expected_outputs=[output], run_id="WF_TEST_1",
+            cwd=self.root,
+            stdout_path=out_log,
+            stderr_path=err_log,
+            stage_inputs=[staged],
+            expected_outputs=[output],
+            run_id="WF_TEST_1",
         )
         self.assertEqual(result.exit_code, 0, result.error)
         self.assertEqual(output.read_text(), "via-slurm")
@@ -1083,11 +1340,16 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
             [7.25, _SLURM_EXIT_CODE_RETRY_SECONDS, _SLURM_EXIT_CODE_RETRY_SECONDS],
         )
         self.assertEqual(exitcode_checks, 3)
-        self.assertEqual(result.details["environment"]["hostname"], _hashed_hostname(socket.gethostname()))
+        self.assertEqual(
+            result.details["environment"]["hostname"],
+            _hashed_hostname(socket.gethostname()),
+        )
         # The uploaded batch script must live in and reference the mirror.
         script = remote_root / "logs" / "WF_TEST_1.sbatch"
         self.assertTrue(script.exists())
-        self.assertIn(str(remote_root / "analysis" / "slurm-out.txt"), script.read_text())
+        self.assertIn(
+            str(remote_root / "analysis" / "slurm-out.txt"), script.read_text()
+        )
         self.assertIn(str(remote_root / "logs" / "WF_TEST_1.env"), script.read_text())
         self.assertFalse((remote_root / "logs" / "WF_TEST_1.env").exists())
 
@@ -1095,7 +1357,9 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         remote_root = self.root / "remote-slurm-array"
         remote_root.mkdir()
         client = FakeSSHClient()
-        executor = self._executor(remote_root=str(remote_root), scheduler="slurm", client=client)
+        executor = self._executor(
+            remote_root=str(remote_root), scheduler="slurm", client=client
+        )
         monkeypatch.setattr("operon.execution.time.sleep", lambda _s: None)
 
         def fake_exec(command, timeout=None):
@@ -1111,29 +1375,47 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                     elif line.startswith("#SBATCH --error="):
                         err = line.split("=", 1)[1]
                     elif line.startswith("#SBATCH --array=1-"):
-                        count = int(line.split("=", 1)[1].split("-", 1)[1].split("%", 1)[0])
+                        count = int(
+                            line.split("=", 1)[1].split("-", 1)[1].split("%", 1)[0]
+                        )
                 # Run each array task the way Slurm would: same script, one
                 # SLURM_ARRAY_TASK_ID per task, wrapper output to %A_%a files.
                 for index in range(1, count + 1):
                     env = dict(os.environ, SLURM_ARRAY_TASK_ID=str(index))
-                    with open(out.replace("%A", "4242").replace("%a", str(index)), "wb") as o, \
-                            open(err.replace("%A", "4242").replace("%a", str(index)), "wb") as e:
-                        subprocess.run(["bash", script_path], stdout=o, stderr=e, env=env)
+                    with (
+                        open(
+                            out.replace("%A", "4242").replace("%a", str(index)), "wb"
+                        ) as o,
+                        open(
+                            err.replace("%A", "4242").replace("%a", str(index)), "wb"
+                        ) as e,
+                    ):
+                        subprocess.run(
+                            ["bash", script_path], stdout=o, stderr=e, env=env
+                        )
                 proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
             elif command.startswith("squeue "):
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")
             else:
-                proc = subprocess.run(command, shell=True, capture_output=True, timeout=timeout)
+                proc = subprocess.run(
+                    command, shell=True, capture_output=True, timeout=timeout
+                )
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
         tasks = [
             {
-                "run_id": f"WF_RA{i}", "command": f"echo hello-{i}",
+                "run_id": f"WF_RA{i}",
+                "command": f"echo hello-{i}",
                 "stdout_path": self.root / "logs" / f"WF_RA{i}.stdout.log",
                 "stderr_path": self.root / "logs" / f"WF_RA{i}.stderr.log",
-                "cwd": self.root, "threads": 2,
+                "cwd": self.root,
+                "threads": 2,
             }
             for i in (1, 2)
         ]
@@ -1142,23 +1424,30 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual([r.scheduler_job_id for r in results], ["4242_1", "4242_2"])
         # Per-task payload output was redirected remotely and pulled back.
         self.assertEqual(
-            (self.root / "logs" / "WF_RA1.stdout.log").read_text().strip(), "hello-1")
+            (self.root / "logs" / "WF_RA1.stdout.log").read_text().strip(), "hello-1"
+        )
         self.assertEqual(
-            (self.root / "logs" / "WF_RA2.stdout.log").read_text().strip(), "hello-2")
+            (self.root / "logs" / "WF_RA2.stdout.log").read_text().strip(), "hello-2"
+        )
         for result in results:
             self.assertEqual(result.details["backend"], "ssh")
             self.assertEqual(result.details["scheduler"], "slurm")
             self.assertEqual(result.details["array_job_id"], "4242")
             # The per-task probe ran on the "compute" side and was consumed.
-            self.assertEqual(result.details["environment"]["hostname"],
-                             _hashed_hostname(socket.gethostname()))
+            self.assertEqual(
+                result.details["environment"]["hostname"],
+                _hashed_hostname(socket.gethostname()),
+            )
         self.assertFalse((remote_root / "logs" / "WF_RA1.env").exists())
         # The manifest and script live in the mirror and carry remote paths.
-        manifest = (remote_root / "logs" / "RB1.array-manifest.tsv").read_text(encoding="utf-8")
+        manifest = (remote_root / "logs" / "RB1.array-manifest.tsv").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(str(remote_root / "logs" / "WF_RA1.stdout.log"), manifest)
         self.assertFalse(
             str(self.root / "logs" / "WF_RA1.stdout.log")
-            in manifest.replace(str(remote_root), ""))
+            in manifest.replace(str(remote_root), "")
+        )
         script = (remote_root / "logs" / "RB1.sbatch").read_text(encoding="utf-8")
         self.assertIn("#SBATCH --array=1-2", script)
         self.assertIn(f"cd {remote_root}", script)
@@ -1166,11 +1455,15 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertTrue(any(c.startswith("squeue ") for c in client.commands))
         self.assertFalse(any(c.startswith("scancel ") for c in client.commands))
 
-    def test_remote_slurm_array_cancel_event_scancels_and_pulls_exitcodes(self, monkeypatch):
+    def test_remote_slurm_array_cancel_event_scancels_and_pulls_exitcodes(
+        self, monkeypatch
+    ):
         remote_root = self.root / "remote-slurm-array"
         remote_root.mkdir()
         client = FakeSSHClient()
-        executor = self._executor(remote_root=str(remote_root), scheduler="slurm", client=client)
+        executor = self._executor(
+            remote_root=str(remote_root), scheduler="slurm", client=client
+        )
         monkeypatch.setattr("operon.execution.time.sleep", lambda _s: None)
 
         def fake_exec(command, timeout=None):
@@ -1179,33 +1472,44 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 # Task 1 finished before the cancellation landed; task 2
                 # never wrote its remote exit code.
                 (remote_root / "logs").mkdir(parents=True, exist_ok=True)
-                (remote_root / "logs" / "WF_RC1.exitcode").write_text("0", encoding="utf-8")
+                (remote_root / "logs" / "WF_RC1.exitcode").write_text(
+                    "0", encoding="utf-8"
+                )
                 proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
             elif command.startswith("squeue "):
                 proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
             else:
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
         tasks = [
             {
-                "run_id": f"WF_RC{i}", "command": f"echo hello-{i}",
+                "run_id": f"WF_RC{i}",
+                "command": f"echo hello-{i}",
                 "stdout_path": self.root / "logs" / f"WF_RC{i}.stdout.log",
                 "stderr_path": self.root / "logs" / f"WF_RC{i}.stderr.log",
-                "cwd": self.root, "threads": 2,
+                "cwd": self.root,
+                "threads": 2,
             }
             for i in (1, 2)
         ]
         cancel_event = threading.Event()
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
-            executor.run_array(tasks, cwd=self.root, batch_id="RC1",
-                               cancel_event=cancel_event)
+            executor.run_array(
+                tasks, cwd=self.root, batch_id="RC1", cancel_event=cancel_event
+            )
         self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))
         # The finished task's exit-code file was pulled before propagation.
-        self.assertEqual((self.root / "logs" / "WF_RC1.exitcode").read_text().strip(), "0")
+        self.assertEqual(
+            (self.root / "logs" / "WF_RC1.exitcode").read_text().strip(), "0"
+        )
         self.assertFalse((self.root / "logs" / "WF_RC2.exitcode").exists())
 
 
@@ -1234,7 +1538,19 @@ class TestShutdownCleanup(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SHUT_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_SHUT_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
@@ -1254,7 +1570,7 @@ class TestShutdownCleanup(PytestAssertions):
 
         The shell creates the redirect target before the pid text lands, so waiting
         for the file to exist is not enough: a read in that turn finds no file yet,
-        and the turn after an empty one — ``int()`` raises on both (ODR-0037).  This
+        and the turn after an empty one — ``int()`` raises on both (ODR-37).  This
         waits for a pid instead.
         """
         limit = time.monotonic() + deadline
@@ -1265,7 +1581,7 @@ class TestShutdownCleanup(PytestAssertions):
                 time.sleep(0.02)
         raise AssertionError(f"{pidfile} never received a pid")
 
-    @pytest.mark.bug("ODR-0037")
+    @pytest.mark.bug("ODR-37")
     def test_local_interrupt_kills_whole_process_group(self, monkeypatch):
         # This test interrupts the payload, not the preceding environment probe.
         monkeypatch.setattr("operon.execution.capture_local", lambda *args: {})
@@ -1293,7 +1609,9 @@ class TestShutdownCleanup(PytestAssertions):
         with self.assertRaises(ShutdownRequested):
             executor.run(
                 ["bash", "-c", f"sleep 60 & echo $! > {pidfile}; wait"],
-                cwd=self.root, stdout_path=out_log, stderr_path=err_log,
+                cwd=self.root,
+                stdout_path=out_log,
+                stderr_path=err_log,
             )
         grandchild = self._grandchild_pid(pidfile)
         # SIGTERM went to the whole group: the grandchild sleep must be gone.
@@ -1303,8 +1621,11 @@ class TestShutdownCleanup(PytestAssertions):
         bin_dir = self.root / "fakebin"
         bin_dir.mkdir()
         scancel_log = self.root / "scancel.log"
-        for name, content in (("sbatch", FAKE_SBATCH_OK), ("squeue", FAKE_SQUEUE_BUSY),
-                              ("scancel", FAKE_SCANCEL)):
+        for name, content in (
+            ("sbatch", FAKE_SBATCH_OK),
+            ("squeue", FAKE_SQUEUE_BUSY),
+            ("scancel", FAKE_SCANCEL),
+        ):
             script = bin_dir / name
             script.write_text(content, encoding="utf-8")
             script.chmod(0o755)
@@ -1322,7 +1643,8 @@ class TestShutdownCleanup(PytestAssertions):
         monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
         with self.assertRaises(ShutdownRequested):
             executor.run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "s.stdout.log",
                 stderr_path=self.root / "logs" / "s.stderr.log",
                 run_id="WF_SLURM_INT",
@@ -1333,8 +1655,11 @@ class TestShutdownCleanup(PytestAssertions):
         bin_dir = self.root / "fakebin"
         bin_dir.mkdir()
         scancel_log = self.root / "scancel.log"
-        for name, content in (("sbatch", FAKE_SBATCH_OK), ("squeue", FAKE_SQUEUE_BUSY),
-                              ("scancel", FAKE_SCANCEL)):
+        for name, content in (
+            ("sbatch", FAKE_SBATCH_OK),
+            ("squeue", FAKE_SQUEUE_BUSY),
+            ("scancel", FAKE_SCANCEL),
+        ):
             script = bin_dir / name
             script.write_text(content, encoding="utf-8")
             script.chmod(0o755)
@@ -1349,7 +1674,8 @@ class TestShutdownCleanup(PytestAssertions):
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
             executor.run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "s.stdout.log",
                 stderr_path=self.root / "logs" / "s.stderr.log",
                 run_id="WF_SLURM_CANCEL",
@@ -1386,15 +1712,31 @@ class TestSSHShutdownCleanup(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_SSHI_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_SSHI_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _executor(self, scheduler: str, client: FakeSSHClient) -> SSHExecutor:
         cfg = {"host": "fake.example.org", "user": "tester", "scheduler": scheduler}
-        return SSHExecutor(self.project, cfg, SlurmConfig(poll_interval=0.05),
-                           client_factory=lambda _self: client)
+        return SSHExecutor(
+            self.project,
+            cfg,
+            SlurmConfig(poll_interval=0.05),
+            client_factory=lambda _self: client,
+        )
 
     def test_direct_interrupt_terminates_remote_process_group(self, monkeypatch):
         client = FakeSSHClient()
@@ -1407,7 +1749,11 @@ class TestSSHShutdownCleanup(PytestAssertions):
                 return None, stream, stream
             proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
 
@@ -1417,7 +1763,8 @@ class TestSSHShutdownCleanup(PytestAssertions):
         monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
         with self.assertRaises(ShutdownRequested):
             self._executor("none", client).run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "i.stdout.log",
                 stderr_path=self.root / "logs" / "i.stderr.log",
                 run_id="WF_SSH_INT",
@@ -1437,7 +1784,11 @@ class TestSSHShutdownCleanup(PytestAssertions):
             else:
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
 
@@ -1447,7 +1798,8 @@ class TestSSHShutdownCleanup(PytestAssertions):
         monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
         with self.assertRaises(ShutdownRequested):
             self._executor("slurm", client).run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "rs.stdout.log",
                 stderr_path=self.root / "logs" / "rs.stderr.log",
                 run_id="WF_RSLURM_INT",
@@ -1465,14 +1817,19 @@ class TestSSHShutdownCleanup(PytestAssertions):
                 return None, stream, stream
             proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
         cancel_event = threading.Event()
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
             self._executor("none", client).run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "c.stdout.log",
                 stderr_path=self.root / "logs" / "c.stderr.log",
                 run_id="WF_SSH_CANCEL",
@@ -1492,14 +1849,19 @@ class TestSSHShutdownCleanup(PytestAssertions):
             else:
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")
             channel = _FakeChannel(proc)
-            return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
 
         client.exec_command = fake_exec
         cancel_event = threading.Event()
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
             self._executor("slurm", client).run(
-                ["sleep", "30"], cwd=self.root,
+                ["sleep", "30"],
+                cwd=self.root,
                 stdout_path=self.root / "logs" / "rc.stdout.log",
                 stderr_path=self.root / "logs" / "rc.stderr.log",
                 run_id="WF_RSLURM_CANCEL",

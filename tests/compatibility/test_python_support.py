@@ -21,7 +21,9 @@ def test_project_metadata_declares_python_310_or_newer() -> None:
 
 
 @pytest.mark.compatibility
-@pytest.mark.parametrize("source_path", SOURCE_FILES, ids=lambda path: str(path.relative_to(ROOT)))
+@pytest.mark.parametrize(
+    "source_path", SOURCE_FILES, ids=lambda path: str(path.relative_to(ROOT))
+)
 def test_source_parses_with_python_310_grammar(source_path: Path) -> None:
     source = source_path.read_text(encoding="utf-8")
     ast.parse(source, filename=str(source_path), feature_version=(3, 10))

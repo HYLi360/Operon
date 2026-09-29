@@ -1,4 +1,5 @@
 """Environment scope, reconstruction, fingerprint and degradation contracts."""
+
 import base64
 import json
 import platform
@@ -41,9 +42,16 @@ def _fresh_capture_cache():
 
 
 def package(**overrides):
-    return {"name": "demo", "version": "1.2", "build": "h0_1", "build_number": 1,
-            "subdir": "linux-64", "sha256": "a" * 64,
-            "url": "https://example.org/channel/linux-64/demo-1.2-h0_1.conda", **overrides}
+    return {
+        "name": "demo",
+        "version": "1.2",
+        "build": "h0_1",
+        "build_number": 1,
+        "subdir": "linux-64",
+        "sha256": "a" * 64,
+        "url": "https://example.org/channel/linux-64/demo-1.2-h0_1.conda",
+        **overrides,
+    }
 
 
 def encoded(key, value):
@@ -54,31 +62,52 @@ def document(records=None, extra="", complete=True):
     return parse_probe_output(
         "capture_schema=1\nos=Linux\nos_release=6.1\nmachine=x86_64\nhostname=node\n"
         "conda_prefix=/old/location\nconda_present=1\n"
-        + "".join(encoded("package", json.dumps(item)) for item in (records if records is not None else [package()]))
-        + extra + ("capture_complete=1\n" if complete else ""))
+        + "".join(
+            encoded("package", json.dumps(item))
+            for item in (records if records is not None else [package()])
+        )
+        + extra
+        + ("capture_complete=1\n" if complete else "")
+    )
 
 
 def test_artifact_export_and_independent_fingerprints():
     first = document(extra=encoded("cpu", "model name : CPU\nflags : avx sse\n"))
-    second = document(extra="hostname=another\nconda_prefix=/new/location\n" + encoded("cpu", "flags : avx sse\nmodel name : CPU\n"))
-    assert first["conda"]["package_fingerprint"] == second["conda"]["package_fingerprint"]
+    second = document(
+        extra="hostname=another\nconda_prefix=/new/location\n"
+        + encoded("cpu", "flags : avx sse\nmodel name : CPU\n")
+    )
+    assert (
+        first["conda"]["package_fingerprint"] == second["conda"]["package_fingerprint"]
+    )
     assert first["hardware_fingerprint"] == second["hardware_fingerprint"]
     assert first["system_fingerprint"] == second["system_fingerprint"]
-    assert first["conda"]["package_fingerprint"] != document([package(build="h0_2")])["conda"]["package_fingerprint"]
+    assert (
+        first["conda"]["package_fingerprint"]
+        != document([package(build="h0_2")])["conda"]["package_fingerprint"]
+    )
     assert first["hardware_fingerprint"] != document()["hardware_fingerprint"]
-    assert export_conda(first) == "@EXPLICIT\n" + package()["url"] + "#" + "a" * 64 + "\n"
+    assert (
+        export_conda(first) == "@EXPLICIT\n" + package()["url"] + "#" + "a" * 64 + "\n"
+    )
     spec = yaml.safe_load(export_conda(first, "yaml"))
     assert spec["dependencies"] == ["demo=1.2=h0_1"]
     assert "prefix" not in spec
     assert spec["channels"] == ["https://example.org/channel"]
 
 
-@pytest.mark.parametrize("records,extra,complete", [
-    ([], "", True), ([package(sha256="", md5="")], "", True),
-    ([package(url="")], "", True), ([package()], "", False),
-    ([{}], "", True), ([package()], "package=***\n", True),
-    ([package()], encoded("package", "not json"), True),
-])
+@pytest.mark.parametrize(
+    "records,extra,complete",
+    [
+        ([], "", True),
+        ([package(sha256="", md5="")], "", True),
+        ([package(url="")], "", True),
+        ([package()], "", False),
+        ([{}], "", True),
+        ([package()], "package=***\n", True),
+        ([package()], encoded("package", "not json"), True),
+    ],
+)
 def test_incomplete_inventory_cannot_be_exported(records, extra, complete):
     env = document(records, extra, complete)
     assert env["conda"]["status"] == "partial"
@@ -89,9 +118,16 @@ def test_incomplete_inventory_cannot_be_exported(records, extra, complete):
 
 
 def test_md5_fallback_redaction_and_pip_limitations():
-    env = document([package(sha256="", md5="b" * 32,
-                            url="https://user:secret@example.org/t/token/channel/linux-64/pkg.conda?token=secret")],
-                   encoded("pip_distribution", "custom-1.0.dist-info\n"))
+    env = document(
+        [
+            package(
+                sha256="",
+                md5="b" * 32,
+                url="https://user:secret@example.org/t/token/channel/linux-64/pkg.conda?token=secret",
+            )
+        ],
+        encoded("pip_distribution", "custom-1.0.dist-info\n"),
+    )
     serialized = json.dumps(env)
     assert "secret" not in serialized and "/t/token" not in serialized
     assert "#" + "b" * 32 in export_conda(env)
@@ -99,21 +135,30 @@ def test_md5_fallback_redaction_and_pip_limitations():
     assert "pip/local" in env["conda"]["scope"]
 
 
-@pytest.mark.parametrize("argv", [
-    ["conda", "run", "-n", "with spaces", "blastp"],
-    ["/bin/micromamba", "-r", "/root dir", "run", "--prefix=/env", "blastp"],
-    ["mamba", "run", "--no-capture-output", "-p", "/env", "--", "blastp"],
-])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["conda", "run", "-n", "with spaces", "blastp"],
+        ["/bin/micromamba", "-r", "/root dir", "run", "--prefix=/env", "blastp"],
+        ["mamba", "run", "--no-capture-output", "-p", "/env", "--", "blastp"],
+    ],
+)
 def test_launcher_parsing(argv):
     command = probe_command(argv)
     assert command[:-3] == argv[:-1]
     assert command[-3:-1] == ["sh", "-c"]
 
 
-@pytest.mark.parametrize("argv", [
-    ["conda", "list"], ["conda", "run", "--unknown", "blastp"],
-    ["conda", "run", "-n"], ["conda", "run"], ["docker", "run", "x"],
-])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["conda", "list"],
+        ["conda", "run", "--unknown", "blastp"],
+        ["conda", "run", "-n"],
+        ["conda", "run"],
+        ["docker", "run", "x"],
+    ],
+)
 def test_unsupported_launcher_is_not_guessed(argv):
     assert probe_command(argv) is None
 
@@ -124,7 +169,7 @@ def _captured(path: str) -> str:
     Capture-time redaction rewrites whole-segment home prefixes, so an assertion
     against the raw path only holds while the scratch directory lives outside
     ``$HOME`` — the shape that turned three of these tests red in a matrix leg
-    whose ``TMPDIR`` sat inside the home directory (ODR-0033).
+    whose ``TMPDIR`` sat inside the home directory (ODR-33).
     """
     return _redact_home(path, _local_home())
 
@@ -136,39 +181,76 @@ def fake_conda(tmp_path, monkeypatch):
     meta.mkdir(parents=True)
     (meta / "demo.json").write_text(json.dumps(package()))
     manager = tmp_path / "micromamba"
-    manager.write_text('#!/bin/sh\n[ "$1" = run ] || exit 2\nshift\n[ "$1" = -p ] || exit 2\nexport CONDA_PREFIX="$2"\nshift 2\nexec "$@"\n')
+    manager.write_text(
+        '#!/bin/sh\n[ "$1" = run ] || exit 2\nshift\n[ "$1" = -p ] || exit 2\nexport CONDA_PREFIX="$2"\nshift 2\nexec "$@"\n'
+    )
     manager.chmod(0o755)
     monkeypatch.setenv("CONDA_PREFIX", "/wrong/controller/env")
     return [str(manager), "run", "-p", str(prefix)]
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_actual_target_environment_and_workflow_roundtrip(tmp_path, fake_conda, capsys):
     project = Project.init(tmp_path / "project")
     with closing(Database(project.db_path)) as db:
         run = run_external_command(db, project, [*fake_conda, "true"], step="smoke")
-        row = db.conn.execute("SELECT document FROM execution_environments WHERE environment_id=?",
-                              (run["environment_id"],)).fetchone()
+        row = db.conn.execute(
+            "SELECT document FROM execution_environments WHERE environment_id=?",
+            (run["environment_id"],),
+        ).fetchone()
         env = json.loads(row["document"])
         assert env["conda_prefix"] == _captured(fake_conda[-1])
         assert env["conda"]["status"] == "captured"
-    assert main(["--project", str(project.root), "environments", "export", run["environment_id"]]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "environments",
+                "export",
+                run["environment_id"],
+            ]
+        )
+        == 0
+    )
     assert "@EXPLICIT" in capsys.readouterr().out
-    assert main(["--project", str(project.root), "environments", "show", run["environment_id"]]) == 0
-    assert json.loads(capsys.readouterr().out)["system_fingerprint"] == env["system_fingerprint"]
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "environments",
+                "show",
+                run["environment_id"],
+            ]
+        )
+        == 0
+    )
+    assert (
+        json.loads(capsys.readouterr().out)["system_fingerprint"]
+        == env["system_fingerprint"]
+    )
     assert main(["--project", str(project.root), "environments", "list"]) == 0
     assert run["environment_id"] in capsys.readouterr().out
-    assert main(["--project", str(project.root), "environments", "show", "missing"]) != 0
+    assert (
+        main(["--project", str(project.root), "environments", "show", "missing"]) != 0
+    )
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_slurm_probe_runs_after_setup_inside_launcher(tmp_path, fake_conda):
     probe = tmp_path / "job.env"
     script = render_slurm_script(
-        job_name="smoke", command_line=shlex.join([*fake_conda, "true"]), cwd=str(tmp_path),
-        stdout_path=str(tmp_path / "out"), stderr_path=str(tmp_path / "err"),
-        exitcode_path=str(tmp_path / "exit"), threads=1,
-        slurm=SlurmConfig(setup_commands=["export OMP_NUM_THREADS=3"]), probe_path=str(probe))
+        job_name="smoke",
+        command_line=shlex.join([*fake_conda, "true"]),
+        cwd=str(tmp_path),
+        stdout_path=str(tmp_path / "out"),
+        stderr_path=str(tmp_path / "err"),
+        exitcode_path=str(tmp_path / "exit"),
+        threads=1,
+        slurm=SlurmConfig(setup_commands=["export OMP_NUM_THREADS=3"]),
+        probe_path=str(probe),
+    )
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     env = parse_probe_output(probe.read_text())
@@ -182,8 +264,10 @@ def test_probe_failure_and_opaque_shell_are_explicit(tmp_path, monkeypatch):
     env = capture_local(["sh", "-c", "true"], tmp_path)
     assert env["capture_scope"] == "executor_only"
     assert env["conda"]["status"] == "unknown"
+
     def fail(*args, **kwargs):
         raise subprocess.TimeoutExpired("probe", 35)
+
     monkeypatch.setattr(subprocess, "run", fail)
     assert capture_local(["true"])["capture_status"] == "failed"
 
@@ -197,9 +281,11 @@ PROBE_OUTPUT = "capture_schema=1\nos=Linux\nos_release=6.1\nmachine=x86_64\ncond
 
 def _counting_probe(monkeypatch, stdout=PROBE_OUTPUT, returncode=0):
     calls = []
+
     def fake_run(command, **kwargs):
         calls.append(command)
         return subprocess.CompletedProcess(command, returncode, stdout, "")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     return calls
 
@@ -253,13 +339,17 @@ def test_cached_document_is_isolated_from_caller_edits(monkeypatch):
 def test_each_chain_step_links_its_environment(tmp_path, fake_conda):
     project = Project.init(tmp_path / "project")
     with closing(Database(project.db_path)) as db:
-        run = run_external_command(db, project, [], commands=[[*fake_conda, "true"], ["true"]], step="chain")
+        run = run_external_command(
+            db, project, [], commands=[[*fake_conda, "true"], ["true"]], step="chain"
+        )
         steps = json.loads(run["execution_details"])["steps"]
         assert len(steps) == 2
         assert steps[0]["environment_id"] != steps[1]["environment_id"]
         for step in steps:
-            assert db.conn.execute("SELECT 1 FROM execution_environments WHERE environment_id=?",
-                                   (step["environment_id"],)).fetchone()
+            assert db.conn.execute(
+                "SELECT 1 FROM execution_environments WHERE environment_id=?",
+                (step["environment_id"],),
+            ).fetchone()
 
 
 def test_missing_timeout_still_captures_a_bounded_probe(tmp_path, monkeypatch):
@@ -270,6 +360,7 @@ def test_missing_timeout_still_captures_a_bounded_probe(tmp_path, monkeypatch):
     capture is complete even with a minimal PATH.
     """
     import shutil
+
     tools_dir = tmp_path / "tools"
     tools_dir.mkdir()
     (tools_dir / "sh").symlink_to(shutil.which("sh"))
@@ -281,13 +372,21 @@ def test_missing_timeout_still_captures_a_bounded_probe(tmp_path, monkeypatch):
 
 def test_failed_launcher_probe_does_not_fail_payload(tmp_path, fake_conda):
     manager = Path(fake_conda[0])
-    manager.write_text(manager.read_text().replace('exec "$@"', '[ "$1" = sh ] && exit 17\nexec "$@"'))
+    manager.write_text(
+        manager.read_text().replace('exec "$@"', '[ "$1" = sh ] && exit 17\nexec "$@"')
+    )
     project = Project.init(tmp_path / "project")
     with closing(Database(project.db_path)) as db:
-        run = run_external_command(db, project, [*fake_conda, "true"], step="probe-fails")
+        run = run_external_command(
+            db, project, [*fake_conda, "true"], step="probe-fails"
+        )
         assert run["status"] == "completed"
-        env = json.loads(db.conn.execute("SELECT document FROM execution_environments WHERE environment_id=?",
-                                         (run["environment_id"],)).fetchone()["document"])
+        env = json.loads(
+            db.conn.execute(
+                "SELECT document FROM execution_environments WHERE environment_id=?",
+                (run["environment_id"],),
+            ).fetchone()["document"]
+        )
         assert env["capture_status"] == "failed"
         assert env["probe_exit_code"] == 17
         with pytest.raises(ValidationError):
@@ -295,7 +394,11 @@ def test_failed_launcher_probe_does_not_fail_payload(tmp_path, fake_conda):
 
 
 def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "", ""),
+    )
     assert capture_local(["true"])["capture_status"] == "failed"
     truncated = parse_probe_output("capture_schema=1\npackage\n")
     assert truncated["capture_status"] == "partial"
@@ -305,21 +408,34 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
         export_conda(document(), "unsupported")
 
 
-@pytest.mark.bug("ODR-0033")
+@pytest.mark.bug("ODR-33")
 def test_direct_ssh_captures_target_and_removes_raw_probe(tmp_path, fake_conda):
     from operon.execution import SSHExecutor
     from tests.unit.test_execution import FakeSSHClient
+
     project = Project.init(tmp_path / "project")
     client = FakeSSHClient()
-    executor = SSHExecutor(project, {"host": "fake.example.org", "scheduler": "none"},
-                           SlurmConfig(), client_factory=lambda _: client)
-    result = executor.run([*fake_conda, "true"], cwd=project.root,
-                          stdout_path=project.logs_root / "out", stderr_path=project.logs_root / "err")
+    executor = SSHExecutor(
+        project,
+        {"host": "fake.example.org", "scheduler": "none"},
+        SlurmConfig(),
+        client_factory=lambda _: client,
+    )
+    result = executor.run(
+        [*fake_conda, "true"],
+        cwd=project.root,
+        stdout_path=project.logs_root / "out",
+        stderr_path=project.logs_root / "err",
+    )
     assert result.exit_code == 0
     env = result.details["environment"]
     assert env["conda_prefix"] == _captured(fake_conda[-1])
-    assert env["conda"]["package_fingerprint"] == document()["conda"]["package_fingerprint"]
+    assert (
+        env["conda"]["package_fingerprint"]
+        == document()["conda"]["package_fingerprint"]
+    )
     import re
+
     probe_paths = re.findall(r"/tmp/operon-env-[0-9a-f]+", "\n".join(client.commands))
     assert probe_paths and all(not Path(path).exists() for path in probe_paths)
     executor.close()
@@ -334,13 +450,19 @@ def test_capture_round_trip_redacts_home_and_hostname():
     assert env["system_fingerprint"] and env["hardware_fingerprint"]
     home = str(Path.home())
     if home != "/":
-        assert not any(isinstance(value, str) and home in value for value in env.values())
+        assert not any(
+            isinstance(value, str) and home in value for value in env.values()
+        )
 
 
 def test_environment_summary_from_captured_document():
-    env = document(extra=encoded("distribution", 'PRETTY_NAME="Debian GNU/Linux 12"\nID=debian\n')
-                   + encoded("memory", "1000 kB\n"))
-    assert environment_summary(env) == "Debian GNU/Linux 12; 1000 kB; conda (1 packages)"
+    env = document(
+        extra=encoded("distribution", 'PRETTY_NAME="Debian GNU/Linux 12"\nID=debian\n')
+        + encoded("memory", "1000 kB\n")
+    )
+    assert (
+        environment_summary(env) == "Debian GNU/Linux 12; 1000 kB; conda (1 packages)"
+    )
     partial = document(complete=False)
     assert environment_summary(partial).endswith("capture: partial")
 
@@ -361,8 +483,22 @@ def test_environments_list_includes_summary_column(tmp_path, capsys):
 # --------------------------------------------------------------------------- #
 
 PROBE_TOOLS = (
-    "sh", "hostname", "uname", "cat", "awk", "sort", "getconf", "sed", "base64",
-    "tr", "dirname", "basename", "sleep", "kill", "true", "false",
+    "sh",
+    "hostname",
+    "uname",
+    "cat",
+    "awk",
+    "sort",
+    "getconf",
+    "sed",
+    "base64",
+    "tr",
+    "dirname",
+    "basename",
+    "sleep",
+    "kill",
+    "true",
+    "false",
 )
 
 
@@ -400,11 +536,17 @@ def test_capture_local_completes_without_the_timeout_utility(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize("hide_timeout", [False, True])
-def test_bounded_shell_propagates_the_wrapped_exit_status(tmp_path, monkeypatch, hide_timeout):
+def test_bounded_shell_propagates_the_wrapped_exit_status(
+    tmp_path, monkeypatch, hide_timeout
+):
     if hide_timeout:
         _path_without_timeout(tmp_path, monkeypatch)
-    proc = subprocess.run(["sh", "-c", bounded_shell(["sh", "-c", "exit 3"])],
-                          capture_output=True, text=True, timeout=20)
+    proc = subprocess.run(
+        ["sh", "-c", bounded_shell(["sh", "-c", "exit 3"])],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
     assert proc.returncode == 3
 
 
@@ -413,8 +555,12 @@ def test_bounded_shell_kills_a_hanging_command(tmp_path, monkeypatch, hide_timeo
     if hide_timeout:
         _path_without_timeout(tmp_path, monkeypatch)
     started = time.monotonic()
-    proc = subprocess.run(["sh", "-c", bounded_shell(["sleep", "30"], limit_seconds=1)],
-                          capture_output=True, text=True, timeout=20)
+    proc = subprocess.run(
+        ["sh", "-c", bounded_shell(["sleep", "30"], limit_seconds=1)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
     elapsed = time.monotonic() - started
     assert proc.returncode != 0
     assert elapsed < 15, f"the {1}s bound was not enforced (took {elapsed:.1f}s)"

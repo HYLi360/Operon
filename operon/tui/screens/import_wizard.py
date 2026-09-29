@@ -33,7 +33,15 @@ from operon.tui.screens.common import DismissOnce, WorkerResults
 
 CREATE_NEW = "__new__"
 
-SECTIONS = ("source", "organism", "sample", "sequencing", "assembly", "annotation", "files")
+SECTIONS = (
+    "source",
+    "organism",
+    "sample",
+    "sequencing",
+    "assembly",
+    "annotation",
+    "files",
+)
 PAGES = (*SECTIONS, "summary")
 
 SOURCE_TYPE_OPTIONS = [
@@ -41,15 +49,28 @@ SOURCE_TYPE_OPTIONS = [
     ("Non-INSDC database, repository, or institution", "non_insdc"),
 ]
 TAXONOMY_SOURCE_OPTIONS = [("NCBI", "NCBI"), ("GTDB", "GTDB"), ("other", "other")]
-LIBRARY_STRATEGY_OPTIONS = [(value, value) for value in
-                            ("WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other")]
-LIBRARY_SOURCE_OPTIONS = [(value, value) for value in
-                          ("GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER")]
+LIBRARY_STRATEGY_OPTIONS = [
+    (value, value)
+    for value in ("WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other")
+]
+LIBRARY_SOURCE_OPTIONS = [
+    (value, value) for value in ("GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER")
+]
 LIBRARY_LAYOUT_OPTIONS = [(value, value) for value in ("PAIRED", "SINGLE", "unknown")]
-PLATFORM_OPTIONS = [(value, value) for value in
-                    ("ILLUMINA", "PACBIO_SMRT", "OXFORD_NANOPORE", "BGISEQ", "ION_TORRENT", "other")]
-ASSEMBLY_LEVEL_OPTIONS = [(value, value) for value in
-                          ("complete_genome", "chromosome", "scaffold", "contig")]
+PLATFORM_OPTIONS = [
+    (value, value)
+    for value in (
+        "ILLUMINA",
+        "PACBIO_SMRT",
+        "OXFORD_NANOPORE",
+        "BGISEQ",
+        "ION_TORRENT",
+        "other",
+    )
+]
+ASSEMBLY_LEVEL_OPTIONS = [
+    (value, value) for value in ("complete_genome", "chromosome", "scaffold", "contig")
+]
 SOURCE_DATABASE_OPTIONS = [(value, value) for value in ("RefSeq", "GenBank", "other")]
 
 # (label, role, entity_type, widget id); annotation/run entries are only shown
@@ -109,47 +130,99 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     with VerticalScroll(id="page-source"):
                         yield Static("[1] Source", classes="wizard-heading")
                         yield Static("Source classification", classes="modal-label")
-                        yield Select(SOURCE_TYPE_OPTIONS, value="insdc",
-                                     id="iw-source-type", allow_blank=False)
-                        yield Input(placeholder="source database or repository (required)",
-                                    id="iw-database-name")
-                        yield Input(placeholder="data provider or institution (required)",
-                                    id="iw-provider")
-                        yield Input(placeholder="source record URL (optional)", id="iw-record-url")
-                        yield Input(placeholder="reference citation or DOI (required for non-INSDC)",
-                                    id="iw-citation")
-                        yield Input(placeholder="license name or SPDX identifier (required for non-INSDC)",
-                                    id="iw-license-name")
-                        yield Input(placeholder="license URL (optional)", id="iw-license-url")
+                        yield Select(
+                            SOURCE_TYPE_OPTIONS,
+                            value="insdc",
+                            id="iw-source-type",
+                            allow_blank=False,
+                        )
+                        yield Input(
+                            placeholder="source database or repository (required)",
+                            id="iw-database-name",
+                        )
+                        yield Input(
+                            placeholder="data provider or institution (required)",
+                            id="iw-provider",
+                        )
+                        yield Input(
+                            placeholder="source record URL (optional)",
+                            id="iw-record-url",
+                        )
+                        yield Input(
+                            placeholder="reference citation or DOI (required for non-INSDC)",
+                            id="iw-citation",
+                        )
+                        yield Input(
+                            placeholder="license name or SPDX identifier (required for non-INSDC)",
+                            id="iw-license-name",
+                        )
+                        yield Input(
+                            placeholder="license URL (optional)", id="iw-license-url"
+                        )
                     with VerticalScroll(id="page-organism"):
                         yield Static("[2] Organism", classes="wizard-heading")
-                        yield Select([("Create a new organism", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-organism-choice", allow_blank=True)
+                        yield Select(
+                            [("Create a new organism", CREATE_NEW)],
+                            value=CREATE_NEW,
+                            id="iw-organism-choice",
+                            allow_blank=True,
+                        )
                         with VerticalScroll(id="iw-organism-form"):
-                            yield Input(placeholder="scientific name (required)", id="iw-organism-name")
-                            yield Input(placeholder="taxonomy ID (optional)", id="iw-organism-taxon-id")
-                            yield Input(value="species", placeholder="taxonomic rank",
-                                        id="iw-organism-rank")
+                            yield Input(
+                                placeholder="scientific name (required)",
+                                id="iw-organism-name",
+                            )
+                            yield Input(
+                                placeholder="taxonomy ID (optional)",
+                                id="iw-organism-taxon-id",
+                            )
+                            yield Input(
+                                value="species",
+                                placeholder="taxonomic rank",
+                                id="iw-organism-rank",
+                            )
                             yield Static("Taxonomy source", classes="modal-label")
-                            yield Select(TAXONOMY_SOURCE_OPTIONS, id="iw-organism-taxonomy-source")
-                            yield Input(placeholder="taxonomy version (optional)",
-                                        id="iw-organism-taxonomy-version")
+                            yield Select(
+                                TAXONOMY_SOURCE_OPTIONS,
+                                id="iw-organism-taxonomy-source",
+                            )
+                            yield Input(
+                                placeholder="taxonomy version (optional)",
+                                id="iw-organism-taxonomy-version",
+                            )
                     with VerticalScroll(id="page-sample"):
                         yield Static("[3] Sample", classes="wizard-heading")
-                        yield Select([("Create a new sample", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-sample-choice", allow_blank=True)
+                        yield Select(
+                            [("Create a new sample", CREATE_NEW)],
+                            value=CREATE_NEW,
+                            id="iw-sample-choice",
+                            allow_blank=True,
+                        )
                         with VerticalScroll(id="iw-sample-form"):
-                            yield Input(placeholder="BioSample accession (optional)",
-                                        id="iw-sample-biosample")
-                            yield Input(placeholder="strain (optional)", id="iw-sample-strain")
-                            yield Input(placeholder="isolate (optional)", id="iw-sample-isolate")
+                            yield Input(
+                                placeholder="BioSample accession (optional)",
+                                id="iw-sample-biosample",
+                            )
+                            yield Input(
+                                placeholder="strain (optional)", id="iw-sample-strain"
+                            )
+                            yield Input(
+                                placeholder="isolate (optional)", id="iw-sample-isolate"
+                            )
                     with VerticalScroll(id="page-sequencing"):
                         yield Static("[4] Sequencing", classes="wizard-heading")
-                        yield Checkbox("Record sequencing information", id="iw-run-enabled")
+                        yield Checkbox(
+                            "Record sequencing information", id="iw-run-enabled"
+                        )
                         with VerticalScroll(id="iw-run-form"):
-                            yield Input(placeholder="run accession (optional)", id="iw-run-accession")
-                            yield Input(placeholder="experiment accession (optional)",
-                                        id="iw-run-experiment")
+                            yield Input(
+                                placeholder="run accession (optional)",
+                                id="iw-run-accession",
+                            )
+                            yield Input(
+                                placeholder="experiment accession (optional)",
+                                id="iw-run-experiment",
+                            )
                             yield Static("Library strategy", classes="modal-label")
                             yield Select(LIBRARY_STRATEGY_OPTIONS, id="iw-run-strategy")
                             yield Static("Library source", classes="modal-label")
@@ -158,50 +231,89 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                             yield Select(LIBRARY_LAYOUT_OPTIONS, id="iw-run-layout")
                             yield Static("Sequencing platform", classes="modal-label")
                             yield Select(PLATFORM_OPTIONS, id="iw-run-platform")
-                            yield Input(placeholder="instrument model (optional)",
-                                        id="iw-run-instrument")
+                            yield Input(
+                                placeholder="instrument model (optional)",
+                                id="iw-run-instrument",
+                            )
                     with VerticalScroll(id="page-assembly"):
                         yield Static("[5] Assembly", classes="wizard-heading")
-                        yield Select([("Create a new assembly", CREATE_NEW)],
-                                     value=CREATE_NEW, id="iw-assembly-choice", allow_blank=True)
+                        yield Select(
+                            [("Create a new assembly", CREATE_NEW)],
+                            value=CREATE_NEW,
+                            id="iw-assembly-choice",
+                            allow_blank=True,
+                        )
                         with VerticalScroll(id="iw-assembly-form"):
-                            yield Input(placeholder="assembly accession (optional)",
-                                        id="iw-assembly-accession")
-                            yield Input(placeholder="assembly name (optional)", id="iw-assembly-name")
-                            yield Input(value="1", placeholder="assembly version",
-                                        id="iw-assembly-version")
+                            yield Input(
+                                placeholder="assembly accession (optional)",
+                                id="iw-assembly-accession",
+                            )
+                            yield Input(
+                                placeholder="assembly name (optional)",
+                                id="iw-assembly-name",
+                            )
+                            yield Input(
+                                value="1",
+                                placeholder="assembly version",
+                                id="iw-assembly-version",
+                            )
                             yield Static("Assembly level", classes="modal-label")
                             yield Select(ASSEMBLY_LEVEL_OPTIONS, id="iw-assembly-level")
-                            yield Input(placeholder="assembly software and parameters (optional)",
-                                        id="iw-assembly-method")
+                            yield Input(
+                                placeholder="assembly software and parameters (optional)",
+                                id="iw-assembly-method",
+                            )
                             yield Static("Source database", classes="modal-label")
-                            yield Select(SOURCE_DATABASE_OPTIONS, id="iw-assembly-source-db")
+                            yield Select(
+                                SOURCE_DATABASE_OPTIONS, id="iw-assembly-source-db"
+                            )
                     with VerticalScroll(id="page-annotation"):
                         yield Static("[6] Annotation", classes="wizard-heading")
-                        yield Checkbox("Record an annotation release", id="iw-annotation-enabled")
+                        yield Checkbox(
+                            "Record an annotation release", id="iw-annotation-enabled"
+                        )
                         with VerticalScroll(id="iw-annotation-form"):
-                            yield Select([("Create a new annotation", CREATE_NEW)],
-                                         value=CREATE_NEW, id="iw-annotation-choice", allow_blank=True)
-                            yield Input(placeholder="annotation pipeline or source (optional)",
-                                        id="iw-annotation-source")
-                            yield Input(value="1", placeholder="annotation version",
-                                        id="iw-annotation-version")
-                            yield Input(placeholder="annotation date, YYYY-MM-DD (optional)",
-                                        id="iw-annotation-date")
+                            yield Select(
+                                [("Create a new annotation", CREATE_NEW)],
+                                value=CREATE_NEW,
+                                id="iw-annotation-choice",
+                                allow_blank=True,
+                            )
+                            yield Input(
+                                placeholder="annotation pipeline or source (optional)",
+                                id="iw-annotation-source",
+                            )
+                            yield Input(
+                                value="1",
+                                placeholder="annotation version",
+                                id="iw-annotation-version",
+                            )
+                            yield Input(
+                                placeholder="annotation date, YYYY-MM-DD (optional)",
+                                id="iw-annotation-date",
+                            )
                     with VerticalScroll(id="page-files"):
                         yield Static("[7] Files", classes="wizard-heading")
-                        yield Static("Leave a path empty to skip that file.", classes="modal-info")
+                        yield Static(
+                            "Leave a path empty to skip that file.",
+                            classes="modal-info",
+                        )
                         for label, _role, _entity_type, widget_id in FILE_ENTRIES:
                             with Vertical(id=f"{widget_id}-row"):
                                 yield Static(label, classes="modal-label")
-                                yield Input(placeholder=f"{label} path (optional)", id=widget_id)
+                                yield Input(
+                                    placeholder=f"{label} path (optional)", id=widget_id
+                                )
                     with VerticalScroll(id="page-summary"):
                         yield Static("Import plan", classes="wizard-heading")
                         yield Static("loading…", id="iw-summary", classes="body")
                         with Horizontal(id="wizard-edit-bar"):
                             for name in SECTIONS:
-                                yield Button(f"Edit {name}", id=f"wizard-edit-{name}",
-                                             classes="wizard-edit")
+                                yield Button(
+                                    f"Edit {name}",
+                                    id=f"wizard-edit-{name}",
+                                    classes="wizard-edit",
+                                )
             yield Static("", id="wizard-error")
             with Horizontal(id="wizard-bar"):
                 yield Button("Back", id="wizard-back")
@@ -246,7 +358,9 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         for button in self.query("#wizard-bar Button, #wizard-edit-bar Button"):
             if button.id != "wizard-cancel":
                 button.disabled = loading
-        self.query_one("#wizard-back", Button).disabled = loading or self.page_index == 0
+        self.query_one("#wizard-back", Button).disabled = (
+            loading or self.page_index == 0
+        )
 
     def _organism_options(self) -> list[tuple[str, str]]:
         names: dict[str, int] = {}
@@ -257,11 +371,14 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         for row in self.organisms:
             name = str(row["scientific_name"])
             label = name if names[name] == 1 else f"{name} [{row['organism_id']}]"
-            options.append((f"{label}  ({row['organism_id']})", str(row["organism_id"])))
+            options.append(
+                (f"{label}  ({row['organism_id']})", str(row["organism_id"]))
+            )
         return options
 
-    def _set_choice_options(self, widget_id: str, options: list[tuple[str, str]],
-                            value: str = CREATE_NEW) -> None:
+    def _set_choice_options(
+        self, widget_id: str, options: list[tuple[str, str]], value: str = CREATE_NEW
+    ) -> None:
         select = self.query_one(widget_id, Select)
         self._choice_values[widget_id] = {option[1] for option in options}
         select.set_options(options)
@@ -273,7 +390,9 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
             select.value = value
         else:
             select.value = Select.NULL
-            self.show_error(f"{value} is no longer available. Select an existing entity or create a new one.")
+            self.show_error(
+                f"{value} is no longer available. Select an existing entity or create a new one."
+            )
 
     def _goto(self, index: int) -> None:
         if not self._ready or self._loading:
@@ -291,14 +410,19 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 payload["organisms"] = data.list_organisms_for_picker(self.project)
             elif page == "sample":
                 organism_id = (self.draft.get("organism") or {}).get("id", "")
-                payload["samples"] = data.list_samples_for_picker(self.project, organism_id)
+                payload["samples"] = data.list_samples_for_picker(
+                    self.project, organism_id
+                )
             elif page == "assembly":
                 sample_id = (self.draft.get("sample") or {}).get("id", "")
-                payload["assemblies"] = data.list_assemblies_for_picker(self.project, sample_id)
+                payload["assemblies"] = data.list_assemblies_for_picker(
+                    self.project, sample_id
+                )
             elif page == "annotation":
                 assembly_id = (self.draft.get("assembly") or {}).get("id", "")
                 payload["annotations"] = data.list_annotations_for_picker(
-                    self.project, assembly_id)
+                    self.project, assembly_id
+                )
             elif page == "summary":
                 payload["summary"] = data.import_summary(self.project, self.draft)
         except Exception as exc:  # noqa: BLE001 - surfaced in the wizard  # pylint: disable=broad-exception-caught
@@ -317,7 +441,8 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         elif page == "sample":
             self._set_choice_options(
                 "#iw-sample-choice",
-                [("Create a new sample", CREATE_NEW)] + [
+                [("Create a new sample", CREATE_NEW)]
+                + [
                     (
                         f"{row['sample_id']}  "
                         f"{row.get('isolate') or row.get('strain') or row.get('biosample_accession') or 'sample'}",
@@ -329,7 +454,8 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         elif page == "assembly":
             self._set_choice_options(
                 "#iw-assembly-choice",
-                [("Create a new assembly", CREATE_NEW)] + [
+                [("Create a new assembly", CREATE_NEW)]
+                + [
                     (
                         f"{row['assembly_id']}  "
                         f"{row.get('assembly_accession') or row.get('assembly_name') or 'assembly'}",
@@ -341,7 +467,8 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         elif page == "annotation":
             self._set_choice_options(
                 "#iw-annotation-choice",
-                [("Create a new annotation", CREATE_NEW)] + [
+                [("Create a new annotation", CREATE_NEW)]
+                + [
                     (
                         f"{row['annotation_id']}  "
                         f"{row.get('annotation_source') or 'annotation'} "
@@ -380,12 +507,20 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         draft = self.draft
         if page == "source" and draft.get("source"):
             source = draft["source"]
-            self.query_one("#iw-source-type", Select).value = source.get("source_type") or "insdc"
+            self.query_one("#iw-source-type", Select).value = (
+                source.get("source_type") or "insdc"
+            )
             for key, widget_id in (
-                    ("database_name", "iw-database-name"), ("provider", "iw-provider"),
-                    ("record_url", "iw-record-url"), ("citation", "iw-citation"),
-                    ("license_name", "iw-license-name"), ("license_url", "iw-license-url")):
-                self.query_one(f"#{widget_id}", Input).value = str(source.get(key) or "")
+                ("database_name", "iw-database-name"),
+                ("provider", "iw-provider"),
+                ("record_url", "iw-record-url"),
+                ("citation", "iw-citation"),
+                ("license_name", "iw-license-name"),
+                ("license_url", "iw-license-url"),
+            ):
+                self.query_one(f"#{widget_id}", Input).value = str(
+                    source.get(key) or ""
+                )
         elif page == "organism" and draft.get("organism"):
             organism = draft["organism"]
             if organism.get("action") == "reuse":
@@ -393,11 +528,18 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
             else:
                 row = organism.get("row", {})
                 self.query_one("#iw-organism-choice", Select).value = CREATE_NEW
-                self.query_one("#iw-organism-name", Input).value = str(row.get("scientific_name") or "")
-                self.query_one("#iw-organism-taxon-id", Input).value = str(row.get("taxon_id") or "")
-                self.query_one("#iw-organism-rank", Input).value = str(row.get("taxonomic_rank") or "species")
+                self.query_one("#iw-organism-name", Input).value = str(
+                    row.get("scientific_name") or ""
+                )
+                self.query_one("#iw-organism-taxon-id", Input).value = str(
+                    row.get("taxon_id") or ""
+                )
+                self.query_one("#iw-organism-rank", Input).value = str(
+                    row.get("taxonomic_rank") or "species"
+                )
                 self.query_one("#iw-organism-taxonomy-version", Input).value = str(
-                    row.get("taxonomy_version") or "")
+                    row.get("taxonomy_version") or ""
+                )
         elif page == "sample" and draft.get("sample"):
             sample = draft["sample"]
             if sample.get("action") == "reuse":
@@ -405,23 +547,34 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
             else:
                 row = sample.get("row", {})
                 self.query_one("#iw-sample-choice", Select).value = CREATE_NEW
-                self.query_one("#iw-sample-biosample", Input).value = str(row.get("biosample_accession") or "")
-                self.query_one("#iw-sample-strain", Input).value = str(row.get("strain") or "")
-                self.query_one("#iw-sample-isolate", Input).value = str(row.get("isolate") or "")
+                self.query_one("#iw-sample-biosample", Input).value = str(
+                    row.get("biosample_accession") or ""
+                )
+                self.query_one("#iw-sample-strain", Input).value = str(
+                    row.get("strain") or ""
+                )
+                self.query_one("#iw-sample-isolate", Input).value = str(
+                    row.get("isolate") or ""
+                )
         elif page == "sequencing":
             run = draft.get("run")
             self.query_one("#iw-run-enabled", Checkbox).value = bool(run)
             row = (run or {}).get("row", {})
             for key, widget_id in (
-                    ("run_accession", "iw-run-accession"),
-                    ("experiment_accession", "iw-run-experiment"),
-                    ("instrument_model", "iw-run-instrument")):
+                ("run_accession", "iw-run-accession"),
+                ("experiment_accession", "iw-run-experiment"),
+                ("instrument_model", "iw-run-instrument"),
+            ):
                 self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
             for key, widget_id in (
-                    ("library_strategy", "iw-run-strategy"),
-                    ("library_source", "iw-run-source"),
-                    ("library_layout", "iw-run-layout"), ("platform", "iw-run-platform")):
-                self.query_one(f"#{widget_id}", Select).value = row.get(key) or Select.NULL
+                ("library_strategy", "iw-run-strategy"),
+                ("library_source", "iw-run-source"),
+                ("library_layout", "iw-run-layout"),
+                ("platform", "iw-run-platform"),
+            ):
+                self.query_one(f"#{widget_id}", Select).value = (
+                    row.get(key) or Select.NULL
+                )
         elif page == "assembly" and draft.get("assembly"):
             assembly = draft["assembly"]
             if assembly.get("action") == "reuse":
@@ -430,11 +583,14 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 row = assembly.get("row", {})
                 self.query_one("#iw-assembly-choice", Select).value = CREATE_NEW
                 for key, widget_id in (
-                        ("assembly_accession", "iw-assembly-accession"),
-                        ("assembly_name", "iw-assembly-name"),
-                        ("assembly_version", "iw-assembly-version"),
-                        ("assembly_method", "iw-assembly-method")):
-                    self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
+                    ("assembly_accession", "iw-assembly-accession"),
+                    ("assembly_name", "iw-assembly-name"),
+                    ("assembly_version", "iw-assembly-version"),
+                    ("assembly_method", "iw-assembly-method"),
+                ):
+                    self.query_one(f"#{widget_id}", Input).value = str(
+                        row.get(key) or ""
+                    )
         elif page == "annotation":
             annotation = draft.get("annotation")
             self.query_one("#iw-annotation-enabled", Checkbox).value = bool(annotation)
@@ -445,13 +601,20 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     row = annotation.get("row", {})
                     self.query_one("#iw-annotation-choice", Select).value = CREATE_NEW
                     for key, widget_id in (
-                            ("annotation_source", "iw-annotation-source"),
-                            ("annotation_version", "iw-annotation-version"),
-                            ("annotation_date", "iw-annotation-date")):
-                        self.query_one(f"#{widget_id}", Input).value = str(row.get(key) or "")
+                        ("annotation_source", "iw-annotation-source"),
+                        ("annotation_version", "iw-annotation-version"),
+                        ("annotation_date", "iw-annotation-date"),
+                    ):
+                        self.query_one(f"#{widget_id}", Input).value = str(
+                            row.get(key) or ""
+                        )
             else:
                 self.query_one("#iw-annotation-choice", Select).value = CREATE_NEW
-                for widget_id in ("iw-annotation-source", "iw-annotation-version", "iw-annotation-date"):
+                for widget_id in (
+                    "iw-annotation-source",
+                    "iw-annotation-version",
+                    "iw-annotation-date",
+                ):
                     self.query_one(f"#{widget_id}", Input).value = ""
         elif page == "files":
             current = {item["role"]: item["path"] for item in draft.get("files", [])}
@@ -465,7 +628,10 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         if not self._ready:
             return "Initialization has not completed. Retry initialization first."
         if page in {"organism", "sample", "assembly", "annotation"}:
-            required = page != "annotation" or self.query_one("#iw-annotation-enabled", Checkbox).value
+            required = (
+                page != "annotation"
+                or self.query_one("#iw-annotation-enabled", Checkbox).value
+            )
             if required and not _select_value(self, f"iw-{page}-choice"):
                 return "Select an existing entity or create a new one."
         if page == "source":
@@ -495,10 +661,16 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     "scientific_name": name,
                     "taxon_id": _input(self, "iw-organism-taxon-id"),
                     "taxonomic_rank": _input(self, "iw-organism-rank"),
-                    "taxonomy_source": _select_value(self, "iw-organism-taxonomy-source"),
+                    "taxonomy_source": _select_value(
+                        self, "iw-organism-taxonomy-source"
+                    ),
                     "taxonomy_version": _input(self, "iw-organism-taxonomy-version"),
                 }
-                self.draft["organism"] = {"action": "create", "id": row["organism_id"], "row": row}
+                self.draft["organism"] = {
+                    "action": "create",
+                    "id": row["organism_id"],
+                    "row": row,
+                }
         elif page == "sample":
             choice = _select_value(self, "iw-sample-choice")
             if choice != CREATE_NEW:
@@ -512,7 +684,11 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     "isolate": _input(self, "iw-sample-isolate"),
                     "source_record": self.draft.get("source", {}).get("record_url", ""),
                 }
-                self.draft["sample"] = {"action": "create", "id": row["sample_id"], "row": row}
+                self.draft["sample"] = {
+                    "action": "create",
+                    "id": row["sample_id"],
+                    "row": row,
+                }
         elif page == "sequencing":
             if not self.query_one("#iw-run-enabled", Checkbox).value:
                 self.draft["run"] = None
@@ -528,7 +704,11 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     "platform": _select_value(self, "iw-run-platform"),
                     "instrument_model": _input(self, "iw-run-instrument"),
                 }
-                self.draft["run"] = {"action": "create", "id": row["run_id"], "row": row}
+                self.draft["run"] = {
+                    "action": "create",
+                    "id": row["run_id"],
+                    "row": row,
+                }
         elif page == "assembly":
             choice = _select_value(self, "iw-assembly-choice")
             if choice != CREATE_NEW:
@@ -545,7 +725,11 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     "submitter": self.draft.get("source", {}).get("provider", ""),
                     "source_database": _select_value(self, "iw-assembly-source-db"),
                 }
-                self.draft["assembly"] = {"action": "create", "id": row["assembly_id"], "row": row}
+                self.draft["assembly"] = {
+                    "action": "create",
+                    "id": row["assembly_id"],
+                    "row": row,
+                }
         elif page == "annotation":
             if not self.query_one("#iw-annotation-enabled", Checkbox).value:
                 self.draft["annotation"] = None
@@ -562,7 +746,9 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                         "annotation_date": _input(self, "iw-annotation-date"),
                     }
                     self.draft["annotation"] = {
-                        "action": "create", "id": row["annotation_id"], "row": row,
+                        "action": "create",
+                        "id": row["annotation_id"],
+                        "row": row,
                     }
         elif page == "files":
             files: list[dict[str, str]] = []
@@ -577,10 +763,14 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 path = Path(value).expanduser()
                 if not path.is_file():
                     return f"File does not exist: {value}"
-                files.append({
-                    "label": label, "role": role, "entity_type": entity_type,
-                    "path": str(path.resolve()),
-                })
+                files.append(
+                    {
+                        "label": label,
+                        "role": role,
+                        "entity_type": entity_type,
+                        "path": str(path.resolve()),
+                    }
+                )
             self.draft["files"] = files
         return None
 
@@ -602,7 +792,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
             self._execute_import()
         elif button_id.startswith("wizard-edit-"):
             self._return_to_summary = True
-            self._goto(SECTIONS.index(button_id[len("wizard-edit-"):]))
+            self._goto(SECTIONS.index(button_id[len("wizard-edit-") :]))
 
     def _advance(self) -> None:
         if self._loading:
@@ -650,7 +840,9 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
         if isinstance(payload, BaseException):
             self.show_error(payload)
             return
-        entities = ", ".join(f"{name} {entity_id}" for name, entity_id in payload["entities"].items())
+        entities = ", ".join(
+            f"{name} {entity_id}" for name, entity_id in payload["entities"].items()
+        )
         self.app.notify(
             f"imported {entities} + {len(payload['files'])} file(s); source {payload['source_id']}"
         )

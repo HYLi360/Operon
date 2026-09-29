@@ -12,7 +12,7 @@ writable session — so audit rows and state transitions are identical to
 ``--yes``.  The apply is a single short transaction with no cooperative
 cancel, so a running form refuses to close (the RunExternalModal pattern;
 Cancel is additionally guarded against Textual's MRO double dispatch,
-ODR-0043).
+ODR-43).
 """
 
 from __future__ import annotations
@@ -67,15 +67,19 @@ class ImportTableModal(WriteModal):
             id="table-table",
         )
         yield Select(
-            [("Import file (preview, then apply)", "import"),
-             ("Generate template", "template")],
+            [
+                ("Import file (preview, then apply)", "import"),
+                ("Generate template", "template"),
+            ],
             value="import",
             allow_blank=False,
             id="table-mode",
         )
         yield Input(placeholder="input .csv/.xlsx path (--file)", id="table-file")
-        yield Input(placeholder="template output .csv/.xlsx path (--template)",
-                    id="table-template-out")
+        yield Input(
+            placeholder="template output .csv/.xlsx path (--template)",
+            id="table-template-out",
+        )
         yield Select(
             ON_CONFLICT_OPTIONS,
             prompt="on-conflict (blank = the CLI default)",
@@ -90,7 +94,8 @@ class ImportTableModal(WriteModal):
     def on_mount(self) -> None:
         super().on_mount()
         self.query_one("#table-preview-table", DataTable).add_columns(
-            "key", "action", "changed_fields")
+            "key", "action", "changed_fields"
+        )
         self.set_confirm_enabled(False)
 
     # -- form values ---------------------------------------------------------
@@ -139,8 +144,9 @@ class ImportTableModal(WriteModal):
     def _apply_mode(self) -> None:
         if self.running or self.preview_running:
             return
-        self.query_one("#table-preview-button", Button).disabled = \
+        self.query_one("#table-preview-button", Button).disabled = (
             self._values()["mode"] == "template"
+        )
         self.set_confirm_enabled(self._confirm_allowed())
 
     def _invalidate_preview(self) -> None:
@@ -150,14 +156,17 @@ class ImportTableModal(WriteModal):
         # preview, so choosing it here must not lock Confirm again.
         if self.preview is None:
             return
-        if self._preview_relevant(self._values()) == self._preview_relevant(self.preview_values):
+        if self._preview_relevant(self._values()) == self._preview_relevant(
+            self.preview_values
+        ):
             self.refresh_command()
             return
         self.preview = None
         self.set_confirm_enabled(self._confirm_allowed())
         self.query_one("#table-preview-table", DataTable).clear()
         self.query_one("#table-status", Static).update(
-            Text("form changed — run the preview again", style="yellow"))
+            Text("form changed — run the preview again", style="yellow")
+        )
 
     def _confirm_allowed(self) -> bool:
         if self.running or self.preview_running:
@@ -175,12 +184,12 @@ class ImportTableModal(WriteModal):
             return
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -200,7 +209,8 @@ class ImportTableModal(WriteModal):
     def _preview(self, values: dict[str, Any]) -> None:
         try:
             payload: Any = actions.table_import_preview(
-                self.project, values["table"], values["file"])
+                self.project, values["table"], values["file"]
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught
             payload = exc
         self.post_to_ui(self._preview_done, payload)
@@ -213,17 +223,20 @@ class ImportTableModal(WriteModal):
             self.preview_values = {}
             self.query_one("#table-preview-table", DataTable).clear()
             self.query_one("#table-status", Static).update(
-                Text(f"preview failed: {payload}", style="red"))
+                Text(f"preview failed: {payload}", style="red")
+            )
             self.set_confirm_enabled(self._confirm_allowed())
             return
-        if self._preview_relevant(self._values()) != \
-                self._preview_relevant(self._preview_snapshot):
+        if self._preview_relevant(self._values()) != self._preview_relevant(
+            self._preview_snapshot
+        ):
             # The form moved on while the preview ran: this answer is stale.
             self.preview = None
             self.preview_values = {}
             self.query_one("#table-preview-table", DataTable).clear()
             self.query_one("#table-status", Static).update(
-                Text("form changed during the preview — run it again", style="yellow"))
+                Text("form changed during the preview — run it again", style="yellow")
+            )
             self.set_confirm_enabled(self._confirm_allowed())
             return
         self.preview = payload
@@ -236,11 +249,15 @@ class ImportTableModal(WriteModal):
                 item["action"],
                 ", ".join(item["differences"]),
             )
-        text = (f"preview: {payload['insert']} insert, {payload['update']} update, "
-                f"{payload['unchanged']} unchanged — nothing was written")
+        text = (
+            f"preview: {payload['insert']} insert, {payload['update']} update, "
+            f"{payload['unchanged']} unchanged — nothing was written"
+        )
         if payload["update"] and not self._values()["on_conflict"]:
-            text += (f"\n{payload['update']} existing row(s) would change — pick skip "
-                     "or update, or leave blank to apply the CLI's error policy")
+            text += (
+                f"\n{payload['update']} existing row(s) would change — pick skip "
+                "or update, or leave blank to apply the CLI's error policy"
+            )
         self.query_one("#table-status", Static).update(text)
         self.set_confirm_enabled(True)
 
@@ -264,7 +281,8 @@ class ImportTableModal(WriteModal):
             return
         if self.preview.get("update") and not values["on_conflict"]:
             self.show_error(
-                "existing rows would change; pass --on-conflict error, skip or update")
+                "existing rows would change; pass --on-conflict error, skip or update"
+            )
             return
         self._start_run("import", values)
 
@@ -275,14 +293,23 @@ class ImportTableModal(WriteModal):
         self.clear_error()
         if kind == "template":
             self.query_one("#table-status", Static).update("writing template…")
-            self.run_action(lambda: actions.table_template(
-                self.project, values["table"], values["template_out"]))
+            self.run_action(
+                lambda: actions.table_template(
+                    self.project, values["table"], values["template_out"]
+                )
+            )
         else:
             self.query_one("#table-status", Static).update(
-                "importing… (a running import cannot be interrupted)")
-            self.run_action(lambda: actions.import_table(
-                self.project, table=values["table"], path=values["file"],
-                on_conflict=values["on_conflict"] or None))
+                "importing… (a running import cannot be interrupted)"
+            )
+            self.run_action(
+                lambda: actions.import_table(
+                    self.project,
+                    table=values["table"],
+                    path=values["file"],
+                    on_conflict=values["on_conflict"] or None,
+                )
+            )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Input, Select"):
@@ -290,8 +317,9 @@ class ImportTableModal(WriteModal):
         self._update_preview_button(disabled)
 
     def _update_preview_button(self, base_disabled: bool = False) -> None:
-        self.query_one("#table-preview-button", Button).disabled = \
+        self.query_one("#table-preview-button", Button).disabled = (
             base_disabled or self._values()["mode"] == "template"
+        )
 
     def _action_done(self, payload: Any) -> None:
         self.running = False
@@ -308,12 +336,15 @@ class ImportTableModal(WriteModal):
 
     def on_action_success(self, payload: Any) -> None:
         if self._run_kind == "template":
-            self.app.notify(f"template written to {payload['path']} ({payload['table']})")
+            self.app.notify(
+                f"template written to {payload['path']} ({payload['table']})"
+            )
         else:
             self.app.notify(
                 f"table import ({payload['table']}): {payload['inserted']} inserted, "
                 f"{payload['updated']} updated, {payload['unchanged']} unchanged, "
-                f"{payload['skipped']} skipped")
+                f"{payload['skipped']} skipped"
+            )
         self.dismiss(payload)
 
     def action_cancel(self) -> None:

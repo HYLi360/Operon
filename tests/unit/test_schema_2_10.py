@@ -21,15 +21,37 @@ class TestSchema210(PytestAssertions):
     def test_schema_2_10_tables_exist(self):
         self.assertEqual(
             self.db.table_columns("sequences"),
-            ["sequence_row_id", "file_id", "file_sha256", "entity_type",
-             "entity_id", "seqid", "length"],
+            [
+                "sequence_row_id",
+                "file_id",
+                "file_sha256",
+                "entity_type",
+                "entity_id",
+                "seqid",
+                "length",
+            ],
         )
         self.assertEqual(
             self.db.table_columns("analysis_alignments"),
-            ["alignment_id", "job_id", "entity_type", "entity_id", "file_id",
-             "analysis_name", "query_id", "subject_id", "hit_rank",
-             "query_start", "query_end", "subject_start", "subject_end",
-             "evalue", "bitscore", "percent_identity", "extra_json"],
+            [
+                "alignment_id",
+                "job_id",
+                "entity_type",
+                "entity_id",
+                "file_id",
+                "analysis_name",
+                "query_id",
+                "subject_id",
+                "hit_rank",
+                "query_start",
+                "query_end",
+                "subject_start",
+                "subject_end",
+                "evalue",
+                "bitscore",
+                "percent_identity",
+                "extra_json",
+            ],
         )
         indexes = {
             row["name"]
@@ -38,11 +60,11 @@ class TestSchema210(PytestAssertions):
             ).fetchall()
         }
         for name in (
-                "idx_sequences_seqid",
-                "idx_sequences_entity",
-                "idx_analysis_alignments_query",
-                "idx_analysis_alignments_subject",
-                "idx_analysis_alignments_job",
+            "idx_sequences_seqid",
+            "idx_sequences_entity",
+            "idx_analysis_alignments_query",
+            "idx_analysis_alignments_subject",
+            "idx_analysis_alignments_job",
         ):
             self.assertIn(name, indexes)
         row = self.db.conn.execute(

@@ -116,8 +116,10 @@ def operon_project(tmp_path):
     """A real initialised project plus an open database."""
     root = tmp_path / "proj"
     root.mkdir()
-    assert main(["--project", str(root), "init", str(root),
-                 "--project-id", "PRJ_T5_001"]) == 0
+    assert (
+        main(["--project", str(root), "init", str(root), "--project-id", "PRJ_T5_001"])
+        == 0
+    )
     project = load_project(root)
     db = Database(project.db_path)
     try:
@@ -140,7 +142,9 @@ def base_recipe(**overrides) -> dict:
     return document
 
 
-def write_tool_config(project, *, executable=None, recipe_document=None, tool=None) -> None:
+def write_tool_config(
+    project, *, executable=None, recipe_document=None, tool=None
+) -> None:
     document = {
         "version": 1,
         "tools": {
@@ -163,8 +167,9 @@ def ingest_assembly(project, db: Database, number: int) -> dict:
     organism_id = f"ORG_{number:06d}"
     sample_id = f"SMP_{number:06d}"
     assembly_id = f"ASM_{number:06d}"
-    db.insert_row("organisms", {"organism_id": organism_id,
-                                "scientific_name": f"Testus {number}"})
+    db.insert_row(
+        "organisms", {"organism_id": organism_id, "scientific_name": f"Testus {number}"}
+    )
     db.insert_row("samples", {"sample_id": sample_id, "organism_id": organism_id})
     db.insert_row("assemblies", {"assembly_id": assembly_id, "sample_id": sample_id})
     source = project.root / f"genome_{number}.fa"
@@ -201,12 +206,18 @@ def test_process_rss_reports_none_when_procfs_and_ps_are_unusable(monkeypatch):
 
     monkeypatch.setattr(builtins, "open", procfs_without_rss)
     # ps exits non-zero: nothing to report.
-    monkeypatch.setattr(execution.subprocess, "run", lambda *_a, **_k: SimpleNamespace(
-        returncode=1, stdout=""))
+    monkeypatch.setattr(
+        execution.subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(returncode=1, stdout=""),
+    )
     assert execution._read_process_rss_mb(4242) is None
     # ps itself is unavailable: still no crash, no value.
-    monkeypatch.setattr(execution.subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(
-        OSError("no ps binary")))
+    monkeypatch.setattr(
+        execution.subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("no ps binary")),
+    )
     assert execution._read_process_rss_mb(4242) is None
 
 
@@ -229,8 +240,10 @@ def test_local_executor_run_without_resource_samples(tmp_path, monkeypatch):
     monkeypatch.setattr(execution, "_sample_process_rss", lambda *_a: None)
     monkeypatch.setattr(execution, "_child_cpu_seconds", lambda: None)
     result = execution.LocalExecutor().run(
-        [sys.executable, "-c", "print('payload')"], cwd=tmp_path,
-        stdout_path=tmp_path / "out.log", stderr_path=tmp_path / "err.log",
+        [sys.executable, "-c", "print('payload')"],
+        cwd=tmp_path,
+        stdout_path=tmp_path / "out.log",
+        stderr_path=tmp_path / "err.log",
     )
     assert result.exit_code == 0
     assert result.resources == {}
@@ -255,7 +268,9 @@ def test_sacct_accounting_skips_blank_lines_and_applies_resources():
     result = execution.ExecResult(exit_code=0)
     execution._apply_slurm_accounting(result, accounting)
     assert result.resources == {
-        "max_rss_mb": 1536.0, "avg_rss_mb": 512.0, "cpu_seconds": 600.0,
+        "max_rss_mb": 1536.0,
+        "avg_rss_mb": 512.0,
+        "cpu_seconds": 600.0,
     }
     assert result.details == {"slurm_elapsed_seconds": 3723.0}
 
@@ -270,33 +285,47 @@ def test_sacct_accounting_skips_blank_lines_and_applies_resources():
 
 
 def test_read_slurm_accounting_uses_sacct_metrics_and_survives_sacct_failure(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     exitcode = tmp_path / "job.exitcode"
     exitcode.write_text("0\n", encoding="utf-8")
-    monkeypatch.setattr(execution.shutil, "which",
-                        lambda name: "sacct" if name == "sacct" else None)
-    monkeypatch.setattr(execution.subprocess, "run", lambda *_a, **_k: SimpleNamespace(
-        stdout="0:0|1G|512M|00:00:30|00:00:10|\n"))
+    monkeypatch.setattr(
+        execution.shutil, "which", lambda name: "sacct" if name == "sacct" else None
+    )
+    monkeypatch.setattr(
+        execution.subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(stdout="0:0|1G|512M|00:00:30|00:00:10|\n"),
+    )
     result = execution._read_slurm_accounting(exitcode, "77", retries=1)
     assert result.exit_code == 0
     assert result.resources["max_rss_mb"] == 1024.0
     assert result.resources["avg_rss_mb"] == 512.0
     assert result.details["slurm_elapsed_seconds"] == 30.0
 
-    monkeypatch.setattr(execution.subprocess, "run", lambda *_a, **_k: (_ for _ in ()).throw(
-        OSError("sacct disappeared")))
+    monkeypatch.setattr(
+        execution.subprocess,
+        "run",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("sacct disappeared")),
+    )
     degraded = execution._read_slurm_accounting(exitcode, "77", retries=1)
     assert degraded.exit_code == 0
     assert degraded.resources == {}
     assert degraded.details == {}
 
 
-def test_slurm_executor_timeout_and_completion_without_probe_document(tmp_path, monkeypatch):
-    executor = execution.SlurmExecutor(project_ns(tmp_path),
-                                       execution.SlurmConfig(poll_interval=0.01))
+def test_slurm_executor_timeout_and_completion_without_probe_document(
+    tmp_path, monkeypatch
+):
+    executor = execution.SlurmExecutor(
+        project_ns(tmp_path), execution.SlurmConfig(poll_interval=0.01)
+    )
     out, err = tmp_path / "out.log", tmp_path / "err.log"
-    monkeypatch.setattr(execution.shutil, "which",
-                        lambda name: name if name in {"sbatch", "squeue"} else None)
+    monkeypatch.setattr(
+        execution.shutil,
+        "which",
+        lambda name: name if name in {"sbatch", "squeue"} else None,
+    )
     monkeypatch.setattr(execution, "_submit_slurm_job", lambda *_a: "42")
     monkeypatch.setattr(execution, "_scancel_slurm_job", lambda _job: None)
     monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
@@ -304,8 +333,14 @@ def test_slurm_executor_timeout_and_completion_without_probe_document(tmp_path, 
 
     times = iter([0, 2, 2])
     monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
-    timed_out = executor.run(["tool"], cwd=None, stdout_path=out, stderr_path=err,
-                             timeout=1, run_id="noprobe")
+    timed_out = executor.run(
+        ["tool"],
+        cwd=None,
+        stdout_path=out,
+        stderr_path=err,
+        timeout=1,
+        run_id="noprobe",
+    )
     assert timed_out.exit_code is None
     assert "timeout after 1s" in timed_out.error
     assert "environment" not in timed_out.details
@@ -316,8 +351,9 @@ def test_slurm_executor_timeout_and_completion_without_probe_document(tmp_path, 
         return True
 
     monkeypatch.setattr(execution, "_squeue_job_gone", finish)
-    completed = executor.run(["tool", "--flag"], cwd=None, stdout_path=out, stderr_path=err,
-                             run_id="done")
+    completed = executor.run(
+        ["tool", "--flag"], cwd=None, stdout_path=out, stderr_path=err, run_id="done"
+    )
     assert completed.exit_code == 0
     assert completed.scheduler_job_id == "42"
     assert completed.details["backend"] == "slurm"
@@ -374,8 +410,10 @@ def test_ssh_probe_environment_returns_none_when_the_connection_fails(tmp_path):
             raise OSError("connection refused")
 
     ssh = execution.SSHExecutor(
-        project_ns(tmp_path), {"host": "unreachable.example.org"},
-        execution.SlurmConfig(), client_factory=lambda _self: BrokenClient(),
+        project_ns(tmp_path),
+        {"host": "unreachable.example.org"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: BrokenClient(),
     )
     assert ssh.probe_environment() is None
 
@@ -387,8 +425,12 @@ def test_ssh_close_without_a_connection_is_a_noop(tmp_path):
         opened.append(1)
         return FakeSSHClient()
 
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host.example.org"},
-                                execution.SlurmConfig(), client_factory=factory)
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path),
+        {"host": "host.example.org"},
+        execution.SlurmConfig(),
+        client_factory=factory,
+    )
     ssh.close()
     assert ssh._client is None
     assert opened == []
@@ -409,8 +451,10 @@ def test_stage_inputs_stages_a_directory_tree(tmp_path):
     (local / "link").symlink_to("a.txt")
     client = FakeSSHClient()
     ssh = execution.SSHExecutor(
-        project_ns(root), {"host": "host", "remote_root": str(remote_root)},
-        execution.SlurmConfig(), client_factory=lambda _self: client,
+        project_ns(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
     )
     ssh._stage_inputs(client, client.sftp, [local])
     assert (remote_root / "tree" / "sub" / "b.txt").read_text(encoding="utf-8") == "b"
@@ -423,14 +467,18 @@ def test_reset_outputs_rejects_the_project_root_itself(tmp_path):
     remote_root.mkdir()
     client = FakeSSHClient()
     ssh = execution.SSHExecutor(
-        project_ns(root), {"host": "host", "remote_root": str(remote_root)},
-        execution.SlurmConfig(), client_factory=lambda _self: client,
+        project_ns(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
     )
     with pytest.raises(ValidationError, match="escapes remote_root"):
         ssh._reset_outputs(client.sftp, [root])
 
 
-def test_stage_directory_rejects_entries_that_appear_after_hashing(tmp_path, monkeypatch):
+def test_stage_directory_rejects_entries_that_appear_after_hashing(
+    tmp_path, monkeypatch
+):
     root, remote_root = tmp_path / "project", tmp_path / "remote"
     local = root / "tree"
     local.mkdir(parents=True)
@@ -438,8 +486,10 @@ def test_stage_directory_rejects_entries_that_appear_after_hashing(tmp_path, mon
     (local / "a.txt").write_text("a", encoding="utf-8")
     client = FakeSSHClient()
     ssh = execution.SSHExecutor(
-        project_ns(root), {"host": "host", "remote_root": str(remote_root)},
-        execution.SlurmConfig(), client_factory=lambda _self: client,
+        project_ns(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
     )
     real_entries = execution.iter_directory_entries
 
@@ -456,7 +506,9 @@ def test_stage_directory_rejects_entries_that_appear_after_hashing(tmp_path, mon
     assert not list(remote_root.glob("*.operon-tmp-*"))
 
 
-def test_stage_directory_verification_and_publish_failures_clean_up(tmp_path, monkeypatch):
+def test_stage_directory_verification_and_publish_failures_clean_up(
+    tmp_path, monkeypatch
+):
     root, remote_root = tmp_path / "project", tmp_path / "remote"
     local = root / "tree"
     local.mkdir(parents=True)
@@ -464,33 +516,44 @@ def test_stage_directory_verification_and_publish_failures_clean_up(tmp_path, mo
     (local / "a.txt").write_text("a", encoding="utf-8")
     client = FakeSSHClient()
     ssh = execution.SSHExecutor(
-        project_ns(root), {"host": "host", "remote_root": str(remote_root)},
-        execution.SlurmConfig(), client_factory=lambda _self: client,
+        project_ns(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
     )
 
-    monkeypatch.setattr("operon.remotes._remote_directory_identity",
-                        lambda *_a, **_k: ("0" * 64, {}))
+    monkeypatch.setattr(
+        "operon.remotes._remote_directory_identity", lambda *_a, **_k: ("0" * 64, {})
+    )
     with pytest.raises(RemoteError, match="staged directory verification failed"):
         ssh._stage_directory(client, client.sftp, local, str(remote_root / "mismatch"))
     assert not (remote_root / "mismatch").exists()
 
     monkeypatch.undo()
-    monkeypatch.setattr("operon.remotes._publish_remote",
-                        lambda *_a, **_k: (_ for _ in ()).throw(OSError("publish failed")))
+    monkeypatch.setattr(
+        "operon.remotes._publish_remote",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("publish failed")),
+    )
     with pytest.raises(OSError, match="publish failed"):
-        ssh._stage_directory(client, client.sftp, local, str(remote_root / "unpublished"))
+        ssh._stage_directory(
+            client, client.sftp, local, str(remote_root / "unpublished")
+        )
     assert not (remote_root / "unpublished").exists()
     assert not list(remote_root.glob("*.operon-tmp-*"))
 
 
-def test_pull_outputs_removes_mismatched_directory_and_temporary_tree(tmp_path, monkeypatch):
+def test_pull_outputs_removes_mismatched_directory_and_temporary_tree(
+    tmp_path, monkeypatch
+):
     root, remote_root = tmp_path / "project", tmp_path / "remote"
     root.mkdir()
     remote_root.mkdir()
     client = FakeSSHClient()
     ssh = execution.SSHExecutor(
-        project_ns(root), {"host": "host", "remote_root": str(remote_root)},
-        execution.SlurmConfig(), client_factory=lambda _self: client,
+        project_ns(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
     )
 
     remote_dir = remote_root / "outdir"
@@ -502,8 +565,11 @@ def test_pull_outputs_removes_mismatched_directory_and_temporary_tree(tmp_path, 
     assert not (root / "outdir").exists()
 
     monkeypatch.undo()
-    monkeypatch.setattr(ssh, "_pull_directory_into",
-                        lambda *_a, **_k: (_ for _ in ()).throw(OSError("sftp broken")))
+    monkeypatch.setattr(
+        ssh,
+        "_pull_directory_into",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("sftp broken")),
+    )
     with pytest.raises(OSError, match="sftp broken"):
         ssh._pull_directory(client.sftp, str(remote_dir), root / "other")
     assert not (root / "other").exists()
@@ -522,8 +588,9 @@ def test_pull_directory_into_rejects_unknown_remote_entry_types(tmp_path):
         def lstat(self, _remote):
             return Entry()
 
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig())
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path), {"host": "host"}, execution.SlurmConfig()
+    )
     with pytest.raises(RemoteError, match="unsupported remote output entry type"):
         ssh._pull_directory_into(SFTP(), "/remote/out", tmp_path / "local")
 
@@ -580,7 +647,11 @@ class _ScriptedClient:
             return None, stream, stream
         proc = subprocess.CompletedProcess(command, self.aux_returncode, b"", b"")
         channel = _FakeChannel(proc)
-        return None, _FakeStream(proc.stdout, channel), _FakeStream(proc.stderr, channel)
+        return (
+            None,
+            _FakeStream(proc.stdout, channel),
+            _FakeStream(proc.stderr, channel),
+        )
 
 
 def test_rewrite_remote_path_rejects_a_relative_remote_root():
@@ -592,13 +663,22 @@ def test_rewrite_remote_path_rejects_a_relative_remote_root():
 
 def test_run_direct_without_probe_or_remote_cwd(tmp_path):
     client = FakeSSHClient()
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig(),
-                                client_factory=lambda _self: client)
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path),
+        {"host": "host"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
     stdout_path, stderr_path = tmp_path / "out.log", tmp_path / "err.log"
-    result = ssh._run_direct(client, ["bash", "-c", "echo payload; pwd"], cwd=None,
-                             stdout_path=stdout_path, stderr_path=stderr_path,
-                             timeout=None, run_id="direct")
+    result = ssh._run_direct(
+        client,
+        ["bash", "-c", "echo payload; pwd"],
+        cwd=None,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        timeout=None,
+        run_id="direct",
+    )
     assert result.exit_code == 0
     payload_line, working_directory = stdout_path.read_text(encoding="utf-8").split()
     assert payload_line == "payload"
@@ -611,29 +691,49 @@ def test_run_direct_without_probe_or_remote_cwd(tmp_path):
 def test_run_direct_drains_bytes_buffered_after_exit(tmp_path):
     channel = _DrainingChannel()
     client = _ScriptedClient(channel)
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig(),
-                                client_factory=lambda _self: client)
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path),
+        {"host": "host"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
     stdout_path, stderr_path = tmp_path / "out.log", tmp_path / "err.log"
-    result = ssh._run_direct(client, ["tool"], cwd=None, stdout_path=stdout_path,
-                             stderr_path=stderr_path, timeout=None, run_id="drain")
+    result = ssh._run_direct(
+        client,
+        ["tool"],
+        cwd=None,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        timeout=None,
+        run_id="drain",
+    )
     assert result.exit_code == 0
     assert stdout_path.read_text(encoding="utf-8") == "tail-out\n"
     assert stderr_path.read_text(encoding="utf-8") == "tail-err\n"
 
 
-def test_run_direct_timeout_reports_when_termination_finds_no_process(tmp_path, monkeypatch):
+def test_run_direct_timeout_reports_when_termination_finds_no_process(
+    tmp_path, monkeypatch
+):
     client = _ScriptedClient(_HangingChannel(), aux_returncode=2)
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig(),
-                                client_factory=lambda _self: client)
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path),
+        {"host": "host"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
     monkeypatch.setattr(execution.time, "sleep", lambda *_a: None)
     times = iter([0, 2, 2])
     monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
-    result = ssh._run_direct(client, ["sleep", "30"], cwd=None,
-                             stdout_path=tmp_path / "out.log",
-                             stderr_path=tmp_path / "err.log",
-                             timeout=1, run_id="hang")
+    result = ssh._run_direct(
+        client,
+        ["sleep", "30"],
+        cwd=None,
+        stdout_path=tmp_path / "out.log",
+        stderr_path=tmp_path / "err.log",
+        timeout=1,
+        run_id="hang",
+    )
     assert result.exit_code is None
     assert "remote process may still be running" in result.error
     assert "termination command exited 2" in result.error
@@ -642,22 +742,31 @@ def test_run_direct_timeout_reports_when_termination_finds_no_process(tmp_path, 
 
 
 def test_run_direct_interrupt_without_signal_confirmation_still_closes_channel(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     channel = _HangingChannel()
     client = _ScriptedClient(channel, aux_returncode=2)
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig(),
-                                client_factory=lambda _self: client)
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path),
+        {"host": "host"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
 
     def interrupting_sleep(_seconds):
         raise ShutdownRequested(signal.SIGINT)
 
     monkeypatch.setattr(execution.time, "sleep", interrupting_sleep)
     with pytest.raises(ShutdownRequested):
-        ssh._run_direct(client, ["sleep", "30"], cwd=None,
-                        stdout_path=tmp_path / "out.log",
-                        stderr_path=tmp_path / "err.log",
-                        timeout=None, run_id="interrupt")
+        ssh._run_direct(
+            client,
+            ["sleep", "30"],
+            cwd=None,
+            stdout_path=tmp_path / "out.log",
+            stderr_path=tmp_path / "err.log",
+            timeout=None,
+            run_id="interrupt",
+        )
     assert channel.closed
     assert any("kill -TERM" in command for command in client.commands)
 
@@ -667,8 +776,9 @@ def test_read_remote_stats_degrades_when_the_exec_channel_fails(tmp_path):
         def exec_command(self, *_args, **_kwargs):
             raise OSError("ssh transport closed")
 
-    ssh = execution.SSHExecutor(project_ns(tmp_path), {"host": "host"},
-                                execution.SlurmConfig())
+    ssh = execution.SSHExecutor(
+        project_ns(tmp_path), {"host": "host"}, execution.SlurmConfig()
+    )
     assert ssh._read_remote_stats(BrokenClient(), "/tmp/operon.stats") == {}
 
 
@@ -699,15 +809,22 @@ def test_remote_slurm_script_upload_failure_cleans_up(tmp_path, monkeypatch):
 
     with pytest.raises(OSError, match="remote disk full"):
         ssh._run_via_slurm(
-            None, FailingSFTP(), ["tool"], cwd=root,
-            stdout_path=root / "logs" / "o.log", stderr_path=root / "logs" / "e.log",
-            timeout=None, threads=None, run_id="upload",
+            None,
+            FailingSFTP(),
+            ["tool"],
+            cwd=root,
+            stdout_path=root / "logs" / "o.log",
+            stderr_path=root / "logs" / "e.log",
+            timeout=None,
+            threads=None,
+            run_id="upload",
         )
     assert not list((root / "logs").glob("*.operon-tmp-*"))
 
 
 def test_remote_slurm_completion_paths_use_queue_sacct_and_local_fallbacks(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     ssh, root = _remote_slurm_executor(tmp_path, monkeypatch)
     sftp = FakeSFTP()
     stdout_path, stderr_path = root / "logs" / "o.log", root / "logs" / "e.log"
@@ -724,9 +841,17 @@ def test_remote_slurm_completion_paths_use_queue_sacct_and_local_fallbacks(
         return 0, ""
 
     monkeypatch.setattr(ssh, "_remote_exec", completed)
-    result = ssh._run_via_slurm(None, sftp, ["tool"], cwd=root,
-                                stdout_path=stdout_path, stderr_path=stderr_path,
-                                timeout=None, threads=None, run_id="finished")
+    result = ssh._run_via_slurm(
+        None,
+        sftp,
+        ["tool"],
+        cwd=root,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        timeout=None,
+        threads=None,
+        run_id="finished",
+    )
     assert result.exit_code == 0
     assert result.scheduler_job_id == "99"
     assert result.resources["max_rss_mb"] == 1024.0
@@ -743,23 +868,36 @@ def test_remote_slurm_completion_paths_use_queue_sacct_and_local_fallbacks(
         raise OSError("sacct missing on the login node")
 
     monkeypatch.setattr(ssh, "_remote_exec", sacct_unavailable)
-    missing = ssh._run_via_slurm(None, sftp, ["tool"], cwd=root,
-                                 stdout_path=stdout_path, stderr_path=stderr_path,
-                                 timeout=None, threads=None, run_id="noexit")
+    missing = ssh._run_via_slurm(
+        None,
+        sftp,
+        ["tool"],
+        cwd=root,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        timeout=None,
+        threads=None,
+        run_id="noexit",
+    )
     assert missing.exit_code is None
     assert "exit code is unavailable" in missing.error
     assert missing.scheduler_job_id == "100"
 
 
-def test_cancel_remote_slurm_job_reports_rejections_and_transport_failures(tmp_path, monkeypatch):
+def test_cancel_remote_slurm_job_reports_rejections_and_transport_failures(
+    tmp_path, monkeypatch
+):
     ssh, _root = _remote_slurm_executor(tmp_path, monkeypatch)
 
     monkeypatch.setattr(ssh, "_remote_exec", lambda *_a, **_k: (1, "not permitted"))
     assert ssh._cancel_remote_slurm_job(None, "7") == (False, "not permitted")
     monkeypatch.setattr(ssh, "_remote_exec", lambda *_a, **_k: (2, ""))
     assert ssh._cancel_remote_slurm_job(None, "7") == (False, "scancel exited 2")
-    monkeypatch.setattr(ssh, "_remote_exec",
-                        lambda *_a, **_k: (_ for _ in ()).throw(RemoteError("link down")))
+    monkeypatch.setattr(
+        ssh,
+        "_remote_exec",
+        lambda *_a, **_k: (_ for _ in ()).throw(RemoteError("link down")),
+    )
     signaled, error = ssh._cancel_remote_slurm_job(None, "7")
     assert signaled is False
     assert "RemoteError" in error and "link down" in error
@@ -772,9 +910,17 @@ def test_cancel_remote_slurm_job_reports_rejections_and_transport_failures(tmp_p
 
 def test_version_detection_falls_back_when_pattern_does_not_match(monkeypatch):
     tools._VERSION_CACHE.clear()
-    monkeypatch.setattr(tools.subprocess, "run", lambda *_a, **_k: SimpleNamespace(
-        stdout="tool build 7.5\nsecond line\n", stderr=""))
-    assert tools.detect_tool_version(tool_spec(version_pattern=r"nomatch=(\S+)"), {}) == "7.5"
+    monkeypatch.setattr(
+        tools.subprocess,
+        "run",
+        lambda *_a, **_k: SimpleNamespace(
+            stdout="tool build 7.5\nsecond line\n", stderr=""
+        ),
+    )
+    assert (
+        tools.detect_tool_version(tool_spec(version_pattern=r"nomatch=(\S+)"), {})
+        == "7.5"
+    )
 
 
 def test_command_step_provenance_validation_and_dry_run_variants(monkeypatch):
@@ -787,20 +933,37 @@ def test_command_step_provenance_validation_and_dry_run_variants(monkeypatch):
     rendered = [["owner", "run"], ["helper", "run"]]
 
     with pytest.raises(ValidationError, match="rendered command count does not match"):
-        tools.command_step_provenance(analysis, tool, {}, rendered[:1], "1.0", "owner: 1.0")
+        tools.command_step_provenance(
+            analysis, tool, {}, rendered[:1], "1.0", "owner: 1.0"
+        )
 
     details = tools.command_step_provenance(
-        analysis, tool, {}, rendered, "1.0", "owner: 1.0",
-        executor=_FakeExecutor("ssh"), dry_run=True,
+        analysis,
+        tool,
+        {},
+        rendered,
+        "1.0",
+        "owner: 1.0",
+        executor=_FakeExecutor("ssh"),
+        dry_run=True,
     )
     assert details[0]["tool_version"] == "not probed (backend=ssh)"
     assert details[0]["tool_version_raw"] == ""
     assert details[1]["tool_version"] == "not probed (backend=ssh)"
 
-    monkeypatch.setattr(tools, "_detect_version_record",
-                        lambda *_a, **_k: (_ for _ in ()).throw(ExternalToolError("probe failed")))
+    monkeypatch.setattr(
+        tools,
+        "_detect_version_record",
+        lambda *_a, **_k: (_ for _ in ()).throw(ExternalToolError("probe failed")),
+    )
     degraded = tools.command_step_provenance(
-        analysis, tool, {}, rendered, "1.0", "owner: 1.0", dry_run=True,
+        analysis,
+        tool,
+        {},
+        rendered,
+        "1.0",
+        "owner: 1.0",
+        dry_run=True,
     )
     assert degraded[0]["tool_version"] == "unavailable (probe failed)"
     assert degraded[0]["tool_version_raw"] == "probe failed"
@@ -813,23 +976,44 @@ def test_command_step_provenance_validation_and_dry_run_variants(monkeypatch):
 
 def test_candidate_files_prefix_recipe_and_entity_filters(tmp_path):
     db = Database(tmp_path / "meta.sqlite")
-    insert_file(db, "F1", file_role="subfamily_alignment:SF01", entity_type="annotation",
-                entity_id="ANN_000001")
-    insert_file(db, "F2", file_role="subfamily_alignment:SF02", entity_type="annotation",
-                entity_id="ANN_000002")
+    insert_file(
+        db,
+        "F1",
+        file_role="subfamily_alignment:SF01",
+        entity_type="annotation",
+        entity_id="ANN_000001",
+    )
+    insert_file(
+        db,
+        "F2",
+        file_role="subfamily_alignment:SF02",
+        entity_type="annotation",
+        entity_id="ANN_000002",
+    )
     insert_file(db, "F3", file_role="genome_fasta")
     insert_file(db, "F4", file_role="genome_fasta", format="genbank")
 
-    prefixed = recipe(entity_type="", file_role="", file_role_prefix="subfamily_alignment:",
-                      fmt="fasta")
-    assert [row["file_id"] for row in tools.candidate_files(db, prefixed)] == ["F1", "F2"]
-    assert [row["file_id"] for row in tools.candidate_files(
-        db, prefixed, entity_type="annotation")] == ["F1", "F2"]
+    prefixed = recipe(
+        entity_type="",
+        file_role="",
+        file_role_prefix="subfamily_alignment:",
+        fmt="fasta",
+    )
+    assert [row["file_id"] for row in tools.candidate_files(db, prefixed)] == [
+        "F1",
+        "F2",
+    ]
+    assert [
+        row["file_id"]
+        for row in tools.candidate_files(db, prefixed, entity_type="annotation")
+    ] == ["F1", "F2"]
     assert tools.candidate_files(db, prefixed, entity_type="assembly") == []
 
     exact = recipe(file_role="genome_fasta", fmt="fasta")
     assert [row["file_id"] for row in tools.candidate_files(db, exact)] == ["F3"]
-    assert [row["file_id"] for row in tools.candidate_files(db, exact, entity_id="A1")] == ["F3"]
+    assert [
+        row["file_id"] for row in tools.candidate_files(db, exact, entity_id="A1")
+    ] == ["F3"]
     assert tools.candidate_files(db, exact, entity_id="MISSING") == []
     db.close()
 
@@ -860,7 +1044,9 @@ def test_database_identity_treats_special_paths_as_unreadable(tmp_path):
     project = project_ns(tmp_path)
     tools._DATABASE_IDENTITY_CACHE.clear()
     identity = tools.database_identity(project, recipe(database="database.fifo"))
-    assert identity == tools.database_identity(project, recipe(database="database.fifo"))
+    assert identity == tools.database_identity(
+        project, recipe(database="database.fifo")
+    )
     assert identity != tools.database_identity(project, recipe(database="missing"))
 
 
@@ -872,20 +1058,29 @@ def test_cached_environment_document_missing_corrupt_and_legacy_rows(tmp_path):
     with db.transaction() as conn:
         conn.execute(
             "INSERT INTO execution_environments(environment_id, document, created_at) "
-            "VALUES (?, ?, ?)", ("corrupt", "{not-json", now_iso()))
+            "VALUES (?, ?, ?)",
+            ("corrupt", "{not-json", now_iso()),
+        )
         conn.execute(
             "INSERT INTO execution_environments(environment_id, document, created_at) "
-            "VALUES (?, ?, ?)", ("legacy", json.dumps(["linux", "x86_64"]), now_iso()))
+            "VALUES (?, ?, ?)",
+            ("legacy", json.dumps(["linux", "x86_64"]), now_iso()),
+        )
     assert tools._cached_environment_document(db, "corrupt") is None
     assert tools._cached_environment_document(db, "legacy") is None
     recorded = db.record_environment({"os": "Linux", "arch": "x86_64"})
-    assert tools._cached_environment_document(db, recorded) == {"os": "Linux", "arch": "x86_64"}
+    assert tools._cached_environment_document(db, recorded) == {
+        "os": "Linux",
+        "arch": "x86_64",
+    }
     db.close()
 
 
 def test_current_environment_document_prefers_the_executor_probe(tmp_path):
     executor = _FakeExecutor("ssh", {"os": "Linux"})
-    assert tools._current_environment_document(executor, ["tool"], tmp_path) == {"os": "Linux"}
+    assert tools._current_environment_document(executor, ["tool"], tmp_path) == {
+        "os": "Linux"
+    }
 
     class NoProbe:
         name = "ssh"
@@ -903,26 +1098,55 @@ def test_find_verified_adoptee_requires_a_present_recorded_output(tmp_path):
     project = project_ns(tmp_path)
     db = Database(tmp_path / "meta.sqlite")
     insert_file(db, "F1")
-    insert_job(db, "F1", parameter_sha256="p1", input_sha256="i" * 64,
-               output_relative_path=None, output_sha256=None)
-    assert tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
+    insert_job(
+        db,
+        "F1",
+        parameter_sha256="p1",
+        input_sha256="i" * 64,
+        output_relative_path=None,
+        output_sha256=None,
+    )
+    assert (
+        tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
+    )
 
-    insert_job(db, "F1", parameter_sha256="p2", input_sha256="i" * 64,
-               output_relative_path="analysis/out.tsv", output_sha256="0" * 64)
-    assert tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
+    insert_job(
+        db,
+        "F1",
+        parameter_sha256="p2",
+        input_sha256="i" * 64,
+        output_relative_path="analysis/out.tsv",
+        output_sha256="0" * 64,
+    )
+    assert (
+        tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
+    )
 
     output = tmp_path / "analysis" / "out.tsv"
     output.parent.mkdir(parents=True)
     output.write_text("real output", encoding="utf-8")
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
-    insert_job(db, "F1", parameter_sha256="p3", input_sha256="i" * 64,
-               output_relative_path="analysis/out.tsv", output_sha256=digest)
-    adoptee, path = tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64)
+    insert_job(
+        db,
+        "F1",
+        parameter_sha256="p3",
+        input_sha256="i" * 64,
+        output_relative_path="analysis/out.tsv",
+        output_sha256=digest,
+    )
+    adoptee, path = tools._find_verified_adoptee(
+        db, project, "fake_recipe", "F1", "i" * 64
+    )
     assert path == output and adoptee["parameter_sha256"] == "p3"
 
     output.write_text("tampered", encoding="utf-8")
-    assert tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
-    assert tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "other-sha") is None
+    assert (
+        tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "i" * 64) is None
+    )
+    assert (
+        tools._find_verified_adoptee(db, project, "fake_recipe", "F1", "other-sha")
+        is None
+    )
     db.close()
 
 
@@ -943,7 +1167,8 @@ def test_render_output_name_rejects_unsupported_placeholders(tmp_path):
     with pytest.raises(ValidationError, match="unsupported placeholder"):
         tools._render_output_name(
             recipe(output_name_template="${file_id}.${unknown}.tsv"),
-            file_record(), tmp_path / "in.fna",
+            file_record(),
+            tmp_path / "in.fna",
         )
 
 
@@ -953,17 +1178,30 @@ def test_parse_and_store_results_records_metrics_without_evalue(tmp_path):
     insert_job(db, "F1")
     hits_path = tmp_path / "hits.tsv"
     hits_path.write_text("q1\ts1\t50\nq1\ts2\t40\nq2\ts1\t30\n", encoding="utf-8")
-    analysis = recipe(result_parser="blast_tabular", raw={
-        "result_columns": ["qseqid", "sseqid", "score"], "hit_metric_columns": ["score"],
-    })
+    analysis = recipe(
+        result_parser="blast_tabular",
+        raw={
+            "result_columns": ["qseqid", "sseqid", "score"],
+            "hit_metric_columns": ["score"],
+        },
+    )
     counts = tools.parse_and_store_results(
-        db, project_ns(tmp_path), analysis, tool_spec(), "1.0",
-        file_record("F1"), 1, hits_path, "output-sha",
+        db,
+        project_ns(tmp_path),
+        analysis,
+        tool_spec(),
+        "1.0",
+        file_record("F1"),
+        1,
+        hits_path,
+        "output-sha",
     )
     # hit pairs, distinct queries, queries with a rank-1 hit, metrics, alignments
     assert counts == (3, 2, 2, 3, 3)
-    stored = [row["metric_name"] for row in db.query(
-        "SELECT metric_name FROM analysis_results WHERE job_id=1")]
+    stored = [
+        row["metric_name"]
+        for row in db.query("SELECT metric_name FROM analysis_results WHERE job_id=1")
+    ]
     assert sorted(stored) == ["hit_count", "query_count", "query_with_hit_count"]
     db.close()
 
@@ -971,12 +1209,17 @@ def test_parse_and_store_results_records_metrics_without_evalue(tmp_path):
 def test_blast_parser_skips_empty_metric_values(tmp_path):
     blast = tmp_path / "blast.tsv"
     blast.write_text("q1\ts1\t\tnote\nq1\ts2\t12.5\tother\n", encoding="utf-8")
-    analysis = recipe(result_parser="blast_tabular", raw={
-        "result_columns": ["qseqid", "sseqid", "score", "note"],
-        "hit_metric_columns": ["score"],
-    })
+    analysis = recipe(
+        result_parser="blast_tabular",
+        raw={
+            "result_columns": ["qseqid", "sseqid", "score", "note"],
+            "hit_metric_columns": ["score"],
+        },
+    )
     hits, alignments = tools.parse_hits(blast, analysis)
-    assert [(hit["subject_id"], hit["metric_value"]) for hit in hits] == [("s2", "12.5")]
+    assert [(hit["subject_id"], hit["metric_value"]) for hit in hits] == [
+        ("s2", "12.5")
+    ]
     assert [alignment["subject_id"] for alignment in alignments] == ["s1", "s2"]
 
 
@@ -996,7 +1239,10 @@ def test_hmmer_swap_defaults_to_hmmscan_for_unrecognized_headers(tmp_path):
     # Header-only output (an empty or truncated result) keeps the same default.
     headers_only = tmp_path / "headers-only.tblout"
     headers_only.write_text("# comment one\n# comment two\n", encoding="utf-8")
-    assert tools.parse_hits(headers_only, recipe(result_parser="hmmer_tblout")) == ([], [])
+    assert tools.parse_hits(headers_only, recipe(result_parser="hmmer_tblout")) == (
+        [],
+        [],
+    )
 
 
 def test_hmmer_domtblout_parser_degrades_on_unparsable_numbers(tmp_path):
@@ -1006,7 +1252,9 @@ def test_hmmer_domtblout_parser_degrades_on_unparsable_numbers(tmp_path):
         "1 120 10 130 10 132 0.95 kinase domain\n",
         encoding="utf-8",
     )
-    hits, alignments = tools.parse_hits(domtblout, recipe(result_parser="hmmer_domtblout"))
+    hits, alignments = tools.parse_hits(
+        domtblout, recipe(result_parser="hmmer_domtblout")
+    )
     assert alignments[0]["evalue"] is None
     assert alignments[0]["bitscore"] is None
     assert [hit["metric_numeric"] for hit in hits] == [None, None]
@@ -1026,7 +1274,9 @@ def test_rpsbproc_parser_accepts_output_without_enddata(tmp_path):
         "ENDSESSION\t1\n",
         encoding="utf-8",
     )
-    hits, alignments = tools.parse_hits(output, recipe(result_parser="rpsbproc_tabular"))
+    hits, alignments = tools.parse_hits(
+        output, recipe(result_parser="rpsbproc_tabular")
+    )
     assert len(alignments) == 1
     assert alignments[0]["query_id"] == "definition one"
     assert [hit["metric_name"] for hit in hits] == ["evalue", "bitscore"]
@@ -1037,7 +1287,9 @@ def test_rpsbproc_parser_accepts_output_without_enddata(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_run_analysis_reports_missing_candidates_and_honours_limit(operon_project, capsys):
+def test_run_analysis_reports_missing_candidates_and_honours_limit(
+    operon_project, capsys
+):
     project, db = operon_project
     tools._VERSION_CACHE.clear()
     write_tool_config(project)
@@ -1047,8 +1299,12 @@ def test_run_analysis_reports_missing_candidates_and_honours_limit(operon_projec
     assert "file_role=genome_fasta" in message
     assert "format=fasta" in message
 
-    write_tool_config(project, recipe_document=base_recipe(
-        file_role="", file_role_prefix="subfamily_alignment:"))
+    write_tool_config(
+        project,
+        recipe_document=base_recipe(
+            file_role="", file_role_prefix="subfamily_alignment:"
+        ),
+    )
     assert run_analysis(project, db, "fake_recipe") == []
     assert "file_role_prefix=subfamily_alignment:" in capsys.readouterr().out
 
@@ -1062,7 +1318,8 @@ def test_run_analysis_reports_missing_candidates_and_honours_limit(operon_projec
 
 
 def test_run_analysis_dry_run_reports_unavailable_version_and_fails_without_it(
-        operon_project, capsys):
+    operon_project, capsys
+):
     project, db = operon_project
     ingest_assembly(project, db, 1)
     write_tool_config(project, executable="/nonexistent/operon-t5-tool")
@@ -1088,8 +1345,14 @@ def test_run_analysis_for_file_owns_a_local_executor_for_dry_runs(operon_project
     analysis = tools.get_recipe(project, "fake_recipe")
     tool = tools.get_tool(project, "faketool")
     result = run_analysis_for_file(
-        project, db, analysis, tool, tools.load_tools_config(project), record,
-        dry_run=True, backend="local",
+        project,
+        db,
+        analysis,
+        tool,
+        tools.load_tools_config(project),
+        record,
+        dry_run=True,
+        backend="local",
     )
     assert result["status"] == "planned"
     assert result["cached"] is False
@@ -1104,13 +1367,20 @@ def test_run_analysis_for_file_owns_and_closes_a_remote_executor(operon_project)
     record = ingest_assembly(project, db, 1)
     document = yaml.safe_load(project.config_path.read_text(encoding="utf-8"))
     document["execution"] = {"backend": "ssh", "ssh": {"host": "hpc.example.org"}}
-    project.config_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    project.config_path.write_text(
+        yaml.safe_dump(document, sort_keys=False), encoding="utf-8"
+    )
     project = load_project(project.root)
     analysis = tools.get_recipe(project, "fake_recipe")
     tool = tools.get_tool(project, "faketool")
 
     result = run_analysis_for_file(
-        project, db, analysis, tool, tools.load_tools_config(project), record,
+        project,
+        db,
+        analysis,
+        tool,
+        tools.load_tools_config(project),
+        record,
         dry_run=True,
     )
     # The owned SSH executor is created without a connection for the dry run and
@@ -1120,43 +1390,67 @@ def test_run_analysis_for_file_owns_and_closes_a_remote_executor(operon_project)
 
 
 def test_run_analysis_for_file_remote_only_dry_run_skips_verification(
-        operon_project, tmp_path, monkeypatch):
+    operon_project, tmp_path, monkeypatch
+):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)
-    local_status = db.query("SELECT status FROM files WHERE file_id=?",
-                            (record["file_id"],))[0]["status"]
+    local_status = db.query(
+        "SELECT status FROM files WHERE file_id=?", (record["file_id"],)
+    )[0]["status"]
     (project.root / record["relative_path"]).unlink()  # only the remote copy remains
     storage = SimpleNamespace(
-        host="cluster.example.org", user="hpcuser", port=2222, root="/shared/operon",
-        key_file="/keys/id", known_hosts="/keys/known", host_key_sha256="sha256:abc",
+        host="cluster.example.org",
+        user="hpcuser",
+        port=2222,
+        root="/shared/operon",
+        key_file="/keys/id",
+        known_hosts="/keys/known",
+        host_key_sha256="sha256:abc",
         insecure_accept_unknown_host=False,
     )
     monkeypatch.setattr("operon.remotes.get_remote", lambda *_a, **_k: storage)
     executor = execution.SSHExecutor(
-        project, {"storage_remote": "store"}, execution.SlurmConfig(),
+        project,
+        {"storage_remote": "store"},
+        execution.SlurmConfig(),
     )
-    analysis = recipe(tool_name="faketool", output_subdir="fake", output_suffix=".out.tsv",
-                      arguments=["--out", "${output}"])
+    analysis = recipe(
+        tool_name="faketool",
+        output_subdir="fake",
+        output_suffix=".out.tsv",
+        arguments=["--out", "${output}"],
+    )
     result = run_analysis_for_file(
-        project, db, analysis, tool_spec(name="faketool", executable="faketool"),
-        {}, record, dry_run=True, executor=executor,
+        project,
+        db,
+        analysis,
+        tool_spec(name="faketool", executable="faketool"),
+        {},
+        record,
+        dry_run=True,
+        executor=executor,
     )
     assert result["status"] == "planned"
-    assert result["tool_version"] == "not probed (backend=ssh:hpcuser@cluster.example.org)"
+    assert (
+        result["tool_version"] == "not probed (backend=ssh:hpcuser@cluster.example.org)"
+    )
     assert result["command"].startswith("faketool --out ")
     assert result["command"].endswith(".out.tsv")
     # A dry run must not promote the file to REMOTE_ONLY nor touch the mirror.
-    status = db.query("SELECT status FROM files WHERE file_id=?", (record["file_id"],))[0]
+    status = db.query("SELECT status FROM files WHERE file_id=?", (record["file_id"],))[
+        0
+    ]
     assert status["status"] == local_status != "REMOTE_ONLY"
     assert not (project.root / record["relative_path"]).exists()
 
 
-@pytest.mark.bug("ODR-0028")
+@pytest.mark.bug("ODR-28")
 def test_dry_run_reports_a_missing_local_database_like_the_real_run(operon_project):
     project, db = operon_project
     ingest_assembly(project, db, 1)
     write_tool_config(
-        project, recipe_document=base_recipe(database="/nonexistent/operon-refdb"),
+        project,
+        recipe_document=base_recipe(database="/nonexistent/operon-refdb"),
     )
     tools._VERSION_CACHE.clear()
 
@@ -1171,68 +1465,91 @@ def test_dry_run_reports_a_missing_local_database_like_the_real_run(operon_proje
     assert db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"] == 0
 
 
-@pytest.mark.bug("ODR-0028")
+@pytest.mark.bug("ODR-28")
 def test_dry_run_verifies_a_remote_reference_database(operon_project, tmp_path):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    analysis = recipe(tool_name="faketool", database="refdb", database_version="v1",
-                      output_subdir="fake", output_suffix=".out.tsv",
-                      raw={"database_checksum": "sha256:" + "0" * 64})
+    analysis = recipe(
+        tool_name="faketool",
+        database="refdb",
+        database_version="v1",
+        output_subdir="fake",
+        output_suffix=".out.tsv",
+        raw={"database_checksum": "sha256:" + "0" * 64},
+    )
     tool = tool_spec(name="faketool", executable="faketool")
 
     # Unprovisioned remote reference: the dry run fails exactly like a real run.
     with pytest.raises(RemoteError, match="not provisioned"):
-        run_analysis_for_file(project, db, analysis, tool, {}, record,
-                              dry_run=True, executor=executor)
+        run_analysis_for_file(
+            project, db, analysis, tool, {}, record, dry_run=True, executor=executor
+        )
 
     # Provisioned: the read-only stat passes and the plan stands.
     (remote_root / "refdb").mkdir()
-    planned = run_analysis_for_file(project, db, analysis, tool, {}, record,
-                                    dry_run=True, executor=executor)
+    planned = run_analysis_for_file(
+        project, db, analysis, tool, {}, record, dry_run=True, executor=executor
+    )
     assert planned["status"] == "planned"
 
 
 def test_run_analysis_for_file_remote_reference_database_requires_checksum(
-        operon_project, tmp_path):
+    operon_project, tmp_path
+):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    analysis = recipe(tool_name="faketool", database="refdb",
-                      output_subdir="fake", output_suffix=".out.tsv")
+    analysis = recipe(
+        tool_name="faketool",
+        database="refdb",
+        output_subdir="fake",
+        output_suffix=".out.tsv",
+    )
     with pytest.raises(ValidationError, match="require database_checksum"):
         run_analysis_for_file(
-            project, db, analysis, tool_spec(name="faketool"), {}, record,
+            project,
+            db,
+            analysis,
+            tool_spec(name="faketool"),
+            {},
+            record,
             executor=executor,
         )
     assert db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"] == 0
 
 
 def test_run_analysis_for_file_ssh_provisions_remote_paths_and_finalizes_shutdown(
-        operon_project, tmp_path, monkeypatch):
+    operon_project, tmp_path, monkeypatch
+):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    monkeypatch.setattr(tools, "_detect_version_record",
-                        lambda *_a, **_k: ("9.9", "faketool: 9.9"))
+    monkeypatch.setattr(
+        tools, "_detect_version_record", lambda *_a, **_k: ("9.9", "faketool: 9.9")
+    )
 
     def interrupted(*_args, **_kwargs):
         raise ShutdownRequested(signal.SIGINT)
 
     monkeypatch.setattr(executor, "run", interrupted)
     analysis = recipe(
-        tool_name="faketool", database="refdb", database_version="v1",
-        output_subdir="chain", output_suffix=".out",
+        tool_name="faketool",
+        database="refdb",
+        database_version="v1",
+        output_subdir="chain",
+        output_suffix=".out",
         arguments=[],
         commands=[
-            tools.RecipeCommand(["faketool", "--out", "${output}"],
-                                ["--version"], r"faketool:\s*(\S+)"),
+            tools.RecipeCommand(
+                ["faketool", "--out", "${output}"], ["--version"], r"faketool:\s*(\S+)"
+            ),
             tools.RecipeCommand(["helper", "${work_dir}/tmp.bin"]),
         ],
         raw={"database_mode": "mutable_cache"},
@@ -1240,58 +1557,91 @@ def test_run_analysis_for_file_ssh_provisions_remote_paths_and_finalizes_shutdow
     tool = tool_spec(name="faketool", executable="faketool", run_method="")
 
     with pytest.raises(ShutdownRequested) as caught:
-        run_analysis_for_file(project, db, analysis, tool, {}, record,
-                              executor=executor, threads=2)
+        run_analysis_for_file(
+            project, db, analysis, tool, {}, record, executor=executor, threads=2
+        )
     assert caught.value.signum == signal.SIGINT
 
     job = db.query("SELECT * FROM analysis_jobs ORDER BY job_id DESC LIMIT 1")[0]
     assert job["status"] == "interrupted"
     assert "interrupted by signal" in job["error"]
     # An interrupted backend run never reaches its completion record.
-    assert db.query(
-        "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='analysis:fake_recipe'"
-    )[0]["n"] == 0
+    assert (
+        db.query(
+            "SELECT COUNT(*) AS n FROM workflow_runs WHERE step='analysis:fake_recipe'"
+        )[0]["n"]
+        == 0
+    )
 
     # The mutable-cache database and the per-file work directory were provisioned
     # in the remote mirror; the partial local work directory was removed.
     assert (remote_root / "refdb").is_dir()
-    work_dir = (project.analysis_root / "chain" / record["entity_id"]
-                / f"{record['file_id']}.genome_fasta.out.work")
+    work_dir = (
+        project.analysis_root
+        / "chain"
+        / record["entity_id"]
+        / f"{record['file_id']}.genome_fasta.out.work"
+    )
     assert not work_dir.exists()
     assert (remote_root / PurePath(work_dir).relative_to(project.root)).is_dir()
-    assert not (project.analysis_root / "chain" / record["entity_id"]
-                / f"{record['file_id']}.genome_fasta.out").exists()
+    assert not (
+        project.analysis_root
+        / "chain"
+        / record["entity_id"]
+        / f"{record['file_id']}.genome_fasta.out"
+    ).exists()
 
 
 def test_run_analysis_for_file_failure_keeps_partial_work_directory(
-        operon_project, tmp_path, monkeypatch):
+    operon_project, tmp_path, monkeypatch
+):
     project, db = operon_project
     record = ingest_assembly(project, db, 1)
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    monkeypatch.setattr(tools, "_detect_version_record",
-                        lambda *_a, **_k: ("9.9", "faketool: 9.9"))
+    monkeypatch.setattr(
+        tools, "_detect_version_record", lambda *_a, **_k: ("9.9", "faketool: 9.9")
+    )
 
     def exploding(*_args, **_kwargs):
         raise ExternalToolError("backend exploded")
 
     monkeypatch.setattr(executor, "run", exploding)
     analysis = recipe(
-        tool_name="faketool", database="refdb", database_version="v1",
-        output_subdir="chain", output_suffix=".out", arguments=[],
-        commands=[tools.RecipeCommand(["faketool", "--out", "${output}"],
-                                      ["--version"], r"faketool:\s*(\S+)")],
+        tool_name="faketool",
+        database="refdb",
+        database_version="v1",
+        output_subdir="chain",
+        output_suffix=".out",
+        arguments=[],
+        commands=[
+            tools.RecipeCommand(
+                ["faketool", "--out", "${output}"], ["--version"], r"faketool:\s*(\S+)"
+            )
+        ],
         raw={"database_mode": "mutable_cache"},
     )
     tool = tool_spec(name="faketool", executable="faketool", run_method="")
 
     with pytest.raises(RuntimeError, match="backend exploded"):
-        run_analysis_for_file(project, db, analysis, tool, {}, record,
-                              executor=executor, keep_partial=True)
+        run_analysis_for_file(
+            project,
+            db,
+            analysis,
+            tool,
+            {},
+            record,
+            executor=executor,
+            keep_partial=True,
+        )
     job = db.query("SELECT * FROM analysis_jobs ORDER BY job_id DESC LIMIT 1")[0]
     assert job["status"] == "failed"
     assert "backend exploded" in job["error"]
-    work_dir = (project.analysis_root / "chain" / record["entity_id"]
-                / f"{record['file_id']}.genome_fasta.out.work")
+    work_dir = (
+        project.analysis_root
+        / "chain"
+        / record["entity_id"]
+        / f"{record['file_id']}.genome_fasta.out.work"
+    )
     assert work_dir.is_dir()

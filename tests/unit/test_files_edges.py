@@ -26,10 +26,16 @@ def project_db(tmp_path: Path):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
     project = load_project(tmp_path)
     db = Database(project.db_path)
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"}
+    )
     try:
         yield project, db
     finally:
@@ -56,10 +62,16 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     assert files.detect_compression(real) == "gzip"
 
 
-@pytest.mark.parametrize("field,value", [
-    ("role", "x/../../../../../escaped"), ("role", "x\\..\\escaped"),
-    ("role", ""), ("role", "bad\nrole"), ("fmt", "../../escaped"),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("role", "x/../../../../../escaped"),
+        ("role", "x\\..\\escaped"),
+        ("role", ""),
+        ("role", "bad\nrole"),
+        ("fmt", "../../escaped"),
+    ],
+)
 def test_ingest_rejects_unsafe_names_before_writing(project_db, tmp_path, field, value):
     project, db = project_db
     source = tmp_path / "source.fa"
@@ -72,11 +84,15 @@ def test_ingest_rejects_unsafe_names_before_writing(project_db, tmp_path, field,
 
 
 @pytest.mark.parametrize("existing", [False, True])
-def test_ingest_rejects_symlink_escape_even_when_idempotent(project_db, tmp_path, existing):
+def test_ingest_rejects_symlink_escape_even_when_idempotent(
+    project_db, tmp_path, existing
+):
     project, db = project_db
     source = tmp_path / "source.fa"
     source.write_text(">x\nACGT\n")
-    target = project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+    target = (
+        project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+    )
     if existing:
         files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
         target.unlink()
@@ -96,32 +112,59 @@ def test_ingest_rejects_artifact_shape_and_role_conflicts(project_db, tmp_path):
     project, db = project_db
     missing = tmp_path / "missing"
     with pytest.raises(ValidationError, match="source artifact does not exist"):
-        files.ingest_file(db, project, missing, "assembly", "ASM_000001", "genome_fasta")
+        files.ingest_file(
+            db, project, missing, "assembly", "ASM_000001", "genome_fasta"
+        )
     directory = tmp_path / "dir"
     directory.mkdir()
     with pytest.raises(ValidationError, match="directory input requires"):
         files.ingest_file(
-            db, project, directory, "assembly", "ASM_000001", "genome_fasta", fmt="fasta"
+            db,
+            project,
+            directory,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+            fmt="fasta",
         )
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="requires a directory source"):
         files.ingest_file(
-            db, project, source, "assembly", "ASM_000001", "genome_fasta", fmt="directory"
+            db,
+            project,
+            source,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+            fmt="directory",
         )
     with pytest.raises(ValidationError, match="compression=none"):
         files.ingest_file(
-            db, project, directory, "assembly", "ASM_000001", "genome_fasta",
-            fmt="directory", compression="gzip",
+            db,
+            project,
+            directory,
+            "assembly",
+            "ASM_000001",
+            "genome_fasta",
+            fmt="directory",
+            compression="gzip",
         )
-    first = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    first = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     changed = tmp_path / "changed.fna"
     changed.write_text(">x\nC\n", encoding="utf-8")
     with pytest.raises(ConflictError, match="already has"):
-        files.ingest_file(db, project, changed, "assembly", "ASM_000001", "genome_fasta")
-    assert files.find_existing_file(
-        db, "assembly", "ASM_000001", "genome_fasta", first["sha256"]
-    )["file_id"] == first["file_id"]
+        files.ingest_file(
+            db, project, changed, "assembly", "ASM_000001", "genome_fasta"
+        )
+    assert (
+        files.find_existing_file(
+            db, "assembly", "ASM_000001", "genome_fasta", first["sha256"]
+        )["file_id"]
+        == first["file_id"]
+    )
 
 
 def test_ingest_move_falls_back_to_copy(project_db, tmp_path, monkeypatch):
@@ -148,17 +191,28 @@ def test_ingest_move_falls_back_to_copy(project_db, tmp_path, monkeypatch):
     (directory / "result.txt").write_text("x", encoding="utf-8")
     move_sources.add(directory)
     row = files.ingest_file(
-        db, project, directory, "annotation", "ANN_000001", "analysis_output",
-        fmt="directory", compression="none", move=True,
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
+        move=True,
     )
     assert not directory.exists() and (project.root / row["relative_path"]).is_dir()
 
 
-def test_local_verification_cache_missing_size_cached_and_changed(project_db, tmp_path, monkeypatch):
+def test_local_verification_cache_missing_size_cached_and_changed(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     path = project.root / row["relative_path"]
     matched, info = files.verify_local_file_identity(db, row, path)
     assert matched and info["verification_method"] == "cached_stat_fingerprint"
@@ -173,21 +227,39 @@ def test_local_verification_cache_missing_size_cached_and_changed(project_db, tm
     assert not matched and info["verification_method"] == "size_mismatch"
 
     real_fingerprint = files._local_file_fingerprint
-    fingerprints = iter([
-        {"size_bytes": row["size_bytes"], "device": 1, "inode": 1, "mtime_ns": 1, "ctime_ns": 1},
-        {"size_bytes": row["size_bytes"], "device": 1, "inode": 1, "mtime_ns": 2, "ctime_ns": 1},
-    ])
+    fingerprints = iter(
+        [
+            {
+                "size_bytes": row["size_bytes"],
+                "device": 1,
+                "inode": 1,
+                "mtime_ns": 1,
+                "ctime_ns": 1,
+            },
+            {
+                "size_bytes": row["size_bytes"],
+                "device": 1,
+                "inode": 1,
+                "mtime_ns": 2,
+                "ctime_ns": 1,
+            },
+        ]
+    )
     monkeypatch.setattr(files, "_local_file_fingerprint", lambda _p: next(fingerprints))
     matched, info = files.verify_local_file_identity(db, row, path, rehash=True)
     assert not matched and info["verification_method"] == "changed_during_sha256"
     monkeypatch.setattr(files, "_local_file_fingerprint", real_fingerprint)
 
-    monkeypatch.setattr(files, "sha256_path", lambda _p: (_ for _ in ()).throw(OSError("read")))
+    monkeypatch.setattr(
+        files, "sha256_path", lambda _p: (_ for _ in ()).throw(OSError("read"))
+    )
     matched, info = files.verify_local_file_identity(db, row, path, rehash=True)
     assert not matched and info["verification_method"] == "sha256_error"
 
 
-def test_verification_cache_ignores_nonfiles_and_wrong_size(project_db, tmp_path, monkeypatch):
+def test_verification_cache_ignores_nonfiles_and_wrong_size(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     record = {"file_id": "F", "sha256": "x", "size_bytes": 1}
     files.remember_local_file_verification(db, record, tmp_path / "missing")
@@ -198,49 +270,67 @@ def test_verification_cache_ignores_nonfiles_and_wrong_size(project_db, tmp_path
 
     # With a real manifest row the only thing standing between the call and a
     # cache entry is the stat failure, which the helper must swallow.
-    archived = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    archived = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     path = project.root / archived["relative_path"]
     # Ingestion caches its own verification; clear it so the helper is the only
     # thing that can (re)create the row below.
     with db.transaction():
         db.conn.execute(
-            "DELETE FROM local_file_verifications WHERE file_id=?", (archived["file_id"],))
+            "DELETE FROM local_file_verifications WHERE file_id=?",
+            (archived["file_id"],),
+        )
     real_is_file = Path.is_file
-    monkeypatch.setattr(Path, "is_file", lambda _self: (_ for _ in ()).throw(OSError("stat")))
+    monkeypatch.setattr(
+        Path, "is_file", lambda _self: (_ for _ in ()).throw(OSError("stat"))
+    )
     files.remember_local_file_verification(db, archived, path)
-    assert db.query(
-        "SELECT * FROM local_file_verifications WHERE file_id=?", (archived["file_id"],)
-    ) == []
+    assert (
+        db.query(
+            "SELECT * FROM local_file_verifications WHERE file_id=?",
+            (archived["file_id"],),
+        )
+        == []
+    )
     # Once stat works again the same call caches the verification.
     monkeypatch.setattr(Path, "is_file", real_is_file)
     files.remember_local_file_verification(db, archived, path)
-    assert [row["file_id"] for row in db.query("SELECT * FROM local_file_verifications")] == [
-        archived["file_id"]
-    ]
+    assert [
+        row["file_id"] for row in db.query("SELECT * FROM local_file_verifications")
+    ] == [archived["file_id"]]
 
 
-@pytest.mark.bug("ODR-0009")
-def test_reingest_preserves_standardized_status_and_audits_transitions(project_db, tmp_path):
+@pytest.mark.bug("ODR-9")
+def test_reingest_preserves_standardized_status_and_audits_transitions(
+    project_db, tmp_path
+):
     project, db = project_db
     source = tmp_path / "genome.fa"
     source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
-    record = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    record = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     files.standardize_file(db, project, record["file_id"])
 
     def status_of(file_id):
         return db.conn.execute(
-            "SELECT status FROM files WHERE file_id=?", (file_id,),
+            "SELECT status FROM files WHERE file_id=?",
+            (file_id,),
         ).fetchone()["status"]
 
     def file_audit_rows(file_id):
         return db.conn.execute(
             "SELECT * FROM changes WHERE object_type='files' AND object_id=? "
-            "ORDER BY change_id", (file_id,),
+            "ORDER BY change_id",
+            (file_id,),
         ).fetchall()
 
     assert status_of(record["file_id"]) == "STANDARDIZED"
     audit_before = len(file_audit_rows(record["file_id"]))
-    again = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    again = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     assert again["file_id"] == record["file_id"]
     # Re-verifying identical bytes must not demote a standardized file,
     # and a no-op must not write audit churn either.
@@ -250,25 +340,35 @@ def test_reingest_preserves_standardized_status_and_audits_transitions(project_d
     # A real status transition is still applied, with its audit row.
     other_source = tmp_path / "proteins.faa"
     other_source.write_text(">p1\nMAAA\n", encoding="utf-8")
-    other = files.ingest_file(db, project, other_source, "assembly", "ASM_000001", "protein_fasta")
+    other = files.ingest_file(
+        db, project, other_source, "assembly", "ASM_000001", "protein_fasta"
+    )
     db.set_file_status(other["file_id"], "MISSING", reason="test setup", actor="tester")
-    files.ingest_file(db, project, other_source, "assembly", "ASM_000001", "protein_fasta")
+    files.ingest_file(
+        db, project, other_source, "assembly", "ASM_000001", "protein_fasta"
+    )
     assert status_of(other["file_id"]) == "CHECKSUM_VERIFIED"
     last = file_audit_rows(other["file_id"])[-1]
     assert (last["old_value"], last["new_value"]) == ("MISSING", "CHECKSUM_VERIFIED")
     assert last["actor"] == "operon ingest"
 
 
-@pytest.mark.bug("ODR-0010")
+@pytest.mark.bug("ODR-10")
 def test_standardize_goes_through_the_audited_state_machine(project_db, tmp_path):
     from operon.workflow import set_state
 
     project, db = project_db
     source = tmp_path / "genome.fa"
     source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
-    record = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
-    target = (project.standardized_root / "assemblies" / "ASM_000001"
-              / Path(record["relative_path"]).name)
+    record = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
+    target = (
+        project.standardized_root
+        / "assemblies"
+        / "ASM_000001"
+        / Path(record["relative_path"]).name
+    )
 
     # The main path audits both the file status and the entity transition.
     files.standardize_file(db, project, record["file_id"])
@@ -290,28 +390,47 @@ def test_standardize_goes_through_the_audited_state_machine(project_db, tmp_path
 
     # An entity that already moved on is protected by the state machine, and
     # the rejected attempt neither recreates the target nor touches the rows.
-    set_state(db, "assembly", "ASM_000001", "RELEASED", "test release",
-              force=True, actor="tester")
+    set_state(
+        db,
+        "assembly",
+        "ASM_000001",
+        "RELEASED",
+        "test release",
+        force=True,
+        actor="tester",
+    )
     target.unlink()
-    with pytest.raises(ConflictError, match="illegal transition RELEASED -> STANDARDIZED"):
+    with pytest.raises(
+        ConflictError, match="illegal transition RELEASED -> STANDARDIZED"
+    ):
         files.standardize_file(db, project, record["file_id"])
     assert not target.exists()
-    assert db.conn.execute(
-        "SELECT status FROM files WHERE file_id=?", (record["file_id"],),
-    ).fetchone()["status"] == "STANDARDIZED"
+    assert (
+        db.conn.execute(
+            "SELECT status FROM files WHERE file_id=?",
+            (record["file_id"],),
+        ).fetchone()["status"]
+        == "STANDARDIZED"
+    )
     assert db.get_entity_state("assembly", "ASM_000001") == "RELEASED"
 
 
-def test_standardize_missing_remote_tampered_links_and_idempotency(project_db, tmp_path, monkeypatch):
+def test_standardize_missing_remote_tampered_links_and_idempotency(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     with pytest.raises(EntityNotFoundError):
         files.standardize_file(db, project, "FIL_MISSING")
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     archived = project.root / row["relative_path"]
     archived.unlink()
-    db.conn.execute("UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?", (row["file_id"],))
+    db.conn.execute(
+        "UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?", (row["file_id"],)
+    )
     db.conn.commit()
     with pytest.raises(ChecksumError, match="remote-only"):
         files.standardize_file(db, project, row["file_id"])
@@ -324,43 +443,79 @@ def test_standardize_missing_remote_tampered_links_and_idempotency(project_db, t
     assert files.standardize_file(db, project, row["file_id"])["action"] == "skipped"
 
 
-def test_standardize_hardlink_fallback_directory_and_batch_error(project_db, tmp_path, monkeypatch):
+def test_standardize_hardlink_fallback_directory_and_batch_error(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     source = tmp_path / "gff.gff3"
     source.write_text("##gff-version 3\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "annotation", "ANN_000001", "annotation_gff3")
-    monkeypatch.setattr(files.os, "link", lambda *_a: (_ for _ in ()).throw(OSError("no hardlink")))
-    assert files.standardize_file(db, project, row["file_id"], link_kind="hardlink")["action"] == "hardlink"
+    row = files.ingest_file(
+        db, project, source, "annotation", "ANN_000001", "annotation_gff3"
+    )
+    monkeypatch.setattr(
+        files.os, "link", lambda *_a: (_ for _ in ()).throw(OSError("no hardlink"))
+    )
+    assert (
+        files.standardize_file(db, project, row["file_id"], link_kind="hardlink")[
+            "action"
+        ]
+        == "hardlink"
+    )
 
     directory = tmp_path / "results"
     directory.mkdir()
     (directory / "x").write_text("x", encoding="utf-8")
     directory_row = files.ingest_file(
-        db, project, directory, "annotation", "ANN_000001", "analysis_output",
-        fmt="directory", compression="none",
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
     )
-    assert Path(files.standardize_file(
-        db, project, directory_row["file_id"], link_kind="hardlink"
-    )["target"]).is_dir()
+    assert Path(
+        files.standardize_file(
+            db, project, directory_row["file_id"], link_kind="hardlink"
+        )["target"]
+    ).is_dir()
     (project.root / row["relative_path"]).unlink()
     results = files.standardize_all(db, project)
     assert any("error" in item for item in results)
 
 
-def test_standardize_rolls_back_target_when_state_commit_fails(project_db, tmp_path, monkeypatch):
+def test_standardize_rolls_back_target_when_state_commit_fails(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     source = tmp_path / "rollback.fa"
     source.write_text(">x\nACGT\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     monkeypatch.setattr(
-        db, "set_entity_state",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("state write failed")),
+        db,
+        "set_entity_state",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("state write failed")
+        ),
     )
     with pytest.raises(RuntimeError, match="state write failed"):
         files.standardize_file(db, project, row["file_id"])
-    target = project.standardized_root / "assemblies" / "ASM_000001" / Path(row["relative_path"]).name
+    target = (
+        project.standardized_root
+        / "assemblies"
+        / "ASM_000001"
+        / Path(row["relative_path"]).name
+    )
     assert not target.exists()
-    assert db.query("SELECT status FROM files WHERE file_id=?", (row["file_id"],))[0]["status"] == "CHECKSUM_VERIFIED"
+    assert (
+        db.query("SELECT status FROM files WHERE file_id=?", (row["file_id"],))[0][
+            "status"
+        ]
+        == "CHECKSUM_VERIFIED"
+    )
 
 
 def test_local_verification_stat_error(project_db, tmp_path, monkeypatch):
@@ -368,44 +523,73 @@ def test_local_verification_stat_error(project_db, tmp_path, monkeypatch):
     path = tmp_path / "x"
     path.write_text("x", encoding="utf-8")
     record = {"file_id": "F", "sha256": sha256_path(path), "size_bytes": 1}
-    monkeypatch.setattr(files, "_local_file_fingerprint", lambda _path: (_ for _ in ()).throw(OSError("stat")))
+    monkeypatch.setattr(
+        files,
+        "_local_file_fingerprint",
+        lambda _path: (_ for _ in ()).throw(OSError("stat")),
+    )
     matched, info = files.verify_local_file_identity(db, record, path, rehash=True)
     assert not matched and info["verification_method"] == "stat_error"
 
 
-def test_ingest_existing_unregistered_target_and_directory_conflict(project_db, tmp_path):
+def test_ingest_existing_unregistered_target_and_directory_conflict(
+    project_db, tmp_path
+):
     project, db = project_db
     source = tmp_path / "source.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    target = project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+    target = (
+        project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+    )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(source.read_bytes())
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     assert row["relative_path"].endswith("ASM_000001.genome_fasta.fasta")
 
     directory = tmp_path / "directory"
     directory.mkdir()
     (directory / "new").write_text("new", encoding="utf-8")
-    occupied = project.raw_root / "annotations" / "ANN_000001" / "ANN_000001.analysis_output.dir"
+    occupied = (
+        project.raw_root
+        / "annotations"
+        / "ANN_000001"
+        / "ANN_000001.analysis_output.dir"
+    )
     occupied.mkdir(parents=True)
     (occupied / "old").write_text("old", encoding="utf-8")
     with pytest.raises(ConflictError, match="different checksum"):
         files.ingest_file(
-            db, project, directory, "annotation", "ANN_000001", "analysis_output",
-            fmt="directory", compression="none",
+            db,
+            project,
+            directory,
+            "annotation",
+            "ANN_000001",
+            "analysis_output",
+            fmt="directory",
+            compression="none",
         )
 
 
-def test_ingest_checksum_mismatch_removes_file_and_directory(project_db, tmp_path, monkeypatch):
+def test_ingest_checksum_mismatch_removes_file_and_directory(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     real_sha = files.sha256_path
     source = tmp_path / "file.txt"
     source.write_text("x", encoding="utf-8")
+
     def mismatching_file(path):
-        return "0" * 64 if str(path).startswith(str(project.raw_root)) else real_sha(path)
+        return (
+            "0" * 64 if str(path).startswith(str(project.raw_root)) else real_sha(path)
+        )
+
     monkeypatch.setattr(files, "sha256_path", mismatching_file)
     with pytest.raises(ChecksumError, match="checksum mismatch while archiving"):
-        files.ingest_file(db, project, source, "annotation", "ANN_000001", "other", fmt="txt")
+        files.ingest_file(
+            db, project, source, "annotation", "ANN_000001", "other", fmt="txt"
+        )
     assert not list((project.raw_root / "annotations" / "ANN_000001").glob("*.txt"))
 
     directory = tmp_path / "dir"
@@ -413,24 +597,46 @@ def test_ingest_checksum_mismatch_removes_file_and_directory(project_db, tmp_pat
     (directory / "x").write_text("x", encoding="utf-8")
     with pytest.raises(ChecksumError, match="checksum mismatch while archiving"):
         files.ingest_file(
-            db, project, directory, "annotation", "ANN_000001", "analysis_output",
-            fmt="directory", compression="none",
+            db,
+            project,
+            directory,
+            "annotation",
+            "ANN_000001",
+            "analysis_output",
+            fmt="directory",
+            compression="none",
         )
-    assert not (project.raw_root / "annotations" / "ANN_000001" / "ANN_000001.analysis_output.dir").exists()
+    assert not (
+        project.raw_root
+        / "annotations"
+        / "ANN_000001"
+        / "ANN_000001.analysis_output.dir"
+    ).exists()
 
 
-def test_resolve_occupied_target_claimant_conflicts_relocation_and_orphan(project_db, tmp_path):
+def test_resolve_occupied_target_claimant_conflicts_relocation_and_orphan(
+    project_db, tmp_path
+):
     project, db = project_db
     target = project.raw_root / "assemblies" / "ASM_000001" / "occupied.fa"
     target.parent.mkdir(parents=True)
     target.write_text("old", encoding="utf-8")
     digest = sha256_path(target)
-    db.insert_row("files", {
-        "file_id": "FIL_000001", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "genome_fasta_refseq", "format": "fasta", "compression": "none",
-        "relative_path": files.project_rel(project, target), "size_bytes": 3,
-        "sha256": "0" * 64, "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_000001",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "genome_fasta_refseq",
+            "format": "fasta",
+            "compression": "none",
+            "relative_path": files.project_rel(project, target),
+            "size_bytes": 3,
+            "sha256": "0" * 64,
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     with pytest.raises(ConflictError, match="do not match manifest"):
         files._resolve_occupied_target(db, project, target, digest)
     db.conn.execute("UPDATE files SET sha256=? WHERE file_id='FIL_000001'", (digest,))
@@ -451,11 +657,15 @@ def test_resolve_occupied_target_claimant_conflicts_relocation_and_orphan(projec
     assert not orphan.exists() and list(orphan.parent.glob("orphan.fa.orphan-*"))
 
 
-def test_standardize_missing_nonremote_target_conflict_and_postcopy_cleanup(project_db, tmp_path, monkeypatch):
+def test_standardize_missing_nonremote_target_conflict_and_postcopy_cleanup(
+    project_db, tmp_path, monkeypatch
+):
     project, db = project_db
     source = tmp_path / "x.gff3"
     source.write_text("##gff-version 3\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "annotation", "ANN_000001", "annotation_gff3")
+    row = files.ingest_file(
+        db, project, source, "annotation", "ANN_000001", "annotation_gff3"
+    )
     archived = project.root / row["relative_path"]
     archived.unlink()
     with pytest.raises(ChecksumError, match="source missing"):
@@ -469,7 +679,15 @@ def test_standardize_missing_nonremote_target_conflict_and_postcopy_cleanup(proj
     target.unlink()
 
     real_sha = files.sha256_path
-    monkeypatch.setattr(files, "sha256_path", lambda path: "bad" if str(path).startswith(str(project.standardized_root)) else real_sha(path))
+    monkeypatch.setattr(
+        files,
+        "sha256_path",
+        lambda path: (
+            "bad"
+            if str(path).startswith(str(project.standardized_root))
+            else real_sha(path)
+        ),
+    )
     with pytest.raises(ChecksumError, match="standardized target checksum mismatch"):
         files.standardize_file(db, project, row["file_id"])
     assert not target.exists()
@@ -479,7 +697,9 @@ def test_verify_files_confirms_bytes_and_clears_placeholder(project_db, tmp_path
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     db.conn.execute(
         "UPDATE files SET status='CHECKSUM_FAILED' WHERE file_id=?", (row["file_id"],)
     )
@@ -510,13 +730,15 @@ def test_verify_files_does_not_demote_standardized(project_db, tmp_path):
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     files.standardize_file(db, project, row["file_id"])
 
     def file_audit_rows():
         return db.query(
             "SELECT * FROM changes WHERE object_type='files' AND object_id=?",
-            (row["file_id"],)
+            (row["file_id"],),
         )
 
     # Standardization itself is audited; verify below must not add churn.
@@ -534,7 +756,9 @@ def test_stale_cached_checksum_falls_back_to_full_hash(project_db, tmp_path):
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     path = project.root / row["relative_path"]
     db.conn.execute(
         "UPDATE local_file_verifications SET sha256=? WHERE file_id=?",
@@ -554,32 +778,41 @@ def test_same_size_modification_is_caught_by_full_rehash(project_db, tmp_path):
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     path = project.root / row["relative_path"]
     path.write_text(">x\nC\n", encoding="utf-8")
 
     matched, info = files.verify_local_file_identity(db, row, path)
     assert not matched and info["verification_method"] == "full_sha256"
     assert info["current_sha256"] == sha256_path(path)
-    assert db.query(
-        "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
-    ) == []
+    assert (
+        db.query(
+            "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+        )
+        == []
+    )
 
 
 def test_ingest_rearchives_bytes_missing_for_manifest_row(project_db, tmp_path):
     project, db = project_db
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     archived = project.root / row["relative_path"]
     archived.unlink()
 
-    restored = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    restored = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     assert restored["file_id"] == row["file_id"]
     assert archived.read_bytes() == source.read_bytes()
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     project, db = project_db
     directory = tmp_path / "results"
@@ -588,8 +821,14 @@ def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     (directory / "nested").mkdir()
     (directory / "nested" / "b.txt").write_text("beta", encoding="utf-8")
     row = files.ingest_file(
-        db, project, directory, "annotation", "ANN_000001", "analysis_output",
-        fmt="directory", compression="none",
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
     )
     path = project.root / row["relative_path"]
 
@@ -598,9 +837,12 @@ def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     assert info["size_bytes"] == int(row["size_bytes"])
     # Directories never use the stat-fingerprint cache: a directory's own
     # mtime changes on any member touch and would spuriously invalidate it.
-    assert db.query(
-        "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
-    ) == []
+    assert (
+        db.query(
+            "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+        )
+        == []
+    )
 
     # Same-size member tamper is caught by the tree hash.
     (path / "a.txt").write_text("ALPHA", encoding="utf-8")
@@ -613,37 +855,50 @@ def test_directory_artifact_verifies_with_tree_hash(project_db, tmp_path):
     assert not matched and info["verification_method"] == "size_mismatch"
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_directory_artifact_type_flip_reports_missing(project_db, tmp_path):
     project, db = project_db
     directory = tmp_path / "results"
     directory.mkdir()
     (directory / "a.txt").write_text("alpha", encoding="utf-8")
     row = files.ingest_file(
-        db, project, directory, "annotation", "ANN_000001", "analysis_output",
-        fmt="directory", compression="none",
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
     )
     path = project.root / row["relative_path"]
 
     # Directory record whose path is now a regular file: missing.
     import shutil
+
     shutil.rmtree(path)
     path.write_text("not a directory", encoding="utf-8")
     matched, info = files.verify_local_file_identity(db, row, path)
-    assert not matched and not info["exists"] and info["verification_method"] == "missing"
+    assert (
+        not matched and not info["exists"] and info["verification_method"] == "missing"
+    )
 
     # Regular-file record whose path is now a directory: also missing.
     source = tmp_path / "x.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
-    file_row = files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
+    file_row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
     file_path = project.root / file_row["relative_path"]
     file_path.unlink()
     file_path.mkdir()
     matched, info = files.verify_local_file_identity(db, file_row, file_path)
-    assert not matched and not info["exists"] and info["verification_method"] == "missing"
+    assert (
+        not matched and not info["exists"] and info["verification_method"] == "missing"
+    )
 
 
-@pytest.mark.bug("ODR-0013")
+@pytest.mark.bug("ODR-13")
 def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
     from operon import qc
 
@@ -652,15 +907,23 @@ def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
     directory.mkdir()
     (directory / "a.txt").write_text("alpha", encoding="utf-8")
     row = files.ingest_file(
-        db, project, directory, "annotation", "ANN_000001", "analysis_output",
-        fmt="directory", compression="none",
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
     )
     result = qc.qc_file(db, project, row["file_id"])
     assert result["ok"], result["error"]
     metrics = {
         (m["qc_stage"], m["metric_name"]): m["metric_value"]
-        for m in db.query("SELECT qc_stage, metric_name, metric_value FROM qc_results WHERE file_id=?",
-                          (row["file_id"],))
+        for m in db.query(
+            "SELECT qc_stage, metric_name, metric_value FROM qc_results WHERE file_id=?",
+            (row["file_id"],),
+        )
     }
     assert metrics[("file_integrity", "file_exists")] in ("1", "True", "true")
     assert metrics[("file_integrity", "sha256_match")] in ("1", "True", "true")

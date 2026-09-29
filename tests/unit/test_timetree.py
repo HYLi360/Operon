@@ -59,13 +59,17 @@ class FakeSession:
 
 
 def make_session(routes: dict[str, object]) -> FakeSession:
-    return FakeSession({
-        url: FakeResponse(body) if isinstance(body, str) else body
-        for url, body in routes.items()
-    })
+    return FakeSession(
+        {
+            url: FakeResponse(body) if isinstance(body, str) else body
+            for url, body in routes.items()
+        }
+    )
 
 
-def make_client(tmp_path: Path, routes: dict[str, object], **kwargs) -> tuple[TimeTreeClient, FakeSession]:
+def make_client(
+    tmp_path: Path, routes: dict[str, object], **kwargs
+) -> tuple[TimeTreeClient, FakeSession]:
     session = make_session(routes)
     kwargs.setdefault("delay", 0)
     client = TimeTreeClient(tmp_path / "cache", session=session, **kwargs)
@@ -93,30 +97,51 @@ def patch_network(monkeypatch):
 
 # --- taxon resolution -------------------------------------------------------
 
+
 def test_resolve_taxon_single(tmp_path):
-    client, _ = make_client(tmp_path, {
-        f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
-            {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"}),
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
+                {
+                    "taxon_id": 3702,
+                    "scientific_name": "Arabidopsis thaliana",
+                    "rank": "species",
+                }
+            ),
+        },
+    )
     candidates = client.resolve_taxon("Arabidopsis thaliana")
     assert candidates == [
-        {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"}]
+        {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"}
+    ]
 
 
 def test_resolve_taxon_multiple(tmp_path):
-    client, _ = make_client(tmp_path, {
-        f"{BASE}/taxon/Apis": json.dumps([
-            {"taxon_id": 7460, "scientific_name": "Apis mellifera", "rank": "species"},
-            {"taxon_id": 7461, "scientific_name": "Apis cerana"},
-        ]),
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{BASE}/taxon/Apis": json.dumps(
+                [
+                    {
+                        "taxon_id": 7460,
+                        "scientific_name": "Apis mellifera",
+                        "rank": "species",
+                    },
+                    {"taxon_id": 7461, "scientific_name": "Apis cerana"},
+                ]
+            ),
+        },
+    )
     candidates = client.resolve_taxon("Apis")
     assert [item["taxon_id"] for item in candidates] == [7460, 7461]
     assert candidates[1]["rank"] == ""
 
 
 def test_resolve_taxon_none(tmp_path):
-    client, _ = make_client(tmp_path, {f"{BASE}/taxon/Nothingium": json.dumps({"error": "no match"})})
+    client, _ = make_client(
+        tmp_path, {f"{BASE}/taxon/Nothingium": json.dumps({"error": "no match"})}
+    )
     with pytest.raises(ValidationError, match="no taxon"):
         client.resolve_taxon("Nothingium")
 
@@ -129,10 +154,14 @@ def test_resolve_taxon_rejects_empty_name(tmp_path):
 
 # --- pairwise / mrca summaries ----------------------------------------------
 
+
 def test_pairwise_summaryjson(tmp_path):
-    client, session = make_client(tmp_path, {
-        f"{BASE}/pairwise/3702/9606/summaryjson": json.dumps(SUMMARY_3702_9606),
-    })
+    client, session = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": json.dumps(SUMMARY_3702_9606),
+        },
+    )
     result = client.pairwise(3702, 9606)
     assert result["age_median"] == 1496.0
     assert result["ci_low"] == 1350.0
@@ -145,10 +174,15 @@ def test_pairwise_summaryjson(tmp_path):
 
 
 def test_pairwise_field_variants(tmp_path):
-    variant = {"Summary": {"Median Time": "100.5", "CI Low": 90, "CI High": 110, "Studies": 3}}
-    client, _ = make_client(tmp_path, {
-        f"{BASE}/pairwise/1/2/summaryjson": json.dumps(variant),
-    })
+    variant = {
+        "Summary": {"Median Time": "100.5", "CI Low": 90, "CI High": 110, "Studies": 3}
+    }
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/1/2/summaryjson": json.dumps(variant),
+        },
+    )
     result = client.pairwise(1, 2)
     assert result["age_median"] == 100.5
     assert result["ci_low"] == 90
@@ -157,9 +191,14 @@ def test_pairwise_field_variants(tmp_path):
 
 
 def test_pairwise_missing_age_reports_raw_body(tmp_path):
-    client, _ = make_client(tmp_path, {
-        f"{BASE}/pairwise/1/2/summaryjson": json.dumps({"message": "no data available"}),
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/1/2/summaryjson": json.dumps(
+                {"message": "no data available"}
+            ),
+        },
+    )
     with pytest.raises(ValidationError, match="no divergence time.*no data available"):
         client.pairwise(1, 2)
 
@@ -173,9 +212,12 @@ def test_pairwise_rejects_invalid_ids(tmp_path):
 
 
 def test_mrca_summaryjson(tmp_path):
-    client, session = make_client(tmp_path, {
-        f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
-    })
+    client, session = make_client(
+        tmp_path,
+        {
+            f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
+        },
+    )
     result = client.mrca([3702, 9606, 7227])
     assert result["taxon_ids"] == [3702, 7227, 9606]
     assert result["age_median"] == 1496.0
@@ -189,6 +231,7 @@ def test_mrca_requires_two_ids(tmp_path):
 
 
 # --- timeline ----------------------------------------------------------------
+
 
 def test_timeline_csv(tmp_path):
     body = "node,node_name,adjusted_age\n1,cellular organisms,4200\n2,Eukaryota,1800\n"
@@ -207,6 +250,7 @@ def test_timeline_empty_is_error(tmp_path):
 
 
 # --- caching -------------------------------------------------------------------
+
 
 def _pairwise_routes() -> dict[str, object]:
     return {f"{BASE}/pairwise/3702/9606/summaryjson": json.dumps(SUMMARY_3702_9606)}
@@ -247,37 +291,57 @@ def test_unreadable_cache_is_clear_error(tmp_path):
 
 # --- error paths -----------------------------------------------------------------
 
+
 def test_timeout_exhausts_retries(tmp_path):
-    client, session = make_client(tmp_path, {
-        f"{BASE}/pairwise/3702/9606/summaryjson": requests.exceptions.Timeout("slow"),
-    }, retries=2)
+    client, session = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": requests.exceptions.Timeout(
+                "slow"
+            ),
+        },
+        retries=2,
+    )
     with pytest.raises(ValidationError, match="after 2 attempt"):
         client.pairwise(3702, 9606)
     assert len(session.calls) == 2
 
 
 def test_http_500_retried_then_fails(tmp_path):
-    client, session = make_client(tmp_path, {
-        f"{BASE}/pairwise/3702/9606/summaryjson": FakeResponse("boom", status=500),
-    }, retries=2)
+    client, session = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": FakeResponse("boom", status=500),
+        },
+        retries=2,
+    )
     with pytest.raises(ValidationError, match="HTTP 500"):
         client.pairwise(3702, 9606)
     assert len(session.calls) == 2
 
 
 def test_http_404_fails_without_retry(tmp_path):
-    client, session = make_client(tmp_path, {
-        f"{BASE}/pairwise/3702/9606/summaryjson": FakeResponse("missing", status=404),
-    }, retries=3)
+    client, session = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": FakeResponse(
+                "missing", status=404
+            ),
+        },
+        retries=3,
+    )
     with pytest.raises(ValidationError, match="HTTP 404"):
         client.pairwise(3702, 9606)
     assert len(session.calls) == 1
 
 
 def test_non_json_body_is_error(tmp_path):
-    client, _ = make_client(tmp_path, {
-        f"{BASE}/pairwise/3702/9606/summaryjson": "<html>oops</html>",
-    })
+    client, _ = make_client(
+        tmp_path,
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": "<html>oops</html>",
+        },
+    )
     with pytest.raises(ValidationError, match="non-JSON"):
         client.pairwise(3702, 9606)
 
@@ -294,18 +358,25 @@ def test_client_parameter_validation(tmp_path):
 
 # --- build_calibrations ------------------------------------------------------------
 
+
 def _calibration_routes() -> dict[str, object]:
     return {
         f"{BASE}/pairwise/3702/9606/summaryjson": json.dumps(SUMMARY_3702_9606),
         f"{BASE}/pairwise/3702/7227/summaryjson": json.dumps(
-            {**SUMMARY_3702_9606, "taxon_b_id": 7227, "precomputed_age": 1400.0}),
+            {**SUMMARY_3702_9606, "taxon_b_id": 7227, "precomputed_age": 1400.0}
+        ),
         f"{BASE}/pairwise/7227/9606/summaryjson": json.dumps(
-            {**SUMMARY_3702_9606, "taxon_a_id": 7227, "precomputed_age": 1000.0}),
+            {**SUMMARY_3702_9606, "taxon_a_id": 7227, "precomputed_age": 1000.0}
+        ),
         f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
     }
 
 
-TAXA = [("Arabidopsis thaliana", 3702), ("Homo sapiens", 9606), ("Drosophila melanogaster", 7227)]
+TAXA = [
+    ("Arabidopsis thaliana", 3702),
+    ("Homo sapiens", 9606),
+    ("Drosophila melanogaster", 7227),
+]
 
 
 def test_build_calibrations_mrca(tmp_path):
@@ -329,7 +400,10 @@ def test_build_calibrations_pairs(tmp_path):
     client, _ = make_client(tmp_path, _calibration_routes())
     rows = client.build_calibrations(TAXA, pairs=True)
     assert [row["node_label"] for row in rows] == [
-        "pair(3702,9606)", "pair(3702,7227)", "pair(7227,9606)"]
+        "pair(3702,9606)",
+        "pair(3702,7227)",
+        "pair(7227,9606)",
+    ]
     assert all(row["source"] == "TimeTree v5 (Kumar et al. 2022, MBE)" for row in rows)
 
 
@@ -345,8 +419,12 @@ def _run_cli(project: Project, *argv: str) -> int:
     inter-request pause is pure test latency.
     """
     args = list(argv)
-    if len(args) >= 2 and args[0] == "timetree" and args[1] in _QUERY_COMMANDS \
-            and "--delay" not in args:
+    if (
+        len(args) >= 2
+        and args[0] == "timetree"
+        and args[1] in _QUERY_COMMANDS
+        and "--delay" not in args
+    ):
         args[2:2] = ["--delay", "0"]
     return main(["--project", str(project.root), *args])
 
@@ -363,26 +441,42 @@ def _workflow_steps(project: Project) -> list[tuple[str, str]]:
 
 
 def test_cli_taxon_single(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
-            {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana", "rank": "species"}),
-    })
+    patch_network(
+        {
+            f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
+                {
+                    "taxon_id": 3702,
+                    "scientific_name": "Arabidopsis thaliana",
+                    "rank": "species",
+                }
+            ),
+        }
+    )
     assert _run_cli(project, "timetree", "taxon", "--name", "Arabidopsis thaliana") == 0
     out, err = capsys.readouterr()
     assert "3702" in out and "Arabidopsis thaliana" in out
     assert "doi.org/10.1093/molbev/msac174" in err
     steps = _workflow_steps(project)
-    assert steps == [("timetree:taxon", "operon timetree taxon --name 'Arabidopsis thaliana'")]
+    assert steps == [
+        ("timetree:taxon", "operon timetree taxon --name 'Arabidopsis thaliana'")
+    ]
 
 
 def test_cli_taxon_json_format(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/taxon/Apis": json.dumps([
-            {"taxon_id": 7460, "scientific_name": "Apis mellifera"},
-            {"taxon_id": 7461, "scientific_name": "Apis cerana"},
-        ]),
-    })
-    assert _run_cli(project, "timetree", "taxon", "--name", "Apis", "--format", "json") == 0
+    patch_network(
+        {
+            f"{BASE}/taxon/Apis": json.dumps(
+                [
+                    {"taxon_id": 7460, "scientific_name": "Apis mellifera"},
+                    {"taxon_id": 7461, "scientific_name": "Apis cerana"},
+                ]
+            ),
+        }
+    )
+    assert (
+        _run_cli(project, "timetree", "taxon", "--name", "Apis", "--format", "json")
+        == 0
+    )
     out, _ = capsys.readouterr()
     payload = json.loads(out)
     assert [item["taxon_id"] for item in payload["candidates"]] == [7460, 7461]
@@ -397,8 +491,9 @@ def test_cli_taxon_no_result_exit_code(project, patch_network, capsys):
 
 def test_cli_pairwise_by_ids(project, patch_network, capsys):
     session = patch_network(_pairwise_routes())
-    exit_code = _run_cli(project, "timetree", "pairwise",
-                         "--taxon-id", "3702", "--taxon-id", "9606")
+    exit_code = _run_cli(
+        project, "timetree", "pairwise", "--taxon-id", "3702", "--taxon-id", "9606"
+    )
     assert exit_code == 0
     out, _ = capsys.readouterr()
     assert "1496.0" in out and "1650.0" in out
@@ -408,48 +503,77 @@ def test_cli_pairwise_by_ids(project, patch_network, capsys):
 
 
 def test_cli_pairwise_ambiguous_name_needs_id(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/taxon/Apis": json.dumps([
-            {"taxon_id": 7460, "scientific_name": "Apis mellifera"},
-            {"taxon_id": 7461, "scientific_name": "Apis cerana"},
-        ]),
-    })
-    exit_code = _run_cli(project, "timetree", "pairwise",
-                         "--taxon", "Apis", "--taxon-id", "9606")
+    patch_network(
+        {
+            f"{BASE}/taxon/Apis": json.dumps(
+                [
+                    {"taxon_id": 7460, "scientific_name": "Apis mellifera"},
+                    {"taxon_id": 7461, "scientific_name": "Apis cerana"},
+                ]
+            ),
+        }
+    )
+    exit_code = _run_cli(
+        project, "timetree", "pairwise", "--taxon", "Apis", "--taxon-id", "9606"
+    )
     assert exit_code == 2
     _, err = capsys.readouterr()
     assert "ambiguous" in err and "--taxon-id" in err
 
 
 def test_cli_mrca_resolves_names_and_ids(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
-            {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana"}),
-        f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
-    })
-    exit_code = _run_cli(project, "timetree", "mrca",
-                         "--taxa", "Arabidopsis thaliana",
-                         "--taxon-id", "9606", "--taxon-id", "7227")
+    patch_network(
+        {
+            f"{BASE}/taxon/Arabidopsis%20thaliana": json.dumps(
+                {"taxon_id": 3702, "scientific_name": "Arabidopsis thaliana"}
+            ),
+            f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
+        }
+    )
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "mrca",
+        "--taxa",
+        "Arabidopsis thaliana",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+    )
     assert exit_code == 0
     out, _ = capsys.readouterr()
     assert "3702,7227,9606" in out
 
 
 def test_cli_mrca_by_ids(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
-    })
-    exit_code = _run_cli(project, "timetree", "mrca",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--taxon-id", "7227")
+    patch_network(
+        {
+            f"{BASE}/mrca/id/3702+7227+9606/summaryjson": json.dumps(SUMMARY_3702_9606),
+        }
+    )
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "mrca",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+    )
     assert exit_code == 0
     out, _ = capsys.readouterr()
     assert "3702,7227,9606" in out
 
 
 def test_cli_timeline(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/timeline/3702": "node,node_name,adjusted_age\n1,cellular organisms,4200\n",
-    })
+    patch_network(
+        {
+            f"{BASE}/timeline/3702": "node,node_name,adjusted_age\n1,cellular organisms,4200\n",
+        }
+    )
     assert _run_cli(project, "timetree", "timeline", "--taxon-id", "3702") == 0
     out, _ = capsys.readouterr()
     assert "cellular organisms" in out
@@ -460,9 +584,19 @@ def test_cli_timeline(project, patch_network, capsys):
 def test_cli_calibrations_writes_tsv(project, patch_network, capsys, tmp_path):
     patch_network(_calibration_routes())
     out_path = tmp_path / "calibrations.tsv"
-    exit_code = _run_cli(project, "timetree", "calibrations",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--taxon-id", "7227",
-                         "--out", str(out_path))
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "calibrations",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+        "--out",
+        str(out_path),
+    )
     assert exit_code == 0
     out, err = capsys.readouterr()
     lines = out_path.read_text().splitlines()
@@ -483,9 +617,20 @@ def test_cli_calibrations_writes_tsv(project, patch_network, capsys, tmp_path):
 def test_cli_calibrations_pairs(project, patch_network, capsys, tmp_path):
     patch_network(_calibration_routes())
     out_path = tmp_path / "pairs.tsv"
-    exit_code = _run_cli(project, "timetree", "calibrations", "--pairs",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--taxon-id", "7227",
-                         "--out", str(out_path))
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "calibrations",
+        "--pairs",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--taxon-id",
+        "7227",
+        "--out",
+        str(out_path),
+    )
     assert exit_code == 0
     capsys.readouterr()
     lines = out_path.read_text().splitlines()
@@ -494,25 +639,57 @@ def test_cli_calibrations_pairs(project, patch_network, capsys, tmp_path):
 
 def test_cli_uses_cache_on_second_run(project, patch_network, capsys):
     session = patch_network(_pairwise_routes())
-    assert _run_cli(project, "timetree", "pairwise",
-                    "--taxon-id", "3702", "--taxon-id", "9606") == 0
-    assert _run_cli(project, "timetree", "pairwise",
-                    "--taxon-id", "3702", "--taxon-id", "9606") == 0
+    assert (
+        _run_cli(
+            project, "timetree", "pairwise", "--taxon-id", "3702", "--taxon-id", "9606"
+        )
+        == 0
+    )
+    assert (
+        _run_cli(
+            project, "timetree", "pairwise", "--taxon-id", "3702", "--taxon-id", "9606"
+        )
+        == 0
+    )
     capsys.readouterr()
     assert len(session.calls) == 1
     cache_files = list((project.root / "adapters_cache" / "timetree").glob("*.json"))
     assert len(cache_files) == 1
-    assert _run_cli(project, "timetree", "pairwise",
-                    "--taxon-id", "3702", "--taxon-id", "9606", "--refresh") == 0
+    assert (
+        _run_cli(
+            project,
+            "timetree",
+            "pairwise",
+            "--taxon-id",
+            "3702",
+            "--taxon-id",
+            "9606",
+            "--refresh",
+        )
+        == 0
+    )
     assert len(session.calls) == 2
 
 
 def test_cli_network_failure_exit_code(project, patch_network, capsys):
-    patch_network({
-        f"{BASE}/pairwise/3702/9606/summaryjson": requests.exceptions.ConnectionError("down"),
-    })
-    exit_code = _run_cli(project, "timetree", "pairwise",
-                         "--taxon-id", "3702", "--taxon-id", "9606", "--delay", "0")
+    patch_network(
+        {
+            f"{BASE}/pairwise/3702/9606/summaryjson": requests.exceptions.ConnectionError(
+                "down"
+            ),
+        }
+    )
+    exit_code = _run_cli(
+        project,
+        "timetree",
+        "pairwise",
+        "--taxon-id",
+        "3702",
+        "--taxon-id",
+        "9606",
+        "--delay",
+        "0",
+    )
     assert exit_code == 2
     _, err = capsys.readouterr()
     assert "failed" in err

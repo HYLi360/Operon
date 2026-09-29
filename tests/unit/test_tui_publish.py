@@ -181,39 +181,62 @@ def _draft(project: Project, fasta: Path) -> dict:
     ids = actions.reserve_entity_ids(project)
     return {
         "source": {
-            "source_type": "insdc", "database_name": "TestDB", "provider": "TestProvider",
-            "record_url": "", "citation": "", "license_name": "", "license_url": "",
+            "source_type": "insdc",
+            "database_name": "TestDB",
+            "provider": "TestProvider",
+            "record_url": "",
+            "citation": "",
+            "license_name": "",
+            "license_url": "",
         },
         "organism": {
-            "action": "create", "id": ids["organism"],
+            "action": "create",
+            "id": ids["organism"],
             "row": {
-                "organism_id": ids["organism"], "scientific_name": "Syntheticus gamma",
-                "taxon_id": "", "taxonomic_rank": "species",
-                "taxonomy_source": "", "taxonomy_version": "",
+                "organism_id": ids["organism"],
+                "scientific_name": "Syntheticus gamma",
+                "taxon_id": "",
+                "taxonomic_rank": "species",
+                "taxonomy_source": "",
+                "taxonomy_version": "",
             },
         },
         "sample": {
-            "action": "create", "id": ids["sample"],
+            "action": "create",
+            "id": ids["sample"],
             "row": {
-                "sample_id": ids["sample"], "organism_id": ids["organism"],
-                "biosample_accession": "", "strain": "T1", "isolate": "",
+                "sample_id": ids["sample"],
+                "organism_id": ids["organism"],
+                "biosample_accession": "",
+                "strain": "T1",
+                "isolate": "",
                 "source_record": "",
             },
         },
         "run": None,
         "assembly": {
-            "action": "create", "id": ids["assembly"],
+            "action": "create",
+            "id": ids["assembly"],
             "row": {
-                "assembly_id": ids["assembly"], "sample_id": ids["sample"],
-                "assembly_accession": "", "assembly_name": "gamma-asm",
-                "assembly_version": "1", "assembly_level": "", "assembly_method": "",
-                "submitter": "TestProvider", "source_database": "",
+                "assembly_id": ids["assembly"],
+                "sample_id": ids["sample"],
+                "assembly_accession": "",
+                "assembly_name": "gamma-asm",
+                "assembly_version": "1",
+                "assembly_level": "",
+                "assembly_method": "",
+                "submitter": "TestProvider",
+                "source_database": "",
             },
         },
         "annotation": None,
         "files": [
-            {"label": "Genome FASTA", "role": "genome_fasta",
-             "entity_type": "assembly", "path": str(fasta)},
+            {
+                "label": "Genome FASTA",
+                "role": "genome_fasta",
+                "entity_type": "assembly",
+                "path": str(fasta),
+            },
         ],
     }
 
@@ -257,7 +280,9 @@ def test_list_releases_and_release_preview(demo_template: Project) -> None:
         exclusions = release_exclusions_for(db, "assembly_production_v1")
     finally:
         db.close()
-    assert [row["file_id"] for row in preview["members"]] == [row["file_id"] for row in members]
+    assert [row["file_id"] for row in preview["members"]] == [
+        row["file_id"] for row in members
+    ]
     assert preview["member_bytes"] == sum(int(row["size_bytes"]) for row in members)
     assert [row["entity_id"] for row in preview["exclusions"]] == [
         row["entity_id"] for row in exclusions
@@ -270,14 +295,23 @@ def test_export_preview_matches_core_selection(demo_template: Project) -> None:
     db = Database(demo_template.db_path, read_only=True)
     try:
         rows = _select_files(
-            db, entity_type="assembly", entity_ids=(), file_ids=(),
-            file_role=None, fmt=None, state=None, decision=None, profile=None,
+            db,
+            entity_type="assembly",
+            entity_ids=(),
+            file_ids=(),
+            file_role=None,
+            fmt=None,
+            state=None,
+            decision=None,
+            profile=None,
         )
     finally:
         db.close()
     assert preview["count"] == len(rows)
     assert preview["bytes"] == sum(int(row["size_bytes"]) for row in rows)
-    assert [row["file_id"] for row in preview["files"]] == [row["file_id"] for row in rows]
+    assert [row["file_id"] for row in preview["files"]] == [
+        row["file_id"] for row in rows
+    ]
 
     with pytest.raises(Exception, match="selection criterion"):
         data.export_preview(demo_template)
@@ -307,8 +341,12 @@ def test_read_coverage_report(coverage_project: Project) -> None:
     assert report["provenance"]["reference_set_id"] == "cov@cov.1"
     summary = report["tables"]["coverage_summary"]
     assert summary["columns"] == [
-        "rank", "numerator", "denominator", "coverage_percent",
-        "min_coverage_percent", "decision",
+        "rank",
+        "numerator",
+        "denominator",
+        "coverage_percent",
+        "min_coverage_percent",
+        "decision",
     ]
     assert summary["total"] == 2
     assert summary["truncated"] is False
@@ -328,8 +366,11 @@ def test_read_coverage_report(coverage_project: Project) -> None:
 def test_reserve_entity_ids(project: Project) -> None:
     ids = actions.reserve_entity_ids(project)
     assert ids == {
-        "organism": "ORG_000003", "sample": "SMP_000004", "run": "RUN_000002",
-        "assembly": "ASM_000004", "annotation": "ANN_000004",
+        "organism": "ORG_000003",
+        "sample": "SMP_000004",
+        "run": "RUN_000002",
+        "assembly": "ASM_000004",
+        "annotation": "ANN_000004",
     }
 
 
@@ -346,17 +387,20 @@ def test_import_dataset_action(project: Project, tmp_path: Path) -> None:
     assert "Taxonomy ID is missing." in result["warnings"]
 
     organism = _query(
-        project, "SELECT scientific_name FROM organisms WHERE organism_id=?",
+        project,
+        "SELECT scientific_name FROM organisms WHERE organism_id=?",
         (draft["organism"]["id"],),
     )
     assert organism[0]["scientific_name"] == "Syntheticus gamma"
     state = _query(
-        project, "SELECT state FROM entity_state WHERE entity_id=?",
+        project,
+        "SELECT state FROM entity_state WHERE entity_id=?",
         (draft["organism"]["id"],),
     )
     assert state[0]["state"] == "METADATA_VALIDATED"
     sources = _query(
-        project, "SELECT source_id FROM data_sources WHERE database_name='TestDB'")
+        project, "SELECT source_id FROM data_sources WHERE database_name='TestDB'"
+    )
     assert sources[0]["source_id"] == result["source_id"]
     runs = _query(
         project,
@@ -369,13 +413,19 @@ def test_import_dataset_action(project: Project, tmp_path: Path) -> None:
     )
     assert changes[0]["n"] >= 3
     files = _query(
-        project, "SELECT file_role FROM files WHERE entity_id=?", (draft["assembly"]["id"],))
+        project,
+        "SELECT file_role FROM files WHERE entity_id=?",
+        (draft["assembly"]["id"],),
+    )
     assert [row["file_role"] for row in files] == ["genome_fasta"]
 
 
 def test_create_release_action(project: Project) -> None:
     result = actions.create_release(
-        project, "2099.01.tui", "assembly_production_v1", copy_files=True,
+        project,
+        "2099.01.tui",
+        "assembly_production_v1",
+        copy_files=True,
     )
     assert result["version"] == "2099.01.tui"
     assert (project.releases_root / "2099.01.tui" / "manifest.tsv").is_file()
@@ -394,7 +444,9 @@ def test_export_action(project: Project, tmp_path: Path) -> None:
         actions.export(project, str(output), entity_type="assembly")
 
 
-def test_run_coverage_fail_is_a_result_not_an_exception(coverage_project: Project) -> None:
+def test_run_coverage_fail_is_a_result_not_an_exception(
+    coverage_project: Project,
+) -> None:
     profile_path = coverage_project.profiles_dir / "covstrict.yaml"
     profile = {
         "kind": "taxonomy_coverage",
@@ -411,14 +463,17 @@ def test_run_coverage_fail_is_a_result_not_an_exception(coverage_project: Projec
     profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
     db = Database(coverage_project.db_path)
     try:
-        reference = taxonomy.compile_reference_set(db, coverage_project, "covstrict", "cov.1")
+        reference = taxonomy.compile_reference_set(
+            db, coverage_project, "covstrict", "cov.1"
+        )
     finally:
         db.close()
     result = actions.run_coverage(coverage_project, reference["reference_set_id"])
     assert result["decision"] == "FAIL"
     assert result["exit_code"] == 1
     assert result["reason_codes"] == [
-        "FAMILY_COVERAGE_BELOW_THRESHOLD", "GENUS_COVERAGE_BELOW_THRESHOLD",
+        "FAMILY_COVERAGE_BELOW_THRESHOLD",
+        "GENUS_COVERAGE_BELOW_THRESHOLD",
     ]
 
 
@@ -480,11 +535,17 @@ def test_import_wizard_walkthrough(project: Project, tmp_path: Path) -> None:
     _run(scenario())
 
     organisms = _query(
-        project, "SELECT organism_id FROM organisms WHERE scientific_name='Syntheticus gamma'")
+        project,
+        "SELECT organism_id FROM organisms WHERE scientific_name='Syntheticus gamma'",
+    )
     assert [row["organism_id"] for row in organisms] == ["ORG_000003"]
-    samples = _query(project, "SELECT sample_id, strain FROM samples WHERE organism_id='ORG_000003'")
+    samples = _query(
+        project, "SELECT sample_id, strain FROM samples WHERE organism_id='ORG_000003'"
+    )
     assert samples == [{"sample_id": "SMP_000004", "strain": "T1"}]
-    assemblies = _query(project, "SELECT assembly_id FROM assemblies WHERE sample_id='SMP_000004'")
+    assemblies = _query(
+        project, "SELECT assembly_id FROM assemblies WHERE sample_id='SMP_000004'"
+    )
     assert [row["assembly_id"] for row in assemblies] == ["ASM_000004"]
 
 
@@ -534,7 +595,10 @@ def test_import_wizard_validation_blocks(project: Project) -> None:
             await pilot.pause()
             await _button_click(pilot, app, "#wizard-next")
             assert pages.current == "page-source"
-            assert "Non-INSDC data requires a reference citation or DOI." in _static_text(error)
+            assert (
+                "Non-INSDC data requires a reference citation or DOI."
+                in _static_text(error)
+            )
 
             wizard.query_one("#iw-citation", Input).value = "doi:10.0000/test"
             wizard.query_one("#iw-license-name", Input).value = "CC0"
@@ -573,11 +637,14 @@ def test_import_wizard_bad_file_path_blocks(project: Project) -> None:
             await _settled(app)
             await pilot.pause()
             assert pages.current == "page-files"
-            wizard.query_one("#iw-file-genome-fasta", Input).value = "/no/such/file.fasta"
+            wizard.query_one(
+                "#iw-file-genome-fasta", Input
+            ).value = "/no/such/file.fasta"
             await _button_click(pilot, app, "#wizard-next")
             assert pages.current == "page-files"
             assert "File does not exist" in _static_text(
-                wizard.query_one("#wizard-error", Static))
+                wizard.query_one("#wizard-error", Static)
+            )
             await pilot.press("escape")
             await pilot.pause()
 
@@ -615,7 +682,8 @@ def test_release_create_end_to_end(project: Project) -> None:
             await _button_click(pilot, app, "#release-create")
             assert not isinstance(app.screen, CreateReleaseModal)
             assert "already exists" in _static_text(
-                panel.query_one("#release-error", Static))
+                panel.query_one("#release-error", Static)
+            )
 
             panel.query_one("#release-version", Input).value = "2099.01.tui"
             await pilot.pause()
@@ -653,14 +721,16 @@ def test_export_end_to_end(project: Project, tmp_path: Path) -> None:
             # No filters → inline validation error.
             await _button_click(pilot, app, "#export-preview-btn")
             assert "at least one selection criterion" in _static_text(
-                panel.query_one("#export-error", Static))
+                panel.query_one("#export-error", Static)
+            )
 
             # Decision filter without profile → inline error (mirrors the CLI).
             panel.query_one("#export-decision", Select).value = "PASS"
             await pilot.pause()
             await _button_click(pilot, app, "#export-preview-btn")
             assert "requires --profile" in _static_text(
-                panel.query_one("#export-error", Static))
+                panel.query_one("#export-error", Static)
+            )
 
             panel.query_one("#export-decision", Select).value = Select.NULL
             panel.query_one("#export-entity-type", Select).value = "assembly"
@@ -668,7 +738,8 @@ def test_export_end_to_end(project: Project, tmp_path: Path) -> None:
             await pilot.pause()
             await _button_click(pilot, app, "#export-preview-btn")
             assert "3 file(s)" in _static_text(
-                panel.query_one("#export-preview-summary", Static))
+                panel.query_one("#export-preview-summary", Static)
+            )
 
             await _button_click(pilot, app, "#export-run")
             modal = app.screen
@@ -703,7 +774,9 @@ def test_coverage_screen_generate_and_browse(coverage_project: Project) -> None:
             await pilot.pause()
             await _settled(app)
             panel = app.query_one(CoveragePanel)
-            assert panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 1
+            assert (
+                panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 1
+            )
             assert panel.query_one("#reference-sets-table", DataTable).row_count == 1
             reports = panel.query_one("#coverage-reports-table", DataTable)
             assert reports.row_count == 0
@@ -726,7 +799,9 @@ def test_coverage_screen_generate_and_browse(coverage_project: Project) -> None:
             await pilot.press("enter")
             await _settled(app)
             await pilot.pause()
-            headline = _static_text(panel.query_one("#coverage-report-headline", Static))
+            headline = _static_text(
+                panel.query_one("#coverage-report-headline", Static)
+            )
             assert "cov@cov.1" in headline
             assert "metadata" in headline
             summary = panel.query_one("#coverage-table-coverage_summary", DataTable)
@@ -749,22 +824,34 @@ def test_coverage_screen_empty_project(tmp_path: Path) -> None:
             await pilot.pause()
             await _settled(app)
             panel = app.query_one(CoveragePanel)
-            assert panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 0
+            assert (
+                panel.query_one("#taxonomy-snapshots-table", DataTable).row_count == 0
+            )
             generate = panel.query_one("#coverage-generate", Button)
             assert generate.disabled
             assert "no reference sets" in _static_text(
-                panel.query_one("#coverage-error", Static))
+                panel.query_one("#coverage-error", Static)
+            )
 
     _run(scenario())
 
 
 @pytest.mark.parametrize("row", ["family\t1\tunexpected", "family", ""])
-def test_coverage_malformed_row_is_inline_and_recoverable(coverage_project: Project, row: str) -> None:
+def test_coverage_malformed_row_is_inline_and_recoverable(
+    coverage_project: Project, row: str
+) -> None:
     result = actions.run_coverage(coverage_project, "cov@cov.1")
-    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    path = (
+        coverage_project.reports_root
+        / "coverage"
+        / result["report_id"]
+        / "coverage_summary.tsv"
+    )
     original = path.read_bytes()
     path.write_text("rank\tnumerator\n" + row + "\n", encoding="utf-8")
-    with pytest.raises(ValidationError, match="coverage_summary.tsv: line 2: expected 2 fields"):
+    with pytest.raises(
+        ValidationError, match="coverage_summary.tsv: line 2: expected 2 fields"
+    ):
         data.read_coverage_report(coverage_project, result["report_id"])
 
     async def scenario() -> None:
@@ -777,24 +864,44 @@ def test_coverage_malformed_row_is_inline_and_recoverable(coverage_project: Proj
             panel = app.query_one(CoveragePanel)
             panel._load_report(result["report_id"])
             await _settled(app)
-            assert "line 2" in _static_text(panel.query_one("#coverage-report-headline", Static))
+            assert "line 2" in _static_text(
+                panel.query_one("#coverage-report-headline", Static)
+            )
             path.write_bytes(original)
             panel._load_report(result["report_id"])
             await _settled(app)
-            assert "error:" not in _static_text(panel.query_one("#coverage-report-headline", Static))
-            assert panel.query_one("#coverage-table-coverage_summary", DataTable).row_count == 2
+            assert "error:" not in _static_text(
+                panel.query_one("#coverage-report-headline", Static)
+            )
+            assert (
+                panel.query_one("#coverage-table-coverage_summary", DataTable).row_count
+                == 2
+            )
 
     _run(scenario())
 
 
-def test_coverage_validates_rows_beyond_display_limit(coverage_project: Project, monkeypatch) -> None:
+def test_coverage_validates_rows_beyond_display_limit(
+    coverage_project: Project, monkeypatch
+) -> None:
     result = actions.run_coverage(coverage_project, "cov@cov.1")
-    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    path = (
+        coverage_project.reports_root
+        / "coverage"
+        / result["report_id"]
+        / "coverage_summary.tsv"
+    )
     monkeypatch.setattr(data, "COVERAGE_REPORT_LIMIT", 1)
     path.write_text("rank\tnumerator\nfamily\t1\ngenus\t2\n", encoding="utf-8")
-    table = data.read_coverage_report(coverage_project, result["report_id"])["tables"]["coverage_summary"]
-    assert table == {"columns": ["rank", "numerator"], "rows": [["family", "1"]],
-                     "truncated": True, "total": 2}
+    table = data.read_coverage_report(coverage_project, result["report_id"])["tables"][
+        "coverage_summary"
+    ]
+    assert table == {
+        "columns": ["rank", "numerator"],
+        "rows": [["family", "1"]],
+        "truncated": True,
+        "total": 2,
+    }
     with path.open("a") as handle:
         handle.write("species\t3\textra\n")
     with pytest.raises(ValidationError, match="line 4"):
@@ -802,15 +909,24 @@ def test_coverage_validates_rows_beyond_display_limit(coverage_project: Project,
 
 
 @pytest.mark.parametrize("blank_lines", [1, 501])
-def test_coverage_blank_header_rejected(coverage_project: Project, blank_lines: int) -> None:
+def test_coverage_blank_header_rejected(
+    coverage_project: Project, blank_lines: int
+) -> None:
     result = actions.run_coverage(coverage_project, "cov@cov.1")
-    path = coverage_project.reports_root / "coverage" / result["report_id"] / "coverage_summary.tsv"
+    path = (
+        coverage_project.reports_root
+        / "coverage"
+        / result["report_id"]
+        / "coverage_summary.tsv"
+    )
     path.write_text("\n" * blank_lines, encoding="utf-8")
     with pytest.raises(ValidationError, match="line 1: missing TSV header"):
         data.read_coverage_report(coverage_project, result["report_id"])
 
 
-def test_export_file_ids_preview_command_and_manifest(project: Project, tmp_path: Path) -> None:
+def test_export_file_ids_preview_command_and_manifest(
+    project: Project, tmp_path: Path
+) -> None:
     ids = [row["file_id"] for row in data.list_files(project)[:2]]
     output = tmp_path / "selected files"
 
@@ -824,10 +940,14 @@ def test_export_file_ids_preview_command_and_manifest(project: Project, tmp_path
             panel = app.query_one(PublishPanel)
             panel.query_one("#publish-tabs", TabbedContent).active = "tab-export"
             await pilot.pause()
-            panel.query_one("#export-file-id", Input).value = ", " + ", ".join(ids) + ", "
+            panel.query_one("#export-file-id", Input).value = (
+                ", " + ", ".join(ids) + ", "
+            )
             panel.query_one("#export-output", Input).value = str(output)
             await _button_click(pilot, app, "#export-preview-btn")
-            assert "2 file(s)" in _static_text(panel.query_one("#export-preview-summary", Static))
+            assert "2 file(s)" in _static_text(
+                panel.query_one("#export-preview-summary", Static)
+            )
             await _button_click(pilot, app, "#export-run")
             modal = app.screen
             assert isinstance(modal, ExportModal)
@@ -839,17 +959,26 @@ def test_export_file_ids_preview_command_and_manifest(project: Project, tmp_path
 
     _run(scenario())
     with (output / "manifest.tsv").open() as handle:
-        assert {row["file_id"] for row in csv.DictReader(handle, delimiter="\t")} == set(ids)
-    assert data.export_preview(project, file_ids=ids, entity_type="run")["count"] == sum(
-        row["entity_type"] == "run" for row in data.list_files(project)[:2]
-    )
+        assert {
+            row["file_id"] for row in csv.DictReader(handle, delimiter="\t")
+        } == set(ids)
+    assert data.export_preview(project, file_ids=ids, entity_type="run")[
+        "count"
+    ] == sum(row["entity_type"] == "run" for row in data.list_files(project)[:2])
 
 
-@pytest.mark.parametrize("page,identifier", [
-    ("organism", "ORG_000001"), ("sample", "SMP_000001"),
-    ("assembly", "ASM_000001"), ("annotation", "ANN_000001"),
-])
-def test_wizard_retired_draft_choice_requires_reselection(project: Project, page: str, identifier: str) -> None:
+@pytest.mark.parametrize(
+    "page,identifier",
+    [
+        ("organism", "ORG_000001"),
+        ("sample", "SMP_000001"),
+        ("assembly", "ASM_000001"),
+        ("annotation", "ANN_000001"),
+    ],
+)
+def test_wizard_retired_draft_choice_requires_reselection(
+    project: Project, page: str, identifier: str
+) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -864,25 +993,40 @@ def test_wizard_retired_draft_choice_requires_reselection(project: Project, page
                 "assembly": {"action": "reuse", "id": "ASM_000001"},
                 "annotation": {"action": "reuse", "id": "ANN_000001"},
             }
-            actions.lifecycle_apply(project, identifier, "RETIRE", reason="test retirement",
-                                    actor="test", reason_code="other")
+            actions.lifecycle_apply(
+                project,
+                identifier,
+                "RETIRE",
+                reason="test retirement",
+                actor="test",
+                reason_code="other",
+            )
             wizard._goto(PAGES.index(page))
             await _settled(app)
-            assert wizard.query_one("#wizard-pages", ContentSwitcher).current == f"page-{page}"
-            assert "no longer available" in _static_text(wizard.query_one("#wizard-error", Static))
+            assert (
+                wizard.query_one("#wizard-pages", ContentSwitcher).current
+                == f"page-{page}"
+            )
+            assert "no longer available" in _static_text(
+                wizard.query_one("#wizard-error", Static)
+            )
             assert wizard.query_one(f"#iw-{page}-choice", Select).value is Select.NULL
             assert "Select an existing entity" in wizard._collect(page)
             assert wizard.draft[page]["id"] == identifier  # no silent substitution
             wizard.query_one(f"#iw-{page}-choice", Select).value = CREATE_NEW
             if page == "organism":
-                wizard.query_one("#iw-organism-name", Input).value = "Replacement species"
+                wizard.query_one(
+                    "#iw-organism-name", Input
+                ).value = "Replacement species"
             assert wizard._collect(page) is None
             assert wizard.draft[page]["action"] == "create"
 
     _run(scenario())
 
 
-def test_wizard_startup_failure_can_retry_without_navigation(project: Project, monkeypatch) -> None:
+def test_wizard_startup_failure_can_retry_without_navigation(
+    project: Project, monkeypatch
+) -> None:
     reserve = actions.reserve_entity_ids
 
     def fail(project):
@@ -898,7 +1042,9 @@ def test_wizard_startup_failure_can_retry_without_navigation(project: Project, m
             app.push_screen(wizard)
             await pilot.pause()
             await _settled(app)
-            assert "reservation unavailable" in _static_text(wizard.query_one("#wizard-error", Static))
+            assert "reservation unavailable" in _static_text(
+                wizard.query_one("#wizard-error", Static)
+            )
             assert "Retry" in str(wizard.query_one("#wizard-next", Button).label)
             wizard._goto(1)
             wizard._execute_import()
@@ -930,8 +1076,20 @@ def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> 
             wizard.draft["sample"] = {"action": "reuse", "id": "SMP_000001"}
             wizard.draft["assembly"] = {"action": "reuse", "id": "ASM_000001"}
             for page, enabled, fields in [
-                ("sequencing", "iw-run-enabled", ["iw-run-accession", "iw-run-experiment", "iw-run-instrument"]),
-                ("annotation", "iw-annotation-enabled", ["iw-annotation-source", "iw-annotation-version", "iw-annotation-date"]),
+                (
+                    "sequencing",
+                    "iw-run-enabled",
+                    ["iw-run-accession", "iw-run-experiment", "iw-run-instrument"],
+                ),
+                (
+                    "annotation",
+                    "iw-annotation-enabled",
+                    [
+                        "iw-annotation-source",
+                        "iw-annotation-version",
+                        "iw-annotation-date",
+                    ],
+                ),
             ]:
                 wizard._goto(PAGES.index(page))
                 await _settled(app)
@@ -944,34 +1102,43 @@ def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> 
                 wizard._goto(PAGES.index(page))
                 await _settled(app)
                 wizard.query_one(f"#{enabled}", Checkbox).value = True
-                assert all(wizard.query_one(f"#{field}", Input).value == "" for field in fields)
+                assert all(
+                    wizard.query_one(f"#{field}", Input).value == "" for field in fields
+                )
                 if page == "sequencing":
-                    assert wizard.query_one("#iw-run-platform", Select).value is Select.NULL
+                    assert (
+                        wizard.query_one("#iw-run-platform", Select).value
+                        is Select.NULL
+                    )
 
     _run(scenario())
 
 
 # --------------------------------------------------------------------------- #
-# Preview workers carry the request they answer (ODR-0031)
+# Preview workers carry the request they answer (ODR-31)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0031")
-def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: Project,
-                                                            monkeypatch) -> None:
+
+@pytest.mark.bug("ODR-31")
+def test_coverage_report_drops_a_read_a_newer_row_superseded(
+    coverage_project: Project, monkeypatch
+) -> None:
     """The report read for the row the user left must not answer for the new one.
 
     ``exclusive=True`` cancels the previous worker's *await*, not the read the
     thread is inside; that thread posts its payload afterwards, so the request
     stamp is what keeps the pane on the row the user actually selected
-    (ODR-0031).
+    (ODR-31).
     """
     import threading
 
     result = actions.run_coverage(coverage_project, "cov@cov.1")
     real = data.read_coverage_report(coverage_project, result["report_id"])
     slow_id, fast_id = "COV_ODR0031_SLOW", "COV_ODR0031_FAST"
-    payloads = {slow_id: dict(real, report_id=slow_id),
-                fast_id: dict(real, report_id=fast_id)}
+    payloads = {
+        slow_id: dict(real, report_id=slow_id),
+        fast_id: dict(real, report_id=fast_id),
+    }
 
     held = threading.Event()
     started = threading.Event()
@@ -1008,15 +1175,21 @@ def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: P
             await _wait_until(started.is_set, "the first report read to block")
             panel._show_report(fast_id)  # the read that lands first
             await _wait_until(
-                lambda: panel.report is not None and panel.report["report_id"] == fast_id,
+                lambda: (
+                    panel.report is not None and panel.report["report_id"] == fast_id
+                ),
                 "the new report to render",
             )
             held.set()
-            await _wait_until(lambda: len(delivered) >= 2, "both report reads to deliver")
+            await _wait_until(
+                lambda: len(delivered) >= 2, "both report reads to deliver"
+            )
 
             assert delivered == [fast_id, slow_id]
             assert panel.report is not None and panel.report["report_id"] == fast_id
-            headline = _static_text(panel.query_one("#coverage-report-headline", Static))
+            headline = _static_text(
+                panel.query_one("#coverage-report-headline", Static)
+            )
             assert fast_id in headline
             assert slow_id not in headline
 
@@ -1026,9 +1199,10 @@ def test_coverage_report_drops_a_read_a_newer_row_superseded(coverage_project: P
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
-def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Project,
-                                                                 monkeypatch) -> None:
+@pytest.mark.bug("ODR-31")
+def test_release_preview_drops_a_read_a_newer_profile_superseded(
+    project: Project, monkeypatch
+) -> None:
     """A preview for the profile the user left must not answer for the new one."""
     import threading
 
@@ -1042,8 +1216,11 @@ def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Projec
             if not held.wait(10):
                 raise AssertionError("test never released the slow preview")
         members = 1 if slow_for and profile == slow_for[0] else 3
-        return {"members": [{"file_id": f"FIL_{index}"} for index in range(members)],
-                "member_bytes": 1024 * members, "exclusions": []}
+        return {
+            "members": [{"file_id": f"FIL_{index}"} for index in range(members)],
+            "member_bytes": 1024 * members,
+            "exclusions": [],
+        }
 
     monkeypatch.setattr(data, "release_preview", gated_preview)
 
@@ -1074,8 +1251,10 @@ def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Projec
             await _wait_until(started.is_set, "the first preview to block")
             select.value = fast
             await _wait_until(
-                lambda: "3 member file(s)" in _static_text(
-                    panel.query_one("#release-preview-summary", Static)),
+                lambda: (
+                    "3 member file(s)"
+                    in _static_text(panel.query_one("#release-preview-summary", Static))
+                ),
                 "the new preview to render",
             )
             held.set()
@@ -1091,9 +1270,10 @@ def test_release_preview_drops_a_read_a_newer_profile_superseded(project: Projec
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
-def test_export_preview_drops_a_read_a_newer_filter_set_superseded(project: Project,
-                                                                   monkeypatch) -> None:
+@pytest.mark.bug("ODR-31")
+def test_export_preview_drops_a_read_a_newer_filter_set_superseded(
+    project: Project, monkeypatch
+) -> None:
     """The same stamp covers the export preview's filter-driven read."""
     import threading
 
@@ -1139,12 +1319,16 @@ def test_export_preview_drops_a_read_a_newer_filter_set_superseded(project: Proj
             field.value = fast
             panel._start_export_preview()  # the read that lands first
             await _wait_until(
-                lambda: "3 file(s)" in _static_text(
-                    panel.query_one("#export-preview-summary", Static)),
+                lambda: (
+                    "3 file(s)"
+                    in _static_text(panel.query_one("#export-preview-summary", Static))
+                ),
                 "the new export preview to render",
             )
             held.set()
-            await _wait_until(lambda: len(delivered) >= 2, "both export previews to deliver")
+            await _wait_until(
+                lambda: len(delivered) >= 2, "both export previews to deliver"
+            )
 
             assert delivered[0] == panel._request_key
             assert delivered[1] != delivered[0]

@@ -89,22 +89,29 @@ class DatasetAsset:
 
 @dataclass
 class ImportPlan:
-    tables: dict[str, list[dict[str, Any]]] = field(default_factory=lambda: {
-        "organisms": [],
-        "samples": [],
-        "assemblies": [],
-        "annotations": [],
-        "accessions": [],
-    })
+    tables: dict[str, list[dict[str, Any]]] = field(
+        default_factory=lambda: {
+            "organisms": [],
+            "samples": [],
+            "assemblies": [],
+            "annotations": [],
+            "accessions": [],
+        }
+    )
     assets: list[DatasetAsset] = field(default_factory=list)
     assembly_ids: dict[str, str] = field(default_factory=dict)
     annotation_ids: dict[str, str] = field(default_factory=dict)
     canonical_accessions: dict[str, str] = field(default_factory=dict)
     assembly_records: list[dict[str, Any]] = field(default_factory=list)
     annotation_records: list[dict[str, Any]] = field(default_factory=list)
-    new_ids: dict[str, int] = field(default_factory=lambda: {
-        "organism": 0, "sample": 0, "assembly": 0, "annotation": 0,
-    })
+    new_ids: dict[str, int] = field(
+        default_factory=lambda: {
+            "organism": 0,
+            "sample": 0,
+            "assembly": 0,
+            "annotation": 0,
+        }
+    )
 
     @property
     def record_count(self) -> int:
@@ -137,7 +144,9 @@ def _read_report_handle(handle: Any, source_name: str) -> list[dict[str, Any]]:
                 if isinstance(row, dict):
                     records.append(row)
         except UnicodeDecodeError as exc:
-            raise ValidationError(f"NCBI report is not UTF-8 text: {source_name}") from exc
+            raise ValidationError(
+                f"NCBI report is not UTF-8 text: {source_name}"
+            ) from exc
         return records
 
     try:
@@ -161,7 +170,9 @@ def _read_report_handle(handle: Any, source_name: str) -> list[dict[str, Any]]:
                 try:
                     row = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    raise ValidationError(f"{source_name}: invalid JSON on line {line_no}: {exc}") from exc
+                    raise ValidationError(
+                        f"{source_name}: invalid JSON on line {line_no}: {exc}"
+                    ) from exc
                 if isinstance(row, dict):
                     records.append(row)
             return records
@@ -186,7 +197,9 @@ def _read_report_tsv(handle: Any, path: Path) -> list[dict[str, Any]]:
 
 
 def _tsv_row_to_report(row: dict[str, str]) -> dict[str, Any]:
-    normalized = {_normalize_key(key): value for key, value in row.items() if key is not None}
+    normalized = {
+        _normalize_key(key): value for key, value in row.items() if key is not None
+    }
 
     def get(*names: str) -> str:
         for name in names:
@@ -209,8 +222,14 @@ def _tsv_row_to_report(row: dict[str, str]) -> dict[str, Any]:
         "assemblyInfo": {
             "assemblyLevel": get("assembly level", "level"),
             "assemblyMethod": get("assembly method"),
-            "biosample": {"accession": get("assembly biosample accession", "biosample accession", "biosample")},
-            "bioprojectAccession": get("assembly bioproject accession", "bioproject accession", "bioproject"),
+            "biosample": {
+                "accession": get(
+                    "assembly biosample accession", "biosample accession", "biosample"
+                )
+            },
+            "bioprojectAccession": get(
+                "assembly bioproject accession", "bioproject accession", "bioproject"
+            ),
             "pairedAssembly": {"accession": get("paired assembly accession")},
             "refseqCategory": get("refseq category", "reference status"),
             "releaseDate": get("assembly release date", "release date"),
@@ -222,26 +241,35 @@ def _tsv_row_to_report(row: dict[str, str]) -> dict[str, Any]:
 def _extract_metadata(report: dict[str, Any]) -> dict[str, Any]:
     assembly_info = _mapping(_pick(report, "assemblyInfo", "assembly_info"))
     organism = _mapping(_pick(report, "organism"))
-    biosample = _mapping(_pick(assembly_info, "biosample") or _pick(report, "biosample"))
+    biosample = _mapping(
+        _pick(assembly_info, "biosample") or _pick(report, "biosample")
+    )
     infra = _mapping(_pick(organism, "infraspecificNames", "infraspecific_names"))
     paired = _mapping(_pick(assembly_info, "pairedAssembly", "paired_assembly"))
     annotation_info = _mapping(_pick(report, "annotationInfo", "annotation_info"))
     attributes = _biosample_attributes(biosample)
-    latitude, longitude = _lat_lon(attributes.get("lat_lon") or attributes.get("latitude_and_longitude"))
-    accession = _canonical_accession(str(
-        _pick(report, "accession", "currentAccession", "current_accession") or ""
-    ))
+    latitude, longitude = _lat_lon(
+        attributes.get("lat_lon") or attributes.get("latitude_and_longitude")
+    )
+    accession = _canonical_accession(
+        str(_pick(report, "accession", "currentAccession", "current_accession") or "")
+    )
     current = str(_pick(report, "currentAccession", "current_accession") or "").strip()
     paired_accession = str(_pick(paired, "accession") or "").strip()
     return {
         "accession": accession,
         "current_accession": _canonical_accession(current) if current else None,
-        "paired_accession": _canonical_accession(paired_accession) if paired_accession else None,
+        "paired_accession": _canonical_accession(paired_accession)
+        if paired_accession
+        else None,
         "scientific_name": _pick(organism, "organismName", "organism_name", "name"),
         "taxon_id": _pick(organism, "taxId", "tax_id", "taxid"),
-        "biosample_accession": _pick(biosample, "accession") or _pick(assembly_info, "biosampleAccession"),
-        "bioproject_accession": _pick(assembly_info, "bioprojectAccession", "bioproject_accession") or _pick(report,
-                                                                                                             "bioprojectAccession"),
+        "biosample_accession": _pick(biosample, "accession")
+        or _pick(assembly_info, "biosampleAccession"),
+        "bioproject_accession": _pick(
+            assembly_info, "bioprojectAccession", "bioproject_accession"
+        )
+        or _pick(report, "bioprojectAccession"),
         "strain": _pick(infra, "strain") or attributes.get("strain"),
         "isolate": _pick(infra, "isolate") or attributes.get("isolate"),
         "cultivar": _pick(infra, "cultivar") or attributes.get("cultivar"),
@@ -255,13 +283,18 @@ def _extract_metadata(report: dict[str, Any]) -> dict[str, Any]:
         "assembly_level": _pick(assembly_info, "assemblyLevel", "assembly_level"),
         "assembly_method": _pick(assembly_info, "assemblyMethod", "assembly_method"),
         "submitter": _pick(assembly_info, "submitter") or _pick(report, "submitter"),
-        "release_date": _pick(assembly_info, "releaseDate", "release_date") or _pick(report, "releaseDate"),
-        "reference_status": _pick(assembly_info, "refseqCategory", "refseq_category", "referenceStatus"),
+        "release_date": _pick(assembly_info, "releaseDate", "release_date")
+        or _pick(report, "releaseDate"),
+        "reference_status": _pick(
+            assembly_info, "refseqCategory", "refseq_category", "referenceStatus"
+        ),
         "source_database": _pick(report, "sourceDatabase", "source_database"),
         "assembly_status": _pick(assembly_info, "assemblyStatus", "assembly_status"),
         "assembly_type": _pick(assembly_info, "assemblyType", "assembly_type"),
         "annotation": {
-            "provider": _pick(annotation_info, "provider", "name", "annotationProvider"),
+            "provider": _pick(
+                annotation_info, "provider", "name", "annotationProvider"
+            ),
             "version": _pick(annotation_info, "version", "annotationVersion"),
             "release_date": _pick(annotation_info, "releaseDate", "release_date"),
         },
@@ -277,7 +310,9 @@ def _biosample_attributes(biosample: dict[str, Any]) -> dict[str, str]:
         for item in values:
             if not isinstance(item, dict):
                 continue
-            name = str(_pick(item, "name", "attributeName", "harmonizedName") or "").strip()
+            name = str(
+                _pick(item, "name", "attributeName", "harmonizedName") or ""
+            ).strip()
             value = str(_pick(item, "value", "attributeValue") or "").strip()
             if name and value:
                 result[_normalize_key(name)] = value
@@ -292,8 +327,12 @@ def _deduplicate_reports(reports: Sequence[dict[str, Any]]) -> list[dict[str, An
         accession = meta["accession"]
         if not accession:
             continue
-        related = _unique([accession, meta.get("current_accession"), meta.get("paired_accession")])
-        canonical_key = next((aliases[item] for item in related if item in aliases), accession)
+        related = _unique(
+            [accession, meta.get("current_accession"), meta.get("paired_accession")]
+        )
+        canonical_key = next(
+            (aliases[item] for item in related if item in aliases), accession
+        )
         current = by_accession.get(canonical_key)
         if current is None:
             by_accession[canonical_key] = report
@@ -304,7 +343,9 @@ def _deduplicate_reports(reports: Sequence[dict[str, Any]]) -> list[dict[str, An
     return list(by_accession.values())
 
 
-def _collect_accessions(values: Sequence[str], accession_file: str | Path | None) -> list[str]:
+def _collect_accessions(
+    values: Sequence[str], accession_file: str | Path | None
+) -> list[str]:
     collected = list(values)
     if accession_file:
         path = Path(accession_file)
@@ -335,9 +376,9 @@ def _split_accession(value: str) -> tuple[str, int | None]:
 
 
 def _select_canonical_assembly_accession(
-        current: dict[str, Any],
-        related: Sequence[str],
-        primary: str,
+    current: dict[str, Any],
+    related: Sequence[str],
+    primary: str,
 ) -> str:
     """Choose a stable canonical accession without arrival-order rewrites."""
     normalized = [_canonical_accession(value) for value in related if value]
@@ -363,11 +404,11 @@ def _assembly_asset_role(role: str, accession: str, canonical: str) -> str:
 
 
 def _annotation_identity(
-        assembly_id: str,
-        accession: str,
-        provider: str,
-        version: int,
-        release_date: str | None,
+    assembly_id: str,
+    accession: str,
+    provider: str,
+    version: int,
+    release_date: str | None,
 ) -> str:
     document = {
         "assembly_id": assembly_id,
@@ -385,7 +426,9 @@ def _metadata_identity(meta: dict[str, Any], accession: str) -> str:
     document = dict(meta)
     document["accession"] = _canonical_accession(accession)
     return hashlib.sha256(
-        json.dumps(document, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        json.dumps(document, ensure_ascii=False, sort_keys=True, default=str).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -399,7 +442,11 @@ def _accession_version(value: str) -> int | None:
 
 
 def _assembly_namespace(accession: str) -> str:
-    return "NCBI_RefSeq_Assembly" if accession.upper().startswith("GCF_") else "NCBI_GenBank_Assembly"
+    return (
+        "NCBI_RefSeq_Assembly"
+        if accession.upper().startswith("GCF_")
+        else "NCBI_GenBank_Assembly"
+    )
 
 
 def _normalize_assembly_level(value: Any) -> str | None:
@@ -435,7 +482,14 @@ def _normalize_source_database(value: Any, accession: str) -> str:
 
 def _normalize_sex(value: Any) -> str | None:
     normalized = str(value or "").strip().casefold()
-    if normalized in {"female", "male", "hermaphrodite", "unknown", "not collected", "not applicable"}:
+    if normalized in {
+        "female",
+        "male",
+        "hermaphrodite",
+        "unknown",
+        "not collected",
+        "not applicable",
+    }:
         return normalized
     return "unknown" if normalized else None
 
@@ -460,7 +514,11 @@ def _date_only(value: Any) -> str | None:
 
 def _lat_lon(value: Any) -> tuple[float | None, float | None]:
     text = str(value or "").strip()
-    match = re.search(r"([+-]?\d+(?:\.\d+)?)\s*([NS])?\s+([+-]?\d+(?:\.\d+)?)\s*([EW])?", text, re.IGNORECASE)
+    match = re.search(
+        r"([+-]?\d+(?:\.\d+)?)\s*([NS])?\s+([+-]?\d+(?:\.\d+)?)\s*([EW])?",
+        text,
+        re.IGNORECASE,
+    )
     if not match:
         return None, None
     lat = float(match.group(1))
@@ -493,7 +551,9 @@ def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _merge_nonempty(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+def _merge_nonempty(
+    existing: dict[str, Any], incoming: dict[str, Any]
+) -> dict[str, Any]:
     result = dict(existing or {})
     for key, value in incoming.items():
         if value not in (None, ""):
@@ -541,9 +601,13 @@ def _float_or_none(value: Any) -> float | None:
 def _report_has_accession(report: dict[str, Any], accession: str) -> bool:
     meta = _extract_metadata(report)
     canonical = _canonical_accession(accession)
-    return canonical in {meta.get("accession"), meta.get("current_accession"), meta.get("paired_accession")}
+    return canonical in {
+        meta.get("accession"),
+        meta.get("current_accession"),
+        meta.get("paired_accession"),
+    }
 
 
 def _chunks(values: Sequence[str], size: int) -> Iterator[list[str]]:
     for start in range(0, len(values), size):
-        yield list(values[start:start + size])
+        yield list(values[start : start + size])

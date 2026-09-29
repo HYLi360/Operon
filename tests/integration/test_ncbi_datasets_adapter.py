@@ -81,8 +81,11 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         document["schema_version"] = "1.0"
         fields = document["tables"]["assemblies"]["fields"]
         for name in (
-            "assembly_name", "bioproject_accession", "source_database",
-            "assembly_status", "assembly_type",
+            "assembly_name",
+            "bioproject_accession",
+            "source_database",
+            "assembly_status",
+            "assembly_type",
         ):
             fields.pop(name, None)
         text = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
@@ -97,15 +100,27 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             report_path = root / "assembly_data_report.jsonl"
             report_path.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
 
-            command = ["--project", str(root), "ncbi-datasets", "--input", str(report_path)]
+            command = [
+                "--project",
+                str(root),
+                "ncbi-datasets",
+                "--input",
+                str(report_path),
+            ]
             self.assertEqual(main(command), 0)
             self.assertEqual(main(command), 0)
 
             db = Database(root / "operon.sqlite")
             try:
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"], 1)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM samples")[0]["n"], 1)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 1)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"], 1
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM samples")[0]["n"], 1
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 1
+                )
                 assembly = dict(db.query("SELECT * FROM assemblies")[0])
                 self.assertEqual(assembly["assembly_accession"], "GCF_000001405.40")
                 self.assertEqual(assembly["assembly_version"], 40)
@@ -119,17 +134,37 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     (row["namespace"], row["accession"], row["internal_id"])
                     for row in db.query("SELECT * FROM accessions")
                 }
-                self.assertIn(("NCBI_Assembly", "GCF_000001405.40", assembly["assembly_id"]), aliases)
-                self.assertIn(("NCBI_GenBank_Assembly", "GCA_000001405.29", assembly["assembly_id"]), aliases)
+                self.assertIn(
+                    ("NCBI_Assembly", "GCF_000001405.40", assembly["assembly_id"]),
+                    aliases,
+                )
+                self.assertIn(
+                    (
+                        "NCBI_GenBank_Assembly",
+                        "GCA_000001405.29",
+                        assembly["assembly_id"],
+                    ),
+                    aliases,
+                )
                 self.assertEqual(assembly["bioproject_accession"], "PRJNA31257")
             finally:
                 db.close()
             self.assertEqual(main(["--project", str(root), "report", "metadata"]), 0)
-            self.assertIn("GCF_000001405.40", (root / "reports" / "metadata" / "assemblies.tsv").read_text())
-            upgraded_schema = yaml.safe_load((root / "config" / "schemas.yaml").read_text())
+            self.assertIn(
+                "GCF_000001405.40",
+                (root / "reports" / "metadata" / "assemblies.tsv").read_text(),
+            )
+            upgraded_schema = yaml.safe_load(
+                (root / "config" / "schemas.yaml").read_text()
+            )
             self.assertEqual(upgraded_schema["schema_version"], "1.4")
-            self.assertIn("bioproject_accession", upgraded_schema["tables"]["assemblies"]["fields"])
-            self.assertTrue(any((root / "raw" / "metadata" / "ncbi_datasets").iterdir()))
+            self.assertIn(
+                "bioproject_accession",
+                upgraded_schema["tables"]["assemblies"]["fields"],
+            )
+            self.assertTrue(
+                any((root / "raw" / "metadata" / "ncbi_datasets").iterdir())
+            )
 
     def test_import_zip_archives_dataset_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -139,25 +174,44 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             accession = "GCF_000001405.40"
             prefix = f"ncbi_dataset/data/{accession}"
             with zipfile.ZipFile(package, "w") as archive:
-                archive.writestr("ncbi_dataset/data/assembly_data_report.jsonl", json.dumps(_report()) + "\n")
+                archive.writestr(
+                    "ncbi_dataset/data/assembly_data_report.jsonl",
+                    json.dumps(_report()) + "\n",
+                )
                 archive.writestr(f"{prefix}/genomic.fna", ">chr1\nACGTACGT\n")
-                archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\nchr1\tNCBI\tgene\t1\t4\t.\t+\t.\tID=g1\n")
+                archive.writestr(
+                    f"{prefix}/genomic.gff",
+                    "##gff-version 3\nchr1\tNCBI\tgene\t1\t4\t.\t+\t.\tID=g1\n",
+                )
                 archive.writestr(f"{prefix}/protein.faa", ">p1\nMK\n")
                 archive.writestr(f"{prefix}/cds_from_genomic.fna", ">cds1\nATGAAA\n")
-                archive.writestr(f"{prefix}/sequence_report.jsonl", '{"sequence_name":"chr1"}\n')
+                archive.writestr(
+                    f"{prefix}/sequence_report.jsonl", '{"sequence_name":"chr1"}\n'
+                )
 
             command = ["--project", str(root), "ncbi-datasets", "--input", str(package)]
             self.assertEqual(main(command), 0)
             self.assertEqual(main(command), 0)
             db = Database(root / "operon.sqlite")
             try:
-                files = [dict(row) for row in db.query("SELECT * FROM files ORDER BY file_role")]
+                files = [
+                    dict(row)
+                    for row in db.query("SELECT * FROM files ORDER BY file_role")
+                ]
                 self.assertEqual(len(files), 5)
                 self.assertEqual(
                     {row["file_role"] for row in files},
-                    {"genome_fasta", "annotation_gff3", "protein_fasta", "cds_fasta", "assembly_report"},
+                    {
+                        "genome_fasta",
+                        "annotation_gff3",
+                        "protein_fasta",
+                        "cds_fasta",
+                        "assembly_report",
+                    },
                 )
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM annotations")[0]["n"], 1)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM annotations")[0]["n"], 1
+                )
                 assembly = dict(db.query("SELECT * FROM assemblies")[0])
                 annotation = dict(db.query("SELECT * FROM annotations")[0])
                 self.assertIsNotNone(assembly["fasta_file_id"])
@@ -176,17 +230,33 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             legacy_schema = self._make_schema_legacy(root)
             report_path = root / "report.jsonl"
             report_path.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
-            self.assertEqual(main([
-                "--project", str(root), "ncbi-datasets", "--input", str(report_path), "--dry-run"
-            ]), 0)
+            self.assertEqual(
+                main(
+                    [
+                        "--project",
+                        str(root),
+                        "ncbi-datasets",
+                        "--input",
+                        str(report_path),
+                        "--dry-run",
+                    ]
+                ),
+                0,
+            )
             db = Database(root / "operon.sqlite")
             try:
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 0)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"], 0)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 0
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"], 0
+                )
             finally:
                 db.close()
             self.assertFalse((root / "raw" / "metadata").exists())
-            self.assertEqual((root / "config" / "schemas.yaml").read_text(), legacy_schema)
+            self.assertEqual(
+                (root / "config" / "schemas.yaml").read_text(), legacy_schema
+            )
 
     def test_zip_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,7 +274,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     ValidationError, "unsafe path in NCBI dataset ZIP"
                 ):
                     run_ncbi_datasets_adapter(
-                        db, load_project(root), inputs=[str(package)],
+                        db,
+                        load_project(root),
+                        inputs=[str(package)],
                     )
             finally:
                 db.close()
@@ -216,22 +288,39 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             first = root / "first.jsonl"
             second = root / "second.jsonl"
             previous = _report("GCF_000001405.39")
-            previous["assemblyInfo"]["pairedAssembly"] = {"accession": "GCA_000001405.28"}
+            previous["assemblyInfo"]["pairedAssembly"] = {
+                "accession": "GCA_000001405.28"
+            }
             first.write_text(json.dumps(previous) + "\n", encoding="utf-8")
             updated = _report("GCF_000001405.40")
-            updated["assemblyInfo"]["pairedAssembly"] = {"accession": "GCA_000001405.29"}
+            updated["assemblyInfo"]["pairedAssembly"] = {
+                "accession": "GCA_000001405.29"
+            }
             second.write_text(json.dumps(updated) + "\n", encoding="utf-8")
-            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(first)]), 0)
-            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(second)]), 0)
+            self.assertEqual(
+                main(["--project", str(root), "ncbi-datasets", "--input", str(first)]),
+                0,
+            )
+            self.assertEqual(
+                main(["--project", str(root), "ncbi-datasets", "--input", str(second)]),
+                0,
+            )
             db = Database(root / "operon.sqlite")
             try:
-                assemblies = [dict(row) for row in db.query(
-                    "SELECT assembly_id, assembly_accession, assembly_version, sample_id "
-                    "FROM assemblies ORDER BY assembly_version"
-                )]
+                assemblies = [
+                    dict(row)
+                    for row in db.query(
+                        "SELECT assembly_id, assembly_accession, assembly_version, sample_id "
+                        "FROM assemblies ORDER BY assembly_version"
+                    )
+                ]
                 self.assertEqual(len(assemblies), 2)
-                self.assertEqual([row["assembly_version"] for row in assemblies], [39, 40])
-                self.assertNotEqual(assemblies[0]["assembly_id"], assemblies[1]["assembly_id"])
+                self.assertEqual(
+                    [row["assembly_version"] for row in assemblies], [39, 40]
+                )
+                self.assertNotEqual(
+                    assemblies[0]["assembly_id"], assemblies[1]["assembly_id"]
+                )
                 self.assertEqual(assemblies[0]["sample_id"], assemblies[1]["sample_id"])
             finally:
                 db.close()
@@ -271,7 +360,10 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             )
             self.assertEqual(result, destination)
             self.assertTrue(zipfile.is_zipfile(destination))
-            self.assertIn("/datasets/v2/genome/accession/GCF_000001405.40/download", session.calls[0][0])
+            self.assertIn(
+                "/datasets/v2/genome/accession/GCF_000001405.40/download",
+                session.calls[0][0],
+            )
             self.assertEqual(
                 session.calls[0][1]["params"],
                 [("include_annotation_type", "GENOME_FASTA")],
@@ -297,7 +389,15 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 side_effect=AssertionError("whole-package extraction must not be used"),
             ):
                 self.assertEqual(
-                    main(["--project", str(root), "ncbi-datasets", "--input", str(package)]),
+                    main(
+                        [
+                            "--project",
+                            str(root),
+                            "ncbi-datasets",
+                            "--input",
+                            str(package),
+                        ]
+                    ),
                     0,
                 )
 
@@ -305,14 +405,20 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "assembly_data_report.jsonl"
             path.write_text(json.dumps(_report()) + "\n", encoding="utf-8")
-            with patch.object(Path, "read_text", side_effect=AssertionError("read_text is not streaming")):
+            with patch.object(
+                Path,
+                "read_text",
+                side_effect=AssertionError("read_text is not streaming"),
+            ):
                 records = _read_report_file(path)
             self.assertEqual(len(records), 1)
             self.assertEqual(records[0]["accession"], "GCF_000001405.40")
 
     def test_disk_preflight_reports_actionable_error(self):
         usage = type("DiskUsage", (), {"free": 1024})()
-        with patch("operon.adapters.ncbi_datasets.shutil.disk_usage", return_value=usage):
+        with patch(
+            "operon.adapters.ncbi_datasets.shutil.disk_usage", return_value=usage
+        ):
             with self.assertRaisesRegex(
                 ValidationError,
                 r"insufficient space.*--batch-size.*--no-preserve-source",
@@ -346,7 +452,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     report["assemblyInfo"]["pairedAssembly"] = {}
                     report["annotationInfo"] = {}
                     reports.append(report)
-                with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                with zipfile.ZipFile(
+                    destination, "w", compression=zipfile.ZIP_DEFLATED
+                ) as archive:
                     archive.writestr(
                         "ncbi_dataset/data/assembly_data_report.jsonl",
                         "".join(json.dumps(report) + "\n" for report in reports),
@@ -355,7 +463,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                         prefix = f"ncbi_dataset/data/{accession}"
                         archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
                         archive.writestr(f"{prefix}/protein.faa", ">p1\nMK\n")
-                        archive.writestr(f"{prefix}/cds_from_genomic.fna", ">cds1\nATGAAA\n")
+                        archive.writestr(
+                            f"{prefix}/cds_from_genomic.fna", ">cds1\nATGAAA\n"
+                        )
                 return destination
 
             def fake_parallel_download(batches, staging_dir, **kwargs):
@@ -388,10 +498,18 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 self.assertEqual(len(download_dirs), 30)
                 self.assertEqual(result["discovered_files"], 900)
                 self.assertEqual(len(result["archived_files"]), 900)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 300)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM annotations")[0]["n"], 300)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM files")[0]["n"], 900)
-                self.assertEqual(db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"], 1)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM assemblies")[0]["n"], 300
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM annotations")[0]["n"], 300
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM files")[0]["n"], 900
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) AS n FROM organisms")[0]["n"], 1
+                )
             finally:
                 db.close()
             for directory in download_dirs:
@@ -399,7 +517,6 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             asset_staging = project.raw_root / ".ncbi_datasets_staging"
             if asset_staging.exists():
                 self.assertEqual(list(asset_staging.iterdir()), [])
-
 
     def test_download_retries_ssl_record_layer_failure(self):
         memory = io.BytesIO()
@@ -428,7 +545,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             def get(self, url, **kwargs):
                 self.calls += 1
                 if self.calls == 1:
-                    raise requests.exceptions.SSLError("[SSL] record layer failure (_ssl.c:2658)")
+                    raise requests.exceptions.SSLError(
+                        "[SSL] record layer failure (_ssl.c:2658)"
+                    )
                 return FakeResponse()
 
             def close(self):
@@ -478,8 +597,14 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 side_effect=fake_batch_download,
             ):
                 completed = download_ncbi_datasets_parallel(
-                    [["GCF_000000001.1"], ["GCF_000000002.1"], ["GCF_000000003.1"],
-                     ["GCF_000000004.1"], ["GCF_000000005.1"], ["GCF_000000006.1"]],
+                    [
+                        ["GCF_000000001.1"],
+                        ["GCF_000000002.1"],
+                        ["GCF_000000003.1"],
+                        ["GCF_000000004.1"],
+                        ["GCF_000000005.1"],
+                        ["GCF_000000006.1"],
+                    ],
                     staging,
                     max_workers=2,
                     max_retries=0,
@@ -542,10 +667,14 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             if consumed[0] >= 2:
                 raise KeyboardInterrupt  # simulated Ctrl-C mid-batch
 
-        with tempfile.TemporaryDirectory() as tmp, patch(
-            "operon.adapters._ncbi_download._download_batch_aiohttp",
-            side_effect=fake_batch_download,
-        ), self.assertRaises(KeyboardInterrupt):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch(
+                "operon.adapters._ncbi_download._download_batch_aiohttp",
+                side_effect=fake_batch_download,
+            ),
+            self.assertRaises(KeyboardInterrupt),
+        ):
             download_ncbi_datasets_parallel(
                 [[f"GCF_{number:09d}.1"] for number in range(1, 51)],
                 Path(tmp),
@@ -559,11 +688,15 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         # completion queue used to deadlock the consumer's thread join and
         # hang interpreter shutdown ("Exception ignored while joining a
         # thread in _thread._shutdown()").
-        leftovers = [t for t in threading.enumerate() if t.name == "operon-ncbi-download"]
+        leftovers = [
+            t for t in threading.enumerate() if t.name == "operon-ncbi-download"
+        ]
         deadline = time.time() + 5
         while leftovers and time.time() < deadline:
             time.sleep(0.05)
-            leftovers = [t for t in threading.enumerate() if t.name == "operon-ncbi-download"]
+            leftovers = [
+                t for t in threading.enumerate() if t.name == "operon-ncbi-download"
+            ]
         self.assertFalse(leftovers)
 
     def test_download_batch_stops_immediately_when_cancelled(self):
@@ -591,9 +724,14 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         # Real NCBI packages name members "<accession>_<description>.ext"; the
         # versioned accession (from the per-accession directory) must win over
         # the truncated unversioned match inside the filename.
-        path = Path("ncbi_dataset/data/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna")
+        path = Path(
+            "ncbi_dataset/data/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna"
+        )
         self.assertEqual(_accession_from_path(path), "GCF_000001405.40")
-        self.assertEqual(_accession_from_path(Path("data/GCF_000001405/genomic.gff")), "GCF_000001405")
+        self.assertEqual(
+            _accession_from_path(Path("data/GCF_000001405/genomic.gff")),
+            "GCF_000001405",
+        )
 
     def test_already_archived_accessions_are_skipped_before_download(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -616,10 +754,14 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                             json.dumps(_report(accession)) + "\n",
                         )
                         prefix = f"ncbi_dataset/data/{accession}"
-                        archive.writestr(f"{prefix}/{accession}_genomic.fna", ">c1\nATGC\n")
+                        archive.writestr(
+                            f"{prefix}/{accession}_genomic.fna", ">c1\nATGC\n"
+                        )
                         archive.writestr(f"{prefix}/sequence_report.jsonl", "{}\n")
                         if with_annotation[0]:
-                            archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
+                            archive.writestr(
+                                f"{prefix}/genomic.gff", "##gff-version 3\n"
+                            )
                     on_complete(batch, destination)
                 return []
 
@@ -630,7 +772,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     side_effect=fake_parallel,
                 ):
                     first = run_ncbi_datasets_adapter(
-                        db, project, accessions=[accession],
+                        db,
+                        project,
+                        accessions=[accession],
                         includes=["genome", "sequence-report"],
                     )
                     self.assertEqual(first["skipped_existing"], [])
@@ -640,14 +784,18 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
 
                     # Same include set, fully archived: no download attempted.
                     second = run_ncbi_datasets_adapter(
-                        db, project, accessions=[accession],
+                        db,
+                        project,
+                        accessions=[accession],
                         includes=["genome", "sequence-report"],
                     )
                     self.assertEqual(second["skipped_existing"], [accession])
                     self.assertEqual(len(calls), 1)
 
                     preview = run_ncbi_datasets_adapter(
-                        db, project, accessions=[accession],
+                        db,
+                        project,
+                        accessions=[accession],
                         includes=["genome", "sequence-report", "gff3"],
                         plan_only=True,
                     )
@@ -657,7 +805,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
 
                     # A widened include set downloads only the missing role.
                     third = run_ncbi_datasets_adapter(
-                        db, project, accessions=[accession],
+                        db,
+                        project,
+                        accessions=[accession],
                         includes=["genome", "sequence-report", "gff3"],
                     )
                     self.assertEqual(third["skipped_existing"], [])
@@ -679,17 +829,28 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             }
             report_path = root / "report.jsonl"
             report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
-            command = ["--project", str(root), "ncbi-datasets", "--input", str(report_path)]
+            command = [
+                "--project",
+                str(root),
+                "ncbi-datasets",
+                "--input",
+                str(report_path),
+            ]
             self.assertEqual(main(command), 0)
             self.assertEqual(main(command), 0)
             db = Database(root / "operon.sqlite")
             try:
-                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 1)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 1
+                )
                 annotation = db.query("SELECT * FROM annotations")[0]
-                self.assertEqual(annotation["annotation_source"], "National Institute of Genetics")
+                self.assertEqual(
+                    annotation["annotation_source"], "National Institute of Genetics"
+                )
                 self.assertEqual(annotation["annotation_version"], 7)
                 self.assertEqual(
-                    db.query("SELECT COUNT(*) n FROM ncbi_annotation_records")[0]["n"], 1,
+                    db.query("SELECT COUNT(*) n FROM ncbi_annotation_records")[0]["n"],
+                    1,
                 )
             finally:
                 db.close()
@@ -702,7 +863,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             gca = "GCA_000001405.29"
             gcf = "GCF_000001405.40"
 
-            def make_package(path: Path, accession: str, paired: str, report_text: str) -> None:
+            def make_package(
+                path: Path, accession: str, paired: str, report_text: str
+            ) -> None:
                 report = _report(accession)
                 report["assemblyInfo"]["pairedAssembly"] = {"accession": paired}
                 with zipfile.ZipFile(path, "w") as archive:
@@ -717,12 +880,30 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             gcf_package = root / "gcf.zip"
             make_package(gca_package, gca, gcf, '{"source":"GenBank"}\n')
             make_package(gcf_package, gcf, gca, '{"source":"RefSeq"}\n')
-            self.assertEqual(main([
-                "--project", str(root), "ncbi-datasets", "--input", str(gca_package),
-            ]), 0)
-            self.assertEqual(main([
-                "--project", str(root), "ncbi-datasets", "--input", str(gcf_package),
-            ]), 0)
+            self.assertEqual(
+                main(
+                    [
+                        "--project",
+                        str(root),
+                        "ncbi-datasets",
+                        "--input",
+                        str(gca_package),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                main(
+                    [
+                        "--project",
+                        str(root),
+                        "ncbi-datasets",
+                        "--input",
+                        str(gcf_package),
+                    ]
+                ),
+                0,
+            )
             db = Database(root / "operon.sqlite")
             try:
                 assembly = db.query("SELECT * FROM assemblies")[0]
@@ -735,7 +916,8 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     ["assembly_report", "assembly_report_genbank"],
                 )
                 self.assertEqual(
-                    db.query("SELECT COUNT(*) n FROM ncbi_assembly_records")[0]["n"], 2,
+                    db.query("SELECT COUNT(*) n FROM ncbi_assembly_records")[0]["n"],
+                    2,
                 )
             finally:
                 db.close()
@@ -758,8 +940,12 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             self.assertEqual(main(command), 0)
             db = Database(root / "operon.sqlite")
             try:
-                annotation_id = db.query("SELECT annotation_id FROM annotations")[0]["annotation_id"]
-                db.set_entity_state("annotation", annotation_id, "QC_COMPLETE", "test evidence")
+                annotation_id = db.query("SELECT annotation_id FROM annotations")[0][
+                    "annotation_id"
+                ]
+                db.set_entity_state(
+                    "annotation", annotation_id, "QC_COMPLETE", "test evidence"
+                )
             finally:
                 db.close()
             self.assertEqual(main(command), 0)
@@ -781,9 +967,18 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             report = _report()
             report["annotationInfo"]["provider"] = "National Institute of Genetics"
             report_path.write_text(json.dumps(report) + "\n", encoding="utf-8")
-            self.assertEqual(main([
-                "--project", str(root), "ncbi-datasets", "--input", str(report_path),
-            ]), 0)
+            self.assertEqual(
+                main(
+                    [
+                        "--project",
+                        str(root),
+                        "ncbi-datasets",
+                        "--input",
+                        str(report_path),
+                    ]
+                ),
+                0,
+            )
             project = load_project(root)
             db = Database(project.db_path)
             try:
@@ -792,27 +987,44 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 gcf_gff = root / "GCF_000001405.40_genomic.gff"
                 gcf_gff.write_text("##gff-version 3\n", encoding="utf-8")
                 ingest_file(
-                    db, project, gcf_gff, "annotation", original["annotation_id"],
-                    "annotation_gff3", source_url=(
-                        "ncbi-datasets:test:GCF_000001405.40/genomic.gff"
-                    ),
+                    db,
+                    project,
+                    gcf_gff,
+                    "annotation",
+                    original["annotation_id"],
+                    "annotation_gff3",
+                    source_url=("ncbi-datasets:test:GCF_000001405.40/genomic.gff"),
                 )
-                original = dict(db.query(
-                    "SELECT * FROM annotations WHERE annotation_id=?",
-                    (original["annotation_id"],),
-                )[0])
+                original = dict(
+                    db.query(
+                        "SELECT * FROM annotations WHERE annotation_id=?",
+                        (original["annotation_id"],),
+                    )[0]
+                )
                 duplicate_id = db.next_id("annotation")
                 duplicate = dict(original)
                 duplicate["annotation_id"] = duplicate_id
                 db.insert_row("annotations", duplicate)
-                db.insert_qc_result({
-                    "entity_type": "annotation", "entity_id": original["annotation_id"],
-                    "qc_stage": "test", "metric_name": "parseable", "metric_value": "1",
-                    "metric_numeric": 1.0, "metric_unit": None, "tool": "test",
-                    "tool_version": "1", "parameter_set": "test", "evaluated_at": now_iso(),
-                })
+                db.insert_qc_result(
+                    {
+                        "entity_type": "annotation",
+                        "entity_id": original["annotation_id"],
+                        "qc_stage": "test",
+                        "metric_name": "parseable",
+                        "metric_value": "1",
+                        "metric_numeric": 1.0,
+                        "metric_unit": None,
+                        "tool": "test",
+                        "tool_version": "1",
+                        "parameter_set": "test",
+                        "evaluated_at": now_iso(),
+                    }
+                )
                 db.set_entity_state(
-                    "annotation", original["annotation_id"], "CHECKSUM_VERIFIED", "simulated downgrade",
+                    "annotation",
+                    original["annotation_id"],
+                    "CHECKSUM_VERIFIED",
+                    "simulated downgrade",
                 )
                 db.conn.execute(
                     "UPDATE assemblies SET assembly_accession='GCA_000001405.29', "
@@ -823,8 +1035,13 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 sequence_report = root / "GCA_000001405.29_sequence_report.jsonl"
                 sequence_report.write_text("{}\n", encoding="utf-8")
                 report_file = ingest_file(
-                    db, project, sequence_report, "assembly", assembly["assembly_id"],
-                    "assembly_report", source_url=(
+                    db,
+                    project,
+                    sequence_report,
+                    "assembly",
+                    assembly["assembly_id"],
+                    "assembly_report",
+                    source_url=(
                         "ncbi-datasets:test:GCA_000001405.29/sequence_report.jsonl"
                     ),
                 )
@@ -835,12 +1052,16 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 self.assertEqual(len(preview["file_role_updates"]), 1)
                 result = apply_ncbi_reconciliation(db, project, actor="test")
 
-                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2
+                )
                 supersession = db.query(
                     "SELECT * FROM entity_supersessions WHERE object_type='annotation'"
                 )[0]
                 self.assertEqual(supersession["object_id"], duplicate_id)
-                self.assertEqual(supersession["superseded_by_id"], original["annotation_id"])
+                self.assertEqual(
+                    supersession["superseded_by_id"], original["annotation_id"]
+                )
                 repaired = db.query(
                     "SELECT assembly_accession, source_database FROM assemblies WHERE assembly_id=?",
                     (assembly["assembly_id"],),
@@ -848,18 +1069,21 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 self.assertEqual(repaired["assembly_accession"], "GCF_000001405.40")
                 self.assertEqual(repaired["source_database"], "RefSeq")
                 role = db.query(
-                    "SELECT file_role FROM files WHERE file_id=?", (report_file["file_id"],)
+                    "SELECT file_role FROM files WHERE file_id=?",
+                    (report_file["file_id"],),
                 )[0]["file_role"]
                 self.assertEqual(role, "assembly_report_genbank")
                 moved_rel = db.query(
-                    "SELECT relative_path FROM files WHERE file_id=?", (report_file["file_id"],)
+                    "SELECT relative_path FROM files WHERE file_id=?",
+                    (report_file["file_id"],),
                 )[0]["relative_path"]
                 self.assertIn("assembly_report_genbank", moved_rel)
                 self.assertTrue((root / moved_rel).exists())
                 state = db.get_entity_state("annotation", original["annotation_id"])
                 self.assertEqual(state, "QC_COMPLETE")
                 workflow = db.query(
-                    "SELECT status FROM workflow_runs WHERE run_id=?", (result["run_id"],)
+                    "SELECT status FROM workflow_runs WHERE run_id=?",
+                    (result["run_id"],),
                 )[0]
                 self.assertEqual(workflow["status"], "completed")
                 self.assertGreater(
@@ -870,19 +1094,24 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     0,
                 )
                 repeated = plan_ncbi_reconciliation(db)
-                self.assertEqual(repeated["summary"], {
-                    "annotation_supersessions": 0,
-                    "assembly_updates": 0,
-                    "file_role_updates": 0,
-                    "file_path_repairs": 0,
-                    "accession_primary_updates": 0,
-                    "state_restorations": 0,
-                    "warnings": 0,
-                })
+                self.assertEqual(
+                    repeated["summary"],
+                    {
+                        "annotation_supersessions": 0,
+                        "assembly_updates": 0,
+                        "file_role_updates": 0,
+                        "file_path_repairs": 0,
+                        "accession_primary_updates": 0,
+                        "state_restorations": 0,
+                        "warnings": 0,
+                    },
+                )
             finally:
                 db.close()
 
-    def test_paired_packages_with_identical_annotation_info_get_distinct_annotations(self):
+    def test_paired_packages_with_identical_annotation_info_get_distinct_annotations(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._init(root)
@@ -907,11 +1136,13 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             gca_package = root / "gca.zip"
             gcf_package = root / "gcf.zip"
             write_package(
-                gca_package, gca,
+                gca_package,
+                gca,
                 "##gff-version 3\nchr1\tGenBank\tgene\t1\t4\t.\t+\t.\tID=gca1\n",
             )
             write_package(
-                gcf_package, gcf,
+                gcf_package,
+                gcf,
                 "##gff-version 3\nchr1\tRefSeq\tgene\t1\t9\t.\t+\t.\tID=gcf1\n",
             )
 
@@ -923,8 +1154,12 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             self.assertEqual(main([*command, str(gcf_package)]), 0)
             db = Database(root / "operon.sqlite")
             try:
-                self.assertEqual(db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1)
-                annotations = [dict(row) for row in db.query("SELECT * FROM annotations")]
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1
+                )
+                annotations = [
+                    dict(row) for row in db.query("SELECT * FROM annotations")
+                ]
                 self.assertEqual(len(annotations), 2)
                 for annotation in annotations:
                     self.assertIsNotNone(annotation["gff_file_id"])
@@ -972,8 +1207,12 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             self.assertEqual(main(command), 0)
             db = Database(root / "operon.sqlite")
             try:
-                self.assertEqual(db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1)
-                self.assertEqual(db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2)
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM assemblies")[0]["n"], 1
+                )
+                self.assertEqual(
+                    db.query("SELECT COUNT(*) n FROM annotations")[0]["n"], 2
+                )
                 self.assertEqual(
                     db.query(
                         "SELECT COUNT(*) n FROM files WHERE file_role='annotation_gff3'"
@@ -998,12 +1237,21 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     f"ncbi_dataset/data/{accession}/sequence_report.jsonl",
                     '{"sequence_name":"chr1"}\n',
                 )
-            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(package)]), 0)
+            self.assertEqual(
+                main(
+                    ["--project", str(root), "ncbi-datasets", "--input", str(package)]
+                ),
+                0,
+            )
             project = load_project(root)
             db = Database(project.db_path)
             try:
                 assembly = dict(db.query("SELECT * FROM assemblies")[0])
-                row = dict(db.query("SELECT * FROM files WHERE file_role LIKE 'assembly_report%'")[0])
+                row = dict(
+                    db.query(
+                        "SELECT * FROM files WHERE file_role LIKE 'assembly_report%'"
+                    )[0]
+                )
                 old_path = root / row["relative_path"]
                 self.assertTrue(old_path.exists())
                 # Simulate a pre-fix reconciliation: role renamed in the
@@ -1018,21 +1266,35 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 other = root / "other_sequence_report.jsonl"
                 other.write_text('{"sequence_name":"chr2"}\n', encoding="utf-8")
                 new_row = ingest_file(
-                    db, project, other, "assembly", assembly["assembly_id"], "assembly_report",
+                    db,
+                    project,
+                    other,
+                    "assembly",
+                    assembly["assembly_id"],
+                    "assembly_report",
                 )
-                renamed_path = old_path.with_name(canonical_filename(
-                    assembly["assembly_id"], "assembly_report_genbank",
-                    row["format"], row["compression"],
-                ))
+                renamed_path = old_path.with_name(
+                    canonical_filename(
+                        assembly["assembly_id"],
+                        "assembly_report_genbank",
+                        row["format"],
+                        row["compression"],
+                    )
+                )
                 # The plain canonical path now holds the newly ingested bytes,
                 # while the renamed file keeps its own bytes at its own path.
                 self.assertEqual(sha256_file(old_path), sha256_file(other))
                 self.assertTrue(renamed_path.exists())
                 self.assertEqual(sha256_file(renamed_path), row["sha256"])
-                relocated = dict(db.query(
-                    "SELECT * FROM files WHERE file_id=?", (row["file_id"],),
-                )[0])
-                self.assertEqual(relocated["relative_path"], str(renamed_path.relative_to(root)))
+                relocated = dict(
+                    db.query(
+                        "SELECT * FROM files WHERE file_id=?",
+                        (row["file_id"],),
+                    )[0]
+                )
+                self.assertEqual(
+                    relocated["relative_path"], str(renamed_path.relative_to(root))
+                )
                 self.assertEqual(new_row["file_role"], "assembly_report")
                 self.assertTrue((root / new_row["relative_path"]).exists())
                 audit = db.query(
@@ -1055,7 +1317,12 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     "ncbi_dataset/data/assembly_data_report.jsonl",
                     json.dumps(_report()) + "\n",
                 )
-            self.assertEqual(main(["--project", str(root), "ncbi-datasets", "--input", str(package)]), 0)
+            self.assertEqual(
+                main(
+                    ["--project", str(root), "ncbi-datasets", "--input", str(package)]
+                ),
+                0,
+            )
             project = load_project(root)
             db = Database(project.db_path)
             try:
@@ -1068,11 +1335,18 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 report = root / "sequence_report.jsonl"
                 report.write_text('{"sequence_name":"chr1"}\n', encoding="utf-8")
                 row = ingest_file(
-                    db, project, report, "assembly", assembly["assembly_id"], "assembly_report",
+                    db,
+                    project,
+                    report,
+                    "assembly",
+                    assembly["assembly_id"],
+                    "assembly_report",
                 )
                 quarantined = entity_dir / f"{orphan.name}.orphan-{orphan_sha[:12]}"
                 self.assertTrue(quarantined.exists())
-                self.assertEqual(quarantined.read_text(encoding="utf-8"), '{"leftover": true}\n')
+                self.assertEqual(
+                    quarantined.read_text(encoding="utf-8"), '{"leftover": true}\n'
+                )
                 # The canonical path now holds the newly ingested bytes.
                 self.assertEqual(sha256_file(orphan), sha256_file(report))
                 self.assertTrue((root / row["relative_path"]).exists())
@@ -1089,12 +1363,17 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
             project = load_project(root)
             db = Database(project.db_path)
             try:
-                with patch(
-                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
-                    side_effect=KeyboardInterrupt,
-                ), self.assertRaises(KeyboardInterrupt):
+                with (
+                    patch(
+                        "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                        side_effect=KeyboardInterrupt,
+                    ),
+                    self.assertRaises(KeyboardInterrupt),
+                ):
                     run_ncbi_datasets_adapter(
-                        db, project, accessions=["GCF_000001405.40"],
+                        db,
+                        project,
+                        accessions=["GCF_000001405.40"],
                     )
                 rows = db.query(
                     "SELECT run_id, status, error FROM workflow_runs WHERE step='ncbi_datasets_import'"
@@ -1120,9 +1399,13 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                             prefix = f"ncbi_dataset/data/{accession}"
                             archive.writestr(f"{prefix}/genomic.fna", ">c1\nATGC\n")
                             archive.writestr(f"{prefix}/sequence_report.jsonl", "{}\n")
-                            archive.writestr(f"{prefix}/genomic.gff", "##gff-version 3\n")
+                            archive.writestr(
+                                f"{prefix}/genomic.gff", "##gff-version 3\n"
+                            )
                             archive.writestr(f"{prefix}/protein.faa", ">p1\nMK\n")
-                            archive.writestr(f"{prefix}/cds_from_genomic.fna", ">c1\nATG\n")
+                            archive.writestr(
+                                f"{prefix}/cds_from_genomic.fna", ">c1\nATG\n"
+                            )
                         kwargs["on_complete"](batch, destination)
                     return []
 
@@ -1131,7 +1414,9 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                     side_effect=fake_parallel,
                 ):
                     result = run_ncbi_datasets_adapter(
-                        db, project, accessions=["GCF_000001405.40"],
+                        db,
+                        project,
+                        accessions=["GCF_000001405.40"],
                         resume_run_id=interrupted_run,
                     )
                 resumed = db.query(
@@ -1164,20 +1449,29 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                         "ncbi_dataset/data/assembly_data_report.jsonl",
                         json.dumps(_report(accession)) + "\n",
                     )
-                    archive.writestr(f"ncbi_dataset/data/{accession}/genomic.fna", ">c1\nATGC\n")
+                    archive.writestr(
+                        f"ncbi_dataset/data/{accession}/genomic.fna", ">c1\nATGC\n"
+                    )
                 kwargs["on_complete"](batch, destination)
             return []
 
         try:
-            with patch(
-                "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
-                side_effect=fake_parallel,
-            ), patch(
-                "operon.adapters.ncbi_datasets._ingest_dataset_asset",
-                side_effect=RuntimeError("ingest boom"),
-            ), self.assertRaises(RuntimeError):
+            with (
+                patch(
+                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                    side_effect=fake_parallel,
+                ),
+                patch(
+                    "operon.adapters.ncbi_datasets._ingest_dataset_asset",
+                    side_effect=RuntimeError("ingest boom"),
+                ),
+                self.assertRaises(RuntimeError),
+            ):
                 run_ncbi_datasets_adapter(
-                    db, project, accessions=["GCF_000001405.40"], includes=["genome"],
+                    db,
+                    project,
+                    accessions=["GCF_000001405.40"],
+                    includes=["genome"],
                 )
         except Exception:
             db.close()
@@ -1239,20 +1533,28 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
                 return []
 
             try:
-                with patch(
-                    "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
-                    side_effect=fake_parallel,
-                ), self.assertRaises(ValidationError) as caught:
+                with (
+                    patch(
+                        "operon.adapters.ncbi_datasets.download_ncbi_datasets_parallel",
+                        side_effect=fake_parallel,
+                    ),
+                    self.assertRaises(ValidationError) as caught,
+                ):
                     run_ncbi_datasets_adapter(
-                        db, project, accessions=[good, bad],
-                        includes=["genome"], batch_size=1,
+                        db,
+                        project,
+                        accessions=[good, bad],
+                        includes=["genome"],
+                        batch_size=1,
                     )
                 message = str(caught.value)
                 self.assertIn("1 NCBI download batch(es) failed", message)
                 self.assertIn(bad, message)
                 # The successfully imported batch stays archived.
                 self.assertEqual(
-                    db.query("SELECT assembly_accession FROM assemblies")[0]["assembly_accession"],
+                    db.query("SELECT assembly_accession FROM assemblies")[0][
+                        "assembly_accession"
+                    ],
                     good,
                 )
             finally:

@@ -137,12 +137,8 @@ def resolve_modal(entry: ParityEntry) -> type:
 
 def strict_mode() -> bool:
     """True when ``OPERON_PARITY_STRICT`` demands zero planned gaps."""
-    return os.environ.get("OPERON_PARITY_STRICT", "").lower() in {  # env-audit: developer switch
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    flag = os.environ.get("OPERON_PARITY_STRICT", "")  # env-audit: developer switch
+    return flag.lower() in {"1", "true", "yes", "on"}
 
 
 def strict_violations(registry: tuple[ParityEntry, ...] = ()) -> list[str]:
@@ -432,8 +428,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("report", "decisions"),
         STATUS_IMPLEMENTED,
         actions="data.list_decisions",
-        params={"profile": "decisions-profile",
-                "include_retired": "decisions-include-retired"},
+        params={
+            "profile": "decisions-profile",
+            "include_retired": "decisions-include-retired",
+        },
     ),
     ParityEntry(
         ("report", "qc"),
@@ -587,9 +585,9 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("import", "table"),
         STATUS_IMPLEMENTED,
         note="template mode writes directly; import mode gates Confirm behind "
-             "the mandatory preview (the CLI's tty --on-conflict prompt is an "
-             "explicit Select; actions.import_table re-runs the preview inside "
-             "the apply, like the fanout dry_run=False path)",
+        "the mandatory preview (the CLI's tty --on-conflict prompt is an "
+        "explicit Select; actions.import_table re-runs the preview inside "
+        "the apply, like the fanout dry_run=False path)",
         actions="actions.import_table",
         modal="operon.tui.screens.table_import::ImportTableModal",
         params={
@@ -608,14 +606,14 @@ REGISTRY: tuple[ParityEntry, ...] = (
         params={
             "record_id": "add-record-id (blank = allocate the next ID on confirm)",
             "field": "add-fields .field-key/.field-value rows "
-                     "(repeatable -> repeated --field)",
+            "(repeatable -> repeated --field)",
         },
     ),
     ParityEntry(
         ("add-accession",),
         STATUS_IMPLEMENTED,
         note="opened from the Entities screen; the selected entity prefills "
-             "--internal-type/--internal-id",
+        "--internal-type/--internal-id",
         actions="actions.add_accession",
         modal="operon.tui.screens.entities::AddAccessionModal",
         params={
@@ -631,9 +629,9 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("next-id",),
         STATUS_IMPLEMENTED,
         note="reserving an ID consumes it (unused reservations become gaps), so "
-             "the modal stays open after success to show the reserved ID and "
-             "Confirm is disabled; id reservation also happens inside the "
-             "import wizard",
+        "the modal stays open after success to show the reserved ID and "
+        "Confirm is disabled; id reservation also happens inside the "
+        "import wizard",
         actions="actions.reserve_next_id",
         modal="operon.tui.screens.entities::NextIdModal",
     ),
@@ -714,8 +712,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
         STATUS_IMPLEMENTED,
         actions="actions.compile_reference_set",
         modal="operon.tui.screens.taxonomy::CompileReferenceSetModal",
-        params={"profile": "taxonomy-compile-profile",
-                "taxonomy_version": "taxonomy-compile-taxonomy-version"},
+        params={
+            "profile": "taxonomy-compile-profile",
+            "taxonomy_version": "taxonomy-compile-taxonomy-version",
+        },
     ),
     ParityEntry(
         ("run-external",),
@@ -987,7 +987,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "and rows the manifest lists",
         actions="actions.export_metadata_report",
         modal="operon.tui.screens.entities::ExportMetadataModal",
-        params={"output": "metadata-output", "include_retired": "metadata-include-retired"},
+        params={
+            "output": "metadata-output",
+            "include_retired": "metadata-include-retired",
+        },
     ),
     ParityEntry(("timetree", "fetch"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),
     ParityEntry(("timetree", "calibrate"), STATUS_CLI_ONLY, note=_TIMETREE_CLI_ONLY),

@@ -38,12 +38,34 @@ from operon.workflow import finish_run, start_run
 
 CLASSIFICATION_KIND = "sequence_classification"
 
-_OPERATORS = {">=", "<=", ">", "<", "==", "!=", "in", "not_in", "between", "exists", "like"}
+_OPERATORS = {
+    ">=",
+    "<=",
+    ">",
+    "<",
+    "==",
+    "!=",
+    "in",
+    "not_in",
+    "between",
+    "exists",
+    "like",
+}
 
 _ROW_FIELDS = (
-    "alignment_id", "job_id", "analysis_name", "query_id", "subject_id",
-    "hit_rank", "query_start", "query_end", "subject_start", "subject_end",
-    "evalue", "bitscore", "percent_identity",
+    "alignment_id",
+    "job_id",
+    "analysis_name",
+    "query_id",
+    "subject_id",
+    "hit_rank",
+    "query_start",
+    "query_end",
+    "subject_start",
+    "subject_end",
+    "evalue",
+    "bitscore",
+    "percent_identity",
 )
 
 
@@ -146,7 +168,9 @@ def _validate_condition(condition: Any, where: str) -> None:
     if "any" in condition:
         group = condition["any"]
         if not isinstance(group, list) or not group:
-            raise ValidationError(f"{where}: 'any' must be a non-empty list of conditions")
+            raise ValidationError(
+                f"{where}: 'any' must be a non-empty list of conditions"
+            )
         for sub in group:
             _validate_condition(sub, where)
         return
@@ -164,38 +188,61 @@ def _validate_condition(condition: Any, where: str) -> None:
             f"from {sorted(_OPERATORS)}"
         )
     if operator in {"in", "not_in"} and not isinstance(condition.get("values"), list):
-        raise ValidationError(f"{where}: operator {operator!r} requires a 'values' list")
+        raise ValidationError(
+            f"{where}: operator {operator!r} requires a 'values' list"
+        )
     if operator == "between" and ("min" not in condition or "max" not in condition):
         raise ValidationError(f"{where}: operator 'between' requires 'min' and 'max'")
-    if operator in {">=", "<=", ">", "<", "==", "!=", "like"} and "value" not in condition:
+    if (
+        operator in {">=", "<=", ">", "<", "==", "!=", "like"}
+        and "value" not in condition
+    ):
         raise ValidationError(f"{where}: operator {operator!r} requires 'value'")
 
 
 def _validate_best_by(best_by: Any, where: str) -> list[dict[str, Any]]:
     if best_by is None:
-        return [{"field": "hit_rank", "direction": "asc", "rank": None, "default": None}]
+        return [
+            {"field": "hit_rank", "direction": "asc", "rank": None, "default": None}
+        ]
     if not isinstance(best_by, list) or not best_by:
         raise ValidationError(f"{where}: 'best_by' must be a non-empty list")
     entries = []
     for entry in best_by:
         if not isinstance(entry, dict) or not str(entry.get("field") or ""):
-            raise ValidationError(f"{where}: each 'best_by' entry needs a non-empty 'field'")
+            raise ValidationError(
+                f"{where}: each 'best_by' entry needs a non-empty 'field'"
+            )
         direction = entry.get("direction", "asc")
         if direction not in {"asc", "desc"}:
-            raise ValidationError(f"{where}: 'best_by' direction must be 'asc' or 'desc'")
+            raise ValidationError(
+                f"{where}: 'best_by' direction must be 'asc' or 'desc'"
+            )
         rank = entry.get("rank")
         if rank is not None and not isinstance(rank, dict):
-            raise ValidationError(f"{where}: 'best_by' rank must be a mapping of value to rank")
-        entries.append({
-            "field": str(entry["field"]),
-            "direction": direction,
-            "rank": {str(k): float(v) for k, v in rank.items()} if rank is not None else None,
-            "default": (float(entry["default"]) if entry.get("default") is not None else None),
-        })
+            raise ValidationError(
+                f"{where}: 'best_by' rank must be a mapping of value to rank"
+            )
+        entries.append(
+            {
+                "field": str(entry["field"]),
+                "direction": direction,
+                "rank": {str(k): float(v) for k, v in rank.items()}
+                if rank is not None
+                else None,
+                "default": (
+                    float(entry["default"])
+                    if entry.get("default") is not None
+                    else None
+                ),
+            }
+        )
     return entries
 
 
-def validate_classification_profile(profile: dict[str, Any], name: str) -> dict[str, Any]:
+def validate_classification_profile(
+    profile: dict[str, Any], name: str
+) -> dict[str, Any]:
     """Check the kind-specific structure and return the normalized spec."""
     where = f"profile {name!r}"
     applies_to = profile.get("applies_to")
@@ -204,9 +251,13 @@ def validate_classification_profile(profile: dict[str, Any], name: str) -> dict[
     entity_type = applies_to.get("entity_type")
     file_role = applies_to.get("file_role")
     if not isinstance(entity_type, str) or not entity_type:
-        raise ValidationError(f"{where}: 'applies_to.entity_type' must be a non-empty string")
+        raise ValidationError(
+            f"{where}: 'applies_to.entity_type' must be a non-empty string"
+        )
     if not isinstance(file_role, str) or not file_role:
-        raise ValidationError(f"{where}: 'applies_to.file_role' must be a non-empty string")
+        raise ValidationError(
+            f"{where}: 'applies_to.file_role' must be a non-empty string"
+        )
 
     raw_sources = profile.get("sources")
     if not isinstance(raw_sources, dict) or not raw_sources:
@@ -218,10 +269,14 @@ def validate_classification_profile(profile: dict[str, Any], name: str) -> dict[
             raise ValidationError(f"{source_where}: must be a mapping")
         analysis = source.get("analysis")
         if not isinstance(analysis, str) or not analysis:
-            raise ValidationError(f"{source_where}: 'analysis' must be a non-empty string")
+            raise ValidationError(
+                f"{source_where}: 'analysis' must be a non-empty string"
+            )
         row_filter = source.get("filter", [])
         if not isinstance(row_filter, list):
-            raise ValidationError(f"{source_where}: 'filter' must be a list of conditions")
+            raise ValidationError(
+                f"{source_where}: 'filter' must be a list of conditions"
+            )
         for condition in row_filter:
             _validate_condition(condition, source_where)
         sources[str(source_name)] = {
@@ -253,7 +308,9 @@ def validate_classification_profile(profile: dict[str, Any], name: str) -> dict[
         absent = bool(rule.get("absent"))
         when = rule.get("when", [])
         if absent and when:
-            raise ValidationError(f"{rule_where}: 'absent' and 'when' are mutually exclusive")
+            raise ValidationError(
+                f"{rule_where}: 'absent' and 'when' are mutually exclusive"
+            )
         if not absent and not when:
             raise ValidationError(
                 f"{rule_where}: a rule needs 'absent: true' or a non-empty 'when' list"
@@ -262,13 +319,15 @@ def validate_classification_profile(profile: dict[str, Any], name: str) -> dict[
             raise ValidationError(f"{rule_where}: 'when' must be a list of conditions")
         for condition in when:
             _validate_condition(condition, rule_where)
-        rules.append({
-            "label": str(rule["label"]),
-            "default": False,
-            "source": str(source),
-            "absent": absent,
-            "when": when,
-        })
+        rules.append(
+            {
+                "label": str(rule["label"]),
+                "default": False,
+                "source": str(source),
+                "absent": absent,
+                "when": when,
+            }
+        )
     return {
         "entity_type": entity_type,
         "file_role": file_role,
@@ -305,7 +364,9 @@ def _best_sort_key(best_by: list[dict[str, Any]]):
 
 
 def _source_hits(
-        db: Database, file_id: str, source: dict[str, Any],
+    db: Database,
+    file_id: str,
+    source: dict[str, Any],
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
     """Filtered, best-first alignment contexts per seqid for one source/file.
 
@@ -332,7 +393,9 @@ def _source_hits(
     hits: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         context = _row_context(dict(row))
-        if not all(_condition_holds(context, condition) for condition in source["filter"]):
+        if not all(
+            _condition_holds(context, condition) for condition in source["filter"]
+        ):
             continue
         hits.setdefault(context["seqid"], []).append(context)
     sort_key = _best_sort_key(source["best_by"])
@@ -341,7 +404,9 @@ def _source_hits(
     return hits, job["completed_jobs"] - 1
 
 
-def _target_files(db: Database, entity_type: str, file_role: str) -> list[dict[str, Any]]:
+def _target_files(
+    db: Database, entity_type: str, file_role: str
+) -> list[dict[str, Any]]:
     """Manifest files in scope; superseded and retired entities are excluded."""
     rows = db.conn.execute(
         "SELECT * FROM files WHERE file_role=? AND entity_type=? AND NOT EXISTS ("
@@ -355,9 +420,9 @@ def _target_files(db: Database, entity_type: str, file_role: str) -> list[dict[s
 
 
 def _decide(
-        rules: list[dict[str, Any]],
-        source_hits: dict[str, dict[str, list[dict[str, Any]]]],
-        seqid: str,
+    rules: list[dict[str, Any]],
+    source_hits: dict[str, dict[str, list[dict[str, Any]]]],
+    seqid: str,
 ) -> tuple[str, dict[str, Any]] | None:
     """First matching rule wins; ``None`` leaves the sequence unlabeled."""
     for index, rule in enumerate(rules):
@@ -367,7 +432,9 @@ def _decide(
         if rule["absent"]:
             if not rows:
                 return rule["label"], {
-                    "rule_index": index, "source": rule["source"], "absent": True,
+                    "rule_index": index,
+                    "source": rule["source"],
+                    "absent": True,
                 }
             continue
         if not rows:
@@ -386,11 +453,11 @@ def _decide(
 
 
 def classify_sequences(
-        db: Database,
-        project: Project,
-        *,
-        profile_name: str,
-        command: str,
+    db: Database,
+    project: Project,
+    *,
+    profile_name: str,
+    command: str,
 ) -> dict[str, Any]:
     """Label every sequence of the profile's target files in one transaction.
 
@@ -398,22 +465,33 @@ def classify_sequences(
     nothing and appends no ``changes`` rows; a changed profile rewrites the
     affected labels and audits each change.
     """
-    profile = load_profile(project.profiles_dir, profile_name, expected_kind=CLASSIFICATION_KIND)
+    profile = load_profile(
+        project.profiles_dir, profile_name, expected_kind=CLASSIFICATION_KIND
+    )
     spec = validate_classification_profile(profile, profile_name)
-    profile_document = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    profile_document = json.dumps(
+        profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
     profile_sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
     profile_version = int(profile.get("version", 1))
 
-    run = start_run(db, {
-        "step": "classify-sequences",
-        "command": command,
-        "tool": "operon",
-        "parameter_set": json.dumps(
-            {"profile": profile_name, "profile_version": profile_version,
-             "profile_sha256": profile_sha256},
-            ensure_ascii=False, sort_keys=True,
-        ),
-    })
+    run = start_run(
+        db,
+        {
+            "step": "classify-sequences",
+            "command": command,
+            "tool": "operon",
+            "parameter_set": json.dumps(
+                {
+                    "profile": profile_name,
+                    "profile_version": profile_version,
+                    "profile_sha256": profile_sha256,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        },
+    )
     try:
         files = _target_files(db, spec["entity_type"], spec["file_role"])
         assignments: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
@@ -422,7 +500,8 @@ def classify_sequences(
         ignored_completed_jobs = 0
         for file_row in files:
             seqids = [
-                str(row["seqid"]) for row in db.conn.execute(
+                str(row["seqid"])
+                for row in db.conn.execute(
                     "SELECT seqid FROM sequences WHERE file_id=? ORDER BY seqid",
                     (file_row["file_id"],),
                 ).fetchall()
@@ -446,7 +525,8 @@ def classify_sequences(
         existing = {
             (str(row["file_id"]), str(row["seqid"])): dict(row)
             for row in db.conn.execute(
-                "SELECT * FROM sequence_labels WHERE profile_name=?", (profile_name,),
+                "SELECT * FROM sequence_labels WHERE profile_name=?",
+                (profile_name,),
             ).fetchall()
             if str(row["file_id"]) in target_file_ids
         }
@@ -455,14 +535,21 @@ def classify_sequences(
         reason = f"classify-sequences profile {profile_name}"
         with db.transaction():
             db.record_profile(
-                profile_name, profile_version, profile_sha256, profile_document, decided_at
+                profile_name,
+                profile_version,
+                profile_sha256,
+                profile_document,
+                decided_at,
             )
             for key in sorted(assignments):
                 label, details = assignments[key]
                 details_json = json.dumps(details, ensure_ascii=False, sort_keys=True)
                 previous = existing.get(key)
-                if previous is not None and previous["label"] == label \
-                        and previous["details_json"] == details_json:
+                if (
+                    previous is not None
+                    and previous["label"] == label
+                    and previous["details_json"] == details_json
+                ):
                     # The decision stands; only refresh the provenance hash
                     # when the profile content changed. No audit row: the
                     # label itself did not change.
@@ -481,13 +568,24 @@ def classify_sequences(
                     "ON CONFLICT(file_id, seqid, profile_name) DO UPDATE SET "
                     "label=excluded.label, profile_sha256=excluded.profile_sha256, "
                     "details_json=excluded.details_json, decided_at=excluded.decided_at",
-                    (key[0], key[1], label, profile_name, profile_sha256,
-                     details_json, decided_at),
+                    (
+                        key[0],
+                        key[1],
+                        label,
+                        profile_name,
+                        profile_sha256,
+                        details_json,
+                        decided_at,
+                    ),
                 )
                 db.record_change(
-                    "sequence_label", f"{key[0]}:{key[1]}:{profile_name}", "label",
-                    previous["label"] if previous is not None else None, label,
-                    reason=reason, workflow_run_id=run["run_id"],
+                    "sequence_label",
+                    f"{key[0]}:{key[1]}:{profile_name}",
+                    "label",
+                    previous["label"] if previous is not None else None,
+                    label,
+                    reason=reason,
+                    workflow_run_id=run["run_id"],
                 )
                 written += 1
             for key in sorted(set(existing) - set(assignments)):
@@ -496,13 +594,19 @@ def classify_sequences(
                     (key[0], key[1], profile_name),
                 )
                 db.record_change(
-                    "sequence_label", f"{key[0]}:{key[1]}:{profile_name}", "label",
-                    existing[key]["label"], None,
-                    reason=reason, workflow_run_id=run["run_id"],
+                    "sequence_label",
+                    f"{key[0]}:{key[1]}:{profile_name}",
+                    "label",
+                    existing[key]["label"],
+                    None,
+                    reason=reason,
+                    workflow_run_id=run["run_id"],
                 )
                 removed += 1
     except Exception as exc:
-        finish_run(db, project, run["run_id"], status="failed", exit_code=1, error=str(exc))
+        finish_run(
+            db, project, run["run_id"], status="failed", exit_code=1, error=str(exc)
+        )
         raise
 
     label_counts: dict[str, int] = {}
@@ -523,8 +627,14 @@ def classify_sequences(
         "labels_unchanged": unchanged,
     }
     finish_run(
-        db, project, run["run_id"], status="completed", exit_code=0,
-        execution_details=json.dumps(execution_details, ensure_ascii=False, sort_keys=True),
+        db,
+        project,
+        run["run_id"],
+        status="completed",
+        exit_code=0,
+        execution_details=json.dumps(
+            execution_details, ensure_ascii=False, sort_keys=True
+        ),
     )
     return {
         "profile": profile_name,

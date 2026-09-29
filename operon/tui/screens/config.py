@@ -80,7 +80,12 @@ from operon.tui.screens.config_coverage import (
 ENTITY_TYPE_NAMES = list(actions.ENTITY_TYPE_NAMES)
 OPERATOR_OPTIONS = [(operator, operator) for operator in actions.PROFILE_OPERATORS]
 RESULT_PARSERS = (
-    "none", "blast_tabular", "hmmer_tblout", "hmmer_domtblout", "rpsbproc_tabular", "busco_json",
+    "none",
+    "blast_tabular",
+    "hmmer_tblout",
+    "hmmer_domtblout",
+    "rpsbproc_tabular",
+    "busco_json",
 )
 ARTIFACT_KINDS = ("file", "directory")
 # Keep in sync with operon.tools.ENVIRONMENT_POLICIES (asserted in
@@ -103,17 +108,45 @@ RECIPE_SLURM_FIELDS = (
     ("setup_commands", "#recipe-slurm-setup-commands", "lines"),
 )
 
-PROFILE_MODELED_KEYS = frozenset({"kind", "version", "description", "applies_to", "required", "warnings"})
+PROFILE_MODELED_KEYS = frozenset(
+    {"kind", "version", "description", "applies_to", "required", "warnings"}
+)
 RULE_MODELED_KEYS = frozenset({"metric", "operator", "value", "code"})
 RECIPE_MODELED_ORDER = (
-    "description", "entity_type", "file_role", "file_role_prefix", "format",
-    "input_kind", "output_kind", "database", "database_version",
-    "database_mode", "database_checksum",
-    "environment_policy", "output_subdir", "output_suffix", "output_name", "arguments",
-    "commands", "parameters", "slurm", "result_parser", "result_glob", "hmmer_mode",
-    "result_columns", "hit_metric_columns", "query_column", "subject_column",
-    "numeric_columns", "qstart_column", "qend_column", "sstart_column",
-    "send_column", "evalue_column", "bitscore_column", "pident_column",
+    "description",
+    "entity_type",
+    "file_role",
+    "file_role_prefix",
+    "format",
+    "input_kind",
+    "output_kind",
+    "database",
+    "database_version",
+    "database_mode",
+    "database_checksum",
+    "environment_policy",
+    "output_subdir",
+    "output_suffix",
+    "output_name",
+    "arguments",
+    "commands",
+    "parameters",
+    "slurm",
+    "result_parser",
+    "result_glob",
+    "hmmer_mode",
+    "result_columns",
+    "hit_metric_columns",
+    "query_column",
+    "subject_column",
+    "numeric_columns",
+    "qstart_column",
+    "qend_column",
+    "sstart_column",
+    "send_column",
+    "evalue_column",
+    "bitscore_column",
+    "pident_column",
     "max_hits_per_query",
 )
 RECIPE_MODELED_KEYS = frozenset(RECIPE_MODELED_ORDER) | {"version"}
@@ -208,17 +241,20 @@ def _parse_parameter_line(
         lowered = segment.lower()
         if lowered.startswith("required"):
             _, _, flag_value = segment.partition("=")
-            spec["required"] = (flag_value.strip().lower() not in {"false", "no"}
-                               if flag_value.strip() else True)
+            spec["required"] = (
+                flag_value.strip().lower() not in {"false", "no"}
+                if flag_value.strip()
+                else True
+            )
         elif lowered.startswith("choices"):
             _, _, listed = segment.partition("=")
             choices = [choice.strip() for choice in listed.split(",") if choice.strip()]
             if choices:
                 spec["choices"] = choices
     if flags:
-        marker = re.search(r"(?:^|;)\s*pattern\s*=", line[len(head):], re.IGNORECASE)
+        marker = re.search(r"(?:^|;)\s*pattern\s*=", line[len(head) :], re.IGNORECASE)
         if marker is not None:
-            pattern = line[len(head):][marker.end():].strip()
+            pattern = line[len(head) :][marker.end() :].strip()
             if pattern:
                 spec["pattern"] = pattern
     return param_name, spec, problems
@@ -235,7 +271,7 @@ class RuleRow(ComposedRows, Vertical):
     rows ``remount`` rebuilds: the guarded subclass retries Textual's own
     mount-phase lookups, adopts the value it was built with and advertises
     ``options_ready``, which ``ConfigPanel._form_mounting`` reads for every
-    ``FittingSelect`` in the form (ODR-0023, ODR-0026).  The recipe editor's and
+    ``FittingSelect`` in the form (ODR-23, ODR-26).  The recipe editor's and
     the analyze modal's selects are composed once with their screen instead of
     being replaced, so they stay bare.
     """
@@ -252,7 +288,9 @@ class RuleRow(ComposedRows, Vertical):
     def __init__(self, rule: dict[str, Any]) -> None:
         super().__init__(classes="rule-row")
         self.original = dict(rule)
-        self.extras = {key: value for key, value in rule.items() if key not in RULE_MODELED_KEYS}
+        self.extras = {
+            key: value for key, value in rule.items() if key not in RULE_MODELED_KEYS
+        }
 
     def on_mount(self) -> None:
         self.mark_form_ready()
@@ -266,21 +304,27 @@ class RuleRow(ComposedRows, Vertical):
         with Horizontal(classes="rule-inputs"):
             yield Input(
                 value=str(self.original.get("metric", "")),
-                placeholder="metric", classes="rule-metric",
+                placeholder="metric",
+                classes="rule-metric",
             )
-            yield FittingSelect(options, value=operator, classes="rule-operator",
-                                allow_blank=False)
+            yield FittingSelect(
+                options, value=operator, classes="rule-operator", allow_blank=False
+            )
             yield Input(
                 value="" if value is None else str(value),
-                placeholder="value", classes="rule-value",
+                placeholder="value",
+                classes="rule-value",
             )
             yield Input(
                 value=str(self.original.get("code", "")),
-                placeholder="code", classes="rule-code",
+                placeholder="code",
+                classes="rule-code",
             )
             yield Button("✕", classes="rule-remove")
         if self.extras:
-            yield Static(Text(_extras_note(self.extras), style="dim"), classes="rule-extras")
+            yield Static(
+                Text(_extras_note(self.extras), style="dim"), classes="rule-extras"
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.has_class("rule-remove"):
@@ -363,7 +407,8 @@ class CommandRow(ComposedRows, Vertical):
         yield Input(
             value=(
                 ", ".join(str(item) for item in version_args)
-                if isinstance(version_args, list) else ""
+                if isinstance(version_args, list)
+                else ""
             ),
             placeholder="version_args (comma separated; blank = inherit the tool's probe)",
             classes="command-version-args",
@@ -397,8 +442,12 @@ class CommandRow(ComposedRows, Vertical):
             if line.strip()
         ]
         version_text = self.query_one(".command-version-args", Input).value.strip()
-        version_args = [part.strip() for part in version_text.split(",") if part.strip()]
-        version_pattern = self.query_one(".command-version-pattern", Input).value.strip()
+        version_args = [
+            part.strip() for part in version_text.split(",") if part.strip()
+        ]
+        version_pattern = self.query_one(
+            ".command-version-pattern", Input
+        ).value.strip()
         document: dict[str, Any] = {}
         for key, original_value in self.original.items():
             if key == "arguments":
@@ -436,7 +485,9 @@ class SnapshotViewModal(DismissOnce, ModalScreen):
         with Vertical(id="modal-box"):
             yield Label(self.view_title, id="modal-title")
             with VerticalScroll(id="snapshot-view-scroll"):
-                yield Static(yaml.safe_dump(self.document, sort_keys=False, allow_unicode=True))
+                yield Static(
+                    yaml.safe_dump(self.document, sort_keys=False, allow_unicode=True)
+                )
             with Horizontal(id="modal-buttons"):
                 yield Button("Close", id="cancel", variant="primary")
 
@@ -457,13 +508,13 @@ class HistoryModal(DismissOnce, ModalScreen):
     ]
 
     def __init__(
-            self,
-            project: Project,
-            kind_label: str,
-            name: str,
-            rows: list[dict[str, Any]],
-            fetch_snapshot: Any,
-            to_editor: Any,
+        self,
+        project: Project,
+        kind_label: str,
+        name: str,
+        rows: list[dict[str, Any]],
+        fetch_snapshot: Any,
+        to_editor: Any,
     ) -> None:
         super().__init__()
         self.project = project
@@ -475,7 +526,10 @@ class HistoryModal(DismissOnce, ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
-            yield Label(f"Snapshot history — {self.kind_label} {self.target_name}", id="modal-title")
+            yield Label(
+                f"Snapshot history — {self.kind_label} {self.target_name}",
+                id="modal-title",
+            )
             yield DataTable(id="history-table", cursor_type="row")
             yield Static("", id="history-error")
             with Horizontal(id="modal-buttons"):
@@ -541,13 +595,26 @@ class NewProfileModal(DismissOnce, ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box"):
             yield Label("New profile", id="modal-title")
-            yield Input(placeholder="profile name, e.g. assembly_strict_v1", id="new-profile-name")
+            yield Input(
+                placeholder="profile name, e.g. assembly_strict_v1",
+                id="new-profile-name",
+            )
             yield Static("Kind", classes="modal-label")
             yield FittingSelect(
-                [("qc (decision thresholds)", "qc"),
-                 ("sequence_classification (label sequences)", actions.CLASSIFICATION_KIND),
-                 ("taxonomy_coverage (coverage denominators)", actions.COVERAGE_KIND)],
-                value="qc", id="new-profile-kind", allow_blank=False,
+                [
+                    ("qc (decision thresholds)", "qc"),
+                    (
+                        "sequence_classification (label sequences)",
+                        actions.CLASSIFICATION_KIND,
+                    ),
+                    (
+                        "taxonomy_coverage (coverage denominators)",
+                        actions.COVERAGE_KIND,
+                    ),
+                ],
+                value="qc",
+                id="new-profile-kind",
+                allow_blank=False,
             )
             yield Static("", id="history-error")
             with Horizontal(id="modal-buttons"):
@@ -572,7 +639,9 @@ class NewProfileModal(DismissOnce, ModalScreen):
 class ProfileSaveModal(WriteModal):
     """Confirm a profile save: file path + new version + snapshot recording."""
 
-    def __init__(self, project: Project, name: str, document: dict[str, Any], new_version: int) -> None:
+    def __init__(
+        self, project: Project, name: str, document: dict[str, Any], new_version: int
+    ) -> None:
         super().__init__(f"Save profile {name}")
         self.project = project
         self.profile_name = name
@@ -587,18 +656,26 @@ class ProfileSaveModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        return (f"config/profiles/{self.profile_name}.yaml → version {self.new_version} "
-                "+ qc_profiles snapshot")
+        return (
+            f"config/profiles/{self.profile_name}.yaml → version {self.new_version} "
+            "+ qc_profiles snapshot"
+        )
 
     def confirm(self) -> None:
         self.run_action(
-            lambda: actions.save_profile(self.project, self.profile_name, self.document,
-                                         known_version=self.new_version - 1)
+            lambda: actions.save_profile(
+                self.project,
+                self.profile_name,
+                self.document,
+                known_version=self.new_version - 1,
+            )
         )
 
     def on_action_success(self, payload: Any) -> None:
         if payload.get("unchanged"):
-            self.app.notify(f"{self.profile_name}: unchanged — version {payload['version']} kept")
+            self.app.notify(
+                f"{self.profile_name}: unchanged — version {payload['version']} kept"
+            )
         else:
             self.app.notify(
                 f"saved {self.profile_name} version {payload['version']} "
@@ -611,12 +688,12 @@ class RecipeSaveModal(WriteModal):
     """Confirm a recipe save inside tools.yaml (formatting is normalized)."""
 
     def __init__(
-            self,
-            project: Project,
-            tool_name: str,
-            recipe_name: str,
-            document: dict[str, Any],
-            new_version: int,
+        self,
+        project: Project,
+        tool_name: str,
+        recipe_name: str,
+        document: dict[str, Any],
+        new_version: int,
     ) -> None:
         super().__init__(f"Save recipe {recipe_name}")
         self.project = project
@@ -635,20 +712,27 @@ class RecipeSaveModal(WriteModal):
         )
 
     def command_text(self) -> str:
-        return (f"config/tools.yaml → {self.tool_name}.{self.recipe_name} version "
-                f"{self.new_version} + recipe_snapshots row")
+        return (
+            f"config/tools.yaml → {self.tool_name}.{self.recipe_name} version "
+            f"{self.new_version} + recipe_snapshots row"
+        )
 
     def confirm(self) -> None:
         self.run_action(
             lambda: actions.save_recipe(
-                self.project, self.tool_name, self.recipe_name, self.document,
+                self.project,
+                self.tool_name,
+                self.recipe_name,
+                self.document,
                 known_version=self.new_version - 1,
             )
         )
 
     def on_action_success(self, payload: Any) -> None:
         if payload.get("unchanged"):
-            self.app.notify(f"{self.recipe_name}: unchanged — version {payload['version']} kept")
+            self.app.notify(
+                f"{self.recipe_name}: unchanged — version {payload['version']} kept"
+            )
         else:
             self.app.notify(
                 f"saved {self.recipe_name} version {payload['version']} "
@@ -710,10 +794,10 @@ class ToolSaveModal(WriteModal):
     """Confirm a tool-level save inside tools.yaml (formatting is normalized)."""
 
     def __init__(
-            self,
-            project: Project,
-            tool_name: str,
-            document: dict[str, Any],
+        self,
+        project: Project,
+        tool_name: str,
+        document: dict[str, Any],
     ) -> None:
         super().__init__(f"Save tool {tool_name}")
         self.project = project
@@ -798,14 +882,18 @@ class ConfigPanel(Panel):
                         with Horizontal(classes="config-buttons"):
                             yield Button("New profile", id="profile-new")
                             yield Button("History", id="profile-history", disabled=True)
-                            yield Button("Run classify", id="profile-run", disabled=True)
+                            yield Button(
+                                "Run classify", id="profile-run", disabled=True
+                            )
                     with VerticalScroll(id="profile-editor"):  # pragma: no branch
                         yield Static("select a profile", id="profile-heading")
                         yield Static("Description", classes="modal-label")
                         yield Input(id="profile-description")
                         yield Static("Applies to", classes="modal-label")
                         for entity_type in ENTITY_TYPE_NAMES:
-                            yield Checkbox(entity_type, id=f"profile-applies-{entity_type}")
+                            yield Checkbox(
+                                entity_type, id=f"profile-applies-{entity_type}"
+                            )
                         yield Static("", id="profile-version-note")
                         yield Static("", id="profile-extras-note")
                         yield Static("Required rules", classes="modal-label")
@@ -815,31 +903,55 @@ class ConfigPanel(Panel):
                         yield MountTracked(id="profile-warnings-rules")
                         yield Button("add rule", id="profile-add-warnings")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button("Save profile", id="profile-save",
-                                         variant="primary", disabled=True)
-                    with VerticalScroll(id="classification-editor"):  # pragma: no branch
+                            yield Button(
+                                "Save profile",
+                                id="profile-save",
+                                variant="primary",
+                                disabled=True,
+                            )
+                    with VerticalScroll(
+                        id="classification-editor"
+                    ):  # pragma: no branch
                         yield Static("select a profile", id="classification-heading")
                         yield Static("", id="classification-readonly-note")
                         yield Static("Description", classes="modal-label")
                         yield Input(id="classification-description")
-                        yield Static("Applies to (entity_type + file_role)", classes="modal-label")
-                        yield Input(placeholder="entity_type", id="classification-entity-type")
-                        yield Input(placeholder="file_role", id="classification-file-role")
+                        yield Static(
+                            "Applies to (entity_type + file_role)",
+                            classes="modal-label",
+                        )
+                        yield Input(
+                            placeholder="entity_type", id="classification-entity-type"
+                        )
+                        yield Input(
+                            placeholder="file_role", id="classification-file-role"
+                        )
                         yield Static("", id="classification-version-note")
                         yield Static("", id="classification-extras-note")
-                        yield Static("Sources (name → analysis, filter, best_by)",
-                                     classes="modal-label")
+                        yield Static(
+                            "Sources (name → analysis, filter, best_by)",
+                            classes="modal-label",
+                        )
                         yield MountTracked(id="classification-sources")
                         yield Button("add source", id="classification-add-source")
-                        yield Static("Rules (first match wins; label + source/when, absent, "
-                                     "or default)", classes="modal-label")
+                        yield Static(
+                            "Rules (first match wins; label + source/when, absent, "
+                            "or default)",
+                            classes="modal-label",
+                        )
                         yield MountTracked(id="classification-rules")
                         yield Button("add rule", id="classification-add-rule")
                         yield Static("", id="classification-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button("Save profile", id="classification-save",
-                                         variant="primary", disabled=True)
-                            yield Button("History", id="classification-history", disabled=True)
+                            yield Button(
+                                "Save profile",
+                                id="classification-save",
+                                variant="primary",
+                                disabled=True,
+                            )
+                            yield Button(
+                                "History", id="classification-history", disabled=True
+                            )
                     with VerticalScroll(id="coverage-editor"):  # pragma: no branch
                         yield Static("select a profile", id="coverage-heading")
                         yield Static("", id="coverage-readonly-note")
@@ -848,44 +960,70 @@ class ConfigPanel(Panel):
                         yield Static("Taxonomy source", classes="modal-label")
                         yield FittingSelect(
                             [(source, source) for source in ("NCBI",)],
-                            value="NCBI", id="coverage-taxonomy-source",
+                            value="NCBI",
+                            id="coverage-taxonomy-source",
                             allow_blank=False,
                         )
-                        yield Static("Root TaxIDs (comma separated)",
-                                     classes="modal-label")
+                        yield Static(
+                            "Root TaxIDs (comma separated)", classes="modal-label"
+                        )
                         yield Input(placeholder="e.g. 33090", id="coverage-root-taxids")
                         yield Static("Target ranks", classes="modal-label")
                         yield Checkbox("family", id="coverage-rank-family")
                         yield Checkbox("genus", id="coverage-rank-genus")
                         yield Static("Filters", classes="modal-label")
-                        yield Checkbox("exclude extinct taxa",
-                                       id="coverage-exclude-extinct")
-                        yield Static("Excluded subtrees (comma separated TaxIDs)",
-                                     classes="modal-label")
-                        yield Input(placeholder="blank = none",
-                                    id="coverage-exclude-subtrees")
-                        yield Static("Excluded name patterns (one regular expression "
-                                     "per line)", classes="modal-label")
+                        yield Checkbox(
+                            "exclude extinct taxa", id="coverage-exclude-extinct"
+                        )
+                        yield Static(
+                            "Excluded subtrees (comma separated TaxIDs)",
+                            classes="modal-label",
+                        )
+                        yield Input(
+                            placeholder="blank = none", id="coverage-exclude-subtrees"
+                        )
+                        yield Static(
+                            "Excluded name patterns (one regular expression per line)",
+                            classes="modal-label",
+                        )
                         yield TextArea(id="coverage-exclude-patterns")
-                        yield Static("Minimum coverage percent per checked target rank",
-                                     classes="modal-label")
-                        yield Input(placeholder="family %", id="coverage-threshold-family")
-                        yield Input(placeholder="genus %", id="coverage-threshold-genus")
+                        yield Static(
+                            "Minimum coverage percent per checked target rank",
+                            classes="modal-label",
+                        )
+                        yield Input(
+                            placeholder="family %", id="coverage-threshold-family"
+                        )
+                        yield Input(
+                            placeholder="genus %", id="coverage-threshold-genus"
+                        )
                         yield Static("", id="coverage-version-note")
                         yield Static("", id="coverage-extras-note")
                         yield Static("", id="coverage-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button("Save profile", id="coverage-save",
-                                         variant="primary", disabled=True)
-                            yield Button("History", id="coverage-history", disabled=True)
+                            yield Button(
+                                "Save profile",
+                                id="coverage-save",
+                                variant="primary",
+                                disabled=True,
+                            )
+                            yield Button(
+                                "History", id="coverage-history", disabled=True
+                            )
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
-                    yield Static("Conda defaults (every tool that inherits them)",
-                                 classes="modal-label")
-                    yield Input(placeholder="conda binary (blank = conda)",
-                                id="conda-bin")
-                    yield Static("conda run args (one token per line; blank = "
-                                 "run --no-capture-output)", classes="modal-label")
+                    yield Static(
+                        "Conda defaults (every tool that inherits them)",
+                        classes="modal-label",
+                    )
+                    yield Input(
+                        placeholder="conda binary (blank = conda)", id="conda-bin"
+                    )
+                    yield Static(
+                        "conda run args (one token per line; blank = "
+                        "run --no-capture-output)",
+                        classes="modal-label",
+                    )
                     yield TextArea(id="conda-run-args")
                     yield Static("", id="conda-note")
                     yield Static("", id="conda-save-error")
@@ -897,42 +1035,62 @@ class ConfigPanel(Panel):
                         yield Static("select a tool", id="tool-heading")
                         yield Static("Description", classes="modal-label")
                         yield Input(id="tool-description")
-                        yield Static("Executable (blank = tool name)", classes="modal-label")
+                        yield Static(
+                            "Executable (blank = tool name)", classes="modal-label"
+                        )
                         yield Input(id="tool-executable")
-                        yield Static("Version args (one token per line)",
-                                     classes="modal-label")
+                        yield Static(
+                            "Version args (one token per line)", classes="modal-label"
+                        )
                         yield TextArea(id="tool-version-args")
-                        yield Static("Version pattern (regular expression)",
-                                     classes="modal-label")
+                        yield Static(
+                            "Version pattern (regular expression)",
+                            classes="modal-label",
+                        )
                         yield Input(id="tool-version-pattern")
                         yield Static("Run method", classes="modal-label")
-                        yield Select(TOOL_RUN_METHOD_OPTIONS, id="tool-run-method",
-                                     prompt="no run_method (run directly)",
-                                     allow_blank=True)
+                        yield Select(
+                            TOOL_RUN_METHOD_OPTIONS,
+                            id="tool-run-method",
+                            prompt="no run_method (run directly)",
+                            allow_blank=True,
+                        )
                         with Vertical(id="tool-run-string-row"):
-                            yield Static("Launcher command (run verbatim)",
-                                         classes="modal-label")
+                            yield Static(
+                                "Launcher command (run verbatim)", classes="modal-label"
+                            )
                             yield Input(id="tool-run-string")
                         with Vertical(id="tool-run-conda-row"):
-                            yield Static("conda environment (required)",
-                                         classes="modal-label")
+                            yield Static(
+                                "conda environment (required)", classes="modal-label"
+                            )
                             yield Input(id="tool-run-conda-env")
-                            yield Static("conda binary (blank = top-level conda.bin)",
-                                         classes="modal-label")
+                            yield Static(
+                                "conda binary (blank = top-level conda.bin)",
+                                classes="modal-label",
+                            )
                             yield Input(id="tool-run-conda-bin")
-                            yield Static("conda run args (one token per line; blank = "
-                                         "top-level conda.run_args)",
-                                         classes="modal-label")
+                            yield Static(
+                                "conda run args (one token per line; blank = "
+                                "top-level conda.run_args)",
+                                classes="modal-label",
+                            )
                             yield TextArea(id="tool-run-conda-args")
                         with Vertical(id="tool-run-prefix-row"):
-                            yield Static("Launcher prefix (one token per line)",
-                                         classes="modal-label")
+                            yield Static(
+                                "Launcher prefix (one token per line)",
+                                classes="modal-label",
+                            )
                             yield TextArea(id="tool-run-prefix")
                         yield Static("", id="tool-extras-note")
                         yield Static("", id="tool-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button("Save tool", id="tool-save",
-                                         variant="primary", disabled=True)
+                            yield Button(
+                                "Save tool",
+                                id="tool-save",
+                                variant="primary",
+                                disabled=True,
+                            )
                     yield Static("Recipes", classes="modal-label")
                     yield DataTable(id="recipes-table", cursor_type="row")
                     with Horizontal(classes="config-buttons"):
@@ -942,101 +1100,198 @@ class ConfigPanel(Panel):
                         yield Static("Description", classes="modal-label")
                         yield Input(id="recipe-description")
                         yield Static("Entity type (blank = *)", classes="modal-label")
-                        yield Select(ENTITY_TYPE_OPTIONS, id="recipe-entity-type", allow_blank=True)
+                        yield Select(
+                            ENTITY_TYPE_OPTIONS,
+                            id="recipe-entity-type",
+                            allow_blank=True,
+                        )
                         yield Input(placeholder="file_role", id="recipe-file-role")
-                        yield Input(placeholder="file_role_prefix (mutually exclusive with "
-                                                "file_role)",
-                                    id="recipe-file-role-prefix")
+                        yield Input(
+                            placeholder="file_role_prefix (mutually exclusive with "
+                            "file_role)",
+                            id="recipe-file-role-prefix",
+                        )
                         yield Input(placeholder="format", id="recipe-format")
-                        yield Static("Input kind (blank = key absent)", classes="modal-label")
-                        yield Select([(kind, kind) for kind in ARTIFACT_KINDS],
-                                     id="recipe-input-kind", allow_blank=True)
-                        yield Static("Output kind (blank = key absent)", classes="modal-label")
-                        yield Select([(kind, kind) for kind in ARTIFACT_KINDS],
-                                     id="recipe-output-kind", allow_blank=True)
+                        yield Static(
+                            "Input kind (blank = key absent)", classes="modal-label"
+                        )
+                        yield Select(
+                            [(kind, kind) for kind in ARTIFACT_KINDS],
+                            id="recipe-input-kind",
+                            allow_blank=True,
+                        )
+                        yield Static(
+                            "Output kind (blank = key absent)", classes="modal-label"
+                        )
+                        yield Select(
+                            [(kind, kind) for kind in ARTIFACT_KINDS],
+                            id="recipe-output-kind",
+                            allow_blank=True,
+                        )
                         yield Input(placeholder="database", id="recipe-database")
-                        yield Input(placeholder="database_version", id="recipe-database-version")
-                        yield Select([(mode, mode) for mode in DATABASE_MODES],
-                                     id="recipe-database-mode", allow_blank=True)
-                        yield Input(placeholder="database_checksum (sha256 hex; optional)",
-                                    id="recipe-database-checksum")
-                        yield Static("Environment policy (blank = key absent; core default "
-                                     "'warn')", classes="modal-label")
-                        yield Select([(policy, policy) for policy in ENVIRONMENT_POLICIES],
-                                     id="recipe-environment-policy", allow_blank=True)
-                        yield Static("Slurm overrides (optional; merges over "
-                                     "execution.slurm — unknown keys preserved)",
-                                     classes="modal-label")
-                        yield Input(placeholder="slurm partition",
-                                    id="recipe-slurm-partition")
-                        yield Input(placeholder="slurm time (e.g. 24:00:00)",
-                                    id="recipe-slurm-time")
-                        yield Input(placeholder="slurm mem_gb", id="recipe-slurm-mem-gb")
-                        yield Input(placeholder="slurm poll_interval (seconds)",
-                                    id="recipe-slurm-poll-interval")
-                        yield Select([("true", "true"), ("false", "false")],
-                                     id="recipe-slurm-array", allow_blank=True)
-                        yield Input(placeholder="slurm array_concurrency",
-                                    id="recipe-slurm-array-concurrency")
-                        yield Static("slurm extra_sbatch (one sbatch flag per line)",
-                                     classes="modal-label")
+                        yield Input(
+                            placeholder="database_version", id="recipe-database-version"
+                        )
+                        yield Select(
+                            [(mode, mode) for mode in DATABASE_MODES],
+                            id="recipe-database-mode",
+                            allow_blank=True,
+                        )
+                        yield Input(
+                            placeholder="database_checksum (sha256 hex; optional)",
+                            id="recipe-database-checksum",
+                        )
+                        yield Static(
+                            "Environment policy (blank = key absent; core default "
+                            "'warn')",
+                            classes="modal-label",
+                        )
+                        yield Select(
+                            [(policy, policy) for policy in ENVIRONMENT_POLICIES],
+                            id="recipe-environment-policy",
+                            allow_blank=True,
+                        )
+                        yield Static(
+                            "Slurm overrides (optional; merges over "
+                            "execution.slurm — unknown keys preserved)",
+                            classes="modal-label",
+                        )
+                        yield Input(
+                            placeholder="slurm partition", id="recipe-slurm-partition"
+                        )
+                        yield Input(
+                            placeholder="slurm time (e.g. 24:00:00)",
+                            id="recipe-slurm-time",
+                        )
+                        yield Input(
+                            placeholder="slurm mem_gb", id="recipe-slurm-mem-gb"
+                        )
+                        yield Input(
+                            placeholder="slurm poll_interval (seconds)",
+                            id="recipe-slurm-poll-interval",
+                        )
+                        yield Select(
+                            [("true", "true"), ("false", "false")],
+                            id="recipe-slurm-array",
+                            allow_blank=True,
+                        )
+                        yield Input(
+                            placeholder="slurm array_concurrency",
+                            id="recipe-slurm-array-concurrency",
+                        )
+                        yield Static(
+                            "slurm extra_sbatch (one sbatch flag per line)",
+                            classes="modal-label",
+                        )
                         yield TextArea(id="recipe-slurm-extra-sbatch")
-                        yield Static("slurm setup_commands (one command per line)",
-                                     classes="modal-label")
+                        yield Static(
+                            "slurm setup_commands (one command per line)",
+                            classes="modal-label",
+                        )
                         yield TextArea(id="recipe-slurm-setup-commands")
                         yield Static("", id="recipe-slurm-note")
-                        yield Input(placeholder="output_subdir", id="recipe-output-subdir")
-                        yield Input(placeholder="output_suffix", id="recipe-output-suffix")
-                        yield Input(placeholder="output_name (template, e.g. "
-                                               "${file_id}.out)", id="recipe-output-name")
-                        yield Static("Arguments (one per line; ${placeholders} stay as-is)",
-                                     classes="modal-label")
+                        yield Input(
+                            placeholder="output_subdir", id="recipe-output-subdir"
+                        )
+                        yield Input(
+                            placeholder="output_suffix", id="recipe-output-suffix"
+                        )
+                        yield Input(
+                            placeholder="output_name (template, e.g. ${file_id}.out)",
+                            id="recipe-output-name",
+                        )
+                        yield Static(
+                            "Arguments (one per line; ${placeholders} stay as-is)",
+                            classes="modal-label",
+                        )
                         yield TextArea(id="recipe-arguments")
-                        yield Static("Runtime parameters (name=default per line, then "
-                                     "optional `; required`, `; choices=a,b` and "
-                                     "`; pattern=<regex>` — pattern takes the rest of the "
-                                     "line; other spec keys preserved)",
-                                     classes="modal-label")
+                        yield Static(
+                            "Runtime parameters (name=default per line, then "
+                            "optional `; required`, `; choices=a,b` and "
+                            "`; pattern=<regex>` — pattern takes the rest of the "
+                            "line; other spec keys preserved)",
+                            classes="modal-label",
+                        )
                         yield TextArea(id="recipe-parameters")
                         yield Static("", id="recipe-parameters-note")
-                        yield Static("Commands chain (optional; mutually exclusive with "
-                                     "arguments — every step runs in the parent tool's single "
-                                     "run_method environment)", classes="modal-label")
+                        yield Static(
+                            "Commands chain (optional; mutually exclusive with "
+                            "arguments — every step runs in the parent tool's single "
+                            "run_method environment)",
+                            classes="modal-label",
+                        )
                         yield MountTracked(id="recipe-command-list")
                         with Horizontal(classes="config-buttons"):
                             yield Button("Add step", id="recipe-add-command")
                         yield Static("", id="recipe-command-note")
                         yield Static("Result parser", classes="modal-label")
-                        yield Select([(parser, parser) for parser in RESULT_PARSERS],
-                                     value="none", id="recipe-result-parser", allow_blank=False)
+                        yield Select(
+                            [(parser, parser) for parser in RESULT_PARSERS],
+                            value="none",
+                            id="recipe-result-parser",
+                            allow_blank=False,
+                        )
                         yield Input(placeholder="result_glob", id="recipe-result-glob")
-                        yield Static("HMMER mode (blank = key absent)", classes="modal-label")
-                        yield Select([(mode, mode) for mode in HMMER_MODES],
-                                     id="recipe-hmmer-mode", allow_blank=True)
-                        yield Input(placeholder="result_columns (comma separated)",
-                                    id="recipe-result-columns")
-                        yield Input(placeholder="hit_metric_columns (comma separated)",
-                                    id="recipe-hit-metric-columns")
-                        yield Static("Column mapping (blank = parser defaults)",
-                                     classes="modal-label")
-                        yield Input(placeholder="query_column", id="recipe-query-column")
-                        yield Input(placeholder="subject_column", id="recipe-subject-column")
-                        yield Input(placeholder="numeric_columns (comma separated)",
-                                    id="recipe-numeric-columns")
-                        yield Input(placeholder="qstart_column", id="recipe-qstart-column")
+                        yield Static(
+                            "HMMER mode (blank = key absent)", classes="modal-label"
+                        )
+                        yield Select(
+                            [(mode, mode) for mode in HMMER_MODES],
+                            id="recipe-hmmer-mode",
+                            allow_blank=True,
+                        )
+                        yield Input(
+                            placeholder="result_columns (comma separated)",
+                            id="recipe-result-columns",
+                        )
+                        yield Input(
+                            placeholder="hit_metric_columns (comma separated)",
+                            id="recipe-hit-metric-columns",
+                        )
+                        yield Static(
+                            "Column mapping (blank = parser defaults)",
+                            classes="modal-label",
+                        )
+                        yield Input(
+                            placeholder="query_column", id="recipe-query-column"
+                        )
+                        yield Input(
+                            placeholder="subject_column", id="recipe-subject-column"
+                        )
+                        yield Input(
+                            placeholder="numeric_columns (comma separated)",
+                            id="recipe-numeric-columns",
+                        )
+                        yield Input(
+                            placeholder="qstart_column", id="recipe-qstart-column"
+                        )
                         yield Input(placeholder="qend_column", id="recipe-qend-column")
-                        yield Input(placeholder="sstart_column", id="recipe-sstart-column")
+                        yield Input(
+                            placeholder="sstart_column", id="recipe-sstart-column"
+                        )
                         yield Input(placeholder="send_column", id="recipe-send-column")
-                        yield Input(placeholder="evalue_column", id="recipe-evalue-column")
-                        yield Input(placeholder="bitscore_column", id="recipe-bitscore-column")
-                        yield Input(placeholder="pident_column", id="recipe-pident-column")
-                        yield Input(placeholder="max_hits_per_query (blank restores default: 5)",
-                                    id="recipe-max-hits")
+                        yield Input(
+                            placeholder="evalue_column", id="recipe-evalue-column"
+                        )
+                        yield Input(
+                            placeholder="bitscore_column", id="recipe-bitscore-column"
+                        )
+                        yield Input(
+                            placeholder="pident_column", id="recipe-pident-column"
+                        )
+                        yield Input(
+                            placeholder="max_hits_per_query (blank restores default: 5)",
+                            id="recipe-max-hits",
+                        )
                         yield Static("", id="recipe-extras-note")
                         yield Static("", id="recipe-save-error")
                         with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button("Save recipe", id="recipe-save",
-                                         variant="primary", disabled=True)
+                            yield Button(
+                                "Save recipe",
+                                id="recipe-save",
+                                variant="primary",
+                                disabled=True,
+                            )
                             yield Button("History", id="recipe-history", disabled=True)
 
     def on_mount(self) -> None:
@@ -1046,7 +1301,9 @@ class ConfigPanel(Panel):
         tools_table.add_column("run_method", key="run_method")
         tools_table.add_column("detected version", key="version")
         recipes_table = self.query_one("#recipes-table", DataTable)
-        recipes_table.add_columns("name", "version", "tool", "entity_type", "file_role", "format")
+        recipes_table.add_columns(
+            "name", "version", "tool", "entity_type", "file_role", "format"
+        )
         super().on_mount()
 
     # -- data loading -----------------------------------------------------
@@ -1076,23 +1333,32 @@ class ConfigPanel(Panel):
         for profile in self.profiles:
             tag = tags.get(str(profile.get("kind") or "qc"), "")
             suffix = f"  · {tag}" if tag else ""
-            list_view.append(ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}")))
+            list_view.append(
+                ListItem(Label(f"{profile['name']}  v{profile['version']}{suffix}"))
+            )
 
         self._render_conda_defaults()
         tools_table = self.query_one("#tools-table", DataTable)
         tools_table.clear()
         for tool in self.tools:
             tools_table.add_row(
-                tool["name"], tool["executable"], tool["run_method"] or "(direct)",
-                Text("not checked", style="dim"), key=tool["name"],
+                tool["name"],
+                tool["executable"],
+                tool["run_method"] or "(direct)",
+                Text("not checked", style="dim"),
+                key=tool["name"],
             )
 
         recipes_table = self.query_one("#recipes-table", DataTable)
         recipes_table.clear()
         for recipe in self.recipes:
             recipes_table.add_row(
-                recipe["name"], str(recipe["version"]), recipe["tool"],
-                recipe["entity_type"], recipe["file_role"], recipe["format"],
+                recipe["name"],
+                str(recipe["version"]),
+                recipe["tool"],
+                recipe["entity_type"],
+                recipe["file_role"],
+                recipe["format"],
                 key=recipe["name"],
             )
 
@@ -1102,35 +1368,51 @@ class ConfigPanel(Panel):
     # -- profile editor ----------------------------------------------------
 
     def _rule_rows(self, section: str) -> list[RuleRow]:
-        return list(self.query_one(f"#profile-{section}-rules", Vertical).query(RuleRow))
+        return list(
+            self.query_one(f"#profile-{section}-rules", Vertical).query(RuleRow)
+        )
 
-    def _render_profile_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
+    def _render_profile_form(
+        self, name: str, document: dict[str, Any], note: str = ""
+    ) -> None:
         self._show_editor("qc")
         self.query_one("#profile-run", Button).disabled = True
         self.query_one("#profile-heading", Static).update(
             f"{name}" + (f"  —  {note}" if note else "")
         )
-        self.query_one("#profile-description", Input).value = str(document.get("description", ""))
+        self.query_one("#profile-description", Input).value = str(
+            document.get("description", "")
+        )
         applies_to = {str(item) for item in document.get("applies_to", []) or []}
         for entity_type in ENTITY_TYPE_NAMES:
             self.query_one(f"#profile-applies-{entity_type}", Checkbox).value = (
                 entity_type in applies_to
             )
         version = int(document.get("version", 1))
-        self.query_one("#profile-version-note", Static).update(Text(
-            f"version {version} — saving writes the next version and records a snapshot",
-            style="dim",
-        ))
-        extras = {key: value for key, value in document.items() if key not in PROFILE_MODELED_KEYS}
+        self.query_one("#profile-version-note", Static).update(
+            Text(
+                f"version {version} — saving writes the next version and records a snapshot",
+                style="dim",
+            )
+        )
+        extras = {
+            key: value
+            for key, value in document.items()
+            if key not in PROFILE_MODELED_KEYS
+        }
         self.query_one("#profile-extras-note", Static).update(
             Text(_extras_note(extras), style="dim") if extras else ""
         )
         for section in ("required", "warnings"):
             container = self.query_one(f"#profile-{section}-rules", Vertical)
-            remount(container, *[
-                RuleRow(rule) for rule in document.get(section, []) or []
-                if isinstance(rule, dict)
-            ])
+            remount(
+                container,
+                *[
+                    RuleRow(rule)
+                    for rule in document.get(section, []) or []
+                    if isinstance(rule, dict)
+                ],
+            )
         self.query_one("#profile-save", Button).disabled = False
         self.query_one("#profile-history", Button).disabled = False
 
@@ -1151,8 +1433,9 @@ class ConfigPanel(Panel):
                 return str(profile.get("kind") or "qc")
         return "qc"
 
-    def _render_profile_document(self, name: str, document: dict[str, Any],
-                                 note: str = "") -> None:
+    def _render_profile_document(
+        self, name: str, document: dict[str, Any], note: str = ""
+    ) -> None:
         """Route a document to the editor its kind needs."""
         document_kind = str(document.get("kind", "qc"))
         if document_kind == actions.CLASSIFICATION_KIND:
@@ -1170,13 +1453,16 @@ class ConfigPanel(Panel):
 
     def _show_editor(self, kind: str) -> None:
         self.query_one("#profile-editor").display = kind == "qc"
-        self.query_one("#classification-editor").display = kind == actions.CLASSIFICATION_KIND
+        self.query_one("#classification-editor").display = (
+            kind == actions.CLASSIFICATION_KIND
+        )
         self.query_one("#coverage-editor").display = kind == actions.COVERAGE_KIND
 
     def _remember_version(self, kind: str, name: str, document: dict[str, Any]) -> None:
         key = (kind, name)
         self._known_versions[key] = max(
-            self._known_versions.get(key, 0), int(document.get("version", 1)),
+            self._known_versions.get(key, 0),
+            int(document.get("version", 1)),
         )
 
     def _compose_profile_document(self) -> dict[str, Any]:
@@ -1186,7 +1472,8 @@ class ConfigPanel(Panel):
             "version": int(original.get("version", 1)),
             "description": self.query_one("#profile-description", Input).value.strip(),
             "applies_to": [
-                entity_type for entity_type in ENTITY_TYPE_NAMES
+                entity_type
+                for entity_type in ENTITY_TYPE_NAMES
                 if self.query_one(f"#profile-applies-{entity_type}", Checkbox).value
             ],
             "required": [row.rule_document() for row in self._rule_rows("required")],
@@ -1207,7 +1494,11 @@ class ConfigPanel(Panel):
 
     def _profile_file_version(self, name: str, kind: str = "qc") -> int | None:
         try:
-            version = int(data.get_profile_document(self.project, name, kind=kind).get("version", 1))
+            version = int(
+                data.get_profile_document(self.project, name, kind=kind).get(
+                    "version", 1
+                )
+            )
         except ValidationError:
             version = 0
         version = max(version, self._known_versions.get(("profile", name), 0))
@@ -1232,8 +1523,9 @@ class ConfigPanel(Panel):
         for row in self.query(".classrule-row").results(ClassificationRuleRow):
             row.set_sources(names)
 
-    def _render_classification_form(self, name: str, document: dict[str, Any],
-                                    note: str = "") -> None:
+    def _render_classification_form(
+        self, name: str, document: dict[str, Any], note: str = ""
+    ) -> None:
         self._show_editor(actions.CLASSIFICATION_KIND)
         supported, reason = classification_form_supported(document)
         heading = f"{name}" + (f"  —  {note}" if note else "")
@@ -1243,38 +1535,59 @@ class ConfigPanel(Panel):
                 f"structure exceeds the manual form: {reason} — edit the YAML file; saving "
                 "from here is disabled and the file is never rewritten by the form",
                 style="yellow",
-            ) if not supported else ""
+            )
+            if not supported
+            else ""
         )
         self.query_one("#classification-description", Input).value = str(
-            document.get("description", ""))
+            document.get("description", "")
+        )
         applies_to = document.get("applies_to")
         applies_to = applies_to if isinstance(applies_to, dict) else {}
         self.query_one("#classification-entity-type", Input).value = str(
-            applies_to.get("entity_type", "") or "")
+            applies_to.get("entity_type", "") or ""
+        )
         self.query_one("#classification-file-role", Input).value = str(
-            applies_to.get("file_role", "") or "")
+            applies_to.get("file_role", "") or ""
+        )
         version = int(document.get("version", 1))
-        self.query_one("#classification-version-note", Static).update(Text(
-            f"version {version} — saving writes the next version and records a snapshot "
-            "that a classify run consumes",
-            style="dim",
-        ))
-        extras = {key: value for key, value in document.items() if key not in CLASSIFICATION_MODELED_KEYS}
+        self.query_one("#classification-version-note", Static).update(
+            Text(
+                f"version {version} — saving writes the next version and records a snapshot "
+                "that a classify run consumes",
+                style="dim",
+            )
+        )
+        extras = {
+            key: value
+            for key, value in document.items()
+            if key not in CLASSIFICATION_MODELED_KEYS
+        }
         self.query_one("#classification-extras-note", Static).update(
             Text(_extras_note(extras), style="dim") if extras else ""
         )
         sources = document.get("sources")
         sources = sources if isinstance(sources, dict) else {}
         source_container = self.query_one("#classification-sources", Vertical)
-        remount(source_container, *[
-            SourceRow(str(source_name), source)
-            for source_name, source in sources.items() if isinstance(source, dict)
-        ])
+        remount(
+            source_container,
+            *[
+                SourceRow(str(source_name), source)
+                for source_name, source in sources.items()
+                if isinstance(source, dict)
+            ],
+        )
         rules = document.get("rules")
-        rules = [rule for rule in rules if isinstance(rule, dict)] if isinstance(rules, list) else []
+        rules = (
+            [rule for rule in rules if isinstance(rule, dict)]
+            if isinstance(rules, list)
+            else []
+        )
         rules_container = self.query_one("#classification-rules", Vertical)
         names = [str(source_name) for source_name in sources]
-        remount(rules_container, *[ClassificationRuleRow(rule, names) for rule in rules])
+        remount(
+            rules_container, *[ClassificationRuleRow(rule, names) for rule in rules]
+        )
         self.query_one("#classification-save-error", Static).update("")
         self.query_one("#classification-save", Button).disabled = not supported
         self.query_one("#classification-history", Button).disabled = False
@@ -1294,10 +1607,16 @@ class ConfigPanel(Panel):
         document: dict[str, Any] = {
             "kind": actions.CLASSIFICATION_KIND,
             "version": int(original.get("version", 1)),
-            "description": self.query_one("#classification-description", Input).value.strip(),
+            "description": self.query_one(
+                "#classification-description", Input
+            ).value.strip(),
             "applies_to": {
-                "entity_type": self.query_one("#classification-entity-type", Input).value.strip(),
-                "file_role": self.query_one("#classification-file-role", Input).value.strip(),
+                "entity_type": self.query_one(
+                    "#classification-entity-type", Input
+                ).value.strip(),
+                "file_role": self.query_one(
+                    "#classification-file-role", Input
+                ).value.strip(),
             },
             "sources": sources,
             "rules": [
@@ -1317,11 +1636,13 @@ class ConfigPanel(Panel):
         names = self._source_names()
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
-            error.update(Text(
-                f"duplicate source name(s): {', '.join(duplicates)} — source names are the "
-                "mapping keys and must be unique",
-                style="red",
-            ))
+            error.update(
+                Text(
+                    f"duplicate source name(s): {', '.join(duplicates)} — source names are the "
+                    "mapping keys and must be unique",
+                    style="red",
+                )
+            )
             return
         error.update("")
         name = self.classification_profile
@@ -1345,8 +1666,9 @@ class ConfigPanel(Panel):
 
     # -- coverage-profile editor ---------------------------------------------
 
-    def _render_coverage_form(self, name: str, document: dict[str, Any],
-                              note: str = "") -> None:
+    def _render_coverage_form(
+        self, name: str, document: dict[str, Any], note: str = ""
+    ) -> None:
         self._show_editor(actions.COVERAGE_KIND)
         self.query_one("#profile-run", Button).disabled = True
         supported, reason = coverage_form_supported(document)
@@ -1358,10 +1680,13 @@ class ConfigPanel(Panel):
                 f"structure exceeds the manual form: {reason} — edit the YAML file; "
                 "saving from here is disabled and the file is never rewritten by the form",
                 style="yellow",
-            ) if not supported else ""
+            )
+            if not supported
+            else ""
         )
         self.query_one("#coverage-description", Input).value = str(
-            document.get("description", ""))
+            document.get("description", "")
+        )
         taxonomy = document.get("taxonomy")
         taxonomy = taxonomy if isinstance(taxonomy, dict) else {}
         source = str(taxonomy.get("source") or "NCBI")
@@ -1383,17 +1708,25 @@ class ConfigPanel(Panel):
             checkbox = self.query_one(f"#coverage-rank-{rank}", Checkbox)
             checkbox.value = rank in ranks
             self.query_one(f"#coverage-threshold-{rank}", Input).disabled = (
-                rank not in ranks)
+                rank not in ranks
+            )
         filters = document.get("filters")
         filters = filters if isinstance(filters, dict) else {}
         self.query_one("#coverage-exclude-extinct", Checkbox).value = bool(
-            filters.get("exclude_extinct", False))
+            filters.get("exclude_extinct", False)
+        )
         subtrees = filters.get("exclude_subtrees")
-        subtrees = [str(item) for item in subtrees] if isinstance(subtrees, list) else []
+        subtrees = (
+            [str(item) for item in subtrees] if isinstance(subtrees, list) else []
+        )
         self.query_one("#coverage-exclude-subtrees", Input).value = ", ".join(subtrees)
         patterns = filters.get("exclude_name_patterns")
-        patterns = [str(item) for item in patterns] if isinstance(patterns, list) else []
-        self.query_one("#coverage-exclude-patterns", TextArea).text = "\n".join(patterns)
+        patterns = (
+            [str(item) for item in patterns] if isinstance(patterns, list) else []
+        )
+        self.query_one("#coverage-exclude-patterns", TextArea).text = "\n".join(
+            patterns
+        )
         thresholds = document.get("thresholds")
         thresholds = thresholds if isinstance(thresholds, dict) else {}
         for rank in COVERAGE_RANKS:
@@ -1401,15 +1734,21 @@ class ConfigPanel(Panel):
             entry = entry if isinstance(entry, dict) else {}
             value = entry.get("min_coverage_percent")
             self.query_one(f"#coverage-threshold-{rank}", Input).value = (
-                "" if value is None else str(value))
+                "" if value is None else str(value)
+            )
         version = int(document.get("version", 1))
-        self.query_one("#coverage-version-note", Static).update(Text(
-            f"version {version} — saving writes the next version and records a "
-            "snapshot that a taxonomy compile consumes",
-            style="dim",
-        ))
-        extras = {key: value for key, value in document.items()
-                  if key not in COVERAGE_MODELED_KEYS}
+        self.query_one("#coverage-version-note", Static).update(
+            Text(
+                f"version {version} — saving writes the next version and records a "
+                "snapshot that a taxonomy compile consumes",
+                style="dim",
+            )
+        )
+        extras = {
+            key: value
+            for key, value in document.items()
+            if key not in COVERAGE_MODELED_KEYS
+        }
         self.query_one("#coverage-extras-note", Static).update(
             Text(_extras_note(extras), style="dim") if extras else ""
         )
@@ -1419,8 +1758,9 @@ class ConfigPanel(Panel):
 
     def _sync_coverage_thresholds(self) -> None:
         for rank in COVERAGE_RANKS:
-            self.query_one(f"#coverage-threshold-{rank}", Input).disabled = (
-                not self.query_one(f"#coverage-rank-{rank}", Checkbox).value)
+            self.query_one(
+                f"#coverage-threshold-{rank}", Input
+            ).disabled = not self.query_one(f"#coverage-rank-{rank}", Checkbox).value
 
     def _compose_coverage_document(self) -> dict[str, Any]:
         original = self.coverage_doc or {}
@@ -1435,16 +1775,21 @@ class ConfigPanel(Panel):
             if not isinstance(value, dict):
                 return {}
             return {
-                key: val for key, val in value.items()
+                key: val
+                for key, val in value.items()
                 if key not in SECTION_MODELED_KEYS[name]
             }
 
         original_filters = original.get("filters")
-        original_filters = original_filters if isinstance(original_filters, dict) else {}
+        original_filters = (
+            original_filters if isinstance(original_filters, dict) else {}
+        )
 
         taxonomy = section("taxonomy")
         source_value = self.query_one("#coverage-taxonomy-source", Select).value
-        taxonomy["source"] = "NCBI" if source_value is Select.NULL else str(source_value)
+        taxonomy["source"] = (
+            "NCBI" if source_value is Select.NULL else str(source_value)
+        )
         document["taxonomy"] = taxonomy
 
         scope = section("scope")
@@ -1454,18 +1799,22 @@ class ConfigPanel(Panel):
             if part.strip()
         ]
         original_scope = original.get("scope")
-        if roots or (isinstance(original_scope, dict) and "root_taxids" in original_scope):
+        if roots or (
+            isinstance(original_scope, dict) and "root_taxids" in original_scope
+        ):
             scope["root_taxids"] = roots
         document["scope"] = scope
 
         ranks = [
-            rank for rank in COVERAGE_RANKS
+            rank
+            for rank in COVERAGE_RANKS
             if self.query_one(f"#coverage-rank-{rank}", Checkbox).value
         ]
         targets = section("targets")
         original_targets = original.get("targets")
-        if ranks or (isinstance(original_targets, dict)
-                     and "ranks" in original_targets):
+        if ranks or (
+            isinstance(original_targets, dict) and "ranks" in original_targets
+        ):
             targets["ranks"] = ranks
         document["targets"] = targets
 
@@ -1475,14 +1824,18 @@ class ConfigPanel(Panel):
             filters["exclude_extinct"] = exclude_extinct
         subtrees = [
             actions.coerce_scalar(part)
-            for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(",")
+            for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(
+                ","
+            )
             if part.strip()
         ]
         if subtrees or "exclude_subtrees" in original_filters:
             filters["exclude_subtrees"] = subtrees
         patterns = [
             line.strip()
-            for line in self.query_one("#coverage-exclude-patterns", TextArea).text.splitlines()
+            for line in self.query_one(
+                "#coverage-exclude-patterns", TextArea
+            ).text.splitlines()
             if line.strip()
         ]
         if patterns or "exclude_name_patterns" in original_filters:
@@ -1491,7 +1844,8 @@ class ConfigPanel(Panel):
 
         original_thresholds = original.get("thresholds")
         original_thresholds = (
-            original_thresholds if isinstance(original_thresholds, dict) else {})
+            original_thresholds if isinstance(original_thresholds, dict) else {}
+        )
         thresholds: dict[str, Any] = {}
         for rank in COVERAGE_RANKS:
             if rank not in ranks:
@@ -1499,10 +1853,13 @@ class ConfigPanel(Panel):
             entry: dict[str, Any] = {}
             original_entry = original_thresholds.get(rank)
             if isinstance(original_entry, dict):
-                entry.update({
-                    key: value for key, value in original_entry.items()
-                    if key not in THRESHOLD_MODELED_KEYS
-                })
+                entry.update(
+                    {
+                        key: value
+                        for key, value in original_entry.items()
+                        if key not in THRESHOLD_MODELED_KEYS
+                    }
+                )
             text = self.query_one(f"#coverage-threshold-{rank}", Input).value.strip()
             if text:
                 entry["min_coverage_percent"] = actions.coerce_scalar(text)
@@ -1519,35 +1876,47 @@ class ConfigPanel(Panel):
             return
         error = self.query_one("#coverage-save-error", Static)
         ranks = [
-            rank for rank in COVERAGE_RANKS
+            rank
+            for rank in COVERAGE_RANKS
             if self.query_one(f"#coverage-rank-{rank}", Checkbox).value
         ]
         if not ranks:
             error.update(Text("at least one target rank is required", style="red"))
             return
         missing = [
-            rank for rank in ranks
+            rank
+            for rank in ranks
             if not self.query_one(f"#coverage-threshold-{rank}", Input).value.strip()
         ]
         if missing:
-            error.update(Text(
-                f"missing minimum coverage for target rank(s): {', '.join(missing)}",
-                style="red",
-            ))
+            error.update(
+                Text(
+                    f"missing minimum coverage for target rank(s): {', '.join(missing)}",
+                    style="red",
+                )
+            )
             return
         for part in self.query_one("#coverage-root-taxids", Input).value.split(","):
             part = part.strip()
             if part and not part.isdigit():
-                error.update(Text(
-                    f"root TaxIDs must be positive integers; got {part!r}", style="red"))
+                error.update(
+                    Text(
+                        f"root TaxIDs must be positive integers; got {part!r}",
+                        style="red",
+                    )
+                )
                 return
-        for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(","):
+        for part in self.query_one("#coverage-exclude-subtrees", Input).value.split(
+            ","
+        ):
             part = part.strip()
             if part and not part.isdigit():
-                error.update(Text(
-                    f"excluded subtrees must be positive integers; got {part!r}",
-                    style="red",
-                ))
+                error.update(
+                    Text(
+                        f"excluded subtrees must be positive integers; got {part!r}",
+                        style="red",
+                    )
+                )
                 return
         error.update("")
         name = self.coverage_profile
@@ -1573,8 +1942,13 @@ class ConfigPanel(Panel):
 
     #: Tool-level keys the editor owns; everything else in the tool mapping is
     #: either shown read-only (recipes) or preserved verbatim (extras note).
-    TOOL_MODELED_KEYS = ("description", "executable", "run_method", "version_args",
-                         "version_pattern")
+    TOOL_MODELED_KEYS = (
+        "description",
+        "executable",
+        "run_method",
+        "version_args",
+        "version_pattern",
+    )
 
     #: Sub-keys the run-method form owns inside a ``run_method`` mapping.  Any
     #: other sub-key of the parsed mapping survives a conda-mode edit.
@@ -1592,13 +1966,16 @@ class ConfigPanel(Panel):
 
     def _render_tool_form(self, name: str, document: dict[str, Any]) -> None:
         extras = {
-            key: value for key, value in document.items()
+            key: value
+            for key, value in document.items()
             if key not in self.TOOL_MODELED_KEYS and key != "recipes"
         }
         self.query_one("#tool-heading", Static).update(name)
-        for key, widget_id in (("description", "#tool-description"),
-                               ("executable", "#tool-executable"),
-                               ("version_pattern", "#tool-version-pattern")):
+        for key, widget_id in (
+            ("description", "#tool-description"),
+            ("executable", "#tool-executable"),
+            ("version_pattern", "#tool-version-pattern"),
+        ):
             self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
         version_args = document.get("version_args") or []
         args = version_args if isinstance(version_args, list) else [version_args]
@@ -1609,9 +1986,7 @@ class ConfigPanel(Panel):
         note = self.query_one("#tool-extras-note", Static)
         messages = [_extras_note(extras)] if extras else []
         if self._run_method_extras:
-            messages.append(
-                "run_method keeps " + ", ".join(self._run_method_extras)
-            )
+            messages.append("run_method keeps " + ", ".join(self._run_method_extras))
         note.update(Text("; ".join(messages), style="dim") if messages else "")
         self.query_one("#tool-save-error", Static).update("")
         self.query_one("#tool-save", Button).disabled = False
@@ -1630,9 +2005,11 @@ class ConfigPanel(Panel):
             run_method if isinstance(run_method, str) else ""
         )
         self.query_one("#tool-run-conda-env", Input).value = str(
-            method.get("env", "") or "")
+            method.get("env", "") or ""
+        )
         self.query_one("#tool-run-conda-bin", Input).value = str(
-            method.get("bin", "") or "")
+            method.get("bin", "") or ""
+        )
         self.query_one("#tool-run-conda-args", TextArea).text = "\n".join(
             self._as_token_list(method.get("args"))
         )
@@ -1667,9 +2044,11 @@ class ConfigPanel(Panel):
         # field is omitted, which save_tool writes as a removed key (so a blank
         # executable falls back to the tool name).
         document: dict[str, Any] = {}
-        for key, widget_id in (("description", "#tool-description"),
-                               ("executable", "#tool-executable"),
-                               ("version_pattern", "#tool-version-pattern")):
+        for key, widget_id in (
+            ("description", "#tool-description"),
+            ("executable", "#tool-executable"),
+            ("version_pattern", "#tool-version-pattern"),
+        ):
             value = self.query_one(widget_id, Input).value.strip()
             if value:
                 document[key] = value
@@ -1735,34 +2114,46 @@ class ConfigPanel(Panel):
             try:
                 re.compile(pattern)
             except re.error as exc:
-                error.update(Text(
-                    f"tool {self.current_tool!r}: version_pattern is not a valid "
-                    f"regular expression ({exc})",
-                    style="red",
-                ))
+                error.update(
+                    Text(
+                        f"tool {self.current_tool!r}: version_pattern is not a valid "
+                        f"regular expression ({exc})",
+                        style="red",
+                    )
+                )
                 return
         run_method = document.get("run_method")
         if run_method == "":
-            error.update(Text(
-                f"tool {self.current_tool!r}: the command-line run method needs "
-                "a command", style="red",
-            ))
+            error.update(
+                Text(
+                    f"tool {self.current_tool!r}: the command-line run method needs "
+                    "a command",
+                    style="red",
+                )
+            )
             return
         if isinstance(run_method, dict):
             if run_method.get("mode") == "conda" and not run_method.get("env"):
-                error.update(Text(
-                    f"tool {self.current_tool!r}: the conda run method requires "
-                    "an environment (or blank for no run_method)", style="red",
-                ))
+                error.update(
+                    Text(
+                        f"tool {self.current_tool!r}: the conda run method requires "
+                        "an environment (or blank for no run_method)",
+                        style="red",
+                    )
+                )
                 return
             if run_method.get("mode") == "prefix" and not run_method.get("prefix"):
-                error.update(Text(
-                    f"tool {self.current_tool!r}: the prefix run method requires "
-                    "at least one token (or blank for no run_method)", style="red",
-                ))
+                error.update(
+                    Text(
+                        f"tool {self.current_tool!r}: the prefix run method requires "
+                        "at least one token (or blank for no run_method)",
+                        style="red",
+                    )
+                )
                 return
         self.app.push_screen(
-            ToolSaveModal(self.project, self.current_tool, document), self._on_tool_saved,
+            ToolSaveModal(self.project, self.current_tool, document),
+            self._on_tool_saved,
         )
 
     def _on_tool_saved(self, payload: Any) -> None:
@@ -1783,7 +2174,8 @@ class ConfigPanel(Panel):
             self.query_one("#conda-save", Button).disabled = True
             return
         extras = {
-            key: value for key, value in document.items()
+            key: value
+            for key, value in document.items()
             if key not in actions.MODELED_CONDA_KEYS
         }
         self.query_one("#conda-bin", Input).value = str(document.get("bin", "") or "")
@@ -1814,7 +2206,8 @@ class ConfigPanel(Panel):
         if document is None:
             return
         self.app.push_screen(
-            CondaDefaultsSaveModal(self.project, document), self._on_conda_saved,
+            CondaDefaultsSaveModal(self.project, document),
+            self._on_conda_saved,
         )
 
     def _on_conda_saved(self, payload: Any) -> None:
@@ -1824,11 +2217,15 @@ class ConfigPanel(Panel):
 
     # -- recipe editor ------------------------------------------------------
 
-    def _render_recipe_form(self, name: str, document: dict[str, Any], note: str = "") -> None:
+    def _render_recipe_form(
+        self, name: str, document: dict[str, Any], note: str = ""
+    ) -> None:
         self.query_one("#recipe-heading", Static).update(
             f"{self.recipe_tool}.{name}" + (f"  —  {note}" if note else "")
         )
-        self.query_one("#recipe-description", Input).value = str(document.get("description", ""))
+        self.query_one("#recipe-description", Input).value = str(
+            document.get("description", "")
+        )
         entity_type = str(document.get("entity_type", "") or "")
         entity_select = self.query_one("#recipe-entity-type", Select)
         entity_options = list(ENTITY_TYPE_OPTIONS)
@@ -1836,16 +2233,21 @@ class ConfigPanel(Panel):
             entity_options.append((f"{entity_type} (preserved)", entity_type))
             entity_select.set_options(entity_options)
         entity_select.value = entity_type if entity_type else Select.NULL
-        self.query_one("#recipe-file-role", Input).value = str(document.get("file_role", "") or "")
+        self.query_one("#recipe-file-role", Input).value = str(
+            document.get("file_role", "") or ""
+        )
         self.query_one("#recipe-file-role-prefix", Input).value = str(
-            document.get("file_role_prefix", "") or "")
-        self.query_one("#recipe-format", Input).value = str(document.get("format", "") or "")
+            document.get("file_role_prefix", "") or ""
+        )
+        self.query_one("#recipe-format", Input).value = str(
+            document.get("format", "") or ""
+        )
         for key, widget_id, options in (
-                ("input_kind", "#recipe-input-kind", ARTIFACT_KINDS),
-                ("output_kind", "#recipe-output-kind", ARTIFACT_KINDS),
-                ("environment_policy", "#recipe-environment-policy", ENVIRONMENT_POLICIES),
-                ("hmmer_mode", "#recipe-hmmer-mode", HMMER_MODES),
-                ("database_mode", "#recipe-database-mode", DATABASE_MODES),
+            ("input_kind", "#recipe-input-kind", ARTIFACT_KINDS),
+            ("output_kind", "#recipe-output-kind", ARTIFACT_KINDS),
+            ("environment_policy", "#recipe-environment-policy", ENVIRONMENT_POLICIES),
+            ("hmmer_mode", "#recipe-hmmer-mode", HMMER_MODES),
+            ("database_mode", "#recipe-database-mode", DATABASE_MODES),
         ):
             value = str(document.get(key, "") or "")
             select = self.query_one(widget_id, Select)
@@ -1855,19 +2257,28 @@ class ConfigPanel(Panel):
                     + [(f"{value} (preserved)", value)]
                 )
             select.value = value if value else Select.NULL
-        self.query_one("#recipe-database", Input).value = str(document.get("database", "") or "")
+        self.query_one("#recipe-database", Input).value = str(
+            document.get("database", "") or ""
+        )
         self.query_one("#recipe-database-version", Input).value = str(
-            document.get("database_version", "") or "")
+            document.get("database_version", "") or ""
+        )
         self.query_one("#recipe-database-checksum", Input).value = str(
-            document.get("database_checksum", "") or "")
+            document.get("database_checksum", "") or ""
+        )
         self.query_one("#recipe-output-subdir", Input).value = str(
-            document.get("output_subdir", "") or "")
+            document.get("output_subdir", "") or ""
+        )
         self.query_one("#recipe-output-suffix", Input).value = str(
-            document.get("output_suffix", "") or "")
+            document.get("output_suffix", "") or ""
+        )
         self.query_one("#recipe-output-name", Input).value = str(
-            document.get("output_name", "") or "")
+            document.get("output_name", "") or ""
+        )
         arguments = document.get("arguments", []) or []
-        self.query_one("#recipe-arguments", TextArea).text = "\n".join(str(a) for a in arguments)
+        self.query_one("#recipe-arguments", TextArea).text = "\n".join(
+            str(a) for a in arguments
+        )
         parameters = document.get("parameters", {}) or {}
         lines = []
         preserved_specs = []
@@ -1880,7 +2291,8 @@ class ConfigPanel(Panel):
         self.query_one("#recipe-parameters", TextArea).text = "\n".join(lines)
         self.query_one("#recipe-parameters-note", Static).update(
             Text("preserved spec keys — " + "; ".join(preserved_specs), style="dim")
-            if preserved_specs else ""
+            if preserved_specs
+            else ""
         )
         self._render_command_rows(document.get("commands"))
         self._render_slurm_fields(document.get("slurm"))
@@ -1891,26 +2303,36 @@ class ConfigPanel(Panel):
                 [(p, p) for p in RESULT_PARSERS] + [(f"{parser} (preserved)", parser)]
             )
         parser_select.value = parser
-        for key, widget_id in (("result_glob", "#recipe-result-glob"),
-                               ("query_column", "#recipe-query-column"),
-                               ("subject_column", "#recipe-subject-column"),
-                               ("qstart_column", "#recipe-qstart-column"),
-                               ("qend_column", "#recipe-qend-column"),
-                               ("sstart_column", "#recipe-sstart-column"),
-                               ("send_column", "#recipe-send-column"),
-                               ("evalue_column", "#recipe-evalue-column"),
-                               ("bitscore_column", "#recipe-bitscore-column"),
-                               ("pident_column", "#recipe-pident-column")):
+        for key, widget_id in (
+            ("result_glob", "#recipe-result-glob"),
+            ("query_column", "#recipe-query-column"),
+            ("subject_column", "#recipe-subject-column"),
+            ("qstart_column", "#recipe-qstart-column"),
+            ("qend_column", "#recipe-qend-column"),
+            ("sstart_column", "#recipe-sstart-column"),
+            ("send_column", "#recipe-send-column"),
+            ("evalue_column", "#recipe-evalue-column"),
+            ("bitscore_column", "#recipe-bitscore-column"),
+            ("pident_column", "#recipe-pident-column"),
+        ):
             self.query_one(widget_id, Input).value = str(document.get(key, "") or "")
-        for key, widget_id in (("result_columns", "#recipe-result-columns"),
-                               ("hit_metric_columns", "#recipe-hit-metric-columns"),
-                               ("numeric_columns", "#recipe-numeric-columns")):
+        for key, widget_id in (
+            ("result_columns", "#recipe-result-columns"),
+            ("hit_metric_columns", "#recipe-hit-metric-columns"),
+            ("numeric_columns", "#recipe-numeric-columns"),
+        ):
             columns = document.get(key, []) or []
             self.query_one(widget_id, Input).value = ", ".join(str(c) for c in columns)
         max_hits = document.get("max_hits_per_query")
-        self.query_one("#recipe-max-hits", Input).value = "" if max_hits is None else str(max_hits)
+        self.query_one("#recipe-max-hits", Input).value = (
+            "" if max_hits is None else str(max_hits)
+        )
         self.query_one("#recipe-save-error", Static).update("")
-        extras = {key: value for key, value in document.items() if key not in RECIPE_MODELED_KEYS}
+        extras = {
+            key: value
+            for key, value in document.items()
+            if key not in RECIPE_MODELED_KEYS
+        }
         self.query_one("#recipe-extras-note", Static).update(
             Text(_extras_note(extras), style="dim") if extras else ""
         )
@@ -1922,25 +2344,33 @@ class ConfigPanel(Panel):
         """Fill the slurm overrides, keeping every key the form does not model."""
         data = slurm if isinstance(slurm, dict) else {}
         modeled = {name for name, _, _ in RECIPE_SLURM_FIELDS}
-        self._slurm_extras = {key: value for key, value in data.items()
-                             if key not in modeled}
+        self._slurm_extras = {
+            key: value for key, value in data.items() if key not in modeled
+        }
         for key, widget_id, kind in RECIPE_SLURM_FIELDS:
             value = data.get(key)
             if kind == "lines":
                 self.query_one(widget_id, TextArea).text = (
                     "\n".join(str(item) for item in value)
-                    if isinstance(value, list) else "")
+                    if isinstance(value, list)
+                    else ""
+                )
             elif kind == "tri":
                 self.query_one(widget_id, Select).value = (
-                    Select.NULL if value is None else ("true" if value else "false"))
+                    Select.NULL if value is None else ("true" if value else "false")
+                )
             else:
                 self.query_one(widget_id, Input).value = (
-                    "" if value is None else str(value))
+                    "" if value is None else str(value)
+                )
         note = self.query_one("#recipe-slurm-note", Static)
         note.update(
-            Text("preserved slurm keys — " + ", ".join(sorted(self._slurm_extras)),
-                 style="dim")
-            if self._slurm_extras else ""
+            Text(
+                "preserved slurm keys — " + ", ".join(sorted(self._slurm_extras)),
+                style="dim",
+            )
+            if self._slurm_extras
+            else ""
         )
 
     def _compose_slurm_document(self) -> dict[str, Any]:
@@ -1953,9 +2383,11 @@ class ConfigPanel(Panel):
         document: dict[str, Any] = dict(self._slurm_extras)
         for key, widget_id, kind in RECIPE_SLURM_FIELDS:
             if kind == "lines":
-                lines = [line.strip()
-                         for line in self.query_one(widget_id, TextArea).text.splitlines()
-                         if line.strip()]
+                lines = [
+                    line.strip()
+                    for line in self.query_one(widget_id, TextArea).text.splitlines()
+                    if line.strip()
+                ]
                 if lines:
                     document[key] = lines
                 continue
@@ -1982,7 +2414,9 @@ class ConfigPanel(Panel):
         """Rebuild the commands rows from a document (a new recipe, a snapshot)."""
         rows = [
             CommandRow(block, index)
-            for index, block in enumerate(blocks if isinstance(blocks, list) else [], start=1)
+            for index, block in enumerate(
+                blocks if isinstance(blocks, list) else [], start=1
+            )
             if isinstance(block, dict)
         ]
         remount(self.query_one("#recipe-command-list", MountTracked), *rows)
@@ -1992,7 +2426,9 @@ class ConfigPanel(Panel):
         self._refresh_command_note()
 
     def _renumber_command_rows(self) -> None:
-        for index, row in enumerate(self.query(CommandRow).results(CommandRow), start=1):
+        for index, row in enumerate(
+            self.query(CommandRow).results(CommandRow), start=1
+        ):
             row.set_index(index)
 
     def _refresh_command_note(self) -> None:
@@ -2004,17 +2440,21 @@ class ConfigPanel(Panel):
             note_view.update("")
             return
         if arguments:
-            note_view.update(Text(
-                f"'commands' and 'arguments' are mutually exclusive — clear one "
-                f"before saving ({row_count} step(s) defined)",
-                style="yellow",
-            ))
+            note_view.update(
+                Text(
+                    f"'commands' and 'arguments' are mutually exclusive — clear one "
+                    f"before saving ({row_count} step(s) defined)",
+                    style="yellow",
+                )
+            )
             return
-        note_view.update(Text(
-            f"{row_count} step(s); every step runs in the parent tool's single "
-            "run_method environment",
-            style="dim",
-        ))
+        note_view.update(
+            Text(
+                f"{row_count} step(s); every step runs in the parent tool's single "
+                "run_method environment",
+                style="dim",
+            )
+        )
 
     def _load_recipe(self, name: str) -> None:
         try:
@@ -2043,26 +2483,34 @@ class ConfigPanel(Panel):
         parameters: dict[str, Any] = {}
         self._parameter_problems = []
         for index, line in enumerate(
-                self.query_one("#recipe-parameters", TextArea).text.splitlines(), start=1):
+            self.query_one("#recipe-parameters", TextArea).text.splitlines(), start=1
+        ):
             parsed = _parse_parameter_line(line, original_parameters)
             if parsed is None:
                 continue
             parameters[parsed[0]] = parsed[1]
             self._parameter_problems.extend(
-                f"line {index}: {problem}" for problem in parsed[2])
+                f"line {index}: {problem}" for problem in parsed[2]
+            )
         columns = [
             column.strip()
-            for column in self.query_one("#recipe-result-columns", Input).value.split(",")
+            for column in self.query_one("#recipe-result-columns", Input).value.split(
+                ","
+            )
             if column.strip()
         ]
         hit_columns = [
             column.strip()
-            for column in self.query_one("#recipe-hit-metric-columns", Input).value.split(",")
+            for column in self.query_one(
+                "#recipe-hit-metric-columns", Input
+            ).value.split(",")
             if column.strip()
         ]
         numeric_columns = [
             column.strip()
-            for column in self.query_one("#recipe-numeric-columns", Input).value.split(",")
+            for column in self.query_one("#recipe-numeric-columns", Input).value.split(
+                ","
+            )
             if column.strip()
         ]
         max_hits_text = self.query_one("#recipe-max-hits", Input).value.strip()
@@ -2071,50 +2519,64 @@ class ConfigPanel(Panel):
             try:
                 max_hits = int(max_hits_text)
             except ValueError:
-                max_hits = max_hits_text  # save_recipe round-trip rejects with a clear error
+                max_hits = (
+                    max_hits_text  # save_recipe round-trip rejects with a clear error
+                )
 
         new_values: dict[str, Any] = {}
-        for key, widget_id in (("description", "#recipe-description"),
-                               ("file_role", "#recipe-file-role"),
-                               ("file_role_prefix", "#recipe-file-role-prefix"),
-                               ("format", "#recipe-format"),
-                               ("database", "#recipe-database"),
-                               ("database_version", "#recipe-database-version"),
-                               ("database_checksum", "#recipe-database-checksum"),
-                               ("output_subdir", "#recipe-output-subdir"),
-                               ("output_suffix", "#recipe-output-suffix"),
-                               ("output_name", "#recipe-output-name"),
-                               ("result_glob", "#recipe-result-glob"),
-                               ("query_column", "#recipe-query-column"),
-                               ("subject_column", "#recipe-subject-column"),
-                               ("qstart_column", "#recipe-qstart-column"),
-                               ("qend_column", "#recipe-qend-column"),
-                               ("sstart_column", "#recipe-sstart-column"),
-                               ("send_column", "#recipe-send-column"),
-                               ("evalue_column", "#recipe-evalue-column"),
-                               ("bitscore_column", "#recipe-bitscore-column"),
-                               ("pident_column", "#recipe-pident-column")):
+        for key, widget_id in (
+            ("description", "#recipe-description"),
+            ("file_role", "#recipe-file-role"),
+            ("file_role_prefix", "#recipe-file-role-prefix"),
+            ("format", "#recipe-format"),
+            ("database", "#recipe-database"),
+            ("database_version", "#recipe-database-version"),
+            ("database_checksum", "#recipe-database-checksum"),
+            ("output_subdir", "#recipe-output-subdir"),
+            ("output_suffix", "#recipe-output-suffix"),
+            ("output_name", "#recipe-output-name"),
+            ("result_glob", "#recipe-result-glob"),
+            ("query_column", "#recipe-query-column"),
+            ("subject_column", "#recipe-subject-column"),
+            ("qstart_column", "#recipe-qstart-column"),
+            ("qend_column", "#recipe-qend-column"),
+            ("sstart_column", "#recipe-sstart-column"),
+            ("send_column", "#recipe-send-column"),
+            ("evalue_column", "#recipe-evalue-column"),
+            ("bitscore_column", "#recipe-bitscore-column"),
+            ("pident_column", "#recipe-pident-column"),
+        ):
             value = self.query_one(widget_id, Input).value.strip()
             new_values[key] = value if value or key in original else _OMIT
-        for key, widget_id in (("input_kind", "#recipe-input-kind"),
-                               ("output_kind", "#recipe-output-kind"),
-                               ("environment_policy", "#recipe-environment-policy"),
-                               ("hmmer_mode", "#recipe-hmmer-mode"),
-                               ("database_mode", "#recipe-database-mode")):
+        for key, widget_id in (
+            ("input_kind", "#recipe-input-kind"),
+            ("output_kind", "#recipe-output-kind"),
+            ("environment_policy", "#recipe-environment-policy"),
+            ("hmmer_mode", "#recipe-hmmer-mode"),
+            ("database_mode", "#recipe-database-mode"),
+        ):
             select_value = self.query_one(widget_id, Select).value
             text = "" if select_value is Select.NULL else str(select_value)
             new_values[key] = text if text or key in original else _OMIT
         new_values["entity_type"] = (
             entity_type if entity_type or "entity_type" in original else _OMIT
         )
-        new_values["arguments"] = arguments if arguments or "arguments" in original else _OMIT
-        commands = [row.command_document() for row in self.query(CommandRow).results(CommandRow)]
-        new_values["commands"] = commands if commands or "commands" in original else _OMIT
+        new_values["arguments"] = (
+            arguments if arguments or "arguments" in original else _OMIT
+        )
+        commands = [
+            row.command_document() for row in self.query(CommandRow).results(CommandRow)
+        ]
+        new_values["commands"] = (
+            commands if commands or "commands" in original else _OMIT
+        )
         slurm_values = self._compose_slurm_document()
         new_values["slurm"] = (
             slurm_values if slurm_values or "slurm" in original else _OMIT
         )
-        new_values["parameters"] = parameters if parameters or "parameters" in original else _OMIT
+        new_values["parameters"] = (
+            parameters if parameters or "parameters" in original else _OMIT
+        )
         new_values["result_parser"] = parser
         new_values["result_columns"] = (
             columns if columns or "result_columns" in original else _OMIT
@@ -2123,7 +2585,9 @@ class ConfigPanel(Panel):
             hit_columns if hit_columns or "hit_metric_columns" in original else _OMIT
         )
         new_values["numeric_columns"] = (
-            numeric_columns if numeric_columns or "numeric_columns" in original else _OMIT
+            numeric_columns
+            if numeric_columns or "numeric_columns" in original
+            else _OMIT
         )
         new_values["max_hits_per_query"] = max_hits
 
@@ -2141,7 +2605,11 @@ class ConfigPanel(Panel):
 
     def _recipe_file_version(self, name: str) -> int | None:
         try:
-            version = int(data.get_recipe_document(self.project, name)["document"].get("version", 1))
+            version = int(
+                data.get_recipe_document(self.project, name)["document"].get(
+                    "version", 1
+                )
+            )
         except ValidationError:
             version = 0
         version = max(version, self._known_versions.get(("recipe", name), 0))
@@ -2223,7 +2691,9 @@ class ConfigPanel(Panel):
     def on_rule_row_remove_requested(self, event: RuleRow.RemoveRequested) -> None:
         event.row.remove()
 
-    async def on_command_row_remove_requested(self, event: CommandRow.RemoveRequested) -> None:
+    async def on_command_row_remove_requested(
+        self, event: CommandRow.RemoveRequested
+    ) -> None:
         event.stop()
         # Removal is deferred, so renumber and re-count only once it has landed.
         await event.row.remove()
@@ -2237,7 +2707,8 @@ class ConfigPanel(Panel):
         self._refresh_rule_sources()
 
     def on_classification_rule_row_remove_requested(
-            self, event: ClassificationRuleRow.RemoveRequested) -> None:
+        self, event: ClassificationRuleRow.RemoveRequested
+    ) -> None:
         event.stop()
         event.row.remove()
 
@@ -2269,8 +2740,9 @@ class ConfigPanel(Panel):
         elif button_id == "recipe-add-command":
             container = self.query_one("#recipe-command-list", MountTracked)
             index = self._command_row_count + 1
-            container.mount_later(CommandRow({"arguments": []}, index),
-                                  when_present=".command-row")
+            container.mount_later(
+                CommandRow({"arguments": []}, index), when_present=".command-row"
+            )
             self._command_row_count = index
             self._refresh_command_note()
         elif button_id == "profile-save":
@@ -2281,12 +2753,14 @@ class ConfigPanel(Panel):
             self.app.push_screen(NewProfileModal(), self._on_new_profile)
         elif button_id == "classification-add-source":
             self.query_one("#classification-sources", MountTracked).mount_later(
-                SourceRow("", {"analysis": "", "filter": []}), when_present=".source-row",
+                SourceRow("", {"analysis": "", "filter": []}),
+                when_present=".source-row",
             )
         elif button_id == "classification-add-rule":
             self.query_one("#classification-rules", MountTracked).mount_later(
-                ClassificationRuleRow({"label": "", "source": "", "when": []},
-                                      self._source_names()),
+                ClassificationRuleRow(
+                    {"label": "", "source": "", "when": []}, self._source_names()
+                ),
                 when_present=".classrule-row",
             )
         elif button_id == "classification-save":
@@ -2317,7 +2791,7 @@ class ConfigPanel(Panel):
     #: Shown when a save arrives before a deferred form rebuild has composed.
     FORM_MOUNTING_MESSAGE = "the form is still loading — save again in a moment"
     #: Answered when a control ran out of mount retries: waiting cannot help it, so
-    #: the message names the controls and sends the reader to a reload (ODR-0039).
+    #: the message names the controls and sends the reader to a reload (ODR-39).
     FORM_STALLED_MESSAGE = (
         "a dropdown in this form never finished loading — reload the profile (r) "
         "and try again"
@@ -2339,7 +2813,7 @@ class ConfigPanel(Panel):
         by Textual while it mounts.  Reading the form inside that window walks
         half-built rows; the composition then either raises ``NoMatches`` or,
         worse, returns a document with the missing rows silently dropped, which
-        is why a save refuses instead (ODR-0023).  Two signals cover it: every
+        is why a save refuses instead (ODR-23).  Two signals cover it: every
         container that fills itself later says so through :class:`MountTracked`,
         and every row latches :attr:`ComposedRows.form_ready` in its own
         ``on_mount`` — which Textual runs only once the row's whole subtree
@@ -2347,7 +2821,7 @@ class ConfigPanel(Panel):
         one control that can still be half-alive inside a composed row: a
         ``Select`` whose own mount lookup failed reports
         :attr:`FittingSelect.options_ready` only once it has adopted its value
-        (ODR-0026).
+        (ODR-26).
         """
         for container in self.query(".mount-tracked").results(MountTracked):
             if not container.mounts_settled:
@@ -2387,7 +2861,7 @@ class ConfigPanel(Panel):
 
         A select whose mount retries ran out blocks the form exactly like one that is
         still mounting, and no amount of waiting helps it — so name those controls and
-        send the reader to a reload instead of telling them to try again (ODR-0039).
+        send the reader to a reload instead of telling them to try again (ODR-39).
         """
         stalled = [
             str(select.id or type(select).__name__)
@@ -2405,24 +2879,34 @@ class ConfigPanel(Panel):
         kind = str(payload.get("kind") or "qc")
         if (self.project.profiles_dir / f"{name}.yaml").exists():
             self.app.notify(
-                f"profile {name!r} already exists — opening it instead", severity="warning",
+                f"profile {name!r} already exists — opening it instead",
+                severity="warning",
             )
             self._load_profile(name)
             return
         if kind == actions.CLASSIFICATION_KIND:
             self.classification_profile = name
             self.classification_doc = {
-                "kind": actions.CLASSIFICATION_KIND, "version": 1, "description": "",
-                "applies_to": {"entity_type": "annotation", "file_role": "protein_fasta"},
-                "sources": {}, "rules": [],
+                "kind": actions.CLASSIFICATION_KIND,
+                "version": 1,
+                "description": "",
+                "applies_to": {
+                    "entity_type": "annotation",
+                    "file_role": "protein_fasta",
+                },
+                "sources": {},
+                "rules": [],
             }
             self._render_classification_form(
-                name, dict(self.classification_doc), note="new profile (not saved yet)")
+                name, dict(self.classification_doc), note="new profile (not saved yet)"
+            )
             return
         if kind == actions.COVERAGE_KIND:
             self.coverage_profile = name
             self.coverage_doc = {
-                "kind": actions.COVERAGE_KIND, "version": 1, "description": "",
+                "kind": actions.COVERAGE_KIND,
+                "version": 1,
+                "description": "",
                 "taxonomy": {"source": "NCBI"},
                 "scope": {"root_taxids": [1]},
                 "targets": {"ranks": ["family", "genus"]},
@@ -2433,14 +2917,21 @@ class ConfigPanel(Panel):
                 },
             }
             self._render_coverage_form(
-                name, dict(self.coverage_doc), note="new profile (not saved yet)")
+                name, dict(self.coverage_doc), note="new profile (not saved yet)"
+            )
             return
         self.current_profile = name
         self.profile_doc = {
-            "kind": "qc", "version": 1, "description": "",
-            "applies_to": ["assembly"], "required": [], "warnings": [],
+            "kind": "qc",
+            "version": 1,
+            "description": "",
+            "applies_to": ["assembly"],
+            "required": [],
+            "warnings": [],
         }
-        self._render_profile_form(name, self.profile_doc, note="new profile (not saved yet)")
+        self._render_profile_form(
+            name, self.profile_doc, note="new profile (not saved yet)"
+        )
 
     def _start_profile_save(self) -> None:
         if not self.current_profile or self.profile_doc is None:
@@ -2461,7 +2952,7 @@ class ConfigPanel(Panel):
 
         ``current_profile`` is maintained only by the qc editor path; the
         classification editor keeps its own name, so a History request must
-        resolve the name from the visible editor instead (ODR-0041).
+        resolve the name from the visible editor instead (ODR-41).
         """
         if self.query_one("#classification-editor").display:
             return self.classification_profile
@@ -2478,14 +2969,20 @@ class ConfigPanel(Panel):
         def restore(document: dict[str, Any]) -> None:
             self.profile_doc = dict(document)
             self._render_profile_document(
-                name, dict(document),
+                name,
+                dict(document),
                 note="restored from snapshot — saving creates the next version",
             )
 
         self.app.push_screen(
             HistoryModal(
-                self.project, "profile", name, rows,
-                fetch_snapshot=lambda sid: data.get_profile_snapshot(self.project, name, sid),
+                self.project,
+                "profile",
+                name,
+                rows,
+                fetch_snapshot=lambda sid: data.get_profile_snapshot(
+                    self.project, name, sid
+                ),
                 to_editor=lambda document: document,
             ),
             lambda document: restore(document) if document else None,
@@ -2497,8 +2994,9 @@ class ConfigPanel(Panel):
 
         name = self.classification_profile
         if not name or not (self.project.profiles_dir / f"{name}.yaml").exists():
-            self.app.notify("save the classification profile before running it",
-                            severity="warning")
+            self.app.notify(
+                "save the classification profile before running it", severity="warning"
+            )
             return
         self.app.push_screen(
             ClassifyModal(self.project, name, self.classification_doc),
@@ -2521,90 +3019,125 @@ class ConfigPanel(Panel):
         # re-validates everything else against the core loader.
         commands = document.get("commands") or []
         if commands and document.get("arguments"):
-            error.update(Text(
-                f"analysis {self.current_recipe!r}: 'commands' and 'arguments' "
-                "are mutually exclusive",
-                style="red",
-            ))
+            error.update(
+                Text(
+                    f"analysis {self.current_recipe!r}: 'commands' and 'arguments' "
+                    "are mutually exclusive",
+                    style="red",
+                )
+            )
             return
         for index, block in enumerate(commands, start=1):
             if not block.get("arguments"):
-                error.update(Text(
-                    f"analysis {self.current_recipe!r}: commands block {index} "
-                    "requires a non-empty 'arguments' list",
-                    style="red",
-                ))
+                error.update(
+                    Text(
+                        f"analysis {self.current_recipe!r}: commands block {index} "
+                        "requires a non-empty 'arguments' list",
+                        style="red",
+                    )
+                )
                 return
             if block.get("version_pattern") and not block.get("version_args"):
-                error.update(Text(
-                    f"analysis {self.current_recipe!r}: commands block {index} "
-                    "version_pattern requires version_args",
-                    style="red",
-                ))
+                error.update(
+                    Text(
+                        f"analysis {self.current_recipe!r}: commands block {index} "
+                        "version_pattern requires version_args",
+                        style="red",
+                    )
+                )
                 return
         if self._parameter_problems:
-            error.update(Text(
-                f"analysis {self.current_recipe!r}: "
-                + "; ".join(self._parameter_problems),
-                style="red",
-            ))
+            error.update(
+                Text(
+                    f"analysis {self.current_recipe!r}: "
+                    + "; ".join(self._parameter_problems),
+                    style="red",
+                )
+            )
             return
         for name, spec in (document.get("parameters") or {}).items():
             if _PARAM_NAME_RE.fullmatch(name) is None:
-                error.update(Text(
-                    f"analysis {self.current_recipe!r}: invalid parameter name {name!r}",
-                    style="red",
-                ))
+                error.update(
+                    Text(
+                        f"analysis {self.current_recipe!r}: invalid parameter name {name!r}",
+                        style="red",
+                    )
+                )
                 return
             pattern = str(spec.get("pattern", "") or "")
             if pattern:
                 try:
                     re.compile(pattern)
                 except re.error as exc:
-                    error.update(Text(
-                        f"analysis {self.current_recipe!r}: parameter {name!r} pattern "
-                        f"is not a valid regular expression ({exc})",
-                        style="red",
-                    ))
+                    error.update(
+                        Text(
+                            f"analysis {self.current_recipe!r}: parameter {name!r} pattern "
+                            f"is not a valid regular expression ({exc})",
+                            style="red",
+                        )
+                    )
                     return
         slurm = document.get("slurm") or {}
         for key, kind, message in (
-                ("mem_gb", int, "slurm mem_gb must be an integer >= 0"),
-                ("poll_interval", float, "slurm poll_interval must be a number > 0"),
-                ("array_concurrency", int,
-                 "slurm array_concurrency must be a positive integer")):
+            ("mem_gb", int, "slurm mem_gb must be an integer >= 0"),
+            ("poll_interval", float, "slurm poll_interval must be a number > 0"),
+            (
+                "array_concurrency",
+                int,
+                "slurm array_concurrency must be a positive integer",
+            ),
+        ):
             value = slurm.get(key)
             if value is None:
                 continue
             if isinstance(value, bool) or not isinstance(value, kind):
-                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
+                error.update(
+                    Text(f"analysis {self.current_recipe!r}: {message}", style="red")
+                )
                 return
-            if (key == "mem_gb" and value < 0) or (key == "array_concurrency" and value < 1) \
-                    or (key == "poll_interval" and value <= 0):
-                error.update(Text(f"analysis {self.current_recipe!r}: {message}", style="red"))
+            if (
+                (key == "mem_gb" and value < 0)
+                or (key == "array_concurrency" and value < 1)
+                or (key == "poll_interval" and value <= 0)
+            ):
+                error.update(
+                    Text(f"analysis {self.current_recipe!r}: {message}", style="red")
+                )
                 return
-        if (str(document.get("database_mode", "")).strip() == "mutable_cache"
-                and not str(document.get("database_version", "")).strip()):
-            error.update(Text(
-                f"analysis {self.current_recipe!r}: mutable_cache requires an "
-                "explicit database_version",
-                style="red",
-            ))
+        if (
+            str(document.get("database_mode", "")).strip() == "mutable_cache"
+            and not str(document.get("database_version", "")).strip()
+        ):
+            error.update(
+                Text(
+                    f"analysis {self.current_recipe!r}: mutable_cache requires an "
+                    "explicit database_version",
+                    style="red",
+                )
+            )
             return
-        if (str(document.get("file_role", "")).strip()
-                and str(document.get("file_role_prefix", "")).strip()):
-            error.update(Text(
-                f"analysis {self.current_recipe!r}: 'file_role' and 'file_role_prefix' "
-                "are mutually exclusive",
-                style="red",
-            ))
+        if (
+            str(document.get("file_role", "")).strip()
+            and str(document.get("file_role_prefix", "")).strip()
+        ):
+            error.update(
+                Text(
+                    f"analysis {self.current_recipe!r}: 'file_role' and 'file_role_prefix' "
+                    "are mutually exclusive",
+                    style="red",
+                )
+            )
             return
         error.update("")
         file_version = self._recipe_file_version(self.current_recipe)
         new_version = 1 if file_version is None else file_version + 1
         self.app.push_screen(
             RecipeSaveModal(
-                self.project, self.recipe_tool, self.current_recipe, document, new_version,
+                self.project,
+                self.recipe_tool,
+                self.current_recipe,
+                document,
+                new_version,
             ),
             self._on_recipe_saved,
         )
@@ -2618,14 +3151,20 @@ class ConfigPanel(Panel):
         def restore(document: dict[str, Any]) -> None:
             self.recipe_doc = dict(document)
             self._render_recipe_form(
-                name, self.recipe_doc,
+                name,
+                self.recipe_doc,
                 note="restored from snapshot — saving creates the next version",
             )
 
         self.app.push_screen(
             HistoryModal(
-                self.project, "recipe", name, rows,
-                fetch_snapshot=lambda sid: data.get_recipe_snapshot(self.project, name, sid),
+                self.project,
+                "recipe",
+                name,
+                rows,
+                fetch_snapshot=lambda sid: data.get_recipe_snapshot(
+                    self.project, name, sid
+                ),
                 to_editor=lambda document: dict(document.get("recipe", {})),
             ),
             lambda document: restore(document) if document else None,

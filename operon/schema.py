@@ -68,14 +68,28 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "organism_id",
             "description": "Taxonomic organisms referenced by samples.",
             "fields": {
-                "organism_id": {"type": "id", "pattern": r"^ORG_\d{6}$", "required": True,
-                                "description": "Internal stable organism ID"},
-                "scientific_name": {"type": "string", "required": True, "description": "Scientific name"},
+                "organism_id": {
+                    "type": "id",
+                    "pattern": r"^ORG_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable organism ID",
+                },
+                "scientific_name": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Scientific name",
+                },
                 "taxon_id": {"type": "integer", "description": "NCBI/GTDB taxonomy ID"},
                 "taxonomic_rank": {"type": "string", "description": "Taxonomic rank"},
-                "taxonomy_source": {"type": "string", "allowed": ["NCBI", "GTDB", "other"],
-                                    "description": "Taxonomy database"},
-                "taxonomy_version": {"type": "string", "description": "Version of taxonomy database"},
+                "taxonomy_source": {
+                    "type": "string",
+                    "allowed": ["NCBI", "GTDB", "other"],
+                    "description": "Taxonomy database",
+                },
+                "taxonomy_version": {
+                    "type": "string",
+                    "description": "Version of taxonomy database",
+                },
             },
         },
         "samples": {
@@ -83,30 +97,84 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "sample_id",
             "description": "Biological samples; the link between organism and experiment/assembly.",
             "fields": {
-                "sample_id": {"type": "id", "pattern": r"^SMP_\d{6}$", "required": True,
-                              "description": "Internal stable sample ID"},
-                "organism_id": {"type": "id", "pattern": r"^ORG_\d{6}$", "required": True,
-                                "description": "Internal organism ID"},
-                "biosample_accession": {"type": "string", "description": "NCBI BioSample accession"},
-                "strain": {"type": "string", "description": "Strain name (original value)"},
+                "sample_id": {
+                    "type": "id",
+                    "pattern": r"^SMP_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable sample ID",
+                },
+                "organism_id": {
+                    "type": "id",
+                    "pattern": r"^ORG_\d{6}$",
+                    "required": True,
+                    "description": "Internal organism ID",
+                },
+                "biosample_accession": {
+                    "type": "string",
+                    "description": "NCBI BioSample accession",
+                },
+                "strain": {
+                    "type": "string",
+                    "description": "Strain name (original value)",
+                },
                 "isolate": {"type": "string", "description": "Isolate identifier"},
                 "cultivar": {"type": "string", "description": "Cultivar"},
-                "sex": {"type": "string",
-                        "allowed": ["female", "male", "hermaphrodite", "unknown", "not collected", "not applicable"],
-                        "description": "Sex, using controlled vocabulary"},
-                "tissue": {"type": "string", "description": "Original tissue description"},
-                "tissue_normalized": {"type": "string", "description": "Normalized tissue term"},
-                "tissue_ontology_id": {"type": "string", "pattern": r"^(PO|UBERON|ENVO):\d+$",
-                                       "description": "Ontology term ID"},
-                "collection_date": {"type": "date", "description": "ISO 8601 collection date"},
+                "sex": {
+                    "type": "string",
+                    "allowed": [
+                        "female",
+                        "male",
+                        "hermaphrodite",
+                        "unknown",
+                        "not collected",
+                        "not applicable",
+                    ],
+                    "description": "Sex, using controlled vocabulary",
+                },
+                "tissue": {
+                    "type": "string",
+                    "description": "Original tissue description",
+                },
+                "tissue_normalized": {
+                    "type": "string",
+                    "description": "Normalized tissue term",
+                },
+                "tissue_ontology_id": {
+                    "type": "string",
+                    "pattern": r"^(PO|UBERON|ENVO):\d+$",
+                    "description": "Ontology term ID",
+                },
+                "collection_date": {
+                    "type": "date",
+                    "description": "ISO 8601 collection date",
+                },
                 "country": {"type": "string", "description": "Original country text"},
-                "country_iso": {"type": "string", "pattern": r"^[A-Z]{2}$",
-                                "description": "ISO 3166-1 alpha-2 country code"},
-                "latitude": {"type": "float", "min": -90, "max": 90, "description": "Decimal latitude (WGS84)"},
-                "longitude": {"type": "float", "min": -180, "max": 180, "description": "Decimal longitude (WGS84)"},
+                "country_iso": {
+                    "type": "string",
+                    "pattern": r"^[A-Z]{2}$",
+                    "description": "ISO 3166-1 alpha-2 country code",
+                },
+                "latitude": {
+                    "type": "float",
+                    "min": -90,
+                    "max": 90,
+                    "description": "Decimal latitude (WGS84)",
+                },
+                "longitude": {
+                    "type": "float",
+                    "min": -180,
+                    "max": 180,
+                    "description": "Decimal longitude (WGS84)",
+                },
                 "host": {"type": "string", "description": "Host organism"},
-                "environment_biome": {"type": "string", "description": "Environment biome (ENVO preferred)"},
-                "source_record": {"type": "string", "description": "Source database or record URL"},
+                "environment_biome": {
+                    "type": "string",
+                    "description": "Environment biome (ENVO preferred)",
+                },
+                "source_record": {
+                    "type": "string",
+                    "description": "Source database or record URL",
+                },
             },
         },
         "runs": {
@@ -114,25 +182,74 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "run_id",
             "description": "Sequencing runs producing raw reads.",
             "fields": {
-                "run_id": {"type": "id", "pattern": r"^RUN_\d{6}$", "required": True,
-                           "description": "Internal stable run ID"},
-                "sample_id": {"type": "id", "pattern": r"^SMP_\d{6}$", "required": True,
-                              "description": "Internal sample ID"},
-                "run_accession": {"type": "string", "description": "SRA/ENA run accession"},
-                "experiment_accession": {"type": "string", "description": "Sequencing experiment accession"},
-                "library_strategy": {"type": "string",
-                                     "allowed": ["WGS", "WGA", "RNA-Seq", "Amplicon", "Hi-C", "ATAC-seq", "other"],
-                                     "description": "INSDC library strategy"},
-                "library_source": {"type": "string", "allowed": ["GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER"],
-                                   "description": "INSDC library source"},
-                "library_layout": {"type": "string", "allowed": ["PAIRED", "SINGLE", "unknown"],
-                                   "description": "Library layout"},
-                "platform": {"type": "string",
-                             "allowed": ["ILLUMINA", "PACBIO_SMRT", "OXFORD_NANOPORE", "BGISEQ", "ION_TORRENT",
-                                         "other"], "description": "Sequencing platform"},
-                "instrument_model": {"type": "string", "description": "Instrument model"},
-                "read_length": {"type": "integer", "min": 0, "description": "Nominal read length"},
-                "download_url": {"type": "string", "description": "Original download URL"},
+                "run_id": {
+                    "type": "id",
+                    "pattern": r"^RUN_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable run ID",
+                },
+                "sample_id": {
+                    "type": "id",
+                    "pattern": r"^SMP_\d{6}$",
+                    "required": True,
+                    "description": "Internal sample ID",
+                },
+                "run_accession": {
+                    "type": "string",
+                    "description": "SRA/ENA run accession",
+                },
+                "experiment_accession": {
+                    "type": "string",
+                    "description": "Sequencing experiment accession",
+                },
+                "library_strategy": {
+                    "type": "string",
+                    "allowed": [
+                        "WGS",
+                        "WGA",
+                        "RNA-Seq",
+                        "Amplicon",
+                        "Hi-C",
+                        "ATAC-seq",
+                        "other",
+                    ],
+                    "description": "INSDC library strategy",
+                },
+                "library_source": {
+                    "type": "string",
+                    "allowed": ["GENOMIC", "TRANSCRIPTOMIC", "METAGENOMIC", "OTHER"],
+                    "description": "INSDC library source",
+                },
+                "library_layout": {
+                    "type": "string",
+                    "allowed": ["PAIRED", "SINGLE", "unknown"],
+                    "description": "Library layout",
+                },
+                "platform": {
+                    "type": "string",
+                    "allowed": [
+                        "ILLUMINA",
+                        "PACBIO_SMRT",
+                        "OXFORD_NANOPORE",
+                        "BGISEQ",
+                        "ION_TORRENT",
+                        "other",
+                    ],
+                    "description": "Sequencing platform",
+                },
+                "instrument_model": {
+                    "type": "string",
+                    "description": "Instrument model",
+                },
+                "read_length": {
+                    "type": "integer",
+                    "min": 0,
+                    "description": "Nominal read length",
+                },
+                "download_url": {
+                    "type": "string",
+                    "description": "Original download URL",
+                },
             },
         },
         "assemblies": {
@@ -140,28 +257,75 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "assembly_id",
             "description": "Genome assemblies; one sample may have several assembly versions.",
             "fields": {
-                "assembly_id": {"type": "id", "pattern": r"^ASM_\d{6}$", "required": True,
-                                "description": "Internal stable assembly ID"},
-                "sample_id": {"type": "id", "pattern": r"^SMP_\d{6}$", "required": True,
-                              "description": "Internal sample ID"},
-                "assembly_accession": {"type": "string", "description": "NCBI/ENA assembly accession"},
-                "assembly_name": {"type": "string", "description": "Source assembly name"},
-                "assembly_version": {"type": "integer", "min": 1, "description": "Assembly version number"},
-                "assembly_level": {"type": "string", "allowed": ["complete_genome", "chromosome", "scaffold", "contig"],
-                                   "description": "Standardized assembly level"},
-                "assembly_method": {"type": "string", "description": "Assembly software and parameters"},
-                "submitter": {"type": "string", "description": "Submitter or source institution"},
-                "release_date": {"type": "date", "description": "Release date of the source assembly"},
-                "reference_status": {"type": "string", "allowed": ["reference", "representative", "alternate", "other"],
-                                     "description": "Reference status"},
-                "bioproject_accession": {"type": "string",
-                                         "description": "Source BioProject/project accession (not unique per assembly)"},
-                "source_database": {"type": "string", "allowed": ["RefSeq", "GenBank", "other"],
-                                    "description": "Source assembly database"},
-                "assembly_status": {"type": "string", "description": "Source database assembly status"},
-                "assembly_type": {"type": "string", "description": "Source database assembly type"},
-                "fasta_file_id": {"type": "id", "pattern": r"^FIL_\d{6}$",
-                                  "description": "Registered assembly FASTA file"},
+                "assembly_id": {
+                    "type": "id",
+                    "pattern": r"^ASM_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable assembly ID",
+                },
+                "sample_id": {
+                    "type": "id",
+                    "pattern": r"^SMP_\d{6}$",
+                    "required": True,
+                    "description": "Internal sample ID",
+                },
+                "assembly_accession": {
+                    "type": "string",
+                    "description": "NCBI/ENA assembly accession",
+                },
+                "assembly_name": {
+                    "type": "string",
+                    "description": "Source assembly name",
+                },
+                "assembly_version": {
+                    "type": "integer",
+                    "min": 1,
+                    "description": "Assembly version number",
+                },
+                "assembly_level": {
+                    "type": "string",
+                    "allowed": ["complete_genome", "chromosome", "scaffold", "contig"],
+                    "description": "Standardized assembly level",
+                },
+                "assembly_method": {
+                    "type": "string",
+                    "description": "Assembly software and parameters",
+                },
+                "submitter": {
+                    "type": "string",
+                    "description": "Submitter or source institution",
+                },
+                "release_date": {
+                    "type": "date",
+                    "description": "Release date of the source assembly",
+                },
+                "reference_status": {
+                    "type": "string",
+                    "allowed": ["reference", "representative", "alternate", "other"],
+                    "description": "Reference status",
+                },
+                "bioproject_accession": {
+                    "type": "string",
+                    "description": "Source BioProject/project accession (not unique per assembly)",
+                },
+                "source_database": {
+                    "type": "string",
+                    "allowed": ["RefSeq", "GenBank", "other"],
+                    "description": "Source assembly database",
+                },
+                "assembly_status": {
+                    "type": "string",
+                    "description": "Source database assembly status",
+                },
+                "assembly_type": {
+                    "type": "string",
+                    "description": "Source database assembly type",
+                },
+                "fasta_file_id": {
+                    "type": "id",
+                    "pattern": r"^FIL_\d{6}$",
+                    "description": "Registered assembly FASTA file",
+                },
             },
         },
         "annotations": {
@@ -169,17 +333,46 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "annotation_id",
             "description": "Annotation releases; an assembly may have several annotation versions.",
             "fields": {
-                "annotation_id": {"type": "id", "pattern": r"^ANN_\d{6}$", "required": True,
-                                  "description": "Internal stable annotation ID"},
-                "assembly_id": {"type": "id", "pattern": r"^ASM_\d{6}$", "required": True,
-                                "description": "Internal assembly ID"},
-                "annotation_source": {"type": "string", "description": "Annotation source or pipeline"},
-                "annotation_version": {"type": "integer", "min": 1, "description": "Annotation version"},
-                "annotation_date": {"type": "date", "description": "Annotation release date"},
-                "gff_file_id": {"type": "id", "pattern": r"^FIL_\d{6}$", "description": "Registered GFF3 file"},
-                "cds_file_id": {"type": "id", "pattern": r"^FIL_\d{6}$", "description": "Registered CDS FASTA file"},
-                "protein_file_id": {"type": "id", "pattern": r"^FIL_\d{6}$",
-                                    "description": "Registered protein FASTA file"},
+                "annotation_id": {
+                    "type": "id",
+                    "pattern": r"^ANN_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable annotation ID",
+                },
+                "assembly_id": {
+                    "type": "id",
+                    "pattern": r"^ASM_\d{6}$",
+                    "required": True,
+                    "description": "Internal assembly ID",
+                },
+                "annotation_source": {
+                    "type": "string",
+                    "description": "Annotation source or pipeline",
+                },
+                "annotation_version": {
+                    "type": "integer",
+                    "min": 1,
+                    "description": "Annotation version",
+                },
+                "annotation_date": {
+                    "type": "date",
+                    "description": "Annotation release date",
+                },
+                "gff_file_id": {
+                    "type": "id",
+                    "pattern": r"^FIL_\d{6}$",
+                    "description": "Registered GFF3 file",
+                },
+                "cds_file_id": {
+                    "type": "id",
+                    "pattern": r"^FIL_\d{6}$",
+                    "description": "Registered CDS FASTA file",
+                },
+                "protein_file_id": {
+                    "type": "id",
+                    "pattern": r"^FIL_\d{6}$",
+                    "description": "Registered protein FASTA file",
+                },
             },
         },
         "accessions": {
@@ -187,16 +380,33 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": None,
             "description": "External accessions mapped to internal stable IDs (never used as primary keys).",
             "fields": {
-                "internal_type": {"type": "string", "required": True, "allowed": list(ENTITY_TABLES.keys()),
-                                  "description": "Internal entity type"},
-                "internal_id": {"type": "id", "pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$", "required": True,
-                                "description": "Internal stable ID"},
-                "namespace": {"type": "string", "required": True,
-                              "description": "Accession namespace (NCBI_Assembly, SRA, ...)"},
-                "accession": {"type": "string", "required": True, "description": "External accession"},
+                "internal_type": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": list(ENTITY_TABLES.keys()),
+                    "description": "Internal entity type",
+                },
+                "internal_id": {
+                    "type": "id",
+                    "pattern": r"^(ORG|SMP|RUN|ASM|ANN)_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable ID",
+                },
+                "namespace": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Accession namespace (NCBI_Assembly, SRA, ...)",
+                },
+                "accession": {
+                    "type": "string",
+                    "required": True,
+                    "description": "External accession",
+                },
                 "version": {"type": "string", "description": "External record version"},
-                "is_primary": {"type": "boolean",
-                               "description": "Whether this is the primary accession for the entity"},
+                "is_primary": {
+                    "type": "boolean",
+                    "description": "Whether this is the primary accession for the entity",
+                },
             },
             "unique": [["namespace", "accession"]],
         },
@@ -205,33 +415,106 @@ def default_schemas() -> dict[str, Any]:
             "primary_key": "file_id",
             "description": "File manifest: path is only the current location; identity is file_id + sha256 + size.",
             "fields": {
-                "file_id": {"type": "id", "pattern": r"^FIL_\d{6}$", "required": True,
-                            "description": "Internal stable file ID"},
-                "entity_type": {"type": "string", "required": True, "allowed": FILE_ENTITY_TYPES,
-                                "description": "Entity type this file belongs to"},
-                "entity_id": {"type": "id", "pattern": r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$", "required": True,
-                              "description": "Internal entity ID"},
-                "file_role": {"type": "string", "required": True, "allowed": [
-                    "genome_fasta", "cds_fasta", "protein_fasta", "annotation_gff3",
-                    "reads_r1", "reads_r2", "reads_single", "assembly_report",
-                    *NCBI_SOURCE_FILE_ROLES,
-                    "taxonomy_package", "other",
-                ], "description": "Biological role of the file"},
-                "format": {"type": "string", "required": True,
-                           "allowed": ["fasta", "fastq", "gff3", "bam", "cram", "tsv", "txt", "html", "json",
-                                       "directory", "other"], "description": "File or directory artifact format"},
-                "compression": {"type": "string", "required": True, "allowed": ["none", "gzip", "bgzip"],
-                                "description": "Compression type"},
-                "relative_path": {"type": "string", "required": True,
-                                  "description": "Current path relative to project root"},
-                "source_url": {"type": "string", "description": "Original source URL or path"},
-                "size_bytes": {"type": "integer", "required": True, "min": 0, "description": "File size in bytes"},
-                "sha256": {"type": "string", "required": True, "pattern": r"^[a-f0-9]{64}$",
-                           "description": "SHA-256 of the stored bytes"},
-                "downloaded_at": {"type": "datetime", "description": "When the file was archived"},
-                "status": {"type": "string", "required": True,
-                           "allowed": ["DISCOVERED", "DOWNLOADED", "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
-                                       "MISSING", "CHECKSUM_FAILED", "CONFLICT"], "description": "File-level status"},
+                "file_id": {
+                    "type": "id",
+                    "pattern": r"^FIL_\d{6}$",
+                    "required": True,
+                    "description": "Internal stable file ID",
+                },
+                "entity_type": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": FILE_ENTITY_TYPES,
+                    "description": "Entity type this file belongs to",
+                },
+                "entity_id": {
+                    "type": "id",
+                    "pattern": r"^(ORG|SMP|RUN|ASM|ANN|TAX)_\d{6}$",
+                    "required": True,
+                    "description": "Internal entity ID",
+                },
+                "file_role": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": [
+                        "genome_fasta",
+                        "cds_fasta",
+                        "protein_fasta",
+                        "annotation_gff3",
+                        "reads_r1",
+                        "reads_r2",
+                        "reads_single",
+                        "assembly_report",
+                        *NCBI_SOURCE_FILE_ROLES,
+                        "taxonomy_package",
+                        "other",
+                    ],
+                    "description": "Biological role of the file",
+                },
+                "format": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": [
+                        "fasta",
+                        "fastq",
+                        "gff3",
+                        "bam",
+                        "cram",
+                        "tsv",
+                        "txt",
+                        "html",
+                        "json",
+                        "directory",
+                        "other",
+                    ],
+                    "description": "File or directory artifact format",
+                },
+                "compression": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": ["none", "gzip", "bgzip"],
+                    "description": "Compression type",
+                },
+                "relative_path": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Current path relative to project root",
+                },
+                "source_url": {
+                    "type": "string",
+                    "description": "Original source URL or path",
+                },
+                "size_bytes": {
+                    "type": "integer",
+                    "required": True,
+                    "min": 0,
+                    "description": "File size in bytes",
+                },
+                "sha256": {
+                    "type": "string",
+                    "required": True,
+                    "pattern": r"^[a-f0-9]{64}$",
+                    "description": "SHA-256 of the stored bytes",
+                },
+                "downloaded_at": {
+                    "type": "datetime",
+                    "description": "When the file was archived",
+                },
+                "status": {
+                    "type": "string",
+                    "required": True,
+                    "allowed": [
+                        "DISCOVERED",
+                        "DOWNLOADED",
+                        "CHECKSUM_VERIFIED",
+                        "STANDARDIZED",
+                        "REMOTE_ONLY",
+                        "MISSING",
+                        "CHECKSUM_FAILED",
+                        "CONFLICT",
+                    ],
+                    "description": "File-level status",
+                },
             },
         },
     }
@@ -283,8 +566,9 @@ class Schema:
     def unique_combinations(self, table: str) -> list[list[str]]:
         return self.tables[table].get("unique", [])
 
-    def validate_and_normalize(self, table: str, rows: list[dict[str, Any]]) -> tuple[
-        list[dict[str, Any]], list[SchemaError]]:
+    def validate_and_normalize(
+        self, table: str, rows: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[SchemaError]]:
         if table not in self.tables:
             raise ValidationError(f"schema has no table {table!r}")
         spec = self.tables[table]
@@ -300,8 +584,15 @@ class Schema:
             unknown = set(raw_row.keys()) - set(columns)
             if unknown:
                 for col in sorted(unknown):
-                    errors.append(SchemaError(table, row_no, col, raw_row.get(col),
-                                              "unknown field; update schema instead of silently accepting it"))
+                    errors.append(
+                        SchemaError(
+                            table,
+                            row_no,
+                            col,
+                            raw_row.get(col),
+                            "unknown field; update schema instead of silently accepting it",
+                        )
+                    )
             row: dict[str, Any] = {}
             for field, field_spec in spec["fields"].items():
                 raw_value = raw_row.get(field, "")
@@ -317,23 +608,39 @@ class Schema:
                 if pk:
                     value = row.get(pk)
                     if value in seen_primary:
-                        errors.append(SchemaError(table, row_no, pk, value,
-                                                  f"duplicate primary key (first seen at row {seen_primary[value]})"))
+                        errors.append(
+                            SchemaError(
+                                table,
+                                row_no,
+                                pk,
+                                value,
+                                f"duplicate primary key (first seen at row {seen_primary[value]})",
+                            )
+                        )
                     seen_primary[value] = row_no
                 for combo in self.unique_combinations(table):
                     values = tuple(row.get(c) for c in combo)
                     if any(v is None for v in values):
                         continue
                     if values in seen_unique[tuple(combo)]:
-                        errors.append(SchemaError(table, row_no, ", ".join(combo), values,
-                                                  f"duplicate unique combination (first seen at row {seen_unique[tuple(combo)][values]})"))
+                        errors.append(
+                            SchemaError(
+                                table,
+                                row_no,
+                                ", ".join(combo),
+                                values,
+                                f"duplicate unique combination (first seen at row {seen_unique[tuple(combo)][values]})",
+                            )
+                        )
                     seen_unique[tuple(combo)][values] = row_no
             normalized.append(row)
         if errors:
             raise ValidationError("\n".join(str(e) for e in errors))
         return normalized, []
 
-    def _normalize_field(self, field: str, spec: dict[str, Any], raw_value: Any) -> tuple[Any, str | None]:
+    def _normalize_field(
+        self, field: str, spec: dict[str, Any], raw_value: Any
+    ) -> tuple[Any, str | None]:
         if raw_value is None:
             raw_value = ""
         if isinstance(raw_value, str):
@@ -419,7 +726,9 @@ def _normalize_date(value: str, with_time: bool) -> str:
     return parsed.isoformat()
 
 
-def read_tsv(path: str | Path, required_header: list[str] | None = None) -> list[dict[str, Any]]:
+def read_tsv(
+    path: str | Path, required_header: list[str] | None = None
+) -> list[dict[str, Any]]:
     """Read a TSV file as a list of dictionaries.
 
     Blank lines and comment lines are ignored.  The first non-comment line is
@@ -465,7 +774,7 @@ def _tsv_cell(value: Any) -> str:
     ``lineterminator``, and CPython 3.11 additionally started quoting every
     field containing CR or LF.  Deriving the decision from the cell itself
     keeps the bytes identical on every supported interpreter, which matters
-    because these files are hashed for provenance (ODR-0044).
+    because these files are hashed for provenance (ODR-44).
     """
     text = escape_formula_text(value)
     if not isinstance(text, str):
@@ -475,16 +784,18 @@ def _tsv_cell(value: Any) -> str:
     return text
 
 
-def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any] | list[Any]]) -> None:
+def write_tsv(
+    path: str | Path, columns: list[str], rows: Iterable[dict[str, Any] | list[Any]]
+) -> None:
     """Write rows as TSV, escaping spreadsheet formula triggers in text cells.
 
     A string cell beginning with ``=``, ``+``, ``-``, ``@``, TAB or CR is
     prefixed with an apostrophe so report files cannot execute as formulas
-    when opened in a spreadsheet application (ODR-0040).  Non-string values
+    when opened in a spreadsheet application (ODR-40).  Non-string values
     are written verbatim.  A cell containing TAB, CR, LF or ``"`` is written
     quoted with its own quotes doubled; that decision is made here and not by
     ``csv.writer``, so a given row produces the same bytes on every supported
-    interpreter (ODR-0044).  This is safe for the release re-ingestion path:
+    interpreter (ODR-44).  This is safe for the release re-ingestion path:
     release-scope coverage reads back only generated identity/join columns
     (entity ids, sha256, size_bytes) that can never begin with a trigger
     character, and provenance hashes are computed over the escaped bytes at
@@ -496,7 +807,9 @@ def write_tsv(path: str | Path, columns: list[str], rows: Iterable[dict[str, Any
         handle.write("\t".join(_tsv_cell(column) for column in columns) + "\n")
         for row in rows:
             if isinstance(row, dict):
-                cells = ["" if row.get(c) is None else _tsv_cell(row.get(c)) for c in columns]
+                cells = [
+                    "" if row.get(c) is None else _tsv_cell(row.get(c)) for c in columns
+                ]
             else:
                 cells = ["" if v is None else _tsv_cell(v) for v in row]
             handle.write("\t".join(cells) + "\n")
@@ -529,21 +842,27 @@ def check_row_references(db: Database, entity_type: str, row: dict[str, Any]) ->
     elif entity_type == "annotation" and row.get("assembly_id"):
         db.require_active_entity("assembly", row["assembly_id"])
     for field in ("fasta_file_id", "gff_file_id", "cds_file_id", "protein_file_id"):
-        if row.get(field) and db.conn.execute(
-                "SELECT 1 FROM files WHERE file_id=?", (row[field],)).fetchone() is None:
+        if (
+            row.get(field)
+            and db.conn.execute(
+                "SELECT 1 FROM files WHERE file_id=?", (row[field],)
+            ).fetchone()
+            is None
+        ):
             raise ValidationError(
                 f"{entity_type} {row.get(ENTITY_ID_COLUMNS.get(entity_type, 'id'))}: "
-                f"{field} {row[field]} does not exist")
+                f"{field} {row[field]} does not exist"
+            )
 
 
 def add_metadata_record(
-        db: Database,
-        project: Project,
-        entity_type: str,
-        fields: dict[str, Any],
-        *,
-        record_id: str | None = None,
-        actor: str | None = None,
+    db: Database,
+    project: Project,
+    entity_type: str,
+    fields: dict[str, Any],
+    *,
+    record_id: str | None = None,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Add one schema-validated metadata record — the core behind ``operon add``.
 
@@ -568,7 +887,8 @@ def add_metadata_record(
             if extra not in schema.columns(table):
                 warnings.append(
                     f"unknown field {extra!r} for {entity_type}; add it to "
-                    f"{project.schema_path} to remove this warning")
+                    f"{project.schema_path} to remove this warning"
+                )
         try:
             normalized, _ = schema.validate_and_normalize(table, [row])
         except ValidationError as exc:
@@ -579,24 +899,34 @@ def add_metadata_record(
         check_row_references(db, entity_type, row)
         db.insert_row(table, row)
         # Historical wording, kept byte-identical for both entry points.
-        db.set_entity_state(entity_type, resolved_id, "METADATA_VALIDATED",
-                            "record added via CLI and schema-validated")
-        db.record_change(entity_type, resolved_id, None, None,
-                         json.dumps({k: str(v) for k, v in row.items()}),
-                         "record added", actor=actor)
+        db.set_entity_state(
+            entity_type,
+            resolved_id,
+            "METADATA_VALIDATED",
+            "record added via CLI and schema-validated",
+        )
+        db.record_change(
+            entity_type,
+            resolved_id,
+            None,
+            None,
+            json.dumps({k: str(v) for k, v in row.items()}),
+            "record added",
+            actor=actor,
+        )
     return {"entity_type": entity_type, "entity_id": resolved_id, "warnings": warnings}
 
 
 def add_accession_record(
-        db: Database,
-        *,
-        internal_type: str,
-        internal_id: str,
-        namespace: str,
-        accession: str,
-        version: str | None = None,
-        primary: bool = False,
-        actor: str | None = None,
+    db: Database,
+    *,
+    internal_type: str,
+    internal_id: str,
+    namespace: str,
+    accession: str,
+    version: str | None = None,
+    primary: bool = False,
+    actor: str | None = None,
 ) -> dict[str, Any]:
     """Map an external accession to an internal stable ID — ``operon add-accession``.
 
@@ -615,8 +945,12 @@ def add_accession_record(
     with db.transaction():
         db.insert_row("accessions", row)
         db.record_change(
-            "accession", f"{namespace}:{accession}", None, None,
-            json.dumps(row, ensure_ascii=False, sort_keys=True), "accession added",
+            "accession",
+            f"{namespace}:{accession}",
+            None,
+            None,
+            json.dumps(row, ensure_ascii=False, sort_keys=True),
+            "accession added",
             actor=actor,
         )
     return row

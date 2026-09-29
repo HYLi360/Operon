@@ -73,14 +73,21 @@ class RemotesPanel(Panel):
 
     def on_mount(self) -> None:
         self.query_one("#remotes-table", DataTable).add_columns(
-            "name", "type", "address", "root", "files", "status", "error")
+            "name", "type", "address", "root", "files", "status", "error"
+        )
         self.query_one("#locations-table", DataTable).add_columns(
-            "file_id", "relative_path", "local_status", "remote",
-            "remote_status", "verified_at")
+            "file_id",
+            "relative_path",
+            "local_status",
+            "remote",
+            "remote_status",
+            "verified_at",
+        )
         self.query_one("#remotes-command", Static).update(
             "equivalent command: operon remotes — the screen lists the mirrors "
             "without connecting; connectivity is probed only when you ask "
-            "(SFTP connects can block)")
+            "(SFTP connects can block)"
+        )
         self._refresh_locations_command()
         super().on_mount()
 
@@ -90,7 +97,8 @@ class RemotesPanel(Panel):
         return {
             "remotes": data.list_remotes(self.project),
             "locations": data.list_locations(
-                self.project, file_ids=self.file_ids or None,
+                self.project,
+                file_ids=self.file_ids or None,
             ),
         }
 
@@ -105,58 +113,89 @@ class RemotesPanel(Panel):
         table.clear()
         for row in self.remotes:
             status = str(row["status"])
-            cell = Text(status, style="green") if status == "ok" else Text(
-                status, style="" if status == "not checked" else "red")
+            cell = (
+                Text(status, style="green")
+                if status == "ok"
+                else Text(status, style="" if status == "not checked" else "red")
+            )
             table.add_row(
-                str(row["name"]), str(row["type"]), str(row["address"]),
-                str(row["root"]), str(row["files"]), cell, str(row["error"]),
+                str(row["name"]),
+                str(row["type"]),
+                str(row["address"]),
+                str(row["root"]),
+                str(row["files"]),
+                cell,
+                str(row["error"]),
                 key=str(row["name"]),
             )
         status_line = self.query_one("#remotes-status", Static)
         if not self.remotes:
-            status_line.update(Text(
-                "no remotes configured; add a 'remotes:' section to project.yaml",
-                style="dim"))
+            status_line.update(
+                Text(
+                    "no remotes configured; add a 'remotes:' section to project.yaml",
+                    style="dim",
+                )
+            )
         elif not self.checking:
             unchecked = sum(1 for row in self.remotes if row["status"] == "not checked")
             if unchecked and unchecked == len(self.remotes):
-                status_line.update(Text(
-                    "connectivity not checked yet — press *Check connectivity*",
-                    style="dim"))
+                status_line.update(
+                    Text(
+                        "connectivity not checked yet — press *Check connectivity*",
+                        style="dim",
+                    )
+                )
 
     def _render_locations(self) -> None:
         table = self.query_one("#locations-table", DataTable)
         table.clear()
         for row in self.locations:
             table.add_row(
-                str(row["file_id"]), str(row["relative_path"]),
-                str(row["local_status"]), str(row["remote"]),
-                str(row["remote_status"]), str(row["verified_at"]),
+                str(row["file_id"]),
+                str(row["relative_path"]),
+                str(row["local_status"]),
+                str(row["remote"]),
+                str(row["remote_status"]),
+                str(row["verified_at"]),
             )
         note = self.query_one("#locations-note", Static)
         if len(self.locations) >= data.LOCATIONS_LIMIT:
-            note.update(Text(
-                f"showing the first {data.LOCATIONS_LIMIT} residency rows of a "
-                "larger project — narrow the list by file id (the CLI prints "
-                "every row)", style="yellow"))
+            note.update(
+                Text(
+                    f"showing the first {data.LOCATIONS_LIMIT} residency rows of a "
+                    "larger project — narrow the list by file id (the CLI prints "
+                    "every row)",
+                    style="yellow",
+                )
+            )
         elif not self.locations:
-            note.update(Text(
-                "no manifest files match" if self.file_ids else "no manifest files yet",
-                style="dim"))
+            note.update(
+                Text(
+                    "no manifest files match"
+                    if self.file_ids
+                    else "no manifest files yet",
+                    style="dim",
+                )
+            )
 
     def show_error(self, exc: BaseException) -> None:
-        self.query_one("#remotes-error", Static).update(Text(f"error: {exc}", style="red"))
+        self.query_one("#remotes-error", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
 
     # -- connectivity ---------------------------------------------------------
 
     def _check(self) -> None:
         if self.checking:
-            self.app.notify("a connectivity check is already running", severity="warning")
+            self.app.notify(
+                "a connectivity check is already running", severity="warning"
+            )
             return
         self.checking = True
         self.query_one("#remotes-check", Button).disabled = True
         self.query_one("#remotes-status", Static).update(
-            "checking connectivity… (SFTP connects can block; the screen stays usable)")
+            "checking connectivity… (SFTP connects can block; the screen stays usable)"
+        )
         self.query_one("#remotes-error", Static).update("")
         self._probe()
 
@@ -181,13 +220,18 @@ class RemotesPanel(Panel):
         if not payload:
             return
         failed = [row for row in payload if row["status"] != "ok"]
-        summary = (f"checked {len(payload)} remote(s): "
-                   f"{len(payload) - len(failed)} ok, {len(failed)} failed")
+        summary = (
+            f"checked {len(payload)} remote(s): "
+            f"{len(payload) - len(failed)} ok, {len(failed)} failed"
+        )
         if failed:
             status_line.update(Text(summary, style="red"))
             self.app.notify(
-                summary + " — " + ", ".join(
-                    f"{row['name']}: {row['error'] or row['status']}" for row in failed),
+                summary
+                + " — "
+                + ", ".join(
+                    f"{row['name']}: {row['error'] or row['status']}" for row in failed
+                ),
                 severity="error",
             )
         else:
@@ -201,11 +245,11 @@ class RemotesPanel(Panel):
         for file_id in self.file_ids:
             parts += ["--file-id", shlex.quote(file_id)]
         self.query_one("#locations-command", Static).update(
-            "equivalent command: " + " ".join(parts))
+            "equivalent command: " + " ".join(parts)
+        )
 
     def _apply_filter(self) -> None:
-        self.file_ids = parse_file_ids(
-            self.query_one("#locations-filter", Input).value)
+        self.file_ids = parse_file_ids(self.query_one("#locations-filter", Input).value)
         self.query_one("#remotes-error", Static).update("")
         self._refresh_locations_command()
         self.reload()
@@ -272,8 +316,9 @@ class SyncModal(WriteModal):
     #: The ``operon.tui.actions`` entry point this dialog runs.
     action_name = "push"
 
-    def __init__(self, project: Project, remote: str = "",
-                 file_ids: Iterable[str] = ()) -> None:
+    def __init__(
+        self, project: Project, remote: str = "", file_ids: Iterable[str] = ()
+    ) -> None:
         if self.verb == "push":
             title = "Push to a remote"
         elif self.verb == "pull":
@@ -328,8 +373,12 @@ class SyncModal(WriteModal):
             yield Input(
                 value=", ".join(self.initial_file_ids),
                 placeholder="file ids (comma-separated; empty = "
-                            + ("all manifest files" if self.verb == "push"
-                               else "the whole remote manifest") + ")",
+                + (
+                    "all manifest files"
+                    if self.verb == "push"
+                    else "the whole remote manifest"
+                )
+                + ")",
                 id="sync-file-ids",
             )
         yield Static("", id="sync-plan", classes="modal-info")
@@ -355,7 +404,10 @@ class SyncModal(WriteModal):
     def command_text(self) -> str:
         values = self._values()
         parts = ["operon", self.verb]
-        parts += ["--remote", shlex.quote(values["remote"]) if values["remote"] else "'…'"]
+        parts += [
+            "--remote",
+            shlex.quote(values["remote"]) if values["remote"] else "'…'",
+        ]
         for file_id in values["file_ids"]:
             parts += ["--file-id", shlex.quote(file_id)]
         return " ".join(parts)
@@ -368,30 +420,49 @@ class SyncModal(WriteModal):
             plan.update(Text("select a remote first", style="dim"))
             return
         if self.verb == "pull" and not values["file_ids"]:
-            plan.update(Text(
-                "plan: every entry in the remote manifest (the list is read "
-                "from the mirror when the transfer starts); nothing is "
-                "downloaded twice and existing local bytes are never "
-                "overwritten", style="dim"))
+            plan.update(
+                Text(
+                    "plan: every entry in the remote manifest (the list is read "
+                    "from the mirror when the transfer starts); nothing is "
+                    "downloaded twice and existing local bytes are never "
+                    "overwritten",
+                    style="dim",
+                )
+            )
             return
         try:
-            preview = data.sync_preview(self.project, file_ids=values["file_ids"] or None)
+            preview = data.sync_preview(
+                self.project, file_ids=values["file_ids"] or None
+            )
         except Exception as exc:  # noqa: BLE001 - rendered as a hint, the confirm repeats it
             plan.update(Text(f"{exc}", style="red"))
             return
         if not preview["count"]:
-            plan.update(Text("plan: no manifest files selected" if values["file_ids"]
-                             else "plan: no manifest files yet", style="dim"))
+            plan.update(
+                Text(
+                    "plan: no manifest files selected"
+                    if values["file_ids"]
+                    else "plan: no manifest files yet",
+                    style="dim",
+                )
+            )
             return
         size = preview["bytes"]
         human = f"{size / 1048576:.1f} MiB" if size >= 1048576 else f"{size} B"
-        detail = ("every manifest file" if not values["file_ids"] else
-                  f"{preview['count']} selected file(s)")
+        detail = (
+            "every manifest file"
+            if not values["file_ids"]
+            else f"{preview['count']} selected file(s)"
+        )
         plan.update(
             f"plan: {detail}, {human} on disk; files whose remote copy already "
             "matches are reported ``skipped``"
-            + ("" if self.verb == "push" else
-               " — only ids present in the remote manifest are restored"))
+            + (
+                ""
+                if self.verb == "push"
+                else " — only ids present in the remote manifest are restored"
+            )
+        )
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "sync-file-ids":
@@ -413,7 +484,9 @@ class SyncModal(WriteModal):
             self.show_error("select a remote first (--remote is required)")
             return
         if values["remote"] not in self.remotes:
-            self.show_error(f"unknown remote {values['remote']!r}; configure it in project.yaml first")
+            self.show_error(
+                f"unknown remote {values['remote']!r}; configure it in project.yaml first"
+            )
             return
         self.running = True
         self.clear_error()
@@ -422,9 +495,13 @@ class SyncModal(WriteModal):
             f"{self.verb}ing… (a running {self.verb} cannot be interrupted from the TUI)"
         )
         self.query_one("#sync-progress", ProgressBar).display = True
-        self.run_action(lambda: getattr(actions, self.action_name)(
-            self.project, values["remote"], values["file_ids"] or None,
-        ))
+        self.run_action(
+            lambda: getattr(actions, self.action_name)(
+                self.project,
+                values["remote"],
+                values["file_ids"] or None,
+            )
+        )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Select, Input"):
@@ -446,35 +523,47 @@ class SyncModal(WriteModal):
         table.add_columns("file_id", "relative_path", "status", "error")
         for row in payload:
             table.add_row(
-                str(row.get("file_id", "")), str(row["relative_path"]),
-                str(row["status"]), str(row.get("error") or ""),
+                str(row.get("file_id", "")),
+                str(row["relative_path"]),
+                str(row["status"]),
+                str(row.get("error") or ""),
             )
         counts: dict[str, int] = {}
         for row in payload:
             status = str(row["status"])
             counts[status] = counts.get(status, 0) + 1
-        summary = ", ".join(f"{status}: {count}" for status, count in sorted(counts.items()))
+        summary = ", ".join(
+            f"{status}: {count}" for status, count in sorted(counts.items())
+        )
         remote = self._values()["remote"]
         failures = [row for row in payload if row["status"] == "error"]
         self.query_one("#sync-status", Static).update(
-            Text(f"{self.verb} {remote}: {summary}",
-                 style="red" if failures else "green"))
+            Text(
+                f"{self.verb} {remote}: {summary}", style="red" if failures else "green"
+            )
+        )
         self.app.notify(
-            f"{self.verb} {remote}: {summary}" + (
-                " — " + "; ".join(f"{row['relative_path']}: {row['error']}" for row in failures[:3])
-                if failures else ""),
+            f"{self.verb} {remote}: {summary}"
+            + (
+                " — "
+                + "; ".join(
+                    f"{row['relative_path']}: {row['error']}" for row in failures[:3]
+                )
+                if failures
+                else ""
+            ),
             severity="error" if failures else "information",
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -516,8 +605,9 @@ class EvictModal(SyncModal):
     verb = "evict"
     action_name = "evict"
 
-    def __init__(self, project: Project, remote: str = "",
-                 file_ids: Iterable[str] = ()) -> None:
+    def __init__(
+        self, project: Project, remote: str = "", file_ids: Iterable[str] = ()
+    ) -> None:
         super().__init__(project, remote, file_ids)
         self.plan: list[dict[str, Any]] | None = None
         self.checking = False
@@ -557,14 +647,16 @@ class EvictModal(SyncModal):
         self.clear_error()
         self.query_one("#evict-check", Button).disabled = True
         self.query_one("#evict-gate", Static).update(
-            "checking every file against the mirror… (SFTP reads can block)")
+            "checking every file against the mirror… (SFTP reads can block)"
+        )
         self._run_check(values)
 
     @work(thread=True, exclusive=True, group="evict-check")
     def _run_check(self, values: dict[str, Any]) -> None:
         try:
             payload: Any = actions.evict_plan(
-                self.project, values["remote"], values["file_ids"] or None)
+                self.project, values["remote"], values["file_ids"] or None
+            )
         except Exception as exc:  # noqa: BLE001 - surfaced in the dialog
             payload = exc
         self.post_to_ui(self._apply_check, payload)
@@ -583,8 +675,11 @@ class EvictModal(SyncModal):
         table.add_columns("file_id", "relative_path", "eligible", "reason")
         for row in payload:
             table.add_row(
-                str(row["file_id"]), str(row["relative_path"]),
-                Text("yes", style="green") if row["eligible"] else Text("no", style="red"),
+                str(row["file_id"]),
+                str(row["relative_path"]),
+                Text("yes", style="green")
+                if row["eligible"]
+                else Text("no", style="red"),
                 str(row["reason"]),
             )
         blocked = [row for row in payload if not row["eligible"]]
@@ -592,15 +687,22 @@ class EvictModal(SyncModal):
             self._arm_gate("nothing selected — no manifest files to evict")
             return
         if blocked:
-            self.query_one("#evict-gate", Static).update(Text(
-                f"{len(blocked)} of {len(payload)} file(s) cannot be evicted — "
-                "Confirm stays disabled; push the missing or diverging files first",
-                style="red"))
+            self.query_one("#evict-gate", Static).update(
+                Text(
+                    f"{len(blocked)} of {len(payload)} file(s) cannot be evicted — "
+                    "Confirm stays disabled; push the missing or diverging files first",
+                    style="red",
+                )
+            )
             self.set_confirm_enabled(False)
             return
-        self.query_one("#evict-gate", Static).update(Text(
-            f"all {len(payload)} file(s) verified on the mirror — Confirm removes "
-            "the local bytes", style="green"))
+        self.query_one("#evict-gate", Static).update(
+            Text(
+                f"all {len(payload)} file(s) verified on the mirror — Confirm removes "
+                "the local bytes",
+                style="green",
+            )
+        )
         self.set_confirm_enabled(True)
 
     def confirm(self) -> None:
@@ -609,25 +711,29 @@ class EvictModal(SyncModal):
         if not self.plan:
             self.show_error(
                 "verify the remote copies first — evict removes local bytes only "
-                "after the mirror copy is proved")
+                "after the mirror copy is proved"
+            )
             return
         blocked = [row for row in self.plan if not row["eligible"]]
         if blocked:
             self.show_error(
                 f"{len(blocked)} file(s) are not verified on the mirror; "
-                "nothing will be evicted")
+                "nothing will be evicted"
+            )
             return
         super().confirm()
 
     def _action_done(self, payload: Any) -> None:
         super()._action_done(payload)
         # The selection's state changed with the run: re-verify before another.
-        self._arm_gate("run finished — press *Verify remote copies* before evicting again")
+        self._arm_gate(
+            "run finished — press *Verify remote copies* before evicting again"
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "evict-check":
             self._check()
             return
-        # ODR-0047: the MRO dispatch would run the base handler a second time.
+        # ODR-47: the MRO dispatch would run the base handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)

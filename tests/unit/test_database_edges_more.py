@@ -27,19 +27,35 @@ def db(tmp_path: Path):
 
 def test_nested_transaction_rollback_and_upsert_rows(db):
     with db.transaction():
-        db.conn.execute("INSERT INTO organisms(organism_id, scientific_name) VALUES('ORG_000001','outer')")
+        db.conn.execute(
+            "INSERT INTO organisms(organism_id, scientific_name) VALUES('ORG_000001','outer')"
+        )
         with pytest.raises(RuntimeError):
             with db.transaction():
-                db.conn.execute("INSERT INTO organisms(organism_id, scientific_name) VALUES('ORG_000002','inner')")
+                db.conn.execute(
+                    "INSERT INTO organisms(organism_id, scientific_name) VALUES('ORG_000002','inner')"
+                )
                 raise RuntimeError("rollback savepoint")
     assert db.entity_exists("organism", "ORG_000001")
     assert not db.entity_exists("organism", "ORG_000002")
     assert db.upsert_rows("organisms", ["organism_id", "scientific_name"], []) == 0
-    assert db.upsert_rows("organisms", ["organism_id", "scientific_name"], [
-        {"organism_id": "ORG_000001", "scientific_name": "updated"},
-        {"organism_id": "ORG_000003", "scientific_name": "new"},
-    ]) == 2
-    assert db.query("SELECT scientific_name FROM organisms WHERE organism_id='ORG_000001'")[0][0] == "updated"
+    assert (
+        db.upsert_rows(
+            "organisms",
+            ["organism_id", "scientific_name"],
+            [
+                {"organism_id": "ORG_000001", "scientific_name": "updated"},
+                {"organism_id": "ORG_000003", "scientific_name": "new"},
+            ],
+        )
+        == 2
+    )
+    assert (
+        db.query(
+            "SELECT scientific_name FROM organisms WHERE organism_id='ORG_000001'"
+        )[0][0]
+        == "updated"
+    )
 
 
 def test_readonly_query_authorizer_and_entity_id_validation(db):
@@ -56,7 +72,7 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
-@pytest.mark.bug("ODR-0012")
+@pytest.mark.bug("ODR-12")
 def test_concurrent_writable_opens_do_not_collide_on_view_rebuild(db):
     """Writable opens serialize their view rebuild on the writer lock."""
     import threading
@@ -93,10 +109,14 @@ def test_next_id_reserves_numbers_across_connections(db):
 
 def test_nested_transaction_interrupt_rolls_back_only_inner_savepoint(db):
     with db.transaction():
-        db.conn.execute("INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000001','outer')")
+        db.conn.execute(
+            "INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000001','outer')"
+        )
         with pytest.raises(KeyboardInterrupt):
             with db.transaction():
-                db.conn.execute("INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000002','inner')")
+                db.conn.execute(
+                    "INSERT INTO organisms(organism_id,scientific_name) VALUES('ORG_000002','inner')"
+                )
                 raise KeyboardInterrupt()
         assert db.entity_exists("organism", "ORG_000001")
         assert not db.entity_exists("organism", "ORG_000002")
@@ -109,12 +129,23 @@ def test_data_source_requires_source_type(db):
 
 
 def test_data_source_idempotency_and_link_validation(db):
-    source = db.register_data_source({
-        "source_type": "insdc", "provider": "NCBI", "database_name": "Assembly",
-    })
-    assert db.register_data_source({
-        "source_type": "insdc", "provider": "NCBI", "database_name": "Assembly",
-    })["source_id"] == source["source_id"]
+    source = db.register_data_source(
+        {
+            "source_type": "insdc",
+            "provider": "NCBI",
+            "database_name": "Assembly",
+        }
+    )
+    assert (
+        db.register_data_source(
+            {
+                "source_type": "insdc",
+                "provider": "NCBI",
+                "database_name": "Assembly",
+            }
+        )["source_id"]
+        == source["source_id"]
+    )
     with pytest.raises(ValidationError, match="unsupported source link"):
         db.link_data_source(source["source_id"], [("bad", "X")])
     with pytest.raises(EntityNotFoundError, match="data source"):
@@ -129,31 +160,56 @@ def test_data_source_idempotency_and_link_validation(db):
 
 
 def test_metadata_columns_export_empty_and_metric_conservative_fallback(db):
-    schema = SimpleNamespace(tables={
-        "not-manual": {"fields": {"x": {"type": "string"}}},
-        "organisms": {"fields": {
-            "organism_id": {"type": "id"},
-            "custom_score": {"type": "float"},
-        }},
-    })
+    schema = SimpleNamespace(
+        tables={
+            "not-manual": {"fields": {"x": {"type": "string"}}},
+            "organisms": {
+                "fields": {
+                    "organism_id": {"type": "id"},
+                    "custom_score": {"type": "float"},
+                }
+            },
+        }
+    )
     db.ensure_metadata_columns(schema)
     assert "custom_score" in db.table_columns("organisms")
-    unsafe = SimpleNamespace(tables={
-        "organisms": {"fields": {"bad-name": {"type": "string"}}},
-    })
+    unsafe = SimpleNamespace(
+        tables={
+            "organisms": {"fields": {"bad-name": {"type": "string"}}},
+        }
+    )
     with pytest.raises(ValidationError, match="unsafe metadata column"):
         db.ensure_metadata_columns(unsafe)
     assert db.export_rows("organisms", ["does_not_exist"]) == []
 
     base = {
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "s",
-        "metric_name": "file_exists", "tool": "t", "tool_version": "1",
-        "parameter_set": "p", "metric_unit": None,
+        "entity_type": "organism",
+        "entity_id": "ORG_000001",
+        "qc_stage": "s",
+        "metric_name": "file_exists",
+        "tool": "t",
+        "tool_version": "1",
+        "parameter_set": "p",
+        "metric_unit": None,
     }
-    db.insert_qc_result({**base, "input_identity": "a", "metric_value": "bad",
-                         "metric_numeric": None, "evaluated_at": "2026-02-01"})
-    db.insert_qc_result({**base, "input_identity": "b", "metric_value": "1",
-                         "metric_numeric": 1, "evaluated_at": "2026-01-01"})
+    db.insert_qc_result(
+        {
+            **base,
+            "input_identity": "a",
+            "metric_value": "bad",
+            "metric_numeric": None,
+            "evaluated_at": "2026-02-01",
+        }
+    )
+    db.insert_qc_result(
+        {
+            **base,
+            "input_identity": "b",
+            "metric_value": "1",
+            "metric_numeric": 1,
+            "evaluated_at": "2026-01-01",
+        }
+    )
     assert db.latest_metrics("organism", "ORG_000001")["file_exists"] == "bad"
 
 

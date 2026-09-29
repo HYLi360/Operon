@@ -64,7 +64,7 @@ def test_noop_outside_main_thread():
     assert not errors
 
 
-@pytest.mark.bug("ODR-0015")
+@pytest.mark.bug("ODR-15")
 def test_signal_after_completed_cleanup_raises_gracefully(monkeypatch):
     forced: list[int] = []
     monkeypatch.setattr(shutdown, "_force_exit", forced.append)
@@ -80,7 +80,7 @@ def test_signal_after_completed_cleanup_raises_gracefully(monkeypatch):
     assert forced == []
 
 
-@pytest.mark.bug("ODR-0015")
+@pytest.mark.bug("ODR-15")
 def test_force_exit_still_applies_while_cleanup_is_running(monkeypatch):
     forced: list[int] = []
     monkeypatch.setattr(shutdown, "_force_exit", forced.append)
@@ -93,7 +93,7 @@ def test_force_exit_still_applies_while_cleanup_is_running(monkeypatch):
     assert forced == [signal.SIGINT]
 
 
-@pytest.mark.bug("ODR-0015")
+@pytest.mark.bug("ODR-15")
 def test_cleanup_completed_without_a_signal_is_a_noop():
     with graceful_shutdown():
         shutdown.cleanup_completed()

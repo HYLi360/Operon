@@ -50,8 +50,12 @@ terminals and a compact per-record layout on narrow terminals. `show` formats
 long record fields as wrapped sections. Colors are enabled only for an
 interactive terminal and can be disabled with `NO_COLOR`.
 
-`add` allocates the next id and appends a `status: open` record. It keeps the
-existing registry schema and YAML storage format unchanged.
+`add` allocates the next id and appends a `status: open` record, then rewrites
+the target file in the canonical storage format. Short strings are
+single-quoted, so an ISO date is never read back as a timestamp. Longer text
+is a literal block wrapped at one width, and a paragraph break is exactly one
+blank line — never none, and never two. `tests/unit/test_defect_registry.py`
+fails when a registry file drifts from that rendering.
 
 ## Rules
 

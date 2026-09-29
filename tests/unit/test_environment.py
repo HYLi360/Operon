@@ -51,12 +51,15 @@ class TestEnvironmentDocuments(PytestAssertions):
         if home == "/":
             self.skipTest("no meaningful home directory")
         prefix = str(Path(home) / "envs" / "demo")
-        with mock.patch.dict(os.environ, {
-            "PATH": prefix + "/bin:/usr/bin:" + home,
-            "CONDA_PREFIX": prefix,
-            "VIRTUAL_ENV": prefix,
-            "CONDA_DEFAULT_ENV": "demo",
-        }):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PATH": prefix + "/bin:/usr/bin:" + home,
+                "CONDA_PREFIX": prefix,
+                "VIRTUAL_ENV": prefix,
+                "CONDA_DEFAULT_ENV": "demo",
+            },
+        ):
             env = local_environment()
         self.assertEqual(env["path"], "~/envs/demo/bin:/usr/bin:~")
         self.assertEqual(env["conda_prefix"], "~/envs/demo")
@@ -82,11 +85,15 @@ class TestEnvironmentDocuments(PytestAssertions):
         # Home-prefix differences vanish entirely after redaction; only the
         # (hashed) hostname still distinguishes the two documents.
         first = parse_probe_output(
-            "hostname=node-a\nhome=/home/alice\nos=Linux\nconda_prefix=/home/alice/env\n")
+            "hostname=node-a\nhome=/home/alice\nos=Linux\nconda_prefix=/home/alice/env\n"
+        )
         second = parse_probe_output(
-            "hostname=node-b\nhome=/home/bob\nos=Linux\nconda_prefix=/home/bob/env\n")
-        self.assertEqual({k: v for k, v in first.items() if k != "hostname"},
-                         {k: v for k, v in second.items() if k != "hostname"})
+            "hostname=node-b\nhome=/home/bob\nos=Linux\nconda_prefix=/home/bob/env\n"
+        )
+        self.assertEqual(
+            {k: v for k, v in first.items() if k != "hostname"},
+            {k: v for k, v in second.items() if k != "hostname"},
+        )
         self.assertNotEqual(first["hostname"], second["hostname"])
         # Rich captures therefore share their sub-fingerprints across hosts:
         # identical setups deduplicate at the system/hardware/conda level.
@@ -103,7 +110,12 @@ class TestEnvironmentDocuments(PytestAssertions):
 
     def test_local_environment_omits_unset_variables(self):
         env = local_environment()
-        for name in ("CONDA_PREFIX", "CONDA_DEFAULT_ENV", "SINGULARITY_NAME", "APPTAINER_NAME"):
+        for name in (
+            "CONDA_PREFIX",
+            "CONDA_DEFAULT_ENV",
+            "SINGULARITY_NAME",
+            "APPTAINER_NAME",
+        ):
             if not os.environ.get(name):
                 self.assertFalse(name.lower() in env)
         # No variable is ever stored as an empty string.
@@ -112,16 +124,23 @@ class TestEnvironmentDocuments(PytestAssertions):
     def test_fingerprint_is_deterministic_and_order_independent(self):
         first = {"hostname": "h", "os": "Linux", "path": "/bin", "dockerenv": False}
         second = {"dockerenv": False, "path": "/bin", "os": "Linux", "hostname": "h"}
-        self.assertEqual(environment_fingerprint(first), environment_fingerprint(second))
+        self.assertEqual(
+            environment_fingerprint(first), environment_fingerprint(second)
+        )
         self.assertEqual(
             environment_fingerprint(first),
             environment_fingerprint(json.loads(json.dumps(first))),
         )
-        self.assertNotEqual(environment_fingerprint(first), environment_fingerprint({**first, "os": "Darwin"}))
+        self.assertNotEqual(
+            environment_fingerprint(first),
+            environment_fingerprint({**first, "os": "Darwin"}),
+        )
 
     def test_probe_round_trip_matches_local_document(self):
         proc = subprocess.run(
-            ["bash", "-c", " ; ".join(PROBE_SHELL_LINES)], capture_output=True, text=True,
+            ["bash", "-c", " ; ".join(PROBE_SHELL_LINES)],
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         probed = parse_probe_output(proc.stdout)
@@ -139,7 +158,9 @@ class TestEnvironmentDocuments(PytestAssertions):
             self.assertFalse(home in str(probed.get("path", "")))
 
     def test_parse_probe_output_treats_empty_values_as_missing(self):
-        parsed = parse_probe_output("hostname=node1\nconda_prefix=\npath=\n=dropped\n\n")
+        parsed = parse_probe_output(
+            "hostname=node1\nconda_prefix=\npath=\n=dropped\n\n"
+        )
         self.assertEqual(parsed, {"hostname": _hashed_hostname("node1")})
 
     def test_parse_probe_output_dockerenv_flag(self):
@@ -161,16 +182,20 @@ class TestRelevanceFingerprint(PytestAssertions):
 
     def test_legacy_document_without_sub_fingerprints_is_not_comparable(self):
         self.assertIsNone(relevance_fingerprint({}))
-        self.assertIsNone(relevance_fingerprint({"hostname": "sha256:x", "os": "Linux"}))
+        self.assertIsNone(
+            relevance_fingerprint({"hostname": "sha256:x", "os": "Linux"})
+        )
         self.assertIsNone(relevance_fingerprint({"conda": {"status": "not_detected"}}))
         self.assertIsNone(relevance_fingerprint(None))
 
     def test_subset_presence_participates(self):
         system_only = relevance_fingerprint({"system_fingerprint": "sys-1"})
         with_hardware = relevance_fingerprint(
-            {"system_fingerprint": "sys-1", "hardware_fingerprint": "hw-1"})
+            {"system_fingerprint": "sys-1", "hardware_fingerprint": "hw-1"}
+        )
         with_conda = relevance_fingerprint(
-            {"system_fingerprint": "sys-1", "conda": {"package_fingerprint": "conda-1"}})
+            {"system_fingerprint": "sys-1", "conda": {"package_fingerprint": "conda-1"}}
+        )
         self.assertIsNotNone(system_only)
         self.assertNotEqual(system_only, with_hardware)
         self.assertNotEqual(system_only, with_conda)
@@ -209,21 +234,31 @@ class TestRelevanceFingerprint(PytestAssertions):
         self.assertIsNotNone(fingerprint)
         self.assertEqual(
             fingerprint,
-            relevance_fingerprint({
-                "system_fingerprint": parsed["system_fingerprint"],
-                "hardware_fingerprint": parsed["hardware_fingerprint"],
-            }),
+            relevance_fingerprint(
+                {
+                    "system_fingerprint": parsed["system_fingerprint"],
+                    "hardware_fingerprint": parsed["hardware_fingerprint"],
+                }
+            ),
         )
 
 
 class TestEnvironmentSummary(PytestAssertions):
     def test_full_document_renders_all_segments(self):
         document = {
-            "system": {"os": "Linux", "os_release": "6.1.0",
-                       "distribution": {"pretty_name": "Ubuntu 22.04.3 LTS"}},
-            "hardware": {"cpu": ["flags : avx sse", "model name\t:  Intel(R)  Xeon(R) Gold 6230"],
-                         "memory_total": "65432108 kB",
-                         "nvidia_gpus": ["NVIDIA A100, 535.104.05, 8.0"]},
+            "system": {
+                "os": "Linux",
+                "os_release": "6.1.0",
+                "distribution": {"pretty_name": "Ubuntu 22.04.3 LTS"},
+            },
+            "hardware": {
+                "cpu": [
+                    "flags : avx sse",
+                    "model name\t:  Intel(R)  Xeon(R) Gold 6230",
+                ],
+                "memory_total": "65432108 kB",
+                "nvidia_gpus": ["NVIDIA A100, 535.104.05, 8.0"],
+            },
             "conda_default_env": "bio",
             "conda": {"status": "captured", "packages": [{"name": "a"}, {"name": "b"}]},
             "capture_status": "partial",
@@ -238,9 +273,13 @@ class TestEnvironmentSummary(PytestAssertions):
         self.assertEqual(environment_summary({}), "")
         self.assertEqual(environment_summary({"capture_status": "complete"}), "")
         # Legacy documents without structured sections fall back to os fields.
-        self.assertEqual(environment_summary({"os": "Linux", "os_release": "6.1"}), "Linux 6.1")
         self.assertEqual(
-            environment_summary({"os": "Linux", "machine": "x86_64", "capture_status": "failed"}),
+            environment_summary({"os": "Linux", "os_release": "6.1"}), "Linux 6.1"
+        )
+        self.assertEqual(
+            environment_summary(
+                {"os": "Linux", "machine": "x86_64", "capture_status": "failed"}
+            ),
             "Linux; capture: failed",
         )
         multiple = {"hardware": {"nvidia_gpus": ["A100, 535.1", "A100, 535.1"]}}
@@ -272,7 +311,9 @@ class TestEnvironmentSchema(PytestAssertions):
         first = self.db.record_environment(document)
         second = self.db.record_environment(dict(reversed(list(document.items()))))
         self.assertEqual(first, second)
-        rows = self.db.conn.execute("SELECT document, created_at FROM execution_environments").fetchall()
+        rows = self.db.conn.execute(
+            "SELECT document, created_at FROM execution_environments"
+        ).fetchall()
         self.assertEqual(len(rows), 1)
         stored = json.loads(rows[0]["document"])
         self.assertEqual(stored, {k: document[k] for k in sorted(document)})
@@ -282,6 +323,7 @@ class TestEnvironmentSchema(PytestAssertions):
         self.db.close()
         path = Path(self.tmp.name) / "meta.sqlite"
         import sqlite3
+
         conn = sqlite3.connect(str(path))
         conn.execute("ALTER TABLE workflow_runs DROP COLUMN environment_id")
         conn.execute("ALTER TABLE analysis_jobs DROP COLUMN environment_id")
@@ -292,4 +334,6 @@ class TestEnvironmentSchema(PytestAssertions):
         self.addCleanup(migrated.close)
         self.assertIn("environment_id", migrated.table_columns("workflow_runs"))
         self.assertIn("environment_id", migrated.table_columns("analysis_jobs"))
-        self.assertIn("environment_id", migrated.table_columns("execution_environments"))
+        self.assertIn(
+            "environment_id", migrated.table_columns("execution_environments")
+        )

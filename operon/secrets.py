@@ -46,7 +46,9 @@ _TIMEOUT_SECONDS = 30
 # --- process helpers ---------------------------------------------------------
 
 
-def _message(result: subprocess.CompletedProcess | subprocess.CalledProcessError) -> str:
+def _message(
+    result: subprocess.CompletedProcess | subprocess.CalledProcessError,
+) -> str:
     """First non-empty stderr (or stdout) line of a failed command."""
     for stream in (result.stderr, result.stdout):
         if not stream:
@@ -57,12 +59,17 @@ def _message(result: subprocess.CompletedProcess | subprocess.CalledProcessError
     return f"exit code {result.returncode}"
 
 
-def _run(command: list[str], *, stdin: bytes | None = None, check: bool = False
-         ) -> subprocess.CompletedProcess:
+def _run(
+    command: list[str], *, stdin: bytes | None = None, check: bool = False
+) -> subprocess.CompletedProcess:
     """Run a backend helper, mapping every process failure to ``SecretError``."""
     try:
         return subprocess.run(
-            command, input=stdin, capture_output=True, timeout=_TIMEOUT_SECONDS, check=check,
+            command,
+            input=stdin,
+            capture_output=True,
+            timeout=_TIMEOUT_SECONDS,
+            check=check,
         )
     except FileNotFoundError as exc:
         raise SecretError(f"{command[0]}: not found") from exc
@@ -107,7 +114,9 @@ class SecretToolBackend(SecretBackend):
         return shutil.which(self.binary) is not None
 
     def get(self, secret_name: str) -> str | None:
-        result = _run([self.binary, "lookup", "service", SERVICE_NAME, "key", secret_name])
+        result = _run(
+            [self.binary, "lookup", "service", SERVICE_NAME, "key", secret_name]
+        )
         if result.returncode != 0:
             return None
         value = result.stdout.decode("utf-8", "replace")
@@ -115,9 +124,18 @@ class SecretToolBackend(SecretBackend):
 
     def store(self, secret_name: str, value: str) -> None:
         _run(
-            [self.binary, "store", "--label", f"Operon {secret_name}",
-             "service", SERVICE_NAME, "key", secret_name],
-            stdin=value.encode("utf-8"), check=True,
+            [
+                self.binary,
+                "store",
+                "--label",
+                f"Operon {secret_name}",
+                "service",
+                SERVICE_NAME,
+                "key",
+                secret_name,
+            ],
+            stdin=value.encode("utf-8"),
+            check=True,
         )
 
     def clear(self, secret_name: str) -> None:
@@ -147,10 +165,17 @@ class SystemdCredsBackend(SecretBackend):
         path = self.path(secret_name)
         if not path.is_file():
             return None
-        result = _run([
-            self.binary, "decrypt", "--user", "--name", self.credential_name(secret_name),
-            str(path), "-",
-        ])
+        result = _run(
+            [
+                self.binary,
+                "decrypt",
+                "--user",
+                "--name",
+                self.credential_name(secret_name),
+                str(path),
+                "-",
+            ]
+        )
         if result.returncode != 0:
             raise SecretError(
                 f"cannot decrypt {path}: {_message(result)}; user-scoped systemd "
@@ -164,10 +189,18 @@ class SystemdCredsBackend(SecretBackend):
         path = self.path(secret_name)
         path.parent.mkdir(parents=True, exist_ok=True)
         os.chmod(path.parent, 0o700)
-        result = _run([
-            self.binary, "encrypt", "--user", "--name", self.credential_name(secret_name),
-            "-", str(path),
-        ], stdin=value.encode("utf-8"))
+        result = _run(
+            [
+                self.binary,
+                "encrypt",
+                "--user",
+                "--name",
+                self.credential_name(secret_name),
+                "-",
+                str(path),
+            ],
+            stdin=value.encode("utf-8"),
+        )
         if result.returncode != 0:
             raise SecretError(f"systemd-creds encrypt failed: {_message(result)}")
         os.chmod(path, 0o600)
@@ -186,9 +219,17 @@ class MacKeychainBackend(SecretBackend):
         return sys.platform == "darwin" and Path(self.binary).exists()
 
     def get(self, secret_name: str) -> str | None:
-        result = _run([
-            self.binary, "find-generic-password", "-a", secret_name, "-s", SERVICE_NAME, "-w",
-        ])
+        result = _run(
+            [
+                self.binary,
+                "find-generic-password",
+                "-a",
+                secret_name,
+                "-s",
+                SERVICE_NAME,
+                "-w",
+            ]
+        )
         if result.returncode != 0:
             return None
         value = result.stdout.decode("utf-8", "replace").strip("\n")
@@ -197,20 +238,40 @@ class MacKeychainBackend(SecretBackend):
     def store(self, secret_name: str, value: str) -> None:
         # ``security`` accepts the value only as an argument, so it is briefly
         # visible to the same user through the process table.
-        result = _run([
-            self.binary, "add-generic-password", "-a", secret_name, "-s", SERVICE_NAME,
-            "-w", value, "-U",
-        ])
+        result = _run(
+            [
+                self.binary,
+                "add-generic-password",
+                "-a",
+                secret_name,
+                "-s",
+                SERVICE_NAME,
+                "-w",
+                value,
+                "-U",
+            ]
+        )
         if result.returncode != 0:
             raise SecretError(f"keychain store failed: {_message(result)}")
 
     def clear(self, secret_name: str) -> None:
-        _run([self.binary, "delete-generic-password", "-a", secret_name, "-s", SERVICE_NAME])
+        _run(
+            [
+                self.binary,
+                "delete-generic-password",
+                "-a",
+                secret_name,
+                "-s",
+                SERVICE_NAME,
+            ]
+        )
 
 
 def secret_directory(config_dir: Path | None = None) -> Path:
     """Directory holding ``systemd-creds`` ciphertext (one file per secret)."""
-    return (Path(config_dir) if config_dir is not None else user_config_dir()) / "secrets"
+    return (
+        Path(config_dir) if config_dir is not None else user_config_dir()
+    ) / "secrets"
 
 
 def backends(*, config_dir: Path | None = None) -> list[SecretBackend]:
@@ -263,7 +324,9 @@ def read_secret(secret_name: str, *, config_dir: Path | None = None) -> str | No
     return backend.get(normalize_secret_name(secret_name))
 
 
-def store_secret(secret_name: str, value: str, *, config_dir: Path | None = None) -> str:
+def store_secret(
+    secret_name: str, value: str, *, config_dir: Path | None = None
+) -> str:
     """Store a secret in the active backend; returns the backend name."""
     if not value:
         raise SecretError("refusing to store an empty secret value")
@@ -283,9 +346,13 @@ def clear_secret(secret_name: str, *, config_dir: Path | None = None) -> bool:
     return existed
 
 
-def resolve_secret(secret_name: str, explicit: str | None = None, *,
-                   environ: Mapping[str, str] | None = None,
-                   config_dir: Path | None = None) -> str | None:
+def resolve_secret(
+    secret_name: str,
+    explicit: str | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+    config_dir: Path | None = None,
+) -> str | None:
     """Resolve one secret: ``--flag`` > environment variable > stored value."""
     name = normalize_secret_name(secret_name)
     candidate = (explicit or "").strip()
@@ -299,8 +366,9 @@ def resolve_secret(secret_name: str, explicit: str | None = None, *,
     return read_secret(name, config_dir=config_dir)
 
 
-def secret_status(*, environ: Mapping[str, str] | None = None,
-                  config_dir: Path | None = None) -> dict[str, Any]:
+def secret_status(
+    *, environ: Mapping[str, str] | None = None, config_dir: Path | None = None
+) -> dict[str, Any]:
     """Backend availability and which secrets are set, never their values."""
     env = os.environ if environ is None else environ  # env-audit: secret status report
     active = active_backend(config_dir=config_dir)
@@ -310,17 +378,24 @@ def secret_status(*, environ: Mapping[str, str] | None = None,
         stored: bool | None = None
         if active is not None:
             stored = active.get(name) is not None
-        secrets_report.append({
-            "name": name,
-            "env_var": variable,
-            "env_set": bool((env.get(variable) or "").strip()) if variable else False,
-            "stored": stored,
-        })
+        secrets_report.append(
+            {
+                "name": name,
+                "env_var": variable,
+                "env_set": bool((env.get(variable) or "").strip())
+                if variable
+                else False,
+                "stored": stored,
+            }
+        )
     return {
         "active_backend": active.name if active is not None else None,
         "backends": [
-            {"name": backend.name, "available": backend.available(),
-             "active": active is not None and backend.name == active.name}
+            {
+                "name": backend.name,
+                "available": backend.available(),
+                "active": active is not None and backend.name == active.name,
+            }
             for backend in backends(config_dir=config_dir)
         ],
         "secrets": secrets_report,

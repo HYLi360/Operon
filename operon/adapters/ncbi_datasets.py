@@ -184,27 +184,27 @@ __all__ = [
 
 
 def run_ncbi_datasets_adapter(
-        db: Database,
-        project: Project,
-        *,
-        inputs: Sequence[str | Path] = (),
-        accessions: Sequence[str] = (),
-        accession_file: str | Path | None = None,
-        includes: Sequence[str] = DEFAULT_INCLUDES,
-        archive_files: bool = True,
-        standardize: bool = False,
-        dry_run: bool = False,
-        preserve_sources: bool = True,
-        email: str | None = None,
-        api_key: str | None = None,
-        timeout: float = 300.0,
-        batch_size: int = 10,
-        download_workers: int = 3,
-        max_retries: int = 4,
-        retry_backoff: float = 1.0,
-        resume_run_id: str | None = None,
-        plan_only: bool = False,
-        cancel_event: threading.Event | None = None,
+    db: Database,
+    project: Project,
+    *,
+    inputs: Sequence[str | Path] = (),
+    accessions: Sequence[str] = (),
+    accession_file: str | Path | None = None,
+    includes: Sequence[str] = DEFAULT_INCLUDES,
+    archive_files: bool = True,
+    standardize: bool = False,
+    dry_run: bool = False,
+    preserve_sources: bool = True,
+    email: str | None = None,
+    api_key: str | None = None,
+    timeout: float = 300.0,
+    batch_size: int = 10,
+    download_workers: int = 3,
+    max_retries: int = 4,
+    retry_backoff: float = 1.0,
+    resume_run_id: str | None = None,
+    plan_only: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Import existing NCBI Datasets outputs and optionally download packages.
 
@@ -318,23 +318,27 @@ class _AdapterRunContext:
 
 
 def _validate_adapter_args(
-        *,
-        inputs: Sequence[str | Path],
-        accessions: Sequence[str],
-        accession_file: str | Path | None,
-        includes: Sequence[str],
-        plan_only: bool,
-        batch_size: int,
-        download_workers: int,
-        max_retries: int,
-        retry_backoff: float,
+    *,
+    inputs: Sequence[str | Path],
+    accessions: Sequence[str],
+    accession_file: str | Path | None,
+    includes: Sequence[str],
+    plan_only: bool,
+    batch_size: int,
+    download_workers: int,
+    max_retries: int,
+    retry_backoff: float,
 ) -> list[str]:
     """Collect requested accessions and reject invalid argument combinations."""
     requested = _collect_accessions(accessions, accession_file)
     if not inputs and not requested:
-        raise ValidationError("provide at least one --input, --accession, or --accession-file")
+        raise ValidationError(
+            "provide at least one --input, --accession, or --accession-file"
+        )
     if plan_only and inputs:
-        raise ValidationError("--plan-only supports accession requests, not offline --input packages")
+        raise ValidationError(
+            "--plan-only supports accession requests, not offline --input packages"
+        )
     unknown_includes = sorted(set(includes) - set(INCLUDE_TYPES))
     if unknown_includes:
         raise ValidationError(f"unknown NCBI include type(s): {unknown_includes}")
@@ -350,21 +354,21 @@ def _validate_adapter_args(
 
 
 def _prepare_run(
-        db: Database,
-        project: Project,
-        *,
-        requested: Sequence[str],
-        includes: Sequence[str],
-        archive_files: bool,
-        standardize: bool,
-        dry_run: bool,
-        preserve_sources: bool,
-        email: str | None,
-        api_key: str | None,
-        batch_size: int,
-        download_workers: int,
-        max_retries: int,
-        retry_backoff: float,
+    db: Database,
+    project: Project,
+    *,
+    requested: Sequence[str],
+    includes: Sequence[str],
+    archive_files: bool,
+    standardize: bool,
+    dry_run: bool,
+    preserve_sources: bool,
+    email: str | None,
+    api_key: str | None,
+    batch_size: int,
+    download_workers: int,
+    max_retries: int,
+    retry_backoff: float,
 ) -> tuple[_AdapterRunContext, dict[tuple[str, ...], list[str]], list[str]]:
     """Build the run context, summary skeleton and missing-download plan."""
     run_id = new_run_id()
@@ -414,13 +418,21 @@ def _prepare_run(
         summary=summary,
     )
 
-    download_groups: dict[tuple[str, ...], list[str]] = {
-        tuple(includes): list(requested),
-    } if requested else {}
+    download_groups: dict[tuple[str, ...], list[str]] = (
+        {
+            tuple(includes): list(requested),
+        }
+        if requested
+        else {}
+    )
     skipped_existing: list[str] = []
     if requested and archive_files:
         download_groups, skipped_existing = _plan_missing_downloads(
-            db, project, requested, includes, standardize=standardize,
+            db,
+            project,
+            requested,
+            includes,
+            standardize=standardize,
         )
         summary["skipped_existing"] = skipped_existing
     summary["download_plan"] = [
@@ -431,27 +443,32 @@ def _prepare_run(
 
 
 def _request_fingerprint(
-        ctx: _AdapterRunContext,
-        *,
-        inputs: Sequence[str | Path],
-        requested: Sequence[str],
-        includes: Sequence[str],
-        archive_files: bool,
-        standardize: bool,
-        download_groups: dict[tuple[str, ...], list[str]],
-        skipped_existing: Sequence[str],
-        download_workers: int,
-        max_retries: int,
-        plan_only: bool,
+    ctx: _AdapterRunContext,
+    *,
+    inputs: Sequence[str | Path],
+    requested: Sequence[str],
+    includes: Sequence[str],
+    archive_files: bool,
+    standardize: bool,
+    download_groups: dict[tuple[str, ...], list[str]],
+    skipped_existing: Sequence[str],
+    download_workers: int,
+    max_retries: int,
+    plan_only: bool,
 ) -> tuple[str, str, dict[str, Any]] | None:
     """Hash the request; return (command, sha256, document), or None for plan-only."""
     summary = ctx.summary
     to_download_count = sum(len(values) for values in download_groups.values())
     command_text = (
-        "offline import" if not requested
+        "offline import"
+        if not requested
         else f"download {to_download_count} accession(s) "
-             f"(workers={download_workers}, retries={max_retries})"
-             + (f"; skipped {len(skipped_existing)} already archived" if skipped_existing else "")
+        f"(workers={download_workers}, retries={max_retries})"
+        + (
+            f"; skipped {len(skipped_existing)} already archived"
+            if skipped_existing
+            else ""
+        )
     )
     request_document = {
         "inputs": [str(Path(value).resolve()) for value in inputs],
@@ -461,7 +478,9 @@ def _request_fingerprint(
         "standardize": standardize,
     }
     request_sha256 = hashlib.sha256(
-        json.dumps(request_document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        json.dumps(request_document, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
     ).hexdigest()
     if plan_only:
         summary["plan_only"] = True
@@ -471,15 +490,15 @@ def _request_fingerprint(
 
 
 def _begin_run(
-        ctx: _AdapterRunContext,
-        *,
-        requested: Sequence[str],
-        includes: Sequence[str],
-        resume_run_id: str | None,
-        command_text: str,
-        request_sha256: str,
-        request_document: dict[str, Any],
-        skipped_existing: Sequence[str],
+    ctx: _AdapterRunContext,
+    *,
+    requested: Sequence[str],
+    includes: Sequence[str],
+    resume_run_id: str | None,
+    command_text: str,
+    request_sha256: str,
+    request_document: dict[str, Any],
+    skipped_existing: Sequence[str],
 ) -> None:
     """Validate a resume request and open the workflow run with its items."""
     db = ctx.db
@@ -489,45 +508,56 @@ def _begin_run(
             (resume_run_id,),
         ).fetchone()
         if previous is None:
-            raise ValidationError(f"resume workflow run does not exist: {resume_run_id}")
+            raise ValidationError(
+                f"resume workflow run does not exist: {resume_run_id}"
+            )
         if previous["input_sha256"] and previous["input_sha256"] != request_sha256:
             raise ValidationError(
                 "--resume-run request differs from the original run; use the same inputs, "
                 "accessions, include set and archival options"
             )
     if not ctx.dry_run:
-        start_run(db, {
-            "run_id": ctx.run_id,
-            "resumes_run_id": resume_run_id,
-            "step": "ncbi_datasets_import",
-            "status": "running",
-            "started_at": ctx.started_at,
-            "tool": "NCBI Datasets adapter",
-            "parameter_set": ",".join(includes),
-            "command": command_text,
-            "input_sha256": request_sha256,
-            "execution_details": json.dumps(request_document, ensure_ascii=False, sort_keys=True),
-        })
+        start_run(
+            db,
+            {
+                "run_id": ctx.run_id,
+                "resumes_run_id": resume_run_id,
+                "step": "ncbi_datasets_import",
+                "status": "running",
+                "started_at": ctx.started_at,
+                "tool": "NCBI Datasets adapter",
+                "parameter_set": ",".join(includes),
+                "command": command_text,
+                "input_sha256": request_sha256,
+                "execution_details": json.dumps(
+                    request_document, ensure_ascii=False, sort_keys=True
+                ),
+            },
+        )
         for accession in requested:
             status = "skipped" if accession in skipped_existing else "pending"
             db.upsert_adapter_run_item(
-                ctx.run_id, accession, json.dumps(list(includes)), status,
+                ctx.run_id,
+                accession,
+                json.dumps(list(includes)),
+                status,
                 started_at=ctx.started_at,
                 finished_at=now_iso() if status == "skipped" else None,
                 result_json=(
                     json.dumps({"reason": "requested roles already archived"})
-                    if status == "skipped" else None
+                    if status == "skipped"
+                    else None
                 ),
             )
 
 
 def _process_source(
-        ctx: _AdapterRunContext,
-        source_path: Path,
-        *,
-        label: str,
-        requested_batch: Sequence[str] = (),
-        already_preserved: Path | None = None,
+    ctx: _AdapterRunContext,
+    source_path: Path,
+    *,
+    label: str,
+    requested_batch: Sequence[str] = (),
+    already_preserved: Path | None = None,
 ) -> dict[str, Any]:
     """Import one source bundle (offline input or downloaded package)."""
     db = ctx.db
@@ -541,12 +571,16 @@ def _process_source(
         )
         contact_email = ctx.email or resolve_ncbi_email()
         if not bundle_reports and requested_batch and contact_email:
-            bundle_reports.extend(fetch_entrez_assembly_reports(
-                requested_batch,
-                email=contact_email,
-                api_key=ctx.api_key or resolve_secret("ncbi.api_key"),
-            ))
-        bundle_assets = discover_dataset_assets(bundle.root, bundle_reports, bundle.label)
+            bundle_reports.extend(
+                fetch_entrez_assembly_reports(
+                    requested_batch,
+                    email=contact_email,
+                    api_key=ctx.api_key or resolve_secret("ncbi.api_key"),
+                )
+            )
+        bundle_assets = discover_dataset_assets(
+            bundle.root, bundle_reports, bundle.label
+        )
         source_summary = {
             "source": bundle.label,
             "preserved_path": (
@@ -579,15 +613,25 @@ def _process_source(
                 "file_ids": [],
             }
 
-        if ctx.preserve_sources and already_preserved is None and bundle.source.is_file():
+        if (
+            ctx.preserve_sources
+            and already_preserved is None
+            and bundle.source.is_file()
+        ):
             bundle.preserved_path = _preserve_source(bundle.source, project)
-            source_summary["preserved_path"] = project_rel(project, bundle.preserved_path)
+            source_summary["preserved_path"] = project_rel(
+                project, bundle.preserved_path
+            )
 
         if ctx.persisted_schema is None:
             ctx.persisted_schema = _adapter_schema(project, persist=True)
         _apply_plan(
-            db, project, plan, ctx.persisted_schema,
-            workflow_run_id=ctx.run_id, normalized=normalized,
+            db,
+            project,
+            plan,
+            ctx.persisted_schema,
+            workflow_run_id=ctx.run_id,
+            normalized=normalized,
         )
         source_file_ids = _archive_plan_assets(ctx, plan)
         return {
@@ -601,7 +645,9 @@ def _process_source(
         bundle.close()
 
 
-def _track_assembly_groups(ctx: _AdapterRunContext, bundle_reports: Sequence[dict[str, Any]]) -> None:
+def _track_assembly_groups(
+    ctx: _AdapterRunContext, bundle_reports: Sequence[dict[str, Any]]
+) -> None:
     """Track report identity independently of allocated IDs."""
     # This keeps large --dry-run summaries correct even though dry runs do
     # not write one batch's ID allocations for the next batch to see.
@@ -609,11 +655,15 @@ def _track_assembly_groups(ctx: _AdapterRunContext, bundle_reports: Sequence[dic
     accession_group = ctx.accession_group
     for report in bundle_reports:
         meta = _extract_metadata(report)
-        related = set(_unique([
-            meta.get("accession"),
-            meta.get("current_accession"),
-            meta.get("paired_accession"),
-        ]))
+        related = set(
+            _unique(
+                [
+                    meta.get("accession"),
+                    meta.get("current_accession"),
+                    meta.get("paired_accession"),
+                ]
+            )
+        )
         if not related:  # pragma: no cover
             continue
         roots = {accession_group[item] for item in related if item in accession_group}
@@ -654,8 +704,10 @@ def _archive_plan_assets(ctx: _AdapterRunContext, plan: ImportPlan) -> list[str]
             source_file_ids.append(row["file_id"])
             if entity_type == "assembly":
                 pointer = (
-                    "genome_file_id" if asset.role.startswith("genome_fasta")
-                    else "report_file_id" if asset.role.startswith("assembly_report")
+                    "genome_file_id"
+                    if asset.role.startswith("genome_fasta")
+                    else "report_file_id"
+                    if asset.role.startswith("assembly_report")
                     else None
                 )
                 if pointer:  # pragma: no branch
@@ -671,11 +723,11 @@ def _archive_plan_assets(ctx: _AdapterRunContext, plan: ImportPlan) -> list[str]
 
 
 def _consume_download_batch(
-        ctx: _AdapterRunContext,
-        batch: Sequence[str],
-        zip_path: Path,
-        *,
-        includes: Sequence[str],
+    ctx: _AdapterRunContext,
+    batch: Sequence[str],
+    zip_path: Path,
+    *,
+    includes: Sequence[str],
 ) -> None:
     """Preserve and import one downloaded batch ZIP, tracking per-accession status."""
     db = ctx.db
@@ -684,8 +736,11 @@ def _consume_download_batch(
     if not ctx.dry_run:
         for accession in batch:
             db.upsert_adapter_run_item(
-                ctx.run_id, accession, json.dumps(list(includes)),
-                "downloading", started_at=now_iso(),
+                ctx.run_id,
+                accession,
+                json.dumps(list(includes)),
+                "downloading",
+                started_at=now_iso(),
             )
     try:
         if ctx.preserve_sources and not ctx.dry_run:
@@ -701,8 +756,12 @@ def _consume_download_batch(
         if not ctx.dry_run:
             for accession in batch:
                 db.upsert_adapter_run_item(
-                    ctx.run_id, accession, json.dumps(list(includes)),
-                    "completed", started_at=ctx.started_at, finished_at=now_iso(),
+                    ctx.run_id,
+                    accession,
+                    json.dumps(list(includes)),
+                    "completed",
+                    started_at=ctx.started_at,
+                    finished_at=now_iso(),
                     result_json=json.dumps(result, ensure_ascii=False, sort_keys=True),
                 )
     except BaseException as exc:
@@ -710,8 +769,12 @@ def _consume_download_batch(
             status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
             for accession in batch:
                 db.upsert_adapter_run_item(
-                    ctx.run_id, accession, json.dumps(list(includes)),
-                    status, started_at=ctx.started_at, finished_at=now_iso(),
+                    ctx.run_id,
+                    accession,
+                    json.dumps(list(includes)),
+                    status,
+                    started_at=ctx.started_at,
+                    finished_at=now_iso(),
                     error=f"{type(exc).__name__}: {exc}",
                 )
         raise
@@ -720,45 +783,51 @@ def _consume_download_batch(
 
 
 def _record_download_failure(
-        ctx: _AdapterRunContext,
-        batch: Sequence[str],
-        error: BaseException,
-        *,
-        includes: Sequence[str],
+    ctx: _AdapterRunContext,
+    batch: Sequence[str],
+    error: BaseException,
+    *,
+    includes: Sequence[str],
 ) -> None:
     """Record one failed download batch in the summary and the run items."""
-    ctx.download_failures.append({
-        "accessions": ",".join(batch),
-        "includes": ",".join(includes),
-        "error": f"{type(error).__name__}: {error}",
-    })
+    ctx.download_failures.append(
+        {
+            "accessions": ",".join(batch),
+            "includes": ",".join(includes),
+            "error": f"{type(error).__name__}: {error}",
+        }
+    )
     ctx.summary["download_failures"] = ctx.download_failures
     if not ctx.dry_run:
         for accession in batch:
             ctx.db.upsert_adapter_run_item(
-                ctx.run_id, accession, json.dumps(list(includes)),
-                "failed", started_at=ctx.started_at, finished_at=now_iso(),
+                ctx.run_id,
+                accession,
+                json.dumps(list(includes)),
+                "failed",
+                started_at=ctx.started_at,
+                finished_at=now_iso(),
                 error=f"{type(error).__name__}: {error}",
             )
 
 
 def _consume_download_batches(
-        ctx: _AdapterRunContext,
-        download_groups: dict[tuple[str, ...], list[str]],
-        *,
-        batch_size: int,
-        timeout: float,
-        download_workers: int,
-        max_retries: int,
-        retry_backoff: float,
-        cancel_event: threading.Event | None = None,
+    ctx: _AdapterRunContext,
+    download_groups: dict[tuple[str, ...], list[str]],
+    *,
+    batch_size: int,
+    timeout: float,
+    download_workers: int,
+    max_retries: int,
+    retry_backoff: float,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     """Download the planned batches concurrently and import each as it lands."""
     # Keep downloads off /tmp: it is commonly a small tmpfs.  The
     # staging directory lives on the project filesystem.  Batches are
     # downloaded concurrently and consumed as soon as each finishes.
     with tempfile.TemporaryDirectory(
-            prefix=".operon-ncbi-download-", dir=str(ctx.project.root)
+        prefix=".operon-ncbi-download-", dir=str(ctx.project.root)
     ) as temp_name:
         for missing_signature, group_accessions in download_groups.items():
             batches = list(_chunks(group_accessions, batch_size))
@@ -773,14 +842,18 @@ def _consume_download_batches(
                 max_retries=max_retries,
                 retry_backoff=retry_backoff,
                 cancel_event=cancel_event,
-                on_complete=lambda batch, zip_path, signature=missing_signature:
-                    _consume_download_batch(ctx, batch, zip_path, includes=signature),
-                on_error=lambda batch, error, signature=missing_signature:
-                    _record_download_failure(ctx, batch, error, includes=signature),
+                on_complete=lambda batch, zip_path, signature=missing_signature: (
+                    _consume_download_batch(ctx, batch, zip_path, includes=signature)
+                ),
+                on_error=lambda batch, error, signature=missing_signature: (
+                    _record_download_failure(ctx, batch, error, includes=signature)
+                ),
             )
 
 
-def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> dict[str, Any]:
+def _finalize_run(
+    ctx: _AdapterRunContext, skipped_existing: Sequence[str]
+) -> dict[str, Any]:
     """Record the audit entry and close out the run, or raise on failures."""
     db = ctx.db
     summary = ctx.summary
@@ -791,18 +864,27 @@ def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> d
     if not ctx.imported_assembly_ids and not skipped_existing:
         if download_failures:
             details = "\n".join(
-                f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
+                f"- {item['accessions']}: {item['error']}"
+                for item in download_failures[:20]
             )
             raise ValidationError(
-                "no NCBI assembly records could be imported; download batch failures:\n" + details
+                "no NCBI assembly records could be imported; download batch failures:\n"
+                + details
             )
-        raise ValidationError("no NCBI assembly records found in the supplied input/download")
+        raise ValidationError(
+            "no NCBI assembly records found in the supplied input/download"
+        )
     summary["assembly_records"] = len(ctx.observed_assembly_groups)
     if ctx.dry_run:
         return summary
-    evidence = ", ".join(
-        item["preserved_path"] for item in summary["sources"] if item["preserved_path"]
-    ) or None
+    evidence = (
+        ", ".join(
+            item["preserved_path"]
+            for item in summary["sources"]
+            if item["preserved_path"]
+        )
+        or None
+    )
     db.record_change(
         "adapter",
         ctx.run_id,
@@ -817,7 +899,8 @@ def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> d
     if download_failures:
         failed_count = len(download_failures)
         details = "\n".join(
-            f"- {item['accessions']}: {item['error']}" for item in download_failures[:20]
+            f"- {item['accessions']}: {item['error']}"
+            for item in download_failures[:20]
         )
         if failed_count > 20:
             details += f"\n- ... and {failed_count - 20} more failed batch(es)"
@@ -826,12 +909,19 @@ def _finalize_run(ctx: _AdapterRunContext, skipped_existing: Sequence[str]) -> d
             + details
         )
     finish_run(
-        db, ctx.project, ctx.run_id, status="completed", exit_code=0,
+        db,
+        ctx.project,
+        ctx.run_id,
+        status="completed",
+        exit_code=0,
         execution_details=json.dumps(summary, ensure_ascii=False, sort_keys=True),
     )
     return summary
 
-def _record_run_outcome(ctx: _AdapterRunContext, exc: Exception, *, interrupted: bool) -> Exception:
+
+def _record_run_outcome(
+    ctx: _AdapterRunContext, exc: Exception, *, interrupted: bool
+) -> Exception:
     """Best-effort run-outcome record so aborted or failed runs stay in the audit trail."""
     if interrupted:
         # SIGINT/SIGTERM (ShutdownRequested included): record the interruption
@@ -841,10 +931,19 @@ def _record_run_outcome(ctx: _AdapterRunContext, exc: Exception, *, interrupted:
             try:
                 signum = getattr(exc, "signum", None)
                 finish_run(
-                    ctx.db, ctx.project, ctx.run_id, status="interrupted", exit_code=130,
-                    error=(f"interrupted by signal {signum}" if signum is not None
-                           else "interrupted"),
-                    execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
+                    ctx.db,
+                    ctx.project,
+                    ctx.run_id,
+                    status="interrupted",
+                    exit_code=130,
+                    error=(
+                        f"interrupted by signal {signum}"
+                        if signum is not None
+                        else "interrupted"
+                    ),
+                    execution_details=json.dumps(
+                        ctx.summary, ensure_ascii=False, sort_keys=True
+                    ),
                 )
             except Exception:  # noqa: BLE001 - failed-run bookkeeping must not mask the original error  # pylint: disable=broad-exception-caught
                 pass
@@ -856,9 +955,15 @@ def _record_run_outcome(ctx: _AdapterRunContext, exc: Exception, *, interrupted:
     if not ctx.dry_run:
         try:
             finish_run(
-                ctx.db, ctx.project, ctx.run_id, status="failed", exit_code=1,
+                ctx.db,
+                ctx.project,
+                ctx.run_id,
+                status="failed",
+                exit_code=1,
                 error=str(reported_exc),
-                execution_details=json.dumps(ctx.summary, ensure_ascii=False, sort_keys=True),
+                execution_details=json.dumps(
+                    ctx.summary, ensure_ascii=False, sort_keys=True
+                ),
             )
         except Exception:  # noqa: BLE001 - failed-run bookkeeping must not mask the original error  # pylint: disable=broad-exception-caught
             pass

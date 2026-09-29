@@ -34,8 +34,12 @@ from operon.tui.screens.files_ops import (
 ALL_STATUSES = "ALL"
 
 KNOWN_FILE_STATUSES = [
-    "CHECKSUM_VERIFIED", "STANDARDIZED", "REMOTE_ONLY",
-    "REMOTE_UNVERIFIED", "MISSING", "CHECKSUM_FAILED",
+    "CHECKSUM_VERIFIED",
+    "STANDARDIZED",
+    "REMOTE_ONLY",
+    "REMOTE_UNVERIFIED",
+    "MISSING",
+    "CHECKSUM_FAILED",
 ]
 
 
@@ -66,28 +70,40 @@ class FilesPanel(Panel):
     def compose(self) -> ComposeResult:
         with Vertical(id="files-layout"):
             with Horizontal(id="files-filters"):
-                yield Input(placeholder="filter by id / entity / path", id="files-filter")
-                yield Select([(ALL_STATUSES, ALL_STATUSES)], value=ALL_STATUSES,
-                             id="files-status", allow_blank=False)
+                yield Input(
+                    placeholder="filter by id / entity / path", id="files-filter"
+                )
+                yield Select(
+                    [(ALL_STATUSES, ALL_STATUSES)],
+                    value=ALL_STATUSES,
+                    id="files-status",
+                    allow_blank=False,
+                )
             yield DataTable(id="files-table", cursor_type="row")
             with VerticalScroll(id="file-detail-scroll"):
                 yield Static("select a file", id="file-detail", classes="body")
 
     def on_mount(self) -> None:
         table = self.query_one("#files-table", DataTable)
-        table.add_columns("file_id", "entity", "role", "format", "size", "sha256", "status")
+        table.add_columns(
+            "file_id", "entity", "role", "format", "size", "sha256", "status"
+        )
         super().on_mount()
 
     def _filters(self) -> tuple[str | None, str, str]:
         status_value = self.query_one("#files-status", Select).value
-        status = None if status_value in (ALL_STATUSES, Select.NULL) else str(status_value)
+        status = (
+            None if status_value in (ALL_STATUSES, Select.NULL) else str(status_value)
+        )
         text = self.query_one("#files-filter", Input).value.strip()
         return status, text, ""
 
     def _fetch(self) -> dict[str, Any]:
         status, text, entity = self._filters()
         return {
-            "files": data.list_files(self.project, status=status, text=text, entity=entity),
+            "files": data.list_files(
+                self.project, status=status, text=text, entity=entity
+            ),
             "statuses": data.file_statuses(self.project),
         }
 
@@ -98,7 +114,9 @@ class FilesPanel(Panel):
             self.statuses = new_statuses
             select = self.query_one("#files-status", Select)
             current = select.value
-            select.set_options([(ALL_STATUSES, ALL_STATUSES)] + [(s, s) for s in new_statuses])
+            select.set_options(
+                [(ALL_STATUSES, ALL_STATUSES)] + [(s, s) for s in new_statuses]
+            )
             if current not in (ALL_STATUSES, Select.NULL) and current in new_statuses:
                 select.value = current
         table = self.query_one("#files-table", DataTable)
@@ -119,7 +137,9 @@ class FilesPanel(Panel):
         restore_table_view(table, view, len(self.files))
 
     def show_error(self, exc: BaseException) -> None:
-        self.query_one("#file-detail", Static).update(Text(f"error: {exc}", style="red"))
+        self.query_one("#file-detail", Static).update(
+            Text(f"error: {exc}", style="red")
+        )
 
     def _selected_record(self) -> dict[str, Any] | None:
         table = self.query_one("#files-table", DataTable)
@@ -165,14 +185,16 @@ class FilesPanel(Panel):
         from operon.tui.screens.derived_ops import ExtractModal
 
         self.app.push_screen(
-            ExtractModal(self.project, self._selected_file_id()), self._after_derived,
+            ExtractModal(self.project, self._selected_file_id()),
+            self._after_derived,
         )
 
     def action_select(self) -> None:
         from operon.tui.screens.derived_ops import SelectSequencesModal
 
         self.app.push_screen(
-            SelectSequencesModal(self.project, self._selected_file_id()), self._after_derived,
+            SelectSequencesModal(self.project, self._selected_file_id()),
+            self._after_derived,
         )
 
     def action_adopt(self) -> None:
@@ -192,17 +214,21 @@ class FilesPanel(Panel):
         from operon.tui.screens.derived_ops import FanoutModal
 
         self.app.push_screen(
-            FanoutModal(self.project, self._selected_file_id()), self._after_write,
+            FanoutModal(self.project, self._selected_file_id()),
+            self._after_write,
         )
 
     def action_ingest(self) -> None:
-        self.app.push_screen(IngestModal(self.project, self._selected_record()), self._after_write)
+        self.app.push_screen(
+            IngestModal(self.project, self._selected_record()), self._after_write
+        )
 
     def action_verify(self) -> None:
         selected = self._selected_record()
         file_id = str(selected["file_id"]) if selected else None
         self.app.push_screen(
-            VerifyModal(self.project, file_id, len(self.files)), self._after_verify,
+            VerifyModal(self.project, file_id, len(self.files)),
+            self._after_verify,
         )
 
     def _after_verify(self, results: Any) -> None:
@@ -211,12 +237,16 @@ class FilesPanel(Panel):
         failed = [r for r in results if r["status"] not in HEALTHY_VERIFY_STATUSES]
         if failed:
             lines = "\n".join(
-                f"{r['file_id']}: {r['status']}" + (f" — {r['error']}" if r.get("error") else "")
+                f"{r['file_id']}: {r['status']}"
+                + (f" — {r['error']}" if r.get("error") else "")
                 for r in failed[:20]
             )
-            self.app.push_screen(ErrorDialog(
-                f"{len(failed)} of {len(results)} file(s) failed verification", lines,
-            ))
+            self.app.push_screen(
+                ErrorDialog(
+                    f"{len(failed)} of {len(results)} file(s) failed verification",
+                    lines,
+                )
+            )
         else:
             self.app.notify(f"verified {len(results)} file(s)")
         self.app.reload_after_write()
@@ -225,7 +255,8 @@ class FilesPanel(Panel):
         selected = self._selected_record()
         file_id = str(selected["file_id"]) if selected else None
         self.app.push_screen(
-            QcModal(self.project, file_id, len(self.files)), self._after_qc,
+            QcModal(self.project, file_id, len(self.files)),
+            self._after_qc,
         )
 
     def action_import_qc(self) -> None:
@@ -233,13 +264,16 @@ class FilesPanel(Panel):
 
     def action_pipeline(self) -> None:
         selected = self._selected_record()
-        self.app.push_screen(PipelineModal(self.project, selected), self._after_pipeline)
+        self.app.push_screen(
+            PipelineModal(self.project, selected), self._after_pipeline
+        )
 
     def action_standardize(self) -> None:
         selected = self._selected_record()
         file_id = str(selected["file_id"]) if selected else None
         self.app.push_screen(
-            StandardizeModal(self.project, file_id), self._after_standardize,
+            StandardizeModal(self.project, file_id),
+            self._after_standardize,
         )
 
     def action_labels(self) -> None:
@@ -255,10 +289,15 @@ class FilesPanel(Panel):
             return
         failures = result.get("failures") or []
         if failures:
-            lines = "\n".join(f"{r['file_id']}: {r.get('error') or 'failed'}" for r in failures[:20])
-            self.app.push_screen(ErrorDialog(
-                f"{len(failures)} of {result['total']} file(s) failed QC", lines,
-            ))
+            lines = "\n".join(
+                f"{r['file_id']}: {r.get('error') or 'failed'}" for r in failures[:20]
+            )
+            self.app.push_screen(
+                ErrorDialog(
+                    f"{len(failures)} of {result['total']} file(s) failed QC",
+                    lines,
+                )
+            )
         self.app.reload_after_write()
 
     def _after_standardize(self, result: Any) -> None:
@@ -267,12 +306,19 @@ class FilesPanel(Panel):
         errors = result.get("errors") or []
         if errors:
             lines = "\n".join(
-                f"{item.get('file_id', '?')}: {item.get('error')}" for item in errors[:20])
-            self.app.push_screen(ErrorDialog(
-                f"{len(errors)} of {result['total']} file(s) failed to standardize", lines,
-            ))
+                f"{item.get('file_id', '?')}: {item.get('error')}"
+                for item in errors[:20]
+            )
+            self.app.push_screen(
+                ErrorDialog(
+                    f"{len(errors)} of {result['total']} file(s) failed to standardize",
+                    lines,
+                )
+            )
         else:
-            staged = sum(1 for item in result["results"] if item.get("action") != "skipped")
+            staged = sum(
+                1 for item in result["results"] if item.get("action") != "skipped"
+            )
             skipped = result["total"] - staged
             message = f"standardized {staged} file(s)"
             if skipped:
@@ -284,8 +330,10 @@ class FilesPanel(Panel):
         if not result:
             return
         if result["format"] == "json":
-            message = (f"imported {result['metric_count']} built-in QC metric(s) "
-                       f"for {result['file_id']}")
+            message = (
+                f"imported {result['metric_count']} built-in QC metric(s) "
+                f"for {result['file_id']}"
+            )
         else:
             message = f"imported {result['metric_count']} external QC metric(s)"
         if result.get("warning"):
@@ -297,10 +345,12 @@ class FilesPanel(Panel):
         if not result:
             return
         if not result.get("qc_ok"):
-            self.app.push_screen(ErrorDialog(
-                f"pipeline stopped: QC failed for {result['file_id']}",
-                str(result.get("qc_error") or "QC failed"),
-            ))
+            self.app.push_screen(
+                ErrorDialog(
+                    f"pipeline stopped: QC failed for {result['file_id']}",
+                    str(result.get("qc_error") or "QC failed"),
+                )
+            )
             self.app.reload_after_write()
             return
         message = f"pipeline complete: {result['file_id']} -> {result['decision']}"
@@ -333,7 +383,7 @@ class FilesPanel(Panel):
         already inside the thread, and that thread still posts its payload — so
         the request is stamped here, on the UI thread, and a payload a newer
         selection superseded is dropped instead of overwriting the pane
-        (ODR-0031).
+        (ODR-31).
         """
         self.begin_request(file_id)
         self._load_detail(file_id)
@@ -360,13 +410,23 @@ class FilesPanel(Panel):
         record = detail["file"]
         text = Text()
         text.append(f"file {record['file_id']}\n", style="bold underline")
-        for field in ("entity_type", "entity_id", "file_role", "format", "compression",
-                      "relative_path", "source_url", "downloaded_at"):
+        for field in (
+            "entity_type",
+            "entity_id",
+            "file_role",
+            "format",
+            "compression",
+            "relative_path",
+            "source_url",
+            "downloaded_at",
+        ):
             value = record.get(field)
             if value not in (None, ""):
                 text.append(f"  {field:<16} {value}\n")
-        text.append(f"  {'size_bytes':<16} {record.get('size_bytes')} "
-                    f"({human_size(record.get('size_bytes'))})\n")
+        text.append(
+            f"  {'size_bytes':<16} {record.get('size_bytes')} "
+            f"({human_size(record.get('size_bytes'))})\n"
+        )
         text.append(f"  {'sha256':<16} {record.get('sha256')}\n")
         text.append("  status          ")
         text.append(styled_file_status(record.get("status")))
@@ -376,7 +436,9 @@ class FilesPanel(Panel):
             for location in detail["locations"]:
                 text.append("  ")
                 text.append(styled_file_status(location.get("status")))
-                text.append(f"  {location['location_name']} ({location['location_type']})\n")
+                text.append(
+                    f"  {location['location_name']} ({location['location_type']})\n"
+                )
                 text.append(f"      {location['uri']}\n")
                 if location.get("verified_at"):
                     text.append(f"      verified {location['verified_at']}\n")
@@ -391,9 +453,15 @@ class FilesPanel(Panel):
                     counts.get((row["label"], row["profile_name"]), 0) + 1
                 )
             for (label, profile), count in counts.items():
-                text.append(f"  {label:<8} {count:>5} sequence(s)   profile {profile}\n")
+                text.append(
+                    f"  {label:<8} {count:>5} sequence(s)   profile {profile}\n"
+                )
             if len(labels) >= 500:
-                text.append("  (first 500 rows; press l for the full browser)\n", style="dim")
+                text.append(
+                    "  (first 500 rows; press l for the full browser)\n", style="dim"
+                )
         else:
-            text.append("  (no sequence labels — run classify-sequences)\n", style="dim")
+            text.append(
+                "  (no sequence labels — run classify-sequences)\n", style="dim"
+            )
         return text

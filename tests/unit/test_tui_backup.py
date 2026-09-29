@@ -42,7 +42,7 @@ from tests.tui_helpers import click as _click
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -71,8 +71,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
         await asyncio.sleep(0.05)
 
 
-async def _wait_until(predicate: Callable[[], bool], description: str,
-                      timeout: float = SETTLE_TIMEOUT) -> None:
+async def _wait_until(
+    predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT
+) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while not predicate():
@@ -148,20 +149,34 @@ def _comparable(manifest: dict) -> dict:
 
 def test_backup_create_matches_the_cli(tmp_path: Path, capsys) -> None:
     template = Project.init(tmp_path / "template")
-    cli_project = Project.find(helpers.copy_project_tree(template.root, tmp_path / "cli"))
-    tui_project = Project.find(helpers.copy_project_tree(template.root, tmp_path / "tui"))
+    cli_project = Project.find(
+        helpers.copy_project_tree(template.root, tmp_path / "cli")
+    )
+    tui_project = Project.find(
+        helpers.copy_project_tree(template.root, tmp_path / "tui")
+    )
     cli_out = tmp_path / "cli-backup"
     tui_out = tmp_path / "tui-backup"
 
     rc = cli_main(
-        ["--project", str(cli_project.root), "backup", "create", "--output", str(cli_out)]
+        [
+            "--project",
+            str(cli_project.root),
+            "backup",
+            "create",
+            "--output",
+            str(cli_out),
+        ]
     )
     capsys.readouterr()
     assert rc == 0
 
     result = actions.create_backup(tui_project, str(tui_out))
-    assert result == {"path": str(tui_out.resolve()), "scope": "control",
-                      "file_count": result["file_count"]}
+    assert result == {
+        "path": str(tui_out.resolve()),
+        "scope": "control",
+        "file_count": result["file_count"],
+    }
     assert result["file_count"] > 0
 
     assert _comparable(_manifest(cli_out)) == _comparable(_manifest(tui_out))
@@ -170,8 +185,9 @@ def test_backup_create_matches_the_cli(tmp_path: Path, capsys) -> None:
     assert actions.verify_backup(str(tui_out))["ok"] is True
 
 
-def test_backup_create_validation_scopes_and_collisions(project: Project,
-                                                        tmp_path: Path) -> None:
+def test_backup_create_validation_scopes_and_collisions(
+    project: Project, tmp_path: Path
+) -> None:
     with pytest.raises(ValidationError, match="output path is required"):
         actions.create_backup(project, "   ")
 
@@ -196,13 +212,17 @@ def test_backup_create_validation_scopes_and_collisions(project: Project,
 
 
 def test_verify_backup_reports_corruption_missing_and_unexpected(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     out = tmp_path / "backup"
     actions.create_backup(project, str(out))
     assert actions.verify_backup(str(out)) == {
-        "path": str(out.resolve()), "scope": "control",
-        "checked": len(_manifest(out)["files"]), "unexpected": 0,
-        "ok": True, "failures": [],
+        "path": str(out.resolve()),
+        "scope": "control",
+        "checked": len(_manifest(out)["files"]),
+        "unexpected": 0,
+        "ok": True,
+        "failures": [],
     }
 
     # Same bytes length, different content: the checksum, not the size, fails.
@@ -235,17 +255,28 @@ def test_verify_backup_reports_corruption_missing_and_unexpected(
 
 
 def test_backup_verify_text_renders_ok_and_failures() -> None:
-    ok_text = backup_verify_text({
-        "path": "/tmp/b", "scope": "control", "checked": 4, "unexpected": 0,
-        "ok": True, "failures": [],
-    }).plain
+    ok_text = backup_verify_text(
+        {
+            "path": "/tmp/b",
+            "scope": "control",
+            "checked": 4,
+            "unexpected": 0,
+            "ok": True,
+            "failures": [],
+        }
+    ).plain
     assert "OK" in ok_text and "checked    4" in ok_text
 
-    failed_text = backup_verify_text({
-        "path": "/tmp/b", "scope": "full", "checked": 4, "unexpected": 1,
-        "ok": False,
-        "failures": [{"relative_path": "a.tsv", "error": "size mismatch"}],
-    }).plain
+    failed_text = backup_verify_text(
+        {
+            "path": "/tmp/b",
+            "scope": "full",
+            "checked": 4,
+            "unexpected": 1,
+            "ok": False,
+            "failures": [{"relative_path": "a.tsv", "error": "size mismatch"}],
+        }
+    ).plain
     assert "FAILED" in failed_text
     assert "a.tsv: size mismatch" in failed_text
 
@@ -262,27 +293,35 @@ def test_home_screen_opens_backup_modals(project: Project) -> None:
             await _settled(app)
             assert isinstance(app.screen.query_one("#home", HomePanel), HomePanel)
             await _click(pilot, "#home-backup-create")
-            await _wait_until(lambda: isinstance(app.screen, BackupModal),
-                              "backup modal to open")
+            await _wait_until(
+                lambda: isinstance(app.screen, BackupModal), "backup modal to open"
+            )
             await pilot.press("escape")
-            await _wait_until(lambda: not isinstance(app.screen, BackupModal),
-                              "backup modal to close")
+            await _wait_until(
+                lambda: not isinstance(app.screen, BackupModal), "backup modal to close"
+            )
             await _click(pilot, "#home-backup-verify")
-            await _wait_until(lambda: isinstance(app.screen, VerifyBackupModal),
-                              "verify modal to open")
+            await _wait_until(
+                lambda: isinstance(app.screen, VerifyBackupModal),
+                "verify modal to open",
+            )
 
     _run(scenario())
 
 
 def test_backup_modal_command_text_matches_action_kwargs(
-        project: Project, tmp_path: Path, monkeypatch) -> None:
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     calls: list[tuple[tuple, dict]] = []
     output = tmp_path / "modal-backup"
 
     def stub(*args, **kwargs):
         calls.append((args, kwargs))
-        return {"path": str(output), "scope": kwargs.get("scope", "control"),
-                "file_count": 7}
+        return {
+            "path": str(output),
+            "scope": kwargs.get("scope", "control"),
+            "file_count": 7,
+        }
 
     monkeypatch.setattr(actions, "create_backup", stub)
     dismissed: list = []
@@ -319,7 +358,8 @@ def test_backup_modal_command_text_matches_action_kwargs(
 
 
 def test_backup_modal_requires_output_and_shows_core_error_inline(
-        project: Project, tmp_path: Path) -> None:
+    project: Project, tmp_path: Path
+) -> None:
     existing = tmp_path / "taken"
     actions.create_backup(project, str(existing))
 
@@ -333,26 +373,35 @@ def test_backup_modal_requires_output_and_shows_core_error_inline(
 
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "--output is required" in _static_text(
-                    app.screen.query_one("#modal-error", Static)),
-                "missing --output error")
+                lambda: (
+                    "--output is required"
+                    in _static_text(app.screen.query_one("#modal-error", Static))
+                ),
+                "missing --output error",
+            )
             assert app.screen is modal
             assert app.screen.query_one("#confirm", Button).disabled is False
 
             (await _q(modal, "#backup-output", Input)).value = str(existing)
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "already exists" in _static_text(
-                    app.screen.query_one("#modal-error", Static)),
-                "conflict error inline")
+                lambda: (
+                    "already exists"
+                    in _static_text(app.screen.query_one("#modal-error", Static))
+                ),
+                "conflict error inline",
+            )
             assert app.screen is modal
-            assert not any(severity == "information" for severity, _ in _notifications(app))
+            assert not any(
+                severity == "information" for severity, _ in _notifications(app)
+            )
 
     _run(scenario())
 
 
-def test_backup_modal_refuses_cancel_while_running(project: Project,
-                                                   tmp_path: Path, monkeypatch) -> None:
+def test_backup_modal_refuses_cancel_while_running(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     released = threading.Event()
     started = threading.Event()
 
@@ -372,17 +421,26 @@ def test_backup_modal_refuses_cancel_while_running(project: Project,
             await _push(pilot, modal, "#backup-output")
             (await _q(modal, "#backup-output", Input)).value = str(tmp_path / "slow")
             await _click(pilot, "#confirm")
-            await _wait_until(started.is_set, "create to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "create to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             await _click(pilot, "#cancel")
             await _wait_until(
-                lambda: any(severity == "warning" and "cannot be interrupted" in message
-                            for severity, message in _notifications(app)),
-                "refusal notification")
+                lambda: any(
+                    severity == "warning" and "cannot be interrupted" in message
+                    for severity, message in _notifications(app)
+                ),
+                "refusal notification",
+            )
             assert app.screen is modal
             released.set()
-            await _wait_until(lambda: app.screen is not modal, "modal to close",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: app.screen is not modal,
+                "modal to close",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     try:
         _run(scenario())
@@ -390,8 +448,9 @@ def test_backup_modal_refuses_cancel_while_running(project: Project,
         released.set()
 
 
-def test_verify_modal_renders_result_and_stays_open(project: Project,
-                                                    tmp_path: Path) -> None:
+def test_verify_modal_renders_result_and_stays_open(
+    project: Project, tmp_path: Path
+) -> None:
     good = tmp_path / "good-backup"
     actions.create_backup(project, str(good))
     bad = tmp_path / "bad-backup"
@@ -409,42 +468,60 @@ def test_verify_modal_renders_result_and_stays_open(project: Project,
             assert modal.command_text() == "operon backup verify --input '…'"
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "--input is required" in _static_text(
-                    app.screen.query_one("#modal-error", Static)),
-                "missing --input error")
+                lambda: (
+                    "--input is required"
+                    in _static_text(app.screen.query_one("#modal-error", Static))
+                ),
+                "missing --input error",
+            )
 
             (await _q(modal, "#backup-verify-input", Input)).value = str(good)
             await pilot.pause()
             assert modal.command_text() == f"operon backup verify --input {good}"
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "result:" in _static_text(
-                    app.screen.query_one("#backup-verify-results", Static)),
-                "verify result to render")
+                lambda: (
+                    "result:"
+                    in _static_text(
+                        app.screen.query_one("#backup-verify-results", Static)
+                    )
+                ),
+                "verify result to render",
+            )
             assert app.screen is modal  # the result stays on screen
             text = _static_text(app.screen.query_one("#backup-verify-results", Static))
             assert "OK" in text
-            assert any(severity == "information" and "OK" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "information" and "OK" in message
+                for severity, message in _notifications(app)
+            )
 
             # The dialog can verify the next directory without reopening.
             (await _q(modal, "#backup-verify-input", Input)).value = str(bad)
             await _click(pilot, "#confirm")
             await _wait_until(
-                lambda: "FAILED" in _static_text(
-                    app.screen.query_one("#backup-verify-results", Static)),
-                "failure result to render")
+                lambda: (
+                    "FAILED"
+                    in _static_text(
+                        app.screen.query_one("#backup-verify-results", Static)
+                    )
+                ),
+                "failure result to render",
+            )
             text = _static_text(app.screen.query_one("#backup-verify-results", Static))
             assert "project.yaml" in text
-            assert any(severity == "error" and "problem(s)" in message
-                       for severity, message in _notifications(app))
+            assert any(
+                severity == "error" and "problem(s)" in message
+                for severity, message in _notifications(app)
+            )
             assert app.screen is modal
 
     _run(scenario())
 
 
-def test_verify_modal_drops_result_after_teardown(project: Project,
-                                                  tmp_path: Path, monkeypatch) -> None:
+def test_verify_modal_drops_result_after_teardown(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
     """A result that lands after the dialog was closed must not raise."""
     released = threading.Event()
     started = threading.Event()
@@ -452,8 +529,14 @@ def test_verify_modal_drops_result_after_teardown(project: Project,
     def blocking_verify(path):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"path": str(path), "scope": "control", "checked": 1,
-                "unexpected": 0, "ok": True, "failures": []}
+        return {
+            "path": str(path),
+            "scope": "control",
+            "checked": 1,
+            "unexpected": 0,
+            "ok": True,
+            "failures": [],
+        }
 
     monkeypatch.setattr(actions, "verify_backup", blocking_verify)
 
@@ -466,8 +549,11 @@ def test_verify_modal_drops_result_after_teardown(project: Project,
             await _push(pilot, modal, "#backup-verify-input")
             (await _q(modal, "#backup-verify-input", Input)).value = str(tmp_path / "b")
             await _click(pilot, "#confirm")
-            await _wait_until(started.is_set, "verify to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "verify to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             # Cancel while running is refused; unlock, then dismiss and let the
             # worker deliver into a torn-down tree.
             await _click(pilot, "#cancel")

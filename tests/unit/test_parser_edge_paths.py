@@ -13,7 +13,12 @@ from operon.qc import parsers
 def test_binary_line_endings_across_one_byte_chunks_and_trailing_line(tmp_path):
     path = tmp_path / "lines"
     path.write_bytes(b"a\r\nb\rc\nd")
-    assert list(parsers._iter_binary_lines(path, chunk_size=1)) == [b"a", b"b", b"c", b"d"]
+    assert list(parsers._iter_binary_lines(path, chunk_size=1)) == [
+        b"a",
+        b"b",
+        b"c",
+        b"d",
+    ]
 
 
 def test_fasta_unicode_space_header_and_empty_sequence_statistics(tmp_path):
@@ -24,9 +29,7 @@ def test_fasta_unicode_space_header_and_empty_sequence_statistics(tmp_path):
 
     fasta = tmp_path / "edge.fa"
     fasta.write_text(
-        ">one topology:circular\nNNRY?\n"
-        ">one topology:circular\n\n"
-        ">three\nA\n",
+        ">one topology:circular\nNNRY?\n>one topology:circular\n\n>three\nA\n",
         encoding="utf-8",
     )
     stats = parsers.fasta_stats(fasta)
@@ -57,7 +60,9 @@ def test_phred_and_nx_edge_branches():
     with pytest.raises(ValueError, match="phred_offset"):
         parsers._resolve_phred_offset(42, 70, 80)
     assert parsers._resolve_phred_offset("auto", 70, -1)[1] == "sanger_phred33"
-    assert parsers._resolve_phred_offset("auto", 70, 80)[1] == "ambiguous_assumed_phred33"
+    assert (
+        parsers._resolve_phred_offset("auto", 70, 80)[1] == "ambiguous_assumed_phred33"
+    )
     assert parsers._nx_from_histogram(Counter({0: 2}), 0, 0.5) == (0.0, 1)
 
 
@@ -65,7 +70,8 @@ def test_attributes_empty_chunks_percent_decoding_and_ignored_tokens():
     assert parsers.parse_attributes("") == {}
     assert parsers.parse_attributes(".") == {}
     assert parsers.parse_attributes(";ignored;ID=x%201;;=bad;Parent=") == {
-        "ID": "x 1", "Parent": ""
+        "ID": "x 1",
+        "Parent": "",
     }
 
 

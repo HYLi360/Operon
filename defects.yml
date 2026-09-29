@@ -8,849 +8,1566 @@
 # See docs/en/contributor/defect-tracking.md for the process.
 schema: 1
 defects:
-- id: ODR-0001
-  title: Import wizard interpolated schema field names into INSERT columns
+- id: ODR-1
+  title: 'Import wizard interpolated schema field names into INSERT columns'
   reported: '2026-09-16'
   introduced_in: null
-  affected: pre-fix releases; requires influence over config/schemas.yaml
-  severity: medium
-  component: import_wizard
-  status: verified
-  reproduction: '`_normalized_new_rows()` accepts project schema field names and
-
-    `_commit()` formerly interpolated them directly into INSERT columns.
-
-    Replacing the last organisms field name with a
-
-    `VALUES (..., upper(?)) --` expression made the original code store
-
-    `injected` as `INJECTED`, demonstrating SQL expression injection.
-
-    Ordinary CSV cell values alone were not shown exploitable.'
-  disposition: 'The commit boundary now validates and quotes every identifier with
-
-    `operon.sql.quote_identifier()`; values still use SQLite parameter
-
-    binding. The commit stays atomic: the hostile draft raises
-
-    ValidationError and leaves no rows in organisms, data_sources or
-
-    changes, with the workflow run recorded failed.'
-  fix_commit: da6edd964091e9ae23d32c4cc29bef1244dc7517
-  fixed_in: 0.8.3
+  affected: 'pre-fix releases; requires influence over config/schemas.yaml'
+  severity: 'medium'
+  component: 'import_wizard'
+  status: 'verified'
+  reproduction: |
+    `_normalized_new_rows()` accepts project schema field names and `_commit()` formerly interpolated
+    them directly into INSERT columns. Replacing the last organisms field name with a `VALUES (...,
+    upper(?)) --` expression made the original code store `injected` as `INJECTED`, demonstrating SQL
+    expression injection. Ordinary CSV cell values alone were not shown exploitable.
+  disposition: |
+    The commit boundary now validates and quotes every identifier with `operon.sql.quote_identifier()`;
+    values still use SQLite parameter binding. The commit stays atomic: the hostile draft raises
+    ValidationError and leaves no rows in organisms, data_sources or changes, with the workflow run
+    recorded failed.
+  fix_commit: 'da6edd964091e9ae23d32c4cc29bef1244dc7517'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/regression/test_sql_identifier_security.py::test_wizard_rejects_schema_column_injection_atomically
-- id: ODR-0002
-  title: Generic write APIs accepted unchecked table and column names
+    - tests/regression/test_sql_identifier_security.py::test_wizard_rejects_schema_column_injection_atomically
+- id: ODR-2
+  title: 'Generic write APIs accepted unchecked table and column names'
   reported: '2026-09-16'
   introduced_in: null
-  affected: pre-fix releases; Python API boundary
-  severity: medium
-  component: database
-  status: verified
-  reproduction: '`Database.insert_row()` and `Database.upsert_rows()` interpolated the table and column names given by their Python caller. A column name such as `scientific_name) VALUES (?, upper(?)) --` was reproduced to evaluate `upper(?)` in a temporary database, and the table argument accepted a full `VALUES (...) --` fragment. The CLI add path has additional schema checks; this is a low-level API boundary defect, not evidence of an unconditional remote exploit.'
-  disposition: Both methods, and the read helpers `table_columns()`, `export_rows()` and `export_active_rows()`, now validate and quote every dynamic identifier with `operon.sql.quote_identifier()` (same alphabet as metadata column creation, so keyword names such as `select` still work). Values still use SQLite parameter binding.
-  fix_commit: ef429f5089d3808db9151fa582e35b5b5f146ab3
-  fixed_in: 0.8.3
+  affected: 'pre-fix releases; Python API boundary'
+  severity: 'medium'
+  component: 'database'
+  status: 'verified'
+  reproduction: |
+    `Database.insert_row()` and `Database.upsert_rows()` interpolated the table and column names given
+    by their Python caller. A column name such as `scientific_name) VALUES (?, upper(?)) --` was
+    reproduced to evaluate `upper(?)` in a temporary database, and the table argument accepted a full
+    `VALUES (...) --` fragment. The CLI add path has additional schema checks; this is a low-level API
+    boundary defect, not evidence of an unconditional remote exploit.
+  disposition: |
+    Both methods, and the read helpers `table_columns()`, `export_rows()` and `export_active_rows()`,
+    now validate and quote every dynamic identifier with `operon.sql.quote_identifier()` (same alphabet
+    as metadata column creation, so keyword names such as `select` still work). Values still use SQLite
+    parameter binding.
+  fix_commit: 'ef429f5089d3808db9151fa582e35b5b5f146ab3'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/regression/test_sql_identifier_security.py::test_column_cannot_replace_insert_values
-  - tests/regression/test_sql_identifier_security.py::test_table_argument_is_not_sql
-  - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
-- id: ODR-0003
-  title: Table-import apply trusted mutable preview columns and differences
+    - tests/regression/test_sql_identifier_security.py::test_column_cannot_replace_insert_values
+    - tests/regression/test_sql_identifier_security.py::test_table_argument_is_not_sql
+    - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
+- id: ODR-3
+  title: 'Table-import apply trusted mutable preview columns and differences'
   reported: '2026-09-16'
   introduced_in: null
-  affected: pre-fix releases; requires influence over the Python preview object
-  severity: medium
-  component: table_import
-  status: verified
-  reproduction: '`apply_table_import()` trusted the preview''s column list, table name and per-row `differences`. Replacing a difference column with `scientific_name=upper(?) WHERE organism_id=? --` made the original implementation evaluate `upper(?)`, and the table name was not rechecked against the importable list. Normal `preview_table_import()` checks external headers; the defect is the missing revalidation at the execution boundary.'
-  disposition: '`apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES` and validates/quotes every identifier through `operon.sql.quote_identifier()`; a tampered preview raises ValidationError, the update is rolled back, and no `changes` rows are written.'
-  fix_commit: 35a0f78b7a574301ee9b1fd70fc993bf5388ecaa
-  fixed_in: 0.8.3
+  affected: 'pre-fix releases; requires influence over the Python preview object'
+  severity: 'medium'
+  component: 'table_import'
+  status: 'verified'
+  reproduction: |
+    `apply_table_import()` trusted the preview's column list, table name and per-row `differences`.
+    Replacing a difference column with `scientific_name=upper(?) WHERE organism_id=? --` made the
+    original implementation evaluate `upper(?)`, and the table name was not rechecked against the
+    importable list. Normal `preview_table_import()` checks external headers; the defect is the missing
+    revalidation at the execution boundary.
+  disposition: |
+    `apply_table_import()` now revalidates the table against `IMPORTABLE_TABLES` and validates/quotes
+    every identifier through `operon.sql.quote_identifier()`; a tampered preview raises ValidationError,
+    the update is rolled back, and no `changes` rows are written.
+  fix_commit: '35a0f78b7a574301ee9b1fd70fc993bf5388ecaa'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/regression/test_sql_identifier_security.py::test_table_import_rejects_tampered_update_column
-  - tests/regression/test_sql_identifier_security.py::test_table_import_rechecks_allowed_table
-  - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
-- id: ODR-0004
-  title: Failed upload verification poisons the remote path
+    - tests/regression/test_sql_identifier_security.py::test_table_import_rejects_tampered_update_column
+    - tests/regression/test_sql_identifier_security.py::test_table_import_rechecks_allowed_table
+    - tests/regression/test_sql_identifier_security.py::test_custom_keyword_column_and_sql_like_values_round_trip
+- id: ODR-4
+  title: 'Failed upload verification poisons the remote path'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by an upload whose bytes fail sha256 verification (truncated or corrupted transfer)
-  severity: high
-  component: remotes
-  status: verified
-  reproduction: '`SFTPRemoteStore.put()` publishes uploaded bytes directly to the final remote path before `push` verifies them. A truncated upload stays at the final path with no manifest entry; the next `push` of the same file takes the different-bytes path, marks the location CORRUPT and refuses to overwrite until an operator removes the remote object by hand.'
-  disposition: '`SFTPStore.put()` now verifies the expected sha256/size on the staging name before the final rename, and `push` passes the manifest identity down; a failed verification removes the staged bytes, so the final remote path is never occupied by unverified content and the next push retries the upload.'
-  fix_commit: 71e88bcc2d214064ae6a84e988b8da535a417a09
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by an upload whose bytes fail sha256 verification (truncated or corrupted
+    transfer)
+  severity: 'high'
+  component: 'remotes'
+  status: 'verified'
+  reproduction: |
+    `SFTPRemoteStore.put()` publishes uploaded bytes directly to the final remote path before `push`
+    verifies them. A truncated upload stays at the final path with no manifest entry; the next `push` of
+    the same file takes the different-bytes path, marks the location CORRUPT and refuses to overwrite
+    until an operator removes the remote object by hand.
+  disposition: |
+    `SFTPStore.put()` now verifies the expected sha256/size on the staging name before the final rename,
+    and `push` passes the manifest identity down; a failed verification removes the staged bytes, so the
+    final remote path is never occupied by unverified content and the next push retries the upload.
+  fix_commit: '71e88bcc2d214064ae6a84e988b8da535a417a09'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_remote_taxonomy_more.py::test_push_reports_an_upload_that_lands_wrong_bytes
-- id: ODR-0005
-  title: Release preflight silently disabled when the profile file is missing
+    - tests/unit/test_remote_taxonomy_more.py::test_push_reports_an_upload_that_lands_wrong_bytes
+- id: ODR-5
+  title: 'Release preflight silently disabled when the profile file is missing'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by a --profile value that names no config/profiles/<profile>.yaml file (for example a typo)
-  severity: high
-  component: release
-  status: verified
-  reproduction: The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
-  disposition: 'The preflight no longer returns early when the profile file is missing: `load_profile` raises ValidationError for an unknown profile, and decision-based export validates the named QC profile before staging any output. A typo now fails loudly instead of publishing a zero-member release or an empty bundle.'
-  fix_commit: bd7de18c7bc82653e5880586f234e861b4d477ac
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by a --profile value that names no config/profiles/<profile>.yaml file (for
+    example a typo)
+  severity: 'high'
+  component: 'release'
+  status: 'verified'
+  reproduction: |
+    The release preflight returns early when `config/profiles/<profile>.yaml` does not exist, so `operon
+    release --profile <typo>` publishes a zero-member release with exit 0 and `operon export --decision
+    PASS --profile <typo>` writes an empty bundle instead of rejecting the unknown profile.
+  disposition: |
+    The preflight no longer returns early when the profile file is missing: `load_profile` raises
+    ValidationError for an unknown profile, and decision-based export validates the named QC profile
+    before staging any output. A typo now fails loudly instead of publishing a zero-member release or an
+    empty bundle.
+  fix_commit: 'bd7de18c7bc82653e5880586f234e861b4d477ac'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_views_release_reports_edges.py::test_release_and_export_reject_an_unknown_profile
-- id: ODR-0006
-  title: Published release tree and releases row are not atomic
+    - tests/unit/test_views_release_reports_edges.py::test_release_and_export_reject_an_unknown_profile
+- id: ODR-6
+  title: 'Published release tree and releases row are not atomic'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by a crash between the final staging rename and the releases insert
-  severity: medium
-  component: release
-  status: verified
-  reproduction: A crash between the final rename of the staged release tree and the `releases` database insert leaves a release directory with no row; the retry then fails with FileExistsError until the tree is removed by hand.
-  disposition: 'create_release now recovers the crash window: when the final path exists without a releases row, the orphan tree is removed — but only when its provenance.json names that release version — and the release is rebuilt. Any other occupant of the path still raises FileExistsError.'
-  fix_commit: d63e494bac3a8efbc639a3f03187c9c662fc2d13
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by a crash between the final staging rename and the releases insert
+  severity: 'medium'
+  component: 'release'
+  status: 'verified'
+  reproduction: |
+    A crash between the final rename of the staged release tree and the `releases` database insert
+    leaves a release directory with no row; the retry then fails with FileExistsError until the tree is
+    removed by hand.
+  disposition: |
+    create_release now recovers the crash window: when the final path exists without a releases row, the
+    orphan tree is removed — but only when its provenance.json names that release version — and the
+    release is rebuilt. Any other occupant of the path still raises FileExistsError.
+  fix_commit: 'd63e494bac3a8efbc639a3f03187c9c662fc2d13'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_views_release_reports_edges.py::test_release_recovers_an_interrupted_publication_on_retry
-- id: ODR-0007
-  title: Export run row can claim a publication that never happened
+    - tests/unit/test_views_release_reports_edges.py::test_release_recovers_an_interrupted_publication_on_retry
+- id: ODR-7
+  title: 'Export run row can claim a publication that never happened'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by a failure after the workflow_runs commit but before the final rename
-  severity: medium
-  component: export
-  status: verified
-  reproduction: The export `workflow_runs` row is committed before the final rename and its command embeds the staging path, so the database and the JSONL log can report a completed export whose destination does not exist.
-  disposition: export_files now records the workflow run only after the workspace has been renamed to the final destination, and the recorded command names that destination instead of the staging path; if recording fails, the published tree is removed, so the database can neither claim a publication that never happened nor leave a publication it never recorded.
-  fix_commit: 395664cf3207719e09c85e6062bce58e24a83815
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by a failure after the workflow_runs commit but before the final rename
+  severity: 'medium'
+  component: 'export'
+  status: 'verified'
+  reproduction: |
+    The export `workflow_runs` row is committed before the final rename and its command embeds the
+    staging path, so the database and the JSONL log can report a completed export whose destination does
+    not exist.
+  disposition: |
+    export_files now records the workflow run only after the workspace has been renamed to the final
+    destination, and the recorded command names that destination instead of the staging path; if
+    recording fails, the published tree is removed, so the database can neither claim a publication that
+    never happened nor leave a publication it never recorded.
+  fix_commit: '395664cf3207719e09c85e6062bce58e24a83815'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_export.py::test_export_run_row_follows_publication
-- id: ODR-0008
-  title: Symlink export into an existing empty destination deletes its children on failure
+    - tests/unit/test_export.py::test_export_run_row_follows_publication
+- id: ODR-8
+  title: 'Symlink export into an existing empty destination deletes its children on failure'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by `export --link symlink` into an existing empty destination directory that later fails
-  severity: high
-  component: export
-  status: verified
-  reproduction: With `--link symlink` and an existing empty destination, the export workspace is the caller's directory itself, and the failure path deletes every child of that directory.
-  disposition: 'export_files no longer uses an existing empty destination as the workspace: every export stages in a hidden sibling directory, an existing empty destination is removed with rmdir (failing safe if it gained content) immediately before the atomic rename, and the failure path only ever removes the staging tree, never the caller''s directory children.'
-  fix_commit: e8c03a85aa9f8bebc59f50e572c5935d4b9468a5
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by `export --link symlink` into an existing empty destination directory that
+    later fails
+  severity: 'high'
+  component: 'export'
+  status: 'verified'
+  reproduction: |
+    With `--link symlink` and an existing empty destination, the export workspace is the caller's
+    directory itself, and the failure path deletes every child of that directory.
+  disposition: |
+    export_files no longer uses an existing empty destination as the workspace: every export stages in a
+    hidden sibling directory, an existing empty destination is removed with rmdir (failing safe if it
+    gained content) immediately before the atomic rename, and the failure path only ever removes the
+    staging tree, never the caller's directory children.
+  fix_commit: 'e8c03a85aa9f8bebc59f50e572c5935d4b9468a5'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_export.py::test_failed_symlink_export_never_touches_the_callers_directory
-- id: ODR-0009
-  title: Idempotent re-ingest demotes STANDARDIZED to CHECKSUM_VERIFIED without audit
+    - tests/unit/test_export.py::test_failed_symlink_export_never_touches_the_callers_directory
+- id: ODR-9
+  title: 'Idempotent re-ingest demotes STANDARDIZED to CHECKSUM_VERIFIED without audit'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by re-ingesting identical bytes for a file that already carries STANDARDIZED status
-  severity: medium
-  component: files
-  status: verified
-  reproduction: Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so a standardized file silently loses that status; `set_file_status` itself is a no-op that writes nothing when the status is unchanged.
-  disposition: 'The idempotent re-ingest path no longer rewrites files.status unconditionally: a STANDARDIZED file keeps its status, and any other transition goes through the audited set_file_status (a no-op when unchanged), so re-verifying identical bytes never silently demotes a standardized file.'
-  fix_commit: ebdc356e5b3cad979bfb8af54b20de84d16aea24
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by re-ingesting identical bytes for a file that already carries STANDARDIZED
+    status
+  severity: 'medium'
+  component: 'files'
+  status: 'verified'
+  reproduction: |
+    Re-ingesting identical bytes rewrites `files.status` unconditionally and writes no `changes` row, so
+    a standardized file silently loses that status; `set_file_status` itself is a no-op that writes
+    nothing when the status is unchanged.
+  disposition: |
+    The idempotent re-ingest path no longer rewrites files.status unconditionally: a STANDARDIZED file
+    keeps its status, and any other transition goes through the audited set_file_status (a no-op when
+    unchanged), so re-verifying identical bytes never silently demotes a standardized file.
+  fix_commit: 'ebdc356e5b3cad979bfb8af54b20de84d16aea24'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_files_edges.py::test_reingest_preserves_standardized_status_and_audits_transitions
-- id: ODR-0010
-  title: standardize bypasses the entity state machine and the audit log
+    - tests/unit/test_files_edges.py::test_reingest_preserves_standardized_status_and_audits_transitions
+- id: ODR-10
+  title: 'standardize bypasses the entity state machine and the audit log'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by standardizing a RELEASED or ACCEPTED entity, or by standardize_all selecting on files.status alone
-  severity: medium
-  component: files
-  status: verified
-  reproduction: '`standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity state with no transition check and no `changes` row.'
-  disposition: 'standardize_file now routes both writes through the audited paths: set_file_status for files.status and set_state for the entity transition, so illegal transitions (RELEASED/ACCEPTED -> STANDARDIZED) are rejected with ConflictError and every change lands in the changes table. The idempotent path repairs a CHECKSUM_VERIFIED crash window without touching entities that already moved on, and TRANSITIONS gained a CHECKSUM_FAILED -> STANDARDIZED recovery edge for re-verified bytes. The CHECKSUM_FAILED alarm write on a checksum mismatch was left as-is.'
-  fix_commit: 34fa5f0082af63b1d27524caead21877bb808a67
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by standardizing a RELEASED or ACCEPTED entity, or by standardize_all
+    selecting on files.status alone
+  severity: 'medium'
+  component: 'files'
+  status: 'verified'
+  reproduction: |
+    `standardize` writes the entity state STANDARDIZED directly, so standardizing a RELEASED or ACCEPTED
+    entity — or running `standardize_all`, which selects on `files.status` alone — changes the entity
+    state with no transition check and no `changes` row.
+  disposition: |
+    standardize_file now routes both writes through the audited paths: set_file_status for files.status
+    and set_state for the entity transition, so illegal transitions (RELEASED/ACCEPTED -> STANDARDIZED)
+    are rejected with ConflictError and every change lands in the changes table. The idempotent path
+    repairs a CHECKSUM_VERIFIED crash window without touching entities that already moved on, and
+    TRANSITIONS gained a CHECKSUM_FAILED -> STANDARDIZED recovery edge for re-verified bytes. The
+    CHECKSUM_FAILED alarm write on a checksum mismatch was left as-is.
+  fix_commit: '34fa5f0082af63b1d27524caead21877bb808a67'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_files_edges.py::test_standardize_goes_through_the_audited_state_machine
-- id: ODR-0011
-  title: Re-running qc or evaluate demotes ACCEPTED/RELEASED entities
+    - tests/unit/test_files_edges.py::test_standardize_goes_through_the_audited_state_machine
+- id: ODR-11
+  title: 'Re-running qc or evaluate demotes ACCEPTED/RELEASED entities'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by re-running qc or evaluate on an entity in ACCEPTED or RELEASED state
-  severity: medium
-  component: qc
-  status: verified
-  reproduction: QC drives its state writes through the forced bulk path and offers no --force or prior-state warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED; `evaluate` does the same for an entity without a curated_decision, while a curated decision is protected.
-  disposition: 'Batch QC and automatic re-evaluation now write entity states through workflow.set_state_guarded: entities in ACCEPTED/REVIEW/REJECTED/RELEASED keep their lifecycle state while fresh QC evidence and decision rows are still recorded; only an explicit curate or forced set-state moves them. The guarded aggregate reports the preserved state as entity_qc_state.'
-  fix_commit: 325dff26717a54b4f08a35684174e9814e130367
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by re-running qc or evaluate on an entity in ACCEPTED or RELEASED state
+  severity: 'medium'
+  component: 'qc'
+  status: 'verified'
+  reproduction: |
+    QC drives its state writes through the forced bulk path and offers no --force or prior-state
+    warning, so an accepted or released entity drops to QC_RUNNING and then QC_COMPLETE/QC_FAILED;
+    `evaluate` does the same for an entity without a curated_decision, while a curated decision is
+    protected.
+  disposition: |
+    Batch QC and automatic re-evaluation now write entity states through workflow.set_state_guarded:
+    entities in ACCEPTED/REVIEW/REJECTED/RELEASED keep their lifecycle state while fresh QC evidence and
+    decision rows are still recorded; only an explicit curate or forced set-state moves them. The
+    guarded aggregate reports the preserved state as entity_qc_state.
+  fix_commit: '325dff26717a54b4f08a35684174e9814e130367'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_qc_and_rules.py::TestQCAndRules::test_rerun_qc_and_evaluate_do_not_demote_decided_entities
-- id: ODR-0012
-  title: Concurrent writable opens collide while rebuilding views
+    - tests/unit/test_qc_and_rules.py::TestQCAndRules::test_rerun_qc_and_evaluate_do_not_demote_decided_entities
+- id: ODR-12
+  title: 'Concurrent writable opens collide while rebuilding views'
   reported: '2026-09-16'
   introduced_in: null
-  affected: all releases; triggered by two operon processes (or the CLI and the TUI) opening the same database writable at the same time
-  severity: low
-  component: database
-  status: verified
-  reproduction: 'Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second busy timeout cannot absorb, surfacing as exit 1.'
-  disposition: _ensure_current_schema_objects now drops and recreates the derived views inside a single immediate transaction acquired through Database.transaction(), so a concurrent writable opener waits on the writer lock instead of landing between DROP and CREATE. Plain execute calls replace executescript, which would implicitly commit and break the atomic window.
-  fix_commit: c33a149fd46f03a8035f25420c069d78e4db512a
-  fixed_in: 0.8.3
+  affected: |
+    all releases; triggered by two operon processes (or the CLI and the TUI) opening the same database
+    writable at the same time
+  severity: 'low'
+  component: 'database'
+  status: 'verified'
+  reproduction: |
+    Every writable open drops and recreates `current_decisions`, `effective_retired_entities` and
+    `current_entity_lifecycle` without a lock or a transaction, so two operon processes can abort with
+    `sqlite3.OperationalError: view current_decisions already exists` — a logical conflict the 30-second
+    busy timeout cannot absorb, surfacing as exit 1.
+  disposition: |
+    _ensure_current_schema_objects now drops and recreates the derived views inside a single immediate
+    transaction acquired through Database.transaction(), so a concurrent writable opener waits on the
+    writer lock instead of landing between DROP and CREATE. Plain execute calls replace executescript,
+    which would implicitly commit and break the atomic window.
+  fix_commit: 'c33a149fd46f03a8035f25420c069d78e4db512a'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild
-- id: ODR-0013
-  title: Directory artifacts always fail the QC checksum stage and fanout source verification
+    - tests/unit/test_database_edges_more.py::test_concurrent_writable_opens_do_not_collide_on_view_rebuild
+- id: ODR-13
+  title: 'Directory artifacts always fail the QC checksum stage and fanout source verification'
   reported: '2026-09-17'
   introduced_in: null
-  affected: 0.8.2 and earlier; any manifest row with format=directory (e.g. adopted OrthoFinder/Notung result trees)
-  severity: medium
-  component: files
-  status: verified
-  reproduction: 'Ingest or adopt a directory artifact (format=directory), then run built-in ''operon qc'' or ''operon fanout'' on it. verify_local_file_identity() required path.is_file(), so a directory always reported exists=False / sha256_match=False: the QC checksum_verified stage could never pass and fanout refused the source, a permanent false alarm for intact directory trees. (Batch ''operon verify'' was unaffected: verify_files() hashes via sha256_path(), which already handles directory trees.)'
-  disposition: 'verify_local_file_identity() now branches on the manifest format: directory records are verified with the same deterministic tree hash used at ingest (sha256_path + path_size_bytes), a file<->directory type flip reports missing, and the stat-fingerprint cache is bypassed for directories because directory mtimes change on any member touch and would spuriously invalidate the cache.'
-  fix_commit: a74213fa3555a193d6a39ef35465fbb5d12a558b
-  fixed_in: 0.8.3
+  affected: |
+    0.8.2 and earlier; any manifest row with format=directory (e.g. adopted OrthoFinder/Notung result
+    trees)
+  severity: 'medium'
+  component: 'files'
+  status: 'verified'
+  reproduction: |
+    Ingest or adopt a directory artifact (format=directory), then run built-in 'operon qc' or 'operon
+    fanout' on it. verify_local_file_identity() required path.is_file(), so a directory always reported
+    exists=False / sha256_match=False: the QC checksum_verified stage could never pass and fanout
+    refused the source, a permanent false alarm for intact directory trees. (Batch 'operon verify' was
+    unaffected: verify_files() hashes via sha256_path(), which already handles directory trees.)
+  disposition: |
+    verify_local_file_identity() now branches on the manifest format: directory records are verified
+    with the same deterministic tree hash used at ingest (sha256_path + path_size_bytes), a
+    file<->directory type flip reports missing, and the stat-fingerprint cache is bypassed for
+    directories because directory mtimes change on any member touch and would spuriously invalidate the
+    cache.
+  fix_commit: 'a74213fa3555a193d6a39ef35465fbb5d12a558b'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
-  - tests/unit/test_files_edges.py::test_directory_artifact_type_flip_reports_missing
-  - tests/unit/test_files_edges.py::test_builtin_qc_passes_directory_checksum_stage
-- id: ODR-0014
-  title: TimeTree surfaces raw KeyError/OSError/ValueError instead of ValidationError
+    - tests/unit/test_files_edges.py::test_directory_artifact_verifies_with_tree_hash
+    - tests/unit/test_files_edges.py::test_directory_artifact_type_flip_reports_missing
+    - tests/unit/test_files_edges.py::test_builtin_qc_passes_directory_checksum_stage
+- id: ODR-14
+  title: 'TimeTree surfaces raw KeyError/OSError/ValueError instead of ValidationError'
   reported: '2026-09-17'
   introduced_in: null
-  affected: 0.8.2 and earlier; timetree fetch/calibrate snapshot loading and calibration inputs
-  severity: low
-  component: timetree
-  status: verified
-  reproduction: load_snapshot() on a snapshot directory without snapshot.json raised FileNotFoundError, on malformed JSON a JSONDecodeError, on a structurally incomplete manifest a bare KeyError, and on a missing raw payload a bare OSError from sha256_file. calibrate_tree() propagated ValueError from int() on non-numeric taxon_id/taxon_a/taxon_b cells and whatever exception Phylo.read raised for a missing or malformed tree file. All surfaced as tracebacks instead of an 'error:' message.
-  disposition: load_snapshot() wraps read/parse/structure/payload failures into ValidationError naming the cause; calibrate_tree() guards the integer conversions and wraps tree read/parse failures; _resolve_cli_taxa() additionally raises a named ValidationError should a resolve_taxon implementation ever return an empty candidate list instead of raising.
-  fix_commit: fcf4f3487ed90febfa9711db244d539b505be24e
-  fixed_in: 0.8.3
+  affected: '0.8.2 and earlier; timetree fetch/calibrate snapshot loading and calibration inputs'
+  severity: 'low'
+  component: 'timetree'
+  status: 'verified'
+  reproduction: |
+    load_snapshot() on a snapshot directory without snapshot.json raised FileNotFoundError, on malformed
+    JSON a JSONDecodeError, on a structurally incomplete manifest a bare KeyError, and on a missing raw
+    payload a bare OSError from sha256_file. calibrate_tree() propagated ValueError from int() on
+    non-numeric taxon_id/taxon_a/taxon_b cells and whatever exception Phylo.read raised for a missing or
+    malformed tree file. All surfaced as tracebacks instead of an 'error:' message.
+  disposition: |
+    load_snapshot() wraps read/parse/structure/payload failures into ValidationError naming the cause;
+    calibrate_tree() guards the integer conversions and wraps tree read/parse failures;
+    _resolve_cli_taxa() additionally raises a named ValidationError should a resolve_taxon
+    implementation ever return an empty candidate list instead of raising.
+  fix_commit: 'fcf4f3487ed90febfa9711db244d539b505be24e'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_manifest_is_validation_error
-  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_malformed_manifest_is_validation_error
-  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_incomplete_manifest_is_validation_error
-  - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_payload_is_validation_error
-  - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_rejects_non_numeric_taxon_ids
-  - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error
-- id: ODR-0015
-  title: A signal arriving after completed interrupt cleanup still force-exits the process
+    - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_manifest_is_validation_error
+    - tests/unit/test_timetree_snapshots.py::test_load_snapshot_malformed_manifest_is_validation_error
+    - tests/unit/test_timetree_snapshots.py::test_load_snapshot_incomplete_manifest_is_validation_error
+    - tests/unit/test_timetree_snapshots.py::test_load_snapshot_missing_payload_is_validation_error
+    - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_rejects_non_numeric_taxon_ids
+    - tests/unit/test_timetree_snapshots.py::test_calibrate_tree_unreadable_or_malformed_tree_is_validation_error
+- id: ODR-15
+  title: 'A signal arriving after completed interrupt cleanup still force-exits the process'
   reported: '2026-09-17'
   introduced_in: null
-  affected: 0.8.2 and earlier; long-running analyze batches interrupted by SIGINT/SIGTERM
-  severity: low
-  component: shutdown
-  status: verified
-  reproduction: _cleanup_in_progress was cleared only when the graceful_shutdown() context manager unwound. After an interrupt's cleanup finished (subprocess/array terminated, analysis_jobs finalized, partial outputs removed) but before the context exited (batch-loop unwinding, exit-130 reporting), any further signal took the second-during-cleanup branch and called os._exit(128+signum), killing a process that had nothing left to clean up and cutting off its normal finalization.
-  disposition: 'Added shutdown.cleanup_completed(), invoked by every interrupt-cleanup site in tools.py once its bookkeeping is finalized; it re-arms graceful handling so a later signal raises a fresh ShutdownRequested (exit 130) instead of force-exiting. The force-exit escape hatch remains exactly where it is needed: a second signal while cleanup is genuinely still running.'
-  fix_commit: b3de56e136aac6077c64baea2431268075ee7637
-  fixed_in: 0.8.3
+  affected: '0.8.2 and earlier; long-running analyze batches interrupted by SIGINT/SIGTERM'
+  severity: 'low'
+  component: 'shutdown'
+  status: 'verified'
+  reproduction: |
+    _cleanup_in_progress was cleared only when the graceful_shutdown() context manager unwound. After an
+    interrupt's cleanup finished (subprocess/array terminated, analysis_jobs finalized, partial outputs
+    removed) but before the context exited (batch-loop unwinding, exit-130 reporting), any further
+    signal took the second-during-cleanup branch and called os._exit(128+signum), killing a process that
+    had nothing left to clean up and cutting off its normal finalization.
+  disposition: |
+    Added shutdown.cleanup_completed(), invoked by every interrupt-cleanup site in tools.py once its
+    bookkeeping is finalized; it re-arms graceful handling so a later signal raises a fresh
+    ShutdownRequested (exit 130) instead of force-exiting. The force-exit escape hatch remains exactly
+    where it is needed: a second signal while cleanup is genuinely still running.
+  fix_commit: 'b3de56e136aac6077c64baea2431268075ee7637'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_shutdown.py::test_signal_after_completed_cleanup_raises_gracefully
-  - tests/unit/test_shutdown.py::test_force_exit_still_applies_while_cleanup_is_running
-  - tests/unit/test_shutdown.py::test_cleanup_completed_without_a_signal_is_a_noop
-- id: ODR-0016
-  title: Tool-version and database-identity caches never invalidate within a process
+    - tests/unit/test_shutdown.py::test_signal_after_completed_cleanup_raises_gracefully
+    - tests/unit/test_shutdown.py::test_force_exit_still_applies_while_cleanup_is_running
+    - tests/unit/test_shutdown.py::test_cleanup_completed_without_a_signal_is_a_noop
+- id: ODR-16
+  title: 'Tool-version and database-identity caches never invalidate within a process'
   reported: '2026-09-17'
   introduced_in: null
-  affected: 0.8.2 and earlier; long-lived processes (the TUI) running analyses after an in-place tool upgrade or reference-database replacement
-  severity: medium
-  component: tools
-  status: verified
-  reproduction: '_VERSION_CACHE and _DATABASE_IDENTITY_CACHE are process-lifetime dicts. In a TUI session that stays open while the tool binary is upgraded in place or the reference database is replaced at the same path, subsequent analyses keep planning with the stale version string and stale database identity: cache identity does not reflect the new bytes (old results are reused against a different database) and provenance records the pre-upgrade version.'
-  disposition: 'Both caches are now TTL-bound (300s, monotonic clock), mirroring the environment-capture probe cache: entries re-probe after expiry, so a batch still pays for one probe while a long-lived process notices in-place upgrades. Failed version probes were never cached and still are not.'
-  fix_commit: 93a05b5adc51e6dd09ef82f8ec9a0e9240a0ceb9
-  fixed_in: 0.8.3
+  affected: |
+    0.8.2 and earlier; long-lived processes (the TUI) running analyses after an in-place tool upgrade or
+    reference-database replacement
+  severity: 'medium'
+  component: 'tools'
+  status: 'verified'
+  reproduction: |
+    _VERSION_CACHE and _DATABASE_IDENTITY_CACHE are process-lifetime dicts. In a TUI session that stays
+    open while the tool binary is upgraded in place or the reference database is replaced at the same
+    path, subsequent analyses keep planning with the stale version string and stale database identity:
+    cache identity does not reflect the new bytes (old results are reused against a different database)
+    and provenance records the pre-upgrade version.
+  disposition: |
+    Both caches are now TTL-bound (300s, monotonic clock), mirroring the environment-capture probe
+    cache: entries re-probe after expiry, so a batch still pays for one probe while a long-lived process
+    notices in-place upgrades. Failed version probes were never cached and still are not.
+  fix_commit: '93a05b5adc51e6dd09ef82f8ec9a0e9240a0ceb9'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tools_edges.py::test_version_and_database_identity_caches_expire_after_ttl
-- id: ODR-0017
-  title: Version-source test races a concurrent sdist build rewriting OperonDBS.egg-info
+    - tests/unit/test_tools_edges.py::test_version_and_database_identity_caches_expire_after_ttl
+- id: ODR-17
+  title: 'Version-source test races a concurrent sdist build rewriting OperonDBS.egg-info'
   reported: '2026-09-17'
   introduced_in: null
-  affected: 0.8.2 and earlier; test suite under pytest-xdist (intermittent)
-  severity: low
-  component: tests
-  status: verified
-  reproduction: operon.__version__ is resolved via importlib.metadata at import time; from the checkout root it resolves to the in-tree OperonDBS.egg-info, which setuptools rewrites in place during every build_sdist call (test_sdist_contains_complete_project_source). Under xdist, a worker whose first operon import lands inside a sibling worker's build window freezes a stale (site-packages) or missing ('0+unknown') version into the module, and test_pyproject_is_the_single_application_version_source then fails against pyproject.toml. Solo runs never race, so the failure is intermittent.
-  disposition: The test now re-reads operon.__version__ via importlib.reload() while holding the same machine-wide _sdist_build_lock() the builds already take, so the assertion always observes a consistent metadata state.
-  fix_commit: 49b802d46b0548c02fcea62a828d06ac4fe9c756
-  fixed_in: 0.8.3
+  affected: '0.8.2 and earlier; test suite under pytest-xdist (intermittent)'
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    operon.__version__ is resolved via importlib.metadata at import time; from the checkout root it
+    resolves to the in-tree OperonDBS.egg-info, which setuptools rewrites in place during every
+    build_sdist call (test_sdist_contains_complete_project_source). Under xdist, a worker whose first
+    operon import lands inside a sibling worker's build window freezes a stale (site-packages) or
+    missing ('0+unknown') version into the module, and
+    test_pyproject_is_the_single_application_version_source then fails against pyproject.toml. Solo runs
+    never race, so the failure is intermittent.
+  disposition: |
+    The test now re-reads operon.__version__ via importlib.reload() while holding the same machine-wide
+    _sdist_build_lock() the builds already take, so the assertion always observes a consistent metadata
+    state.
+  fix_commit: '49b802d46b0548c02fcea62a828d06ac4fe9c756'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
-- id: ODR-0018
-  title: Array analysis swallows progress-callback cancellations as per-file failures
+    - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
+- id: ODR-18
+  title: 'Array analysis swallows progress-callback cancellations as per-file failures'
   reported: '2026-09-18'
   introduced_in: null
-  affected: 0.8.2 and earlier; run_analysis on the Slurm-array path with a progress_callback that raises (the TUI's AnalysisCancelled)
-  severity: medium
-  component: tools
-  status: verified
-  reproduction: 'In _execute_analysis_array the phase-3 progress_callback invocation sits inside the outer try whose ''except Exception'' is the whole-batch failure path. A plain-Exception cancellation raised by the callback (the TUI raises AnalysisCancelled, a plain Exception, from the callback when the worker is cancelled) is caught there: every not-yet-collected task is marked ''failed'', per-file ''error'' results are recorded, and the function returns normally, so the cancellation is swallowed — the TUI never sees its AnalysisCancelled and shows a successful/failed batch instead of a cancellation. KeyboardInterrupt subclasses escape correctly via the outer ''except KeyboardInterrupt'', so the CLI signal path is unaffected. The staging-error callback in the same function has the identical structure and the same swallow.'
-  disposition: 'Wrap both progress_callback invocations of _execute_analysis_array so callback exceptions abort the batch instead of feeding the per-file/batch failure paths: KeyboardInterrupt subclasses keep the existing outer interrupt path, and any other callback exception finalizes tasks that already wrote their exit-code file (same as the executor-interrupt path), marks the remaining plans interrupted, and re-raises so the caller''s cancellation propagates.'
-  fix_commit: b2c14e328c06330459dd5c20075a38e946e82e6c
-  fixed_in: 0.8.3
+  affected: |
+    0.8.2 and earlier; run_analysis on the Slurm-array path with a progress_callback that raises (the
+    TUI's AnalysisCancelled)
+  severity: 'medium'
+  component: 'tools'
+  status: 'verified'
+  reproduction: |
+    In _execute_analysis_array the phase-3 progress_callback invocation sits inside the outer try whose
+    'except Exception' is the whole-batch failure path. A plain-Exception cancellation raised by the
+    callback (the TUI raises AnalysisCancelled, a plain Exception, from the callback when the worker is
+    cancelled) is caught there: every not-yet-collected task is marked 'failed', per-file 'error'
+    results are recorded, and the function returns normally, so the cancellation is swallowed — the TUI
+    never sees its AnalysisCancelled and shows a successful/failed batch instead of a cancellation.
+    KeyboardInterrupt subclasses escape correctly via the outer 'except KeyboardInterrupt', so the CLI
+    signal path is unaffected. The staging-error callback in the same function has the identical
+    structure and the same swallow.
+  disposition: |
+    Wrap both progress_callback invocations of _execute_analysis_array so callback exceptions abort the
+    batch instead of feeding the per-file/batch failure paths: KeyboardInterrupt subclasses keep the
+    existing outer interrupt path, and any other callback exception finalizes tasks that already wrote
+    their exit-code file (same as the executor-interrupt path), marks the remaining plans interrupted,
+    and re-raises so the caller's cancellation propagates.
+  fix_commit: 'b2c14e328c06330459dd5c20075a38e946e82e6c'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_cancellation_aborts_the_batch
-  - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_shutdown_interrupts_remaining_tasks
-  - tests/integration/test_analysis_array.py::TestAnalysisArrayRemote::test_remote_array_staging_callback_cancellation_aborts_the_batch
-- id: ODR-0019
-  title: Modal filter rows over-constrain their controls, pushing widgets outside the box
+    - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_cancellation_aborts_the_batch
+    - tests/integration/test_analysis_array.py::TestAnalysisArray::test_array_progress_callback_shutdown_interrupts_remaining_tasks
+    - tests/integration/test_analysis_array.py::TestAnalysisArrayRemote::test_remote_array_staging_callback_cancellation_aborts_the_batch
+- id: ODR-19
+  title: 'Modal filter rows over-constrain their controls, pushing widgets outside the box'
   reported: '2026-09-18'
   introduced_in: null
-  affected: 0.8.2 and earlier; the Tasks screen's Analysis jobs modal at every terminal width (its status select is clipped to a single column and its limit input renders outside the modal box)
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'Filter rows lay their children out in a Horizontal without width rules. Textual hands every child of an over-constrained Horizontal its own preferred width, so the first Input consumes the whole row and the trailing widgets are pushed past the parent''s right edge and clipped: in AnalysisJobsModal the row is 78 columns wide, jobs-analysis alone fills it, jobs-status shrinks to one column and jobs-limit lands entirely outside the modal box, leaving both filters unusable. Tests kept passing because they set widget values programmatically instead of clicking them.'
-  disposition: 'Width rules added for every panel/modal filter row (jobs-filters, hits-filters, hits-filters-2, hits-export): flexible search inputs take 1fr, narrow selects and limit fields get fixed widths, so every control stays inside its row. A regression test mounts the affected screens and modals and asserts that each identified control is fully inside its row and at least 8 columns wide.'
-  fix_commit: 7d1fce0bdf81eb6ea7893977e574525345a486cf
-  fixed_in: 0.8.3
+  affected: |
+    0.8.2 and earlier; the Tasks screen's Analysis jobs modal at every terminal width (its status select
+    is clipped to a single column and its limit input renders outside the modal box)
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Filter rows lay their children out in a Horizontal without width rules. Textual hands every child of
+    an over-constrained Horizontal its own preferred width, so the first Input consumes the whole row
+    and the trailing widgets are pushed past the parent's right edge and clipped: in AnalysisJobsModal
+    the row is 78 columns wide, jobs-analysis alone fills it, jobs-status shrinks to one column and
+    jobs-limit lands entirely outside the modal box, leaving both filters unusable. Tests kept passing
+    because they set widget values programmatically instead of clicking them.
+  disposition: |
+    Width rules added for every panel/modal filter row (jobs-filters, hits-filters, hits-filters-2,
+    hits-export): flexible search inputs take 1fr, narrow selects and limit fields get fixed widths, so
+    every control stays inside its row. A regression test mounts the affected screens and modals and
+    asserts that each identified control is fully inside its row and at least 8 columns wide.
+  fix_commit: '7d1fce0bdf81eb6ea7893977e574525345a486cf'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row
-- id: ODR-0020
-  title: The analysis-jobs dialog collapses its table to one row and overlaps its panes
+    - tests/unit/test_tui.py::test_filter_rows_keep_their_controls_inside_the_row
+- id: ODR-20
+  title: 'The analysis-jobs dialog collapses its table to one row and overlaps its panes'
   reported: '2026-09-18'
   introduced_in: null
-  affected: None (Found before push)
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'The dialog''s box is capped by max-height but holds no ``1fr`` child, so Textual handed the surplus height to the first auto-sized child: measured at 160x50, #jobs-filters took 33 rows, the table and the detail Static were squeezed to a single row each, and the table''s rows rendered across its own slot — the header drifted and the table visually covered the controls above and below it.  The detail pane was effectively invisible, which is why the per-job error/artifact view went unnoticed.'
-  disposition: 'The dialog now uses a fixed tall box (``#modal-box.jobs``, 80%) with a two-pane body: the table takes ``1fr`` and scrolls internally, the detail moves to a right-hand column.  A regression test asserts the panes stay inside the box, do not overlap each other, and keep a usable size.'
-  fix_commit: ea61c4eeaa7546dcd35e06f57cdb34354ebff18f
-  fixed_in: 0.8.3
+  affected: 'None (Found before push)'
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    The dialog's box is capped by max-height but holds no ``1fr`` child, so Textual handed the surplus
+    height to the first auto-sized child: measured at 160x50, #jobs-filters took 33 rows, the table and
+    the detail Static were squeezed to a single row each, and the table's rows rendered across its own
+    slot — the header drifted and the table visually covered the controls above and below it. The detail
+    pane was effectively invisible, which is why the per-job error/artifact view went unnoticed.
+  disposition: |
+    The dialog now uses a fixed tall box (``#modal-box.jobs``, 80%) with a two-pane body: the table
+    takes ``1fr`` and scrolls internally, the detail moves to a right-hand column. A regression test
+    asserts the panes stay inside the box, do not overlap each other, and keep a usable size.
+  fix_commit: 'ea61c4eeaa7546dcd35e06f57cdb34354ebff18f'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes
-- id: ODR-0021
-  title: A copied project inherits the read-only WAL side files of a read-only database
+    - tests/unit/test_tui.py::test_analysis_jobs_modal_layout_keeps_its_panes
+- id: ODR-21
+  title: 'A copied project inherits the read-only WAL side files of a read-only database'
   reported: '2026-09-19'
   introduced_in: null
-  affected: 'test infrastructure only, no shipped behavior: any test that copies a project directory which was read while its database file was read-only'
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'test_data_layer_never_writes() chmods the module-scoped demo database to 0444 and runs the read-only data layer against it; SQLite then creates operon.sqlite-shm and operon.sqlite-wal with that read-only mode, and the test''s finally restores only the database file. A later shutil.copytree() of the same demo project (for example _seed_analysis_jobs) preserves the 0444 side files, so opening the copy for writing raises sqlite3.OperationalError: attempt to write a readonly database in Database._migrate_recovery_schema_2_6. Reproduced in isolation (chmod a WAL database 0444, open it with mode=ro, restore the database mode, copytree it, write -> "attempt to write a readonly database"). Measured locally: the chmod window appeared in 6/6 runs of tests/unit/test_tui.py (-n 4), a copy inherited the read-only -shm in 4 of those runs, and every one of the four failed (test_analysis_jobs_modal_layout_keeps_its_panes); CI hit test_analysis_jobs_modal_browses_interrupted_tasks in 3 of 12 jobs.'
-  disposition: 'tests/helpers.copy_project_tree() copies a project into a writable tree: it drops every *.sqlite-shm (SQLite rebuilds the shared-memory index from the log on the next open) and restores write permission on the copied database, log and journal files. test_data_layer_never_writes() now works on a private copy of the demo project instead of the shared module fixture, so the read-only window no longer leaks into every later test that copies it. A regression test asserts that a copied project opens for writing after a read-only session.'
-  fix_commit: 1737b0067e3a0b0b154b9bbc65d8f8ac8b1419bd
-  fixed_in: 0.8.3
+  affected: |
+    test infrastructure only, no shipped behavior: any test that copies a project directory which was
+    read while its database file was read-only
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    test_data_layer_never_writes() chmods the module-scoped demo database to 0444 and runs the read-only
+    data layer against it; SQLite then creates operon.sqlite-shm and operon.sqlite-wal with that
+    read-only mode, and the test's finally restores only the database file. A later shutil.copytree() of
+    the same demo project (for example _seed_analysis_jobs) preserves the 0444 side files, so opening
+    the copy for writing raises sqlite3.OperationalError: attempt to write a readonly database in
+    Database._migrate_recovery_schema_2_6. Reproduced in isolation (chmod a WAL database 0444, open it
+    with mode=ro, restore the database mode, copytree it, write -> "attempt to write a readonly
+    database"). Measured locally: the chmod window appeared in 6/6 runs of tests/unit/test_tui.py (-n
+    4), a copy inherited the read-only -shm in 4 of those runs, and every one of the four failed
+    (test_analysis_jobs_modal_layout_keeps_its_panes); CI hit
+    test_analysis_jobs_modal_browses_interrupted_tasks in 3 of 12 jobs.
+  disposition: |
+    tests/helpers.copy_project_tree() copies a project into a writable tree: it drops every *.sqlite-shm
+    (SQLite rebuilds the shared-memory index from the log on the next open) and restores write
+    permission on the copied database, log and journal files. test_data_layer_never_writes() now works
+    on a private copy of the demo project instead of the shared module fixture, so the read-only window
+    no longer leaks into every later test that copies it. A regression test asserts that a copied
+    project opens for writing after a read-only session.
+  fix_commit: '1737b0067e3a0b0b154b9bbc65d8f8ac8b1419bd'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session
-- id: ODR-0022
-  title: A write modal's worker result lands after the modal was dismissed
+    - tests/unit/test_tui.py::test_copied_project_stays_writable_after_a_read_only_session
+- id: ODR-22
+  title: 'A write modal''s worker result lands after the modal was dismissed'
   reported: '2026-09-19'
   introduced_in: null
-  affected: unreleased (the TUI write modals are not in any tagged release; v0.8.2 and earlier lack them). Triggered when a write finishes after its modal was dismissed — escape, Cancel, or a second Confirm — so the queued result is applied to a widget tree that is already gone
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'WriteModal._action_done() ran on a torn-down modal, so set_confirm_enabled()/show_error() raised NoMatches *inside the worker thread*; Textual turned that into WorkerFailed and failed the whole application. CI showed it as unrelated tests failing: common.py:388 set_confirm_enabled -> query_one("#confirm") on AdoptModal and FanoutModal (macos 3.12/3.14, test_adopt_modal_manifest_requires_preview, test_fanout_modal_requires_the_dry_run) and common.py:390 show_error -> query_one("#modal-error") while #confirm was still resolvable, i.e. a partially torn-down modal (test_adopt_modal_conflict_stays_inline). The race needs the dismiss to happen in the same turn in which the queued result lands, so it reproduced only on slow runners: 4 of the 12 CI jobs, and 1 of 6 local full-suite runs. Panel._apply already carried the same guard, which is why panels never failed this way.'
-  disposition: 'operon/tui/screens/common.py gained WorkerResults: post_to_ui() hands a worker result to the UI thread and apply_from_worker() drops it when the widget is gone. WriteModal and Panel inherit it, as do AnalysisJobsModal, RunDetailScreen, SequenceLabelsModal, EnvironmentsModal, AnalysisHitsModal and ImportWizardScreen, and every worker call site in operon/tui/screens now goes through post_to_ui() — which also replaced the hand-rolled is_running/RuntimeError blocks. The regression test dismisses a modal and asserts that a result handed to the torn-down widgets is dropped while the unguarded call still raises; the race itself is timing-dependent, so the test pins the guard and its precondition rather than the interleaving.'
-  fix_commit: 41c504cf57011446a41acb791cbeb782aba36870
-  fixed_in: 0.8.3
+  affected: |
+    unreleased (the TUI write modals are not in any tagged release; v0.8.2 and earlier lack them).
+    Triggered when a write finishes after its modal was dismissed — escape, Cancel, or a second Confirm
+    — so the queued result is applied to a widget tree that is already gone
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    WriteModal._action_done() ran on a torn-down modal, so set_confirm_enabled()/show_error() raised
+    NoMatches *inside the worker thread*; Textual turned that into WorkerFailed and failed the whole
+    application. CI showed it as unrelated tests failing: common.py:388 set_confirm_enabled ->
+    query_one("#confirm") on AdoptModal and FanoutModal (macos 3.12/3.14,
+    test_adopt_modal_manifest_requires_preview, test_fanout_modal_requires_the_dry_run) and
+    common.py:390 show_error -> query_one("#modal-error") while #confirm was still resolvable, i.e. a
+    partially torn-down modal (test_adopt_modal_conflict_stays_inline). The race needs the dismiss to
+    happen in the same turn in which the queued result lands, so it reproduced only on slow runners: 4
+    of the 12 CI jobs, and 1 of 6 local full-suite runs. Panel._apply already carried the same guard,
+    which is why panels never failed this way.
+  disposition: |
+    operon/tui/screens/common.py gained WorkerResults: post_to_ui() hands a worker result to the UI
+    thread and apply_from_worker() drops it when the widget is gone. WriteModal and Panel inherit it, as
+    do AnalysisJobsModal, RunDetailScreen, SequenceLabelsModal, EnvironmentsModal, AnalysisHitsModal and
+    ImportWizardScreen, and every worker call site in operon/tui/screens now goes through post_to_ui() —
+    which also replaced the hand-rolled is_running/RuntimeError blocks. The regression test dismisses a
+    modal and asserts that a result handed to the torn-down widgets is dropped while the unguarded call
+    still raises; the race itself is timing-dependent, so the test pins the guard and its precondition
+    rather than the interleaving.
+  fix_commit: '41c504cf57011446a41acb791cbeb782aba36870'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown
-- id: ODR-0023
-  title: The config editors read a form whose deferred rows have not mounted
+    - tests/unit/test_tui_derived_ops.py::test_write_modal_drops_a_result_that_arrives_after_teardown
+- id: ODR-23
+  title: 'The config editors read a form whose deferred rows have not mounted'
   reported: '2026-09-19'
   introduced_in: null
-  affected: unreleased (the classification editor is not in any tagged release; v0.8.2 and earlier lack it). Triggered when the form is read in the message-loop turn in which ``remount`` replaces an editor's rows — a save pressed there — and when a test clicks a control whose centre a rebuilt layout has not repositioned yet
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'The panel replaces an editor through ``remount`` (remove the old rows, mount the new ones a turn later) and each row mounts its own nested rows a turn after that, so "the panel rendered" is not "the form can be read". CI showed it as two unrelated tests failing: ``test_config_classification_editor_end_to_end`` on ubuntu 3.10/3.11 and macos 3.11 composing the document right after ``_load_profile`` and hitting ``NoMatches`` — ``.condition-field`` on a ConditionRow, ``.condition-body .condition-row`` on a ConditionEditor, and Textual''s own ``Select._on_mount -> _setup_options_renderables -> query_one(SelectOverlay)`` while a select was mounted inside the moving subtree — and ``test_config_screen_unchanged_profile_save_notifies`` on macos 3.13, where ``_click(pilot, "#profile-save")`` raised ``textual.pilot.OutOfBounds: Target offset is outside of currently-visible screen region``.  The same window in the product read a half-built form: the composition either raised out of a button handler or returned a document with the rows it could not see silently dropped.  A first fix (container-level tracking) closed only part of it: the v0.8.3 CI run 35432524587 still failed four jobs, all in this family — ``_form_mounting()`` accepted a row whose own children were present but whose grandchildren were not (``.condition-field`` missing on a ConditionRow), and Textual''s ``Select`` crashed in ``_on_mount`` / ``_init_selected_option -> _watch_value -> SelectCurrent.update`` while mounted through the deferred chain (``SelectOverlay`` / ``#label`` not composed yet).'
-  disposition: 'Container-level mount tracking plus deep row readiness: ``MountTracked`` (operon/tui/screens/common.py) is a container that fills itself later and reports ``mounts_settled``, set through ``expect_mounts``/``mount_later`` and by ``remount`` itself, with the check evaluated lazily and latched (a ``call_after_refresh`` callback is posted to the widget''s own queue, which a container that is still mounting never pumps).  Every editor row (RuleRow, ConditionRow, ConditionEditor, BestByRow, SourceRow, ClassificationRuleRow) is a ``ComposedRows``: it latches ``form_ready`` in its own ``on_mount``, which Textual runs only after the row''s whole subtree — inputs and their children — is in the tree, and the latch is one-way so deleting a row later cannot make the form look unfinished. ``ConfigPanel._form_mounting()`` answers from both signals, and ``_form_document()`` refuses a save with ``FORM_MOUNTING_MESSAGE`` while that holds instead of walking a half-built tree.  ``FittingSelect`` shields Textual''s own mount-time lookups by retrying ``_setup_options_renderables``/``_init_selected_option`` a turn at a time, and the classification editor''s selects (condition operator, condition mode, best_by direction, rule mode) are that subclass.  The tests wait through ``_await_form_ready``/``_await_rows`` before reading a form directly, ``_click`` tolerates ``OutOfBounds`` by pressing an enabled button and waits out the lingering ``-active`` press effect (ODR-0024), and two regression tests pin the save refusal and the row latch''s contract.  The selector-based ``mount_later`` API also removed a late-binding bug found on the way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and the filter container waited on the best_by container forever.  The completion landed in 60a2d46 (deep row readiness and the Select guard) and f1fd525 (waits at the add-row sites); this record''s fix_commit names the latter.  Appendix (after 0.8.4, ODR-0033 round of repair): the QC editor''s rule operator was the one control still outside that coverage — a bare ``Select`` inside a ``remount``-replaced row, so invisible to the ``FittingSelect``-based readiness query — and is now a ``FittingSelect`` as well; the recipe editor''s and the analyze modal''s selects are composed once with their screen instead of being replaced and stay bare, which ``RuleRow``''s docstring records.'
-  fix_commit: f1fd5257ca0eca9ceb447c8edc59e2dcfe51aba6
-  fixed_in: 0.8.3
+  affected: |
+    unreleased (the classification editor is not in any tagged release; v0.8.2 and earlier lack it).
+    Triggered when the form is read in the message-loop turn in which ``remount`` replaces an editor's
+    rows — a save pressed there — and when a test clicks a control whose centre a rebuilt layout has not
+    repositioned yet
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    The panel replaces an editor through ``remount`` (remove the old rows, mount the new ones a turn
+    later) and each row mounts its own nested rows a turn after that, so "the panel rendered" is not
+    "the form can be read". CI showed it as two unrelated tests failing:
+    ``test_config_classification_editor_end_to_end`` on ubuntu 3.10/3.11 and macos 3.11 composing the
+    document right after ``_load_profile`` and hitting ``NoMatches`` — ``.condition-field`` on a
+    ConditionRow, ``.condition-body .condition-row`` on a ConditionEditor, and Textual's own
+    ``Select._on_mount -> _setup_options_renderables -> query_one(SelectOverlay)`` while a select was
+    mounted inside the moving subtree — and ``test_config_screen_unchanged_profile_save_notifies`` on
+    macos 3.13, where ``_click(pilot, "#profile-save")`` raised ``textual.pilot.OutOfBounds: Target
+    offset is outside of currently-visible screen region``. The same window in the product read a
+    half-built form: the composition either raised out of a button handler or returned a document with
+    the rows it could not see silently dropped. A first fix (container-level tracking) closed only part
+    of it: the v0.8.3 CI run 35432524587 still failed four jobs, all in this family —
+    ``_form_mounting()`` accepted a row whose own children were present but whose grandchildren were not
+    (``.condition-field`` missing on a ConditionRow), and Textual's ``Select`` crashed in ``_on_mount``
+    / ``_init_selected_option -> _watch_value -> SelectCurrent.update`` while mounted through the
+    deferred chain (``SelectOverlay`` / ``#label`` not composed yet).
+  disposition: |
+    Container-level mount tracking plus deep row readiness: ``MountTracked``
+    (operon/tui/screens/common.py) is a container that fills itself later and reports
+    ``mounts_settled``, set through ``expect_mounts``/``mount_later`` and by ``remount`` itself, with
+    the check evaluated lazily and latched (a ``call_after_refresh`` callback is posted to the widget's
+    own queue, which a container that is still mounting never pumps). Every editor row (RuleRow,
+    ConditionRow, ConditionEditor, BestByRow, SourceRow, ClassificationRuleRow) is a ``ComposedRows``:
+    it latches ``form_ready`` in its own ``on_mount``, which Textual runs only after the row's whole
+    subtree — inputs and their children — is in the tree, and the latch is one-way so deleting a row
+    later cannot make the form look unfinished. ``ConfigPanel._form_mounting()`` answers from both
+    signals, and ``_form_document()`` refuses a save with ``FORM_MOUNTING_MESSAGE`` while that holds
+    instead of walking a half-built tree. ``FittingSelect`` shields Textual's own mount-time lookups by
+    retrying ``_setup_options_renderables``/``_init_selected_option`` a turn at a time, and the
+    classification editor's selects (condition operator, condition mode, best_by direction, rule mode)
+    are that subclass. The tests wait through ``_await_form_ready``/``_await_rows`` before reading a
+    form directly, ``_click`` tolerates ``OutOfBounds`` by pressing an enabled button and waits out the
+    lingering ``-active`` press effect (ODR-24), and two regression tests pin the save refusal and the
+    row latch's contract. The selector-based ``mount_later`` API also removed a late-binding bug found
+    on the way in ``SourceRow.on_mount``, where two lambdas shared one ``view`` variable and the filter
+    container waited on the best_by container forever. The completion landed in 60a2d46 (deep row
+    readiness and the Select guard) and f1fd525 (waits at the add-row sites); this record's fix_commit
+    names the latter. Appendix (after 0.8.4, ODR-33 round of repair): the QC editor's rule operator was
+    the one control still outside that coverage — a bare ``Select`` inside a ``remount``-replaced row,
+    so invisible to the ``FittingSelect``-based readiness query — and is now a ``FittingSelect`` as
+    well; the recipe editor's and the analyze modal's selects are composed once with their screen
+    instead of being replaced and stay bare, which ``RuleRow``'s docstring records.
+  fix_commit: 'f1fd5257ca0eca9ceb447c8edc59e2dcfe51aba6'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
-  - tests/unit/test_tui_config.py::test_row_reports_ready_only_once_its_subtree_is_in_the_tree
-  - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
-  - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
-- id: ODR-0024
-  title: A second click on a button is swallowed by the press effect it still shows
+    - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_that_is_still_mounting
+    - tests/unit/test_tui_config.py::test_row_reports_ready_only_once_its_subtree_is_in_the_tree
+    - tests/unit/test_tui_config.py::test_click_helper_reaches_a_button_whose_centre_is_off_screen
+    - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
+- id: ODR-24
+  title: 'A second click on a button is swallowed by the press effect it still shows'
   reported: '2026-09-19'
   introduced_in: null
-  affected: 'test infrastructure only, no shipped behavior: any test that clicks the same button twice in quick succession, which is what the Config screen''s recipe save flow does'
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save clicks ``#recipe-save`` twice in a row (the first click must show the inline file_role/file_role_prefix conflict, the second must open the confirmation modal). Textual keeps a Button''s ``-active`` press effect for about 0.2 s and drops a ``Button.Pressed`` raised inside that window, so the second ``Pilot.click`` reported ``landed=True`` while the panel handler never ran: an instrumented run printed the handler entry for the first click only, with the stale inline error still in place and no modal.  Surfaced by a four-file stress loop at ``-n 4`` (the same command that reproduced the local/CI flakiness): the *pre-fix* commit e9e257d was red in 3 of 4 runs (the recipe test in 1 of them), and once the test waits for the inline error instead of a fixed ``pause()`` the failure becomes deterministic.'
-  disposition: tests/unit/test_tui_config.py::_click now waits for the ``-active`` effect to clear before clicking again — the same step tests/unit/test_tui_derived_ops.py::_click has carried since the derived-artifact dialogs — and the recipe test waits for the outcomes it expects (the inline conflict error, then the modal) instead of a single ``pilot.pause()``.  The test carries ``@pytest.mark.bug("ODR-0024")``.
-  fix_commit: 44c265e67f5c82d25ee802fda2113c54956730e5
-  fixed_in: 0.8.3
+  affected: |
+    test infrastructure only, no shipped behavior: any test that clicks the same button twice in quick
+    succession, which is what the Config screen's recipe save flow does
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
+    clicks ``#recipe-save`` twice in a row (the first click must show the inline
+    file_role/file_role_prefix conflict, the second must open the confirmation modal). Textual keeps a
+    Button's ``-active`` press effect for about 0.2 s and drops a ``Button.Pressed`` raised inside that
+    window, so the second ``Pilot.click`` reported ``landed=True`` while the panel handler never ran: an
+    instrumented run printed the handler entry for the first click only, with the stale inline error
+    still in place and no modal. Surfaced by a four-file stress loop at ``-n 4`` (the same command that
+    reproduced the local/CI flakiness): the *pre-fix* commit e9e257d was red in 3 of 4 runs (the recipe
+    test in 1 of them), and once the test waits for the inline error instead of a fixed ``pause()`` the
+    failure becomes deterministic.
+  disposition: |
+    tests/unit/test_tui_config.py::_click now waits for the ``-active`` effect to clear before clicking
+    again — the same step tests/unit/test_tui_derived_ops.py::_click has carried since the
+    derived-artifact dialogs — and the recipe test waits for the outcomes it expects (the inline
+    conflict error, then the modal) instead of a single ``pilot.pause()``. The test carries
+    ``@pytest.mark.bug("ODR-24")``.
+  fix_commit: '44c265e67f5c82d25ee802fda2113c54956730e5'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
-- id: ODR-0025
-  title: The publish workflow builds the pre-split documentation source directory
+    - tests/unit/test_tui_config.py::test_config_screen_recipe_file_role_prefix_conflict_blocks_save
+- id: ODR-25
+  title: 'The publish workflow builds the pre-split documentation source directory'
   reported: '2026-09-19'
   introduced_in: null
-  affected: the publish workflow's documentation job on any commit after the per-language documentation split; found while preparing the v0.8.3 release, before any upload (pypi-publish depends on source-distribution and wheels only, so the job is red without blocking the upload)
-  severity: low
-  component: ci
-  status: verified
-  reproduction: The release-triggered publish run for v0.8.3 (run 35427002855) failed its documentation job in 47 s.  After the split each language owns its Sphinx project, so ``docs/`` holds no conf.py and ``sphinx-build -W --keep-going -b html docs docs/_build/html`` fails; the CI workflow was updated in the split commit while the publish workflow kept the old line, and nothing asserted the workflows.
-  disposition: The publish workflow now builds docs/en and docs/zh exactly like the CI docs job, and tests/unit/test_docs_projects.py gained a guard that reads the workflow files (both the inline ``run:`` and the block form) and fails when a ``sphinx-build`` line does not name both language trees.
-  fix_commit: 604725c511c793c9c601070c20b3bf22b93738aa
-  fixed_in: 0.8.3
+  affected: |
+    the publish workflow's documentation job on any commit after the per-language documentation split;
+    found while preparing the v0.8.3 release, before any upload (pypi-publish depends on
+    source-distribution and wheels only, so the job is red without blocking the upload)
+  severity: 'low'
+  component: 'ci'
+  status: 'verified'
+  reproduction: |
+    The release-triggered publish run for v0.8.3 (run 35427002855) failed its documentation job in 47 s.
+    After the split each language owns its Sphinx project, so ``docs/`` holds no conf.py and
+    ``sphinx-build -W --keep-going -b html docs docs/_build/html`` fails; the CI workflow was updated in
+    the split commit while the publish workflow kept the old line, and nothing asserted the workflows.
+  disposition: |
+    The publish workflow now builds docs/en and docs/zh exactly like the CI docs job, and
+    tests/unit/test_docs_projects.py gained a guard that reads the workflow files (both the inline
+    ``run:`` and the block form) and fails when a ``sphinx-build`` line does not name both language
+    trees.
+  fix_commit: '604725c511c793c9c601070c20b3bf22b93738aa'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
-- id: ODR-0026
-  title: A condition's operator composes as blank when a Select could not finish mounting
+    - tests/unit/test_docs_projects.py::test_every_workflow_builds_both_language_trees
+- id: ODR-26
+  title: 'A condition''s operator composes as blank when a Select could not finish mounting'
   reported: '2026-09-19'
-  introduced_in: 0.8.3
-  affected: the classification editor's condition operators, and any Select the FittingSelect mount guard covers, when Textual's mount-time lookup fails; seen on CI only, under load
-  severity: high
-  component: tui
-  status: verified
-  reproduction: 'CI run 35434598469 (head f1fd525) failed tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end on ubuntu-latest 3.12 and 3.13: the composed document held ``{"field": "short_name", "operator": "", "value": "bHLH%"}`` where the file said ``"operator": "like"``.  Textual''s ``Select._on_mount`` calls ``_setup_options_renderables`` — which queries ``SelectOverlay`` — *before* ``_init_selected_option`` stores the value the control was built with, so the guard added for ODR-0023 deferred both steps and left ``value`` at ``NULL``, which the editor reads as an empty operator.  The same read reported whole rank maps as ``0.0``/``1.0`` because ``BestByRow`` parsed them with ``float``.'
-  disposition: 'FittingSelect adopts the value it was built with before deferring (``_adopt_value_before_overlay``) and publishes ``options_ready``, which ``ConfigPanel._form_mounting`` now requires of every Select in the form, so a reader waits instead of composing a blank operator; ``BestByRow`` parses rank values and defaults through ``actions.coerce_scalar``, keeping whole numbers whole.  Appendix (after 0.8.4, ODR-0033 round of repair): that query reads every ``FittingSelect`` in the form, and the QC rule operator — still a bare ``Select`` and therefore outside it — is now the subclass as well, which the same test below covers (see ODR-0023).'
-  fix_commit: 729fc99378fb01279b6dd87e6b9bb432261f4085
-  fixed_in: 0.8.3
+  introduced_in: '0.8.3'
+  affected: |
+    the classification editor's condition operators, and any Select the FittingSelect mount guard
+    covers, when Textual's mount-time lookup fails; seen on CI only, under load
+  severity: 'high'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    CI run 35434598469 (head f1fd525) failed
+    tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end on ubuntu-latest 3.12
+    and 3.13: the composed document held ``{"field": "short_name", "operator": "", "value": "bHLH%"}``
+    where the file said ``"operator": "like"``. Textual's ``Select._on_mount`` calls
+    ``_setup_options_renderables`` — which queries ``SelectOverlay`` — *before*
+    ``_init_selected_option`` stores the value the control was built with, so the guard added for ODR-23
+    deferred both steps and left ``value`` at ``NULL``, which the editor reads as an empty operator. The
+    same read reported whole rank maps as ``0.0``/``1.0`` because ``BestByRow`` parsed them with
+    ``float``.
+  disposition: |
+    FittingSelect adopts the value it was built with before deferring (``_adopt_value_before_overlay``)
+    and publishes ``options_ready``, which ``ConfigPanel._form_mounting`` now requires of every Select
+    in the form, so a reader waits instead of composing a blank operator; ``BestByRow`` parses rank
+    values and defaults through ``actions.coerce_scalar``, keeping whole numbers whole. Appendix (after
+    0.8.4, ODR-33 round of repair): that query reads every ``FittingSelect`` in the form, and the QC
+    rule operator — still a bare ``Select`` and therefore outside it — is now the subclass as well,
+    which the same test below covers (see ODR-23).
+  fix_commit: '729fc99378fb01279b6dd87e6b9bb432261f4085'
+  fixed_in: '0.8.3'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
-  - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_with_an_uninitialised_select
-  - tests/unit/test_tui_config.py::test_best_by_rank_map_keeps_whole_ranks_whole
-  - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
-- id: ODR-0027
-  title: Two config-screen tests read the UI a message-loop turn too early
+    - tests/unit/test_tui_config.py::test_select_whose_mount_lookup_failed_adopts_its_value
+    - tests/unit/test_tui_config.py::test_classification_save_refuses_a_form_with_an_uninitialised_select
+    - tests/unit/test_tui_config.py::test_best_by_rank_map_keeps_whole_ranks_whole
+    - tests/unit/test_tui_config.py::test_rule_operator_controls_are_guarded_and_keep_their_value
+- id: ODR-27
+  title: 'Two config-screen tests read the UI a message-loop turn too early'
   reported: '2026-09-19'
   introduced_in: null
-  affected: 'the config screen tests on a slow runner: both are green locally and on the local cross-version matrix (3.10-3.15) while CI''s ubuntu-latest 3.13 leg failed them twice, on two different commits'
-  severity: medium
-  component: tests
-  status: verified
-  reproduction: 'CI run 35437444763 (head f16d077) and run 35436469140 (head 4a116ce, second attempt) each failed ``pytest (ubuntu-latest, 3.13)`` in ``tests/unit/test_tui_config.py``.  ``test_profile_editor_scrolls_to_all_rules`` asserted ``editor.virtual_size.height > editor.scrollable_content_region.height`` and reported ``assert 46 > 46`` — the profile rows were not in the tree in the turn the test measured, so the editor had not grown past its viewport yet. ``test_config_classification_editor_end_to_end`` closed its save and asserted ``any("saved bhlh_tiers version 2" in message for _, message in _notifications(app))`` before the notification the save worker raises a turn later had arrived.  A third run failed ``test_config_classification_editor_guards_and_readonly`` on ubuntu 3.10 in the same family: the row the add-source click produces never reached the helper''s budget, because ``_await_rows`` and ``_click`` bounded themselves by a fixed number of loop cycles (60 and 10, roughly a second on an idle machine) instead of the file''s own wall-clock settle timeout, and a loaded runner needs longer to deliver the click and mount the row.'
-  disposition: 'Neither wait is a fixed number of ``pilot.pause()`` cycles any more: the scroll test waits through ``_await_form_ready`` and then for the editor''s own growth, and the notification assertions go through a new ``_await_notification`` helper.  Applied to every site of that shape in the file (six notification assertions), because the ones that happened to pass are the ones the next slow run picks.'
-  fix_commit: b2e8c9cee602e0aaa6c8c2924df838f933699af8
-  fixed_in: 0.8.4
+  affected: |
+    the config screen tests on a slow runner: both are green locally and on the local cross-version
+    matrix (3.10-3.15) while CI's ubuntu-latest 3.13 leg failed them twice, on two different commits
+  severity: 'medium'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    CI run 35437444763 (head f16d077) and run 35436469140 (head 4a116ce, second attempt) each failed
+    ``pytest (ubuntu-latest, 3.13)`` in ``tests/unit/test_tui_config.py``.
+    ``test_profile_editor_scrolls_to_all_rules`` asserted ``editor.virtual_size.height >
+    editor.scrollable_content_region.height`` and reported ``assert 46 > 46`` — the profile rows were
+    not in the tree in the turn the test measured, so the editor had not grown past its viewport yet.
+    ``test_config_classification_editor_end_to_end`` closed its save and asserted ``any("saved
+    bhlh_tiers version 2" in message for _, message in _notifications(app))`` before the notification
+    the save worker raises a turn later had arrived. A third run failed
+    ``test_config_classification_editor_guards_and_readonly`` on ubuntu 3.10 in the same family: the row
+    the add-source click produces never reached the helper's budget, because ``_await_rows`` and
+    ``_click`` bounded themselves by a fixed number of loop cycles (60 and 10, roughly a second on an
+    idle machine) instead of the file's own wall-clock settle timeout, and a loaded runner needs longer
+    to deliver the click and mount the row.
+  disposition: |
+    Neither wait is a fixed number of ``pilot.pause()`` cycles any more: the scroll test waits through
+    ``_await_form_ready`` and then for the editor's own growth, and the notification assertions go
+    through a new ``_await_notification`` helper. Applied to every site of that shape in the file (six
+    notification assertions), because the ones that happened to pass are the ones the next slow run
+    picks.
+  fix_commit: 'b2e8c9cee602e0aaa6c8c2924df838f933699af8'
+  fixed_in: '0.8.4'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
-  - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
-  - tests/unit/test_tui_config.py::test_config_classification_editor_guards_and_readonly
-- id: ODR-0028
+    - tests/unit/test_tui_config.py::test_profile_editor_scrolls_to_all_rules
+    - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
+    - tests/unit/test_tui_config.py::test_config_classification_editor_guards_and_readonly
+- id: ODR-28
   title: '`--dry-run` reports a plan that cannot execute and does not probe the configured backend'
   reported: '2026-09-20'
   introduced_in: null
-  affected: 'all releases; `analyze --dry-run` on any project whose recipe `database` is missing locally (every backend) or not deployed on the compute side (ssh/slurm with a non-empty `remote_root`), and the `tool_version` column of any dry run on a non-local backend; preconditions: a misconfigured or unprovisioned reference database, or a deployment being preflighted with `--dry-run`'
-  severity: low
-  component: tools
-  status: verified
-  reproduction: 'Reproduced on 2026-09-20 against a real OpenSSH + Slurm cluster and in an isolated `operon init-demo` project. (1) Remote reference database absent: after the pre-provisioned remote copy of the recipe database was removed, `operon analyze --analysis hmmsearch_pf00010 --entity-id ANN_000001 --backend ssh --dry-run` still printed `adoptable` with an output path, `tool_version` `not probed (backend=ssh:lihuanyu@202.117.107.236)` and `dry-run: 1 planned job(s), 0 job(s) left. no command executed`, exit 0; the same command without `--dry-run` failed with `RemoteError: remote reference database is not provisioned at /home/lizhonghu/lihuanyu/operon/project_bhlh/hmm/PF00010/PF00010.hmm`, exit 1. (2) Local database absent: in a demo project whose `blastn_nt` recipe database was `/nonexistent/nt`, `analyze --limit 1 --dry-run` printed status `planned` with exit 0, while the real run failed with `ExternalToolError: blastn_nt: reference database not found: /nonexistent/nt; edit config/tools.yaml`. Both gates are the `not dry_run` conditions around the local existence check and `executor.prepare_database()` in `plan_analysis_for_file` (`operon/tools.py`). (3) Documented promise: `docs/*/reference/cli-analysis.md` states that in a dry run `tool_version` contains the detected version, but a non-local backend always reports `not probed (backend=...)`, because the probe itself runs through the backend; the remote `database_checksum` rule is the one database check that does fire in a dry run.'
-  disposition: 'Fixed 2026-09-25, taking the record''s first option where it needs no command execution and the second where it would. `_prepare_plan_database` (operon/tools.py) runs the local reference-database existence check under `--dry-run` too, and for a remote-only run it verifies a `reference` database over the backend with the read-only provisioning stat (`prepare_database` resolves the remote path with a stat; a `mutable_cache` is created by the run itself and is still skipped). A preview therefore reports `reference database not found: <path>; edit config/tools.yaml` or `remote reference database is not provisioned at <path>` exactly like a real run, and `_cmd_analyze` returns 1 for the error row. The backend version probe is deliberately left unprobed because it would execute a command, and the promise in `docs/{en,zh}/reference/cli-analysis.md` now says so; the pitfalls in `docs/{en,zh}/guides/remote-execution.md` and `docs/{en,zh}/reference/recipe-fields.md` were rewritten to match. Two regressions: a local missing database fails the dry run with the real run''s error, and an unprovisioned remote reference raises `RemoteError` while a provisioned one still plans.'
-  fix_commit: 15e1089bd6affa4648891261d7e0c2e275b01ffb
-  fixed_in: 0.9.0
+  affected: |
+    all releases; `analyze --dry-run` on any project whose recipe `database` is missing locally (every
+    backend) or not deployed on the compute side (ssh/slurm with a non-empty `remote_root`), and the
+    `tool_version` column of any dry run on a non-local backend; preconditions: a misconfigured or
+    unprovisioned reference database, or a deployment being preflighted with `--dry-run`
+  severity: 'low'
+  component: 'tools'
+  status: 'verified'
+  reproduction: |
+    Reproduced on 2026-09-20 against a real OpenSSH + Slurm cluster and in an isolated `operon
+    init-demo` project. (1) Remote reference database absent: after the pre-provisioned remote copy of
+    the recipe database was removed, `operon analyze --analysis hmmsearch_pf00010 --entity-id ANN_000001
+    --backend ssh --dry-run` still printed `adoptable` with an output path, `tool_version` `not probed
+    (backend=ssh:lihuanyu@202.117.107.236)` and `dry-run: 1 planned job(s), 0 job(s) left. no command
+    executed`, exit 0; the same command without `--dry-run` failed with `RemoteError: remote reference
+    database is not provisioned at
+    /home/lizhonghu/lihuanyu/operon/project_bhlh/hmm/PF00010/PF00010.hmm`, exit 1. (2) Local database
+    absent: in a demo project whose `blastn_nt` recipe database was `/nonexistent/nt`, `analyze --limit
+    1 --dry-run` printed status `planned` with exit 0, while the real run failed with
+    `ExternalToolError: blastn_nt: reference database not found: /nonexistent/nt; edit
+    config/tools.yaml`. Both gates are the `not dry_run` conditions around the local existence check and
+    `executor.prepare_database()` in `plan_analysis_for_file` (`operon/tools.py`). (3) Documented
+    promise: `docs/*/reference/cli-analysis.md` states that in a dry run `tool_version` contains the
+    detected version, but a non-local backend always reports `not probed (backend=...)`, because the
+    probe itself runs through the backend; the remote `database_checksum` rule is the one database check
+    that does fire in a dry run.
+  disposition: |
+    Fixed 2026-09-25, taking the record's first option where it needs no command execution and the
+    second where it would. `_prepare_plan_database` (operon/tools.py) runs the local reference-database
+    existence check under `--dry-run` too, and for a remote-only run it verifies a `reference` database
+    over the backend with the read-only provisioning stat (`prepare_database` resolves the remote path
+    with a stat; a `mutable_cache` is created by the run itself and is still skipped). A preview
+    therefore reports `reference database not found: <path>; edit config/tools.yaml` or `remote
+    reference database is not provisioned at <path>` exactly like a real run, and `_cmd_analyze` returns
+    1 for the error row. The backend version probe is deliberately left unprobed because it would
+    execute a command, and the promise in `docs/{en,zh}/reference/cli-analysis.md` now says so; the
+    pitfalls in `docs/{en,zh}/guides/remote-execution.md` and `docs/{en,zh}/reference/recipe-fields.md`
+    were rewritten to match. Two regressions: a local missing database fails the dry run with the real
+    run's error, and an unprovisioned remote reference raises `RemoteError` while a provisioned one
+    still plans.
+  fix_commit: '15e1089bd6affa4648891261d7e0c2e275b01ffb'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_tools_execution_more.py::test_dry_run_reports_a_missing_local_database_like_the_real_run
-  - tests/unit/test_tools_execution_more.py::test_dry_run_verifies_a_remote_reference_database
-- id: ODR-0029
-  title: Run detail tests treat an empty worker set as completed screen loading
+    - tests/unit/test_tools_execution_more.py::test_dry_run_reports_a_missing_local_database_like_the_real_run
+    - tests/unit/test_tools_execution_more.py::test_dry_run_verifies_a_remote_reference_database
+- id: ODR-29
+  title: 'Run detail tests treat an empty worker set as completed screen loading'
   reported: '2026-09-20'
   introduced_in: null
-  affected: 0.8.4; run-external success and failure detail assertions before the new screen schedules its load worker, plus the run-detail read after enter on the runs table
-  severity: medium
-  component: tests
-  status: verified
-  reproduction: 'CI run 35499613546, macos-latest Python 3.13, failed test_run_external_modal_preview_run_and_detail at test_tui_writes.py:1134: marker_step was absent from loading…. A local controlled RunDetailScreen.on_mount gate reproduces screen_is_detail=true and workers=0 while _settled returns and the text is still loading; releasing the gate lets the real loader update the screen normally. Second audit round (2026-09-21) found the same shape at test_tui.py:957-963, where enter on the runs table is followed by _settled, an isinstance check and a read of #run-detail.'
-  disposition: 'Fixed.  Every read of #run-detail in the TUI tests now waits for the content it asserts instead of for the worker set.  test_tui_writes.py gained _detail_text() and _await_detail_text(), and its two run-external sites read the detail text only once the marker they assert is there; test_tui.py runs-table site does the same through its own copy of the pair.  The window is invisible to a single run, so the shape is also guarded rather than only fixed — test_no_tui_test_reads_run_detail_straight_after_settling reads the test modules for a raw assignment of _static_text(app.screen.query_one("#run-detail" …)) and fails on one, and test_run_detail_read_waits_for_the_loaded_content holds the screen load back so the old gate passes while the placeholder is still up, the way the flake fell into it.'
-  fix_commit: 8204e189737b102d9c5ac1e4195ae33623e8adcb
-  fixed_in: 0.8.5
+  affected: |
+    0.8.4; run-external success and failure detail assertions before the new screen schedules its load
+    worker, plus the run-detail read after enter on the runs table
+  severity: 'medium'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    CI run 35499613546, macos-latest Python 3.13, failed test_run_external_modal_preview_run_and_detail
+    at test_tui_writes.py:1134: marker_step was absent from loading…. A local controlled
+    RunDetailScreen.on_mount gate reproduces screen_is_detail=true and workers=0 while _settled returns
+    and the text is still loading; releasing the gate lets the real loader update the screen normally.
+    Second audit round (2026-09-21) found the same shape at test_tui.py:957-963, where enter on the runs
+    table is followed by _settled, an isinstance check and a read of #run-detail.
+  disposition: |
+    Fixed. Every read of #run-detail in the TUI tests now waits for the content it asserts instead of
+    for the worker set. test_tui_writes.py gained _detail_text() and _await_detail_text(), and its two
+    run-external sites read the detail text only once the marker they assert is there; test_tui.py
+    runs-table site does the same through its own copy of the pair. The window is invisible to a single
+    run, so the shape is also guarded rather than only fixed —
+    test_no_tui_test_reads_run_detail_straight_after_settling reads the test modules for a raw
+    assignment of _static_text(app.screen.query_one("#run-detail" …)) and fails on one, and
+    test_run_detail_read_waits_for_the_loaded_content holds the screen load back so the old gate passes
+    while the placeholder is still up, the way the flake fell into it.
+  fix_commit: '8204e189737b102d9c5ac1e4195ae33623e8adcb'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui.py::test_run_detail_read_waits_for_the_loaded_content
-  - tests/unit/test_tui.py::test_no_tui_test_reads_run_detail_straight_after_settling
-- id: ODR-0030
-  title: Old editor rows falsely satisfy readiness during a deferred form replacement
+    - tests/unit/test_tui.py::test_run_detail_read_waits_for_the_loaded_content
+    - tests/unit/test_tui.py::test_no_tui_test_reads_run_detail_straight_after_settling
+- id: ODR-30
+  title: 'Old editor rows falsely satisfy readiness during a deferred form replacement'
   reported: '2026-09-20'
   introduced_in: null
-  affected: 0.8.4; rebuilding an already populated config editor and requesting save before deferred replacement completes, or two renders arriving before the first replacement lands
-  severity: high
-  component: tui
-  status: verified
-  reproduction: On Python 3.14.4 and Textual 8.2.8, render BHLH_PROFILE with _render_profile_document and await readiness. Render the same document with a new description and first rule label CHANGED, then call _form_mounting and _start_classification_save synchronously before yielding. _form_mounting returns false and ClassificationSaveModal.document contains the new description but old labels A/U/C. After refresh the editor contains CHANGED/U/C. No save was confirmed. remount defers insertion, while MountTracked.mounts_settled clears its latch upon seeing any existing child, including old rows awaiting removal. Second audit round (2026-09-21) used reports/tui-timing-audit-2026-09-20/probe_two_selections.py and delivered two selections in one message-loop turn, the way the handler that reads the live event.list_view.index receives queued messages — both generations survive rather than mixing; 13 .rule-row widgets for a profile whose file holds 6 required + 3 warnings, _form_mounting() false, and ProfileSaveModal then composes 7 required + 6 warnings, so a confirmed save would write a duplicated profile. Two enter presses one turn apart did not reproduce it.
-  disposition: Fixed in operon/tui/screens/common.py.  MountTracked now retires the generation it is replacing before it mounts the next one and stamps each replacement with a generation token, so a replacement that is superseded while its removal is in flight drops its mount instead of adding a second generation.  mounts_settled reports false until the replacement the editor is waiting for has landed, with an _EMPTIED sentinel keeping a populated-to-empty replacement in that waiting state, and _replacing() keeps readiness false while a previous generation is still in the tree. Two selections delivered in one turn now leave one generation of rows, the readiness check reads the rows the user sees, and the save modal composes the profile file's own rules.  The regression test drives two rebuilds inside one turn and then saves, asserting one generation of rows and a document equal to the file's.
-  fix_commit: ed6e199d9cebf8e2ac86749c1c7bf3afa73eab96
-  fixed_in: 0.8.5
+  affected: |
+    0.8.4; rebuilding an already populated config editor and requesting save before deferred replacement
+    completes, or two renders arriving before the first replacement lands
+  severity: 'high'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    On Python 3.14.4 and Textual 8.2.8, render BHLH_PROFILE with _render_profile_document and await
+    readiness. Render the same document with a new description and first rule label CHANGED, then call
+    _form_mounting and _start_classification_save synchronously before yielding. _form_mounting returns
+    false and ClassificationSaveModal.document contains the new description but old labels A/U/C. After
+    refresh the editor contains CHANGED/U/C. No save was confirmed. remount defers insertion, while
+    MountTracked.mounts_settled clears its latch upon seeing any existing child, including old rows
+    awaiting removal. Second audit round (2026-09-21) used
+    reports/tui-timing-audit-2026-09-20/probe_two_selections.py and delivered two selections in one
+    message-loop turn, the way the handler that reads the live event.list_view.index receives queued
+    messages — both generations survive rather than mixing; 13 .rule-row widgets for a profile whose
+    file holds 6 required + 3 warnings, _form_mounting() false, and ProfileSaveModal then composes 7
+    required + 6 warnings, so a confirmed save would write a duplicated profile. Two enter presses one
+    turn apart did not reproduce it.
+  disposition: |
+    Fixed in operon/tui/screens/common.py. MountTracked now retires the generation it is replacing
+    before it mounts the next one and stamps each replacement with a generation token, so a replacement
+    that is superseded while its removal is in flight drops its mount instead of adding a second
+    generation. mounts_settled reports false until the replacement the editor is waiting for has landed,
+    with an _EMPTIED sentinel keeping a populated-to-empty replacement in that waiting state, and
+    _replacing() keeps readiness false while a previous generation is still in the tree. Two selections
+    delivered in one turn now leave one generation of rows, the readiness check reads the rows the user
+    sees, and the save modal composes the profile file's own rules. The regression test drives two
+    rebuilds inside one turn and then saves, asserting one generation of rows and a document equal to
+    the file's.
+  fix_commit: 'ed6e199d9cebf8e2ac86749c1c7bf3afa73eab96'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_two_editor_rebuilds_in_one_turn_leave_one_generation
-- id: ODR-0031
-  title: Detail panes apply a worker result that no longer matches the selection
+    - tests/unit/test_tui_config.py::test_two_editor_rebuilds_in_one_turn_leave_one_generation
+- id: ODR-31
+  title: 'Detail panes apply a worker result that no longer matches the selection'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 0.8.4; files and entities detail panes when two highlights arrive closer together than the first read takes
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py, the stale-detail scenario). Stub data.file_detail so the read for FIL_000002 sleeps 0.6 s, highlight FIL_000002 and one turn later FIL_000003 in the Files table, then let the app settle. The reads finish out of order (FIL_000003 at 14.983 s, FIL_000002 at 15.468 s) and the pane renders file FIL_000002 while the table highlights FIL_000003 — pane_names_highlighted false and pane_names_slow true. FilesPanel._load_detail is @work(thread=True, exclusive=True, group="file-detail"), and exclusive cancels the previous worker await rather than its thread; the thread still calls post_to_ui(self._apply_detail, payload) with no request identity, so the last payload to arrive wins. EntitiesPanel._load_detail has the same shape, as do the coverage and publish preview workers.
-  disposition: Fixed.  WorkerResults stamps every request with a key and panels hand the key to the worker result (post_to_ui(..., key=...) on the thread side, apply_from_worker(..., key=...) in the panel), so a payload that arrives after a newer request was stamped is dropped instead of rendered. A result without a key and a widget that never stamped one are both treated as current, so the mechanism is inert for workers that do not opt in.  Panel.begin_request() + is_current_result() are the two halves; FilesPanel and EntitiesPanel stamp file_id or the entity key, CoveragePanel stamps the report id, and PublishPanel stamps the release profile and the export filter tuple.
-  fix_commit: 2384e2c37a7a4ef3768113bc88de376822f91d41
-  fixed_in: 0.8.5
+  affected: |
+    0.8.4; files and entities detail panes when two highlights arrive closer together than the first
+    read takes
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py, the stale-detail
+    scenario). Stub data.file_detail so the read for FIL_000002 sleeps 0.6 s, highlight FIL_000002 and
+    one turn later FIL_000003 in the Files table, then let the app settle. The reads finish out of order
+    (FIL_000003 at 14.983 s, FIL_000002 at 15.468 s) and the pane renders file FIL_000002 while the
+    table highlights FIL_000003 — pane_names_highlighted false and pane_names_slow true.
+    FilesPanel._load_detail is @work(thread=True, exclusive=True, group="file-detail"), and exclusive
+    cancels the previous worker await rather than its thread; the thread still calls
+    post_to_ui(self._apply_detail, payload) with no request identity, so the last payload to arrive
+    wins. EntitiesPanel._load_detail has the same shape, as do the coverage and publish preview workers.
+  disposition: |
+    Fixed. WorkerResults stamps every request with a key and panels hand the key to the worker result
+    (post_to_ui(..., key=...) on the thread side, apply_from_worker(..., key=...) in the panel), so a
+    payload that arrives after a newer request was stamped is dropped instead of rendered. A result
+    without a key and a widget that never stamped one are both treated as current, so the mechanism is
+    inert for workers that do not opt in. Panel.begin_request() + is_current_result() are the two
+    halves; FilesPanel and EntitiesPanel stamp file_id or the entity key, CoveragePanel stamps the
+    report id, and PublishPanel stamps the release profile and the export filter tuple.
+  fix_commit: '2384e2c37a7a4ef3768113bc88de376822f91d41'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_screens_more.py::test_files_detail_drops_a_read_a_newer_selection_superseded
-  - tests/unit/test_tui_screens_more.py::test_entity_detail_drops_a_read_a_newer_node_superseded
-  - tests/unit/test_tui_publish.py::test_coverage_report_drops_a_read_a_newer_row_superseded
-  - tests/unit/test_tui_publish.py::test_release_preview_drops_a_read_a_newer_profile_superseded
-  - tests/unit/test_tui_publish.py::test_export_preview_drops_a_read_a_newer_filter_set_superseded
-- id: ODR-0032
-  title: A dropped initial panel render leaves the app on the splash screen
+    - tests/unit/test_tui_screens_more.py::test_files_detail_drops_a_read_a_newer_selection_superseded
+    - tests/unit/test_tui_screens_more.py::test_entity_detail_drops_a_read_a_newer_node_superseded
+    - tests/unit/test_tui_publish.py::test_coverage_report_drops_a_read_a_newer_row_superseded
+    - tests/unit/test_tui_publish.py::test_release_preview_drops_a_read_a_newer_profile_superseded
+    - tests/unit/test_tui_publish.py::test_export_preview_drops_a_read_a_newer_filter_set_superseded
+- id: ODR-32
+  title: 'A dropped initial panel render leaves the app on the splash screen'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 0.8.4; any panel whose first render is dropped by a lookup failure during startup
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py, the dropped-initial-load scenario). Make HomePanel.render_data raise NoMatches once. Panel._apply returns on its (MountError, NoMatches) guard before it latches initial_load_complete, and OperonApp._finish_startup waits for every panel to latch with no deadline, so the probe reports starting true, screen SplashScreen, splash_status "Loading Home...", home_initial_load_complete false and workers [RUNNING], and nothing changes afterwards. In a test run every _settled then times out with RUNNING; in production the panels stay unreachable and the only way out is ctrl+q. The panel-level test test_panel_drops_a_result_whose_widgets_are_gone pins the dropped result as intended for teardown, which a live render failure is indistinguishable from.
-  disposition: 'Fixed in operon/tui/screens/common.py and operon/tui/app.py.  Panel._apply still drops a result whose widgets are gone, but a dropped result no longer returns before the app is told that the panel first load is over — the initial-load state latches either way, so a live render failure is reported instead of parking the splash.  OperonApp._finish_startup stops waiting for panels that never report at all: after startup_deadline seconds it shows what did load, logs the panels that did not, pops the splash and notifies the user that r retries.  The deadline is covered by stepping the app clock (a frozen clock cannot show elapsed time), and the panel-level test parametrises both drop shapes, MountError and NoMatches.'
-  fix_commit: 7f73c472728ccfc34a7aab6f255d1051e45a2adf
-  fixed_in: 0.8.5
+  affected: '0.8.4; any panel whose first render is dropped by a lookup failure during startup'
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Controlled probe (reports/tui-timing-audit-2026-09-20/probe_lifecycle.py, the dropped-initial-load
+    scenario). Make HomePanel.render_data raise NoMatches once. Panel._apply returns on its (MountError,
+    NoMatches) guard before it latches initial_load_complete, and OperonApp._finish_startup waits for
+    every panel to latch with no deadline, so the probe reports starting true, screen SplashScreen,
+    splash_status "Loading Home...", home_initial_load_complete false and workers [RUNNING], and nothing
+    changes afterwards. In a test run every _settled then times out with RUNNING; in production the
+    panels stay unreachable and the only way out is ctrl+q. The panel-level test
+    test_panel_drops_a_result_whose_widgets_are_gone pins the dropped result as intended for teardown,
+    which a live render failure is indistinguishable from.
+  disposition: |
+    Fixed in operon/tui/screens/common.py and operon/tui/app.py. Panel._apply still drops a result whose
+    widgets are gone, but a dropped result no longer returns before the app is told that the panel first
+    load is over — the initial-load state latches either way, so a live render failure is reported
+    instead of parking the splash. OperonApp._finish_startup stops waiting for panels that never report
+    at all: after startup_deadline seconds it shows what did load, logs the panels that did not, pops
+    the splash and notifies the user that r retries. The deadline is covered by stepping the app clock
+    (a frozen clock cannot show elapsed time), and the panel-level test parametrises both drop shapes,
+    MountError and NoMatches.
+  fix_commit: '7f73c472728ccfc34a7aab6f255d1051e45a2adf'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
-  - tests/unit/test_tui.py::test_splash_leaves_after_the_startup_deadline
-  - tests/unit/test_tui_screens_more.py::test_panel_drops_a_result_whose_widgets_are_gone
-- id: ODR-0033
-  title: Environment-capture tests assert a raw path that capture redacts under $HOME
+    - tests/unit/test_tui.py::test_splash_leaves_when_a_panel_drops_its_first_render
+    - tests/unit/test_tui.py::test_splash_leaves_after_the_startup_deadline
+    - tests/unit/test_tui_screens_more.py::test_panel_drops_a_result_whose_widgets_are_gone
+- id: ODR-33
+  title: 'Environment-capture tests assert a raw path that capture redacts under $HOME'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'test infrastructure only, no shipped behavior: the three conda_prefix assertions in tests/unit/test_environment_capture.py whenever the scratch directory (TMPDIR) sits inside the home directory'
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'Cross-version matrix run on 7f73c472728ccfc34a7aab6f255d1051e45a2adf, leg Python 3.12.14, TMPDIR under the home directory (/home/hyli360/.hermes/cache/scratch/pytest-of-…): the leg reported 3 failed, 1936 passed, each failure the same shape — the capture recorded ''~/.hermes/cache/scratch/…/tool env'' while the test compared it with the raw absolute path ''/home/hyli360/.hermes/cache/scratch/…/tool env'' in assert env["conda_prefix"] == fake_conda[-1]. Capture-time redaction collapses whole-segment home prefixes (environment._redact_home), so the assertions only hold while the scratch directory is outside $HOME — which every scripted run except an unstamped matrix leg arranges. The 3.10/3.11 legs of that run and CI never saw it.'
-  disposition: Fixed in tests/unit/test_environment_capture.py. The three assertions compare against the capture's own form of the path, a new _captured() helper that applies environment._redact_home with environment._local_home() to the expected value, so they hold wherever the scratch directory lives; a run whose TMPDIR is inside $HOME is now a condition the matrix exercises instead of one it trips on. The three tests carry @pytest.mark.bug("ODR-0033").
-  fix_commit: 380f7077df7c9aa15b58f0c5ac1db32e4beb3aa2
-  fixed_in: 0.8.5
+  affected: |
+    test infrastructure only, no shipped behavior: the three conda_prefix assertions in
+    tests/unit/test_environment_capture.py whenever the scratch directory (TMPDIR) sits inside the home
+    directory
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    Cross-version matrix run on 7f73c472728ccfc34a7aab6f255d1051e45a2adf, leg Python 3.12.14, TMPDIR
+    under the home directory (/home/hyli360/.hermes/cache/scratch/pytest-of-…): the leg reported 3
+    failed, 1936 passed, each failure the same shape — the capture recorded
+    '~/.hermes/cache/scratch/…/tool env' while the test compared it with the raw absolute path
+    '/home/hyli360/.hermes/cache/scratch/…/tool env' in assert env["conda_prefix"] == fake_conda[-1].
+    Capture-time redaction collapses whole-segment home prefixes (environment._redact_home), so the
+    assertions only hold while the scratch directory is outside $HOME — which every scripted run except
+    an unstamped matrix leg arranges. The 3.10/3.11 legs of that run and CI never saw it.
+  disposition: |
+    Fixed in tests/unit/test_environment_capture.py. The three assertions compare against the capture's
+    own form of the path, a new _captured() helper that applies environment._redact_home with
+    environment._local_home() to the expected value, so they hold wherever the scratch directory lives;
+    a run whose TMPDIR is inside $HOME is now a condition the matrix exercises instead of one it trips
+    on. The three tests carry @pytest.mark.bug("ODR-33").
+  fix_commit: '380f7077df7c9aa15b58f0c5ac1db32e4beb3aa2'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_environment_capture.py::test_actual_target_environment_and_workflow_roundtrip
-  - tests/unit/test_environment_capture.py::test_slurm_probe_runs_after_setup_inside_launcher
-  - tests/unit/test_environment_capture.py::test_direct_ssh_captures_target_and_removes_raw_probe
-- id: ODR-0034
-  title: The classification editor's nesting limit is enforced by branches no caller can reach
+    - tests/unit/test_environment_capture.py::test_actual_target_environment_and_workflow_roundtrip
+    - tests/unit/test_environment_capture.py::test_slurm_probe_runs_after_setup_inside_launcher
+    - tests/unit/test_environment_capture.py::test_direct_ssh_captures_target_and_removes_raw_probe
+- id: ODR-34
+  title: 'The classification editor''s nesting limit is enforced by branches no caller can reach'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'operon/tui/screens/config_classification.py, _condition_within_depth (the depth parameter) and ConditionEditor._rebuild (the leaf fallback): the depth argument was only ever passed 0, so its two guards could not fire, and the fallback tests a document shape the panel''s classification_form_supported gate opens read-only, so no editor is ever built for it'
-  severity: low
-  component: tui
-  status: verified
-  reproduction: 'Third audit pass, coverage report of the TUI test files: the module''s 77 % line coverage included branches whose condition variables were never set. Reading the call sites showed _condition_within_depth(condition, 0) at both panel call sites and ConditionEditor._rebuild reached only through on_mount (self.original, a dict) and the mode-change handler (editor_document(), a dict that already carries the new group key) — so neither depth >= 1 nor "a group reached a leaf rebuild" could occur.'
-  expectation: The depth limit is a property of what the form can edit, so it belongs in the predicate and in the panel's read-only gate, not in a parameter no caller sets or a fallback no caller trips.
-  disposition: 'The depth parameter is gone: _condition_within_depth(condition) now returns False for a group inside a group, a not: of a group, a non-list any: group and a non-dict condition, which is exactly the set of shapes classification_form_supported refuses. The _rebuild leaf fallback stays (it is the editor''s own last line of defence against a document the gate did not filter) and now says so in a comment. Pinned by test_classification_form_refuses_what_it_cannot_represent, whose cases name every refused shape and the reason the read-only note shows.'
-  fix_commit: 0c77dab399f2d9419bd47c805a325731a0a12194
-  fixed_in: 0.8.5
+  affected: |
+    operon/tui/screens/config_classification.py, _condition_within_depth (the depth parameter) and
+    ConditionEditor._rebuild (the leaf fallback): the depth argument was only ever passed 0, so its two
+    guards could not fire, and the fallback tests a document shape the panel's
+    classification_form_supported gate opens read-only, so no editor is ever built for it
+  severity: 'low'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Third audit pass, coverage report of the TUI test files: the module's 77 % line coverage included
+    branches whose condition variables were never set. Reading the call sites showed
+    _condition_within_depth(condition, 0) at both panel call sites and ConditionEditor._rebuild reached
+    only through on_mount (self.original, a dict) and the mode-change handler (editor_document(), a dict
+    that already carries the new group key) — so neither depth >= 1 nor "a group reached a leaf rebuild"
+    could occur.
+  expectation: |
+    The depth limit is a property of what the form can edit, so it belongs in the predicate and in the
+    panel's read-only gate, not in a parameter no caller sets or a fallback no caller trips.
+  disposition: |
+    The depth parameter is gone: _condition_within_depth(condition) now returns False for a group inside
+    a group, a not: of a group, a non-list any: group and a non-dict condition, which is exactly the set
+    of shapes classification_form_supported refuses. The _rebuild leaf fallback stays (it is the
+    editor's own last line of defence against a document the gate did not filter) and now says so in a
+    comment. Pinned by test_classification_form_refuses_what_it_cannot_represent, whose cases name every
+    refused shape and the reason the read-only note shows.
+  fix_commit: '0c77dab399f2d9419bd47c805a325731a0a12194'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent
-- id: ODR-0035
-  title: The classification editor raises while a mode change replaces its body
+    - tests/unit/test_tui_config.py::test_classification_form_refuses_what_it_cannot_represent
+- id: ODR-35
+  title: 'The classification editor raises while a mode change replaces its body'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'operon/tui/screens/config_classification.py, ConditionEditor.editor_document() whenever a reader lands between MountTracked.replace_children''s remove_children() and the mount of the next generation: leaf/not mode raised NoMatches, and any: mode silently composed an empty group.  Surfaced by the new mode-switch test, which failed only in the coverage run — the slower variant of the suite.'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'Run the TUI test file with the coverage gate: test_classification_condition_editor_mode_and_nested_rows failed with "NoMatches: No nodes match ''.condition-body .condition-row'' on ConditionEditor" raised from editor_document(), while a wait polled the composition across a switch to not: mode.  The same test passed without the coverage load, so the window is one message-loop turn wide and only a reader that lands in it is hit.'
-  expectation: 'A reader must never see a half-replaced body: while the replacement is in flight the editor composes the document the rebuild was seeded from, which is the document the new body is becoming.'
-  disposition: editor_document() asks the body's own MountTracked.mounts_settled first — the readiness answer ODR-0023 introduced — and composes ConditionEditor._seeded_document, recorded by _rebuild before it replaces the body, while the rows are not there yet. Both modes now answer with the seeded condition instead of raising (leaf/not) or reporting an empty group (any:), so a save that lands in the window keeps the condition the user was editing.  Pinned by a test that hooks the body's own mount so the read happens exactly inside the window instead of when a poll happens to land there.
-  fix_commit: 6dbcd2050612aa1411220028c6a84ab3a9bf88a2
-  fixed_in: 0.8.5
+  affected: |
+    operon/tui/screens/config_classification.py, ConditionEditor.editor_document() whenever a reader
+    lands between MountTracked.replace_children's remove_children() and the mount of the next
+    generation: leaf/not mode raised NoMatches, and any: mode silently composed an empty group. Surfaced
+    by the new mode-switch test, which failed only in the coverage run — the slower variant of the
+    suite.
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Run the TUI test file with the coverage gate:
+    test_classification_condition_editor_mode_and_nested_rows failed with "NoMatches: No nodes match
+    '.condition-body .condition-row' on ConditionEditor" raised from editor_document(), while a wait
+    polled the composition across a switch to not: mode. The same test passed without the coverage load,
+    so the window is one message-loop turn wide and only a reader that lands in it is hit.
+  expectation: |
+    A reader must never see a half-replaced body: while the replacement is in flight the editor composes
+    the document the rebuild was seeded from, which is the document the new body is becoming.
+  disposition: |
+    editor_document() asks the body's own MountTracked.mounts_settled first — the readiness answer
+    ODR-23 introduced — and composes ConditionEditor._seeded_document, recorded by _rebuild before it
+    replaces the body, while the rows are not there yet. Both modes now answer with the seeded condition
+    instead of raising (leaf/not) or reporting an empty group (any:), so a save that lands in the window
+    keeps the condition the user was editing. Pinned by a test that hooks the body's own mount so the
+    read happens exactly inside the window instead of when a poll happens to land there.
+  fix_commit: '6dbcd2050612aa1411220028c6a84ab3a9bf88a2'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations
-- id: ODR-0036
-  title: A composition that lands while a nested condition row is being removed reads a row with no inputs
+    - tests/unit/test_tui_config.py::test_classification_editor_composes_while_the_body_is_between_generations
+- id: ODR-36
+  title: |
+    A composition that lands while a nested condition row is being removed reads a row with no inputs
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'operon/tui/screens/config_classification.py, ConditionEditor.editor_document() composing a ConditionRow whose inputs Textual has already pruned: the row is not out of the tree yet, and its ComposedRows.form_ready latch stays set by design, so the panel''s readiness gate cannot see the window either.  Raised NoMatches from condition_document(); a row that reads as absent would instead have been dropped silently.'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'TUI test files with the coverage gate (the loaded variant), mode-switch test: NoMatches "No nodes match ''.condition-field'' on ConditionRow(classes=''condition-row'')" raised from condition_document() while the test read the composition after pressing a nested row''s ✕.  The same read is safe without the coverage load, so the window is the turn between the row''s children being pruned and the row leaving the tree.'
-  expectation: 'A read that lands while a row is being removed skips that row: it is leaving the document, not part of it.'
-  disposition: 'editor_document() composes only rows whose .condition-field is in the tree (ConditionEditor._composable_rows) and falls back to _seeded_document when the leaf/not body has no such row, so the any: branch reports the rows that remain and the leaf branches keep the condition instead of raising.  Pinned by a test that reads every turn from the ✕ press until the row is gone.'
-  fix_commit: 021b9552e779c8632bcf7804cd72d27e6f987cf9
-  fixed_in: 0.8.5
+  affected: |
+    operon/tui/screens/config_classification.py, ConditionEditor.editor_document() composing a
+    ConditionRow whose inputs Textual has already pruned: the row is not out of the tree yet, and its
+    ComposedRows.form_ready latch stays set by design, so the panel's readiness gate cannot see the
+    window either. Raised NoMatches from condition_document(); a row that reads as absent would instead
+    have been dropped silently.
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    TUI test files with the coverage gate (the loaded variant), mode-switch test: NoMatches "No nodes
+    match '.condition-field' on ConditionRow(classes='condition-row')" raised from condition_document()
+    while the test read the composition after pressing a nested row's ✕. The same read is safe without
+    the coverage load, so the window is the turn between the row's children being pruned and the row
+    leaving the tree.
+  expectation: |
+    A read that lands while a row is being removed skips that row: it is leaving the document, not part
+    of it.
+  disposition: |
+    editor_document() composes only rows whose .condition-field is in the tree
+    (ConditionEditor._composable_rows) and falls back to _seeded_document when the leaf/not body has no
+    such row, so the any: branch reports the rows that remain and the leaf branches keep the condition
+    instead of raising. Pinned by a test that reads every turn from the ✕ press until the row is gone.
+  fix_commit: '021b9552e779c8632bcf7804cd72d27e6f987cf9'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed
-- id: ODR-0037
-  title: A shutdown test reads the grandchild pid file before the shell has written the pid
+    - tests/unit/test_tui_config.py::test_classification_editor_composes_while_a_nested_row_is_being_removed
+- id: ODR-37
+  title: 'A shutdown test reads the grandchild pid file before the shell has written the pid'
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'test infrastructure only, no shipped behavior: tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group whenever the payload''s shell has created the redirect target but not yet written the pid into it'
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'Full unit suite with the default xdist worker count, after the TUI work: ValueError: invalid literal for int() with base 10: '''' raised by int(pidfile.read_text().strip()). The payload is ``sleep 60 & echo $! > pidfile``, so the file exists as soon as the redirect opens — the test waited for the file, then read text that was still empty. The test passes on an idle machine, where the write lands before the read.'
+  affected: |
+    test infrastructure only, no shipped behavior:
+    tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
+    whenever the payload's shell has created the redirect target but not yet written the pid into it
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    Full unit suite with the default xdist worker count, after the TUI work: ValueError: invalid literal
+    for int() with base 10: '' raised by int(pidfile.read_text().strip()). The payload is ``sleep 60 &
+    echo $! > pidfile``, so the file exists as soon as the redirect opens — the test waited for the
+    file, then read text that was still empty. The test passes on an idle machine, where the write lands
+    before the read.
   expectation: 'A wait names the value the test reads: the pid, not the file that will hold it.'
-  disposition: The test asks a new _grandchild_pid() helper for the pid — polling until the content parses, with the same five-second budget — at both read sites; the pre-interrupt wait keeps its tolerance (it may proceed without a pid) while the post-run read is strict.  The test carries @pytest.mark.bug("ODR-0037").
-  fix_commit: 07b0d5cf007e317d4cac2b411526e4e0649f0709
-  fixed_in: 0.8.5
+  disposition: |
+    The test asks a new _grandchild_pid() helper for the pid — polling until the content parses, with
+    the same five-second budget — at both read sites; the pre-interrupt wait keeps its tolerance (it may
+    proceed without a pid) while the post-run read is strict. The test carries
+    @pytest.mark.bug("ODR-37").
+  fix_commit: '07b0d5cf007e317d4cac2b411526e4e0649f0709'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
-- id: ODR-0038
-  title: A Select's own on_mount runs unguarded next to the guarded override, so its mount failure reaches the app
+    - tests/unit/test_execution.py::TestShutdownCleanup::test_local_interrupt_kills_whole_process_group
+- id: ODR-38
+  title: |
+    A Select's own on_mount runs unguarded next to the guarded override, so its mount failure reaches
+    the app
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'any FittingSelect whose overlay is not composed yet when it mounts: under load the first mount lookup fails and Textual''s own Select._on_mount, dispatched beside FittingSelect._on_mount, lets the exception reach the application error boundary — run_test re-raises it at teardown, so the run fails'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'The 3.11 and 3.12 legs of the local matrix (MATRIX_JOBS=4) on 6ec3a00: textual.css.query.NoMatches: No nodes match SelectOverlay on FittingSelect(classes=condition-operator), raised through MessagePump._on_message -> _callback.invoke -> _select.py:628 in _on_mount -> _setup_options_renderables -> query_one.  Textual dispatches a handler defined in several classes of the MRO and only the subclass wrapped its call, so the base handler''s lookup escaped.  test_fitting_select_mount_without_an_overlay_does_not_crash_the_app drives it deterministically: a Select is mounted with its overlay kept out of the tree, so every retry misses as well.'
-  expectation: 'A lookup that can fail should fail in one place: the guarded path, with no traceback reaching the application error boundary and no run aborted.'
-  disposition: FittingSelect now overrides the two methods Textual's handler calls through the instance (_setup_options_renderables and _init_selected_option) and absorbs the overlay NoMatches there, so the base handler cannot raise.  Readiness can no longer be inferred from that exception, so _on_mount and the retry ask the tree instead (_overlay_present) before latching options_ready — the ODR-0023/ODR-0026 contract is unchanged for readers.
-  fix_commit: 5aa574b7ec6c68c3d61b436c6fc3768fe1773916
-  fixed_in: 0.8.5
+  affected: |
+    any FittingSelect whose overlay is not composed yet when it mounts: under load the first mount
+    lookup fails and Textual's own Select._on_mount, dispatched beside FittingSelect._on_mount, lets the
+    exception reach the application error boundary — run_test re-raises it at teardown, so the run fails
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    The 3.11 and 3.12 legs of the local matrix (MATRIX_JOBS=4) on 6ec3a00: textual.css.query.NoMatches:
+    No nodes match SelectOverlay on FittingSelect(classes=condition-operator), raised through
+    MessagePump._on_message -> _callback.invoke -> _select.py:628 in _on_mount ->
+    _setup_options_renderables -> query_one. Textual dispatches a handler defined in several classes of
+    the MRO and only the subclass wrapped its call, so the base handler's lookup escaped.
+    test_fitting_select_mount_without_an_overlay_does_not_crash_the_app drives it deterministically: a
+    Select is mounted with its overlay kept out of the tree, so every retry misses as well.
+  expectation: |
+    A lookup that can fail should fail in one place: the guarded path, with no traceback reaching the
+    application error boundary and no run aborted.
+  disposition: |
+    FittingSelect now overrides the two methods Textual's handler calls through the instance
+    (_setup_options_renderables and _init_selected_option) and absorbs the overlay NoMatches there, so
+    the base handler cannot raise. Readiness can no longer be inferred from that exception, so _on_mount
+    and the retry ask the tree instead (_overlay_present) before latching options_ready — the
+    ODR-23/ODR-26 contract is unchanged for readers.
+  fix_commit: '5aa574b7ec6c68c3d61b436c6fc3768fe1773916'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui.py::test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
-- id: ODR-0039
-  title: An exhausted Select mount retry leaves options_ready False for good, and the form gate then waits forever
+    - tests/unit/test_tui.py::test_fitting_select_mount_without_an_overlay_does_not_crash_the_app
+- id: ODR-39
+  title: |
+    An exhausted Select mount retry leaves options_ready False for good, and the form gate then waits
+    forever
   reported: '2026-09-21'
   introduced_in: null
-  affected: 'a FittingSelect whose overlay lookup misses on more than _mount_retry_limit refreshes (50): options_ready stays False, so ConfigPanel._form_mounting keeps reporting True — the form never becomes readable or saveable and every save is answered with "the form is still loading — save again in a moment", which never becomes true'
-  severity: low
-  component: tui
-  status: verified
-  reproduction: Registered from code reading after the matrix runs; the state is driven deterministically in test_fitting_select_reports_a_mount_that_ran_out_of_retries (a Select mounted with its overlay kept out of the tree, so all 50 retries miss) and the message in test_blocked_save_names_a_control_that_never_finished_loading. 50 consecutive missed refreshes have not been observed in the field.
-  expectation: 'A guard that gives up should say so: a warning naming the control, and a readiness signal a reader can distinguish from "still coming" — so the refused save can tell the user to reload instead of to wait.'
-  disposition: FittingSelect gains options_gave_up (a second signal beside options_ready) and logs one warning naming the control when the retry budget runs out.  ConfigPanel answers a blocked save through _blocked_save_message, which names the stalled controls and points at a profile reload once any of them gave up, and keeps the still-loading wording otherwise.
-  fix_commit: 7ceccc5788ed67b1827f62124958b7f2c91c787b
-  fixed_in: 0.8.5
+  affected: |
+    a FittingSelect whose overlay lookup misses on more than _mount_retry_limit refreshes (50):
+    options_ready stays False, so ConfigPanel._form_mounting keeps reporting True — the form never
+    becomes readable or saveable and every save is answered with "the form is still loading — save again
+    in a moment", which never becomes true
+  severity: 'low'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Registered from code reading after the matrix runs; the state is driven deterministically in
+    test_fitting_select_reports_a_mount_that_ran_out_of_retries (a Select mounted with its overlay kept
+    out of the tree, so all 50 retries miss) and the message in
+    test_blocked_save_names_a_control_that_never_finished_loading. 50 consecutive missed refreshes have
+    not been observed in the field.
+  expectation: |
+    A guard that gives up should say so: a warning naming the control, and a readiness signal a reader
+    can distinguish from "still coming" — so the refused save can tell the user to reload instead of to
+    wait.
+  disposition: |
+    FittingSelect gains options_gave_up (a second signal beside options_ready) and logs one warning
+    naming the control when the retry budget runs out. ConfigPanel answers a blocked save through
+    _blocked_save_message, which names the stalled controls and points at a profile reload once any of
+    them gave up, and keeps the still-loading wording otherwise.
+  fix_commit: '7ceccc5788ed67b1827f62124958b7f2c91c787b'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
-  - tests/unit/test_tui_config.py::test_blocked_save_names_a_control_that_never_finished_loading
-- id: ODR-0040
-  title: Alignment sequence_qc.tsv and the shared write_tsv emit cells beginning with spreadsheet formula triggers verbatim, so a FASTA header or metadata value starting with = + - @ executes as a formula when a report TSV is opened in Excel
+    - tests/unit/test_tui.py::test_fitting_select_reports_a_mount_that_ran_out_of_retries
+    - tests/unit/test_tui_config.py::test_blocked_save_names_a_control_that_never_finished_loading
+- id: ODR-40
+  title: |
+    Alignment sequence_qc.tsv and the shared write_tsv emit cells beginning with spreadsheet formula
+    triggers verbatim, so a FASTA header or metadata value starting with = + - @ executes as a formula
+    when a report TSV is opened in Excel
   reported: '2026-09-23'
   introduced_in: null
-  affected: 'All released versions: any project whose alignment FASTA headers or imported metadata free text begin with =, +, -, @ (also TAB/CR). sequence_qc.tsv writes the raw FASTA header in safe_id; write_tsv (releases, exports, reports, timetree candidates) writes string cells verbatim.'
-  severity: low
-  component: qc
-  status: verified
-  reproduction: compute_alignment_qc stores the FASTA header verbatim in safe_id (operon/qc/alignment.py and the Cython twin operon/qc/_alignment.pyx) and _render_sequence_qc writes it unescaped, so a header like '=1+1' lands in sequence_qc.tsv as a formula cell; write_tsv string cells (operon/schema.py) have the same shape. Confirmed by the 2026-09-23 security audit of the Codacy defusedcsv findings.
-  disposition: 'Escape formula triggers on write: a text cell whose first character is one of = + - @ TAB CR is prefixed with an apostrophe (the standard spreadsheet text escape) in both compute_alignment_qc backends (keeping byte parity) and in schema.write_tsv. Non-string values pass through untouched, so numeric columns keep their exact bytes. The taxonomy reference-set writer is intentionally unchanged (its bytes are hashed for provenance). Round-trip safety: the only in-tree re-ingester of write_tsv output, release-scope coverage, consumes generated identity/join columns (ids, sha256, size_bytes) that can never begin with a trigger character, and provenance hashes are computed over the escaped bytes at write time; no operon import path feeds write_tsv output back into the database.'
-  fix_commit: 220cd0256ba09782b3188509b2a80bfc81bb229c
-  fixed_in: 0.9.0
+  affected: |
+    All released versions: any project whose alignment FASTA headers or imported metadata free text
+    begin with =, +, -, @ (also TAB/CR). sequence_qc.tsv writes the raw FASTA header in safe_id;
+    write_tsv (releases, exports, reports, timetree candidates) writes string cells verbatim.
+  severity: 'low'
+  component: 'qc'
+  status: 'verified'
+  reproduction: |
+    compute_alignment_qc stores the FASTA header verbatim in safe_id (operon/qc/alignment.py and the
+    Cython twin operon/qc/_alignment.pyx) and _render_sequence_qc writes it unescaped, so a header like
+    '=1+1' lands in sequence_qc.tsv as a formula cell; write_tsv string cells (operon/schema.py) have
+    the same shape. Confirmed by the 2026-09-23 security audit of the Codacy defusedcsv findings.
+  disposition: |
+    Escape formula triggers on write: a text cell whose first character is one of = + - @ TAB CR is
+    prefixed with an apostrophe (the standard spreadsheet text escape) in both compute_alignment_qc
+    backends (keeping byte parity) and in schema.write_tsv. Non-string values pass through untouched, so
+    numeric columns keep their exact bytes. The taxonomy reference-set writer is intentionally unchanged
+    (its bytes are hashed for provenance). Round-trip safety: the only in-tree re-ingester of write_tsv
+    output, release-scope coverage, consumes generated identity/join columns (ids, sha256, size_bytes)
+    that can never begin with a trigger character, and provenance hashes are computed over the escaped
+    bytes at write time; no operon import path feeds write_tsv output back into the database.
+  fix_commit: '220cd0256ba09782b3188509b2a80bfc81bb229c'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv
-  - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_match_across_backends
-  - tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells
-- id: ODR-0041
-  title: Config screen History button gates on the QC-only profile field, so a classification profile's history is unreachable or shows the wrong profile
+    - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv
+    - tests/unit/test_alignment_qc.py::test_formula_trigger_headers_match_across_backends
+    - tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells
+- id: ODR-41
+  title: |
+    Config screen History button gates on the QC-only profile field, so a classification profile's
+    history is unreachable or shows the wrong profile
   reported: '2026-09-24'
   introduced_in: null
-  affected: 0.8.5; the Config screen's *History* button for sequence_classification profiles (operon/tui/screens/config.py `_open_profile_history`). Selecting a classification profile leaves `current_profile` None or holding the previously selected qc profile name, so the button either does nothing or opens the qc profile's snapshot history. No test ever clicked `#classification-history`.
-  severity: low
-  component: tui
-  status: verified
-  reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23: `_open_profile_history` (operon/tui/screens/config.py:1354-1355) disables the History action unless `self.current_profile` is set, but that field is only maintained by the qc editor path; the classification editor never updates it. A grep of the test tree shows `#profile-history` exercised but `#classification-history` never clicked, so the gate failure went unnoticed.'
-  disposition: 'Fixed in operon/tui/screens/config.py: `_open_profile_history()` resolves the profile name through the new `_active_profile_name()`, which answers with the classification editor''s own name while that editor is on display and with `current_profile` otherwise, so History opens the snapshot history of the profile the user is actually editing. Pinned by tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile, which clicks `#classification-history` from a fresh screen (no qc profile ever selected) and asserts the modal title names the classification profile — and that a stale qc selection does not leak into it.'
-  fix_commit: 1362854dd13e4c3656eb7a3ee6b5c8480a7b5cbe
-  fixed_in: 0.8.5
+  affected: |
+    0.8.5; the Config screen's *History* button for sequence_classification profiles
+    (operon/tui/screens/config.py `_open_profile_history`). Selecting a classification profile leaves
+    `current_profile` None or holding the previously selected qc profile name, so the button either does
+    nothing or opens the qc profile's snapshot history. No test ever clicked `#classification-history`.
+  severity: 'low'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Confirmed by code reading during M4 planning on 2026-09-23: `_open_profile_history`
+    (operon/tui/screens/config.py:1354-1355) disables the History action unless `self.current_profile`
+    is set, but that field is only maintained by the qc editor path; the classification editor never
+    updates it. A grep of the test tree shows `#profile-history` exercised but `#classification-history`
+    never clicked, so the gate failure went unnoticed.
+  disposition: |
+    Fixed in operon/tui/screens/config.py: `_open_profile_history()` resolves the profile name through
+    the new `_active_profile_name()`, which answers with the classification editor's own name while that
+    editor is on display and with `current_profile` otherwise, so History opens the snapshot history of
+    the profile the user is actually editing. Pinned by
+    tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile,
+    which clicks `#classification-history` from a fresh screen (no qc profile ever selected) and asserts
+    the modal title names the classification profile — and that a stale qc selection does not leak into
+    it.
+  fix_commit: '1362854dd13e4c3656eb7a3ee6b5c8480a7b5cbe'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile
-- id: ODR-0042
-  title: run-pipeline does not support sftp:// or remote:// sources for its ingest stage
+    - tests/unit/test_tui_config.py::test_config_screen_classification_history_opens_the_selected_profile
+- id: ODR-42
+  title: 'run-pipeline does not support sftp:// or remote:// sources for its ingest stage'
   reported: '2026-09-24'
   introduced_in: null
-  affected: all releases with run-pipeline; `operon run-pipeline --source sftp://...` (or remote://) treats the URL as a local path and fails, while the standalone `operon ingest` accepts the same URL
-  severity: low
-  component: cli
-  status: verified
-  reproduction: 'Confirmed by code reading during M4 planning on 2026-09-23: `_cmd_ingest` (operon/cli.py:1120-1140) wraps `ingest_file` with a `fetch_url_to_temp` pre-fetch for sources starting with sftp:// or remote://, but `_cmd_run_pipeline` (operon/cli.py:2126-2158) passes `args.source` straight to `ingest_file`, bypassing that wrapper, so a remote URL reaches the local file probe and fails.'
-  disposition: 'Fixed 2026-09-25: `run_pipeline` (operon/pipeline.py, the shared core behind the CLI and the TUI modal) now pre-fetches sources starting with sftp:// or remote:// through `remotes.fetch_url_to_temp`, passes the temporary path to `ingest_file` with `source_url` recording the original URL, and removes the temporary copy in a `finally` block -- the same path `_cmd_ingest` has taken. Because the fix sits in the shared core, the TUI pipeline modal (whose source field already documents the URL forms) inherits it without a TUI-side branch, so CLI and TUI stay at parity.'
-  fix_commit: 81f00f8231ec592d6e7d24ba1687a654a96aa330
-  fixed_in: 0.9.0
+  affected: |
+    all releases with run-pipeline; `operon run-pipeline --source sftp://...` (or remote://) treats the
+    URL as a local path and fails, while the standalone `operon ingest` accepts the same URL
+  severity: 'low'
+  component: 'cli'
+  status: 'verified'
+  reproduction: |
+    Confirmed by code reading during M4 planning on 2026-09-23: `_cmd_ingest` (operon/cli.py:1120-1140)
+    wraps `ingest_file` with a `fetch_url_to_temp` pre-fetch for sources starting with sftp:// or
+    remote://, but `_cmd_run_pipeline` (operon/cli.py:2126-2158) passes `args.source` straight to
+    `ingest_file`, bypassing that wrapper, so a remote URL reaches the local file probe and fails.
+  disposition: |
+    Fixed 2026-09-25: `run_pipeline` (operon/pipeline.py, the shared core behind the CLI and the TUI
+    modal) now pre-fetches sources starting with sftp:// or remote:// through
+    `remotes.fetch_url_to_temp`, passes the temporary path to `ingest_file` with `source_url` recording
+    the original URL, and removes the temporary copy in a `finally` block -- the same path `_cmd_ingest`
+    has taken. Because the fix sits in the shared core, the TUI pipeline modal (whose source field
+    already documents the URL forms) inherits it without a TUI-side branch, so CLI and TUI stay at
+    parity.
+  fix_commit: '81f00f8231ec592d6e7d24ba1687a654a96aa330'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_pipeline.py::test_run_pipeline_fetches_remote_sources_like_ingest
-- id: ODR-0043
-  title: Real Cancel clicks dismissed WriteModal subclasses during a run (MRO double dispatch)
+    - tests/unit/test_pipeline.py::test_run_pipeline_fetches_remote_sources_like_ingest
+- id: ODR-43
+  title: 'Real Cancel clicks dismissed WriteModal subclasses during a run (MRO double dispatch)'
   reported: '2026-09-24'
   introduced_in: null
-  affected: 'QcModal (screens/files_ops.py), AnalyzeModal (screens/analyze.py), RunExternalModal (screens/run_external.py), TaxonomyImportModal and CompileReferenceSetModal (screens/taxonomy.py): clicking the Cancel button while a run was in flight invoked the subclass handler and then WriteModal.on_button_pressed, dismissing the modal underneath the running worker; the cancelled/summary notification and result payload were lost'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'Confirmed by code reading against Textual 8.2.8 on 2026-09-24. MessagePump._get_dispatch_methods walks the whole MRO and yields every on_button_pressed definition, and only Message._no_default_action (set by prevent_default) breaks the walk. The five cancel-while-running branches returned without prevent_default, so the base WriteModal handler dismissed the modal right after the refusal or worker.cancel ran. The existing refuse-cancel tests called the handlers directly and never went through the message pump, so they stayed green while a real pilot click on #cancel dismissed the modal (the NcbiDatasetsModal comment describes the hazard).'
-  disposition: Each cancel-while-running branch now calls event.prevent_default() first, stopping the MRO walk before WriteModal.on_button_pressed (the NcbiDatasetsModal pattern). Regression tests dispatch a real Button.Pressed via Button.press() while a stubbed action blocks, and assert the modal stays open and the run still completes.
-  fix_commit: c349718530be2c2b9679cd8aa6f1e8f49b0b183c
-  fixed_in: 0.8.5
+  affected: |
+    QcModal (screens/files_ops.py), AnalyzeModal (screens/analyze.py), RunExternalModal
+    (screens/run_external.py), TaxonomyImportModal and CompileReferenceSetModal (screens/taxonomy.py):
+    clicking the Cancel button while a run was in flight invoked the subclass handler and then
+    WriteModal.on_button_pressed, dismissing the modal underneath the running worker; the
+    cancelled/summary notification and result payload were lost
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Confirmed by code reading against Textual 8.2.8 on 2026-09-24. MessagePump._get_dispatch_methods
+    walks the whole MRO and yields every on_button_pressed definition, and only
+    Message._no_default_action (set by prevent_default) breaks the walk. The five cancel-while-running
+    branches returned without prevent_default, so the base WriteModal handler dismissed the modal right
+    after the refusal or worker.cancel ran. The existing refuse-cancel tests called the handlers
+    directly and never went through the message pump, so they stayed green while a real pilot click on
+    #cancel dismissed the modal (the NcbiDatasetsModal comment describes the hazard).
+  disposition: |
+    Each cancel-while-running branch now calls event.prevent_default() first, stopping the MRO walk
+    before WriteModal.on_button_pressed (the NcbiDatasetsModal pattern). Regression tests dispatch a
+    real Button.Pressed via Button.press() while a stubbed action blocks, and assert the modal stays
+    open and the run still completes.
+  fix_commit: 'c349718530be2c2b9679cd8aa6f1e8f49b0b183c'
+  fixed_in: '0.8.5'
   regression_tests:
-  - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
-- id: ODR-0044
-  title: write_tsv delegated cell quoting to the csv module, whose CR/LF rule changed in CPython 3.11, so identical rows serialized to different bytes on 3.10 and the byte-level ODR-0040 regression test failed every 3.10 job
+    - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
+- id: ODR-44
+  title: |
+    write_tsv delegated cell quoting to the csv module, whose CR/LF rule changed in CPython 3.11, so
+    identical rows serialized to different bytes on 3.10 and the byte-level ODR-40 regression test
+    failed every 3.10 job
   reported: '2026-09-24'
   introduced_in: null
-  affected: 'Python 3.10 in practice, every write_tsv consumer (release and export manifests, report TSVs, timetree candidate tables): a cell containing CR or LF was written unquoted, so the same project produced interpreter-dependent artifact bytes — files a CSV reader rejects with "new-line character seen in unquoted field" — while the ODR-0040 test pinned the 3.11+ quoted form'
-  severity: low
-  component: export
-  status: verified
-  reproduction: on 3.10 csv.writer(delimiter="\t", lineterminator="\n") writes the cell chr(13)+"6" unquoted, while 3.11+ quotes it; the 3.10 matrix row failed the tab_cr byte assertion of tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells with the same diff CI reported for pytest (ubuntu-latest, 3.10) and pytest (macos-latest, 3.10) in run 35877895464
-  disposition: 'write_tsv now quotes its own cells instead of delegating to csv: a cell containing TAB, CR, LF or the quote character is wrapped in double quotes with inner quotes doubled, everything else is written verbatim. Output is byte-identical to the previous 3.11+ bytes and now identical on 3.10-3.15, so hashed artifacts (release manifests, export provenance) no longer depend on the interpreter. Formula-trigger escaping (ODR-0040) is unchanged; the alignment reporter keeps csv (its CRLF lineterminator already makes its quoting version-stable) and the taxonomy reference-set writer stays frozen by decision.'
-  fix_commit: 8cc64cf9377beea6b4d694c22de680813147cb5a
-  fixed_in: 0.9.0
+  affected: |
+    Python 3.10 in practice, every write_tsv consumer (release and export manifests, report TSVs,
+    timetree candidate tables): a cell containing CR or LF was written unquoted, so the same project
+    produced interpreter-dependent artifact bytes — files a CSV reader rejects with "new-line character
+    seen in unquoted field" — while the ODR-40 test pinned the 3.11+ quoted form
+  severity: 'low'
+  component: 'export'
+  status: 'verified'
+  reproduction: |
+    on 3.10 csv.writer(delimiter="\t", lineterminator="\n") writes the cell chr(13)+"6" unquoted, while
+    3.11+ quotes it; the 3.10 matrix row failed the tab_cr byte assertion of
+    tests/unit/test_rules_schema_edges.py::test_write_tsv_escapes_formula_trigger_cells with the same
+    diff CI reported for pytest (ubuntu-latest, 3.10) and pytest (macos-latest, 3.10) in run 35877895464
+  disposition: |
+    write_tsv now quotes its own cells instead of delegating to csv: a cell containing TAB, CR, LF or
+    the quote character is wrapped in double quotes with inner quotes doubled, everything else is
+    written verbatim. Output is byte-identical to the previous 3.11+ bytes and now identical on
+    3.10-3.15, so hashed artifacts (release manifests, export provenance) no longer depend on the
+    interpreter. Formula-trigger escaping (ODR-40) is unchanged; the alignment reporter keeps csv (its
+    CRLF lineterminator already makes its quoting version-stable) and the taxonomy reference-set writer
+    stays frozen by decision.
+  fix_commit: '8cc64cf9377beea6b4d694c22de680813147cb5a'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_rules_schema_edges.py::test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter
-- id: ODR-0045
-  title: A panel load that finished after a newer one overwrote it, so a filter typed while an earlier read was still running could come back with the rows it removed (macOS/Python 3.15 CI, where the entity filter never latched)
+    - tests/unit/test_rules_schema_edges.py::test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter
+- id: ODR-45
+  title: |
+    A panel load that finished after a newer one overwrote it, so a filter typed while an earlier read
+    was still running could come back with the rows it removed (macOS/Python 3.15 CI, where the entity
+    filter never latched)
   reported: '2026-09-24'
   introduced_in: null
-  affected: 'Every Panel read: reload() started a worker thread without cancelling the thread already inside a read, and the payload carried no identity, so the rendered answer was whichever read happened to finish last. Seen in CI as tests/unit/test_tui_screens_more.py::test_decisions_profile_filter_survives_new_profiles timing out on "entity filter applied" (pytest (macos-latest, 3.15)), and reproduced deterministically by holding an unfiltered read at a gate until a filtered one has been rendered.'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: 'hold the earlier read: patch operon.tui.data.list_decisions so one call blocks on a threading.Event after it has read its rows, call panel.reload(), set an entity id in #decisions-filter so a second, fast read renders the filtered rows, then release the gate. Before the fix the held payload lands last and the table shows every row again (the assertion expecting a single filtered entity id sees six rows), which is the CI timeout.'
-  disposition: 'reload() stamps a monotonic generation on the UI thread and passes it into the worker; post_to_ui hands it to _apply_load, which drops a payload whose generation is no longer the newest load of that panel. The newest load always lands, so the initial-load latch still completes on every path. FilesPanel''s detail-pane read and PublishPanel''s release preview keep their own begin_request key: the load generation is a separate slot on purpose.'
-  fix_commit: dcf0be922ee914e1caa8f807cc9705100ed3ac2f
-  fixed_in: 0.9.0
+  affected: |
+    Every Panel read: reload() started a worker thread without cancelling the thread already inside a
+    read, and the payload carried no identity, so the rendered answer was whichever read happened to
+    finish last. Seen in CI as
+    tests/unit/test_tui_screens_more.py::test_decisions_profile_filter_survives_new_profiles timing out
+    on "entity filter applied" (pytest (macos-latest, 3.15)), and reproduced deterministically by
+    holding an unfiltered read at a gate until a filtered one has been rendered.
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    hold the earlier read: patch operon.tui.data.list_decisions so one call blocks on a threading.Event
+    after it has read its rows, call panel.reload(), set an entity id in #decisions-filter so a second,
+    fast read renders the filtered rows, then release the gate. Before the fix the held payload lands
+    last and the table shows every row again (the assertion expecting a single filtered entity id sees
+    six rows), which is the CI timeout.
+  disposition: |
+    reload() stamps a monotonic generation on the UI thread and passes it into the worker; post_to_ui
+    hands it to _apply_load, which drops a payload whose generation is no longer the newest load of that
+    panel. The newest load always lands, so the initial-load latch still completes on every path.
+    FilesPanel's detail-pane read and PublishPanel's release preview keep their own begin_request key:
+    the load generation is a separate slot on purpose.
+  fix_commit: 'dcf0be922ee914e1caa8f807cc9705100ed3ac2f'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_tui_screens_more.py::test_stale_load_does_not_restore_rows_a_newer_filter_removed
-- id: ODR-0046
-  title: The Cancel-click regression tests of ODR-0043 press Cancel before the run starts, and can hang the wait - a busy machine turns into a red suite with no product fault behind it
-  reported: 2026-09-24
+    - tests/unit/test_tui_screens_more.py::test_stale_load_does_not_restore_rows_a_newer_filter_removed
+- id: ODR-46
+  title: |
+    The Cancel-click regression tests of ODR-43 press Cancel before the run starts, and can hang the
+    wait - a busy machine turns into a red suite with no product fault behind it
+  reported: '2026-09-24'
   introduced_in: null
-  affected: 'The cancel-while-running tests of five TUI test modules (tests/unit/test_tui_writes.py,
-
+  affected: |
+    The cancel-while-running tests of five TUI test modules (tests/unit/test_tui_writes.py,
     tests/unit/test_tui_analyze.py, tests/unit/test_tui_taxonomy.py,
-
-    tests/unit/test_tui_table_import.py, tests/unit/test_tui_screens_more.py): twelve
-
-    waits for a worker result crossing back to the UI, plus the stub holds that gate
-
-    them, all measured by wall-clock budgets.  Observed on 2026-09-24: on master under
-
-    load (1 failed, 2086 passed); on the merged branch in a 3.10-3.15 matrix wave where a
-
-    two-version run failed it on 3.13, 3.14 and 3.15 (1 failed / 2173 passed each);
-
-    and twice on 3.15 alone at -n 8 (1 failed / 2173 passed), where the wait burned a
-
-    raised 120 s budget to the second.  Python 3.15 is the most sensitive version.
-
-    '
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'Run the full suite (python -m pytest, the project default addopts) on a busy machine,
-
-    or two versions at once through scripts/run-test-matrix.sh: the failure is
-
-    test_qc_modal_real_cancel_click_stays_open_while_running timing out on "qc modal
-
-    dismissal" (tests/unit/test_tui_writes.py) after the stubbed run was released.  It
-
-    passes alone, with -n0 and with --dist loadfile, so the trigger is scheduling
-
-    pressure, not the distribution mode by itself.
-
-    '
-  root_cause: 'These tests pressed Cancel immediately after Confirm, and asked the UI to be running
-
-    already through a flag set synchronously in the same call - so the click could land
-
-    before the worker''s task took its first step.  Textual cancels a worker by cancelling
-
-    that task, and a task cancelled before its first step never runs the threaded body at
-
-    all: nothing executes, nothing posts a result, and the modal can never dismiss.  A
-
-    30-line probe on 3.15 shows it directly (state RUNNING, is_cancelled True, body ran
-
-    False, no thread left); the modal then waits forever, which is why a raised budget
-
-    only delayed the failure.  A human cannot hit the window (the worker starts on the
-
-    loop''s next tick), but a test clicking Confirm and Cancel in the same tick can.
-
-    '
-  disposition: 'Fixed test-side, without touching the product: every cancel test now waits for a
-
-    `started` event that the stub sets right before it blocks, so Cancel always cancels
-
-    a run that is provably running.  The waits that span a worker->UI handoff got their
-
-    own HANDOFF_TIMEOUT of 120 s with the scenario cap raised to 180 s (a loaded runner
-
-    really did hold a result for 33 s in the same session), so a slow machine no longer
-
-    reddens them while a genuine hang still fails at the harder wall.
-
-    '
-  fix_commit: ab54dc49ded903d6a5c5ac2248bf8e3e74ce92ad
-  fixed_in: 0.9.0
+    tests/unit/test_tui_table_import.py, tests/unit/test_tui_screens_more.py): twelve waits for a worker
+    result crossing back to the UI, plus the stub holds that gate them, all measured by wall-clock
+    budgets. Observed on 2026-09-24: on master under load (1 failed, 2086 passed); on the merged branch
+    in a 3.10-3.15 matrix wave where a two-version run failed it on 3.13, 3.14 and 3.15 (1 failed / 2173
+    passed each); and twice on 3.15 alone at -n 8 (1 failed / 2173 passed), where the wait burned a
+    raised 120 s budget to the second. Python 3.15 is the most sensitive version.
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    Run the full suite (python -m pytest, the project default addopts) on a busy machine, or two
+    versions at once through scripts/run-test-matrix.sh: the failure is
+    test_qc_modal_real_cancel_click_stays_open_while_running timing out on "qc modal dismissal"
+    (tests/unit/test_tui_writes.py) after the stubbed run was released. It passes alone, with -n0 and
+    with --dist loadfile, so the trigger is scheduling pressure, not the distribution mode by itself.
+  root_cause: |
+    These tests pressed Cancel immediately after Confirm, and asked the UI to be running already through
+    a flag set synchronously in the same call - so the click could land before the worker's task took
+    its first step. Textual cancels a worker by cancelling that task, and a task cancelled before its
+    first step never runs the threaded body at all: nothing executes, nothing posts a result, and the
+    modal can never dismiss. A 30-line probe on 3.15 shows it directly (state RUNNING, is_cancelled
+    True, body ran False, no thread left); the modal then waits forever, which is why a raised budget
+    only delayed the failure. A human cannot hit the window (the worker starts on the loop's next tick),
+    but a test clicking Confirm and Cancel in the same tick can.
+  disposition: |
+    Fixed test-side, without touching the product: every cancel test now waits for a `started` event
+    that the stub sets right before it blocks, so Cancel always cancels a run that is provably running.
+    The waits that span a worker->UI handoff got their own HANDOFF_TIMEOUT of 120 s with the scenario
+    cap raised to 180 s (a loaded runner really did hold a result for 33 s in the same session), so a
+    slow machine no longer reddens them while a genuine hang still fails at the harder wall.
+  fix_commit: 'ab54dc49ded903d6a5c5ac2248bf8e3e74ce92ad'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
-  - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
-- id: ODR-0047
-  title: A TUI modal Confirm runs its action twice when the subclass delegates to super() unguarded
+    - tests/unit/test_tui_writes.py::test_qc_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_writes.py::test_run_external_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_analyze.py::test_analyze_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_taxonomy.py::test_import_modal_real_cancel_click_stays_open_while_running
+    - tests/unit/test_tui_taxonomy.py::test_compile_modal_real_cancel_click_stays_open_while_running
+- id: ODR-47
+  title: 'A TUI modal Confirm runs its action twice when the subclass delegates to super() unguarded'
   reported: '2026-09-24'
   introduced_in: null
-  affected: 'Ten handlers in eight screens — operon/tui/screens/analyze.py (AnalyzeModal), derived_ops.py (AdoptModal, FanoutModal), entities.py (AddRecordModal), files_ops.py (QcModal — the tenth site, found by the source-level guard test added with this fix), run_external.py, table_import.py, taxonomy.py (taxonomy import and reference-set compilation) and ncbi_datasets.py. Every Confirm click there runs its write action twice: two audit rows and two workflow runs, two adopted files, or two executions of the external command behind the run-external dialog. Measured twice: on the import-qc dialog this session (one click, two import-qc runs in workflow_runs before the guard, one after it) and by reverting the AddRecordModal guard, where the new regression reports one Confirm click running actions.add_record 2 times.'
-  severity: medium
-  component: tui
-  status: verified
-  reproduction: Textual dispatches a button message to every class in the MRO that defines on_button_pressed, and these handlers also call super().on_button_pressed. The base WriteModal handler therefore runs twice per click — once through the explicit super() call, once through the dispatch — and with it self.confirm(). Reproduce by counting action invocations or run rows around a single Confirm click on any of the ten dialogs; an idempotent action hides the duplicate from every render assertion.
-  disposition: 'Registered with the ODR-0048 and ODR-0049 round on 2026-09-24. The fix is one event.prevent_default() on each delegating path, the same guard the tree already carries for the ODR-0043 cancel branch, plus two regressions: a source-level scan over operon/tui/screens that fails any handler reaching super().on_button_pressed(event) without the guard above it, and an end-to-end count on the add-record dialog. The scan immediately found the tenth site (QcModal), which a file-by-file audit had missed.'
-  fix_commit: 5f083cbbaff90bee017b2dc7039f695ba2df4067
-  fixed_in: 0.9.0
+  affected: |
+    Ten handlers in eight screens — operon/tui/screens/analyze.py (AnalyzeModal), derived_ops.py
+    (AdoptModal, FanoutModal), entities.py (AddRecordModal), files_ops.py (QcModal — the tenth site,
+    found by the source-level guard test added with this fix), run_external.py, table_import.py,
+    taxonomy.py (taxonomy import and reference-set compilation) and ncbi_datasets.py. Every Confirm
+    click there runs its write action twice: two audit rows and two workflow runs, two adopted files, or
+    two executions of the external command behind the run-external dialog. Measured twice: on the
+    import-qc dialog this session (one click, two import-qc runs in workflow_runs before the guard, one
+    after it) and by reverting the AddRecordModal guard, where the new regression reports one Confirm
+    click running actions.add_record 2 times.
+  severity: 'medium'
+  component: 'tui'
+  status: 'verified'
+  reproduction: |
+    Textual dispatches a button message to every class in the MRO that defines on_button_pressed, and
+    these handlers also call super().on_button_pressed. The base WriteModal handler therefore runs twice
+    per click — once through the explicit super() call, once through the dispatch — and with it
+    self.confirm(). Reproduce by counting action invocations or run rows around a single Confirm click
+    on any of the ten dialogs; an idempotent action hides the duplicate from every render assertion.
+  disposition: |
+    Registered with the ODR-48 and ODR-49 round on 2026-09-24. The fix is one event.prevent_default() on
+    each delegating path, the same guard the tree already carries for the ODR-43 cancel branch, plus two
+    regressions: a source-level scan over operon/tui/screens that fails any handler reaching
+    super().on_button_pressed(event) without the guard above it, and an end-to-end count on the
+    add-record dialog. The scan immediately found the tenth site (QcModal), which a file-by-file audit
+    had missed.
+  fix_commit: '5f083cbbaff90bee017b2dc7039f695ba2df4067'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_tui_button_dispatch.py::test_every_delegating_button_handler_guards_the_mro_dispatch
-  - tests/unit/test_tui_writes.py::test_add_record_confirm_runs_the_action_once
-- id: ODR-0048
-  title: The no-backend secret tests assume a Linux host and go red on every macOS leg
+    - tests/unit/test_tui_button_dispatch.py::test_every_delegating_button_handler_guards_the_mro_dispatch
+    - tests/unit/test_tui_writes.py::test_add_record_confirm_runs_the_action_once
+- id: ODR-48
+  title: 'The no-backend secret tests assume a Linux host and go red on every macOS leg'
   reported: '2026-09-24'
   introduced_in: null
-  affected: Four tests that assert a machine with no usable secret backend — tests/unit/test_secrets.py::test_backend_order_and_detection, ::test_no_backend_is_an_actionable_error, ::test_secret_status_without_backend, and tests/unit/test_config_cli.py::test_config_secret_list_without_a_backend. Observed on 2026-09-24 on the pushed master (a7cdd44), CI run 36002523976 — all four macOS legs red, 8 failed / 2166 passed each, every ubuntu leg green.
-  severity: low
-  component: tests
-  status: verified
-  reproduction: 'Run the four tests on a Darwin host, or read the probe — MacKeychainBackend.available() asks sys.platform and /usr/bin/security, never PATH, so the scratch fixture''s PATH strip (PATH is set to an empty bin directory) still leaves "keychain: available" on a macOS runner. The four assertions then read active_backend(...) as the keychain instead of None, require_backend() stops raising, and the CLI prints "active backend: keychain" where the test expects "none available".'
-  disposition: 'Registered on the maintainer instruction of 2026-09-24 so the macOS red shares the ODR-0047 round, and fixed in that round. The scratch fixture now pins the third probe (MacKeychainBackend.binary pointed at a path that does not exist) beside the PATH strip that already pins the other two, and the config-cli test that needs the same premise pins it inline. The regression reproduces the Darwin state on any host — platform darwin plus a Path whose /usr/bin/security exists — and fails with active_backend() returning the MacKeychainBackend when the pin is reverted, the same assertion every macOS leg produced. test_mac_keychain_round_trip moved from scratch to tmp_path: it drives the real binary string and must not inherit the no-backend pin.'
-  fix_commit: 378f3cf23bb40c8f9a0f8e5a0205e3b5e9a8c7ef
-  fixed_in: 0.9.0
+  affected: |
+    Four tests that assert a machine with no usable secret backend —
+    tests/unit/test_secrets.py::test_backend_order_and_detection,
+    ::test_no_backend_is_an_actionable_error, ::test_secret_status_without_backend, and
+    tests/unit/test_config_cli.py::test_config_secret_list_without_a_backend. Observed on 2026-09-24 on
+    the pushed master (a7cdd44), CI run 36002523976 — all four macOS legs red, 8 failed / 2166 passed
+    each, every ubuntu leg green.
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    Run the four tests on a Darwin host, or read the probe — MacKeychainBackend.available() asks
+    sys.platform and /usr/bin/security, never PATH, so the scratch fixture's PATH strip (PATH is set to
+    an empty bin directory) still leaves "keychain: available" on a macOS runner. The four assertions
+    then read active_backend(...) as the keychain instead of None, require_backend() stops raising, and
+    the CLI prints "active backend: keychain" where the test expects "none available".
+  disposition: |
+    Registered on the maintainer instruction of 2026-09-24 so the macOS red shares the ODR-47 round, and
+    fixed in that round. The scratch fixture now pins the third probe (MacKeychainBackend.binary pointed
+    at a path that does not exist) beside the PATH strip that already pins the other two, and the
+    config-cli test that needs the same premise pins it inline. The regression reproduces the Darwin
+    state on any host — platform darwin plus a Path whose /usr/bin/security exists — and fails with
+    active_backend() returning the MacKeychainBackend when the pin is reverted, the same assertion every
+    macOS leg produced. test_mac_keychain_round_trip moved from scratch to tmp_path: it drives the real
+    binary string and must not inherit the no-backend pin.
+  fix_commit: '378f3cf23bb40c8f9a0f8e5a0205e3b5e9a8c7ef'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_secrets.py::test_no_backend_premise_holds_where_the_keychain_exists
-- id: ODR-0049
-  title: The fake secret backends hard-code Linux tool paths and die on macOS
+    - tests/unit/test_secrets.py::test_no_backend_premise_holds_where_the_keychain_exists
+- id: ODR-49
+  title: 'The fake secret backends hard-code Linux tool paths and die on macOS'
   reported: '2026-09-24'
   introduced_in: null
-  affected: Four tests that drive the fake secret-tool — test_secret_tool_round_trip, test_store_read_resolve_through_helpers, test_resolve_precedence_flag_then_environment_then_backend and test_secret_status_reports_without_values in tests/unit/test_secrets.py. Same CI run as ODR-0048 (36002523976); each macOS leg reports SecretError "secret-tool failed" with the stub line naming /usr/bin/mkdir and No such file or directory.
-  severity: low
-  component: tests
-  status: verified
-  reproduction: Run the four tests on a macOS host, or read SECRET_TOOL_FAKE — the stub creates its state directory through /usr/bin/mkdir, prints through /usr/bin/cat and removes through /usr/bin/rm. macOS keeps mkdir, cat and rm in /bin, so the stub dies at its first store call and every assertion sees SecretError instead of a value. SYSTEMD_CREDS_FAKE carries the same shape around /usr/bin/base64, which does exist on macOS and hid the pattern.
-  disposition: Registered with ODR-0048 on 2026-09-24 and fixed in the same round. Both stubs are now Python scripts whose shebang is the absolute sys.executable of the interpreter running the suite, so they reach no system tool at all and inherit PATH from nothing. Two regressions pin the shape — one scans the stub text for absolute /usr/bin or /bin tool paths (five offending lines in the pre-fix constants), one asserts the written stubs start with an absolute shebang and carry no placeholder.
-  fix_commit: cf4477e437b7c16da1c85c8354a1c365e481823a
-  fixed_in: 0.9.0
+  affected: |
+    Four tests that drive the fake secret-tool — test_secret_tool_round_trip,
+    test_store_read_resolve_through_helpers, test_resolve_precedence_flag_then_environment_then_backend
+    and test_secret_status_reports_without_values in tests/unit/test_secrets.py. Same CI run as ODR-48
+    (36002523976); each macOS leg reports SecretError "secret-tool failed" with the stub line naming
+    /usr/bin/mkdir and No such file or directory.
+  severity: 'low'
+  component: 'tests'
+  status: 'verified'
+  reproduction: |
+    Run the four tests on a macOS host, or read SECRET_TOOL_FAKE — the stub creates its state directory
+    through /usr/bin/mkdir, prints through /usr/bin/cat and removes through /usr/bin/rm. macOS keeps
+    mkdir, cat and rm in /bin, so the stub dies at its first store call and every assertion sees
+    SecretError instead of a value. SYSTEMD_CREDS_FAKE carries the same shape around /usr/bin/base64,
+    which does exist on macOS and hid the pattern.
+  disposition: |
+    Registered with ODR-48 on 2026-09-24 and fixed in the same round. Both stubs are now Python scripts
+    whose shebang is the absolute sys.executable of the interpreter running the suite, so they reach no
+    system tool at all and inherit PATH from nothing. Two regressions pin the shape — one scans the stub
+    text for absolute /usr/bin or /bin tool paths (five offending lines in the pre-fix constants), one
+    asserts the written stubs start with an absolute shebang and carry no placeholder.
+  fix_commit: 'cf4477e437b7c16da1c85c8354a1c365e481823a'
+  fixed_in: '0.9.0'
   regression_tests:
-  - tests/unit/test_secrets.py::test_the_fake_backends_call_no_absolute_system_tool
-  - tests/unit/test_secrets.py::test_fake_backends_are_pinned_to_this_interpreter
-- id: ODR-0050
-  title: A Select value assigned while its label composes raises NoMatches out of the assignment
+    - tests/unit/test_secrets.py::test_the_fake_backends_call_no_absolute_system_tool
+    - tests/unit/test_secrets.py::test_fake_backends_are_pinned_to_this_interpreter
+- id: ODR-50
+  title: 'A Select value assigned while its label composes raises NoMatches out of the assignment'
   reported: '2026-09-26'
   introduced_in: null
-  affected: 'One job of the test workflow for feat/m5-storage-admin (commit d994c3c, run 36253650213): the macos-latest / 3.10 leg failed tests/unit/test_tui_config.py::test_classification_save_of_an_unchanged_document_keeps_the_version with textual.css.query.NoMatches: No nodes match ''#label'' on SelectCurrent(classes=''-has-value''). The other five macOS legs, all six ubuntu legs, the local suite and the local 3.10-3.15 matrix were green, which places it in the mount-timing family of ODR-0023 / ODR-0026 / ODR-0038 / ODR-0039 rather than in interpreter sensitivity.'
-  severity: low
-  component: tui
-  status: fixed
-  reproduction: 'Run the pinning test, or open the classification editor so a rule row carrying a `source` is mounted. Textual stores the value in `Select._watch_value` and only then looks up the `SelectCurrent` label to paint the collapsed control, so a row whose `on_mount` assigns `value` while that subtree is still composing gets NoMatches out of the assignment and dies with it. The macOS 3.10 log carries the path: ClassificationRuleRow.on_mount (config_classification.py:551) -> Select._watch_value -> SelectCurrent.update -> query_one("#label") raising at textual/dom.py:1505.'
-  disposition: 'Registered and fixed in the same round. `FittingSelect`, the control these rows already use, now overrides `_watch_value`: the stored value is kept and Textual paint is retried a refresh at a time until the label is in the tree, bounded by the class existing retry budget and reported by name when it runs out, in the shape ODR-0039 established. Textual posts `Changed` only after a successful paint, so a retried paint still reports the value exactly once. A sweep of the TUI found this to be the only Select assignment inside an `on_mount`; the others run from render/load handlers against controls composed with their panel, and the plain Selects of the import wizard and the filter bars keep that distance too. Two regressions pin the fix: one removes the label from a mounted control and asserts the assignment survives and the retry paints it, one pins the give-up warning.'
-  fix_commit: e959c70937f70489fb1e36b20e66d7f6679981fb
+  affected: |
+    One job of the test workflow for feat/m5-storage-admin (commit d994c3c, run 36253650213): the
+    macos-latest / 3.10 leg failed
+    tests/unit/test_tui_config.py::test_classification_save_of_an_unchanged_document_keeps_the_version
+    with textual.css.query.NoMatches: No nodes match '#label' on SelectCurrent(classes='-has-value').
+    The other five macOS legs, all six ubuntu legs, the local suite and the local 3.10-3.15 matrix were
+    green, which places it in the mount-timing family of ODR-23 / ODR-26 / ODR-38 / ODR-39 rather than
+    in interpreter sensitivity.
+  severity: 'low'
+  component: 'tui'
+  status: 'fixed'
+  reproduction: |
+    Run the pinning test, or open the classification editor so a rule row carrying a `source` is
+    mounted. Textual stores the value in `Select._watch_value` and only then looks up the
+    `SelectCurrent` label to paint the collapsed control, so a row whose `on_mount` assigns `value`
+    while that subtree is still composing gets NoMatches out of the assignment and dies with it. The
+    macOS 3.10 log carries the path: ClassificationRuleRow.on_mount (config_classification.py:551) ->
+    Select._watch_value -> SelectCurrent.update -> query_one("#label") raising at textual/dom.py:1505.
+  disposition: |
+    Registered and fixed in the same round. `FittingSelect`, the control these rows already use, now
+    overrides `_watch_value`: the stored value is kept and Textual paint is retried a refresh at a time
+    until the label is in the tree, bounded by the class existing retry budget and reported by name when
+    it runs out, in the shape ODR-39 established. Textual posts `Changed` only after a successful paint,
+    so a retried paint still reports the value exactly once. A sweep of the TUI found this to be the
+    only Select assignment inside an `on_mount`; the others run from render/load handlers against
+    controls composed with their panel, and the plain Selects of the import wizard and the filter bars
+    keep that distance too. Two regressions pin the fix: one removes the label from a mounted control
+    and asserts the assignment survives and the retry paints it, one pins the give-up warning.
+  fix_commit: 'e959c70937f70489fb1e36b20e66d7f6679981fb'
   fixed_in: null
   regression_tests:
-  - tests/unit/test_tui_config.py::test_fitting_select_survives_a_paint_whose_label_has_not_composed
-  - tests/unit/test_tui_common_guard.py::test_fitting_select_paint_gives_up_by_name
-- id: ODR-0051
-  title: A TUI test read the notification list before the queued notification was delivered
+    - tests/unit/test_tui_config.py::test_fitting_select_survives_a_paint_whose_label_has_not_composed
+    - tests/unit/test_tui_common_guard.py::test_fitting_select_paint_gives_up_by_name
+- id: ODR-51
+  title: 'A TUI test read the notification list before the queued notification was delivered'
   reported: '2026-09-27'
   introduced_in: null
-  affected: 'The local 3.10-3.15 matrix on feat/m5-storage-admin (commit c22378f): the Python 3.15 leg failed tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure while 3.10-3.14 stayed green, and the earlier run of the same legs was green on all six. The failing assertion is ''assert "error" in severities'' with severities == [] right after the results table and the status line had already shown the finished push.'
-  severity: low
-  component: tui
-  status: fixed
-  reproduction: 'Drive PushModal through the Remotes screen, confirm a push in which one file fails, wait for the two result rows, then read app._notifications immediately: Textual''s App.notify queues a Notify message, so the list is only appended when the message loop gets to it, one or more turns after the worker callback that updated the table and the status line. Reading the list in the same turn therefore sees it empty, and how many turns the loop needs depends on the interpreter and the load of the runner.'
-  disposition: Registered and fixed in the same round as an instance of the ODR-0027 family (a TUI test asserting on state that a worker delivers a message-loop turn later). The test module now has the predicate wait tests/unit/test_tui_remotes.py::_await_notification and the three sites that read app._notifications directly - the connectivity-check test, the failed-push test and the refuse-to-close-while-running test - all wait for the notification they assert with it, so the class is fixed and not just the reported site. The three tests carry @pytest.mark.bug("ODR-0051").
-  fix_commit: 46c850fff390b4147aae38a02c3af06a98721667
+  affected: |
+    The local 3.10-3.15 matrix on feat/m5-storage-admin (commit c22378f): the Python 3.15 leg failed
+    tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure while
+    3.10-3.14 stayed green, and the earlier run of the same legs was green on all six. The failing
+    assertion is 'assert "error" in severities' with severities == [] right after the results table and
+    the status line had already shown the finished push.
+  severity: 'low'
+  component: 'tui'
+  status: 'fixed'
+  reproduction: |
+    Drive PushModal through the Remotes screen, confirm a push in which one file fails, wait for the two
+    result rows, then read app._notifications immediately: Textual's App.notify queues a Notify message,
+    so the list is only appended when the message loop gets to it, one or more turns after the worker
+    callback that updated the table and the status line. Reading the list in the same turn therefore
+    sees it empty, and how many turns the loop needs depends on the interpreter and the load of the
+    runner.
+  disposition: |
+    Registered and fixed in the same round as an instance of the ODR-27 family (a TUI test asserting on
+    state that a worker delivers a message-loop turn later). The test module now has the predicate wait
+    tests/unit/test_tui_remotes.py::_await_notification and the three sites that read app._notifications
+    directly - the connectivity-check test, the failed-push test and the refuse-to-close-while-running
+    test - all wait for the notification they assert with it, so the class is fixed and not just the
+    reported site. The three tests carry @pytest.mark.bug("ODR-51").
+  fix_commit: '46c850fff390b4147aae38a02c3af06a98721667'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure

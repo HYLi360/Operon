@@ -50,23 +50,37 @@ def project_db(project):
 
 
 def _organism(db: Database, organism_id: str = "ORG_000001") -> None:
-    db.insert_row("organisms", {"organism_id": organism_id, "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": organism_id, "scientific_name": "Example"}
+    )
 
 
 def _graph(db: Database) -> None:
     _organism(db)
     db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
     db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
-    db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"})
-    db.insert_row("annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    db.insert_row(
+        "annotations", {"annotation_id": "ANN_000001", "assembly_id": "ASM_000001"}
+    )
 
 
 def _member(relative_path: str, sha: str) -> dict:
     return {
-        "file_id": "FIL_000001", "entity_type": "organism", "entity_id": "ORG_000001",
-        "file_role": "other", "format": "other", "compression": "none",
-        "relative_path": relative_path, "source_url": None, "size_bytes": 1,
-        "sha256": sha, "status": "CHECKSUM_VERIFIED", "effective_decision": "PASS",
+        "file_id": "FIL_000001",
+        "entity_type": "organism",
+        "entity_id": "ORG_000001",
+        "file_role": "other",
+        "format": "other",
+        "compression": "none",
+        "relative_path": relative_path,
+        "source_url": None,
+        "size_bytes": 1,
+        "sha256": sha,
+        "status": "CHECKSUM_VERIFIED",
+        "effective_decision": "PASS",
     }
 
 
@@ -99,11 +113,15 @@ class _Prompt:
 
 
 def _fake_questionary(monkeypatch, *, select=None, confirm=None) -> None:
-    monkeypatch.setitem(sys.modules, "questionary", SimpleNamespace(
-        Choice=lambda label, value: (label, value),
-        select=lambda *_a, **_k: _Prompt(select),
-        confirm=lambda *_a, **_k: _Prompt(confirm),
-    ))
+    monkeypatch.setitem(
+        sys.modules,
+        "questionary",
+        SimpleNamespace(
+            Choice=lambda label, value: (label, value),
+            select=lambda *_a, **_k: _Prompt(select),
+            confirm=lambda *_a, **_k: _Prompt(confirm),
+        ),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -117,11 +135,24 @@ def test_set_state_cli_audits_transition_and_rejects_illegal(project, capsys):
     db.close()
     root = str(project.root)
 
-    assert main([
-        "--project", root, "set-state", "--entity-type", "organism",
-        "--entity-id", "ORG_000001", "--state", "METADATA_VALIDATED",
-        "--message", "manually validated",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "set-state",
+                "--entity-type",
+                "organism",
+                "--entity-id",
+                "ORG_000001",
+                "--state",
+                "METADATA_VALIDATED",
+                "--message",
+                "manually validated",
+            ]
+        )
+        == 0
+    )
     assert "organism ORG_000001 -> METADATA_VALIDATED" in capsys.readouterr().out
 
     db = Database(project.db_path)
@@ -137,25 +168,54 @@ def test_set_state_cli_audits_transition_and_rejects_illegal(project, capsys):
             "WHERE object_type='entity_state' AND object_id='organism:ORG_000001'"
         )[0]
         assert (change["field"], change["old_value"], change["new_value"]) == (
-            "state", None, "METADATA_VALIDATED")
+            "state",
+            None,
+            "METADATA_VALIDATED",
+        )
         assert change["reason"] == "manually validated"
     finally:
         db.close()
 
     # METADATA_VALIDATED -> RELEASED is not a declared transition.
-    assert main([
-        "--project", root, "set-state", "--entity-type", "organism",
-        "--entity-id", "ORG_000001", "--state", "RELEASED",
-    ]) == 2
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "set-state",
+                "--entity-type",
+                "organism",
+                "--entity-id",
+                "ORG_000001",
+                "--state",
+                "RELEASED",
+            ]
+        )
+        == 2
+    )
     error = capsys.readouterr().err
     assert "illegal transition METADATA_VALIDATED -> RELEASED" in error
     assert "--force" in error
 
-    assert main([
-        "--project", root, "set-state", "--entity-type", "organism",
-        "--entity-id", "ORG_000001", "--state", "RELEASED", "--force",
-        "--message", "curator override",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "set-state",
+                "--entity-type",
+                "organism",
+                "--entity-id",
+                "ORG_000001",
+                "--state",
+                "RELEASED",
+                "--force",
+                "--message",
+                "curator override",
+            ]
+        )
+        == 0
+    )
     db = Database(project.db_path)
     try:
         assert db.get_entity_state("organism", "ORG_000001") == "RELEASED"
@@ -171,10 +231,23 @@ def test_set_state_cli_audits_transition_and_rejects_illegal(project, capsys):
 def test_add_warns_about_fields_the_schema_does_not_know(project, capsys):
     root = str(project.root)
     # The CLI warns about the unknown field and then refuses to store it.
-    assert main([
-        "--project", root, "add", "organism", "--id", "ORG_000001",
-        "--field", "scientific_name=Example", "--field", "mystery_field=1",
-    ]) == 2
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "add",
+                "organism",
+                "--id",
+                "ORG_000001",
+                "--field",
+                "scientific_name=Example",
+                "--field",
+                "mystery_field=1",
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert "warning: unknown field 'mystery_field'" in captured.err
     assert "add it to" in captured.err
@@ -201,9 +274,19 @@ def test_ncbi_reconcile_cli_reports_dry_run(project, monkeypatch, capsys):
         "operon.ncbi_reconcile.apply_ncbi_reconciliation",
         lambda _db, _project, actor=None: {"applied": 1, "actor": actor},
     )
-    assert main([
-        "--project", str(project.root), "ncbi-reconcile", "--apply", "--actor", "tester",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "ncbi-reconcile",
+                "--apply",
+                "--actor",
+                "tester",
+            ]
+        )
+        == 0
+    )
     captured = capsys.readouterr()
     assert '"applied": 1' in captured.out
     assert "dry-run" not in captured.err
@@ -213,8 +296,12 @@ def test_environment_summary_ignores_corrupt_documents(project, capsys):
     db = Database(project.db_path)
     try:
         with db.transaction():
-            db.record_environment({"system": {"os": "Linux"}, "capture_status": "complete"})
-            db.record_environment({"system": {"os": "Darwin"}, "capture_status": "complete"})
+            db.record_environment(
+                {"system": {"os": "Linux"}, "capture_status": "complete"}
+            )
+            db.record_environment(
+                {"system": {"os": "Darwin"}, "capture_status": "complete"}
+            )
         rows = db.query(
             "SELECT environment_id FROM execution_environments ORDER BY environment_id"
         )
@@ -257,25 +344,41 @@ def test_unknown_subcommands_raise_validation_errors(project_db, capsys):
 # --------------------------------------------------------------------------- #
 
 
-def test_qc_command_reports_progress_failures_and_siblings(project_db, monkeypatch, capsys):
+def test_qc_command_reports_progress_failures_and_siblings(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
     results = [
         {
-            "file_id": "FIL_1", "ok": False, "error": "bad bytes",
-            "file_qc_state": "QC_FAILED", "entity_qc_state": "QC_FAILED",
+            "file_id": "FIL_1",
+            "ok": False,
+            "error": "bad bytes",
+            "file_qc_state": "QC_FAILED",
+            "entity_qc_state": "QC_FAILED",
             "file_statuses": [
                 {"file_id": "FIL_1", "file_role": "reads_r1", "qc_state": "QC_FAILED"},
-                {"file_id": "FIL_9", "file_role": "reads_r2", "qc_state": "QC_COMPLETE"},
+                {
+                    "file_id": "FIL_9",
+                    "file_role": "reads_r2",
+                    "qc_state": "QC_COMPLETE",
+                },
             ],
         },
         {
-            "file_id": "FIL_2", "ok": False, "skipped": True, "error": "REMOTE_ONLY",
-            "file_qc_state": "QC_UNKNOWN", "entity_qc_state": "QC_UNKNOWN",
+            "file_id": "FIL_2",
+            "ok": False,
+            "skipped": True,
+            "error": "REMOTE_ONLY",
+            "file_qc_state": "QC_UNKNOWN",
+            "entity_qc_state": "QC_UNKNOWN",
             "file_statuses": [],
         },
         {
-            "file_id": "FIL_3", "ok": True, "file_qc_state": "QC_COMPLETE",
-            "entity_qc_state": "QC_COMPLETE", "file_statuses": [],
+            "file_id": "FIL_3",
+            "ok": True,
+            "file_qc_state": "QC_COMPLETE",
+            "entity_qc_state": "QC_COMPLETE",
+            "file_statuses": [],
         },
     ]
 
@@ -287,8 +390,12 @@ def test_qc_command_reports_progress_failures_and_siblings(project_db, monkeypat
 
     monkeypatch.setattr("operon.qc.qc_all", fake_qc_all)
     args = SimpleNamespace(
-        entity_type=None, entity_id=None, file_id=None, sample_size=None,
-        phred_offset=None, rehash=False,
+        entity_type=None,
+        entity_id=None,
+        file_id=None,
+        sample_size=None,
+        phred_offset=None,
+        rehash=False,
     )
     assert cli._cmd_qc(args, project, db) == 1
     captured = capsys.readouterr()
@@ -296,36 +403,71 @@ def test_qc_command_reports_progress_failures_and_siblings(project_db, monkeypat
     assert "[2/3] FIL_2: SKIPPED (REMOTE_ONLY)" in captured.out
     assert "[3/3] FIL_3: OK" in captured.out
     assert "FIL_9 (reads_r2): QC_COMPLETE" in captured.out
-    assert "FIL_1 (reads_r1): QC_FAILED" not in captured.out  # own file is not a sibling
+    assert (
+        "FIL_1 (reads_r1): QC_FAILED" not in captured.out
+    )  # own file is not a sibling
     assert "FIL_1: FAILED bad bytes" in captured.err
     assert "FIL_2: SKIPPED REMOTE_ONLY" in captured.err
-    assert "QC complete: 1/3 file(s) passed built-in stages, 1 skipped (REMOTE_ONLY)" in captured.out
+    assert (
+        "QC complete: 1/3 file(s) passed built-in stages, 1 skipped (REMOTE_ONLY)"
+        in captured.out
+    )
 
 
-def test_qc_command_fails_when_only_requested_file_was_skipped(project_db, monkeypatch, capsys):
+def test_qc_command_fails_when_only_requested_file_was_skipped(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
-    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [{
-        "file_id": "FIL_1", "ok": False, "skipped": True, "error": "REMOTE_ONLY",
-        "file_qc_state": "QC_UNKNOWN", "entity_qc_state": "QC_UNKNOWN", "file_statuses": [],
-    }])
+    monkeypatch.setattr(
+        "operon.qc.qc_all",
+        lambda *_a, **_k: [
+            {
+                "file_id": "FIL_1",
+                "ok": False,
+                "skipped": True,
+                "error": "REMOTE_ONLY",
+                "file_qc_state": "QC_UNKNOWN",
+                "entity_qc_state": "QC_UNKNOWN",
+                "file_statuses": [],
+            }
+        ],
+    )
     args = SimpleNamespace(
-        entity_type=None, entity_id=None, file_id="FIL_1", sample_size=None,
-        phred_offset=None, rehash=False,
+        entity_type=None,
+        entity_id=None,
+        file_id="FIL_1",
+        sample_size=None,
+        phred_offset=None,
+        rehash=False,
     )
     assert cli._cmd_qc(args, project, db) == 1
     captured = capsys.readouterr()
     assert "error: requested file FIL_1 was skipped: REMOTE_ONLY" in captured.err
 
 
-def test_qc_command_reports_failed_entity_state_without_failed_files(project_db, monkeypatch):
+def test_qc_command_reports_failed_entity_state_without_failed_files(
+    project_db, monkeypatch
+):
     project, db = project_db
-    monkeypatch.setattr("operon.qc.qc_all", lambda *_a, **_k: [{
-        "file_id": "FIL_1", "ok": True, "file_qc_state": "QC_COMPLETE",
-        "entity_qc_state": "QC_FAILED", "file_statuses": [],
-    }])
+    monkeypatch.setattr(
+        "operon.qc.qc_all",
+        lambda *_a, **_k: [
+            {
+                "file_id": "FIL_1",
+                "ok": True,
+                "file_qc_state": "QC_COMPLETE",
+                "entity_qc_state": "QC_FAILED",
+                "file_statuses": [],
+            }
+        ],
+    )
     args = SimpleNamespace(
-        entity_type=None, entity_id=None, file_id=None, sample_size=None,
-        phred_offset=None, rehash=False,
+        entity_type=None,
+        entity_id=None,
+        file_id=None,
+        sample_size=None,
+        phred_offset=None,
+        rehash=False,
     )
     assert cli._cmd_qc(args, project, db) == 1
 
@@ -335,7 +477,9 @@ def test_qc_command_reports_failed_entity_state_without_failed_files(project_db,
 # --------------------------------------------------------------------------- #
 
 
-def test_evaluate_cli_warns_and_confirms_curated_reevaluation(project, monkeypatch, capsys):
+def test_evaluate_cli_warns_and_confirms_curated_reevaluation(
+    project, monkeypatch, capsys
+):
     # Keep a handle on the captured stream: replacing sys.stdout below must not
     # hide the text the CLI prints.
     captured_stdout = sys.stdout
@@ -343,20 +487,39 @@ def test_evaluate_cli_warns_and_confirms_curated_reevaluation(project, monkeypat
     profile = project.config["qc"]["default_profile"]
     try:
         _graph(db)
-        db.insert_qc_result({
-            "entity_type": "assembly", "entity_id": "ASM_000001", "file_id": None,
-            "file_sha256": None, "input_identity": "entity:assembly:ASM_000001",
-            "qc_stage": "external", "metric_name": "score", "metric_value": "1",
-            "metric_numeric": 1.0, "metric_unit": None, "tool": "tool",
-            "tool_version": "1", "parameter_set": "external",
-            "evaluated_at": "2026-01-01T00:00:00+00:00",
-        })
-        db.upsert_decision({
-            "entity_type": "assembly", "entity_id": "ASM_000001", "profile": profile,
-            "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
-            "curated_reason": "checked", "reason_codes": "[]", "observed": "{}",
-            "thresholds": "{}", "evaluated_at": "2026-01-01T00:00:00+00:00",
-        })
+        db.insert_qc_result(
+            {
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "file_id": None,
+                "file_sha256": None,
+                "input_identity": "entity:assembly:ASM_000001",
+                "qc_stage": "external",
+                "metric_name": "score",
+                "metric_value": "1",
+                "metric_numeric": 1.0,
+                "metric_unit": None,
+                "tool": "tool",
+                "tool_version": "1",
+                "parameter_set": "external",
+                "evaluated_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+        db.upsert_decision(
+            {
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "profile": profile,
+                "decision": "PASS",
+                "curated_decision": "PASS",
+                "curated_by": "reviewer",
+                "curated_reason": "checked",
+                "reason_codes": "[]",
+                "observed": "{}",
+                "thresholds": "{}",
+                "evaluated_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
     finally:
         db.close()
 
@@ -364,8 +527,13 @@ def test_evaluate_cli_warns_and_confirms_curated_reevaluation(project, monkeypat
     real_evaluate_all = cli.evaluate_all
     monkeypatch.setattr(cli.sys, "stdin", _TTY(False))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(False))
-    monkeypatch.setattr(cli, "evaluate_all", lambda *_a: pytest.fail("evaluated without confirmation"))
-    assert main(["--project", str(project.root), "evaluate", "--entity-type", "assembly"]) == 2
+    monkeypatch.setattr(
+        cli, "evaluate_all", lambda *_a: pytest.fail("evaluated without confirmation")
+    )
+    assert (
+        main(["--project", str(project.root), "evaluate", "--entity-type", "assembly"])
+        == 2
+    )
     assert "pass --yes to confirm" in capsys.readouterr().err
 
     # Interactive decline: prints the cancellation notice and exits 0.
@@ -373,16 +541,29 @@ def test_evaluate_cli_warns_and_confirms_curated_reevaluation(project, monkeypat
     tty_out = _TTY(True, sink=captured_stdout)
     monkeypatch.setattr(cli.sys, "stdin", _TTY(True))
     monkeypatch.setattr(cli.sys, "stdout", tty_out)
-    assert main(["--project", str(project.root), "evaluate", "--entity-type", "assembly"]) == 0
+    assert (
+        main(["--project", str(project.root), "evaluate", "--entity-type", "assembly"])
+        == 0
+    )
     assert "Evaluation cancelled; no rows were changed." in capsys.readouterr().out
 
     # --yes proceeds through the real evaluation.
     monkeypatch.setattr(cli, "evaluate_all", real_evaluate_all)
     monkeypatch.setattr(cli.sys, "stdin", _TTY(False))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(False, sink=captured_stdout))
-    assert main([
-        "--project", str(project.root), "evaluate", "--yes", "--entity-type", "assembly",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "evaluate",
+                "--yes",
+                "--entity-type",
+                "assembly",
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "assembly" in out and "decision" in out
 
@@ -392,20 +573,45 @@ def test_curate_cli_records_audited_override(project, capsys):
     profile = project.config["qc"]["default_profile"]
     try:
         _organism(db)
-        db.upsert_decision({
-            "entity_type": "organism", "entity_id": "ORG_000001", "profile": profile,
-            "decision": "NOT_EVALUATED", "reason_codes": "[]", "observed": "{}",
-            "thresholds": "{}", "evaluated_at": "2026-01-01T00:00:00+00:00",
-        })
+        db.upsert_decision(
+            {
+                "entity_type": "organism",
+                "entity_id": "ORG_000001",
+                "profile": profile,
+                "decision": "NOT_EVALUATED",
+                "reason_codes": "[]",
+                "observed": "{}",
+                "thresholds": "{}",
+                "evaluated_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
     finally:
         db.close()
 
-    assert main([
-        "--project", str(project.root), "curate",
-        "--entity-type", "organism", "--entity-id", "ORG_000001",
-        "--profile", profile, "--decision", "pass", "--reviewer", "curator",
-        "--reason", "manual inspection", "--evidence", "report.tsv",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "curate",
+                "--entity-type",
+                "organism",
+                "--entity-id",
+                "ORG_000001",
+                "--profile",
+                profile,
+                "--decision",
+                "pass",
+                "--reviewer",
+                "curator",
+                "--reason",
+                "manual inspection",
+                "--evidence",
+                "report.tsv",
+            ]
+        )
+        == 0
+    )
     assert (
         "recorded curated decision pass for organism ORG_000001"
         in capsys.readouterr().out
@@ -426,19 +632,38 @@ def test_curate_cli_records_audited_override(project, capsys):
             "WHERE object_type='decision'"
         )[0]
         assert (change["field"], change["old_value"], change["new_value"]) == (
-            "curated_decision", "NOT_EVALUATED", "PASS")
+            "curated_decision",
+            "NOT_EVALUATED",
+            "PASS",
+        )
         assert change["actor"] == "curator"
         assert db.get_entity_state("organism", "ORG_000001") == "ACCEPTED"
     finally:
         db.close()
 
     # Unknown profile: the audit-less path is rejected.
-    assert main([
-        "--project", str(project.root), "curate",
-        "--entity-type", "organism", "--entity-id", "ORG_000001",
-        "--profile", "does_not_exist", "--decision", "PASS", "--reviewer", "r",
-        "--reason", "why",
-    ]) == 2
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "curate",
+                "--entity-type",
+                "organism",
+                "--entity-id",
+                "ORG_000001",
+                "--profile",
+                "does_not_exist",
+                "--decision",
+                "PASS",
+                "--reviewer",
+                "r",
+                "--reason",
+                "why",
+            ]
+        )
+        == 2
+    )
     assert "no automatic decision" in capsys.readouterr().err
 
 
@@ -446,22 +671,42 @@ def test_release_cli_creates_snapshot_and_copy_alias(project, monkeypatch, capsy
     import operon.release as release_mod
 
     (project.profiles_dir / "p.yaml").write_text(
-        yaml.safe_dump({"kind": "qc", "version": 1, "applies_to": [],
-                        "required": [], "warnings": []}, sort_keys=False),
+        yaml.safe_dump(
+            {
+                "kind": "qc",
+                "version": 1,
+                "applies_to": [],
+                "required": [],
+                "warnings": [],
+            },
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
     source = project.root / "raw" / "file"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("y", encoding="utf-8")
     monkeypatch.setattr(
-        release_mod, "release_files_for",
+        release_mod,
+        "release_files_for",
         lambda *_a, **_k: [_member("raw/file", hashlib.sha256(b"y").hexdigest())],
     )
 
-    assert main([
-        "--project", str(project.root), "release", "--version", "2026.09",
-        "--profile", "p", "--copy-files",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "release",
+                "--version",
+                "2026.09",
+                "--profile",
+                "p",
+                "--copy-files",
+            ]
+        )
+        == 0
+    )
     result = json.loads(capsys.readouterr().out)
     assert result["version"] == "2026.09"
     published = Path(result["path"]) / "data" / "organism" / "ORG_000001" / "file"
@@ -478,28 +723,64 @@ def test_adopt_cli_requires_single_file_identifiers(project, capsys):
     root = str(project.root)
     derived = project.root / "derived.fa"
     derived.write_text(">x\nAC\n", encoding="utf-8")
-    assert main([
-        "--project", root, "adopt", "--file", str(derived),
-    ]) == 2
-    assert "single-file adopt requires --entity-type, --entity-id, --role" in capsys.readouterr().err
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "adopt",
+                "--file",
+                str(derived),
+            ]
+        )
+        == 2
+    )
+    assert (
+        "single-file adopt requires --entity-type, --entity-id, --role"
+        in capsys.readouterr().err
+    )
 
-    assert main([
-        "--project", root, "adopt", "--file", str(derived),
-        "--entity-type", "assembly", "--entity-id", "ASM_000001", "--role", "protein_fasta",
-    ]) == 2
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "adopt",
+                "--file",
+                str(derived),
+                "--entity-type",
+                "assembly",
+                "--entity-id",
+                "ASM_000001",
+                "--role",
+                "protein_fasta",
+            ]
+        )
+        == 2
+    )
     assert "requires at least one --derived-from FILE_ID" in capsys.readouterr().err
 
 
 def test_classify_sequences_cli_prints_label_counts(project_db, monkeypatch, capsys):
     project, db = project_db
-    monkeypatch.setattr("operon.classify.classify_sequences", lambda *_a, **_k: {
-        "sequences": 5, "unlabeled": 2, "files": 1, "profile": "demo",
-        "label_counts": {"ribosomal": 3}, "labels_written": 3, "labels_removed": 0,
-        "run_id": "WF_CLASSIFY",
-        "ignored_completed_jobs": 0, "files_without_sequences": 0,
-    })
-    assert cli._cmd_classify_sequences(
-        SimpleNamespace(profile="demo"), project, db) == 0
+    monkeypatch.setattr(
+        "operon.classify.classify_sequences",
+        lambda *_a, **_k: {
+            "sequences": 5,
+            "unlabeled": 2,
+            "files": 1,
+            "profile": "demo",
+            "label_counts": {"ribosomal": 3},
+            "labels_written": 3,
+            "labels_removed": 0,
+            "run_id": "WF_CLASSIFY",
+            "ignored_completed_jobs": 0,
+            "files_without_sequences": 0,
+        },
+    )
+    assert (
+        cli._cmd_classify_sequences(SimpleNamespace(profile="demo"), project, db) == 0
+    )
     out = capsys.readouterr().out
     assert "labeled 3 of 5 sequence(s)" in out
     assert "ribosomal" in out
@@ -516,9 +797,17 @@ def test_select_sequences_cli_records_entity_scope(project_db, monkeypatch, caps
 
     monkeypatch.setattr("operon.sequence_tools.select_sequences", fake_select)
     args = SimpleNamespace(
-        file_id="FIL_1", analysis=[], subject_like=None, evalue_max=None,
-        min_span=None, hit_type=None, require_no_hit=False,
-        entity_type="assembly", entity_id="ASM_000001", out="out.fa", manifest=None,
+        file_id="FIL_1",
+        analysis=[],
+        subject_like=None,
+        evalue_max=None,
+        min_span=None,
+        hit_type=None,
+        require_no_hit=False,
+        entity_type="assembly",
+        entity_id="ASM_000001",
+        out="out.fa",
+        manifest=None,
     )
     assert cli._cmd_select_sequences(args, project, db) == 0
     assert captured["entity_id"] == "ASM_000001"
@@ -533,15 +822,25 @@ def test_fanout_cli_records_parent_run(project_db, monkeypatch, capsys):
     def fake_fanout(_db, _project, **kwargs):
         captured.update(kwargs)
         return {
-            "dry_run": False, "units": [], "created": 0, "reused": 0,
+            "dry_run": False,
+            "units": [],
+            "created": 0,
+            "reused": 0,
             "run_id": "WF_FANOUT",
         }
 
     monkeypatch.setattr("operon.fanout.fanout_units", fake_fanout)
     args = SimpleNamespace(
-        assignments_file="FIL_1", source_file=["FIL_2"], entity_type="assembly",
-        entity_id="ASM_000001", role_prefix="unit", unit_column="unit",
-        seqid_column="seqid", parent_run_id="WF_PARENT", actor="tester", dry_run=False,
+        assignments_file="FIL_1",
+        source_file=["FIL_2"],
+        entity_type="assembly",
+        entity_id="ASM_000001",
+        role_prefix="unit",
+        unit_column="unit",
+        seqid_column="seqid",
+        parent_run_id="WF_PARENT",
+        actor="tester",
+        dry_run=False,
     )
     assert cli._cmd_fanout(args, project, db) == 0
     assert captured["parent_run_id"] == "WF_PARENT"
@@ -567,23 +866,51 @@ def test_snapshot_document_falls_back_to_raw_text(project, capsys):
 def test_profiles_show_snapshot_by_id(project, capsys):
     db = Database(project.db_path)
     try:
-        document = json.dumps({"kind": "qc", "version": 1, "required": [], "warnings": []})
-        first = db.record_profile("demo", 1, "sha-1", document, "2026-01-01T00:00:00+00:00")
+        document = json.dumps(
+            {"kind": "qc", "version": 1, "required": [], "warnings": []}
+        )
+        first = db.record_profile(
+            "demo", 1, "sha-1", document, "2026-01-01T00:00:00+00:00"
+        )
         db.record_profile("demo", 2, "sha-2", document, "2026-01-02T00:00:00+00:00")
     finally:
         db.close()
 
-    assert main([
-        "--project", str(project.root), "profiles", "show", "demo",
-        "--snapshot-id", str(first),
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "profiles",
+                "show",
+                "demo",
+                "--snapshot-id",
+                str(first),
+            ]
+        )
+        == 0
+    )
     assert "kind: qc" in capsys.readouterr().out
     assert main(["--project", str(project.root), "profiles", "show", "demo"]) == 0
     assert "kind: qc" in capsys.readouterr().out
-    assert main([
-        "--project", str(project.root), "profiles", "show", "demo", "--snapshot-id", "99999",
-    ]) == 2
-    assert "no snapshot recorded for profile 'demo' with snapshot id 99999" in capsys.readouterr().err
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "profiles",
+                "show",
+                "demo",
+                "--snapshot-id",
+                "99999",
+            ]
+        )
+        == 2
+    )
+    assert (
+        "no snapshot recorded for profile 'demo' with snapshot id 99999"
+        in capsys.readouterr().err
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -596,7 +923,10 @@ def test_show_cli_renders_supersessions_and_retirements(project, capsys):
     try:
         _graph(db)
         db.supersede_entity(
-            "assembly", "ASM_000001", "assembly", "ASM_000002",
+            "assembly",
+            "ASM_000001",
+            "assembly",
+            "ASM_000002",
             reason="duplicate import",
         )
     finally:
@@ -604,15 +934,38 @@ def test_show_cli_renders_supersessions_and_retirements(project, capsys):
     assert main(["--project", str(project.root), "show", "ORG_000001"]) == 0
     assert "Supersessions (1)" in capsys.readouterr().out
 
-    assert main([
-        "--project", str(project.root), "retire", "SMP_000001",
-        "--reason-code", "accidental_import", "--reason", "mistake",
-        "--actor", "tester", "--apply", "--yes",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "retire",
+                "SMP_000001",
+                "--reason-code",
+                "accidental_import",
+                "--reason",
+                "mistake",
+                "--actor",
+                "tester",
+                "--apply",
+                "--yes",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
-    assert main([
-        "--project", str(project.root), "show", "ASM_000001", "--include-retired",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "show",
+                "ASM_000001",
+                "--include-retired",
+            ]
+        )
+        == 0
+    )
     # Retirement is inherited: sample root plus its assembly and annotation.
     assert "Retirements (3)" in capsys.readouterr().out
 
@@ -628,9 +981,18 @@ def test_retire_twice_reports_already_applied(project, capsys):
     finally:
         db.close()
     first = [
-        "--project", str(project.root), "retire", "ASM_000001",
-        "--reason-code", "duplicate", "--reason", "duplicate row",
-        "--actor", "tester", "--apply", "--yes",
+        "--project",
+        str(project.root),
+        "retire",
+        "ASM_000001",
+        "--reason-code",
+        "duplicate",
+        "--reason",
+        "duplicate row",
+        "--actor",
+        "tester",
+        "--apply",
+        "--yes",
     ]
     assert main(first) == 0
     assert json.loads(capsys.readouterr().out)["applied"] is True
@@ -649,11 +1011,25 @@ def test_retired_cli_table_json_and_direct_only(project, capsys):
     assert main(["--project", str(project.root), "retired"]) == 0
     assert capsys.readouterr().out.strip() == "no retired entities"
 
-    assert main([
-        "--project", str(project.root), "retire", "SMP_000001",
-        "--reason-code", "accidental_import", "--reason", "mistake",
-        "--actor", "tester", "--apply", "--yes",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "retire",
+                "SMP_000001",
+                "--reason-code",
+                "accidental_import",
+                "--reason",
+                "mistake",
+                "--actor",
+                "tester",
+                "--apply",
+                "--yes",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
 
     assert main(["--project", str(project.root), "retired"]) == 0
@@ -669,16 +1045,34 @@ def test_retired_cli_table_json_and_direct_only(project, capsys):
 
 def test_backup_create_and_verify_cli(project, capsys):
     destination = project.root.parent / f"{project.root.name}-backup-out"
-    assert main([
-        "--project", str(project.root), "backup", "create", "--output", str(destination),
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "backup",
+                "create",
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
     created = json.loads(capsys.readouterr().out)
     assert created["file_count"] >= 1
     assert (destination / "backup-manifest.json").is_file()
 
-    assert main([
-        "backup", "verify", "--input", str(destination),
-    ]) == 0
+    assert (
+        main(
+            [
+                "backup",
+                "verify",
+                "--input",
+                str(destination),
+            ]
+        )
+        == 0
+    )
     verified = json.loads(capsys.readouterr().out)
     assert verified["ok"] is True
 
@@ -745,7 +1139,9 @@ def _seed_fasta_file(project: Project, db: Database, name: str = "assembly.fa") 
     return ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
 
 
-def test_import_qc_json_without_sequences_leaves_sequences_untouched(project, tmp_path, capsys):
+def test_import_qc_json_without_sequences_leaves_sequences_untouched(
+    project, tmp_path, capsys
+):
     db = Database(project.db_path)
     try:
         _graph(db)
@@ -753,27 +1149,47 @@ def test_import_qc_json_without_sequences_leaves_sequences_untouched(project, tm
     finally:
         db.close()
     payload = {
-        "schema_version": 1, "tool": "operon.builtin",
+        "schema_version": 1,
+        "tool": "operon.builtin",
         "tool_version": __import__("operon").__version__,
         "parameter_set": "builtin_v2",
         "file": {
-            "file_id": record["file_id"], "sha256": record["sha256"],
-            "size_bytes": record["size_bytes"], "format": "fasta",
+            "file_id": record["file_id"],
+            "sha256": record["sha256"],
+            "size_bytes": record["size_bytes"],
+            "format": "fasta",
             "file_role": "genome_fasta",
         },
-        "metrics": [{
-            "qc_stage": "file_integrity", "metric_name": "parseable",
-            "metric_value": "1", "metric_numeric": 1.0, "metric_unit": None,
-            "parameter_set": "builtin_v2",
-        }],
+        "metrics": [
+            {
+                "qc_stage": "file_integrity",
+                "metric_name": "parseable",
+                "metric_value": "1",
+                "metric_numeric": 1.0,
+                "metric_unit": None,
+                "parameter_set": "builtin_v2",
+            }
+        ],
     }
     document = tmp_path / "payload.json"
     document.write_text(json.dumps(payload), encoding="utf-8")
 
-    assert main([
-        "--project", str(project.root), "import-qc", "--file", str(document),
-    ]) == 0
-    assert f"imported 1 built-in QC metric(s) for {record['file_id']}" in capsys.readouterr().out
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "import-qc",
+                "--file",
+                str(document),
+            ]
+        )
+        == 0
+    )
+    assert (
+        f"imported 1 built-in QC metric(s) for {record['file_id']}"
+        in capsys.readouterr().out
+    )
     db = Database(project.db_path)
     try:
         assert db.query("SELECT COUNT(*) AS n FROM sequences")[0]["n"] == 0
@@ -795,14 +1211,18 @@ def test_import_qc_tsv_deduplicates_entities(project, tmp_path, capsys):
         "assembly\tASM_000001\texternal\tmetric_b\t2\ttool\t1\tp\n",
         encoding="utf-8",
     )
-    assert main(["--project", str(project.root), "import-qc", "--file", str(table)]) == 0
+    assert (
+        main(["--project", str(project.root), "import-qc", "--file", str(table)]) == 0
+    )
     assert "imported 2 external QC metric(s)" in capsys.readouterr().out
     db = Database(project.db_path)
     try:
         assert db.query("SELECT COUNT(*) AS n FROM qc_results")[0]["n"] == 2
-        details = json.loads(db.query(
-            "SELECT execution_details FROM workflow_runs WHERE step='import-qc'"
-        )[0]["execution_details"])
+        details = json.loads(
+            db.query(
+                "SELECT execution_details FROM workflow_runs WHERE step='import-qc'"
+            )[0]["execution_details"]
+        )
         assert details["entities"] == ["assembly:ASM_000001"]
     finally:
         db.close()
@@ -835,36 +1255,91 @@ def test_analysis_report_filters_json_tsv_and_output_file(project, tmp_path, cap
         db.close()
     root = str(project.root)
 
-    assert main([
-        "--project", root, "report", "analysis", "--hits", "--format", "json",
-        "--query-id", "q1", "--subject-id", "s1", "--evalue-max", "0.001",
-        "--include-retired",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "report",
+                "analysis",
+                "--hits",
+                "--format",
+                "json",
+                "--query-id",
+                "q1",
+                "--subject-id",
+                "s1",
+                "--evalue-max",
+                "0.001",
+                "--include-retired",
+            ]
+        )
+        == 0
+    )
     rows = json.loads(capsys.readouterr().out)
     assert [row["query_id"] for row in rows] == ["q1"]
     assert rows[0]["bitscore"] == 10.0
 
-    assert main([
-        "--project", root, "report", "analysis", "--hits", "--format", "tsv",
-        "--include-retired", "--limit", "1",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "report",
+                "analysis",
+                "--hits",
+                "--format",
+                "tsv",
+                "--include-retired",
+                "--limit",
+                "1",
+            ]
+        )
+        == 0
+    )
     lines = capsys.readouterr().out.strip().splitlines()
     assert lines[0].split("\t")[0] == "analysis_name"
     assert len(lines) == 2
 
     target = tmp_path / "hits.json"
-    assert main([
-        "--project", root, "report", "analysis", "--hits", "--format", "json",
-        "--out", str(target), "--analysis", "missing",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "report",
+                "analysis",
+                "--hits",
+                "--format",
+                "json",
+                "--out",
+                str(target),
+                "--analysis",
+                "missing",
+            ]
+        )
+        == 0
+    )
     assert capsys.readouterr().out == ""
     assert json.loads(target.read_text(encoding="utf-8")) == []
 
     assert main(["--project", root, "report", "analysis", "--limit", "5"]) == 0
     assert "score" in capsys.readouterr().out
-    assert main([
-        "--project", root, "report", "analysis", "--analysis", "missing", "--limit", "5",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                root,
+                "report",
+                "analysis",
+                "--analysis",
+                "missing",
+                "--limit",
+                "5",
+            ]
+        )
+        == 0
+    )
     assert "(no analysis results)" in capsys.readouterr().out
 
 
@@ -946,8 +1421,9 @@ def test_pre_1_0_database_is_reshaped_without_losing_rows(tmp_path):
     db = Database(legacy_path)
     try:
         # Legacy rows survive the reshape and get a synthetic input identity.
-        assert db.query("SELECT input_identity FROM qc_results")[0]["input_identity"] == (
-            "legacy:assembly:ASM_1")
+        assert db.query("SELECT input_identity FROM qc_results")[0][
+            "input_identity"
+        ] == ("legacy:assembly:ASM_1")
         assert db.query("SELECT decision FROM decisions")[0]["decision"] == "PASS"
         assert "profile_snapshot_id" in db.table_columns("decisions")
         assert "input_identity" in db.table_columns("qc_results")
@@ -960,12 +1436,12 @@ def test_reopening_database_restores_dropped_columns(project):
     try:
         with db.transaction():
             db.conn.execute('ALTER TABLE assemblies DROP COLUMN "assembly_type"')
-            db.conn.execute('ALTER TABLE workflow_runs DROP COLUMN executor')
-            db.conn.execute('ALTER TABLE workflow_runs DROP COLUMN scheduler_job_id')
-            db.conn.execute('ALTER TABLE workflow_runs DROP COLUMN execution_details')
-            db.conn.execute('ALTER TABLE workflow_runs DROP COLUMN resumes_run_id')
-            db.conn.execute('ALTER TABLE changes DROP COLUMN workflow_run_id')
-            db.conn.execute('ALTER TABLE changes DROP COLUMN reverts_change_id')
+            db.conn.execute("ALTER TABLE workflow_runs DROP COLUMN executor")
+            db.conn.execute("ALTER TABLE workflow_runs DROP COLUMN scheduler_job_id")
+            db.conn.execute("ALTER TABLE workflow_runs DROP COLUMN execution_details")
+            db.conn.execute("ALTER TABLE workflow_runs DROP COLUMN resumes_run_id")
+            db.conn.execute("ALTER TABLE changes DROP COLUMN workflow_run_id")
+            db.conn.execute("ALTER TABLE changes DROP COLUMN reverts_change_id")
     finally:
         db.close()
 
@@ -973,7 +1449,12 @@ def test_reopening_database_restores_dropped_columns(project):
     try:
         assert "assembly_type" in db.table_columns("assemblies")
         workflow_columns = set(db.table_columns("workflow_runs"))
-        assert {"executor", "scheduler_job_id", "execution_details", "resumes_run_id"} <= workflow_columns
+        assert {
+            "executor",
+            "scheduler_job_id",
+            "execution_details",
+            "resumes_run_id",
+        } <= workflow_columns
         change_columns = set(db.table_columns("changes"))
         assert {"workflow_run_id", "reverts_change_id"} <= change_columns
     finally:
@@ -1000,20 +1481,38 @@ def test_lifecycle_helpers_tolerate_unknown_types_and_absent_schema(project_db):
 
 def test_max_id_number_handles_missing_tables_and_foreign_ids(project_db):
     _project, db = project_db
-    assert Database._max_id_number(db.conn, "organism", "ORG", "missing_table", "organism_id") == 0
+    assert (
+        Database._max_id_number(
+            db.conn, "organism", "ORG", "missing_table", "organism_id"
+        )
+        == 0
+    )
     # Rows whose IDs do not carry the requested prefix contribute nothing.
     _organism(db)
     db.insert_row("samples", {"sample_id": "SMP_000042", "organism_id": "ORG_000001"})
-    assert Database._max_id_number(db.conn, "organism", "ORG", "samples", "sample_id") == 0
-    assert Database._max_id_number(db.conn, "organism", "ORG", "samples", "sample_id") == 0
+    assert (
+        Database._max_id_number(db.conn, "organism", "ORG", "samples", "sample_id") == 0
+    )
+    assert (
+        Database._max_id_number(db.conn, "organism", "ORG", "samples", "sample_id") == 0
+    )
 
     # A manifest row whose ID does not look like FIL_<n> is ignored.
-    db.insert_row("files", {
-        "file_id": "LEGACY_FILE", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "other", "format": "other", "compression": "none",
-        "relative_path": "raw/legacy.bin", "size_bytes": 1, "sha256": "b" * 64,
-        "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "files",
+        {
+            "file_id": "LEGACY_FILE",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "other",
+            "format": "other",
+            "compression": "none",
+            "relative_path": "raw/legacy.bin",
+            "size_bytes": 1,
+            "sha256": "b" * 64,
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     assert Database._max_id_number(db.conn, "file", "FIL", None, None) == 0
 
     bare = sqlite3.connect(":memory:")
@@ -1034,7 +1533,12 @@ def test_next_id_rolls_back_when_reservation_fails(project_db, monkeypatch):
     with pytest.raises(RuntimeError, match="counter failure"):
         db.next_id("organism")
     assert db.conn.in_transaction is False
-    assert db.query("SELECT COUNT(*) AS n FROM id_counters WHERE entity_type='organism'")[0]["n"] == 0
+    assert (
+        db.query("SELECT COUNT(*) AS n FROM id_counters WHERE entity_type='organism'")[
+            0
+        ]["n"]
+        == 0
+    )
 
 
 def test_register_data_source_validates_required_fields(project_db):
@@ -1046,23 +1550,35 @@ def test_register_data_source_validates_required_fields(project_db):
     with pytest.raises(ValidationError, match="database or repository is required"):
         db.register_data_source({"source_type": "insdc", "provider": "P"})
     with pytest.raises(ValidationError, match="reference citation or DOI"):
-        db.register_data_source({
-            "source_type": "non_insdc", "provider": "P", "database_name": "D",
-        })
+        db.register_data_source(
+            {
+                "source_type": "non_insdc",
+                "provider": "P",
+                "database_name": "D",
+            }
+        )
     with pytest.raises(ValidationError, match="License name or SPDX"):
-        db.register_data_source({
-            "source_type": "non_insdc", "provider": "P", "database_name": "D",
-            "citation": "doi:10.1/x",
-        })
+        db.register_data_source(
+            {
+                "source_type": "non_insdc",
+                "provider": "P",
+                "database_name": "D",
+                "citation": "doi:10.1/x",
+            }
+        )
 
 
 def test_export_active_rows_handles_unknown_columns_and_source_links(project_db):
     _project, db = project_db
     _organism(db)
     assert db.export_active_rows("organisms", ["does_not_exist"]) == []
-    source = db.register_data_source({
-        "source_type": "insdc", "provider": "NCBI", "database_name": "Assembly",
-    })
+    source = db.register_data_source(
+        {
+            "source_type": "insdc",
+            "provider": "NCBI",
+            "database_name": "Assembly",
+        }
+    )
     db.link_data_source(source["source_id"], [("organism", "ORG_000001")])
     exported = db.export_active_rows("data_sources")
     assert [row["source_id"] for row in exported] == [source["source_id"]]
@@ -1074,11 +1590,19 @@ def test_effective_decision_prefers_curated_value(project_db):
     _project, db = project_db
     _organism(db)
     assert db.effective_decision("organism", "ORG_000001", "p") is None
-    db.upsert_decision({
-        "entity_type": "organism", "entity_id": "ORG_000001", "profile": "p",
-        "decision": "FAIL", "curated_decision": "PASS", "reason_codes": "[]",
-        "observed": "{}", "thresholds": "{}", "evaluated_at": "2026-01-01T00:00:00+00:00",
-    })
+    db.upsert_decision(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "profile": "p",
+            "decision": "FAIL",
+            "curated_decision": "PASS",
+            "reason_codes": "[]",
+            "observed": "{}",
+            "thresholds": "{}",
+            "evaluated_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
     assert db.effective_decision("organism", "ORG_000001", "p") == "PASS"
 
 
@@ -1091,20 +1615,46 @@ def test_pull_and_evict_cli_print_per_status_summaries(project, monkeypatch, cap
     from operon import remotes
 
     seen: list = []
-    monkeypatch.setattr(remotes, "pull", lambda _db, _p, remote, file_ids=None: (
-        seen.append(("pull", remote, file_ids)) or [
-            {"file_id": "FIL_1", "relative_path": "a.fa", "status": "restored"},
-        ]
-    ))
-    monkeypatch.setattr(remotes, "evict_local", lambda _db, _p, remote, file_ids=None: (
-        seen.append(("evict", remote, file_ids)) or [
-            {"file_id": "FIL_2", "relative_path": "b.fa", "status": "error", "error": "busy"},
-        ]
-    ))
+    monkeypatch.setattr(
+        remotes,
+        "pull",
+        lambda _db, _p, remote, file_ids=None: (
+            seen.append(("pull", remote, file_ids))
+            or [
+                {"file_id": "FIL_1", "relative_path": "a.fa", "status": "restored"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        remotes,
+        "evict_local",
+        lambda _db, _p, remote, file_ids=None: (
+            seen.append(("evict", remote, file_ids))
+            or [
+                {
+                    "file_id": "FIL_2",
+                    "relative_path": "b.fa",
+                    "status": "error",
+                    "error": "busy",
+                },
+            ]
+        ),
+    )
 
-    assert main([
-        "--project", str(project.root), "pull", "--remote", "mirror", "--file-id", "FIL_1",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "pull",
+                "--remote",
+                "mirror",
+                "--file-id",
+                "FIL_1",
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "pull mirror: restored: 1" in out
     assert seen[-1] == ("pull", "mirror", ["FIL_1"])
@@ -1117,11 +1667,15 @@ def test_pull_and_evict_cli_print_per_status_summaries(project, monkeypatch, cap
 
 def test_confirm_curated_evaluation_truncates_long_previews(monkeypatch, capsys):
     prompts: list[str] = []
-    monkeypatch.setitem(sys.modules, "questionary", SimpleNamespace(
-        confirm=lambda message, default=False: (
-            prompts.append(message) or _Prompt(True)
+    monkeypatch.setitem(
+        sys.modules,
+        "questionary",
+        SimpleNamespace(
+            confirm=lambda message, default=False: (
+                prompts.append(message) or _Prompt(True)
+            ),
         ),
-    ))
+    )
     captured_stdout = sys.stdout
     monkeypatch.setattr(cli.sys, "stdin", _TTY(True))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(True, sink=captured_stdout))
@@ -1138,33 +1692,71 @@ def test_run_pipeline_honours_interactive_cancellation(project, monkeypatch):
     profile = project.config["qc"]["default_profile"]
     try:
         _graph(db)
-        db.upsert_decision({
-            "entity_type": "assembly", "entity_id": "ASM_000001", "profile": profile,
-            "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
-            "reason_codes": "[]", "observed": "{}", "thresholds": "{}",
-            "evaluated_at": "2026-01-01T00:00:00+00:00",
-        })
+        db.upsert_decision(
+            {
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "profile": profile,
+                "decision": "PASS",
+                "curated_decision": "PASS",
+                "curated_by": "reviewer",
+                "reason_codes": "[]",
+                "observed": "{}",
+                "thresholds": "{}",
+                "evaluated_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
     finally:
         db.close()
 
     _fake_questionary(monkeypatch, confirm=False)
     monkeypatch.setattr(cli.sys, "stdin", _TTY(True))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(True))
-    monkeypatch.setattr(cli, "ingest_file", lambda *_a, **_k: pytest.fail("ingest ran after declining"))
-    assert main([
-        "--project", str(project.root), "run-pipeline", "--source", "x.fa",
-        "--entity-type", "assembly", "--entity-id", "ASM_000001", "--role", "genome_fasta",
-    ]) == 0
+    monkeypatch.setattr(
+        cli, "ingest_file", lambda *_a, **_k: pytest.fail("ingest ran after declining")
+    )
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "run-pipeline",
+                "--source",
+                "x.fa",
+                "--entity-type",
+                "assembly",
+                "--entity-id",
+                "ASM_000001",
+                "--role",
+                "genome_fasta",
+            ]
+        )
+        == 0
+    )
 
 
-def test_classify_sequences_without_labels_prints_no_table(project_db, monkeypatch, capsys):
+def test_classify_sequences_without_labels_prints_no_table(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
-    monkeypatch.setattr("operon.classify.classify_sequences", lambda *_a, **_k: {
-        "sequences": 2, "unlabeled": 2, "files": 1, "profile": "demo",
-        "label_counts": {}, "labels_written": 0, "labels_removed": 0, "run_id": "WF_EMPTY",
-        "ignored_completed_jobs": 0, "files_without_sequences": 0,
-    })
-    assert cli._cmd_classify_sequences(SimpleNamespace(profile="demo"), project, db) == 0
+    monkeypatch.setattr(
+        "operon.classify.classify_sequences",
+        lambda *_a, **_k: {
+            "sequences": 2,
+            "unlabeled": 2,
+            "files": 1,
+            "profile": "demo",
+            "label_counts": {},
+            "labels_written": 0,
+            "labels_removed": 0,
+            "run_id": "WF_EMPTY",
+            "ignored_completed_jobs": 0,
+            "files_without_sequences": 0,
+        },
+    )
+    assert (
+        cli._cmd_classify_sequences(SimpleNamespace(profile="demo"), project, db) == 0
+    )
     out = capsys.readouterr().out
     assert "labels written: 0, removed: 0 (run WF_EMPTY)" in out
     assert "sequences\n" not in out  # no label table when nothing was labelled
@@ -1175,7 +1767,9 @@ def test_classify_sequences_without_labels_prints_no_table(project_db, monkeypat
 # --------------------------------------------------------------------------- #
 
 
-def test_verify_local_file_identity_survives_unreadable_path(project_db, tmp_path, monkeypatch):
+def test_verify_local_file_identity_survives_unreadable_path(
+    project_db, tmp_path, monkeypatch
+):
     _project, db = project_db
 
     # Subclass the concrete Path class: on Python 3.10/3.11 ``Path.__new__``
@@ -1198,10 +1792,16 @@ def test_verify_local_file_identity_rehashes_after_stat_change(project_db):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("payload", encoding="utf-8")
     record = {
-        "file_id": "FIL_000001", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "other", "format": "other", "compression": "none",
-        "relative_path": "raw/payload.bin", "status": "CHECKSUM_VERIFIED",
-        "sha256": hashlib.sha256(b"payload").hexdigest(), "size_bytes": len(b"payload"),
+        "file_id": "FIL_000001",
+        "entity_type": "assembly",
+        "entity_id": "ASM_000001",
+        "file_role": "other",
+        "format": "other",
+        "compression": "none",
+        "relative_path": "raw/payload.bin",
+        "status": "CHECKSUM_VERIFIED",
+        "sha256": hashlib.sha256(b"payload").hexdigest(),
+        "size_bytes": len(b"payload"),
     }
     db.insert_row("files", record)
     ok, info = verify_local_file_identity(db, record, path)
@@ -1222,8 +1822,14 @@ def test_ingest_accepts_binary_formats_with_gzip_compression(project_db, tmp_pat
     source = tmp_path / "reads.bam.gz"
     source.write_bytes(b"BAM\x01binary")
     row = ingest_file(
-        db, project, source, "assembly", "ASM_000001", "other",
-        fmt="bam", compression="gzip",
+        db,
+        project,
+        source,
+        "assembly",
+        "ASM_000001",
+        "other",
+        fmt="bam",
+        compression="gzip",
     )
     assert row["format"] == "bam"
     assert row["compression"] == "gzip"
@@ -1241,13 +1847,24 @@ def test_occupied_target_that_is_its_own_canonical_path_is_a_conflict(project_db
         files_mod._resolve_occupied_target(db, project, target, row["sha256"])
 
 
-def _remote_only_file(db: Database, file_id: str, relative_path: str, location: str) -> None:
-    db.insert_row("files", {
-        "file_id": file_id, "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "other", "format": "other", "compression": "none",
-        "relative_path": relative_path, "size_bytes": 4, "sha256": "a" * 64,
-        "status": "REMOTE_ONLY",
-    })
+def _remote_only_file(
+    db: Database, file_id: str, relative_path: str, location: str
+) -> None:
+    db.insert_row(
+        "files",
+        {
+            "file_id": file_id,
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "other",
+            "format": "other",
+            "compression": "none",
+            "relative_path": relative_path,
+            "size_bytes": 4,
+            "sha256": "a" * 64,
+            "status": "REMOTE_ONLY",
+        },
+    )
     with db.transaction():
         db.conn.execute(
             "INSERT INTO file_locations(file_id, location_name, location_type, uri, "
@@ -1257,7 +1874,9 @@ def _remote_only_file(db: Database, file_id: str, relative_path: str, location: 
         )
 
 
-def test_verify_files_reports_remote_unverified_when_store_cannot_open(project_db, monkeypatch, capsys):
+def test_verify_files_reports_remote_unverified_when_store_cannot_open(
+    project_db, monkeypatch, capsys
+):
     project, db = project_db
     _graph(db)
     _remote_only_file(db, "FIL_000001", "raw/gone1.fa", "mirror")
@@ -1349,11 +1968,14 @@ def test_standardize_removes_temporary_link_when_publish_fails(project_db, monke
     source.write_text(">c\nTT\n", encoding="utf-8")
     row = ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
     target = (
-        project.standardized_root / files_mod.raw_bucket("assembly") / "ASM_000001"
+        project.standardized_root
+        / files_mod.raw_bucket("assembly")
+        / "ASM_000001"
         / Path(row["relative_path"]).name
     )
     monkeypatch.setattr(
-        files_mod.os, "replace",
+        files_mod.os,
+        "replace",
         lambda *_a, **_k: (_ for _ in ()).throw(OSError("device gone")),
     )
     # Symlink publishing has no copy fallback, so the interrupted temporary
@@ -1370,7 +1992,9 @@ def test_standardize_directory_copy_and_rollback(project_db, monkeypatch):
     tree = project.root / "tree"
     tree.mkdir()
     (tree / "part.fa").write_text(">x\nAC\n", encoding="utf-8")
-    row = ingest_file(db, project, tree, "assembly", "ASM_000001", "other", fmt="directory")
+    row = ingest_file(
+        db, project, tree, "assembly", "ASM_000001", "other", fmt="directory"
+    )
     result = standardize_file(db, project, row["file_id"])
     target = Path(result["target"])
     assert target.is_dir()
@@ -1380,9 +2004,13 @@ def test_standardize_directory_copy_and_rollback(project_db, monkeypatch):
     tree2 = project.root / "tree2"
     tree2.mkdir()
     (tree2 / "part.fa").write_text(">y\nGT\n", encoding="utf-8")
-    row2 = ingest_file(db, project, tree2, "assembly", "ASM_000001", "protein_fasta", fmt="directory")
+    row2 = ingest_file(
+        db, project, tree2, "assembly", "ASM_000001", "protein_fasta", fmt="directory"
+    )
     target2 = (
-        project.standardized_root / files_mod.raw_bucket("assembly") / "ASM_000001"
+        project.standardized_root
+        / files_mod.raw_bucket("assembly")
+        / "ASM_000001"
         / Path(row2["relative_path"]).name
     )
 
@@ -1391,26 +2019,37 @@ def test_standardize_directory_copy_and_rollback(project_db, monkeypatch):
         (Path(destination) / "part.fa").write_text("tampered", encoding="utf-8")
 
     monkeypatch.setattr(files_mod, "atomic_copytree", bad_copytree)
-    with pytest.raises(files_mod.ChecksumError, match="standardized target checksum mismatch"):
+    with pytest.raises(
+        files_mod.ChecksumError, match="standardized target checksum mismatch"
+    ):
         standardize_file(db, project, row2["file_id"])
     assert not target2.exists()
 
 
-def test_standardize_file_removes_target_when_checksum_mismatch(project_db, monkeypatch):
+def test_standardize_file_removes_target_when_checksum_mismatch(
+    project_db, monkeypatch
+):
     project, db = project_db
     _graph(db)
     source = project.root / "fourth.fa"
     source.write_text(">d\nAA\n", encoding="utf-8")
     row = ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
     target = (
-        project.standardized_root / files_mod.raw_bucket("assembly") / "ASM_000001"
+        project.standardized_root
+        / files_mod.raw_bucket("assembly")
+        / "ASM_000001"
         / Path(row["relative_path"]).name
     )
     monkeypatch.setattr(
-        files_mod, "atomic_copy",
-        lambda _source, destination: Path(destination).write_text("tampered", encoding="utf-8"),
+        files_mod,
+        "atomic_copy",
+        lambda _source, destination: Path(destination).write_text(
+            "tampered", encoding="utf-8"
+        ),
     )
-    with pytest.raises(files_mod.ChecksumError, match="standardized target checksum mismatch"):
+    with pytest.raises(
+        files_mod.ChecksumError, match="standardized target checksum mismatch"
+    ):
         standardize_file(db, project, row["file_id"])
     assert not target.exists()
 
@@ -1431,7 +2070,11 @@ def test_follow_run_logs_normalizes_stderr_and_reports_failure(tmp_path):
     statuses = [{"status": "running"}, {"status": "failed", "exit_code": 7}]
     out = io.StringIO()
     code = follow_run_logs(
-        lambda: statuses.pop(0), tmp_path, run_id, out=out, poll_interval=0,
+        lambda: statuses.pop(0),
+        tmp_path,
+        run_id,
+        out=out,
+        poll_interval=0,
     )
     text = out.getvalue()
     assert code == 1
@@ -1440,7 +2083,9 @@ def test_follow_run_logs_normalizes_stderr_and_reports_failure(tmp_path):
     assert f"run {run_id} finished: status=failed exit_code=7" in text
 
 
-def _stage_executor(observed: dict, *, probe_error: bool = False, run_error: str | None = None):
+def _stage_executor(
+    observed: dict, *, probe_error: bool = False, run_error: str | None = None
+):
     from operon.execution import ExecResult
 
     class _Executor:
@@ -1455,7 +2100,9 @@ def _stage_executor(observed: dict, *, probe_error: bool = False, run_error: str
             return {"system": {"os": "Linux"}}
 
         def run(self, argv, **kwargs):
-            observed.setdefault("calls", []).append((list(argv), kwargs.get("stage_inputs")))
+            observed.setdefault("calls", []).append(
+                (list(argv), kwargs.get("stage_inputs"))
+            )
             return ExecResult(exit_code=0, error=run_error, details={})
 
     return _Executor()
@@ -1469,14 +2116,20 @@ def test_run_external_command_resolves_stage_inputs_and_survives_probe_failure(p
         observed: dict = {}
         executor = _stage_executor(observed, probe_error=True)
         record = run_external_command(
-            db, project, [sys.executable, "-c", "pass"], step="stage-inputs",
-            entity_type="assembly", entity_id="ASM_000001",
-            stage_inputs=["relative.fa"], executor=executor,
+            db,
+            project,
+            [sys.executable, "-c", "pass"],
+            step="stage-inputs",
+            entity_type="assembly",
+            entity_id="ASM_000001",
+            stage_inputs=["relative.fa"],
+            executor=executor,
         )
         assert record["status"] == "completed"
         assert observed["calls"][0][1] == [project.root / "relative.fa"]
         row = db.query(
-            "SELECT environment_id FROM workflow_runs WHERE run_id=?", (record["run_id"],)
+            "SELECT environment_id FROM workflow_runs WHERE run_id=?",
+            (record["run_id"],),
         )[0]
         assert row["environment_id"] is None
     finally:
@@ -1503,9 +2156,15 @@ def test_run_external_command_reports_failing_step_of_chain(project):
                     return ExecResult(exit_code=0, error="tolerant failure", details={})
                 return ExecResult(exit_code=0, error=None, details={})
 
-        with pytest.raises(RuntimeError, match=r"chain failed: step 2/2 failed: tolerant failure"):
+        with pytest.raises(
+            RuntimeError, match=r"chain failed: step 2/2 failed: tolerant failure"
+        ):
             run_external_command(
-                db, project, ["unused"], step="chain", commands=[["a"], ["b"]],
+                db,
+                project,
+                ["unused"],
+                step="chain",
+                commands=[["a"], ["b"]],
                 executor=_ChainExecutor(),
             )
         assert calls == [["a"], ["b"]]
@@ -1527,22 +2186,41 @@ def test_run_external_command_reports_failing_step_of_chain(project):
 
 
 def _rules_profile(project, name: str, **extra) -> str:
-    document = {"kind": "qc", "version": 1, "applies_to": ["assembly"],
-                "required": [], "warnings": []}
+    document = {
+        "kind": "qc",
+        "version": 1,
+        "applies_to": ["assembly"],
+        "required": [],
+        "warnings": [],
+    }
     document.update(extra)
     (project.profiles_dir / f"{name}.yaml").write_text(
-        yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        yaml.safe_dump(document, sort_keys=False), encoding="utf-8"
+    )
     return name
 
 
-def _assembly_metrics(db: Database, *, score: int = 50, lineage: str = "unknown") -> None:
-    for name, value, numeric in (("score", str(score), float(score)),
-                                 ("lineage", lineage, None)):
-        db.insert_qc_result({
-            "entity_type": "assembly", "entity_id": "ASM_000001", "qc_stage": "analysis:x",
-            "metric_name": name, "metric_value": value, "metric_numeric": numeric,
-            "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-        })
+def _assembly_metrics(
+    db: Database, *, score: int = 50, lineage: str = "unknown"
+) -> None:
+    for name, value, numeric in (
+        ("score", str(score), float(score)),
+        ("lineage", lineage, None),
+    ):
+        db.insert_qc_result(
+            {
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "qc_stage": "analysis:x",
+                "metric_name": name,
+                "metric_value": value,
+                "metric_numeric": numeric,
+                "tool": "t",
+                "tool_version": "1",
+                "parameter_set": "p",
+                "evaluated_at": "now",
+            }
+        )
 
 
 def test_evaluation_targets_and_curated_targets(project_db):
@@ -1551,35 +2229,77 @@ def test_evaluation_targets_and_curated_targets(project_db):
     _assembly_metrics(db)
     _rules_profile(project, "targets")
 
-    assert rules.evaluation_targets(db, project, "targets") == [("assembly", "ASM_000001")]
+    assert rules.evaluation_targets(db, project, "targets") == [
+        ("assembly", "ASM_000001")
+    ]
     assert rules.evaluation_targets(
-        db, project, "targets", entity_type="assembly", entity_id="ASM_000001",
+        db,
+        project,
+        "targets",
+        entity_type="assembly",
+        entity_id="ASM_000001",
     ) == [("assembly", "ASM_000001")]
-    assert rules.evaluation_targets(
-        db, project, "targets", entity_type="assembly", entity_id="ASM_MISSING",
-    ) == []
+    assert (
+        rules.evaluation_targets(
+            db,
+            project,
+            "targets",
+            entity_type="assembly",
+            entity_id="ASM_MISSING",
+        )
+        == []
+    )
     # A filter that matches nothing short-circuits curated discovery.
-    assert rules.curated_evaluation_targets(
-        db, project, "targets", entity_type="assembly", entity_id="ASM_MISSING",
-    ) == []
+    assert (
+        rules.curated_evaluation_targets(
+            db,
+            project,
+            "targets",
+            entity_type="assembly",
+            entity_id="ASM_MISSING",
+        )
+        == []
+    )
 
-    db.upsert_decision({
-        "entity_type": "assembly", "entity_id": "ASM_000001", "profile": "targets",
-        "decision": "PASS", "curated_decision": "PASS", "curated_by": "reviewer",
-        "reason_codes": "[]", "observed": "{}", "thresholds": "{}",
-        "evaluated_at": "2026-01-01T00:00:00+00:00",
-    })
-    assert rules.curated_evaluation_targets(db, project, "targets") == [("assembly", "ASM_000001")]
+    db.upsert_decision(
+        {
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "profile": "targets",
+            "decision": "PASS",
+            "curated_decision": "PASS",
+            "curated_by": "reviewer",
+            "reason_codes": "[]",
+            "observed": "{}",
+            "thresholds": "{}",
+            "evaluated_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
+    assert rules.curated_evaluation_targets(db, project, "targets") == [
+        ("assembly", "ASM_000001")
+    ]
 
 
 def test_warning_rule_with_failing_unknown_policy_is_skipped(project_db):
     project, db = project_db
     _graph(db)
     _assembly_metrics(db)
-    _rules_profile(project, "warn_fail", warnings=[{
-        "metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-        "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "fail"},
-    }])
+    _rules_profile(
+        project,
+        "warn_fail",
+        warnings=[
+            {
+                "metric": "score",
+                "operator": ">=",
+                "source": {"qc_stage": "analysis:x"},
+                "value_by": {
+                    "metric": "lineage",
+                    "values": {"known": 80},
+                    "unknown": "fail",
+                },
+            }
+        ],
+    )
     result = rules.evaluate_entity(db, project, "assembly", "ASM_000001", "warn_fail")
     assert result["decision"] == "PASS"
     assert json.loads(result["reason_codes"]) == []
@@ -1590,25 +2310,47 @@ def test_warning_rule_with_failing_unknown_policy_is_skipped(project_db):
 # --------------------------------------------------------------------------- #
 
 
-def _qc_metric(db: Database, name: str, value: str, numeric, file_id: str = "FIL_000001") -> None:
-    db.insert_qc_result({
-        "entity_type": "assembly", "entity_id": "ASM_000001", "file_id": file_id,
-        "file_sha256": "a" * 64, "input_identity": f"file:{file_id}:{'a' * 64}",
-        "qc_stage": "file_integrity", "metric_name": name, "metric_value": value,
-        "metric_numeric": numeric, "metric_unit": None, "tool": "t", "tool_version": "1",
-        "parameter_set": "p", "evaluated_at": "now",
-    })
+def _qc_metric(
+    db: Database, name: str, value: str, numeric, file_id: str = "FIL_000001"
+) -> None:
+    db.insert_qc_result(
+        {
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_id": file_id,
+            "file_sha256": "a" * 64,
+            "input_identity": f"file:{file_id}:{'a' * 64}",
+            "qc_stage": "file_integrity",
+            "metric_name": name,
+            "metric_value": value,
+            "metric_numeric": numeric,
+            "metric_unit": None,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
 
 
 def test_file_qc_status_coerces_text_booleans(project_db):
     project, db = project_db
     _graph(db)
-    db.insert_row("files", {
-        "file_id": "FIL_000001", "entity_type": "assembly", "entity_id": "ASM_000001",
-        "file_role": "genome_fasta", "format": "fasta", "compression": "none",
-        "relative_path": "raw/assembly.fa", "size_bytes": 4, "sha256": "a" * 64,
-        "status": "CHECKSUM_VERIFIED",
-    })
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_000001",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "genome_fasta",
+            "format": "fasta",
+            "compression": "none",
+            "relative_path": "raw/assembly.fa",
+            "size_bytes": 4,
+            "sha256": "a" * 64,
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
     assert qc.file_qc_status(db, "FIL_000001") == "QC_PENDING"
 
     _qc_metric(db, "parseable", "no", None)
@@ -1621,7 +2363,9 @@ def test_file_qc_status_coerces_text_booleans(project_db):
     assert qc.file_qc_status(db, "FIL_000001") == "QC_FAILED"
 
 
-def test_fasta_length_cache_tolerates_blank_lines_and_directory_paths(project_db, tmp_path, monkeypatch):
+def test_fasta_length_cache_tolerates_blank_lines_and_directory_paths(
+    project_db, tmp_path, monkeypatch
+):
     _project, db = project_db
     record = {"file_id": "FIL_1", "sha256": "a" * 64, "size_bytes": 4}
     cache = tmp_path / "cache.tsv"
@@ -1648,12 +2392,16 @@ def test_fasta_length_cache_tolerates_blank_lines_and_directory_paths(project_db
     assert broken.is_file()
 
 
-def test_fasta_length_cache_write_failure_preserves_original_error(tmp_path, monkeypatch):
+def test_fasta_length_cache_write_failure_preserves_original_error(
+    tmp_path, monkeypatch
+):
     record = {"file_id": "FIL_1", "sha256": "a" * 64, "size_bytes": 4}
     monkeypatch.setattr(
-        qc.os, "fsync", lambda _fd: (_ for _ in ()).throw(OSError("disk full")))
+        qc.os, "fsync", lambda _fd: (_ for _ in ()).throw(OSError("disk full"))
+    )
     monkeypatch.setattr(
-        qc.os, "unlink", lambda *_a, **_k: (_ for _ in ()).throw(OSError("missing")))
+        qc.os, "unlink", lambda *_a, **_k: (_ for _ in ()).throw(OSError("missing"))
+    )
     with pytest.raises(OSError, match="disk full"):
         qc._write_fasta_length_cache(tmp_path / "cache.tsv", record, {"ctg1": 4})
     assert not (tmp_path / "cache.tsv").exists()
@@ -1662,7 +2410,9 @@ def test_fasta_length_cache_write_failure_preserves_original_error(tmp_path, mon
 def test_annotation_metrics_without_manifest_row_and_without_assembly_fasta(project_db):
     project, db = project_db
     _graph(db)
-    missing = qc._annotation_metrics(db, project, {"entity_id": "ANN_999999"}, "builtin_v2")
+    missing = qc._annotation_metrics(
+        db, project, {"entity_id": "ANN_999999"}, "builtin_v2"
+    )
     assert [(metric["metric_name"], metric["metric_value"]) for metric in missing] == [
         ("parseable", "0")
     ]
@@ -1674,10 +2424,18 @@ def test_annotation_metrics_without_manifest_row_and_without_assembly_fasta(proj
         "ctg1\ttest\tCDS\t1\t12\t.\t+\t0\tID=cds1;Parent=gene1\n",
         encoding="utf-8",
     )
-    metrics = qc._annotation_metrics(db, project, {
-        "entity_id": "ANN_000001", "relative_path": "annotation.gff3",
-        "file_id": "FIL_000009", "sha256": "a" * 64, "size_bytes": 4,
-    }, "builtin_v2")
+    metrics = qc._annotation_metrics(
+        db,
+        project,
+        {
+            "entity_id": "ANN_000001",
+            "relative_path": "annotation.gff3",
+            "file_id": "FIL_000009",
+            "sha256": "a" * 64,
+            "size_bytes": 4,
+        },
+        "builtin_v2",
+    )
     by_name = {metric["metric_name"]: metric for metric in metrics if metric}
     # The annotation's assembly has no fasta file, so no seqid cross-check ran.
     assert by_name["parseable"]["metric_numeric"] == 1.0
@@ -1706,7 +2464,10 @@ def test_measure_metric_specs_drop_none_and_skip_unpaired_roles(tmp_path):
     paired = tmp_path / "mate.fastq"
     paired.write_text("@r1\nACGT\n+\nIIII\n", encoding="utf-8")
     payload = measure.measure_file(
-        fastq, file_format="fastq", file_role="other", paired_read=paired,
+        fastq,
+        file_format="fastq",
+        file_role="other",
+        paired_read=paired,
         sha256=hashlib.sha256(fastq.read_bytes()).hexdigest(),
         size_bytes=fastq.stat().st_size,
     )
@@ -1727,7 +2488,10 @@ def test_reference_binary_line_iterator_handles_every_line_ending(tmp_path, chun
     path = tmp_path / "lines.bin"
     path.write_bytes(b"alpha\r\nbeta\rgamma\ndelta")
     assert list(reference._iter_binary_lines(path, chunk_size=chunk_size)) == [
-        b"alpha", b"beta", b"gamma", b"delta",
+        b"alpha",
+        b"beta",
+        b"gamma",
+        b"delta",
     ]
 
 
@@ -1813,8 +2577,7 @@ def test_reference_fastq_records_and_structural_errors(tmp_path):
 
     good = tmp_path / "good.fastq"
     good.write_text(
-        "@r1 description\nACGTACGT\n+\nIIIIIIII\n"
-        "@r2\nNNNN\n+\n!!!!\n",
+        "@r1 description\nACGTACGT\n+\nIIIIIIII\n@r2\nNNNN\n+\n!!!!\n",
         encoding="utf-8",
     )
     records = list(reference.iter_fastq(good))
@@ -1830,7 +2593,10 @@ def test_reference_fastq_records_and_structural_errors(tmp_path):
         "empty-id.fastq": ("@ \nACGT\n+\nIIII\n", "empty FASTQ identifier"),
         "bad-plus.fastq": ("@r1\nACGT\n-\nIIII\n", "plus line malformed"),
         "mismatch.fastq": ("@r1\nACGT\n+\nII\n", "sequence/quality length mismatch"),
-        "bad-quality.fastq": ("@r1\nACGT\n+\n\x1f\x1f\x1f\x1f\n", "quality character outside"),
+        "bad-quality.fastq": (
+            "@r1\nACGT\n+\n\x1f\x1f\x1f\x1f\n",
+            "quality character outside",
+        ),
     }
     for name, (text, message) in cases.items():
         path = tmp_path / name
@@ -1848,9 +2614,7 @@ def test_reference_fastq_stats_encodings_and_sampling(tmp_path):
 
     path = tmp_path / "reads.fastq"
     path.write_text(
-        "@r1\nACGTACGT\n+\nIIIIIIII\n"
-        "@r2\nACGTACGT\n+\nIIIIIIII\n"
-        "@r3\nNNNN\n+\n!!!!\n",
+        "@r1\nACGTACGT\n+\nIIIIIIII\n@r2\nACGTACGT\n+\nIIIIIIII\n@r3\nNNNN\n+\n!!!!\n",
         encoding="utf-8",
     )
     stats = reference.fastq_stats(path)
@@ -1882,7 +2646,8 @@ def test_reference_fastq_stats_encodings_and_sampling(tmp_path):
     phred64 = reference.fastq_stats(high, phred_offset=64)
     assert phred64["quality_encoding"] == "illumina_phred64"
     assert reference.fastq_stats(high, phred_offset="auto")["quality_encoding"] == (
-        "ambiguous_assumed_phred33")
+        "ambiguous_assumed_phred33"
+    )
 
     low = tmp_path / "low.fastq"
     low.write_text("@r1\nACGT\n+\n!!!!\n", encoding="utf-8")
@@ -1923,7 +2688,8 @@ def test_reference_gff3_attribute_parsing_and_stats(tmp_path):
     assert reference.parse_attributes("") == {}
     assert reference.parse_attributes(".") == {}
     assert reference.parse_attributes(";=;ID=gene1;Note=a%20b;no_equals") == {
-        "ID": "gene1", "Note": "a b",
+        "ID": "gene1",
+        "Note": "a b",
     }
 
     fasta = tmp_path / "assembly.fa"
@@ -1968,8 +2734,12 @@ def test_reference_gff3_attribute_parsing_and_stats(tmp_path):
     assert stats["cds_not_multiple3_count"] == 1
     assert stats["cds_length_multiple3_percent"] == 75.0
     assert stats["cds_phase0_percent"] == 75.0
-    assert {"assembly_fasta_lengths", "assembly_fasta_length_map_prepare",
-            "gff3_scan", "gff3_finalize"} <= set(timings)
+    assert {
+        "assembly_fasta_lengths",
+        "assembly_fasta_length_map_prepare",
+        "gff3_scan",
+        "gff3_finalize",
+    } <= set(timings)
 
     plain = reference.gff3_stats(gff3)
     assert plain["seqid_mismatch_count"] == 0
@@ -1984,10 +2754,7 @@ def test_reference_protein_stats(tmp_path):
 
     path = tmp_path / "proteins.fa"
     path.write_text(
-        ">p1\nMXXAA*\n"
-        ">p1\nMAA*AA*\n"
-        ">p3\n\n"
-        ">p4\nAA\n",
+        ">p1\nMXXAA*\n>p1\nMAA*AA*\n>p3\n\n>p4\nAA\n",
         encoding="utf-8",
     )
     stats = reference.protein_stats(path, cds_count=4)
@@ -2011,8 +2778,7 @@ def test_reference_gff3_without_timings_and_n50_progression(tmp_path):
     fasta.write_text(">ctg1\n" + "ACGT" * 10 + "\n", encoding="utf-8")
     gff3 = tmp_path / "annotation.gff3"
     gff3.write_text(
-        "##gff-version 3\n"
-        "ctg1\ttest\tgene\t1\t30\t.\t+\t.\tID=gene1\n",
+        "##gff-version 3\nctg1\ttest\tgene\t1\t30\t.\t+\t.\tID=gene1\n",
         encoding="utf-8",
     )
     # No timings mapping: every diagnostic timer stays untouched.

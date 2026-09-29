@@ -21,7 +21,9 @@ def project_db(tmp_path: Path):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
     project = load_project(tmp_path)
     db = Database(project.db_path)
-    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"})
+    db.insert_row(
+        "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+    )
     try:
         yield project, db
     finally:
@@ -31,12 +33,18 @@ def project_db(tmp_path: Path):
 @pytest.mark.parametrize(
     ("operator", "observed", "expected", "result"),
     [
-        (">=", 2, 1, True), (">=", 1, 2, False),
-        ("<=", 1, 1, True), ("<=", 2, 1, False),
-        (">", 2, 1, True), (">", 1, 1, False),
-        ("<", 1, 2, True), ("<", 2, 2, False),
-        ("==", 1, 1, True), ("==", 1, 2, False),
-        ("!=", 1, 2, True), ("!=", 1, 1, False),
+        (">=", 2, 1, True),
+        (">=", 1, 2, False),
+        ("<=", 1, 1, True),
+        ("<=", 2, 1, False),
+        (">", 2, 1, True),
+        (">", 1, 1, False),
+        ("<", 1, 2, True),
+        ("<", 2, 2, False),
+        ("==", 1, 1, True),
+        ("==", 1, 2, False),
+        ("!=", 1, 2, True),
+        ("!=", 1, 1, False),
     ],
 )
 def test_compare_operators(operator, observed, expected, result):
@@ -52,12 +60,15 @@ def test_rule_satisfaction_descriptions_and_validation(project_db):
     assert rules._satisfies(0, {})
     with pytest.raises(ValidationError, match="unknown operator"):
         rules._compare(1, "bad", 1)
-    assert rules._describe_rule({"operator": "between", "min": 1, "max": 2}) == "1 <= value <= 2"
+    assert (
+        rules._describe_rule({"operator": "between", "min": 1, "max": 2})
+        == "1 <= value <= 2"
+    )
     assert rules._describe_rule({"operator": "in", "values": [1]}) == "in [1]"
     assert rules._describe_rule({"operator": "exists"}) == "metric exists"
-    assert "selected by lineage" in rules._describe_rule({
-        "operator": ">=", "value_by": {"metric": "lineage"}
-    })
+    assert "selected by lineage" in rules._describe_rule(
+        {"operator": ">=", "value_by": {"metric": "lineage"}}
+    )
     assert rules._describe_rule({"operator": ">=", "value": 1}) == "value >= 1"
     with pytest.raises(ValidationError, match="rule source"):
         rules._rule_metrics(db, "organism", "ORG_000001", {"source": []}, {})
@@ -78,9 +89,15 @@ def test_value_by_validation(value_by, message):
 
 
 def test_value_by_resolution_policies_and_matching_keys():
-    rule = {"metric": "score", "operator": ">=", "value_by": {
-        "metric": "lineage", "values": {1: 80}, "unknown": "warning",
-    }}
+    rule = {
+        "metric": "score",
+        "operator": ">=",
+        "value_by": {
+            "metric": "lineage",
+            "values": {1: 80},
+            "unknown": "warning",
+        },
+    }
     effective, policy = rules._resolve_value_by(rule, {"lineage": 1})
     assert policy is None and effective["value"] == 80 and "value_by" not in effective
     assert rules._resolve_value_by(rule, {"lineage": "missing"}) == (None, "warning")
@@ -95,44 +112,135 @@ def _write_profile(project, name, document):
 
 def test_evaluate_entity_covers_missing_fail_warning_and_source_snapshots(project_db):
     project, db = project_db
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
-        "metric_name": "lineage", "metric_value": "unknown", "metric_numeric": None,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "base",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "analysis:x",
+            "metric_name": "lineage",
+            "metric_value": "unknown",
+            "metric_numeric": None,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "analysis:x",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
     base = {"kind": "qc", "version": 1, "applies_to": ["organism"]}
     profiles_to_decisions = {
-        "missing": ({**base, "required": [{"metric": "missing", "operator": "exists"}]}, "NOT_EVALUATED"),
-        "fail": ({**base, "required": [{"metric": "score", "operator": ">=", "value": 80}]}, "FAIL"),
-        "pass": ({**base, "required": [{"metric": "score", "operator": ">=", "value": 40}]}, "PASS"),
-        "warning": ({**base, "warnings": [{"metric": "score", "operator": "<", "value": 80}]}, "PASS_WITH_WARNINGS"),
-        "unknown_warning": ({**base, "required": [{
-            "metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "warning"},
-            "unknown_code": "UNKNOWN_LINEAGE",
-        }]}, "PASS_WITH_WARNINGS"),
-        "unknown_fail": ({**base, "required": [{
-            "metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "fail"},
-        }]}, "FAIL"),
-        "unknown_missing": ({**base, "required": [{
-            "metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}},
-        }]}, "NOT_EVALUATED"),
-        "unknown_ignore": ({**base, "warnings": [{
-            "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "ignore"},
-        }]}, "PASS"),
+        "missing": (
+            {**base, "required": [{"metric": "missing", "operator": "exists"}]},
+            "NOT_EVALUATED",
+        ),
+        "fail": (
+            {**base, "required": [{"metric": "score", "operator": ">=", "value": 80}]},
+            "FAIL",
+        ),
+        "pass": (
+            {**base, "required": [{"metric": "score", "operator": ">=", "value": 40}]},
+            "PASS",
+        ),
+        "warning": (
+            {**base, "warnings": [{"metric": "score", "operator": "<", "value": 80}]},
+            "PASS_WITH_WARNINGS",
+        ),
+        "unknown_warning": (
+            {
+                **base,
+                "required": [
+                    {
+                        "metric": "score",
+                        "operator": ">=",
+                        "source": {"qc_stage": "analysis:x"},
+                        "value_by": {
+                            "metric": "lineage",
+                            "values": {"known": 80},
+                            "unknown": "warning",
+                        },
+                        "unknown_code": "UNKNOWN_LINEAGE",
+                    }
+                ],
+            },
+            "PASS_WITH_WARNINGS",
+        ),
+        "unknown_fail": (
+            {
+                **base,
+                "required": [
+                    {
+                        "metric": "score",
+                        "operator": ">=",
+                        "source": {"qc_stage": "analysis:x"},
+                        "value_by": {
+                            "metric": "lineage",
+                            "values": {"known": 80},
+                            "unknown": "fail",
+                        },
+                    }
+                ],
+            },
+            "FAIL",
+        ),
+        "unknown_missing": (
+            {
+                **base,
+                "required": [
+                    {
+                        "metric": "score",
+                        "operator": ">=",
+                        "source": {"qc_stage": "analysis:x"},
+                        "value_by": {"metric": "lineage", "values": {"known": 80}},
+                    }
+                ],
+            },
+            "NOT_EVALUATED",
+        ),
+        "unknown_ignore": (
+            {
+                **base,
+                "warnings": [
+                    {
+                        "metric": "score",
+                        "operator": "<",
+                        "source": {"qc_stage": "analysis:x"},
+                        "value_by": {
+                            "metric": "lineage",
+                            "values": {"known": 80},
+                            "unknown": "ignore",
+                        },
+                    }
+                ],
+            },
+            "PASS",
+        ),
     }
     for name, (document, expected) in profiles_to_decisions.items():
         _write_profile(project, name, document)
@@ -151,30 +259,64 @@ def test_evaluate_entity_covers_missing_fail_warning_and_source_snapshots(projec
 
 def _insert_unknown_lineage_metrics(db):
     for metric, value, numeric in (("lineage", "unknown", None), ("score", "50", 50)):
-        db.insert_qc_result({
-            "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
-            "metric_name": metric, "metric_value": value, "metric_numeric": numeric,
-            "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-        })
+        db.insert_qc_result(
+            {
+                "entity_type": "organism",
+                "entity_id": "ORG_000001",
+                "qc_stage": "analysis:x",
+                "metric_name": metric,
+                "metric_value": value,
+                "metric_numeric": numeric,
+                "tool": "t",
+                "tool_version": "1",
+                "parameter_set": "p",
+                "evaluated_at": "now",
+            }
+        )
 
 
 def test_required_rule_with_ignore_policy_leaves_persistent_trace(project_db):
     project, db = project_db
     _insert_unknown_lineage_metrics(db)
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    _write_profile(project, "required_ignore", {
-        "kind": "qc", "version": 1, "applies_to": ["organism"],
-        "required": [
-            {"metric": "score", "operator": ">=", "source": {"qc_stage": "analysis:x"},
-             "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "ignore"}},
-            {"metric": "score", "operator": ">=", "value": 40},
-        ],
-    })
-    result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "required_ignore")
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "base",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    _write_profile(
+        project,
+        "required_ignore",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["organism"],
+            "required": [
+                {
+                    "metric": "score",
+                    "operator": ">=",
+                    "source": {"qc_stage": "analysis:x"},
+                    "value_by": {
+                        "metric": "lineage",
+                        "values": {"known": 80},
+                        "unknown": "ignore",
+                    },
+                },
+                {"metric": "score", "operator": ">=", "value": 40},
+            ],
+        },
+    )
+    result = rules.evaluate_entity(
+        db, project, "organism", "ORG_000001", "required_ignore"
+    )
     assert result["decision"] == "PASS"
     persisted = db.query(
         "SELECT reason_codes FROM current_decisions "
@@ -183,9 +325,13 @@ def test_required_rule_with_ignore_policy_leaves_persistent_trace(project_db):
     )[0]["reason_codes"]
     assert json.loads(persisted) == ["LINEAGE_IGNORED"]
     assert result["details"][0] == {
-        "metric": "score", "rule": "value >= threshold selected by lineage",
-        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
-        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_IGNORED",
+        "metric": "score",
+        "rule": "value >= threshold selected by lineage",
+        "observed": 50.0,
+        "selector": "lineage",
+        "selector_value": "unknown",
+        "source": {"qc_stage": "analysis:x"},
+        "code": "LINEAGE_IGNORED",
         "kind": "value_by_unknown_ignore",
     }
 
@@ -193,14 +339,28 @@ def test_required_rule_with_ignore_policy_leaves_persistent_trace(project_db):
 def test_warning_rule_with_ignore_policy_leaves_persistent_trace(project_db):
     project, db = project_db
     _insert_unknown_lineage_metrics(db)
-    _write_profile(project, "warn_ignore", {
-        "kind": "qc", "version": 1, "applies_to": ["organism"],
-        "warnings": [{
-            "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "ignore"},
-            "unknown_code": "LINEAGE_IGNORED_CUSTOM",
-        }],
-    })
+    _write_profile(
+        project,
+        "warn_ignore",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["organism"],
+            "warnings": [
+                {
+                    "metric": "score",
+                    "operator": "<",
+                    "source": {"qc_stage": "analysis:x"},
+                    "value_by": {
+                        "metric": "lineage",
+                        "values": {"known": 80},
+                        "unknown": "ignore",
+                    },
+                    "unknown_code": "LINEAGE_IGNORED_CUSTOM",
+                }
+            ],
+        },
+    )
     result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "warn_ignore")
     assert result["decision"] == "PASS"
     persisted = db.query(
@@ -209,65 +369,133 @@ def test_warning_rule_with_ignore_policy_leaves_persistent_trace(project_db):
         ("organism", "ORG_000001", "warn_ignore"),
     )[0]["reason_codes"]
     assert json.loads(persisted) == ["LINEAGE_IGNORED_CUSTOM"]
-    assert result["details"] == [{
-        "metric": "score", "rule": "value < threshold selected by lineage",
-        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
-        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_IGNORED_CUSTOM",
-        "kind": "value_by_unknown_ignore",
-    }]
+    assert result["details"] == [
+        {
+            "metric": "score",
+            "rule": "value < threshold selected by lineage",
+            "observed": 50.0,
+            "selector": "lineage",
+            "selector_value": "unknown",
+            "source": {"qc_stage": "analysis:x"},
+            "code": "LINEAGE_IGNORED_CUSTOM",
+            "kind": "value_by_unknown_ignore",
+        }
+    ]
 
 
 def test_warning_rule_with_unknown_selector_emits_warning_detail(project_db):
     project, db = project_db
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
-        "metric_name": "lineage", "metric_value": "unknown", "metric_numeric": None,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "analysis:x",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    _write_profile(project, "warn_unknown", {
-        "kind": "qc", "version": 1, "applies_to": ["organism"],
-        "warnings": [{
-            "metric": "score", "operator": "<", "source": {"qc_stage": "analysis:x"},
-            "value_by": {"metric": "lineage", "values": {"known": 80}, "unknown": "warning"},
-            "unknown_code": "LINEAGE_UNKNOWN",
-        }],
-    })
-    result = rules.evaluate_entity(db, project, "organism", "ORG_000001", "warn_unknown")
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "analysis:x",
+            "metric_name": "lineage",
+            "metric_value": "unknown",
+            "metric_numeric": None,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "analysis:x",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    _write_profile(
+        project,
+        "warn_unknown",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["organism"],
+            "warnings": [
+                {
+                    "metric": "score",
+                    "operator": "<",
+                    "source": {"qc_stage": "analysis:x"},
+                    "value_by": {
+                        "metric": "lineage",
+                        "values": {"known": 80},
+                        "unknown": "warning",
+                    },
+                    "unknown_code": "LINEAGE_UNKNOWN",
+                }
+            ],
+        },
+    )
+    result = rules.evaluate_entity(
+        db, project, "organism", "ORG_000001", "warn_unknown"
+    )
     assert result["decision"] == "PASS_WITH_WARNINGS"
     assert json.loads(result["reason_codes"]) == ["LINEAGE_UNKNOWN"]
-    assert result["details"] == [{
-        "metric": "score", "rule": "value < threshold selected by lineage",
-        "observed": 50.0, "selector": "lineage", "selector_value": "unknown",
-        "source": {"qc_stage": "analysis:x"}, "code": "LINEAGE_UNKNOWN",
-        "kind": "value_by_unknown_warning",
-    }]
+    assert result["details"] == [
+        {
+            "metric": "score",
+            "rule": "value < threshold selected by lineage",
+            "observed": 50.0,
+            "selector": "lineage",
+            "selector_value": "unknown",
+            "source": {"qc_stage": "analysis:x"},
+            "code": "LINEAGE_UNKNOWN",
+            "kind": "value_by_unknown_warning",
+        }
+    ]
 
 
 def test_evaluate_all_skips_entities_outside_profile_applies_to(project_db):
     project, db = project_db
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    _write_profile(project, "assemblies_only", {
-        "kind": "qc", "version": 1, "applies_to": ["assembly"],
-        "required": [{"metric": "score", "operator": ">=", "value": 1}],
-    })
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "base",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    _write_profile(
+        project,
+        "assemblies_only",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["assembly"],
+            "required": [{"metric": "score", "operator": ">=", "value": 1}],
+        },
+    )
     assert rules.evaluate_all(db, project, "assemblies_only") == []
     assert db.query("SELECT COUNT(*) FROM decisions")[0][0] == 0
 
 
 def test_evaluate_all_filter_and_curate_missing(project_db):
     project, db = project_db
-    _write_profile(project, "none", {
-        "kind": "qc", "version": 1, "applies_to": ["assembly"], "required": [],
-    })
+    _write_profile(
+        project,
+        "none",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["assembly"],
+            "required": [],
+        },
+    )
     assert rules.evaluate_all(db, project, "none", entity_type="organism") == []
     with pytest.raises(ValidationError, match="no automatic decision"):
         rules.curate_decision(db, "organism", "ORG_000001", "none", "PASS", "r", "why")
@@ -275,22 +503,46 @@ def test_evaluate_all_filter_and_curate_missing(project_db):
 
 def test_re_evaluation_carries_curated_decision_forward(project_db):
     project, db = project_db
-    db.insert_qc_result({
-        "entity_type": "organism", "entity_id": "ORG_000001", "qc_stage": "base",
-        "metric_name": "score", "metric_value": "50", "metric_numeric": 50,
-        "tool": "t", "tool_version": "1", "parameter_set": "p", "evaluated_at": "now",
-    })
-    _write_profile(project, "curation_lifecycle", {
-        "kind": "qc", "version": 1, "applies_to": ["organism"],
-        "required": [{"metric": "score", "operator": ">=", "value": 80}],
-    })
-    first = rules.evaluate_entity(db, project, "organism", "ORG_000001", "curation_lifecycle")
+    db.insert_qc_result(
+        {
+            "entity_type": "organism",
+            "entity_id": "ORG_000001",
+            "qc_stage": "base",
+            "metric_name": "score",
+            "metric_value": "50",
+            "metric_numeric": 50,
+            "tool": "t",
+            "tool_version": "1",
+            "parameter_set": "p",
+            "evaluated_at": "now",
+        }
+    )
+    _write_profile(
+        project,
+        "curation_lifecycle",
+        {
+            "kind": "qc",
+            "version": 1,
+            "applies_to": ["organism"],
+            "required": [{"metric": "score", "operator": ">=", "value": 80}],
+        },
+    )
+    first = rules.evaluate_entity(
+        db, project, "organism", "ORG_000001", "curation_lifecycle"
+    )
     assert first["decision"] == "FAIL"
     rules.curate_decision(
-        db, "organism", "ORG_000001", "curation_lifecycle", "PASS",
-        reviewer="reviewer", reason="manual evidence",
+        db,
+        "organism",
+        "ORG_000001",
+        "curation_lifecycle",
+        "PASS",
+        reviewer="reviewer",
+        reason="manual evidence",
     )
-    second = rules.evaluate_entity(db, project, "organism", "ORG_000001", "curation_lifecycle")
+    second = rules.evaluate_entity(
+        db, project, "organism", "ORG_000001", "curation_lifecycle"
+    )
     assert second["decision"] == "FAIL"
     assert db.get_entity_state("organism", "ORG_000001") == "ACCEPTED"
     current = db.query(
@@ -309,9 +561,18 @@ def test_schema_construction_columns_and_error_rendering(tmp_path):
         Schema([])
     with pytest.raises(ValidationError, match="schema file not found"):
         Schema.from_file(tmp_path / "missing")
-    schema = Schema({"schema_version": "x", "tables": {"t": {
-        "primary_key": "id", "unique": [["name"]], "fields": {"id": {"type": "id"}}
-    }}})
+    schema = Schema(
+        {
+            "schema_version": "x",
+            "tables": {
+                "t": {
+                    "primary_key": "id",
+                    "unique": [["name"]],
+                    "fields": {"id": {"type": "id"}},
+                }
+            },
+        }
+    )
     assert schema.table_names() == ["t"]
     assert schema.columns("t") == ["id"]
     assert schema.primary_key("t") == "id"
@@ -355,16 +616,30 @@ def test_schema_field_normalization(spec, value, expected, error):
 
 
 def test_schema_row_duplicates_unknown_fields_and_tsv_edges(tmp_path):
-    schema = Schema({"tables": {"t": {
-        "primary_key": "id", "unique": [["name"]],
-        "fields": {"id": {"type": "id", "required": True}, "name": {"type": "string"}},
-    }}})
+    schema = Schema(
+        {
+            "tables": {
+                "t": {
+                    "primary_key": "id",
+                    "unique": [["name"]],
+                    "fields": {
+                        "id": {"type": "id", "required": True},
+                        "name": {"type": "string"},
+                    },
+                }
+            }
+        }
+    )
     with pytest.raises(ValidationError, match="unknown field"):
         schema.validate_and_normalize("t", [{"id": "A", "extra": 1}])
     with pytest.raises(ValidationError, match="duplicate primary key"):
-        schema.validate_and_normalize("t", [{"id": "A", "name": "x"}, {"id": "A", "name": "y"}])
+        schema.validate_and_normalize(
+            "t", [{"id": "A", "name": "x"}, {"id": "A", "name": "y"}]
+        )
     with pytest.raises(ValidationError, match="duplicate unique combination"):
-        schema.validate_and_normalize("t", [{"id": "A", "name": "x"}, {"id": "B", "name": "x"}])
+        schema.validate_and_normalize(
+            "t", [{"id": "A", "name": "x"}, {"id": "B", "name": "x"}]
+        )
     with pytest.raises(ValidationError, match="schema has no table"):
         schema.validate_and_normalize("missing", [])
 
@@ -388,18 +663,22 @@ def test_schema_row_duplicates_unknown_fields_and_tsv_edges(tmp_path):
     assert read_tsv(output) == [{"a": "", "b": "1"}, {"a": "2", "b": ""}]
 
 
-@pytest.mark.bug("ODR-0040")
+@pytest.mark.bug("ODR-40")
 def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
     output = tmp_path / "escaped.tsv"
-    write_tsv(output, ["text", "number"], [
-        {"text": "=1+1", "number": 1},
-        {"text": "+2", "number": -2},
-        {"text": "-3", "number": 3.5},
-        {"text": "@4", "number": 4},
-        {"text": "in=x", "number": 5},
-        {"text": "", "number": None},
-        ["'=already-escaped", 9],
-    ])
+    write_tsv(
+        output,
+        ["text", "number"],
+        [
+            {"text": "=1+1", "number": 1},
+            {"text": "+2", "number": -2},
+            {"text": "-3", "number": 3.5},
+            {"text": "@4", "number": 4},
+            {"text": "in=x", "number": 5},
+            {"text": "", "number": None},
+            ["'=already-escaped", 9],
+        ],
+    )
     assert output.read_text(encoding="utf-8") == (
         "text\tnumber\n"
         "'=1+1\t1\n"
@@ -425,28 +704,33 @@ def test_write_tsv_escapes_formula_trigger_cells(tmp_path):
     write_tsv(tab_cr, ["text"], [{"text": "\t5"}, {"text": "\r6"}])
     # TAB/CR still trigger the escape, and a cell containing TAB, CR, LF or the
     # quote character is quoted by write_tsv itself rather than by csv (whose
-    # rule changed in 3.11; ODR-0044).  Values containing the delimiter itself
+    # rule changed in 3.11; ODR-44).  Values containing the delimiter itself
     # are still not round-trippable through read_tsv's plain split.
     assert tab_cr.read_bytes() == b'text\n"\'\t5"\n"\'\r6"\n'
 
 
-@pytest.mark.bug("ODR-0044")
-@pytest.mark.parametrize(("value", "expected"), [
-    ("\t5", b'"\'\t5"'),
-    ("\r6", b'"\'\r6"'),
-    ("\n7", b'"\n7"'),
-    ('say "hi"', b'"say ""hi"""'),
-    ("plain", b"plain"),
-    ("=1+1", b"'=1+1"),
-    ("in=x", b"in=x"),
-    (7, b"7"),
-    (-3.5, b"-3.5"),
-    (None, b""),
-])
-def test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter(tmp_path, value, expected):
+@pytest.mark.bug("ODR-44")
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("\t5", b'"\'\t5"'),
+        ("\r6", b'"\'\r6"'),
+        ("\n7", b'"\n7"'),
+        ('say "hi"', b'"say ""hi"""'),
+        ("plain", b"plain"),
+        ("=1+1", b"'=1+1"),
+        ("in=x", b"in=x"),
+        (7, b"7"),
+        (-3.5, b"-3.5"),
+        (None, b""),
+    ],
+)
+def test_write_tsv_cell_bytes_do_not_depend_on_the_interpreter(
+    tmp_path, value, expected
+):
     """A row must serialize to the same bytes on every supported Python.
 
-    Guards ODR-0044: csv quotes a CR cell only from 3.11 on, so the writer
+    Guards ODR-44: csv quotes a CR cell only from 3.11 on, so the writer
     decides quoting itself.  With ``csv.writer`` the ``\r6`` cell was written
     unquoted on 3.10 — bytes no CSV reader could parse — and quoted from 3.11.
     """

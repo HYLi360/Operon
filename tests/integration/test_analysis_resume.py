@@ -25,14 +25,27 @@ class TestAnalysisResume(PytestAssertions):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
-        self.assertEqual(main(["--project", str(self.root), "init", str(self.root), "--project-id", "PRJ_RSM_001"]), 0)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "init",
+                    str(self.root),
+                    "--project-id",
+                    "PRJ_RSM_001",
+                ]
+            ),
+            0,
+        )
         self.project = load_project(self.root)
         self.db = Database(self.project.db_path)
         self.addCleanup(self.db.close)
 
     def _write_fake_blast(self) -> Path:
         script = self.root / "fakeblast.py"
-        script.write_text(textwrap.dedent("""
+        script.write_text(
+            textwrap.dedent("""
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -41,7 +54,9 @@ class TestAnalysisResume(PytestAssertions):
             out = args[args.index('-out') + 1]
             with open(out, 'w') as handle:
                 handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
-        """).strip(), encoding="utf-8")
+        """).strip(),
+            encoding="utf-8",
+        )
         return script
 
     def _write_tool_config(self, executable: Path, extra_args: list[str] | None = None):
@@ -64,21 +79,49 @@ class TestAnalysisResume(PytestAssertions):
                             "arguments": ["-query", "${input}", "-out", "${output}"]
                             + list(extra_args or []),
                             "result_parser": "blast_tabular",
-                            "result_columns": ["qseqid", "sseqid", "pident", "length", "evalue", "bitscore"],
+                            "result_columns": [
+                                "qseqid",
+                                "sseqid",
+                                "pident",
+                                "length",
+                                "evalue",
+                                "bitscore",
+                            ],
                         }
                     },
                 }
             },
         }
-        self.project.tools_config_path.write_text(yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8")
+        self.project.tools_config_path.write_text(
+            yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
+        )
 
     def _add_assembly(self):
-        self.db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Testus", "taxonomy_source": "NCBI"})
-        self.db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
-        self.db.insert_row("assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001", "assembly_level": "contig", "assembly_version": 1})
+        self.db.insert_row(
+            "organisms",
+            {
+                "organism_id": "ORG_000001",
+                "scientific_name": "Testus",
+                "taxonomy_source": "NCBI",
+            },
+        )
+        self.db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        self.db.insert_row(
+            "assemblies",
+            {
+                "assembly_id": "ASM_000001",
+                "sample_id": "SMP_000001",
+                "assembly_level": "contig",
+                "assembly_version": 1,
+            },
+        )
         fasta = self.root / "asm.fa"
         fasta.write_text(">ctg1\n" + "ACGT" * 600 + "\n", encoding="utf-8")
-        return ingest_file(self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta")
+        return ingest_file(
+            self.db, self.project, fasta, "assembly", "ASM_000001", "genome_fasta"
+        )
 
     def test_database_identity_matches_pre_backend_digest(self):
         # Regression: adding the execution-location key must not change the
@@ -93,11 +136,15 @@ class TestAnalysisResume(PytestAssertions):
             "database_mode": "reference",
         }
         legacy = hashlib.sha256(
-            json.dumps(legacy_canonical, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            json.dumps(legacy_canonical, sort_keys=True, ensure_ascii=False).encode(
+                "utf-8"
+            )
         ).hexdigest()
         self.assertEqual(identity, legacy)
         # A non-empty location still distinguishes staged remote databases.
-        self.assertNotEqual(identity, database_identity(self.project, recipe, "ssh:host"))
+        self.assertNotEqual(
+            identity, database_identity(self.project, recipe, "ssh:host")
+        )
 
     def test_verified_output_is_adopted_after_fingerprint_change(self):
         self._write_fake_blast()
@@ -118,7 +165,9 @@ class TestAnalysisResume(PytestAssertions):
         self.assertEqual([j["status"] for j in jobs], ["completed", "completed"])
         # The adopted row links back to the original run and output.
         self.assertEqual(jobs[1]["workflow_run_id"], jobs[0]["workflow_run_id"])
-        self.assertEqual(jobs[1]["output_relative_path"], jobs[0]["output_relative_path"])
+        self.assertEqual(
+            jobs[1]["output_relative_path"], jobs[0]["output_relative_path"]
+        )
         self.assertEqual(jobs[1]["output_sha256"], jobs[0]["output_sha256"])
         self.assertNotEqual(jobs[1]["parameter_sha256"], jobs[0]["parameter_sha256"])
         audit = self.db.query("SELECT * FROM changes WHERE object_type='analysis_job'")
@@ -128,7 +177,9 @@ class TestAnalysisResume(PytestAssertions):
         # The adopted row is a normal exact cache hit from now on.
         results = run_analysis(self.project, self.db, "fake_nt")
         self.assertEqual(results[0]["status"], "cached")
-        self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2)
+        self.assertEqual(
+            self.db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"], 2
+        )
 
     def test_modified_output_is_recomputed_not_adopted(self):
         self._write_fake_blast()
@@ -137,8 +188,12 @@ class TestAnalysisResume(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt")
         self.assertEqual(results[0]["status"], "completed", results[0].get("error"))
 
-        output = (self.project.analysis_root / "fake_nt" / "ASM_000001"
-                  / f"{file_row['file_id']}.genome_fasta.out.tsv")
+        output = (
+            self.project.analysis_root
+            / "fake_nt"
+            / "ASM_000001"
+            / f"{file_row['file_id']}.genome_fasta.out.tsv"
+        )
         with open(output, "a", encoding="utf-8") as handle:
             handle.write("tampered\n")
 
@@ -151,8 +206,12 @@ class TestAnalysisResume(PytestAssertions):
         self.assertEqual(self.db.query("SELECT COUNT(*) AS n FROM changes")[0]["n"], 0)
 
     def _cached_output_path(self, file_id: str) -> Path:
-        return (self.project.analysis_root / "fake_nt" / "ASM_000001"
-                / f"{file_id}.genome_fasta.out.tsv")
+        return (
+            self.project.analysis_root
+            / "fake_nt"
+            / "ASM_000001"
+            / f"{file_id}.genome_fasta.out.tsv"
+        )
 
     def test_deleted_cached_output_is_superseded_and_recomputed(self):
         self._write_fake_blast()
@@ -215,5 +274,7 @@ class TestAnalysisResume(PytestAssertions):
         results = run_analysis(self.project, self.db, "fake_nt", dry_run=True)
         self.assertEqual(results[0]["status"], "cached")
         # --force supersedes the cache, so the dry run plans a re-run.
-        results = run_analysis(self.project, self.db, "fake_nt", dry_run=True, force=True)
+        results = run_analysis(
+            self.project, self.db, "fake_nt", dry_run=True, force=True
+        )
         self.assertEqual(results[0]["status"], "planned")

@@ -62,7 +62,7 @@ from operon.tui.screens.runs import RunDetailScreen, RunsPanel
 SCENARIO_TIMEOUT = 180.0
 SETTLE_TIMEOUT = 30.0
 #: Budget for a worker result crossing back from its thread to the UI, and for
-#: the screen teardown that follows it (ODR-0046).  Those steps have no upper
+#: the screen teardown that follows it (ODR-46).  Those steps have no upper
 #: bound a loaded machine cannot exceed: a busy runner once left the dismissal
 #: of a cancelled run past the 30 s SETTLE_TIMEOUT and reddened the suite with
 #: no product fault behind it.  The scenario cap above is three times this
@@ -99,7 +99,9 @@ async def _settled(app, timeout: float = SETTLE_TIMEOUT) -> None:
 
 
 async def _wait_until(
-        predicate: Callable[[], bool], description: str, timeout: float = SETTLE_TIMEOUT,
+    predicate: Callable[[], bool],
+    description: str,
+    timeout: float = SETTLE_TIMEOUT,
 ) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -135,7 +137,10 @@ def _form_text(modal) -> str:
 
 
 def _notifications(app) -> list[tuple[str, str]]:
-    return [(notification.severity, notification.message) for notification in app._notifications]
+    return [
+        (notification.severity, notification.message)
+        for notification in app._notifications
+    ]
 
 
 def _shutdown_guard(app):
@@ -150,13 +155,17 @@ def _shutdown_guard(app):
 
 def test_human_size_and_metric_section_rendering() -> None:
     """Size formatting saturates at TiB; metric sections group, unit and truncate."""
-    assert human_size(5 * 1024 ** 5) == "5.0 TiB"
+    assert human_size(5 * 1024**5) == "5.0 TiB"
     assert human_size(0) == "0 B"
 
     text = Text()
     rows = [
-        {"analysis_name": "busco", "metric_name": "complete", "metric_value": "95.0",
-         "metric_unit": "%"},
+        {
+            "analysis_name": "busco",
+            "metric_name": "complete",
+            "metric_value": "95.0",
+            "metric_unit": "%",
+        },
         {"analysis_name": "busco", "metric_name": "fragmented", "metric_value": "2.0"},
         {"analysis_name": "quast", "metric_name": "n50", "metric_value": "1000"},
     ]
@@ -170,8 +179,14 @@ def test_human_size_and_metric_section_rendering() -> None:
 
     many = Text()
     metrics = [
-        {"qc_stage": "assembly", "metric_name": f"m{index}", "metric_value": index,
-         "metric_unit": "bp", "tool": "operon.builtin", "tool_version": "0.7"}
+        {
+            "qc_stage": "assembly",
+            "metric_name": f"m{index}",
+            "metric_value": index,
+            "metric_unit": "bp",
+            "tool": "operon.builtin",
+            "tool_version": "0.7",
+        }
         for index in range(METRIC_ROW_LIMIT + 5)
     ]
     _metrics_section(many, "QC metrics", metrics, "qc_stage", show_tool=True)
@@ -213,7 +228,9 @@ def test_write_modal_base_contract(project: Project) -> None:
             recorder = RecorderModal("Recorder")
             app.push_screen(recorder)
             await pilot.pause()
-            recorder.on_button_pressed(Button.Pressed(recorder.query_one("#confirm", Button)))
+            recorder.on_button_pressed(
+                Button.Pressed(recorder.query_one("#confirm", Button))
+            )
             assert recorder.confirmed == 1
             recorder.on_button_pressed(Button.Pressed(Button("other", id="other")))
             assert recorder.confirmed == 1
@@ -236,7 +253,8 @@ def test_error_dialog_shows_message_and_closes(project: Project) -> None:
             app.push_screen(dialog)
             await pilot.pause()
             assert "FIL_1: CHECKSUM_FAILED" in _static_text(
-                dialog.query_one("#error-dialog-body", Static))
+                dialog.query_one("#error-dialog-body", Static)
+            )
             dialog.on_button_pressed(Button.Pressed(Button("other", id="other")))
             assert app.screen is dialog, "only the OK button closes the dialog"
             assert await pilot.click("#cancel")
@@ -260,33 +278,65 @@ def test_entity_metrics_keep_newest_measurement_per_metric(project: Project) -> 
             ("old-run", "100", "2026-01-01T00:00:00+00:00"),
             ("new-run", "250", "2026-02-01T00:00:00+00:00"),
         ):
-            db.insert_row("qc_results", {
-                "entity_type": "assembly", "entity_id": "ASM_000001", "file_id": file_id,
-                "file_sha256": "ab" * 32, "input_identity": "asm-1",
-                "qc_stage": "assembly", "metric_name": "test_metric_n50", "metric_value": value,
-                "metric_numeric": float(value), "metric_unit": "bp", "tool": "operon.builtin",
-                "tool_version": "0.7", "parameter_set": parameter_set, "evaluated_at": evaluated_at,
-            })
-        for index, (analysis_name, finished_at, metric_name, value, unit) in enumerate((
-            ("busco", "2026-01-01T00:00:00+00:00", "complete", "90.0", "%"),
-            ("busco", "2026-03-01T00:00:00+00:00", "complete", "95.0", "%"),
-            ("busco", "2026-03-01T00:00:00+00:00", "fragmented", "2.0", "%"),
-        )):
-            db.insert_row("analysis_jobs", {
-                "analysis_name": analysis_name, "entity_type": "assembly",
-                "entity_id": "ASM_000001", "file_id": file_id, "tool": analysis_name,
-                "tool_version": "1", "parameter_set": "default",
-                "parameter_sha256": f"{index:02d}" * 32, "input_sha256": "ef" * 32,
-                "database_identity": "db", "status": "completed", "started_at": finished_at,
-                "finished_at": finished_at,
-            })
+            db.insert_row(
+                "qc_results",
+                {
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "file_id": file_id,
+                    "file_sha256": "ab" * 32,
+                    "input_identity": "asm-1",
+                    "qc_stage": "assembly",
+                    "metric_name": "test_metric_n50",
+                    "metric_value": value,
+                    "metric_numeric": float(value),
+                    "metric_unit": "bp",
+                    "tool": "operon.builtin",
+                    "tool_version": "0.7",
+                    "parameter_set": parameter_set,
+                    "evaluated_at": evaluated_at,
+                },
+            )
+        for index, (analysis_name, finished_at, metric_name, value, unit) in enumerate(
+            (
+                ("busco", "2026-01-01T00:00:00+00:00", "complete", "90.0", "%"),
+                ("busco", "2026-03-01T00:00:00+00:00", "complete", "95.0", "%"),
+                ("busco", "2026-03-01T00:00:00+00:00", "fragmented", "2.0", "%"),
+            )
+        ):
+            db.insert_row(
+                "analysis_jobs",
+                {
+                    "analysis_name": analysis_name,
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "file_id": file_id,
+                    "tool": analysis_name,
+                    "tool_version": "1",
+                    "parameter_set": "default",
+                    "parameter_sha256": f"{index:02d}" * 32,
+                    "input_sha256": "ef" * 32,
+                    "database_identity": "db",
+                    "status": "completed",
+                    "started_at": finished_at,
+                    "finished_at": finished_at,
+                },
+            )
             job_id = int(db.query("SELECT MAX(job_id) AS j FROM analysis_jobs")[0]["j"])
-            db.insert_row("analysis_results", {
-                "job_id": job_id, "entity_type": "assembly", "entity_id": "ASM_000001",
-                "file_id": file_id, "analysis_name": analysis_name,
-                "metric_name": metric_name, "metric_value": value,
-                "metric_numeric": float(value), "metric_unit": unit,
-            })
+            db.insert_row(
+                "analysis_results",
+                {
+                    "job_id": job_id,
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "file_id": file_id,
+                    "analysis_name": analysis_name,
+                    "metric_name": metric_name,
+                    "metric_value": value,
+                    "metric_numeric": float(value),
+                    "metric_unit": unit,
+                },
+            )
     finally:
         db.close()
 
@@ -299,7 +349,10 @@ def test_entity_metrics_keep_newest_measurement_per_metric(project: Project) -> 
         (row["analysis_name"], row["metric_name"], row["metric_value"])
         for row in metrics["analysis"]
     ] == [("busco", "complete", "95.0"), ("busco", "fragmented", "2.0")]
-    assert all("finished_at" not in row and "result_id" not in row for row in metrics["analysis"])
+    assert all(
+        "finished_at" not in row and "result_id" not in row
+        for row in metrics["analysis"]
+    )
 
 
 def test_list_decisions_without_limit(demo_template: Project) -> None:
@@ -320,26 +373,43 @@ def test_list_tools_surfaces_invalid_recipe(project: Project) -> None:
 
     rows = {row["name"]: row for row in data.list_tools(project)}
     broken = rows["broken_tool"]
-    assert broken["executable"] == "" and broken["run_method"] == "" and broken["recipes"] == []
+    assert (
+        broken["executable"] == ""
+        and broken["run_method"] == ""
+        and broken["recipes"] == []
+    )
     assert broken["description"] == (
-        "invalid: tool broken_tool: conda launcher requires 'env'")
+        "invalid: tool broken_tool: conda launcher requires 'env'"
+    )
     valid = [row for name, row in rows.items() if name != "broken_tool"]
     assert valid and all(row["executable"] for row in valid)
 
 
-def test_workflow_run_detail_survives_corrupt_environment_document(project: Project) -> None:
+def test_workflow_run_detail_survives_corrupt_environment_document(
+    project: Project,
+) -> None:
     """A corrupt environment document leaves the run readable with no summary."""
     from operon.workflow import log_run
 
     db = Database(project.db_path)
     try:
-        db.insert_row("execution_environments", {
-            "environment_id": "env_corrupt", "document": "{not json",
-            "created_at": "2026-01-01T00:00:00+00:00",
-        })
-        run = log_run(db, project, {
-            "step": "qc", "status": "completed", "environment_id": "env_corrupt",
-        })
+        db.insert_row(
+            "execution_environments",
+            {
+                "environment_id": "env_corrupt",
+                "document": "{not json",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+        )
+        run = log_run(
+            db,
+            project,
+            {
+                "step": "qc",
+                "status": "completed",
+                "environment_id": "env_corrupt",
+            },
+        )
     finally:
         db.close()
 
@@ -355,12 +425,21 @@ def test_entity_tree_hides_retired_runs(tmp_path: Path) -> None:
     project = Project.init(tmp_path / "retired-runs")
     db = Database(project.db_path)
     try:
-        db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"})
-        db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "Doomed"}
+        )
+        db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
         db.insert_row("runs", {"run_id": "RUN_000001", "sample_id": "SMP_000001"})
         apply_lifecycle_event(
-            db, "sample", "SMP_000001",
-            action="RETIRE", reason="test retirement", actor="tester", reason_code="duplicate",
+            db,
+            "sample",
+            "SMP_000001",
+            action="RETIRE",
+            reason="test retirement",
+            actor="tester",
+            reason_code="duplicate",
         )
     finally:
         db.close()
@@ -382,9 +461,13 @@ def test_pickers_work_without_lifecycle_schema(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.sqlite"
     conn = sqlite3.connect(db_path)
     conn.executescript(DDL)
-    conn.execute("INSERT INTO organisms (organism_id, scientific_name) VALUES ('ORG_000001', 'Legacy')")
-    conn.execute("INSERT INTO samples (sample_id, organism_id, strain) "
-                 "VALUES ('SMP_000001', 'ORG_000001', 'legacy strain')")
+    conn.execute(
+        "INSERT INTO organisms (organism_id, scientific_name) VALUES ('ORG_000001', 'Legacy')"
+    )
+    conn.execute(
+        "INSERT INTO samples (sample_id, organism_id, strain) "
+        "VALUES ('SMP_000001', 'ORG_000001', 'legacy strain')"
+    )
     conn.commit()
     conn.close()
 
@@ -392,23 +475,40 @@ def test_pickers_work_without_lifecycle_schema(tmp_path: Path) -> None:
     project.db_path.unlink()
     db_path.rename(project.db_path)
 
-    assert [row["organism_id"] for row in data.list_organisms_for_picker(project)] == ["ORG_000001"]
-    assert [row["sample_id"] for row in data.list_samples_for_picker(project, "ORG_000001")] == ["SMP_000001"]
+    assert [row["organism_id"] for row in data.list_organisms_for_picker(project)] == [
+        "ORG_000001"
+    ]
+    assert [
+        row["sample_id"] for row in data.list_samples_for_picker(project, "ORG_000001")
+    ] == ["SMP_000001"]
 
 
 def test_list_releases_tolerates_empty_and_corrupt_summaries(project: Project) -> None:
     """Undecodable or empty release summaries are returned verbatim."""
     db = Database(project.db_path)
     try:
-        db.insert_row("releases", {
-            "version": "v-empty", "created_at": "2026-01-01T00:00:00+00:00",
-            "profile": "p", "path": "/tmp/v-empty", "manifest_sha256": "ab", "summary": "",
-        })
-        db.insert_row("releases", {
-            "version": "v-corrupt", "created_at": "2026-02-01T00:00:00+00:00",
-            "profile": "p", "path": "/tmp/v-corrupt", "manifest_sha256": "cd",
-            "summary": "{not json",
-        })
+        db.insert_row(
+            "releases",
+            {
+                "version": "v-empty",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "profile": "p",
+                "path": "/tmp/v-empty",
+                "manifest_sha256": "ab",
+                "summary": "",
+            },
+        )
+        db.insert_row(
+            "releases",
+            {
+                "version": "v-corrupt",
+                "created_at": "2026-02-01T00:00:00+00:00",
+                "profile": "p",
+                "path": "/tmp/v-corrupt",
+                "manifest_sha256": "cd",
+                "summary": "{not json",
+            },
+        )
     finally:
         db.close()
 
@@ -429,12 +529,21 @@ def test_coverage_report_discovery_and_parsing(project: Project) -> None:
     (root / "COV_0C3D").mkdir()  # report directory without any provenance
     complete = root / "COV_0FED"
     complete.mkdir()
-    (complete / "provenance.json").write_text(json.dumps({
-        "reference_set_id": "RS_1", "scope_kind": "metadata", "scope_value": None,
-        "decision": "PASS", "created_at": "2026-04-01T00:00:00+00:00",
-    }), encoding="utf-8")
+    (complete / "provenance.json").write_text(
+        json.dumps(
+            {
+                "reference_set_id": "RS_1",
+                "scope_kind": "metadata",
+                "scope_value": None,
+                "decision": "PASS",
+                "created_at": "2026-04-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
     (complete / "coverage_summary.tsv").write_text(
-        "family\tcoverage_percent\nfamA\t100.0\n", encoding="utf-8")
+        "family\tcoverage_percent\nfamA\t100.0\n", encoding="utf-8"
+    )
 
     listed = {row["report_id"]: row for row in data.list_coverage_reports(project)}
     assert set(listed) == {"COV_0BAD", "COV_0C3D", "COV_0FED"}
@@ -446,15 +555,20 @@ def test_coverage_report_discovery_and_parsing(project: Project) -> None:
     assert listed["COV_0C3D"]["scope_value"] is None
 
     assert data.read_coverage_report(project, "COV_0C3D") == {
-        "report_id": "COV_0C3D", "path": str(root / "COV_0C3D"),
-        "provenance": {}, "tables": {},
+        "report_id": "COV_0C3D",
+        "path": str(root / "COV_0C3D"),
+        "provenance": {},
+        "tables": {},
     }
     report = data.read_coverage_report(project, "COV_0BAD")
     assert report["provenance"] == {}
     assert report["tables"] == {}
     parsed = data.read_coverage_report(project, "COV_0FED")
     assert parsed["provenance"]["reference_set_id"] == "RS_1"
-    assert parsed["tables"]["coverage_summary"]["columns"] == ["family", "coverage_percent"]
+    assert parsed["tables"]["coverage_summary"]["columns"] == [
+        "family",
+        "coverage_percent",
+    ]
     assert parsed["tables"]["coverage_summary"]["rows"] == [["famA", "100.0"]]
     assert parsed["tables"]["coverage_summary"]["truncated"] is False
     assert set(parsed["tables"]) == {"coverage_summary"}
@@ -481,11 +595,16 @@ def test_entities_lifecycle_action_guards(demo_template: Project) -> None:
             assert not isinstance(app.screen, LifecycleModal)
             assert ("warning", "select an entity first") in _notifications(app)
 
-            panel._apply_detail(data.entity_detail(demo_template, "assembly", "ASM_000001"))
+            panel._apply_detail(
+                data.entity_detail(demo_template, "assembly", "ASM_000001")
+            )
             panel.action_lifecycle()
             await pilot.pause()
             assert isinstance(app.screen, LifecycleModal)
-            assert (app.screen.entity_type, app.screen.entity_id) == ("assembly", "ASM_000001")
+            assert (app.screen.entity_type, app.screen.entity_id) == (
+                "assembly",
+                "ASM_000001",
+            )
             assert app.screen.action == "RETIRE"
             await pilot.press("escape")
             await _settled(app)
@@ -510,9 +629,13 @@ def test_entities_tree_highlight_loads_detail(demo_template: Project) -> None:
             tree = panel.query_one("#entities-tree", Tree)
 
             tree.move_cursor(tree.root.children[0])
-            await _wait_until(lambda: panel.detail is not None, "detail after highlight")
+            await _wait_until(
+                lambda: panel.detail is not None, "detail after highlight"
+            )
             assert panel.detail["entity_id"] == "ORG_000001"
-            assert "Syntheticus alpha" in _static_text(panel.query_one("#entity-detail", Static))
+            assert "Syntheticus alpha" in _static_text(
+                panel.query_one("#entity-detail", Static)
+            )
 
             panel.detail = None
             tree.move_cursor(tree.root)
@@ -543,14 +666,18 @@ def test_entities_detail_error_paths(demo_template: Project, monkeypatch) -> Non
             monkeypatch.setattr(data, "entity_detail", boom)
             panel._load_detail("assembly", "ASM_000001")
             await _wait_until(
-                lambda: "entity read failed" in _static_text(
-                    panel.query_one("#entity-detail", Static)),
+                lambda: (
+                    "entity read failed"
+                    in _static_text(panel.query_one("#entity-detail", Static))
+                ),
                 "inline entity error",
             )
             assert panel.detail is None
 
             panel._apply_detail(RuntimeError("late failure"))
-            assert "late failure" in _static_text(panel.query_one("#entity-detail", Static))
+            assert "late failure" in _static_text(
+                panel.query_one("#entity-detail", Static)
+            )
 
             with _shutdown_guard(app) as patch:
                 patch.setattr(type(app), "is_running", property(lambda self: False))
@@ -560,7 +687,9 @@ def test_entities_detail_error_paths(demo_template: Project, monkeypatch) -> Non
     _run(scenario())
 
 
-def test_lifecycle_preview_failure_is_shown_inline(demo_template: Project, monkeypatch) -> None:
+def test_lifecycle_preview_failure_is_shown_inline(
+    demo_template: Project, monkeypatch
+) -> None:
     """A preview that cannot be computed is reported inside the modal."""
 
     def boom(*args, **kwargs):
@@ -571,13 +700,16 @@ def test_lifecycle_preview_failure_is_shown_inline(demo_template: Project, monke
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
             monkeypatch.setattr(
-                "operon.tui.screens.entities.actions.lifecycle_preview", boom)
+                "operon.tui.screens.entities.actions.lifecycle_preview", boom
+            )
             modal = LifecycleModal(demo_template, "assembly", "ASM_000001", False)
             app.push_screen(modal)
             await pilot.pause()
             await _wait_until(
-                lambda: "preview unavailable" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "preview unavailable"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "inline preview error",
             )
             assert modal.plan is None
@@ -624,13 +756,16 @@ def test_lifecycle_modal_plan_validation_and_render(demo_template: Project) -> N
             )
 
             modal._apply_plan(RuntimeError("preview exploded"))
-            assert "preview exploded" in _static_text(modal.query_one("#modal-error", Static))
+            assert "preview exploded" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
             blocked = dict(modal.plan)
             blocked["will_change"] = False
             blocked["blocker"] = "release members reference this entity"
             blocked["physical_changes"] = {
-                "metadata_rows_deleted": 0, "artifact_paths_moved": 2,
+                "metadata_rows_deleted": 0,
+                "artifact_paths_moved": 2,
             }
             modal._apply_plan(blocked)
             plan_text = _static_text(modal.query_one("#lifecycle-plan", Static))
@@ -647,28 +782,40 @@ def test_lifecycle_modal_plan_validation_and_render(demo_template: Project) -> N
             modal.plan = dict(blocked, will_change=True)
             modal.query_one("#lifecycle-reason", Input).value = ""
             modal.confirm()
-            assert "reason is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "reason is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#lifecycle-reason", Input).value = "duplicate"
             modal.query_one("#lifecycle-actor", Input).value = ""
             modal.confirm()
-            assert "actor is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "actor is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
             # A foreign widget's change event must not disturb the command line.
             command = modal.command_text()
-            modal.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
-            modal.on_select_changed(Select.Changed(Select([("A", "a")], id="other-select"), "a"))
+            modal.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
+            modal.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other-select"), "a")
+            )
             assert modal.command_text() == command
 
             app.clear_notifications()
             modal.on_action_success({"applied": False})
             await pilot.pause()
             assert captured == [{"applied": False}]
-            assert ("information", "no change: assembly ASM_000001") in _notifications(app)
+            assert ("information", "no change: assembly ASM_000001") in _notifications(
+                app
+            )
 
     _run(scenario())
 
 
-def test_lifecycle_plan_ignores_late_preview_during_shutdown(demo_template: Project) -> None:
+def test_lifecycle_plan_ignores_late_preview_during_shutdown(
+    demo_template: Project,
+) -> None:
     """A preview that finishes while the app is closing is never applied."""
     captured: list[Any] = []
 
@@ -707,23 +854,32 @@ def _write_coverage_report(project: Project, report_id: str, **provenance: Any) 
 
 def _reference_set_row(reference_set_id: str = "RS_1") -> dict[str, Any]:
     return {
-        "reference_set_id": reference_set_id, "profile_name": "coverage_v1",
-        "profile_version": 1, "taxonomy_version": "2025-01-01",
-        "family_count": 3, "genus_count": 7, "compiled_at": "2026-03-01T00:00:00+00:00",
+        "reference_set_id": reference_set_id,
+        "profile_name": "coverage_v1",
+        "profile_version": 1,
+        "taxonomy_version": "2025-01-01",
+        "family_count": 3,
+        "genus_count": 7,
+        "compiled_at": "2026-03-01T00:00:00+00:00",
     }
 
 
 def test_coverage_panel_report_browsing(project: Project) -> None:
     """A discovered report renders its scope, tables, and truncation notice."""
     report = _write_coverage_report(
-        project, "COV_00A1", reference_set_id="RS_1", scope_kind="release",
-        scope_value="2026.08.demo", decision="FAIL",
+        project,
+        "COV_00A1",
+        reference_set_id="RS_1",
+        scope_kind="release",
+        scope_value="2026.08.demo",
+        decision="FAIL",
         created_at="2026-05-01T00:00:00+00:00",
     )
     rows = [["family", "coverage_percent"]]
     rows += [[f"fam{index}", "1.0"] for index in range(data.COVERAGE_REPORT_LIMIT + 3)]
     (report / "coverage_summary.tsv").write_text(
-        "\n".join("\t".join(row) for row in rows) + "\n", encoding="utf-8")
+        "\n".join("\t".join(row) for row in rows) + "\n", encoding="utf-8"
+    )
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -737,14 +893,20 @@ def test_coverage_panel_report_browsing(project: Project) -> None:
             assert _cell_text(table, 0, 3) == "FAIL"
 
             panel.on_data_table_row_selected(
-                DataTable.RowSelected(panel.query_one("#taxonomy-snapshots-table", DataTable),
-                                      0, RowKey("other")))
+                DataTable.RowSelected(
+                    panel.query_one("#taxonomy-snapshots-table", DataTable),
+                    0,
+                    RowKey("other"),
+                )
+            )
             panel.on_button_pressed(Button.Pressed(Button("other", id="other")))
             assert panel.report is None
 
             panel._apply_report(data.read_coverage_report(project, "COV_00A1"))
             await pilot.pause()
-            headline = _static_text(panel.query_one("#coverage-report-headline", Static))
+            headline = _static_text(
+                panel.query_one("#coverage-report-headline", Static)
+            )
             assert "COV_00A1" in headline
             assert "reference set RS_1" in headline
             assert "scope release:2026.08.demo" in headline
@@ -754,7 +916,9 @@ def test_coverage_panel_report_browsing(project: Project) -> None:
             assert summary.row_count == data.COVERAGE_REPORT_LIMIT + 1
             assert "… 3 more rows" in _cell_text(summary, summary.row_count - 1, 0)
             targets = panel.query_one("#coverage-table-coverage_targets", DataTable)
-            assert [str(column.label) for column in targets.columns.values()] == ["(no data)"]
+            assert [str(column.label) for column in targets.columns.values()] == [
+                "(no data)"
+            ]
 
     _run(scenario())
 
@@ -774,15 +938,20 @@ def test_coverage_panel_report_load_failure(project: Project, monkeypatch) -> No
             monkeypatch.setattr(data, "read_coverage_report", boom)
             panel._load_report("COV_0000")
             await _wait_until(
-                lambda: "report unreadable" in _static_text(
-                    panel.query_one("#coverage-report-headline", Static)),
+                lambda: (
+                    "report unreadable"
+                    in _static_text(
+                        panel.query_one("#coverage-report-headline", Static)
+                    )
+                ),
                 "report error headline",
             )
             assert panel.report is None
 
             panel._apply_report(RuntimeError("late failure"))
             assert "late failure" in _static_text(
-                panel.query_one("#coverage-report-headline", Static))
+                panel.query_one("#coverage-report-headline", Static)
+            )
 
             with _shutdown_guard(app) as patch:
                 patch.setattr(type(app), "is_running", property(lambda self: False))
@@ -801,12 +970,14 @@ def test_coverage_generate_scope_guards(project: Project) -> None:
             app.action_switch_screen("coverage")
             await _settled(app)
             panel = app.query_one(CoveragePanel)
-            panel.render_data({
-                "snapshots": [],
-                "reference_sets": [_reference_set_row()],
-                "releases": [{"version": "2026.08.demo"}],
-                "reports": [],
-            })
+            panel.render_data(
+                {
+                    "snapshots": [],
+                    "reference_sets": [_reference_set_row()],
+                    "releases": [{"version": "2026.08.demo"}],
+                    "reports": [],
+                }
+            )
             reference = panel.query_one("#coverage-reference-set", Select)
             error = panel.query_one("#coverage-error", Static)
 
@@ -832,7 +1003,8 @@ def test_coverage_generate_scope_guards(project: Project) -> None:
             assert isinstance(app.screen, CoverageModal)
             assert app.screen.release_version == "2026.08.demo"
             assert app.screen.command_text() == (
-                "operon report coverage --reference-set RS_1 --release 2026.08.demo")
+                "operon report coverage --reference-set RS_1 --release 2026.08.demo"
+            )
             assert "frozen release 2026.08.demo" in _form_text(app.screen)
             await pilot.press("escape")
             await pilot.pause()
@@ -850,9 +1022,13 @@ def test_coverage_generate_scope_guards(project: Project) -> None:
 def test_coverage_modal_warns_on_below_threshold_result(project: Project) -> None:
     """A FAIL result (CLI exit 1) is a warning notification naming the report."""
     payload = {
-        "decision": "FAIL", "exit_code": 1, "path": "/tmp/reports/coverage/COV_00A1",
+        "decision": "FAIL",
+        "exit_code": 1,
+        "path": "/tmp/reports/coverage/COV_00A1",
         "reused": True,
-        "metrics": [{"rank": "family", "coverage_percent": 12.5, "threshold_percent": 80.0}],
+        "metrics": [
+            {"rank": "family", "coverage_percent": 12.5, "threshold_percent": 80.0}
+        ],
     }
     captured: list[Any] = []
 
@@ -867,9 +1043,11 @@ def test_coverage_modal_warns_on_below_threshold_result(project: Project) -> Non
             modal.on_action_success(payload)
             await pilot.pause()
             assert captured == [payload]
-            assert ("warning", "coverage FAIL: family 12.50% (min 80.00%) "
-                               "(reused cached report) — report /tmp/reports/coverage/COV_00A1"
-                    ) in _notifications(app)
+            assert (
+                "warning",
+                "coverage FAIL: family 12.50% (min 80.00%) "
+                "(reused cached report) — report /tmp/reports/coverage/COV_00A1",
+            ) in _notifications(app)
 
     _run(scenario())
 
@@ -907,7 +1085,9 @@ def test_files_panel_filters_and_stale_selection(demo_template: Project) -> None
 
             # The cursor can outlive a reload that shrank the file list.
             panel.render_data({"files": panel.files[:1], "statuses": panel.statuses})
-            table.add_row("stale", "x", "y", "z", "0 B", "0", "MISSING", key="stale-row")
+            table.add_row(
+                "stale", "x", "y", "z", "0 B", "0", "MISSING", key="stale-row"
+            )
             table.move_cursor(row=table.row_count - 1, animate=False)
             assert panel._selected_record() is None
 
@@ -916,15 +1096,26 @@ def test_files_panel_filters_and_stale_selection(demo_template: Project) -> None
             assert panel._selected_record() is None
 
             # Unrelated widgets never trigger the panel's own handlers.
-            panel.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
-            panel.on_select_changed(Select.Changed(Select([("A", "a")], id="other-select"), "a"))
+            panel.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
+            panel.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other-select"), "a")
+            )
             other = DataTable(id="other-table")
             panel.detail = None
             panel.on_data_table_row_highlighted(
-                DataTable.RowHighlighted(other, 0, RowKey("k")))
-            panel.on_data_table_row_selected(DataTable.RowSelected(other, 0, RowKey("k")))
-            panel.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
-            panel.on_select_changed(Select.Changed(Select([("A", "a")], id="other-select"), "a"))
+                DataTable.RowHighlighted(other, 0, RowKey("k"))
+            )
+            panel.on_data_table_row_selected(
+                DataTable.RowSelected(other, 0, RowKey("k"))
+            )
+            panel.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
+            panel.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other-select"), "a")
+            )
             assert panel.detail is None
 
     _run(scenario())
@@ -944,15 +1135,32 @@ def test_files_detail_rendering_and_errors(demo_template: Project, monkeypatch) 
             panel = app.query_one(FilesPanel)
 
             detail = {
-                "file": {"file_id": "FIL_X", "entity_type": "run", "entity_id": "RUN_1",
-                         "file_role": "reads_r1", "format": "fastq", "compression": "none",
-                         "relative_path": "raw/reads/x.fastq", "size_bytes": 2048,
-                         "sha256": "ab" * 32, "status": "MISSING"},
+                "file": {
+                    "file_id": "FIL_X",
+                    "entity_type": "run",
+                    "entity_id": "RUN_1",
+                    "file_role": "reads_r1",
+                    "format": "fastq",
+                    "compression": "none",
+                    "relative_path": "raw/reads/x.fastq",
+                    "size_bytes": 2048,
+                    "sha256": "ab" * 32,
+                    "status": "MISSING",
+                },
                 "locations": [
-                    {"location_name": "archive", "location_type": "sftp", "uri": "sftp://h/x",
-                     "status": "AVAILABLE", "verified_at": "2026-01-02"},
-                    {"location_name": "mirror", "location_type": "sftp", "uri": "sftp://h/y",
-                     "status": "REMOTE_UNVERIFIED"},
+                    {
+                        "location_name": "archive",
+                        "location_type": "sftp",
+                        "uri": "sftp://h/x",
+                        "status": "AVAILABLE",
+                        "verified_at": "2026-01-02",
+                    },
+                    {
+                        "location_name": "mirror",
+                        "location_type": "sftp",
+                        "uri": "sftp://h/y",
+                        "status": "REMOTE_UNVERIFIED",
+                    },
                 ],
             }
             text = panel._detail_text(detail).plain
@@ -963,14 +1171,18 @@ def test_files_detail_rendering_and_errors(demo_template: Project, monkeypatch) 
             panel.detail = None
             panel._load_detail("FIL_000001")
             await _wait_until(
-                lambda: "file read failed" in _static_text(
-                    panel.query_one("#file-detail", Static)),
+                lambda: (
+                    "file read failed"
+                    in _static_text(panel.query_one("#file-detail", Static))
+                ),
                 "inline file error",
             )
             assert panel.detail is None
 
             panel._apply_detail(RuntimeError("late failure"))
-            assert "late failure" in _static_text(panel.query_one("#file-detail", Static))
+            assert "late failure" in _static_text(
+                panel.query_one("#file-detail", Static)
+            )
 
             with _shutdown_guard(app) as patch:
                 patch.setattr(type(app), "is_running", property(lambda self: False))
@@ -1003,24 +1215,37 @@ def test_files_write_callbacks_report_outcomes(demo_template: Project) -> None:
                 "verify summary notification",
             )
 
-            panel._after_verify([
-                {"file_id": "FIL_1", "status": "CHECKSUM_FAILED", "error": "digest mismatch"},
-                {"file_id": "FIL_2", "status": "CHECKSUM_VERIFIED"},
-            ])
+            panel._after_verify(
+                [
+                    {
+                        "file_id": "FIL_1",
+                        "status": "CHECKSUM_FAILED",
+                        "error": "digest mismatch",
+                    },
+                    {"file_id": "FIL_2", "status": "CHECKSUM_VERIFIED"},
+                ]
+            )
             # Wait on the body — the leaf this assertion reads.  A pushed screen
             # mounts its children a few frames later, and the title it composes
             # first says nothing about the body being rendered yet.
             await _wait_until(
-                lambda: "FIL_1: CHECKSUM_FAILED — digest mismatch"
-                in _screen_text(app.screen, "#error-dialog-body"),
+                lambda: (
+                    "FIL_1: CHECKSUM_FAILED — digest mismatch"
+                    in _screen_text(app.screen, "#error-dialog-body")
+                ),
                 "verify error dialog body",
             )
-            assert "1 of 2 file(s) failed verification" in _screen_text(app.screen, "#modal-title")
-            assert "FIL_1: CHECKSUM_FAILED — digest mismatch" in _screen_text(app.screen, "#error-dialog-body")
+            assert "1 of 2 file(s) failed verification" in _screen_text(
+                app.screen, "#modal-title"
+            )
+            assert "FIL_1: CHECKSUM_FAILED — digest mismatch" in _screen_text(
+                app.screen, "#error-dialog-body"
+            )
             assert isinstance(app.screen, ErrorDialog)
             await pilot.press("escape")
             await _wait_until(
-                lambda: not isinstance(app.screen, ErrorDialog), "verify dialog closed")
+                lambda: not isinstance(app.screen, ErrorDialog), "verify dialog closed"
+            )
 
             panel._after_qc({"cancelled": True})
             await pilot.pause()
@@ -1028,14 +1253,19 @@ def test_files_write_callbacks_report_outcomes(demo_template: Project) -> None:
 
             panel._after_qc({"ok": 1, "total": 2, "failures": [{"file_id": "FIL_9"}]})
             await _wait_until(
-                lambda: "FIL_9: failed" in _screen_text(app.screen, "#error-dialog-body"),
+                lambda: (
+                    "FIL_9: failed" in _screen_text(app.screen, "#error-dialog-body")
+                ),
                 "QC error dialog body",
             )
-            assert "1 of 2 file(s) failed QC" in _screen_text(app.screen, "#modal-title")
+            assert "1 of 2 file(s) failed QC" in _screen_text(
+                app.screen, "#modal-title"
+            )
             assert "FIL_9: failed" in _screen_text(app.screen, "#error-dialog-body")
             await pilot.press("escape")
             await _wait_until(
-                lambda: not isinstance(app.screen, ErrorDialog), "QC dialog closed")
+                lambda: not isinstance(app.screen, ErrorDialog), "QC dialog closed"
+            )
             await _settled(app)
 
     _run(scenario())
@@ -1083,27 +1313,45 @@ def test_ingest_modal_command_and_failed_action(project: Project, monkeypatch) -
         app = OperonApp(project)
         async with app.run_test(size=(140, 45)) as pilot:
             await _settled(app)
-            modal = IngestModal(project, {
-                "entity_type": "assembly", "entity_id": "ASM_000001",
-                "file_role": "genome_fasta",
-            })
+            modal = IngestModal(
+                project,
+                {
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "file_role": "genome_fasta",
+                },
+            )
             app.push_screen(modal, captured.append)
             await pilot.pause()
             modal.query_one("#ingest-source", Input).value = "/data/asm.fasta.gz"
             modal.query_one("#ingest-format", Input).value = "fasta"
             modal.query_one("#ingest-compression", Input).value = "gzip"
-            modal.query_one("#ingest-source-url", Input).value = "https://example.org/asm"
+            modal.query_one(
+                "#ingest-source-url", Input
+            ).value = "https://example.org/asm"
             modal.query_one("#ingest-move", Checkbox).value = True
             command = modal.command_text()
             assert command.startswith("operon ingest --source /data/asm.fasta.gz ")
-            assert "--entity-type assembly --entity-id ASM_000001 --role genome_fasta" in command
-            assert "--format fasta --compression gzip --source-url https://example.org/asm" in command
+            assert (
+                "--entity-type assembly --entity-id ASM_000001 --role genome_fasta"
+                in command
+            )
+            assert (
+                "--format fasta --compression gzip --source-url https://example.org/asm"
+                in command
+            )
             assert command.endswith("--move")
 
             # Unrelated widgets never rewrite the preview.
-            modal.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
-            modal.on_select_changed(Select.Changed(Select([("A", "a")], id="other"), "a"))
-            modal.on_checkbox_changed(Checkbox.Changed(Checkbox("other", id="other-check"), True))
+            modal.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
+            modal.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other"), "a")
+            )
+            modal.on_checkbox_changed(
+                Checkbox.Changed(Checkbox("other", id="other-check"), True)
+            )
             assert modal.command_text() == command
 
             def failing_ingest(*args, **kwargs):
@@ -1112,8 +1360,10 @@ def test_ingest_modal_command_and_failed_action(project: Project, monkeypatch) -
             monkeypatch.setattr(files_ops_module.actions, "ingest", failing_ingest)
             modal.confirm()
             await _wait_until(
-                lambda: "source not found" in _static_text(
-                    modal.query_one("#modal-error", Static)),
+                lambda: (
+                    "source not found"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
                 "inline ingest error",
             )
             assert app.screen is modal
@@ -1123,11 +1373,15 @@ def test_ingest_modal_command_and_failed_action(project: Project, monkeypatch) -
             app.clear_notifications()
             modal.query_one("#ingest-source", Input).value = ""
             modal.confirm()
-            assert "source is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "source is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             modal.query_one("#ingest-source", Input).value = "/data/asm.fasta.gz"
             modal.query_one("#ingest-entity-id", Input).value = ""
             modal.confirm()
-            assert "entity id is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "entity id is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
             await pilot.press("escape")
 
     _run(scenario())
@@ -1162,18 +1416,26 @@ def test_qc_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> Non
             assert modal.running
             assert modal.query_one("#qc-progress").display is True
 
-            await _wait_until(started.is_set, "the run to have reached the core",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                started.is_set,
+                "the run to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
             modal.on_button_pressed(Button.Pressed(modal.query_one("#cancel", Button)))
             assert modal._worker.is_cancelled
             modal.action_cancel()  # a queued escape cancels again without dismissing
             assert app.screen is modal
             released.set()
-            await _wait_until(lambda: cancelled_payloads, "cancelled QC dismissal",
-                              timeout=HANDOFF_TIMEOUT)
+            await _wait_until(
+                lambda: cancelled_payloads,
+                "cancelled QC dismissal",
+                timeout=HANDOFF_TIMEOUT,
+            )
             assert cancelled_payloads == [{"cancelled": True, "done": 0, "total": 2}]
-            assert any("QC cancelled after 0/2 file(s)" in message
-                       for _severity, message in _notifications(app))
+            assert any(
+                "QC cancelled after 0/2 file(s)" in message
+                for _severity, message in _notifications(app)
+            )
 
             # Without a live worker, cancelling leaves the modal open.
             modal = QcModal(project, None, 2)
@@ -1192,14 +1454,18 @@ def test_qc_modal_cancel_and_failure_paths(project: Project, monkeypatch) -> Non
             await pilot.pause()
             failing.confirm()
             await _wait_until(lambda: not failing.running, "QC failure handling")
-            assert "qc exploded" in _static_text(failing.query_one("#modal-error", Static))
+            assert "qc exploded" in _static_text(
+                failing.query_one("#modal-error", Static)
+            )
             assert not failing.query_one("#confirm", Button).disabled
             assert app.screen is failing
 
             with _shutdown_guard(app) as patch:
                 patch.setattr(type(app), "is_running", property(lambda self: False))
-                patch.setattr("textual.worker.get_current_worker",
-                              lambda: SimpleNamespace(is_cancelled=False))
+                patch.setattr(
+                    "textual.worker.get_current_worker",
+                    lambda: SimpleNamespace(is_cancelled=False),
+                )
                 app.clear_notifications()
                 QcModal._run_qc.__wrapped__(failing)
             assert app.screen is failing
@@ -1226,18 +1492,35 @@ def test_decisions_render_data_markers_and_reasons(project: Project) -> None:
             await _settled(app)
             panel = app.query_one(DecisionsPanel)
             rows = [
-                {"entity_type": "assembly", "entity_id": "ASM_000001", "profile": "reads_qc_v1",
-                 "decision": "REVIEW", "curated_decision": "PASS", "curated_by": "tester",
-                 "curated_reason": "manual", "curated_at": "2026-01-01T00:00:00+00:00",
-                 "reason_codes": '["low_n50", "many_contigs"]',
-                 "evaluated_at": "2026-01-01T00:00:00+00:00"},
-                {"entity_type": "run", "entity_id": "RUN_000001", "profile": "reads_qc_v1",
-                 "decision": "FAIL", "curated_decision": None, "curated_by": None,
-                 "curated_reason": None, "curated_at": None, "reason_codes": "not json",
-                 "evaluated_at": None},
+                {
+                    "entity_type": "assembly",
+                    "entity_id": "ASM_000001",
+                    "profile": "reads_qc_v1",
+                    "decision": "REVIEW",
+                    "curated_decision": "PASS",
+                    "curated_by": "tester",
+                    "curated_reason": "manual",
+                    "curated_at": "2026-01-01T00:00:00+00:00",
+                    "reason_codes": '["low_n50", "many_contigs"]',
+                    "evaluated_at": "2026-01-01T00:00:00+00:00",
+                },
+                {
+                    "entity_type": "run",
+                    "entity_id": "RUN_000001",
+                    "profile": "reads_qc_v1",
+                    "decision": "FAIL",
+                    "curated_decision": None,
+                    "curated_by": None,
+                    "curated_reason": None,
+                    "curated_at": None,
+                    "reason_codes": "not json",
+                    "evaluated_at": None,
+                },
             ]
             panel.profiles = []
-            panel.render_data({"decisions": rows, "profiles": ["reads_qc_v1", "assembly_qc_v1"]})
+            panel.render_data(
+                {"decisions": rows, "profiles": ["reads_qc_v1", "assembly_qc_v1"]}
+            )
             table = panel.query_one("#decisions-table", DataTable)
             assert table.row_count == 2
             assert _cell_text(table, 0, 2) == "PASS ✎curated"
@@ -1247,7 +1530,9 @@ def test_decisions_render_data_markers_and_reasons(project: Project) -> None:
             assert _cell_text(table, 1, 4) == "-"
             assert panel.profiles == ["reads_qc_v1", "assembly_qc_v1"]
 
-            panel.on_select_changed(Select.Changed(Select([("A", "a")], id="other"), "a"))
+            panel.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other"), "a")
+            )
 
     _run(scenario())
 
@@ -1264,44 +1549,61 @@ def test_decisions_profile_filter_survives_new_profiles(project: Project) -> Non
             select = panel.query_one("#decisions-profile", Select)
             recorded = {row["profile"] for row in panel.decisions}
             assert recorded
-            available = [value for _label, value in select._options if value in recorded]
+            available = [
+                value for _label, value in select._options if value in recorded
+            ]
             assert available
             before = list(panel.profiles)
             select.value = available[0]
             # Wait for the reload to actually reflect the selected profile
             # instead of assuming a fixed number of pause() cycles.
             await _wait_until(
-                lambda: panel.decisions
-                and all(row["profile"] == available[0] for row in panel.decisions),
+                lambda: (
+                    panel.decisions
+                    and all(row["profile"] == available[0] for row in panel.decisions)
+                ),
                 "profile filter applied",
             )
 
             (project.profiles_dir / "extra_profile.yaml").write_text(
-                "kind: qc\nversion: 1\n", encoding="utf-8")
+                "kind: qc\nversion: 1\n", encoding="utf-8"
+            )
             panel.reload()
             await _wait_until(
-                lambda: panel.profiles == sorted([*before, "extra_profile"])
-                and any(value == available[0] for _label, value in select._options),
+                lambda: (
+                    panel.profiles == sorted([*before, "extra_profile"])
+                    and any(value == available[0] for _label, value in select._options)
+                ),
                 "profile list reloaded",
             )
-            assert select.value == available[0], "the active filter survives the refresh"
+            assert select.value == available[0], (
+                "the active filter survives the refresh"
+            )
 
-            panel.query_one("#decisions-filter", Input).value = panel.decisions[0]["entity_id"]
+            panel.query_one("#decisions-filter", Input).value = panel.decisions[0][
+                "entity_id"
+            ]
             entity_id = panel.decisions[0]["entity_id"]
             await _wait_until(
-                lambda: panel.decisions
-                and all(row["entity_id"] == entity_id for row in panel.decisions),
+                lambda: (
+                    panel.decisions
+                    and all(row["entity_id"] == entity_id for row in panel.decisions)
+                ),
                 "entity filter applied",
             )
             assert all(row["entity_id"] == entity_id for row in panel.decisions)
-            panel.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
+            panel.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
             assert all(row["entity_id"] == entity_id for row in panel.decisions)
 
     _run(scenario())
 
 
-@pytest.mark.bug("ODR-0045")
-def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkeypatch) -> None:
+@pytest.mark.bug("ODR-45")
+def test_stale_load_does_not_restore_rows_a_newer_filter_removed(
+    project, monkeypatch
+) -> None:
     """An earlier, slower load must not overwrite a newer, filtered one.
 
     Panel reads run in worker threads: ``reload()`` starts a new one while the
@@ -1332,17 +1634,25 @@ def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkey
             app.action_switch_screen("decisions")
             await _settled(app)
             panel = app.query_one(DecisionsPanel)
-            assert len(panel.decisions) > 1, "the demo project must have several decisions"
+            assert len(panel.decisions) > 1, (
+                "the demo project must have several decisions"
+            )
             try:
                 armed["on"] = True
                 panel.reload()  # an unfiltered read, held at the gate
-                await _wait_until(lambda: bool(held), "the earlier read to reach the gate")
+                await _wait_until(
+                    lambda: bool(held), "the earlier read to reach the gate"
+                )
 
                 entity_id = panel.decisions[0]["entity_id"]
                 panel.query_one("#decisions-filter", Input).value = entity_id
                 await _wait_until(
-                    lambda: bool(panel.decisions)
-                    and all(row["entity_id"] == entity_id for row in panel.decisions),
+                    lambda: (
+                        bool(panel.decisions)
+                        and all(
+                            row["entity_id"] == entity_id for row in panel.decisions
+                        )
+                    ),
                     "entity filter applied",
                 )
                 filtered = [row["entity_id"] for row in panel.decisions]
@@ -1356,7 +1666,9 @@ def test_stale_load_does_not_restore_rows_a_newer_filter_removed(project, monkey
                 for _ in range(10):  # let its payload reach the UI thread
                     await pilot.pause()
                     await asyncio.sleep(0.02)
-                assert len(held[0]) > len(filtered), "the held payload must be the unfiltered one"
+                assert len(held[0]) > len(filtered), (
+                    "the held payload must be the unfiltered one"
+                )
                 assert [row["entity_id"] for row in panel.decisions] == filtered
             finally:
                 released.set()
@@ -1386,8 +1698,12 @@ def test_decisions_actions_require_a_selected_row(project: Project) -> None:
 
             panel.render_data({"decisions": panel.decisions or [], "profiles": []})
             single = {
-                "entity_type": "assembly", "entity_id": "ASM_000001", "profile": "reads_qc_v1",
-                "decision": "REVIEW", "curated_decision": None, "reason_codes": "[]",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+                "profile": "reads_qc_v1",
+                "decision": "REVIEW",
+                "curated_decision": None,
+                "reason_codes": "[]",
                 "evaluated_at": "2026-01-01T00:00:00+00:00",
             }
             panel.render_data({"decisions": [single], "profiles": []})
@@ -1412,8 +1728,13 @@ def test_decisions_actions_require_a_selected_row(project: Project) -> None:
 
 def test_curate_modal_validation_and_command(project: Project) -> None:
     """Curate requires a decision, reviewer, and reason before it can run."""
-    row = {"entity_type": "assembly", "entity_id": "ASM_000001", "profile": "reads_qc_v1",
-           "decision": "NOT_EVALUATED", "curated_decision": None}
+    row = {
+        "entity_type": "assembly",
+        "entity_id": "ASM_000001",
+        "profile": "reads_qc_v1",
+        "decision": "NOT_EVALUATED",
+        "curated_decision": None,
+    }
 
     async def scenario() -> None:
         app = OperonApp(project)
@@ -1425,17 +1746,22 @@ def test_curate_modal_validation_and_command(project: Project) -> None:
             assert modal._current() == "NOT_EVALUATED"
             assert modal._decision() == ""
             modal.confirm()
-            assert "choose a new decision" in _static_text(modal.query_one("#modal-error", Static))
+            assert "choose a new decision" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
             modal.query_one("#curate-decision", Select).value = "PASS"
             modal.query_one("#curate-reviewer", Input).value = ""
             modal.confirm()
-            assert "reviewer is required" in _static_text(modal.query_one("#modal-error", Static))
+            assert "reviewer is required" in _static_text(
+                modal.query_one("#modal-error", Static)
+            )
 
             modal.query_one("#curate-reviewer", Input).value = "tester"
             modal.confirm()
             assert "reason is required for a curated decision" in _static_text(
-                modal.query_one("#modal-error", Static))
+                modal.query_one("#modal-error", Static)
+            )
 
             modal.query_one("#curate-reason", Input).value = "manual override"
             modal.query_one("#curate-evidence", Input).value = "see ticket-7"
@@ -1445,8 +1771,12 @@ def test_curate_modal_validation_and_command(project: Project) -> None:
                 "--profile reads_qc_v1 --decision PASS --reviewer tester "
                 "--reason 'manual override' --evidence 'see ticket-7'"
             )
-            modal.on_select_changed(Select.Changed(Select([("A", "a")], id="other"), "a"))
-            modal.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
+            modal.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other"), "a")
+            )
+            modal.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
             assert modal.command_text().endswith("--evidence 'see ticket-7'")
             await pilot.press("escape")
 
@@ -1464,20 +1794,32 @@ def test_evaluate_modal_scope_options(project: Project) -> None:
             app.push_screen(modal)
             await pilot.pause()
             scope = modal.query_one("#evaluate-scope", Select)
-            assert [value for _label, value in scope._options if value != Select.NULL] == ["all"]
+            assert [
+                value for _label, value in scope._options if value != Select.NULL
+            ] == ["all"]
             assert modal.command_text().startswith("operon evaluate --profile ")
-            modal.on_select_changed(Select.Changed(Select([("A", "a")], id="other"), "a"))
+            modal.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other"), "a")
+            )
             await pilot.press("escape")
 
-            selected = EvaluateModal(project, {"entity_type": "assembly",
-                                               "entity_id": "ASM_000001"})
+            selected = EvaluateModal(
+                project, {"entity_type": "assembly", "entity_id": "ASM_000001"}
+            )
             app.push_screen(selected)
             await pilot.pause()
-            options = [value for _label, value in
-                       selected.query_one("#evaluate-scope", Select)._options]
+            options = [
+                value
+                for _label, value in selected.query_one(
+                    "#evaluate-scope", Select
+                )._options
+            ]
             assert options == ["all", "selected"]
             selected.query_one("#evaluate-scope", Select).value = "selected"
-            assert "--entity-type assembly --entity-id ASM_000001" in selected.command_text()
+            assert (
+                "--entity-type assembly --entity-id ASM_000001"
+                in selected.command_text()
+            )
             await pilot.press("escape")
 
     _run(scenario())
@@ -1488,7 +1830,9 @@ def test_evaluate_modal_scope_options(project: Project) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_detail_error_paths_and_back_guard(demo_template: Project, monkeypatch) -> None:
+def test_run_detail_error_paths_and_back_guard(
+    demo_template: Project, monkeypatch
+) -> None:
     """A failed run read renders inline; a queued escape never pops a lower screen."""
     run_id = data.list_workflow_runs(demo_template, limit=1)[0]["run_id"]
 
@@ -1511,7 +1855,9 @@ def test_run_detail_error_paths_and_back_guard(demo_template: Project, monkeypat
             await _wait_until(lambda: app.screen is second, "second screen active")
             first.action_back()
             await pilot.pause()
-            assert app.screen is second, "the inactive screen must not pop the active one"
+            assert app.screen is second, (
+                "the inactive screen must not pop the active one"
+            )
 
             monkeypatch.setattr(data, "workflow_run_detail", boom)
             failing = RunDetailScreen(demo_template, run_id)
@@ -1538,7 +1884,8 @@ def test_run_detail_error_paths_and_back_guard(demo_template: Project, monkeypat
             await _wait_until(lambda: app.screen is first, "back to the first screen")
             first.action_back()
             await _wait_until(
-                lambda: not isinstance(app.screen, RunDetailScreen), "run detail popped")
+                lambda: not isinstance(app.screen, RunDetailScreen), "run detail popped"
+            )
 
     _run(scenario())
 
@@ -1555,10 +1902,16 @@ def test_runs_panel_ignores_foreign_events(demo_template: Project) -> None:
             table = panel.query_one("#runs-table", DataTable)
             before = table.row_count
 
-            panel.on_input_changed(Input.Changed(input=Input(id="other-input"), value="zzz"))
-            panel.on_select_changed(Select.Changed(Select([("A", "a")], id="other-select"), "a"))
+            panel.on_input_changed(
+                Input.Changed(input=Input(id="other-input"), value="zzz")
+            )
+            panel.on_select_changed(
+                Select.Changed(Select([("A", "a")], id="other-select"), "a")
+            )
             other = DataTable(id="other-table")
-            panel.on_data_table_row_selected(DataTable.RowSelected(other, 0, RowKey("k")))
+            panel.on_data_table_row_selected(
+                DataTable.RowSelected(other, 0, RowKey("k"))
+            )
             await pilot.pause()
             assert table.row_count == before
             assert not isinstance(app.screen, RunDetailScreen)
@@ -1619,9 +1972,16 @@ def test_home_panel_attention_files_render(demo_template: Project) -> None:
     home.summary = None
     home.recent_runs = []
     home.attention = {
-        "failed_run_count": 0, "runs": [], "decisions": [],
-        "files": [{"file_id": "FIL_7", "status": "MISSING",
-                   "relative_path": "raw/reads/missing.fastq"}],
+        "failed_run_count": 0,
+        "runs": [],
+        "decisions": [],
+        "files": [
+            {
+                "file_id": "FIL_7",
+                "status": "MISSING",
+                "relative_path": "raw/reads/missing.fastq",
+            }
+        ],
     }
     text = home._build_text().plain
     assert "file FIL_7  raw/reads/missing.fastq" in text
@@ -1638,7 +1998,9 @@ def test_lake_pixels_rejects_short_asset(monkeypatch) -> None:
     from operon.tui import splash
 
     splash.lake_pixels.cache_clear()
-    monkeypatch.setattr(splash, "zlib", SimpleNamespace(decompress=lambda _data: b"short"))
+    monkeypatch.setattr(
+        splash, "zlib", SimpleNamespace(decompress=lambda _data: b"short")
+    )
     try:
         with pytest.raises(ValueError, match="Invalid splash pixel data"):
             splash.lake_pixels.__wrapped__()
@@ -1690,6 +2052,7 @@ def test_lake_art_hide_image_survives_terminal_loss(monkeypatch) -> None:
 # Panel worker guard: a result arriving during teardown must not fail the app
 # --------------------------------------------------------------------------- #
 
+
 class _StubPanel(Panel):
     """Minimal panel whose render raises on demand."""
 
@@ -1711,8 +2074,10 @@ class _StubPanel(Panel):
         return {}
 
 
-@pytest.mark.bug("ODR-0032")
-@pytest.mark.parametrize("failure", [MountError("widget tree is gone"), NoMatches("#profiles-list")])
+@pytest.mark.bug("ODR-32")
+@pytest.mark.parametrize(
+    "failure", [MountError("widget tree is gone"), NoMatches("#profiles-list")]
+)
 def test_panel_drops_a_result_whose_widgets_are_gone(failure):
     """Quitting during the initial load used to fail the app from the worker.
 
@@ -1720,7 +2085,7 @@ def test_panel_drops_a_result_whose_widgets_are_gone(failure):
     load delivers its payload; Textual reports that as MountError/NoMatches and
     the result simply has nowhere to go.  The drop still reports the load as
     finished — the startup screen waits for every panel to report one, so a
-    dropped first render must not hold the app behind the splash (ODR-0032).
+    dropped first render must not hold the app behind the splash (ODR-32).
     """
     panel = _StubPanel(failure)
     panel._apply({"profiles": []})
@@ -1747,18 +2112,20 @@ def test_panel_surfaces_a_failed_load_inside_the_panel():
 
 
 # --------------------------------------------------------------------------- #
-# Worker results carry the request they answer (ODR-0031)
+# Worker results carry the request they answer (ODR-31)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.bug("ODR-0031")
-def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project,
-                                                                monkeypatch) -> None:
+
+@pytest.mark.bug("ODR-31")
+def test_files_detail_drops_a_read_a_newer_selection_superseded(
+    project: Project, monkeypatch
+) -> None:
     """A read already inside its thread must not paint over a newer selection.
 
     ``exclusive=True`` cancels the previous worker's *await*, not the read the
     thread is in the middle of: that thread still posts its payload, and without
     the request stamp the pane ends up showing the row the user left behind
-    (ODR-0031).
+    (ODR-31).
     """
     held = threading.Event()
     started = threading.Event()
@@ -1804,9 +2171,13 @@ def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project
             # Gate on the *delivery*, not on the pane: the pane may already
             # show this file from the initial highlight, which would let the
             # slow read's payload race in before the newer one landed.
-            await _wait_until(lambda: fast in delivered, "the newer detail read to land")
+            await _wait_until(
+                lambda: fast in delivered, "the newer detail read to land"
+            )
             held.set()
-            await _wait_until(lambda: len(delivered) >= 2, "both detail reads to deliver")
+            await _wait_until(
+                lambda: len(delivered) >= 2, "both detail reads to deliver"
+            )
 
             # The slow read for the row the user left arrived last and was
             # dropped instead of overwriting the newer answer.
@@ -1823,9 +2194,10 @@ def test_files_detail_drops_a_read_a_newer_selection_superseded(project: Project
         held.set()
 
 
-@pytest.mark.bug("ODR-0031")
-def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Project,
-                                                            monkeypatch) -> None:
+@pytest.mark.bug("ODR-31")
+def test_entity_detail_drops_a_read_a_newer_node_superseded(
+    demo_template: Project, monkeypatch
+) -> None:
     """The same stamp keeps the entity pane on the highlighted node."""
     held = threading.Event()
     started = threading.Event()
@@ -1871,9 +2243,13 @@ def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Proje
             tree.move_cursor(nodes[1])  # the read that blocks
             await _wait_until(started.is_set, "the first entity read to block")
             tree.move_cursor(nodes[0])  # the read that lands first
-            await _wait_until(lambda: fast_key in delivered, "the newer entity read to land")
+            await _wait_until(
+                lambda: fast_key in delivered, "the newer entity read to land"
+            )
             held.set()
-            await _wait_until(lambda: len(delivered) >= 2, "both entity reads to deliver")
+            await _wait_until(
+                lambda: len(delivered) >= 2, "both entity reads to deliver"
+            )
 
             assert delivered == [fast_key, slow_key]
             detail = _static_text(panel.query_one("#entity-detail", Static))
@@ -1886,6 +2262,8 @@ def test_entity_detail_drops_a_read_a_newer_node_superseded(demo_template: Proje
         _run(scenario())
     finally:
         held.set()
+
+
 # -- M5 alignment: retired list, supersessions, decisions/include-retired ------
 
 
@@ -1893,7 +2271,11 @@ def _retire(project: Project, entity_id: str, entity_type: str = "organism") -> 
     from operon.tui import actions
 
     actions.lifecycle_apply(
-        project, entity_id, "RETIRE", "m5 test retirement", "tester",
+        project,
+        entity_id,
+        "RETIRE",
+        "m5 test retirement",
+        "tester",
         reason_code="other",
     )
 
@@ -1929,19 +2311,25 @@ def test_retired_modal_mirrors_the_cli_rows_and_direct_only(project: Project) ->
             await _wait_until(lambda: modal.rows != [], "retirement rows")
             table = modal.query_one("#retired-table", DataTable)
             assert table.row_count == len(effective)
-            assert _static_text(modal.query_one("#retired-command", Static)) == "operon retired"
+            assert (
+                _static_text(modal.query_one("#retired-command", Static))
+                == "operon retired"
+            )
             first = effective[0]
             assert _cell_text(table, 0, 0) == first["entity_type"]
             assert _cell_text(table, 0, 1) == first["entity_id"]
             assert _cell_text(table, 0, 7) == first["retired_at"]
-            assert _static_text(
-                modal.query_one("#retired-status", Static)
-            ) == f"{len(effective)} retirement(s)"
+            assert (
+                _static_text(modal.query_one("#retired-status", Static))
+                == f"{len(effective)} retirement(s)"
+            )
 
             modal.query_one("#retired-direct-only", Checkbox).value = True
             await _wait_until(
-                lambda: _static_text(modal.query_one("#retired-status", Static))
-                == "1 retirement(s)",
+                lambda: (
+                    _static_text(modal.query_one("#retired-status", Static))
+                    == "1 retirement(s)"
+                ),
                 "direct-only rows",
             )
             assert table.row_count == 1
@@ -1963,8 +2351,12 @@ def test_entity_detail_lists_supersessions_both_directions(project: Project) -> 
     db = Database(project.db_path)
     try:
         db.supersede_entity(
-            "assembly", "ASM_000001", "assembly", "ASM_000002",
-            reason="re-sequenced", workflow_run_id=None,
+            "assembly",
+            "ASM_000001",
+            "assembly",
+            "ASM_000002",
+            reason="re-sequenced",
+            workflow_run_id=None,
         )
     finally:
         db.close()
@@ -2057,11 +2449,16 @@ def test_runs_more_filters_accept_resumes_run_id(project: Project, monkeypatch) 
                 lambda: isinstance(app.screen, RunsFiltersModal), "filters dialog"
             )
             modal = app.screen
-            modal.query_one("#runs-filter-resumes-run-id", Input).value = runs[0]["run_id"]
+            modal.query_one("#runs-filter-resumes-run-id", Input).value = runs[0][
+                "run_id"
+            ]
             await _wait_until(
-                lambda: (bool(modal.query("#runs-filter-resumes-run-id"))
-                         and bool(modal.query_one(
-                             "#runs-filter-resumes-run-id", Input).value)),
+                lambda: (
+                    bool(modal.query("#runs-filter-resumes-run-id"))
+                    and bool(
+                        modal.query_one("#runs-filter-resumes-run-id", Input).value
+                    )
+                ),
                 "the resumes-run-id field to hold its value",
             )
             modal.query_one("#runs-filter-apply", Button).press()

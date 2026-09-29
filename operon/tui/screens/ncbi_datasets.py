@@ -60,27 +60,49 @@ class NcbiDatasetsModal(WriteModal):
             "download plan without downloading",
             classes="modal-info",
         )
-        yield Input(placeholder="input paths, comma separated (JSON/JSONL/ZIP/dir)",
-                    id="ncbi-inputs")
-        yield Input(placeholder="accessions, comma separated (GCF_/GCA_…)",
-                    id="ncbi-accessions")
-        yield Input(placeholder="accession file (one GCF/GCA per line)", id="ncbi-accession-file")
-        yield Input(placeholder="include types, comma separated "
-                    "(genome,gff3,protein,cds,sequence-report; blank = all)",
-                    id="ncbi-include")
-        yield Checkbox("Import metadata only (--no-archive-files)", id="ncbi-no-archive-files")
-        yield Checkbox("Also create standardized/ copies (--standardize)", id="ncbi-standardize")
+        yield Input(
+            placeholder="input paths, comma separated (JSON/JSONL/ZIP/dir)",
+            id="ncbi-inputs",
+        )
+        yield Input(
+            placeholder="accessions, comma separated (GCF_/GCA_…)", id="ncbi-accessions"
+        )
+        yield Input(
+            placeholder="accession file (one GCF/GCA per line)",
+            id="ncbi-accession-file",
+        )
+        yield Input(
+            placeholder="include types, comma separated "
+            "(genome,gff3,protein,cds,sequence-report; blank = all)",
+            id="ncbi-include",
+        )
+        yield Checkbox(
+            "Import metadata only (--no-archive-files)", id="ncbi-no-archive-files"
+        )
+        yield Checkbox(
+            "Also create standardized/ copies (--standardize)", id="ncbi-standardize"
+        )
         yield Checkbox("Dry run (--dry-run)", id="ncbi-dry-run")
-        yield Checkbox("Do not preserve sources (--no-preserve-source)",
-                       id="ncbi-no-preserve-source")
-        yield Checkbox("Plan only, no download or run rows (--plan-only)", id="ncbi-plan-only")
+        yield Checkbox(
+            "Do not preserve sources (--no-preserve-source)",
+            id="ncbi-no-preserve-source",
+        )
+        yield Checkbox(
+            "Plan only, no download or run rows (--plan-only)", id="ncbi-plan-only"
+        )
         yield Input(placeholder="NCBI contact email (or NCBI_EMAIL)", id="ncbi-email")
         yield Input(placeholder="NCBI API key (or NCBI_API_KEY)", id="ncbi-api-key")
         yield Input(value="300.0", placeholder="timeout seconds", id="ncbi-timeout")
         yield Input(value="10", placeholder="batch size (1-100)", id="ncbi-batch-size")
-        yield Input(value="3", placeholder="download workers (1-10)", id="ncbi-download-workers")
-        yield Input(value="4", placeholder="retries per batch (0-10)", id="ncbi-retries")
-        yield Input(value="1.0", placeholder="retry backoff seconds", id="ncbi-retry-backoff")
+        yield Input(
+            value="3", placeholder="download workers (1-10)", id="ncbi-download-workers"
+        )
+        yield Input(
+            value="4", placeholder="retries per batch (0-10)", id="ncbi-retries"
+        )
+        yield Input(
+            value="1.0", placeholder="retry backoff seconds", id="ncbi-retry-backoff"
+        )
         yield Input(placeholder="resume run id (WF_…, optional)", id="ncbi-resume-run")
         yield Static("", id="ncbi-status", classes="modal-info")
         with Horizontal(classes="config-buttons"):
@@ -99,18 +121,26 @@ class NcbiDatasetsModal(WriteModal):
         return {
             "inputs": _split_csv(self.query_one("#ncbi-inputs", Input).value),
             "accessions": _split_csv(self.query_one("#ncbi-accessions", Input).value),
-            "accession_file": self.query_one("#ncbi-accession-file", Input).value.strip(),
+            "accession_file": self.query_one(
+                "#ncbi-accession-file", Input
+            ).value.strip(),
             "include": _split_csv(self.query_one("#ncbi-include", Input).value),
-            "archive_files": not self.query_one("#ncbi-no-archive-files", Checkbox).value,
+            "archive_files": not self.query_one(
+                "#ncbi-no-archive-files", Checkbox
+            ).value,
             "standardize": self.query_one("#ncbi-standardize", Checkbox).value,
             "dry_run": self.query_one("#ncbi-dry-run", Checkbox).value,
-            "preserve_sources": not self.query_one("#ncbi-no-preserve-source", Checkbox).value,
+            "preserve_sources": not self.query_one(
+                "#ncbi-no-preserve-source", Checkbox
+            ).value,
             "plan_only": self.query_one("#ncbi-plan-only", Checkbox).value,
             "email": self.query_one("#ncbi-email", Input).value.strip(),
             "api_key": self.query_one("#ncbi-api-key", Input).value.strip(),
             "timeout": self.query_one("#ncbi-timeout", Input).value.strip(),
             "batch_size": self.query_one("#ncbi-batch-size", Input).value.strip(),
-            "download_workers": self.query_one("#ncbi-download-workers", Input).value.strip(),
+            "download_workers": self.query_one(
+                "#ncbi-download-workers", Input
+            ).value.strip(),
             "retries": self.query_one("#ncbi-retries", Input).value.strip(),
             "retry_backoff": self.query_one("#ncbi-retry-backoff", Input).value.strip(),
             "resume_run": self.query_one("#ncbi-resume-run", Input).value.strip(),
@@ -121,11 +151,11 @@ class NcbiDatasetsModal(WriteModal):
         values = self._values()
         numbers: dict[str, Any] = {}
         for key, label, kind in (
-                ("timeout", "timeout", float),
-                ("batch_size", "batch size", int),
-                ("download_workers", "download workers", int),
-                ("retries", "retries", int),
-                ("retry_backoff", "retry backoff", float),
+            ("timeout", "timeout", float),
+            ("batch_size", "batch size", int),
+            ("download_workers", "download workers", int),
+            ("retries", "retries", int),
+            ("retry_backoff", "retry backoff", float),
         ):
             try:
                 numbers[key] = kind(values[key])
@@ -171,11 +201,11 @@ class NcbiDatasetsModal(WriteModal):
         if values["api_key"]:
             parts += ["--api-key", shlex.quote(values["api_key"])]
         for key, flag, default in (
-                ("timeout", "--timeout", "300.0"),
-                ("batch_size", "--batch-size", "10"),
-                ("download_workers", "--download-workers", "3"),
-                ("retries", "--retries", "4"),
-                ("retry_backoff", "--retry-backoff", "1.0"),
+            ("timeout", "--timeout", "300.0"),
+            ("batch_size", "--batch-size", "10"),
+            ("download_workers", "--download-workers", "3"),
+            ("retries", "--retries", "4"),
+            ("retry_backoff", "--retry-backoff", "1.0"),
         ):
             if values[key] != default:
                 parts += [flag, shlex.quote(values[key] or "…")]
@@ -221,7 +251,7 @@ class NcbiDatasetsModal(WriteModal):
             event.prevent_default()
             self._request_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -233,8 +263,14 @@ class NcbiDatasetsModal(WriteModal):
         except ValidationError as exc:
             self.show_error(exc)
             return
-        if not kwargs["inputs"] and not kwargs["accessions"] and not kwargs["accession_file"]:
-            self.show_error("provide at least one --input, --accession, or --accession-file")
+        if (
+            not kwargs["inputs"]
+            and not kwargs["accessions"]
+            and not kwargs["accession_file"]
+        ):
+            self.show_error(
+                "provide at least one --input, --accession, or --accession-file"
+            )
             return
         self.clear_error()
         self.preflight_running = True
@@ -292,8 +328,10 @@ class NcbiDatasetsModal(WriteModal):
         planned = sum(len(group["accessions"]) for group in plan)
         lines.append(f"download plan: {planned} accession(s) in {len(plan)} group(s)")
         for group in plan:
-            lines.append(f"  includes={','.join(group['includes'])}: "
-                         f"{', '.join(group['accessions'])}")
+            lines.append(
+                f"  includes={','.join(group['includes'])}: "
+                f"{', '.join(group['accessions'])}"
+            )
         skipped = payload.get("skipped_existing") or []
         if skipped:
             lines.append(f"skipped (already archived): {', '.join(skipped)}")
@@ -364,7 +402,9 @@ class NcbiDatasetsModal(WriteModal):
             return
         elapsed = int(monotonic() - self._started)
         try:
-            self.query_one("#ncbi-status", Static).update(f"running… ({elapsed}s elapsed)")
+            self.query_one("#ncbi-status", Static).update(
+                f"running… ({elapsed}s elapsed)"
+            )
         except NoMatches:  # pragma: no cover - modal teardown race
             self._stop_status_timer()
 
@@ -375,7 +415,9 @@ class NcbiDatasetsModal(WriteModal):
     def _run(self) -> None:
         try:
             payload: Any = actions.ncbi_datasets(
-                self.project, cancel_event=self._cancel_event, **self._run_kwargs,
+                self.project,
+                cancel_event=self._cancel_event,
+                **self._run_kwargs,
             )
         except Exception as exc:  # noqa: BLE001 - routed to _run_done  # pylint: disable=broad-exception-caught
             payload = exc

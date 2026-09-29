@@ -67,20 +67,21 @@ def project_summary(project: Project) -> dict[str, Any]:
     """Return headline counts for the Home dashboard."""
     with _open(project) as db:
         entity_counts = {
-            entity_type: int(
-                _row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"]
-            )
+            entity_type: int(_row(db, f"SELECT COUNT(*) AS n FROM {table}")["n"])
             for entity_type, (table, _id_col) in ENTITY_TABLES.items()
         }
-        files_row = _row(db, "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM files")
+        files_row = _row(
+            db, "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM files"
+        )
         decision_rows = _rows(
             db,
             "SELECT COALESCE(curated_decision, decision) AS effective, COUNT(*) AS n "
             "FROM current_decisions GROUP BY effective",
         )
         latest_release = _row(
-            db, "SELECT version, created_at, profile, summary FROM releases "
-                "ORDER BY created_at DESC LIMIT 1"
+            db,
+            "SELECT version, created_at, profile, summary FROM releases "
+            "ORDER BY created_at DESC LIMIT 1",
         )
     return {
         "entity_counts": entity_counts,
@@ -101,11 +102,15 @@ def attention_items(project: Project, *, limit: int = 10) -> dict[str, Any]:
             "ORDER BY julianday(started_at) DESC LIMIT ?",
             (limit,),
         )
-        run_count = int(_row(
-            db, "SELECT COUNT(*) AS n FROM workflow_runs WHERE status IN ('failed', 'interrupted')"
-        )["n"])
+        run_count = int(
+            _row(
+                db,
+                "SELECT COUNT(*) AS n FROM workflow_runs WHERE status IN ('failed', 'interrupted')",
+            )["n"]
+        )
         decision_rows = [
-            row for row in _rows(
+            row
+            for row in _rows(
                 db,
                 "SELECT entity_type, entity_id, profile, decision, curated_decision, "
                 "reason_codes, evaluated_at FROM current_decisions",
@@ -132,18 +137,24 @@ def _retired_keys(db: Database) -> set[tuple[str, str]]:
         return set()
     return {
         (str(row["entity_type"]), str(row["entity_id"]))
-        for row in db.query("SELECT entity_type, entity_id FROM effective_retired_entities")
+        for row in db.query(
+            "SELECT entity_type, entity_id FROM effective_retired_entities"
+        )
     }
 
 
 def _states(db: Database) -> dict[tuple[str, str], dict[str, Any]]:
     return {
         (str(row["entity_type"]), str(row["entity_id"])): dict(row)
-        for row in db.query("SELECT entity_type, entity_id, state, message, updated_at FROM entity_state")
+        for row in db.query(
+            "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state"
+        )
     }
 
 
-def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict[str, Any]]:
+def entity_tree(
+    project: Project, *, include_retired: bool = False
+) -> list[dict[str, Any]]:
     """Return organisms → samples → runs/assemblies → annotations as nested dicts.
 
     Each node has ``entity_type``, ``entity_id``, ``name`` (a human label field
@@ -155,7 +166,9 @@ def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict
         retired = _retired_keys(db)
         states = _states(db)
 
-        def node(entity_type: str, record: dict[str, Any], children: list[dict[str, Any]]) -> dict[str, Any]:
+        def node(
+            entity_type: str, record: dict[str, Any], children: list[dict[str, Any]]
+        ) -> dict[str, Any]:
             entity_id = str(record.get(ENTITY_TABLES[entity_type][1]) or "")
             state_row = states.get((entity_type, entity_id))
             return {
@@ -174,7 +187,9 @@ def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict
         for record in _rows(db, "SELECT * FROM annotations ORDER BY annotation_id"):
             child = node("annotation", record, [])
             if visible(child):
-                annotations_by_assembly.setdefault(str(record["assembly_id"]), []).append(child)
+                annotations_by_assembly.setdefault(
+                    str(record["assembly_id"]), []
+                ).append(child)
 
         runs_by_sample: dict[str, list[dict[str, Any]]] = {}
         for record in _rows(db, "SELECT * FROM runs ORDER BY run_id"):
@@ -184,23 +199,37 @@ def entity_tree(project: Project, *, include_retired: bool = False) -> list[dict
 
         assemblies_by_sample: dict[str, list[dict[str, Any]]] = {}
         for record in _rows(db, "SELECT * FROM assemblies ORDER BY assembly_id"):
-            child = node("assembly", record, annotations_by_assembly.get(str(record["assembly_id"]), []))
+            child = node(
+                "assembly",
+                record,
+                annotations_by_assembly.get(str(record["assembly_id"]), []),
+            )
             if visible(child):
-                assemblies_by_sample.setdefault(str(record["sample_id"]), []).append(child)
+                assemblies_by_sample.setdefault(str(record["sample_id"]), []).append(
+                    child
+                )
 
         samples_by_organism: dict[str, list[dict[str, Any]]] = {}
         for record in _rows(db, "SELECT * FROM samples ORDER BY sample_id"):
             sample_id = str(record["sample_id"])
             child = node(
-                "sample", record,
-                runs_by_sample.get(sample_id, []) + assemblies_by_sample.get(sample_id, []),
+                "sample",
+                record,
+                runs_by_sample.get(sample_id, [])
+                + assemblies_by_sample.get(sample_id, []),
             )
             if visible(child):
-                samples_by_organism.setdefault(str(record["organism_id"]), []).append(child)
+                samples_by_organism.setdefault(str(record["organism_id"]), []).append(
+                    child
+                )
 
         tree = []
         for record in _rows(db, "SELECT * FROM organisms ORDER BY organism_id"):
-            child = node("organism", record, samples_by_organism.get(str(record["organism_id"]), []))
+            child = node(
+                "organism",
+                record,
+                samples_by_organism.get(str(record["organism_id"]), []),
+            )
             if visible(child):
                 tree.append(child)
         return tree
@@ -236,12 +265,19 @@ def _entity_metrics(db: Database, entity_type: str, entity_id: str) -> dict[str,
             del row["finished_at"], row["result_id"]
             analysis[row["metric_name"]] = row
     return {
-        "qc": sorted(qc.values(), key=lambda row: (row["qc_stage"], row["metric_name"])),
-        "analysis": sorted(analysis.values(), key=lambda row: (row["analysis_name"], row["metric_name"])),
+        "qc": sorted(
+            qc.values(), key=lambda row: (row["qc_stage"], row["metric_name"])
+        ),
+        "analysis": sorted(
+            analysis.values(),
+            key=lambda row: (row["analysis_name"], row["metric_name"]),
+        ),
     }
 
 
-def entity_metrics(project: Project, entity_type: str, entity_id: str) -> dict[str, Any]:
+def entity_metrics(
+    project: Project, entity_type: str, entity_id: str
+) -> dict[str, Any]:
     """Return the latest built-in QC and external-analysis metrics for one entity.
 
     ``"qc"`` holds one row per ``metric_name`` — the newest measurement,
@@ -254,7 +290,9 @@ def entity_metrics(project: Project, entity_type: str, entity_id: str) -> dict[s
         return _entity_metrics(db, entity_type, entity_id)
 
 
-def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[str, Any] | None:
+def entity_detail(
+    project: Project, entity_type: str, entity_id: str
+) -> dict[str, Any] | None:
     """Return one entity's row, accessions, state, and files."""
     table, id_column = ENTITY_TABLES[entity_type]
     with _open(project) as db:
@@ -289,7 +327,8 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
                 "ORDER BY superseded_at, object_type, object_id",
                 (entity_type, entity_id, entity_type, entity_id),
             )
-            if db.lifecycle_schema_available() else []
+            if db.lifecycle_schema_available()
+            else []
         )
     return {
         "entity_type": entity_type,
@@ -304,12 +343,12 @@ def entity_detail(project: Project, entity_type: str, entity_id: str) -> dict[st
 
 
 def list_files(
-        project: Project,
-        *,
-        status: str | None = None,
-        text: str = "",
-        entity: str = "",
-        limit: int = 0,
+    project: Project,
+    *,
+    status: str | None = None,
+    text: str = "",
+    entity: str = "",
+    limit: int = 0,
 ) -> list[dict[str, Any]]:
     """Return manifest files with an aggregated residency summary.
 
@@ -347,7 +386,10 @@ def list_files(
 def file_statuses(project: Project) -> list[str]:
     """Return the distinct file statuses present, for filter selectors."""
     with _open(project) as db:
-        return [str(row["status"]) for row in db.query("SELECT DISTINCT status FROM files ORDER BY status")]
+        return [
+            str(row["status"])
+            for row in db.query("SELECT DISTINCT status FROM files ORDER BY status")
+        ]
 
 
 def _file_labels(db: Database, file_id: str, limit: int = 500) -> list[dict[str, Any]]:
@@ -360,10 +402,10 @@ def _file_labels(db: Database, file_id: str, limit: int = 500) -> list[dict[str,
 
 
 def file_sequence_labels(
-        project: Project,
-        file_id: str,
-        *,
-        limit: int = 500,
+    project: Project,
+    file_id: str,
+    *,
+    limit: int = 500,
 ) -> list[dict[str, Any]]:
     """Return one file's ``sequence_labels`` rows (``classify-sequences`` output)."""
     with _open(project) as db:
@@ -387,23 +429,33 @@ def file_detail(project: Project, file_id: str) -> dict[str, Any] | None:
 
 
 ANALYSIS_HIT_COLUMNS = (
-    "analysis_name", "entity_type", "entity_id", "query_id", "subject_id",
-    "hit_rank", "query_start", "query_end", "subject_start", "subject_end",
-    "evalue", "bitscore", "percent_identity",
+    "analysis_name",
+    "entity_type",
+    "entity_id",
+    "query_id",
+    "subject_id",
+    "hit_rank",
+    "query_start",
+    "query_end",
+    "subject_start",
+    "subject_end",
+    "evalue",
+    "bitscore",
+    "percent_identity",
 )
 
 
 def analysis_hits(
-        project: Project,
-        *,
-        analysis: str | None = None,
-        entity_type: str | None = None,
-        entity_id: str | None = None,
-        query_id: str | None = None,
-        subject_id: str | None = None,
-        evalue_max: float | None = None,
-        limit: int = 20,
-        include_retired: bool = False,
+    project: Project,
+    *,
+    analysis: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    query_id: str | None = None,
+    subject_id: str | None = None,
+    evalue_max: float | None = None,
+    limit: int = 20,
+    include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     """Return alignment-hit rows exactly like ``report analysis --hits``.
 
@@ -450,10 +502,10 @@ def analysis_hits(
 
 
 def label_summary(
-        project: Project,
-        *,
-        profile_name: str | None = None,
-        limit: int = 500,
+    project: Project,
+    *,
+    profile_name: str | None = None,
+    limit: int = 500,
 ) -> list[dict[str, Any]]:
     """Return ``label`` × how many sequences and files carry it.
 
@@ -475,13 +527,13 @@ def label_summary(
 
 
 def list_decisions(
-        project: Project,
-        *,
-        profile: str | None = None,
-        decision: str | None = None,
-        text: str = "",
-        limit: int = 500,
-        include_retired: bool = False,
+    project: Project,
+    *,
+    profile: str | None = None,
+    decision: str | None = None,
+    text: str = "",
+    limit: int = 500,
+    include_retired: bool = False,
 ) -> list[dict[str, Any]]:
     """Return rows from the ``current_decisions`` view.
 
@@ -566,22 +618,29 @@ def list_coverage_profiles(project: Project) -> list[dict[str, Any]]:
     return _profile_rows(project, "taxonomy_coverage")
 
 
-def get_profile_document(project: Project, name: str, *, kind: str = "qc") -> dict[str, Any]:
+def get_profile_document(
+    project: Project, name: str, *, kind: str = "qc"
+) -> dict[str, Any]:
     """Return the current on-disk profile document for the editor."""
     from operon.profiles import load_profile
 
     return load_profile(project.profiles_dir, name, expected_kind=kind)
 
 
-def config_version_floor(project: Project, kind: str, name: str, version: int = 0) -> int:
+def config_version_floor(
+    project: Project, kind: str, name: str, version: int = 0
+) -> int:
     """Highest known version, including snapshots of deleted/replaced files."""
     table, column, name_column = {
         "profile": ("qc_profiles", "profile_version", "profile_name"),
         "recipe": ("recipe_snapshots", "recipe_version", "recipe_name"),
     }[kind]
     with _open(project) as db:
-        row = _row(db, f"SELECT MAX({column}) AS version FROM {table} WHERE {name_column}=?",  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
-                   (name,))
+        row = _row(
+            db,
+            f"SELECT MAX({column}) AS version FROM {table} WHERE {name_column}=?",  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
+            (name,),
+        )
     return max(version, int(row["version"] or 0))
 
 
@@ -598,7 +657,9 @@ def profile_history(project: Project, name: str) -> list[dict[str, Any]]:
         )
 
 
-def get_profile_snapshot(project: Project, name: str, snapshot_id: int) -> dict[str, Any]:
+def get_profile_snapshot(
+    project: Project, name: str, snapshot_id: int
+) -> dict[str, Any]:
     """Return the parsed document of one recorded profile snapshot."""
     with _open(project) as db:
         row = _row(
@@ -608,7 +669,9 @@ def get_profile_snapshot(project: Project, name: str, snapshot_id: int) -> dict[
             (name, snapshot_id),
         )
     if row is None:
-        raise ValidationError(f"no snapshot recorded for profile {name!r} with snapshot id {snapshot_id}")
+        raise ValidationError(
+            f"no snapshot recorded for profile {name!r} with snapshot id {snapshot_id}"
+        )
     return json.loads(str(row["profile_document"]))
 
 
@@ -621,21 +684,25 @@ def list_tools(project: Project) -> list[dict[str, Any]]:
     for tool_name in config.get("tools", {}):
         try:
             tool = get_tool(project, str(tool_name))
-            rows.append({
-                "name": tool.name,
-                "executable": tool.executable,
-                "run_method": tool.run_method,
-                "description": tool.description,
-                "recipes": sorted(tool.recipes),
-            })
+            rows.append(
+                {
+                    "name": tool.name,
+                    "executable": tool.executable,
+                    "run_method": tool.run_method,
+                    "description": tool.description,
+                    "recipes": sorted(tool.recipes),
+                }
+            )
         except ValidationError as exc:
-            rows.append({
-                "name": str(tool_name),
-                "executable": "",
-                "run_method": "",
-                "description": f"invalid: {exc}",
-                "recipes": [],
-            })
+            rows.append(
+                {
+                    "name": str(tool_name),
+                    "executable": "",
+                    "run_method": "",
+                    "description": f"invalid: {exc}",
+                    "recipes": [],
+                }
+            )
     return rows
 
 
@@ -660,7 +727,8 @@ def get_tools_defaults(project: Project) -> dict[str, Any]:
     section = load_tools_config(project).get("conda") or {}
     if not isinstance(section, dict):
         raise ValidationError(
-            f"the conda section in {project.tools_config_path} must be a mapping")
+            f"the conda section in {project.tools_config_path} must be a mapping"
+        )
     return {"document": dict(section)}
 
 
@@ -702,7 +770,9 @@ def recipe_history(project: Project, name: str) -> list[dict[str, Any]]:
         )
 
 
-def get_recipe_snapshot(project: Project, name: str, snapshot_id: int) -> dict[str, Any]:
+def get_recipe_snapshot(
+    project: Project, name: str, snapshot_id: int
+) -> dict[str, Any]:
     """Return the parsed document of one recorded recipe snapshot.
 
     The document has the same shape ``run_analysis`` records:
@@ -716,7 +786,9 @@ def get_recipe_snapshot(project: Project, name: str, snapshot_id: int) -> dict[s
             (name, snapshot_id),
         )
     if row is None:
-        raise ValidationError(f"no snapshot recorded for recipe {name!r} with snapshot id {snapshot_id}")
+        raise ValidationError(
+            f"no snapshot recorded for recipe {name!r} with snapshot id {snapshot_id}"
+        )
     return json.loads(str(row["recipe_document"]))
 
 
@@ -741,21 +813,21 @@ def normalize_workflow_time(value: str) -> str:
 
 
 def list_workflow_runs(
-        project: Project,
-        *,
-        statuses: Iterable[str] = (),
-        step: str = "",
-        entity: str = "",
-        limit: int = 100,
-        offset: int = 0,
-        started_from: str | None = None,
-        started_to: str | None = None,
-        run_id: str | None = None,
-        parent_run_id: str | None = None,
-        resumes_run_id: str | None = None,
-        tool: str | None = None,
-        executor: str | None = None,
-        oldest_first: bool = False,
+    project: Project,
+    *,
+    statuses: Iterable[str] = (),
+    step: str = "",
+    entity: str = "",
+    limit: int = 100,
+    offset: int = 0,
+    started_from: str | None = None,
+    started_to: str | None = None,
+    run_id: str | None = None,
+    parent_run_id: str | None = None,
+    resumes_run_id: str | None = None,
+    tool: str | None = None,
+    executor: str | None = None,
+    oldest_first: bool = False,
 ) -> list[dict[str, Any]]:
     """Return workflow runs with the CLI's ``workflow list`` filters.
 
@@ -774,18 +846,29 @@ def list_workflow_runs(
         started_from = normalize_workflow_time(started_from)
     if started_to is not None:
         started_to = normalize_workflow_time(started_to)
-    if (started_from is not None and started_to is not None
-            and datetime.fromisoformat(started_from) >= datetime.fromisoformat(started_to)):
+    if (
+        started_from is not None
+        and started_to is not None
+        and datetime.fromisoformat(started_from) >= datetime.fromisoformat(started_to)
+    ):
         raise ValidationError("--from must be earlier than --to")
     with _open(project) as db:
         if not step and not entity:
             from operon.workflow import list_runs
+
             return list_runs(
                 db,
-                started_from=started_from, started_to=started_to, run_id=run_id,
-                statuses=list(statuses), parent_run_id=parent_run_id,
-                resumes_run_id=resumes_run_id, tool=tool, executor=executor,
-                limit=limit, offset=offset, oldest_first=oldest_first,
+                started_from=started_from,
+                started_to=started_to,
+                run_id=run_id,
+                statuses=list(statuses),
+                parent_run_id=parent_run_id,
+                resumes_run_id=resumes_run_id,
+                tool=tool,
+                executor=executor,
+                limit=limit,
+                offset=offset,
+                oldest_first=oldest_first,
             )
         conditions: list[str] = []
         params: list[Any] = []
@@ -805,9 +888,13 @@ def list_workflow_runs(
         if entity:
             conditions.append("(entity_type LIKE ? OR entity_id LIKE ?)")
             params.extend((f"%{entity}%", f"%{entity}%"))
-        for column, value in (("run_id", run_id), ("parent_run_id", parent_run_id),
-                              ("resumes_run_id", resumes_run_id), ("tool", tool),
-                              ("executor", executor)):
+        for column, value in (
+            ("run_id", run_id),
+            ("parent_run_id", parent_run_id),
+            ("resumes_run_id", resumes_run_id),
+            ("tool", tool),
+            ("executor", executor),
+        ):
             if value is not None:
                 conditions.append(f"{column}=?")  # nosec B608 # fixed column names; filter values are bound
                 params.append(value)
@@ -823,11 +910,14 @@ def list_workflow_runs(
 def workflow_run_status(project: Project, run_id: str) -> dict[str, Any] | None:
     """Return only the fields a log follower polls (no JSON decoding)."""
     from operon.workflow import get_run
+
     with _open(project) as db:
         record = get_run(db, run_id)
     if record is None:
         return None
-    return {key: record.get(key) for key in ("run_id", "status", "exit_code", "finished_at")}
+    return {
+        key: record.get(key) for key in ("run_id", "status", "exit_code", "finished_at")
+    }
 
 
 def list_environments(project: Project) -> list[dict[str, Any]]:
@@ -838,6 +928,7 @@ def list_environments(project: Project) -> list[dict[str, Any]]:
     ``"-"`` summary instead of failing the load, exactly like the CLI.
     """
     from operon.environment import environment_summary
+
     with _open(project) as db:
         rows = _rows(
             db,
@@ -865,7 +956,9 @@ def environment_document(project: Project, environment_id: str) -> dict[str, Any
     return json.loads(row["document"])
 
 
-def export_environment(project: Project, environment_id: str, fmt: str = "explicit") -> str:
+def export_environment(
+    project: Project, environment_id: str, fmt: str = "explicit"
+) -> str:
     """Render a Conda reconstruction spec like ``operon environments export``."""
     from operon.environment_capture import export_conda
 
@@ -879,6 +972,7 @@ def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
     is attached as ``environment_summary`` (None when missing or corrupt).
     """
     from operon.workflow import get_run
+
     with _open(project) as db:
         record = get_run(db, run_id)
         if record is None:
@@ -893,6 +987,7 @@ def workflow_run_detail(project: Project, run_id: str) -> dict[str, Any] | None:
             if row is not None:
                 try:
                     from operon.environment import environment_summary
+
                     summary = environment_summary(json.loads(row["document"])) or None
                 except json.JSONDecodeError:
                     pass
@@ -913,11 +1008,11 @@ ANALYSIS_JOB_STATUSES = ("RUNNING", "completed", "failed", "interrupted")
 
 
 def list_analysis_jobs(
-        project: Project,
-        *,
-        analysis: str = "",
-        statuses: Iterable[str] = (),
-        limit: int = 200,
+    project: Project,
+    *,
+    analysis: str = "",
+    statuses: Iterable[str] = (),
+    limit: int = 200,
 ) -> list[dict[str, Any]]:
     """Return analysis jobs, newest first, with their scheduler job id.
 
@@ -992,7 +1087,9 @@ def list_samples_for_picker(project: Project, organism_id: str) -> list[dict[str
         )
 
 
-def list_assemblies_for_picker(project: Project, sample_id: str) -> list[dict[str, Any]]:
+def list_assemblies_for_picker(
+    project: Project, sample_id: str
+) -> list[dict[str, Any]]:
     """Return non-retired assemblies of one sample for the assembly picker."""
     with _open(project) as db:
         return _rows(
@@ -1005,7 +1102,9 @@ def list_assemblies_for_picker(project: Project, sample_id: str) -> list[dict[st
         )
 
 
-def list_annotations_for_picker(project: Project, assembly_id: str) -> list[dict[str, Any]]:
+def list_annotations_for_picker(
+    project: Project, assembly_id: str
+) -> list[dict[str, Any]]:
     """Return non-retired annotations of one assembly for the annotation picker."""
     with _open(project) as db:
         return _rows(
@@ -1064,24 +1163,31 @@ def release_preview(project: Project, profile: str) -> dict[str, Any]:
 
 
 def export_preview(
-        project: Project,
-        *,
-        entity_type: str | None = None,
-        entity_ids: Iterable[str] = (),
-        file_ids: Iterable[str] = (),
-        file_role: str | None = None,
-        fmt: str | None = None,
-        state: str | None = None,
-        decision: str | None = None,
-        profile: str | None = None,
+    project: Project,
+    *,
+    entity_type: str | None = None,
+    entity_ids: Iterable[str] = (),
+    file_ids: Iterable[str] = (),
+    file_role: str | None = None,
+    fmt: str | None = None,
+    state: str | None = None,
+    decision: str | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Count the files an export with these filters would materialize, without writing."""
     from operon.export import _select_files
 
     with _open(project) as db:
         rows = _select_files(
-            db, entity_type=entity_type, entity_ids=entity_ids, file_ids=file_ids,
-            file_role=file_role, fmt=fmt, state=state, decision=decision, profile=profile,
+            db,
+            entity_type=entity_type,
+            entity_ids=entity_ids,
+            file_ids=file_ids,
+            file_role=file_role,
+            fmt=fmt,
+            state=state,
+            decision=decision,
+            profile=profile,
         )
     return {
         "count": len(rows),
@@ -1154,15 +1260,17 @@ def list_coverage_reports(project: Project) -> list[dict[str, Any]]:
                 provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 provenance = {}
-        reports.append({
-            "report_id": path.name,
-            "path": str(path),
-            "reference_set_id": provenance.get("reference_set_id", "?"),
-            "scope_kind": provenance.get("scope_kind", "?"),
-            "scope_value": provenance.get("scope_value"),
-            "decision": provenance.get("decision", "?"),
-            "created_at": provenance.get("created_at", "?"),
-        })
+        reports.append(
+            {
+                "report_id": path.name,
+                "path": str(path),
+                "reference_set_id": provenance.get("reference_set_id", "?"),
+                "scope_kind": provenance.get("scope_kind", "?"),
+                "scope_value": provenance.get("scope_value"),
+                "decision": provenance.get("decision", "?"),
+                "created_at": provenance.get("created_at", "?"),
+            }
+        )
     reports.sort(key=lambda row: str(row["created_at"]), reverse=True)
     return reports
 
@@ -1215,7 +1323,12 @@ def read_coverage_report(project: Project, report_id: str) -> dict[str, Any]:
             "truncated": total > COVERAGE_REPORT_LIMIT,
             "total": total,
         }
-    return {"report_id": report_id, "path": str(path), "provenance": provenance, "tables": tables}
+    return {
+        "report_id": report_id,
+        "path": str(path),
+        "provenance": provenance,
+        "tables": tables,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1241,8 +1354,13 @@ def list_remotes(project: Project) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for name in sorted(_list(project)):
         row: dict[str, Any] = {
-            "name": name, "type": "sftp", "address": "", "root": "",
-            "files": "", "status": "not checked", "error": "",
+            "name": name,
+            "type": "sftp",
+            "address": "",
+            "root": "",
+            "files": "",
+            "status": "not checked",
+            "error": "",
         }
         try:
             spec = get_remote(project, name)
@@ -1254,8 +1372,12 @@ def list_remotes(project: Project) -> list[dict[str, Any]]:
     return rows
 
 
-def list_locations(project: Project, *, file_ids: Iterable[str] | None = None,
-                   limit: int = LOCATIONS_LIMIT) -> list[dict[str, Any]]:
+def list_locations(
+    project: Project,
+    *,
+    file_ids: Iterable[str] | None = None,
+    limit: int = LOCATIONS_LIMIT,
+) -> list[dict[str, Any]]:
     """Return local/remote residency rows (CLI ``locations``)."""
     from operon.remotes import list_locations as _list
 
@@ -1263,7 +1385,9 @@ def list_locations(project: Project, *, file_ids: Iterable[str] | None = None,
         return _list(db, file_ids, limit=limit)
 
 
-def sync_preview(project: Project, *, file_ids: Iterable[str] | None = None) -> dict[str, Any]:
+def sync_preview(
+    project: Project, *, file_ids: Iterable[str] | None = None
+) -> dict[str, Any]:
     """Describe the local side of a push/pull selection without transferring.
 
     Uses the core's own ``_select_files`` selection, so the count, the bytes
@@ -1291,7 +1415,9 @@ def sync_preview(project: Project, *, file_ids: Iterable[str] | None = None) -> 
     }
 
 
-def list_retired(project: Project, *, direct_only: bool = False) -> list[dict[str, Any]]:
+def list_retired(
+    project: Project, *, direct_only: bool = False
+) -> list[dict[str, Any]]:
     """Return current retirements, like ``operon retired``.
 
     The core ``lifecycle.list_retired_entities`` is the single source, so the

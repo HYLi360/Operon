@@ -18,7 +18,7 @@ def copy_project_tree(source: str | Path, target: str | Path) -> Path:
     read while it was itself read-only carries side files with that read-only
     mode: SQLite gives ``operon.sqlite-shm``/``-wal`` the mode of the database
     it opened.  A copy inherits them and can no longer be written — opening it
-    raises ``attempt to write a readonly database`` (ODR-0021).  Dropping the
+    raises ``attempt to write a readonly database`` (ODR-21).  Dropping the
     shared-memory file is safe (SQLite rebuilds it from the log on the next
     open) and restoring write permission on the database, log and journal files
     makes the copy behave like the project it was copied from.
@@ -44,14 +44,18 @@ class PytestAssertions:
     """
 
     def setup_method(self) -> None:
-        self._cleanup_callbacks: list[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]] = []
+        self._cleanup_callbacks: list[
+            tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]]
+        ] = []
 
     def teardown_method(self) -> None:
         while self._cleanup_callbacks:
             callback, args, kwargs = self._cleanup_callbacks.pop()
             callback(*args, **kwargs)
 
-    def addCleanup(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+    def addCleanup(
+        self, callback: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> None:
         self._cleanup_callbacks.append((callback, args, kwargs))
 
     @staticmethod
@@ -95,7 +99,9 @@ class PytestAssertions:
         assert left <= right, message
 
     @staticmethod
-    def assertAlmostEqual(left: float, right: float, places: int = 7, message: Any = None) -> None:
+    def assertAlmostEqual(
+        left: float, right: float, places: int = 7, message: Any = None
+    ) -> None:
         assert round(abs(left - right), places) == 0, message
 
     @staticmethod
@@ -103,5 +109,7 @@ class PytestAssertions:
         return pytest.raises(exception)
 
     @staticmethod
-    def assertRaisesRegex(exception: type[BaseException], pattern: str) -> AbstractContextManager[Any]:
+    def assertRaisesRegex(
+        exception: type[BaseException], pattern: str
+    ) -> AbstractContextManager[Any]:
         return pytest.raises(exception, match=pattern)

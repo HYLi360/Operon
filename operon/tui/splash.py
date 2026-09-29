@@ -72,18 +72,23 @@ def lake_text(width: int, height: int) -> Text:
             x = min(255, int((column + 0.5) * 256 / columns))
             # Replace the raster subtitle with readable terminal text, sampling
             # nearby lake-sky colors so the caption has no full-width banner.
-            if (columns >= 19 and caption_left <= column < caption_left + target
-                    and int(rows * 0.50) <= row <= int(rows * 0.54)):
+            if (
+                columns >= 19
+                and caption_left <= column < caption_left + target
+                and int(rows * 0.50) <= row <= int(rows * 0.54)
+            ):
                 offset = (int(192 * 0.55) * 256 + x) * 3
-                background = "#" + pixels[offset:offset + 3].hex()
-                char = caption[column - caption_left] if row == int(rows * 0.52) else " "
+                background = "#" + pixels[offset : offset + 3].hex()
+                char = (
+                    caption[column - caption_left] if row == int(rows * 0.52) else " "
+                )
                 result.append(char, Style(color="#bce9ed", bgcolor=background))
                 continue
             colors = []
             for half in range(2):
                 y = min(191, int((row * 2 + half + 0.5) * 192 / (rows * 2)))
                 offset = (y * 256 + x) * 3
-                colors.append("#" + pixels[offset:offset + 3].hex())
+                colors.append("#" + pixels[offset : offset + 3].hex())
             result.append("▀", Style(color=colors[0], bgcolor=colors[1]))
         if row < rows - 1:
             result.append("\n")
@@ -106,9 +111,17 @@ class LakeArt(Static):
 
     def render(self) -> Text:
         if self.mode == "text":
-            encoding = (getattr(sys.__stdout__, "encoding", None) or "ascii").lower().replace("-", "")
-            return text_brand(self.size.width, self.size.height,
-                              unicode=encoding == "utf8", color=not self.app.no_color)
+            encoding = (
+                (getattr(sys.__stdout__, "encoding", None) or "ascii")
+                .lower()
+                .replace("-", "")
+            )
+            return text_brand(
+                self.size.width,
+                self.size.height,
+                unicode=encoding == "utf8",
+                color=not self.app.no_color,
+            )
         return lake_text(self.size.width, self.size.height)
 
     def on_mount(self) -> None:
@@ -120,8 +133,13 @@ class LakeArt(Static):
     def display_image(self) -> None:
         # Use the same serialized output queue as Textual, never stdout writes.
         driver = self.app._driver
-        if (self.mode != "kitty" or driver is None or driver.is_headless
-                or not self.is_mounted or self.app.screen is not self.screen):
+        if (
+            self.mode != "kitty"
+            or driver is None
+            or driver.is_headless
+            or not self.is_mounted
+            or self.app.screen is not self.screen
+        ):
             return
         region = self.region
         if not region.width or not region.height or region == self._placement:
@@ -131,8 +149,10 @@ class LakeArt(Static):
                 png = files("operon.tui").joinpath("assets/splash.png").read_bytes()
                 driver.write(kitty_upload(png, self._image_id))
                 self._uploaded = True
-            driver.write(kitty_delete(self._image_id, free=False)
-                         + kitty_place(self._image_id, *region))
+            driver.write(
+                kitty_delete(self._image_id, free=False)
+                + kitty_place(self._image_id, *region)
+            )
             self._placement = region
         except (OSError, ValueError):
             self.hide_image()

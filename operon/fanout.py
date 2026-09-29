@@ -43,12 +43,17 @@ DERIVED_SUBDIR = "derived"
 
 def _validate_role_component(value: str, label: str) -> None:
     """Same character rules as ``canonical_filename`` applies to roles."""
-    if (not value or value in {".", ".."}
-            or any(char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value)):
+    if (
+        not value
+        or value in {".", ".."}
+        or any(char in "/\\" or ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
         raise ValidationError(f"invalid {label}: {value!r}")
 
 
-def _manifest_file(db: Database, project: Project, file_id: str, label: str) -> tuple[dict[str, Any], Path]:
+def _manifest_file(
+    db: Database, project: Project, file_id: str, label: str
+) -> tuple[dict[str, Any], Path]:
     row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
     if row is None:
         raise ValidationError(f"{label} {file_id} is not registered in the manifest")
@@ -68,10 +73,10 @@ def _manifest_file(db: Database, project: Project, file_id: str, label: str) -> 
 
 
 def parse_assignments(
-        path: str | Path,
-        *,
-        unit_column: str = "unit",
-        seqid_column: str = "seqid",
+    path: str | Path,
+    *,
+    unit_column: str = "unit",
+    seqid_column: str = "seqid",
 ) -> tuple[list[dict[str, Any]], int]:
     """Group an assignment TSV into ordered units of seqids.
 
@@ -101,16 +106,18 @@ def parse_assignments(
             continue
         entry["_seen"].add(seqid)
         entry["seqids"].append(seqid)
-    result = [{"unit": u["unit"], "seqids": sorted(u["seqids"])} for u in units.values()]
+    result = [
+        {"unit": u["unit"], "seqids": sorted(u["seqids"])} for u in units.values()
+    ]
     if not result:
         raise ValidationError(f"{path}: no assignment rows; nothing to fan out")
     return result, duplicate_rows
 
 
 def _resolve_seqids(
-        db: Database,
-        source_file_ids: list[str],
-        units: list[dict[str, Any]],
+    db: Database,
+    source_file_ids: list[str],
+    units: list[dict[str, Any]],
 ) -> dict[str, str]:
     """Map every assigned seqid to exactly one source file_id.
 
@@ -124,7 +131,7 @@ def _resolve_seqids(
     placeholders = ", ".join("?" for _ in source_file_ids)
     found: dict[str, list[str]] = {}
     for chunk_start in range(0, len(needed), 500):
-        chunk = needed[chunk_start:chunk_start + 500]
+        chunk = needed[chunk_start : chunk_start + 500]
         seq_placeholders = ", ".join("?" for _ in chunk)
         rows = db.conn.execute(
             f"SELECT seqid, file_id FROM sequences WHERE file_id IN ({placeholders}) "
@@ -139,11 +146,15 @@ def _resolve_seqids(
             f"{len(missing)} seqid(s) do not resolve against the source file(s) "
             f"{', '.join(source_file_ids)}: {', '.join(missing)}"
         )
-    ambiguous = {seqid: sorted(set(file_ids)) for seqid, file_ids in found.items()
-                 if len(set(file_ids)) > 1}
+    ambiguous = {
+        seqid: sorted(set(file_ids))
+        for seqid, file_ids in found.items()
+        if len(set(file_ids)) > 1
+    }
     if ambiguous:
         details = "; ".join(
-            f"{seqid} in {', '.join(file_ids)}" for seqid, file_ids in sorted(ambiguous.items())
+            f"{seqid} in {', '.join(file_ids)}"
+            for seqid, file_ids in sorted(ambiguous.items())
         )
         raise ValidationError(
             f"{len(ambiguous)} seqid(s) appear in multiple source files ({details}); "
@@ -153,9 +164,9 @@ def _resolve_seqids(
 
 
 def _load_source_bodies(
-        db: Database,
-        source_records: dict[str, tuple[dict[str, Any], Path]],
-        needed: set[str],
+    db: Database,
+    source_records: dict[str, tuple[dict[str, Any], Path]],
+    needed: set[str],
 ) -> dict[str, str]:
     """Read sequence bodies from verified source FASTA bytes.
 
@@ -193,20 +204,20 @@ def _load_source_bodies(
 
 
 def fanout_units(
-        db: Database,
-        project: Project,
-        *,
-        assignments_file_id: str,
-        source_file_ids: list[str],
-        entity_type: str,
-        entity_id: str,
-        role_prefix: str,
-        unit_column: str = "unit",
-        seqid_column: str = "seqid",
-        parent_run_id: str | None = None,
-        actor: str = "fanout",
-        dry_run: bool = False,
-        command: str = "",
+    db: Database,
+    project: Project,
+    *,
+    assignments_file_id: str,
+    source_file_ids: list[str],
+    entity_type: str,
+    entity_id: str,
+    role_prefix: str,
+    unit_column: str = "unit",
+    seqid_column: str = "seqid",
+    parent_run_id: str | None = None,
+    actor: str = "fanout",
+    dry_run: bool = False,
+    command: str = "",
 ) -> dict[str, Any]:
     """Materialize and register one FASTA per assignment unit, idempotently.
 
@@ -227,14 +238,16 @@ def fanout_units(
     _validate_role_component(role_prefix, "role prefix")
     db.require_active_entity(entity_type, entity_id)
     assignments_record, assignments_path = _manifest_file(
-        db, project, assignments_file_id, "assignments file")
+        db, project, assignments_file_id, "assignments file"
+    )
     source_records = {
         file_id: _manifest_file(db, project, file_id, "source file")
         for file_id in source_file_ids
     }
 
     units, duplicate_rows = parse_assignments(
-        assignments_path, unit_column=unit_column, seqid_column=seqid_column)
+        assignments_path, unit_column=unit_column, seqid_column=seqid_column
+    )
     resolution = _resolve_seqids(db, source_file_ids, units)
     derived_root = project.analysis_root / DERIVED_SUBDIR
     for unit in units:
@@ -242,10 +255,12 @@ def fanout_units(
         # canonical_filename enforces the archive naming rules on the role.
         canonical_filename(entity_id, unit["role"], "fasta", "none")
         unit["target"] = archive_target(
-            project, entity_type, entity_id, unit["role"], "fasta", "none", derived_root)
+            project, entity_type, entity_id, unit["role"], "fasta", "none", derived_root
+        )
 
     bodies = _load_source_bodies(
-        db, source_records, {seqid for u in units for seqid in u["seqids"]})
+        db, source_records, {seqid for u in units for seqid in u["seqids"]}
+    )
     for unit in units:
         text = _format_fasta([(seqid, bodies[seqid]) for seqid in unit["seqids"]])
         payload = text.encode("utf-8")
@@ -270,14 +285,18 @@ def fanout_units(
         reused = False
         if existing is not None:
             existing_path = project.root / existing["relative_path"]
-            reused = existing_path.is_file() and (
-                sha256_path(existing_path), path_size_bytes(existing_path)
-            ) == unit["identity"]
+            reused = (
+                existing_path.is_file()
+                and (sha256_path(existing_path), path_size_bytes(existing_path))
+                == unit["identity"]
+            )
         unit["reused"] = reused
         if not reused and (unit["target"].exists() or unit["target"].is_symlink()):
-            if not unit["target"].is_file() or (
-                    sha256_path(unit["target"]), path_size_bytes(unit["target"])
-            ) != unit["identity"]:
+            if (
+                not unit["target"].is_file()
+                or (sha256_path(unit["target"]), path_size_bytes(unit["target"]))
+                != unit["identity"]
+            ):
                 raise ConflictError(
                     f"fanout target is occupied by different content: {unit['target']}"
                 )
@@ -286,37 +305,50 @@ def fanout_units(
         return {
             "dry_run": True,
             "units": [
-                {"unit": u["unit"], "role": u["role"], "sequences": len(u["seqids"]),
-                 "status": "would_reuse" if u["reused"] else "would_create"}
+                {
+                    "unit": u["unit"],
+                    "role": u["role"],
+                    "sequences": len(u["seqids"]),
+                    "status": "would_reuse" if u["reused"] else "would_create",
+                }
                 for u in units
             ],
             "duplicate_rows": duplicate_rows,
         }
 
-    run = start_run(db, {
-        "step": "fanout",
-        "parent_run_id": parent_run_id,
-        "entity_type": entity_type,
-        "entity_id": entity_id,
-        "command": command,
-        "tool": "operon",
-        "parameter_set": json.dumps({
-            "assignments_file_id": assignments_file_id,
-            "source_file_ids": source_file_ids,
+    run = start_run(
+        db,
+        {
+            "step": "fanout",
+            "parent_run_id": parent_run_id,
             "entity_type": entity_type,
             "entity_id": entity_id,
-            "role_prefix": role_prefix,
-            "unit_column": unit_column,
-            "seqid_column": seqid_column,
-            "actor": actor,
-        }, ensure_ascii=False, sort_keys=True),
-    })
+            "command": command,
+            "tool": "operon",
+            "parameter_set": json.dumps(
+                {
+                    "assignments_file_id": assignments_file_id,
+                    "source_file_ids": source_file_ids,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "role_prefix": role_prefix,
+                    "unit_column": unit_column,
+                    "seqid_column": seqid_column,
+                    "actor": actor,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        },
+    )
     created_targets: list[Path] = []
     jsonl_buffer: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     project.logs_root.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="operon-fanout-", dir=project.logs_root) as staging:
+        with tempfile.TemporaryDirectory(
+            prefix="operon-fanout-", dir=project.logs_root
+        ) as staging:
             with db.transaction():
                 for index, unit in enumerate(units, start=1):
                     staged = Path(staging) / f"unit-{index:04d}.fasta"
@@ -324,8 +356,14 @@ def fanout_units(
                     if not (unit["target"].exists() or unit["target"].is_symlink()):
                         created_targets.append(unit["target"])
                     record = ingest_file(
-                        db, project, staged, entity_type, entity_id, unit["role"],
-                        fmt="fasta", compression="none",
+                        db,
+                        project,
+                        staged,
+                        entity_type,
+                        entity_id,
+                        unit["role"],
+                        fmt="fasta",
+                        compression="none",
                         source_url=f"fanout:{assignments_file_id}",
                         run_id=run["run_id"],
                         archive_root=derived_root,
@@ -336,17 +374,24 @@ def fanout_units(
                             "INSERT OR IGNORE INTO file_lineage"
                             "(derived_file_id, input_file_id, workflow_run_id, created_at) "
                             "VALUES(?,?,?,?)",
-                            (record["file_id"], input_file_id, run["run_id"], now_iso()),
+                            (
+                                record["file_id"],
+                                input_file_id,
+                                run["run_id"],
+                                now_iso(),
+                            ),
                         )
-                    results.append({
-                        "unit": unit["unit"],
-                        "role": unit["role"],
-                        "sequences": len(unit["seqids"]),
-                        "file_id": record["file_id"],
-                        "relative_path": record["relative_path"],
-                        "sha256": record["sha256"],
-                        "status": "reused" if unit["reused"] else "created",
-                    })
+                    results.append(
+                        {
+                            "unit": unit["unit"],
+                            "role": unit["role"],
+                            "sequences": len(unit["seqids"]),
+                            "file_id": record["file_id"],
+                            "relative_path": record["relative_path"],
+                            "sha256": record["sha256"],
+                            "status": "reused" if unit["reused"] else "created",
+                        }
+                    )
     except BaseException as exc:
         for target in reversed(created_targets):
             if target.is_dir() and not target.is_symlink():
@@ -354,11 +399,18 @@ def fanout_units(
             else:
                 target.unlink(missing_ok=True)
         if isinstance(exc, Exception):
-            finish_run(db, project, run["run_id"], status="failed", exit_code=1,
-                       error=str(exc))
+            finish_run(
+                db, project, run["run_id"], status="failed", exit_code=1, error=str(exc)
+            )
         else:
-            finish_run(db, project, run["run_id"], status="interrupted", exit_code=130,
-                       error=type(exc).__name__)
+            finish_run(
+                db,
+                project,
+                run["run_id"],
+                status="interrupted",
+                exit_code=130,
+                error=type(exc).__name__,
+            )
         raise
     flush_run_log(project, jsonl_buffer)
 
@@ -372,8 +424,14 @@ def fanout_units(
         "units": results,
     }
     finish_run(
-        db, project, run["run_id"], status="completed", exit_code=0,
-        execution_details=json.dumps(execution_details, ensure_ascii=False, sort_keys=True),
+        db,
+        project,
+        run["run_id"],
+        status="completed",
+        exit_code=0,
+        execution_details=json.dumps(
+            execution_details, ensure_ascii=False, sort_keys=True
+        ),
     )
     return {
         "dry_run": False,

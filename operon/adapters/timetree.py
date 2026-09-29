@@ -35,18 +35,40 @@ TIMETREE_SOURCE_LABEL = "TimeTree v5 (Kumar et al. 2022, MBE)"
 RETRYABLE_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 CALIBRATION_COLUMNS = [
-    "node_label", "taxa", "taxon_ids", "age_median", "ci_low", "ci_high",
-    "study_count", "source", "queried_at", "cache_file",
+    "node_label",
+    "taxa",
+    "taxon_ids",
+    "age_median",
+    "ci_low",
+    "ci_high",
+    "study_count",
+    "source",
+    "queried_at",
+    "cache_file",
 ]
 
 _ID_KEYS = ("taxon_id", "taxid", "taxonid", "ncbi_id", "id")
 _NAME_KEYS = ("scientific_name", "taxon_name", "name", "taxon")
 _RANK_KEYS = ("rank", "taxon_rank", "taxonomic_rank")
 _AGE_KEYS = ("precomputed_age", "median_time", "age", "time", "median_age", "median")
-_CI_LOW_KEYS = ("precomputed_ci_low", "ci_low", "ci_lower", "confidence_low",
-                "confidence_interval_low", "ci95_low", "lower_ci")
-_CI_HIGH_KEYS = ("precomputed_ci_high", "ci_high", "ci_upper", "confidence_high",
-                 "confidence_interval_high", "ci95_high", "upper_ci")
+_CI_LOW_KEYS = (
+    "precomputed_ci_low",
+    "ci_low",
+    "ci_lower",
+    "confidence_low",
+    "confidence_interval_low",
+    "ci95_low",
+    "lower_ci",
+)
+_CI_HIGH_KEYS = (
+    "precomputed_ci_high",
+    "ci_high",
+    "ci_upper",
+    "confidence_high",
+    "confidence_interval_high",
+    "ci95_high",
+    "upper_ci",
+)
 _STUDY_KEYS = ("all_total", "study_count", "studies", "n_studies", "total_studies")
 
 
@@ -105,15 +127,15 @@ class TimeTreeClient:
     """
 
     def __init__(
-            self,
-            cache_dir: str | Path | None = None,
-            *,
-            base_url: str = TIMETREE_API,
-            timeout: float = 30.0,
-            retries: int = 3,
-            delay: float = 0.5,
-            refresh: bool = False,
-            session: Any = None,
+        self,
+        cache_dir: str | Path | None = None,
+        *,
+        base_url: str = TIMETREE_API,
+        timeout: float = 30.0,
+        retries: int = 3,
+        delay: float = 0.5,
+        refresh: bool = False,
+        session: Any = None,
     ) -> None:
         if timeout <= 0:
             raise ValidationError("TimeTree timeout must be positive")
@@ -147,6 +169,7 @@ class TimeTreeClient:
     def session(self) -> Any:
         if self._session is None:
             import requests
+
             self._session = requests.Session()
             self._session.headers["User-Agent"] = (
                 "Operon-TimeTree-adapter (research; per-query cache only)"
@@ -178,10 +201,11 @@ class TimeTreeClient:
             }
 
         import requests
+
         last_error: Exception | None = None
         for attempt in range(self.retries):
             if attempt:
-                time.sleep(self.delay * (2 ** attempt) if self.delay else 0)
+                time.sleep(self.delay * (2**attempt) if self.delay else 0)
             try:
                 response = self.session.get(url, timeout=self.timeout)
             except requests.exceptions.RequestException as exc:
@@ -204,7 +228,8 @@ class TimeTreeClient:
             if cache_path is not None:
                 atomic_write_text(
                     cache_path,
-                    json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                    json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True)
+                    + "\n",
                 )
             if self.delay:
                 time.sleep(self.delay)
@@ -248,11 +273,13 @@ class TimeTreeClient:
             if taxon_id_int <= 0 or taxon_id_int in seen:
                 continue
             seen.add(taxon_id_int)
-            candidates.append({
-                "taxon_id": taxon_id_int,
-                "scientific_name": label,
-                "rank": _first_text(record, _RANK_KEYS) or "",
-            })
+            candidates.append(
+                {
+                    "taxon_id": taxon_id_int,
+                    "scientific_name": label,
+                    "rank": _first_text(record, _RANK_KEYS) or "",
+                }
+            )
         if not candidates:
             raise ValidationError(
                 f"TimeTree found no taxon for {name!r}; raw response: {_truncated(json.dumps(data, default=str))}"
@@ -272,12 +299,14 @@ class TimeTreeClient:
                 f"raw response: {_truncated(json.dumps(data, default=str))}"
             )
         names = [
-            value for key in ("scientific_name_a", "scientific_name_b")
+            value
+            for key in ("scientific_name_a", "scientific_name_b")
             if (value := summary.get(key))
         ]
         if not names:
             names = [
-                str(value) for key, value in summary.items()
+                str(value)
+                for key, value in summary.items()
                 if key.startswith("scientific_name") and value
             ]
         return {
@@ -298,7 +327,9 @@ class TimeTreeClient:
         """Divergence-time summary for two NCBI taxonomy IDs."""
         id_a, id_b = sorted((int(id_a), int(id_b)))
         if id_a <= 0 or id_a == id_b:
-            raise ValidationError("TimeTree pairwise requires two different positive NCBI IDs")
+            raise ValidationError(
+                "TimeTree pairwise requires two different positive NCBI IDs"
+            )
         url = f"{self.base_url}/pairwise/{id_a}/{id_b}/summaryjson"
         result = self._divergence(url, f"pair {id_a}/{id_b}")
         result["taxon_ids"] = [id_a, id_b]
@@ -308,7 +339,9 @@ class TimeTreeClient:
         """MRCA divergence-time summary for N NCBI taxonomy IDs."""
         taxon_ids = sorted({int(value) for value in ids})
         if len(taxon_ids) < 2 or taxon_ids[0] <= 0:
-            raise ValidationError("TimeTree mrca requires at least two positive NCBI IDs")
+            raise ValidationError(
+                "TimeTree mrca requires at least two positive NCBI IDs"
+            )
         joined = "+".join(str(value) for value in taxon_ids)
         url = f"{self.base_url}/mrca/id/{joined}/summaryjson"
         result = self._divergence(url, f"MRCA of {joined}")
@@ -331,14 +364,16 @@ class TimeTreeClient:
             )
         for row in rows:
             row["_queried_at"] = result["queried_at"]
-            row["_cache_file"] = str(result["cache_file"]) if result["cache_file"] else ""
+            row["_cache_file"] = (
+                str(result["cache_file"]) if result["cache_file"] else ""
+            )
         return rows
 
     def build_calibrations(
-            self,
-            taxa: Sequence[tuple[str, int]],
-            *,
-            pairs: bool = False,
+        self,
+        taxa: Sequence[tuple[str, int]],
+        *,
+        pairs: bool = False,
     ) -> list[dict[str, Any]]:
         """Calibration TSV rows for a resolved taxon set.
 
@@ -350,7 +385,9 @@ class TimeTreeClient:
         if len(resolved) < 2:
             raise ValidationError("TimeTree calibrations require at least two taxa")
 
-        def row(label: str, members: list[tuple[str, int]], summary: dict[str, Any]) -> dict[str, Any]:
+        def row(
+            label: str, members: list[tuple[str, int]], summary: dict[str, Any]
+        ) -> dict[str, Any]:
             cache_file = summary["cache_file"]
             return {
                 "node_label": label,

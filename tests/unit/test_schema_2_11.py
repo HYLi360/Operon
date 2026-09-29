@@ -21,8 +21,15 @@ class TestSchema211(PytestAssertions):
     def test_schema_2_11_tables_exist(self):
         self.assertEqual(
             self.db.table_columns("sequence_labels"),
-            ["file_id", "seqid", "label", "profile_name",
-             "profile_sha256", "details_json", "decided_at"],
+            [
+                "file_id",
+                "seqid",
+                "label",
+                "profile_name",
+                "profile_sha256",
+                "details_json",
+                "decided_at",
+            ],
         )
         indexes = {
             row["name"]

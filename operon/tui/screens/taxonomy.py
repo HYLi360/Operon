@@ -80,8 +80,11 @@ class TaxonomyImportModal(WriteModal):
         self.query_one("#taxonomy-import-status", Static).update(
             "importing… (a running import cannot be interrupted)"
         )
-        self.run_action(lambda: actions.import_taxonomy(
-            self.project, values["input"], values["version"]))
+        self.run_action(
+            lambda: actions.import_taxonomy(
+                self.project, values["input"], values["version"]
+            )
+        )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Input"):
@@ -116,12 +119,12 @@ class TaxonomyImportModal(WriteModal):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
@@ -145,7 +148,8 @@ class CompileReferenceSetModal(WriteModal):
         self.profiles = data.list_coverage_profiles(project)
         # Same READY condition the core enforces for ``taxonomy compile``.
         self.snapshots = [
-            row for row in data.list_taxonomy_snapshots(project)
+            row
+            for row in data.list_taxonomy_snapshots(project)
             if row["source"] == "NCBI" and row["status"] == "READY"
         ]
 
@@ -165,8 +169,10 @@ class CompileReferenceSetModal(WriteModal):
                 classes="modal-info",
             )
         yield Select(
-            [(f"{row['name']} (v{row['version']})", row["name"])
-             for row in self.profiles],
+            [
+                (f"{row['name']} (v{row['version']})", row["name"])
+                for row in self.profiles
+            ],
             prompt="select a coverage profile",
             id="taxonomy-compile-profile",
             allow_blank=True,
@@ -178,7 +184,10 @@ class CompileReferenceSetModal(WriteModal):
                 classes="modal-info",
             )
         yield Select(
-            [(row["taxonomy_version"], row["taxonomy_version"]) for row in self.snapshots],
+            [
+                (row["taxonomy_version"], row["taxonomy_version"])
+                for row in self.snapshots
+            ],
             prompt="select a taxonomy version",
             id="taxonomy-compile-taxonomy-version",
             allow_blank=True,
@@ -215,8 +224,11 @@ class CompileReferenceSetModal(WriteModal):
         self.query_one("#taxonomy-compile-status", Static).update(
             "compiling… (a running compile cannot be interrupted)"
         )
-        self.run_action(lambda: actions.compile_reference_set(
-            self.project, str(profile), str(version)))
+        self.run_action(
+            lambda: actions.compile_reference_set(
+                self.project, str(profile), str(version)
+            )
+        )
 
     def _set_controls_disabled(self, disabled: bool) -> None:
         for widget in self.query("Select"):
@@ -236,8 +248,9 @@ class CompileReferenceSetModal(WriteModal):
         super()._action_done(payload)
 
     def on_action_success(self, payload: dict[str, Any]) -> None:
-        counts = (f"family {payload['family_count']} / genus "
-                  f"{payload['genus_count']} row(s)")
+        counts = (
+            f"family {payload['family_count']} / genus {payload['genus_count']} row(s)"
+        )
         if payload.get("reused"):
             self.app.notify(
                 f"reference set {payload['reference_set_id']}: {counts} "
@@ -250,12 +263,12 @@ class CompileReferenceSetModal(WriteModal):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel" and self.running:
             # Textual dispatches a message to every MRO class defining the
-            # handler (ODR-0043); prevent_default keeps WriteModal's own
+            # handler (ODR-43); prevent_default keeps WriteModal's own
             # on_button_pressed from dismissing the modal mid-run.
             event.prevent_default()
             self.action_cancel()
             return
-        # ODR-0047: the MRO dispatch would run WriteModal's handler a second time.
+        # ODR-47: the MRO dispatch would run WriteModal's handler a second time.
         event.prevent_default()
         super().on_button_pressed(event)
 
