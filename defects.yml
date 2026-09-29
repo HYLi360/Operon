@@ -1606,7 +1606,7 @@ defects:
     shapes is filtered down to its one source file, and a git init scratch repository shows the tracked
     set excludes a staged tree while keeping the source. On a clean tree the new listing covers exactly
     the files the old walk covered.
-  fix_commit: null
+  fix_commit: 'ae7e3fbc2edf6802cab17f67e8867847a6bb1ecb'
   fixed_in: null
   regression_tests:
     - tests/unit/test_ruff_suppression_format.py::test_python_files_skips_distribution_artifacts_without_git
