@@ -911,7 +911,7 @@ def test_cancel_remote_slurm_job_reports_rejections_and_transport_failures(
 def test_version_detection_falls_back_when_pattern_does_not_match(monkeypatch):
     tools._VERSION_CACHE.clear()
     monkeypatch.setattr(
-        tools.subprocess,
+        tools._probe.subprocess,
         "run",
         lambda *_a, **_k: SimpleNamespace(
             stdout="tool build 7.5\nsecond line\n", stderr=""
@@ -952,7 +952,7 @@ def test_command_step_provenance_validation_and_dry_run_variants(monkeypatch):
     assert details[1]["tool_version"] == "not probed (backend=ssh)"
 
     monkeypatch.setattr(
-        tools,
+        tools._probe,
         "_detect_version_record",
         lambda *_a, **_k: (_ for _ in ()).throw(ExternalToolError("probe failed")),
     )
@@ -1523,6 +1523,21 @@ def test_run_analysis_for_file_remote_reference_database_requires_checksum(
     assert db.query("SELECT COUNT(*) AS n FROM analysis_jobs")[0]["n"] == 0
 
 
+def _stub_version_probe(monkeypatch):
+    """Stub every version-probe call site with the same record.
+
+    After the tools split the probe helper is read from two module namespaces:
+    the plan stages (``_plan``) and command-provenance collection (``_probe``),
+    so both bindings are replaced.
+    """
+
+    def stub(*_args, **_kwargs):
+        return ("9.9", "faketool: 9.9")
+
+    monkeypatch.setattr(tools._plan, "_detect_version_record", stub)
+    monkeypatch.setattr(tools._probe, "_detect_version_record", stub)
+
+
 def test_run_analysis_for_file_ssh_provisions_remote_paths_and_finalizes_shutdown(
     operon_project, tmp_path, monkeypatch
 ):
@@ -1531,9 +1546,7 @@ def test_run_analysis_for_file_ssh_provisions_remote_paths_and_finalizes_shutdow
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    monkeypatch.setattr(
-        tools, "_detect_version_record", lambda *_a, **_k: ("9.9", "faketool: 9.9")
-    )
+    _stub_version_probe(monkeypatch)
 
     def interrupted(*_args, **_kwargs):
         raise ShutdownRequested(signal.SIGINT)
@@ -1600,9 +1613,7 @@ def test_run_analysis_for_file_failure_keeps_partial_work_directory(
     remote_root = tmp_path / "mirror"
     remote_root.mkdir()
     executor = _ssh_executor(project, remote_root)
-    monkeypatch.setattr(
-        tools, "_detect_version_record", lambda *_a, **_k: ("9.9", "faketool: 9.9")
-    )
+    _stub_version_probe(monkeypatch)
 
     def exploding(*_args, **_kwargs):
         raise ExternalToolError("backend exploded")
