@@ -57,5 +57,15 @@ jobs:
           python -m pip install -e '.[test]'
           python -m pytest
       - uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
+        if: matrix.os == 'ubuntu-24.04' && matrix.python-version == '3.12'
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-24.04
+    needs: [docs, pytest]
+    if: always()
+    steps:
+      - if: contains(needs.*result, 'failure') || contains(needs.*result, 'cancelled')
+        run: exit 1
