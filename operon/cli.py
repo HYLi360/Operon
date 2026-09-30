@@ -17,6 +17,7 @@ from operon import __version__
 from operon.backup import create_backup, verify_backup
 from operon.config import Project, load_project, resolve_actor, resolve_ncbi_email
 from operon.coverage import report_coverage
+from operon.database import SCHEMA_VERSION as DATABASE_SCHEMA_VERSION
 from operon.database import Database
 from operon.entity_view import entity_graph, sequence_hits
 from operon.errors import EntityNotFoundError, OperonError, ValidationError
@@ -36,6 +37,7 @@ from operon.rules import (
     evaluate_entity,
 )
 from operon.schema import (
+    METADATA_SCHEMA_VERSION,
     MetadataRecordError,
     Schema,
     add_accession_record,
@@ -66,6 +68,20 @@ from operon.workflow import (
 )
 
 MANUAL_METADATA_ENTITIES = ["organism", "sample", "run", "assembly", "annotation"]
+
+
+class ShowOperonVersion(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        sys.stdout.write(
+            "Operon the Database System\n"
+            f"Main program version:    {__version__}\n"
+            f"Database schema version: {DATABASE_SCHEMA_VERSION}\n"
+            f"Metadata schema version: {METADATA_SCHEMA_VERSION}\n"
+        )
+        parser.exit()
 
 
 def _positive_int(value: str) -> int:
@@ -112,9 +128,7 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         help="project root or project.yaml path (default: current directory)",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", "-v", action=ShowOperonVersion)
     sub = parser.add_subparsers(dest="command", required=True)
     from operon.timetree import add_parser as add_timetree_parser
 
