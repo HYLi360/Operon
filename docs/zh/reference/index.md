@@ -44,5 +44,5 @@ resolved-issues
 全部命令使用全局形式：
 
 ```text
-operon [--project PATH] [--version] <子命令> [参数]
+operon [--project PATH] [-v | --version] <子命令> [参数]
 ```

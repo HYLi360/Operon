@@ -127,6 +127,13 @@ the reported total drops below the `fail_under` threshold. The reported total is
 `(covered lines + covered branches) / (valid lines + valid branches)`, so a change that adds only lines without their
 branches lowers it. Branch coverage must additionally stay at or above 95% of all valid branches.
 
+The threshold is a floor, not a target. Whenever a release or a large change
+lifts the measured total well above `fail_under`, raise `fail_under` in the
+same change to roughly one point below the new level, so that slow erosion
+cannot pass unnoticed: a gate that never moves is a gate that slowly stops
+meaning anything. `AGENTS.md` states the branch-coverage, per-commit and
+Codacy rules that accompany it.
+
 Read the gaps with:
 
 ```bash
@@ -181,6 +188,32 @@ When you add or change a CLI command or flag, update the registry in the
 same commit: extend the `params`/`waived` mapping of an `implemented`
 entry, or register the command as `cli-only` or `planned` with a reason.
 Otherwise the parity tests fail.
+
+## TUI race defects
+
+Textual's message loop makes several failures timing-dependent: a widget that
+is not mounted yet, a reactive that has not painted, a notification that has
+been queued but not delivered. Three registry records are of this class
+(ODR-0027, ODR-0050, ODR-0051), and the matrix or CI found all three after the
+fact. When your change touches `operon/tui/`, three rules apply:
+
+- **Assert UI state only through a predicate wait.** Wait for the *specific*
+  state under test — the widget exists, the label reads X, the notification
+  text has arrived — never a bare `pilot.pause()` followed by a read, and
+  never a direct read of `app._notifications`.
+- **Repair a framework-level guard with the smallest possible override.** When
+  the defect comes from Textual itself (for example a `Select` whose label is
+  assigned before the option is composed), fix it in the smallest wrapper that
+  covers every call path rather than at the one call site that happened to
+  fail first.
+- **Run the TUI modules at least three times locally, in random order**
+  (`python -m pytest tests/unit/test_tui*.py`). The matrix and CI run the whole
+  suite, but three ordered runs surface most races in seconds rather than in a
+  twenty-minute CI leg.
+
+A timing-dependent test failure is a defect to register, not a flake to
+re-run: every record above was reproduced before its fix landed, and each fix
+carries a regression test marked `@pytest.mark.bug("ODR-XXXX")`.
 
 ## Documentation synchronization
 

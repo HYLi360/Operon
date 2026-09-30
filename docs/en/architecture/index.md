@@ -10,6 +10,7 @@ The architecture documentation is intended for developers and maintainers who ne
 - [Taxonomy Coverage Architecture](taxonomy-coverage.md)
 - [Releases, Lifecycle, and Correctness Guarantees](release-lifecycle.md)
 - [Extension Boundaries](extensibility.md)
+- [Decision Records](decisions.md)
 
 ```{toctree}
 :hidden:
@@ -22,4 +23,5 @@ external-analysis
 taxonomy-coverage
 release-lifecycle
 extensibility
+decisions
 ```
