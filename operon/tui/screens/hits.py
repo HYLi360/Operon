@@ -52,7 +52,6 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
         super().__init__()
         self.project = project
         self.hits: list[dict[str, Any]] = []
-        self._loading = False
         self._exporting = False
 
     def compose(self) -> ComposeResult:
@@ -100,10 +99,12 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
         self.reload()
 
     def reload(self) -> None:
-        # Filter edits must never pile up overlapping loads.
-        if self._loading:
-            return
-        self._loading = True
+        # Filter edits must never pile up overlapping loads, but a request made
+        # while one is in flight still has to run — it is a new filter, not a
+        # duplicate (ODR-55).
+        self.begin_load(self._start_load)
+
+    def _start_load(self) -> None:
         self._load()
 
     def _filters(self) -> dict[str, Any]:
@@ -148,7 +149,12 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
         self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
-        self._loading = False
+        try:
+            self._render_hits(payload)
+        finally:
+            self.end_load()
+
+    def _render_hits(self, payload: Any) -> None:
         status = self.query_one("#hits-status", Static)
         if isinstance(payload, BaseException):
             status.update(Text(f"error: {payload}", style="red"))

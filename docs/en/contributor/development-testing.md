@@ -215,6 +215,19 @@ A timing-dependent test failure is a defect to register, not a flake to
 re-run: every record above was reproduced before its fix landed, and each fix
 carries a regression test marked `@pytest.mark.bug("ODR-XXXX")`.
 
+Two further records came out of the same class but were *product* defects, so
+the same discipline applies with the fix on the widget side:
+
+- **A reload guard must latch a request, not drop it** (ODR-55). A panel that
+  returns early when a read is in flight discards the *new* filter, not a
+  duplicate, and the table then answers the previous question while the panel
+  reports the new one. Use `WorkerResults.begin_load` / `end_load`, which
+  record the request and start it once the in-flight read has been rendered.
+- **Do not read the DOM to renumber a list while a removal is still landing**
+  (ODR-56). `remove()` prunes asynchronously, so the row being removed can
+  still be in the tree; exclude that row explicitly instead of trusting the
+  query to have finished pruning.
+
 ## Documentation synchronization
 
 When changing the CLI, configuration fields, behavior, or storage layout, update the Chinese and English documentation in the same change:

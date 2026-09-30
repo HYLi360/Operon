@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -132,6 +133,25 @@ def _notifications(app) -> list[tuple[str, str]]:
     return [(item.severity, item.message) for item in app._notifications]
 
 
+async def _await_notification(app, needle: str, *, prefix: bool = False) -> None:
+    """Wait until a raised notification's message matches *needle*.
+
+    The run finishes on a worker and ``_after_pipeline`` raises its
+    notification a message-loop turn after the modal closes, so reading
+    ``_notifications(app)`` right after the workers drain sees the list before
+    the text is in it — on a loaded runner that turns a correct run into a
+    failure (ODR-57).
+    """
+
+    def matches(app) -> bool:
+        return any(
+            (message.startswith(needle) if prefix else needle in message)
+            for _severity, message in _notifications(app)
+        )
+
+    await _wait_until(lambda: matches(app), f"the notification {needle!r}")
+
+
 def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
     db = Database(project.db_path, read_only=True)
     try:
@@ -213,10 +233,7 @@ def test_pipeline_preview_gates_confirm_and_runs_the_four_stages(
                 timeout=HANDOFF_TIMEOUT,
             )
             await _settled(app)
-            messages = [message for _severity, message in _notifications(app)]
-            assert any(
-                message.startswith("pipeline complete: FIL_") for message in messages
-            ), messages
+            await _await_notification(app, "pipeline complete: FIL_", prefix=True)
 
     _run(scenario())
 
@@ -277,10 +294,7 @@ def test_pipeline_curated_decision_needs_the_explicit_rerun_box(
                 timeout=HANDOFF_TIMEOUT,
             )
             await _settled(app)
-            messages = [message for _severity, message in _notifications(app)]
-            assert any(
-                message.startswith("pipeline complete:") for message in messages
-            ), messages
+            await _await_notification(app, "pipeline complete:", prefix=True)
 
     _run(scenario())
     assert _query(project, "SELECT 1 FROM files WHERE entity_id='ASM_000901'")
@@ -359,5 +373,51 @@ def test_pipeline_qc_failure_opens_the_error_dialog(
                 for _s, message in _notifications(app)
                 if message.startswith("pipeline complete:")
             ]
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-57")
+def test_the_completion_notification_arrives_after_the_modal_closes(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """The run's notification is raised a message-loop turn after the modal closes.
+
+    ``notify()`` posts to the app's message queue, so the text lands one turn
+    after the worker drains — reading the rack right after ``_settled`` saw it
+    empty on a loaded runner and failed a run that had actually succeeded.
+    Waiting for the text is what the other tests do now (ODR-27's rule).
+    """
+    from operon.tui import actions
+
+    _fresh_assembly(project, "ASM_000903")
+    real_run = actions.run_pipeline
+
+    def slow_run(*args, **kwargs):
+        time.sleep(0.2)  # the handoff a loaded runner really takes
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(actions, "run_pipeline", slow_run)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(140, 50)) as pilot:
+            modal = await _open_modal(pilot, app)
+            await _fill(pilot, modal, _source(tmp_path, "slow.fasta"), "ASM_000903")
+            await _preview(pilot, modal)
+            await _click(pilot, "#confirm")
+            await _wait_until(
+                lambda: not isinstance(app.screen, PipelineModal),
+                "pipeline modal closed",
+                timeout=HANDOFF_TIMEOUT,
+            )
+            await _settled(app)
+            # The wait is the contract: the text is not there the instant the
+            # workers drain, and it is there once the wait has run.
+            await _await_notification(app, "pipeline complete: FIL_", prefix=True)
+            messages = [message for _severity, message in _notifications(app)]
+            assert any(m.startswith("pipeline complete: FIL_") for m in messages), (
+                messages
+            )
 
     _run(scenario())

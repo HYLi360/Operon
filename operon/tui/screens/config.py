@@ -2425,9 +2425,24 @@ class ConfigPanel(Panel):
         self._command_row_count = len(rows)
         self._refresh_command_note()
 
-    def _renumber_command_rows(self) -> None:
+    def _renumber_command_rows(self, removed: CommandRow | None = None) -> None:
+        """Renumber the chain, skipping the row that is on its way out.
+
+        ``remove()`` prunes asynchronously, so on a busy event loop the row it
+        removes can still be in the tree when the chain is renumbered — and
+        numbering every row found then hands the *survivor* the removed row's
+        number, which is how a two-step chain that lost its head ended up
+        labelled ``step 2`` (ODR-56).  The row being removed is therefore
+        excluded explicitly.
+        """
+
         for index, row in enumerate(
-            self.query(CommandRow).results(CommandRow), start=1
+            (
+                row
+                for row in self.query(CommandRow).results(CommandRow)
+                if row is not removed
+            ),
+            start=1,
         ):
             row.set_index(index)
 
@@ -2698,7 +2713,7 @@ class ConfigPanel(Panel):
         # Removal is deferred, so renumber and re-count only once it has landed.
         await event.row.remove()
         self._command_row_count = max(0, self._command_row_count - 1)
-        self._renumber_command_rows()
+        self._renumber_command_rows(event.row)
         self._refresh_command_note()
 
     def on_source_row_remove_requested(self, event: SourceRow.RemoveRequested) -> None:

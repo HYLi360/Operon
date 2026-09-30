@@ -179,7 +179,6 @@ class RunsPanel(Panel):
         self.project = project
         self.runs: list[dict[str, Any]] = []
         self.advanced: dict[str, Any] = {}
-        self._loading = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="runs-layout"):
@@ -214,15 +213,19 @@ class RunsPanel(Panel):
         super().on_mount()
 
     def reload(self) -> None:
-        # Filter edits and manual refreshes must never pile up overlapping loads.
-        if self._loading:
-            return
-        self._loading = True
-        super().reload()
+        # Filter edits and manual refreshes must never pile up overlapping
+        # loads, but a request made while one is in flight still has to run —
+        # it is a new filter, not a duplicate (ODR-55).
+        self.begin_load(super().reload)
+
+    def _start_load(self) -> None:
+        Panel.reload(self)
 
     def _apply(self, payload: Any) -> None:
-        self._loading = False
-        super()._apply(payload)
+        try:
+            super()._apply(payload)
+        finally:
+            self.end_load()
 
     def _filters(self) -> dict[str, Any]:
         """The everyday strip plus whatever the More… dialog applied."""
@@ -358,7 +361,6 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
         super().__init__()
         self.project = project
         self.jobs: list[dict[str, Any]] = []
-        self._loading = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-box", classes="jobs"):
@@ -398,10 +400,12 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
         self.reload()
 
     def reload(self) -> None:
-        # Filter edits and manual refreshes must never pile up overlapping loads.
-        if self._loading:
-            return
-        self._loading = True
+        # Filter edits and manual refreshes must never pile up overlapping
+        # loads, but a request made while one is in flight still has to run —
+        # it is a new filter, not a duplicate (ODR-55).
+        self.begin_load(self._start_load)
+
+    def _start_load(self) -> None:
         self._load()
 
     def _filters(self) -> tuple[str, list[str], int]:
@@ -441,7 +445,12 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
         self.post_to_ui(self._apply, payload)
 
     def _apply(self, payload: Any) -> None:
-        self._loading = False
+        try:
+            self._render_jobs(payload)
+        finally:
+            self.end_load()
+
+    def _render_jobs(self, payload: Any) -> None:
         detail = self.query_one("#jobs-detail", Static)
         if isinstance(payload, BaseException):
             detail.update(Text(f"error: {payload}", style="red"))

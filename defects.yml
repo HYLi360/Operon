@@ -1672,3 +1672,84 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_a_parked_worker_is_released_before_the_scenario_returns
+- id: ODR-55
+  title: 'A panel load guard dropped the filter it was asked to answer'
+  reported: '2026-10-01'
+  introduced_in: null
+  affected: |
+    the Tasks panel, the analysis-jobs modal and the analysis-hits modal: a filter applied while a read
+    was in flight never ran, so the table kept answering the previous question
+  severity: 'medium'
+  component: 'tui'
+  status: 'fixed'
+  reproduction: |
+    RunsPanel.reload, AnalysisJobsModal.reload and AnalysisHitsModal.reload each opened with `if
+    self._loading: return`, so a request made while a read was in flight was discarded rather than
+    queued. Reproduced headlessly by holding an unfiltered read open in a patched
+    data.list_workflow_runs and then applying the More… dialog's tool filter: `_load_generation` stayed
+    at the earlier read's value, no second read started, and the table finished on the 18 rows the
+    superseded read had produced while `_filters()` already reported tool='no_such_tool'. That is the
+    state CI run 36690350147 caught as `assert 18 == 0` in
+    test_runs_panel_advanced_filters_behind_the_more_dialog.
+  disposition: |
+    The guard is now a latch rather than a drop, in one shared place: WorkerResults.begin_load records a
+    request made during a load and end_load starts it once the in-flight read has been rendered. The
+    three widgets route their reload through it, so the newest filter always wins, reads still never
+    overlap, and a slow query cannot pile up threads. Panel subclasses keep their own generation guard
+    (ODR-45), which already dropped a superseded *payload*; this fixes the superseded *request*, which
+    that guard could not see.
+  fix_commit: 'c4f97d25e16c8788584ca63af5dc05f292cd010d'
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui.py::test_runs_filter_applied_while_a_load_is_in_flight_is_not_lost
+- id: ODR-56
+  title: 'A recipe chain''s surviving step kept the removed step''s number'
+  reported: '2026-10-01'
+  introduced_in: null
+  affected: |
+    the recipe editor's commands chain: a removal that renumbered the rows while the pruned row was
+    still mounted left the survivor labelled step 2
+  severity: 'medium'
+  component: 'tui'
+  status: 'fixed'
+  reproduction: |
+    ConfigPanel.on_command_row_remove_requested awaits row.remove() and then calls
+    _renumber_command_rows, which numbered every CommandRow the DOM still held. Textual's remove()
+    returns an AwaitRemove that gathers only the pruned node's own task, so on a busy event loop the row
+    being removed can still be in the tree when the renumber runs and the survivor is numbered second.
+    Reproduced by loading the two-step chain_probe recipe, calling victim.remove() without awaiting it
+    (the row is still among the two the query returns) and renumbering: survivor.index stayed 2 and its
+    title stayed 'step 2'. That is the state CI run 36728702398 caught as `assert 'step 1 (logical
+    owner)' == 'step 2'` in test_config_screen_commands_chain_validation_and_step_rows.
+  disposition: |
+    The removal now names the row it is removing, and the renumber skips exactly that row instead of
+    trusting the DOM to have finished pruning. A survivor renumbered before its own on_mount was already
+    correct — compose renders the title from the current index — so no other change was needed.
+  fix_commit: '307cffd0b91bf04276269f43b0cfb2adf964421e'
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_command_row_renumbered_while_the_removed_row_is_still_mounted
+- id: ODR-57
+  title: 'The pipeline tests read notifications before the app had raised them'
+  reported: '2026-10-01'
+  introduced_in: null
+  affected: 'the run-pipeline TUI tests: two tests asserted a toast the app had not posted yet'
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    App.notify posts a Notify message rather than recording the toast inline, so the text lands a
+    message-loop turn later. test_tui_pipeline.py read _notifications(app) straight after _settled,
+    which only waits for the worker set to drain, and asserted a 'pipeline complete:' entry from that
+    read. CI run 36728702398 caught it on macOS 3.11 as `AssertionError: []` with a successful pipeline
+    behind it. This is the same read ODR-27 already fixed in test_tui_config.py with a predicate wait;
+    the pipeline module had kept its own unguarded copy.
+  disposition: |
+    The module now has one _await_notification helper, built on the same predicate wait as ODR-27's, and
+    the two completion assertions use it instead of sampling the rack. The regression test drives a
+    deliberately slowed run_pipeline so the turn between the worker finishing and the toast landing is
+    wide enough to be meaningful, and asserts the wait finds the text.
+  fix_commit: '1fbde27dd116d844a10e0358d4509b04dabbceb8'
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_pipeline.py::test_the_completion_notification_arrives_after_the_modal_closes
