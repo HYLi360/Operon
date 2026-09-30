@@ -1672,3 +1672,33 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_a_parked_worker_is_released_before_the_scenario_returns
+- id: ODR-55
+  title: 'A panel load guard dropped the filter it was asked to answer'
+  reported: '2026-10-01'
+  introduced_in: null
+  affected: |
+    the Tasks panel, the analysis-jobs modal and the analysis-hits modal: a filter applied while a read
+    was in flight never ran, so the table kept answering the previous question
+  severity: 'medium'
+  component: 'tui'
+  status: 'fixed'
+  reproduction: |
+    RunsPanel.reload, AnalysisJobsModal.reload and AnalysisHitsModal.reload each opened with `if
+    self._loading: return`, so a request made while a read was in flight was discarded rather than
+    queued. Reproduced headlessly by holding an unfiltered read open in a patched
+    data.list_workflow_runs and then applying the More… dialog's tool filter: `_load_generation` stayed
+    at the earlier read's value, no second read started, and the table finished on the 18 rows the
+    superseded read had produced while `_filters()` already reported tool='no_such_tool'. That is the
+    state CI run 36690350147 caught as `assert 18 == 0` in
+    test_runs_panel_advanced_filters_behind_the_more_dialog.
+  disposition: |
+    The guard is now a latch rather than a drop, in one shared place: WorkerResults.begin_load records a
+    request made during a load and end_load starts it once the in-flight read has been rendered. The
+    three widgets route their reload through it, so the newest filter always wins, reads still never
+    overlap, and a slow query cannot pile up threads. Panel subclasses keep their own generation guard
+    (ODR-45), which already dropped a superseded *payload*; this fixes the superseded *request*, which
+    that guard could not see.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui.py::test_runs_filter_applied_while_a_load_is_in_flight_is_not_lost

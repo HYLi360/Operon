@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -1944,6 +1945,71 @@ def test_runs_panel_advanced_filters_behind_the_more_dialog(
             assert panel.advanced == {}
             assert panel.query_one("#runs-more", Button).label.plain == "More…"
             assert table.row_count == total
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-55")
+def test_runs_filter_applied_while_a_load_is_in_flight_is_not_lost(
+    demo_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A filter applied mid-load still runs; the newest filter always wins.
+
+    The old guard returned early while a load was in flight, so a More… filter
+    applied during one was dropped outright and the table kept the rows the
+    superseded read had produced — the panel's own filters then reported the
+    new filter while its rows answered the old question.
+    """
+    from operon.tui.screens.runs import RunsFiltersModal
+
+    real_list = data.list_workflow_runs
+    released = threading.Event()
+    gating = threading.Event()
+
+    def slow_list(project, **kwargs):
+        # Only the unfiltered in-flight read is held back; everything else
+        # (the initial load, the latched filtered read) runs normally.
+        if not kwargs.get("tool") and gating.is_set():
+            released.wait(30.0)
+        return real_list(project, **kwargs)
+
+    monkeypatch.setattr("operon.tui.screens.runs.data.list_workflow_runs", slow_list)
+
+    async def scenario() -> None:
+        app = OperonApp(demo_project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("runs")
+            await pilot.pause()
+            await _settled(app)
+            panel = app.query_one(RunsPanel)
+            table = panel.query_one("#runs-table", DataTable)
+            unfiltered_rows = table.row_count
+            assert unfiltered_rows > 0
+
+            # An unfiltered refresh that will still be in flight.
+            gating.set()
+            panel.reload()
+            assert panel._loading
+            await pilot.click("#runs-more")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, RunsFiltersModal)
+            modal.query_one("#runs-filter-tool", Input).value = "no_such_tool"
+            modal.query_one("#runs-filter-apply", Button).press()
+            await _wait_until(
+                lambda: panel.advanced == {"tool": "no_such_tool"},
+                "the advanced filter to be recorded",
+            )
+            released.set()
+            try:
+                await _wait_until(
+                    lambda: table.row_count == 0,
+                    "the latched filter to reach the table",
+                )
+            finally:
+                released.set()
+            assert panel._filters()["tool"] == "no_such_tool"
 
     _run(scenario())
 

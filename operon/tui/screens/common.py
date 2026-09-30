@@ -566,6 +566,10 @@ class WorkerResults:
     #: Supplied by the concrete widget (``Widget.app``).
     app: Any
 
+    #: Whether a load is in flight, and whether one was asked for while it was.
+    _loading = False
+    _reload_pending = False
+
     #: The key of the request this widget is currently waiting for (ODR-31).
     _request_key: Any = None
 
@@ -613,6 +617,41 @@ class WorkerResults:
             callback(*args)
         except (MountError, NoMatches):
             return
+
+    def begin_load(self, start: Callable[[], Any]) -> bool:
+        """Start a load, coalescing the requests that arrive while one is in flight.
+
+        A filter the user typed — or a More… dialog they applied — is a *new
+        question*, so a read already in flight cannot answer it.  Dropping that
+        request outright is what left the Tasks table showing the previous
+        filter's rows: the ``_loading`` guard returned early, no second load was
+        started, and the table kept the rows the superseded read had produced
+        (ODR-55).
+
+        So a request made while a load is in flight is *latched* instead of
+        dropped, and :meth:`end_load` starts it as soon as the in-flight read
+        has been rendered.  The newest filter therefore always wins, and the
+        reads never overlap, so a slow query cannot pile up threads.
+        """
+
+        if self._loading:
+            self._reload_pending = True
+            return False
+        self._loading = True
+        start()
+        return True
+
+    def end_load(self) -> None:
+        """Render finished; start a latched request, if one is waiting."""
+
+        pending, self._reload_pending = self._reload_pending, False
+        self._loading = False
+        if pending:
+            self._loading = True
+            self._start_load()
+
+    #: Overridden by each widget to actually start its read (:meth:`begin_load`).
+    _start_load: Callable[[], Any]
 
 
 class Panel(WorkerResults, VerticalScroll):
