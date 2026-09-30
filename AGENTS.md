@@ -287,7 +287,8 @@ PyPI，且 `.github/workflows/publish.yml` 的 `verify-release` 作业必须看�
 - 所有提交**必须**经 GPG 签名。
 - 回填 `defects.yml` 的 `fix_commit`/`fixed_in` 时，**应**使用以下格式：
   `docs(defects): backfill ODR-X's fix_commit/fixed_in`（单个 ODR），或
-  `docs(defects): backfill fix_commits/fixed_ins for ODR-X, ODR-Y, ODR-Z`（多个 ODR）。
+  `docs(defects): backfill fix_commits/fixed_ins for ODR-X, ODR-Y, ODR-Z`（多个 ODR；
+  若编号连续，允许使用 `from ... to ...`）。
 
 ### 5.4 文档同步
 
@@ -352,7 +353,7 @@ Metadata schema version: ZZZZZ
 - 对于从其他 worktree 合并来的提交（需经过 Pull Request）：总覆盖率需达到 95% 以上（**硬**）、
   分支覆盖率需达到 95% 以上（软）、单次提交的覆盖率降低需低于 0.1%（**硬**，由 Codacy 管理）、
   diff 部分的覆盖率需达到 85% 以上（**硬**，由 Codacy 管理，如适用），且代码质量需符合 Codacy 要求
-  （不新增任何 medium 程度的 issue，不新增任何 minor 程度的 security issue）。
+  （不新增任何 medium 及以上的 issue，不新增任何 minor 及以上的 security issue）。
 
 **门限随水位抬升（建议）**：当一次发布或一次大改动把实测总覆盖率抬升到门限之上时，**应**在同一次
 变更里把 `fail_under` 抬到新水位下方约 1 个点，避免缓慢侵蚀悄无声息地通过；配套细则见
@@ -368,7 +369,7 @@ Metadata schema version: ZZZZZ
   而不是修在恰好先失败的那个调用点。
 - 改动后，以随机序在本地执行**至少 3 次** `pytest tests/unit/test_tui*.py`，以充分暴露竞态问题。
 
-背景、命名（ODR-0027 / ODR-0050 / ODR-0051）与「最小覆盖」的判定标准见
+背景、命名与「最小覆盖」的判定标准见
 `docs/*/contributor/development-testing.md` 的「TUI 竞态缺陷」小节；那里的规则与本节等效，
 任何一项变更都**必须**同时满足两处。
 
@@ -395,6 +396,7 @@ Metadata schema version: ZZZZZ
 1. **先登记**。当一次审计或调查确认了缺陷，必须先把它的 `ODR-XXXX` 记录追加进 `defects.yml`，
    修复才能落地。
 2. **一次提交修一个缺陷**。修复与其回归测试在同一提交里；提交时回填 `fix_commit`。
+   注意同步至 `docs/*/reference/resolved-issues.md`。
 3. **闭环测试**。缺陷的回归测试带 `@pytest.mark.bug("ODR-XXXX")`，且每条 `fixed`/`verified` 记录
    至少列出一条这样的测试；`tests/unit/test_defect_registry.py` 校验登记表 schema 与这个闭环的
    两个方向。
