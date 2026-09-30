@@ -54,7 +54,7 @@ the same invariants as project requirements.
 | GATE-5 | Version markers have a single source of truth (`pyproject.toml`, `operon/database.py`, `operon/schema.py`) and **MUST NOT** be written literally in documentation — use the `{{ operon_version }}`, `{{ db_schema }}` and `{{ metadata_schema }}` substitutions. | `tests/unit/test_docs_versions.py` |
 | GATE-6 | Defects are registered before their fix lands, one commit per defect, and every `fixed`/`verified` record lists at least one regression test carrying `@pytest.mark.bug("ODR-XXXX")`. | `scripts/defects.sh`, `tests/unit/test_defect_registry.py` |
 | GATE-7 | Performance budgets for the TUI and for the machine-readable exports. | [Performance budgets](../operations/performance-budgets.md) — policy binding, baseline still to be measured |
-| GATE-8 | TUI changes must not introduce Textual race defects: assert UI state only through predicate waits, repair framework-level guards with the smallest possible override, and run the TUI modules at least three times with random ordering locally. | [Development and testing](../contributor/development-testing.md); defects ODR-0027, ODR-0050, ODR-0051 |
+| GATE-8 | TUI changes must not introduce Textual race defects: assert UI state only through predicate waits, repair framework-level guards with the smallest possible override, and run the TUI modules at least three times with random ordering locally. | [Development and testing](../contributor/development-testing.md); defects ODR-0027, ODR-0050, ODR-0051, ODR-0055, ODR-0056, ODR-0057 |
 
 ## Open questions
 

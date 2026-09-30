@@ -4752,6 +4752,44 @@ def test_config_screen_commands_chain_validation_and_step_rows(
     assert get_recipe(project, "chain_probe").version == 1
 
 
+@pytest.mark.bug("ODR-56")
+def test_command_row_renumbered_while_the_removed_row_is_still_mounted(
+    project: Project,
+) -> None:
+    """A survivor numbered while its predecessor is still in the tree is step 1.
+
+    ``remove()`` prunes asynchronously, so on a busy event loop the row being
+    removed can still be in the tree when the chain is renumbered.  Numbering
+    every row found then hands the survivor the removed row's number, and it
+    keeps that wrong title for the rest of its life.
+    """
+    _add_commands_recipe_probe(project)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("chain_probe")
+            await _wait_until(lambda: len(_command_rows(panel)) == 2, "the two steps")
+
+            victim, survivor = _command_rows(panel)
+            assert [victim.index, survivor.index] == [1, 2]
+
+            # The removal is requested but deliberately not awaited, so the
+            # pruned row is still in the tree — the interleaving CI hit.
+            victim.remove()
+            assert len(list(panel.query(CommandRow).results(CommandRow))) == 2
+            panel._renumber_command_rows(victim)
+
+            assert survivor.index == 1
+            assert "step 1  (logical owner)" == _static_text(
+                survivor.query_one(".command-title", Static)
+            )
+
+    _run(scenario())
+
+
 def test_config_screen_recipe_output_name_roundtrip(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
