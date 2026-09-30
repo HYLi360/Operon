@@ -67,5 +67,5 @@ jobs:
     needs: [docs, pytest]
     if: always()
     steps:
-      - if: contains(needs.*result, 'failure') || contains(needs.*result, 'cancelled')
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1
