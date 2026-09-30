@@ -10,6 +10,7 @@
 - [Taxonomy 覆盖率架构](taxonomy-coverage.md)
 - [Release、生命周期与正确性保证](release-lifecycle.md)
 - [扩展边界](extensibility.md)
+- [决策记录](decisions.md)
 
 ```{toctree}
 :hidden:
@@ -22,4 +23,5 @@ external-analysis
 taxonomy-coverage
 release-lifecycle
 extensibility
+decisions
 ```

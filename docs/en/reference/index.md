@@ -44,5 +44,5 @@ resolved-issues
 All commands use the following form:
 
 ```text
-operon [--project PATH] [--version] <subcommand> [arguments]
+operon [--project PATH] [-v | --version] <subcommand> [arguments]
 ```

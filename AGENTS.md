@@ -1,374 +1,466 @@
-# AGENTS.md
+# Operon 开发指南（面向 AI 编码助手与贡献者）
 
-Guidance for AI agents and contributors working in this repository.
+本文件是本仓库**唯一**的项目要求汇总：所有贡献者（包括 AI 助手）在改动本仓库时**必须**遵守。
+文中出现的"**必须**""**不得**""**应**""**建议**""**可以**"等要求级别关键词，按
+[RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.txt) 解释。
 
-## Project overview
+三件先读的事：
 
-Operon is a Python-based, file-backed database for large-scale genomic data:
-archiving, metadata management, quality control (QC), rule-based decisions,
-deterministic automation, taxonomy coverage auditing, and versioned dataset
-releases. A single SQLite file (`operon.sqlite`) is the sole writable source
-of truth inside each managed project; large sequence files never enter the
-database, only their manifest records, QC metrics, and provenance do.
+1. **语言**：本文件用中文书写；代码、注释、docstring 与提交信息**必须**用英文（见 §5.1）。
+2. **冲突时的优先级**：对外承诺（契约、不变式、版本政策、兼容窗口）以 `docs/` 为准——索引在
+   `docs/*/architecture/decisions.md`。本文件若与文档树冲突，**必须**立即修正本文件。
+3. **落地要求**：任何改动都要有**实测**证据（测试数字、构建结果），不接受推测数字（见 §9）。
 
-The core design invariants are:
+## 一、Operon 是什么
 
-1. Structured metadata is the single source of truth.
-2. Raw data is immutable; derived data is rebuildable.
-3. File identity is `file_id + sha256 + size_bytes`, never the path.
-4. QC tools only measure metrics; decisions come from versioned YAML profiles.
-5. All processing runs as an explicit, idempotent state machine with
-   machine-readable provenance.
+Operon 是一个 Python 编写、以文件为载体的数据库系统，面向大规模基因组数据：归档、元数据管理、
+质量控制（QC）、基于规则的判定、确定性自动化、taxonomy 覆盖率审计与版本化数据集发布。每个受管
+项目内，唯一可写的真相是单个 SQLite 文件（`operon.sqlite`）；大型序列文件**从不**进入数据库，
+入库的只有它们的清单记录、QC 指标与 provenance。
 
-Keep these invariants intact when changing code. See
-`docs/en/architecture/` (or the mirrored `docs/zh/architecture/`) for the
-principle-to-implementation mapping.
+五条核心不变式（编号与 `docs/*/architecture/decisions.md` 一致）：
 
-Current version markers (must stay consistent across code and docs):
+1. **INV-1** 结构化元数据是唯一真相（阈值、判定、状态都以数据库与版本化配置为准）。
+2. **INV-2** 原始数据不可变；派生数据可重建。
+3. **INV-3** 文件身份是 `file_id + sha256 + size_bytes`，**永远不是**路径。
+4. **INV-4** QC 工具只测量指标；判定只来自版本化的 YAML profile。
+5. **INV-5** 每一步处理都是显式、幂等的状态机迁移，并留下机器可读的 provenance。
 
-- `operon` 0.9.0 (`pyproject.toml`)
-- database schema 2.11 (`operon/database.py`, `SCHEMA_VERSION`)
-- metadata schema 1.4 (`operon/schema.py`, `METADATA_SCHEMA_VERSION`)
+改动任何代码前，先确认不会破坏这五条；`docs/*/architecture/` 是它们的实现映射。
 
-## Repository layout
+## 二、仓库结构
 
-- `operon/` — the Python package (CLI entry points: `operon/cli.py`,
-  `operon/__main__.py`; console script `operon = operon.cli:main`).
-  - `operon/adapters/` — external source adapters: NCBI Datasets
-    (offline-first: JSON/JSONL, ZIP, or unpacked directories, plus optional
-    online download; `ncbi_datasets.py` is the facade/run orchestration, split
-    into the internal `_ncbi_model` (constants, data models and pure helpers
-    with no database access), `_ncbi_storage` (stateless disk-space guards
-    shared by the layers above), `_ncbi_sources` (source discovery, ZIP
-    safety), `_ncbi_download` (requests/aiohttp downloads, Entrez fallback)
-    and `_ncbi_plan` (import planning, include-reuse matching and
-    persistence) submodules)
-    and TimeTree (query-cache-only REST client caching the
-    verbatim responses of exact queries under `adapters_cache/timetree/`;
-    mirroring or redistribution is forbidden by TimeTree's terms).
-  - `operon/qc/` — home for all QC functionality: streaming
-    FASTA/FASTQ/GFF3/protein parsers and built-in QC stages, plus alignment
-    QC (`alignment.py`, the pure-Python multiple-alignment QC reference
-    implementation behind `operon alignment-qc`, and `_alignment.pyx`, its
-    Cython production backend; parity enforced by
-    `tests/regression/test_cython_alignment_parity.py`). `parsers.py` is the
-    pure-Python reference
-    implementation; `_parsers.pyx` is the Cython-accelerated build of the
-    same API (compiled in place as `operon.qc._parsers`). The Cython
-    module is the required production backend; the pure-Python module is the
-    behavioral reference used by regression tests. Both must produce
-    identical metrics and error messages (enforced by
-    `tests/regression/test_cython_parser_parity.py`). `measure.py` backs
-    `operon qc-measure`, a project-independent measurement-only path whose
-    JSON payload can be imported back through `operon import-qc` (the remote
-    built-in QC workflow; `imports.py` is the shared core of that import —
-    payload/TSV detection, manifest validation, metric insertion, QC-state
-    recomputation and the run record — and `plan_qc_import` its write-free
-    preview).
-  - `operon/execution.py` — execution backends for external commands:
-    `local` subprocess, `slurm` (sbatch submit + squeue poll), and `ssh`
-    (Paramiko; HPC head nodes and cloud VMs, optionally through remote
-    Slurm). All backends share one provenance contract.
-  - `operon/remotes.py` — SFTP remote storage mirrors (push/pull with
-    checksum verification) and `sftp://` / `remote://` URL fetching.
-  - `operon/tui/` — Textual-based terminal UI (`operon tui`, optional `tui`
-    extra): Home dashboard, Entities browser, Files browser, workflow-run
-    monitor, a Decisions screen, a Config screen, a Publish screen (nav key
-    `7`; release builder + selective export builder with read-only previews),
-    a Coverage screen (nav key `8`; taxonomy snapshots, reference sets,
-    coverage report generation and `COV_*` report browsing, plus *Import
-    taxonomy…* / *Compile reference set…* write entries mirroring
-    `operon taxonomy import`/`operon taxonomy compile`), and the import
-    dataset wizard (`operon/tui/screens/import_wizard.py`; Home button or
-    global `i`, except on the Files screen where `i` stays ingest). Read
-    access lives in
-    `operon/tui/data.py` and is strictly read-only (short-lived read-only
-    connections only). Phase 2 write operations (evaluate, curate,
-    retire/restore, ingest, verify, QC batch) live in
-    `operon/tui/actions.py`: each function opens its own short-lived
-    *writable* `Database`, calls the same core functions as the CLI
-    (identical `changes`/`workflow_runs` provenance), and returns plain
-    dicts; writable connections are never held by the UI. Every write in the
-    UI follows form/plan preview → equivalent CLI command shown → explicit
-    Confirm → background worker → notify + reload or inline error. Phase 3
-    actions in the same module: `import_dataset` (commits wizard drafts
-    through the shared single-transaction `import_wizard._commit`),
-    `ncbi_datasets` (backing the Home screen's NCBI Datasets import dialog:
-    a mandatory dry-run preflight — `dry_run` for offline inputs,
-    `plan_only` for accession-only requests — gates Confirm, and Cancel sets
-    a cooperative `cancel_event` the core records as an `interrupted`,
-    `--resume-run`-able run),
-    `reserve_entity_ids`, `create_release`, `export`, `run_coverage`
-    (a below-threshold coverage report returns `exit_code=1` in the result
-    dict — a warning, not an exception), `preflight_backend`, `run_analysis`
-    (backing the AnalyzeModal launched from the Config screen's Run analysis
-    button or the Tasks screen's New analysis button; the modal mirrors
-    `--backend` — project default / local / slurm / ssh — and preflights the
-    selection inline, and cancellation sets the core's cooperative
-    `cancel_event`, so a queued Slurm job or array is cancelled with one
-    `scancel`), `run_external` (backing the Tasks screen's Run external
-    dialog, which mirrors `run-external` field by field and opens the run
-    record when it finishes) and `write_analysis_report` (backing the
-    Analysis hits browser's Export button: it runs the same read-only query
-    and the same renderer as `report analysis --hits --format … --out …`, so
-    the file is byte-identical and, like that command, writes no provenance
-    rows). Phase 3 also covers the
-    derived-artifact loop: `run_classify` (the Config screen's Run classify
-    dialog, mirroring `classify-sequences` with the CLI's summary and a re-run
-    button), and — on the Files screen — `extract_domains`, `select_sequences`,
-    `adopt` and `fanout` (modals in `operon/tui/screens/derived_ops.py`:
-    extract/select chain into the adopt dialog with `derived_from` prefilled and
-    leave their output unregistered, adopt's manifest mode previews before
-    Confirm, and fanout's dry run is a mandatory preflight). Read-only TUI views added for `report analysis --hits` (alignment
-    hits with the CLI's filters and columns) and for `sequence_labels` (the
-    classify-sequences output: a per-file section in the Files detail plus
-    the project-wide label summary behind the Files screen's `l` binding), which
-    has no CLI reader at all. The
-    Config screen (`operon/tui/screens/config.py`, nav key `6`) edits
-    `config/profiles/*.yaml` (kinds `qc`, `sequence_classification` and
-    `taxonomy_coverage` — each kind has its own form, dispatched by the document's
-    own kind, with the classification widgets in `operon/tui/screens/config_classification.py`,
-    the coverage widgets in `operon/tui/screens/config_coverage.py`, and
-    `actions.save_classification_profile` / `actions.save_coverage_profile`
-    sharing `save_profile`'s version, snapshot and rollback machinery; a
-    classification profile whose conditions nest deeper than one `any:`/`not:`
-    level, or a coverage profile whose structure exceeds the flat grammar, opens
-    read-only) and single recipes inside
-    `config/tools.yaml` through structured control-based forms (no free-text
-    YAML): every save bumps the `version`, records the same content-addressed
-    snapshot the CLI records (`qc_profiles` / `recipe_snapshots`), and
-    restores the previous file bytes on failure; keys the forms do not model
-    are preserved verbatim; history modals restore snapshots into the editor
-    as the next version; tools-check runs in a worker with per-row updates.
-    `operon/tui/parity.py` is the CLI/TUI parity registry: every CLI leaf
-    command is registered `implemented`/`cli-only`/`planned`, enforced by
-    `tests/unit/test_tui_cli_parity.py` (see Conventions).
-    Textual is imported only inside this package, which the `tui` command
-    handler imports lazily.
-  - Other top-level modules by responsibility: `database.py` (SQLite schema
-    and migrations), `schema.py` (YAML metadata schema and validation),
-    `config.py` (project configuration and directory layout), `files.py`
-    (immutable manifest archival and verification), `profiles.py` +
-    `rules.py` (versioned QC profiles and the decision engine),
-    `workflow.py` (state machine and run logs), `pipeline.py` (the
-    four-stage ingest → standardize → QC → evaluate runner shared by
-    `run-pipeline`'s CLI and TUI), `tools/` (package: the
-    `__init__.py` facade re-exports the previous `operon.tools` surface, and
-    the implementation splits by dependency chain into `_defaults.py` (the
-    default `config/tools.yaml` document: launcher defaults and software
-    recipe presets), `_config.py` (recipe/tool model, loading, validation,
-    listing), `_probe.py` (launch commands, version probing, command
-    provenance, identity-probe caches), `_inputs.py` (candidate files,
-    database identity, runtime parameters, fingerprints), `_cache.py`
-    (cached/adoptable job lookups, environment-reuse decision,
-    stale-`RUNNING` sweep), `_plan.py` (per-file planning), `_execute.py`
-    (per-file execution and finalization), `_run.py` (`run_analysis` batch and
-    Slurm-array orchestration) and `_results.py` (per-software result parsers
-    and SQLite write-back)), `taxonomy.py` + `coverage.py` (frozen
-    NCBI Taxonomy snapshots and coverage denominators), `release.py` +
-    `export.py` (immutable releases and selective exports), `lifecycle.py`
-    (audited reversible entity retirement), `lineage.py` (adopting external
-    workflow outputs), `sequence_tools.py` (alignment-driven domain
-    extraction and sequence selection), `classify.py` (versioned
-    sequence_classification profiles labelling `sequence_labels`),
-    `fanout.py` (data-derived fan-out of registered sequence files into
-    per-unit FASTAs under `analysis/derived/`, selected downstream by recipe
-    `file_role_prefix`), `timetree.py` (TimeTree query/calibration CLI
-    group backed by the query-cache adapter), `backup.py`, `reports.py`,
-    `table_import.py`,
-    `import_wizard.py`, `entity_view.py`, `environment.py`
-    (execution-environment capture with at-capture redaction; recipe
-    `environment_policy` governs environment-aware cache reuse),
-    `shutdown.py` (graceful SIGINT/SIGTERM
-    handling), `ncbi_reconcile.py` (development-era adapter anomaly repair),
-    `demo.py` (deterministic synthetic demo project), `errors.py`,
-    `utils.py`.
-- `tests/` — pytest suite organized as `unit/`, `integration/`,
-  `regression/`, `compatibility/`, with module-local fixtures next to their
-  tests, shared helpers in `tests/helpers.py` and `tests/tui_helpers.py`, and
-  the suite-wide premises in `tests/conftest.py` (a test-length notification
-  lifetime, ODR-53).
-- `docs/` — Sphinx documentation in two mirrored language trees, `docs/en/`
-  and `docs/zh/`, each split into `overview.md`, `getting-started/`,
-  `guides/`, `architecture/`, `reference/`, `operations/`, and
-  `contributor/`. Each tree is a Sphinx project of its own
-  (`docs/<language>/conf.py`, sharing settings from `docs/conf_common.py`) and
-  a Read the Docs project of its own, linked there as parent and translation:
-  `operonproject` (English) and `operonproject-zh` (Chinese). Read the Docs
-  accepts no build-configuration file name other than `.readthedocs.yaml`, so
-  each tree carries one next to its `conf.py`
-  (`docs/<language>/.readthedocs.yaml`) and the dashboard points the project at
-  that path. `docs/locales/` is the catalog directory
-  for a future gettext-maintained language; `tests/unit/test_docs_projects.py`
-  guards the layout.
-- `benchmarks/` — representative entity sets for QC performance diagnostics
-  (see `docs/*/operations/qc-performance.md`).
-- `scripts/` — local developer tooling; `setup-test-matrix.sh` and
-  `run-test-matrix.sh` build and drive the uv-managed Python 3.10–3.15
-  matrix under .matrix/ (see `docs/*/contributor/development-testing.md`);
-  `release-preflight.sh` is the release gate and the script the publish
-  workflow runs on the tag; `defects.sh` appends to and queries the defect
-  registry (`defects.yml`, see "Defect reports" below).
+### 2.1 源码 `./operon/`
 
-## Setup, test, and build
+```
+./operon/
+├── adapters                  # 外部数据源适配器
+│   ├── __init__.py
+│   ├── ncbi_datasets.py       # 离线优先的 NCBI Datasets 适配器
+│   ├── _ncbi_download.py      # requests/aiohttp 下载，Entrez 回退
+│   ├── _ncbi_model.py         # 常量、数据模型与不访问数据库的纯函数
+│   ├── _ncbi_plan.py          # 导入计划、include 复用匹配与持久化
+│   ├── _ncbi_sources.py       # 来源发现、ZIP 安全
+│   ├── _ncbi_storage.py       # 各层共用的无状态磁盘空间守卫
+│   └── timetree.py            # 从最新 TimeTree 数据库取物种分歧时间
+├── backup.py                 # 为当前 operon 数据库生成备份
+├── classify.py               # 版本化 sequence_classification profile，标注 sequence_labels
+├── cli.py                    # CLI 入口
+├── config.py                 # 项目配置与目录布局
+├── coverage.py               # 基于快照的 NCBI Taxonomy 覆盖率分母
+├── database.py               # SQLite schema 与迁移
+├── demo.py                   # 确定性合成演示项目
+├── entity_view.py
+├── environment_capture.py
+├── environment.py
+├── errors.py
+├── execution.py              # 执行后端（local/Slurm/SSH）
+├── export.py                 # 不可变 release 与选择性导出
+├── fanout.py                 # 把已登记序列文件按数据派生拆分为 per-unit FASTA，
+│                             # 落在 `analysis/derived/` 下，由配方 `file_role_prefix` 选择
+├── files.py                  # 不可变清单归档与校验
+├── import_wizard.py
+├── __init__.py
+├── lifecycle.py              # 可审计、可回退的实体退役
+├── lineage.py                # 采纳外部工作流产物（adopt）
+├── __main__.py
+├── metadata_files.py
+├── ncbi_reconcile.py         # 开发期适配器异常修复
+├── pipeline.py               # ingest → standardize → QC → evaluate 四阶段执行器
+├── profiles.py               # 版本化 QC profile 与判定引擎（与 rules.py 配对）
+├── qc                        # 全部 QC 功能的归属地
+│   ├── alignment.py           # 多序列比对 QC 的 Python 实现（仅作行为参照）
+│   ├── _alignment.pyx         # 同一 API 的 Cython 实现（生产使用）
+│   ├── imports.py
+│   ├── __init__.py
+│   ├── measure.py
+│   ├── parsers.py             # 内置流式 QC 的 Python 实现（仅作行为参照）
+│   └── _parsers.pyx           # 同一 API 的 Cython 实现（生产使用）
+├── release.py                # 不可变 release
+├── remotes.py                # SFTP 远端镜像（带校验和的 push/pull）与
+│                             # `sftp://` / `remote://` URL 抓取
+├── reports.py
+├── rules.py                  # 版本化 QC profile 与判定引擎（与 profiles.py 配对）
+├── schema.py                 # YAML 元数据 schema 与校验
+├── secrets.py                # 安全存放令牌（如 NCBI API-Key）
+├── sequence_tools.py         # 基于比对的域提取与序列选择
+├── shutdown.py               # 优雅处理 SIGINT/SIGTERM
+├── sql.py
+├── table_import.py
+├── taxonomy.py               # 冻结的 NCBI Taxonomy 快照
+├── timetree.py               # 冻结的 TimeTree 证据与经人工复核的次级标定
+├── tools                     # operon.tools
+│   ├── _cache.py              # 可缓存/可采纳的任务查询、环境复用判定、
+│   │                          # 陈旧 `RUNNING` 清扫
+│   ├── _config.py             # 配方/工具模型、加载、校验、列举
+│   ├── _defaults.py           # 默认 `config/tools.yaml`
+│   ├── _execute.py            # 逐文件执行与收尾
+│   ├── __init__.py
+│   ├── _inputs.py             # 候选文件、数据库身份、运行参数、指纹
+│   ├── _plan.py               # 逐文件计划
+│   ├── _probe.py              # 启动命令、版本探测、命令 provenance、身份探测缓存
+│   ├── _results.py            # 各软件的结果解析与 SQLite 回写
+│   └── _run.py
+├── tui                       # 基于 Textual 的终端界面（`operon tui`）
+│   ├── actions.py             # Phase 2/3 写操作：每个函数自开短生命周期可写连接
+│   ├── app.py
+│   ├── app.tcss
+│   ├── assets
+│   │   ├── splash.png
+│   │   └── splash.rgb.z
+│   ├── data.py                # 只读访问层：只用短生命周期只读连接
+│   ├── __init__.py
+│   ├── parity.py              # CLI/TUI parity 注册表
+│   ├── screens
+│   │   ├── analyze.py
+│   │   ├── backup.py
+│   │   ├── classify.py
+│   │   ├── common.py
+│   │   ├── config_classification.py
+│   │   ├── config_coverage.py
+│   │   ├── config.py
+│   │   ├── coverage.py
+│   │   ├── decisions.py
+│   │   ├── derived_ops.py
+│   │   ├── entities.py
+│   │   ├── environments.py
+│   │   ├── files_ops.py
+│   │   ├── files.py
+│   │   ├── hits.py
+│   │   ├── home.py
+│   │   ├── import_wizard.py
+│   │   ├── __init__.py
+│   │   ├── labels.py
+│   │   ├── ncbi_datasets.py
+│   │   ├── publish.py
+│   │   ├── remotes.py
+│   │   ├── run_external.py
+│   │   ├── runs.py
+│   │   ├── table_import.py
+│   │   └── taxonomy.py
+│   ├── splash.py
+│   └── splash_terminal.py
+├── utils.py                  # 共享工具函数
+└── workflow.py               # 状态机与运行日志
+```
 
-Always work inside the project virtual environment (`.venv/` exists in the
-repo root; activate it or invoke `.venv/bin/python` explicitly).
+### 2.2 测试 `./tests/`
+
+```
+./tests/
+├── compatibility
+├── conftest.py       # 测试期通知生命周期，ODR-53
+├── helpers.py        # 共享助手
+├── __init__.py
+├── integration
+├── regression
+├── tui_helpers.py    # TUI 共享助手
+└── unit
+```
+
+### 2.3 文档 `./docs/`
+
+```
+./docs/
+├── _build                 # 本地 Sphinx 构建产物
+├── conf_common.py         # 两棵树共享的设置
+├── locales
+│   └── README.md
+├── requirements.txt
+└── <language>             # {en, zh}
+    ├── .readthedocs.yaml  # RTD 项目信息（en 为 `operonproject`，其余为 `operonproject-<language>`）
+    ├── architecture
+    ├── conf.py
+    ├── contributor
+    ├── getting-started
+    ├── guides
+    ├── index.md
+    ├── operations
+    ├── overview.md
+    └── reference
+```
+
+### 2.4 开发者脚本 `./scripts/`
+
+```
+./scripts/
+├── defects.py            # \
+├── defects.sh            # - 列出、查看或登记 defects.yml 中的缺陷
+├── release-preflight.sh  # 发布前检查
+├── run-test-matrix.sh    # \
+└── setup-test-matrix.sh  # - 本地测试矩阵：必须先 setup 再 run
+```
+
+## 三、环境、测试与构建
+
+始终在项目虚拟环境里工作（仓库根目录已有 `.venv/`；激活它，或显式调用 `.venv/bin/python`）。
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev]'   # runtime + pytest + Cython + Sphinx;
-                                    # also compiles the qc parsers extension
+python -m pip install -e '.[dev]'   # 运行时 + pytest + Cython + Sphinx；
+                                    # 同时编译 qc parsers 扩展
 
-python -m pytest                    # full suite (coverage gate: >=95% combined
-                                    # line+branch, and >=95% branch coverage)
-python -m pytest tests/unit         # by category: unit / integration /
+python -m pytest                    # 全量套件（含覆盖率门禁）
+python -m pytest tests/unit         # 按类目：unit / integration /
                                     # regression / compatibility
 
-python -m pytest --lf -q --no-cov   # iterate: last failures, no coverage
-python -m pytest -n 4 --dist loadfile   # parallel full suite (xdist, in the dev/test extras)
-scripts/setup-test-matrix.sh        # once per machine: uv-managed 3.10-3.15 venvs
-scripts/run-test-matrix.sh          # whole suite on 3.10-3.15, in waves
-                                    # (MATRIX_CONCURRENCY / MATRIX_JOBS override the split)
-scripts/release-preflight.sh        # the release gate: version, full suite, both doc
-                                    # trees, defect registry, matrix evidence for HEAD;
-                                    # --run-matrix runs the matrix inside the gate, and
-                                    # --tag vX.Y.Z asserts the tag's name/signature/target
+python -m pytest --lf -q --no-cov   # 迭代：只跑上次失败，不测覆盖率
+python -m pytest -n 4 --dist loadfile  # 并行（pytest-xdist）
+scripts/setup-test-matrix.sh        # 每台机器一次：uv 管理的 3.10–3.15 环境
+scripts/run-test-matrix.sh          # 在 3.10–3.15 上分批跑全量套件
+                                    # （MATRIX_CONCURRENCY / MATRIX_JOBS 覆盖分批参数）
+scripts/release-preflight.sh        # 发布闸门：版本、全量套件、两棵文档树、
+                                    # 缺陷登记表、HEAD 的矩阵证据；
+                                    # --run-matrix 在闸门内跑矩阵，
+                                    # --tag vX.Y.Z 校验 tag 的名称/签名/指向
 
-python setup.py build_ext --inplace # rebuild only the Cython extension
+python setup.py build_ext --inplace # 只重建 Cython 扩展
 
-sphinx-build -W --keep-going -b html docs/en docs/_build/en/html  # strict build,
-sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html  # one per language
+sphinx-build -W --keep-going -b html docs/en docs/_build/en/html  # 严格构建，
+sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html  # 每种语言一棵
 ```
 
-Run the relevant test category after any change; run the full suite before
-considering work done.
+任何改动后都要跑**相关类目**；在认为工作完成前**必须**跑全量套件。
 
-CI (`.github/workflows/test.yml`) runs pytest on Python 3.10–3.15 and the strict
-Sphinx build. Releases are published exclusively to PyPI, and
-`.github/workflows/publish.yml` builds nothing and uploads nothing until its
-`verify-release` job has seen a `success` conclusion for the tagged commit's `test`
-run *and* a passing `scripts/release-preflight.sh --ci --tag <tag>`; see
-`docs/*/contributor/pypi-release.md`.
+CI（`.github/workflows/test.yml`）在 Python 3.10–3.15 上跑 pytest 与严格 Sphinx 构建。发布只发到
+PyPI，且 `.github/workflows/publish.yml` 的 `verify-release` 作业必须看到被打 tag 提交的 `test`
+运行为 `success` **且** `scripts/release-preflight.sh --ci --tag <tag>` 通过，才会构建与上传；
+细节见 `docs/*/contributor/pypi-release.md`。
 
-The project uses `pytest-xdist` to parallel testing. Avoid sharing state between tests
-to prevent unexpected or random test results.
+项目使用 `pytest-xdist` 并行测试：**不要**在测试之间共享状态，否则会出现随机失败。
 
-> Running `python -m pytest` directly takes approx 35 seconds
-> (auto: 24 workers). Running the local test matrix takes about 5 minutes
-> (6 versions, 3 at a time × 7 workers by default; `MATRIX_CONCURRENCY` /
-> `MATRIX_JOBS` override the split).
-> 
-> Measured on Intel Core i7-13700HX (16c24t).
+参考耗时（本机 i7-13700HX 实测，仅供参考，不是承诺）：`python -m pytest` 全量约 3–4 分钟（覆盖率
+开启），`--no-cov` 更快；本地矩阵约 3 分钟（3 个版本并行 × 4 workers）。预算与测量口径见
+§8 与 `docs/*/operations/performance-budgets.md`。
 
-## Git
+## 四、源码约定（Conventions）
 
-If the user requests or grants permission, do `git commit` after modify.
-Avoid including overly large changes in a single commit. For commit messages,
-follow the pattern used in the last five commits; otherwise, the Conventional
-Commits guidelines.
+- **Python 3.10+**。以 `pyproject.toml` 为依赖的唯一权威：`[project.dependencies]` 是核心运行时依赖，
+  `[project.optional-dependencies]` 是可单独安装的 extras（`test`、`docs`、`dev`）。运行时功能的
+  extra 必须由其功能路径**惰性导入**（例如 Paramiko 只在远端/SSH 代码内导入）；测试/构建类 extra
+  **不得**进入正常运行时路径。**不得**把某个 extra 提升为 core，也**不得**新增核心运行时依赖，
+  除非用户明确授权该依赖；一个依赖获批**不**代表其他依赖也获批；仅仅"告知"用户不算授权，新的可选
+  依赖仍须明确报备并放进最窄合适的 extra。
+- **绝不静默覆盖已归档文件**：同一 entity + role、字节不同时**必须**抛 `ConflictError`；字节相同则**必须**幂等。
+- **手动覆盖必留痕**：`curate`、强制 `set-state` 等一律记入 `changes` 审计表。
+- **CLI 先行**：新能力先落在 CLI/核心，TUI 永不走在前头。任何 CLI 命令、flag 或 TUI 表面的改动，
+  **必须**在同一提交里更新 parity 注册表 `operon/tui/parity.py`——否则
+  `tests/unit/test_tui_cli_parity.py` 会失败。有意不在 TUI 提供的命令登记为 `cli-only` 并写明理由；
+  已知缺口登记为 `planned` 并写明里程碑；CI 的 `pytest` 作业导出 `OPERON_PARITY_STRICT=1`，任何再次
+  出现的 `planned` 条目都会让构建失败。
+- **TUI 的读写边界**：读路径（`operon/tui/data.py`）只使用短生命周期的只读连接；写操作
+  （`operon/tui/actions.py`）各自打开短生命周期的**可写**连接，调用与 CLI 相同的核心函数，并留下相同的
+  `changes`/`workflow_runs` provenance；UI 绝不长期持有可写连接。
+- **TUI 写路径契约**：表单/预览 → 显示等价 CLI 命令 → 显式 Confirm → 后台 worker → 通知并重载，
+  或就地报错。写操作失败时**必须**回滚到原字节。
+- **"建模键"式表单写入的语义是完整状态**：文档携带的键被写入，省略的键被删除（回落默认值）；
+  未建模的键逐字保留，文档里给它们的值一律忽略。
+- **可审计、可回滚的配置写入**：profile/recipe/tool 的保存 = 原子写 + 往返校验 + 失败时恢复原字节，
+  并为每个受影响的 recipe 记录一条内容寻址快照（未变化的保存是 no-op）。
+- **名字校验**：任何由表单写入的配置名/文件名**必须**先校验（拒绝路径穿越与非法字符），绝不把
+  用户输入直接拼进路径。
+- **阈值不写进代码**：QC 阈值只属于版本化 YAML profile（受管项目的 `config/profiles/` 下）。
+- `docs/*/operations/database-compatibility.md` 列出了只为 pre-1.0 数据库而存在、并计划在 1.0 移除的
+  迁移代码；改动 `operon/database.py` 的迁移或 NCBI 适配器 schema 升级路径前，先查该页。
+- 代码用 `ruff` 格式化。
 
-**DO NOT** push any commit or tag unless the user **explicitly** requests that.
+## 五、项目纪律（Project Discipline）
 
-If times out, assume the user is not present and that a GPG signature
-is required. Add `-c commit.gpgsign=false` behind `git` may help (However,
-re-signing will reset the commit hash, and corrupt the defects.yml. Please
-proceed with caution).
+> 本节表述的是项目规格（specification），所有贡献者（包括 AI 助手）**必须**遵守。
 
-## Conventions
+### 5.1 语言
 
-- Python 3.10+. Treat `pyproject.toml` as the authoritative dependency
-  list: `[project.dependencies]` contains core runtime dependencies, while
-  `[project.optional-dependencies]` contains separately installable extras
-  (`test`, `docs`, `dev`). Runtime-feature extras must
-  remain lazy-imported by their feature paths (e.g. Paramiko is only
-  imported inside remote/SSH code); test/build extras must stay out of
-  normal runtime paths. Do not promote an extra dependency to core, or add a
-  new core runtime dependency, unless the user explicitly authorizes that
-  dependency. Approval for one dependency does not authorize others unless
-  the user grants a broader allowance. Merely informing the user is not
-  authorization; new optional dependencies must still be surfaced and kept
-  in the narrowest appropriate extra.
-- Documentation language: `docs/` is maintained in parallel English
-  (`docs/en/`) and Chinese (`docs/zh/`) trees — keep both in sync;
-  `README.md` is English and `README_ZH.md` is Chinese. Code, comments,
-  docstrings, and commit messages are in English.
-- Naming in prose: headings use the stylized `Operon`; body text refers to
-  the tool as `` `operon` `` (code-formatted).
-- Never hard-code thresholds in QC code — they belong in versioned YAML
-  profiles (under `config/profiles/` inside each managed project).
-- Never silently overwrite archived files: same entity + role with different
-  bytes must raise `ConflictError`; identical bytes must be idempotent.
-- Manual overrides (e.g. `curate`, forced `set-state`) must always be
-  recorded in the `changes` audit table.
-- CLI-first: new capabilities land in the CLI/core first, and the TUI never
-  runs ahead of the CLI. Any change to CLI commands, flags, or the TUI
-  surface must update the parity registry `operon/tui/parity.py` in the same
-  commit — the parity tests in `tests/unit/test_tui_cli_parity.py` fail
-  otherwise. Commands intentionally not offered in the TUI are registered
-  `cli-only` with a reason; known gaps are registered `planned` with a
-  milestone (the CI `pytest` job exports `OPERON_PARITY_STRICT=1`, so any
-  `planned` entry that reappears fails the build).
-- `docs/*/operations/database-compatibility.md` lists migration code that
-  exists only for pre-1.0 databases and is scheduled for removal at the 1.0
-  release; check it before touching `operon/database.py` migrations or the
-  NCBI adapter's schema-upgrade path.
-- Using `ruff` to re-format the code.
+`README.md` 为英文；`README_ZH.md` 与 `AGENTS.md`（本文件）为中文。代码、注释、docstring 与提交
+信息**必须**为英文。
 
-## Defect reports
+### 5.2 Git 与 GPG
 
-Confirmed defects are tracked in the machine-readable registry
-`defects.yml` at the repository root (plus any `defects/*.yml` shards;
-`scripts/defects.sh` appends and queries records). The full process is in
-`docs/*/contributor/defect-tracking.md`; the binding rules are:
+**不得**推送任何提交或 tag，除非用户**明确**要求。
 
-1. **Register first.** When an audit or investigation confirms a defect,
-   append its `ODR-XXXX` record to `defects.yml` before the fix lands.
-2. **One commit per defect.** The fix and its regression tests ride in the
-   same commit; fill in `fix_commit` when committing.
-3. **Close the test loop.** Regression tests for a defect carry
-   `@pytest.mark.bug("ODR-XXXX")`, and every `fixed`/`verified` record
-   lists at least one such test; `tests/unit/test_defect_registry.py`
-   validates the registry schema and both directions of this closure.
+若提交超时，假定用户不在场且需要 GPG 签名口令；可以在 `git` 后加 `-c commit.gpgsign=false` 作为
+权宜之计（注意：重新签名会改变提交哈希），或**建议**用户使用密码库，以免每次都要输入 GPG 口令。
 
-## Documentation sync
+### 5.3 提交信息
 
-When you change behavior, CLI surface, configuration fields, or storage
-layout, update both language trees (`docs/en/` and `docs/zh/`) in the same
-change:
+- 提交标题**必须**符合 [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) 的相关规定。
+- 3 行以内的微小改动**建议**只写标题、省略正文；20 行及以上的改动**必须**写正文。
+- 所有提交**必须**经 GPG 签名。
+- 回填 `defects.yml` 的 `fix_commit`/`fixed_in` 时，**应**使用以下格式：
+  `docs(defects): backfill ODR-X's fix_commit/fixed_in`（单个 ODR），或
+  `docs(defects): backfill fix_commits/fixed_ins for ODR-X, ODR-Y, ODR-Z`（多个 ODR）。
 
-- CLI commands/flags → `docs/*/reference/cli-*.md`
-- Task-level workflows → `docs/*/guides/` and `docs/*/getting-started/`
-- Architecture, data model, state machine, guarantees → `docs/*/architecture/`
-- `tools.yaml` recipes/placeholders/parsers → `docs/*/reference/recipe-*.md`
-- Migrations, performance diagnostics, compatibility boundaries →
-  `docs/*/operations/`
-- Contributor-facing processes → `docs/*/contributor/`; navigation →
-  `docs/*/index.md`
-- The set of language projects → `docs/<language>/conf.py`, its
-  `docs/<language>/.readthedocs.yaml`, and the registry in
-  `tests/unit/test_docs_projects.py`
+### 5.4 文档同步
 
-Version markers in docs (`operon` 0.9.0, database schema 2.11, metadata
-schema 1.4) must match `pyproject.toml` and the code. Do not write the
-current values literally in Markdown sources: use the `myst_substitutions`
-references `{{ operon_version }}`, `{{ db_schema }}`, and
-`{{ metadata_schema }}`, which `docs/conf_common.py` resolves from the single
-sources above at build time. Substitutions expand in paragraph text only,
-never inside code spans or fenced code blocks — examples there use
-`<version>` placeholders instead. Intentional historical pins stay literal — either on the
-allowlisted era-pinned pages (`docs/*/operations/database-compatibility.md`,
-`docs/*/operations/ncbi-recovery-migration.md`) or on a line carrying an
-inline `<!-- version-pin -->` marker — and
-`tests/unit/test_docs_versions.py` fails on any other hardcoded current
-version. Only this `AGENTS.md` keeps literal current markers (it is not
-Sphinx-rendered); update the list above when bumping.
+当改动行为、CLI 表面、配置字段或存储布局时，**必须**在同一变更里更新**所有语言树**
+（`docs/en/` 与 `docs/zh/`）：
 
-## Special Note For Codex/ChatGPT
+- CLI 命令/flag → `docs/*/reference/cli-*.md`
+- 任务级工作流 → `docs/*/guides/` 与 `docs/*/getting-started/`
+- 架构、数据模型、状态机、正确性保证 → `docs/*/architecture/`
+- `tools.yaml` 的配方/占位符/解析器 → `docs/*/reference/recipe-*.md`
+- 迁移、性能诊断、兼容边界 → `docs/*/operations/`
+- 面向贡献者的流程 → `docs/*/contributor/`；导航 → `docs/*/index.md`
+- 架构、契约、版本政策、兼容窗口等**对外承诺** → `docs/*/architecture/decisions.md`（决策索引）。
+  对外承诺**必须**落在 `docs/` 里；`others/` 只放内部推演与里程碑记录，不进版本控制，也**不得**
+  作为对外依据。
+- 性能预算 → `docs/*/operations/performance-budgets.md`
+- 语言项目集合 → `docs/<language>/conf.py`、其 `docs/<language>/.readthedocs.yaml`，以及
+  `tests/unit/test_docs_projects.py` 中的注册表
 
-Due to specific limitations of the sandbox environment, executing certain TUI
-test code may cause the system to freeze; this often occurs on Codex/ChatGPT.
-The specific reason is that when this test code runs in the sandbox, it may
-result a Textual/asyncio cleanup block, and reports "FAIL" due to timeout.
+如改动还影响到 `AGENTS.md`、`README.md` 和（或）`README_ZH.md`，**应**将上述三个文件视为文档，
+并在同一变更里同步。
 
-If you are Codex/ChatGPT, please execute TUI-related test code OUTSIDE the sandbox.
+### 5.5 版本号
+
+当前版本号**不得**在任何文档里写死。`./docs` 内任何需要引用主程序版本、数据库 schema 版本或元数据
+schema 版本的位置，**必须**使用替换占位符（`{{ operon_version }}`、`{{ db_schema }}`、
+`{{ metadata_schema }}`）。需要记录与版本相关的特性或问题时，在该行加 `<!-- version-pin -->` 以豁免。
+
+所有当前版本号都有单一、权威的来源：
+
+- 主程序：`pyproject.toml`
+- 数据库 schema：`operon/database.py` 的 `SCHEMA_VERSION`
+- 元数据 schema：`operon/schema.py` 的 `METADATA_SCHEMA_VERSION`
+
+因此直接改动它们来 bump 是安全的。需额外注意：若已在 `pyproject.toml` bump 主程序版本号，**必须**
+先执行一次 `python -m pip install -e .`，然后再运行测试套件。
+
+运行 `operon -v` 或 `operon --version` 可查看：
+
+```
+> operon -v
+Operon the Database System
+Main program version:    XXXXX
+Database schema version: YYYYY
+Metadata schema version: ZZZZZ
+```
+
+该输出**必须**写 stdout（保证 `operon -v | …` 这类管道可用）并以退出码 0 结束；`-v` 与 `--version`
+等价。`tests/compatibility/test_python_support.py` 固定这条契约（三行标签与去尾空白后的逐行内容）。
+
+### 5.6 静态检查与分支保护
+
+本仓库的静态检查与分支保护由 Codacy 负责。本地复现方式见
+`docs/*/contributor/development-testing.md` 的「本地 Codacy 分析」。
+
+### 5.7 测试与覆盖率
+
+测试细节见 §三。`master` 上的提交与分支合并均**必须**符合覆盖率门禁：
+
+- 对于 `master` 上的提交：总覆盖率需达到 95% 以上（**硬**，由 `pyproject.toml` 管理）、分支覆盖率需
+  达到 95% 以上（软），单次提交的覆盖率降低需低于 0.1%（软）；
+- 对于从其他 worktree 合并来的提交（需经过 Pull Request）：总覆盖率需达到 95% 以上（**硬**）、
+  分支覆盖率需达到 95% 以上（软）、单次提交的覆盖率降低需低于 0.1%（**硬**，由 Codacy 管理）、
+  diff 部分的覆盖率需达到 85% 以上（**硬**，由 Codacy 管理，如适用），且代码质量需符合 Codacy 要求
+  （不新增任何 medium 程度的 issue，不新增任何 minor 程度的 security issue）。
+
+**门限随水位抬升（建议）**：当一次发布或一次大改动把实测总覆盖率抬升到门限之上时，**应**在同一次
+变更里把 `fail_under` 抬到新水位下方约 1 个点，避免缓慢侵蚀悄无声息地通过；配套细则见
+`docs/*/contributor/development-testing.md` 的「覆盖率门禁」。
+
+#### Textual 的竞态缺陷
+
+为避免新增 Textual（TUI）竞态缺陷，改动 TUI 代码时**必须**注意：
+
+- 断言 UI 状态前必须**谓词等待**（等待被测的具体状态），不得"裸 `pilot.pause()` 之后直接读"，
+  也不得直接读 `app._notifications`。
+- 框架级 guard 的修理要走 `FittingSelect` 式的**最小覆盖**：在能覆盖全部调用路径的最小封装里修，
+  而不是修在恰好先失败的那个调用点。
+- 改动后，以随机序在本地执行**至少 3 次** `pytest tests/unit/test_tui*.py`，以充分暴露竞态问题。
+
+背景、命名（ODR-0027 / ODR-0050 / ODR-0051）与「最小覆盖」的判定标准见
+`docs/*/contributor/development-testing.md` 的「TUI 竞态缺陷」小节；那里的规则与本节等效，
+任何一项变更都**必须**同时满足两处。
+
+#### 使用沙盒的 AI 助手特别注意
+
+受沙盒环境的特有约束，执行 TUI 相关测试代码时，可能因 Textual/asyncio cleanup block 而报告测试
+失败。该问题常发生于 Codex/ChatGPT，但理论上任何使用沙盒环境的 AI 助手都可能触发。
+
+对于任何 AI 助手：如果你确实在沙盒环境中、且需要运行完整测试套件，**必须**在尝试执行前向用户
+警告该问题；如有必要，**建议**请求用户在沙盒外执行 TUI 测试。
+
+### 5.8 代码与文档风格
+
+- 代码使用 `ruff` 格式化（提交前对被改动的文件跑一次，且**不得**引入新的告警）。
+- Markdown 文档**建议**采用 [markdownlint](https://github.com/davidanson/markdownlint) 格式化，
+  但不作强制要求。
+
+## 六、缺陷登记（Defect reports）
+
+确认的缺陷记录在仓库根目录的机器可读登记表 `defects.yml`（以及可选的 `defects/*.yml` 分片；
+`scripts/defects.sh` 负责追加与查询）。完整流程见 `docs/*/contributor/defect-tracking.md`，
+其中**强制**规则有三条：
+
+1. **先登记**。当一次审计或调查确认了缺陷，必须先把它的 `ODR-XXXX` 记录追加进 `defects.yml`，
+   修复才能落地。
+2. **一次提交修一个缺陷**。修复与其回归测试在同一提交里；提交时回填 `fix_commit`。
+3. **闭环测试**。缺陷的回归测试带 `@pytest.mark.bug("ODR-XXXX")`，且每条 `fixed`/`verified` 记录
+   至少列出一条这样的测试；`tests/unit/test_defect_registry.py` 校验登记表 schema 与这个闭环的
+   两个方向。
+
+时序相关的测试失败（尤其 TUI）是**要登记的缺陷**，不是可以重跑带过的 flake：先复现，再登记，再修。
+
+## 七、决策与对外承诺
+
+- `docs/*/architecture/decisions.md` 是决策索引：核心不变式（INV-\*）、扩展边界（EXT-\*）、
+  契约与闸门（GATE-\*）逐条列出，并写明各自的"执法者"（测试、闸门或 CLI 表面）。
+- **对外承诺必须落 `docs/`**：契约、不变式、版本政策、兼容窗口只有写进文档树才生效；计划草稿、
+  里程碑记录与推演过程放在 `others/`（不进版本控制），**不得**作为对外依据。
+- **开放问题也要在 `docs/` 里回答**：尚未裁定的问题在决策索引的「开放问题」中列出；在它被提升为
+  决策之前，外部消费者**不得**依赖其中任何一种结果。
+- 变更一项契约时，同一变更里**必须**完成三件事：①更新决策记录；②更新它的执法者（测试/闸门/CLI
+  表面）；③更新两棵文档树（若 `README*` 或本文件有引用，一并同步）。
+
+## 八、性能预算
+
+- 性能预算的定义、夹具、测量方法与"数字如何入库"见 `docs/*/operations/performance-budgets.md`
+  （对应决策索引里的 GATE-7）。
+- 规则：**预算是上限而非平均值**，且**必须能被第三方复现**（数字旁边要有命令）。
+- 若一次改动使某项测量劣于已记录的预算，该改动**必须**要么修回归、要么带着测量理由更新预算——
+  默默接受更慢的路径不是选项。
+- 加入第一个预算数字时，**必须**与产生它的测量脚本在同一变更里落地。
+
+## 九、交付、汇报与检查清单
+
+### 9.1 交付与汇报
+
+- 交付 = **可运行/可验证的产物**，不是描述。声称完成之前，必须给出**实测**证据：相关测试的
+  通过数字、覆盖率、构建结果（如 Sphinx 退出码）、必要时 CI run id 与逐腿结论。
+- 汇报按**条目**组织：每项写清改了什么、对应的提交哈希、以及验证数字；**禁止**用推测或"应该没问题"
+  代替实测。做不到或无法验证的，如实说明并给出替代路径或向用户提问。
+- 被阻塞时先说明阻塞点，再给可选项；不要用看起来合理的假数据填补。
+
+### 9.2 计划与里程碑记录
+
+- 计划文件与里程碑记录放在 `others/`（该目录被 `.gitignore` 排除，不随仓库分发）：计划放
+  `others/plans/`，里程碑记录写在对应的计划文件或该阶段的记录文件里。
+- 落地后**必须**回填提交哈希与验证数字；**不得**把未落地项描述成已完成。
+
+### 9.3 提交前检查清单
+
+1. 读相关文档与既有实现（`docs/*/`、相邻模块、既有测试），不猜 API 形状。
+2. 改动面尽可能小；不顺手重构、不改格式、不动无关文件。
+3. 新增/修改行为**必须**伴随测试；缺陷修复**必须**带 `@pytest.mark.bug("ODR-XXXX")` 回归测试。
+4. 跑相关测试类目；认为完成前跑全量 `python -m pytest`。
+5. 覆盖率不下降；触及门禁阈值时按 §5.7 处理。
+6. 若改动了 CLI 命令/flag 或 TUI 表面：同一提交更新 `operon/tui/parity.py`。
+7. 双语文档已同步（§5.4）；涉及版本号的位置使用占位符（§5.5）。
+8. 确认的缺陷已在 `defects.yml` 登记并回填 `fix_commit`（§六）。
+9. `ruff` 无误、无新增告警；Markdown 尽量符合 markdownlint。
+10. 提交信息符合 §5.3（Conventional Commits、必要的正文）；提交经 GPG 签名。
+11. **不**推送、**不**打 tag，除非用户明确要求。
+
+## 十、常见陷阱
+
+- **Textual 的三类异步时序**（挂载、绘制、通知投递）会让"先读后断言"的测试随机变红——见 §5.7；
+  正确做法是谓词等待。
+- **覆盖率门禁是合并门**：只增加行而不覆盖其分支同样会拉低合并覆盖率；`# pragma: no cover` 不能
+  替代测试。
+- **文档里写死版本号**会被 `tests/unit/test_docs_versions.py` 抓住；请用替换占位符。
+- **bump 主程序版本后**必须先 `python -m pip install -e .`，否则测试跑的是旧版本。
+- **单解释器通过 ≠ 完成**：跨版本矩阵与 CI（Linux + macOS）才是放行标准。
+- **归档不可覆盖**：同 entity + role 字节不同会抛 `ConflictError`，这是设计而不是缺陷，不要"修"它。
+- **`defects.yml` 是三段式闭环**：登记记录、`fix_commit` 回填、带 marker 的回归测试，缺一不可。
+- **`others/` 不进版本控制**：把对外承诺写在那里等于没写（见 §七）。
+- **TUI 测试在沙盒里可能假红**：见 §5.7 的沙盒提醒。

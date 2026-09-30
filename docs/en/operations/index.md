@@ -2,6 +2,7 @@
 
 - [NCBI Adapter Recovery and Migration](ncbi-recovery-migration.md): migrate an old project, rehearse repairs, validate the result, and roll back safely.
 - [Built-In QC Performance Diagnostics](qc-performance.md): timing fields, representative benchmark sets, and hotspot interpretation.
+- [Performance Budgets](performance-budgets.md): where the TUI and export budgets live, what each one measures, and how a number becomes binding.
 - [Database Compatibility Code Inventory](database-compatibility.md): migration code boundaries before and after version 1.0.
 
 ```{toctree}
@@ -9,5 +10,6 @@
 
 ncbi-recovery-migration
 qc-performance
+performance-budgets
 database-compatibility
 ```

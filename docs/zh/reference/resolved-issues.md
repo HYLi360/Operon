@@ -62,6 +62,11 @@
 | ODR-0047 | TUI | 模态 Confirm 的动作只执行一次：`operon/tui/screens` 中每个委托型的 `on_button_pressed` 都在 `super()` 之前调用 `event.prevent_default()`，让 Textual 的 MRO 分发止于子类——这正是该树为 ODR-0043 取消分支早已携带的同一道守卫。两条回归锁定它：一条源码级扫描，凡有处理器在未加守卫的情况下抵达 `super().on_button_pressed(event)` 即失败（它当场找出了第十处 `QcModal`）；另一条对 add-record 对话框做端到端点击计数。 |
 | ODR-0048 | Tests | no-backend 机密测试不再假定 Linux 主机：`scratch` fixture 在既有的 PATH 剥离（钉住其余两个探测）旁，再钉住第三个探测（`MacKeychainBackend.binary` 指向不存在的路径），需要同一前提的 config-cli 测试则就地钉住——因此包括 macOS 在内的每条腿都解析不出后端。回归在任何主机上复现 Darwin 状态；`test_mac_keychain_round_trip` 从 `scratch` 改到 `tmp_path`，因为它驱动真实二进制字符串，不应继承该钉住。 |
 | ODR-0049 | Tests | 两个机密后端桩都改为 Python 脚本，其 shebang 是运行测试套件的解释器的绝对 `sys.executable`，因此完全不触达任何系统工具、也不从 PATH 继承任何东西。两条回归锁定其形态：一条扫描桩文本中的绝对 `/usr/bin` 或 `/bin` 工具路径（修复前有五处），一条断言写出的桩以绝对 shebang 开头且不含占位符。 |
+| ODR-0050 | TUI | 在标签仍在合成时赋值的 `Select` 不再从赋值处抛出 `NoMatches`：`FittingSelect` 覆写 `_watch_value`，保留已存的值并按一次 refresh 重试绘制，直到标签进入控件树；重试受该类既有的重试预算限制，用尽时按控件名报告。Textual 只在成功绘制后才发出 `Changed`，因此该值仍恰好上报一次。一次排查确认这是 `on_mount` 中唯一的 `Select` 赋值。 |
+| ODR-0051 | TUI | 没有任何 TUI 测试在通知送达之前读取通知栈：`test_tui_remotes.py` 新增了谓词等待 `_await_notification`，三处直接读取 `app._notifications` 的位置（连通性检查、推送失败、运行中拒绝关闭）都改为等待它们所断言的那条通知——修的是这一类问题，而不只是报告的那一处。 |
+| ODR-0052 | Tests | ruff 抑制守卫不再把目录遍历当作事实来源：改为向 git 索取已跟踪文件集（`git ls-files -z -- '*.py'`），这是精确的且不会与构建竞争；基于形状的遍历只作为无 git 检出时的回退。该回退会跳过 `PKG-INFO` 暂存树、`*.egg-info`、`dist/` 以及编辑器/缓存目录，读取循环也能容忍扫描中途消失的文件。 |
+| ODR-0053 | Tests | 已抛出的通知现在在整个测试期间保持可读：`tests/conftest.py` 携带一个 autouse fixture `durable_notifications`，全套件把 `App.NOTIFICATION_TIMEOUT` 提升到测试长度级别，而不是让每个读取方各自绕开 Textual 五秒的默认值。 |
+| ODR-0054 | Tests | `test_modal_drops_result_after_teardown` 不再每次都睡完整个 120 秒的交接预算：场景把释放事件作为最后一步、在返回 runner 之前完成设置，而不是留给 `finally`，因此通过的测试不再按整份预算占住一个 worker——该测试原本耗时 124 秒，并把每一次运行的墙钟上限都钉死在这一单个测试的节奏上。`test_a_parked_worker_is_released_before_the_scenario_returns` 通用地锁定了该性质，方式是给运行计时，而不是断言一个刚刚自己设过的标志位。 |
 
 ## K 系列（历史）
 

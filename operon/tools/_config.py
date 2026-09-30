@@ -8,6 +8,7 @@ private modules in this package; the public surface is re-exported by
 
 from __future__ import annotations
 
+import copy
 import re
 import shlex
 from dataclasses import dataclass, field
@@ -22,6 +23,24 @@ from operon.errors import ValidationError
 from ._defaults import DEFAULT_TOOLS_CONFIG
 
 ENVIRONMENT_POLICIES = ("ignore", "warn", "strict")
+
+#: Parsed ``config/tools.yaml`` documents keyed by path, each held against the
+#: ``(mtime_ns, size)`` it was parsed from.  A single Config-screen render reads
+#: this file once per tool, per recipe and per analysis, so without the cache the
+#: YAML scanner ran tens of times per screen; keying on the file's identity
+#: rather than a clock keeps a just-saved edit visible on the very next read,
+#: which a TTL cache could not promise for a file the TUI rewrites in place.
+_TOOLS_CONFIG_CACHE: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+
+def _file_identity(path: Path) -> tuple[int, int]:
+    stat = path.stat()
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def invalidate_tools_config_cache(project: Project) -> None:
+    """Drop the cached document for one project's ``config/tools.yaml``."""
+    _TOOLS_CONFIG_CACHE.pop(str(project.tools_config_path), None)
 
 
 @dataclass
@@ -97,12 +116,26 @@ def ensure_tools_config(project: Project) -> Path:
 
 
 def load_tools_config(project: Project) -> dict[str, Any]:
-    ensure_tools_config(project)
-    with open(project.tools_config_path, encoding="utf-8") as handle:
+    """Parse ``config/tools.yaml``, reusing the last parse while it is unchanged.
+
+    Callers own their result: the save paths mutate it in place (``setdefault``
+    on a tool's ``recipes``, then a whole-document rewrite), so a cached hit is
+    handed out as a deep copy.  The document is re-parsed the moment the file's
+    mtime or size moves, and the write paths invalidate it explicitly, so a save
+    is always visible to the round-trip read that follows it.
+    """
+    path = ensure_tools_config(project)
+    key = str(path)
+    identity = _file_identity(path)
+    cached = _TOOLS_CONFIG_CACHE.get(key)
+    if cached is not None and cached[0] == identity:
+        return copy.deepcopy(cached[1])
+    with open(path, encoding="utf-8") as handle:
         doc = yaml.safe_load(handle) or {}
     if not isinstance(doc, dict) or "tools" not in doc:
-        raise ValidationError(f"invalid tools config: {project.tools_config_path}")
-    return doc
+        raise ValidationError(f"invalid tools config: {path}")
+    _TOOLS_CONFIG_CACHE[key] = (identity, doc)
+    return copy.deepcopy(doc)
 
 
 def get_tool(project: Project, tool_name: str) -> ToolSpec:

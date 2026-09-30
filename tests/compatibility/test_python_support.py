@@ -54,15 +54,23 @@ def test_runtime_is_within_supported_window() -> None:
 
 @pytest.mark.compatibility
 def test_cli_version_flag_prints_version_and_exits_zero(capsys) -> None:
-    """`--version` is a documented CLI contract; exercise it on this runtime."""
+    """`--version`/`-v` is a documented CLI contract; exercise it on this runtime."""
     from operon import __version__
     from operon.cli import main
+    from operon.database import SCHEMA_VERSION
+    from operon.schema import METADATA_SCHEMA_VERSION
 
-    with pytest.raises(SystemExit) as excinfo:
-        main(["--version"])
+    for flag in ("--version", "-v"):
+        with pytest.raises(SystemExit) as excinfo:
+            main([flag])
 
-    assert excinfo.value.code == 0
-    assert capsys.readouterr().out.strip() == f"operon {__version__}"
+        assert excinfo.value.code == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "Operon the Database System",
+            f"Main program version:    {__version__}",
+            f"Database schema version: {SCHEMA_VERSION}",
+            f"Metadata schema version: {METADATA_SCHEMA_VERSION}",
+        ]
 
 
 @pytest.mark.compatibility

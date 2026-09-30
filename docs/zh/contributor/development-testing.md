@@ -61,9 +61,13 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
 1. **只重跑失败项。** `python -m pytest --lf -q --no-cov` 先重放 pytest 的 last-failed 缓存。
 2. **迭代时遇到首个失败即停**：`python -m pytest tests/unit -x -q --no-cov`，并只指定你改动的
    文件或用例，而不是整个类目。
-3. **并行执行。** 在 24 核工作站上，`python -m pytest -n 24 --dist loadfile`（带 `pytest-xdist`） 
-   可将耗时压到 30～40 秒。`--dist loadfile` 保证同一个测试文件只落在一个
-   worker 上，这是 Textual UI 测试所需要的。覆盖率统计最贵：迭代时用 `--no-cov`，最后只测一次。
+3. **并行执行。** `pyproject.toml` 已配置 `-n auto` 和默认的 `load` 分配策略，所以直接
+   `python -m pytest` 就是并行运行：在 24 核工作站上约 70 秒。覆盖率统计最贵：迭代时用
+   `--no-cov`，最后只测一次。
+   **不要**改用 `--dist loadfile` 或 `--dist loadscope`。虽然"同一个测试文件只落在一个
+   worker"听起来对 Textual 更稳妥，但 TUI 模块很大且极不均匀，文件级/类级分组会把
+   套件集中到少数几个 worker 上，本机实测约 5.5 分钟，比默认策略慢约 4.6 倍。每个 TUI
+   用例都在自己的 `tmp_path` 下建立项目，因此默认分配方式已经足够安全。
 4. **一次跑完跨版本矩阵。** `scripts/setup-test-matrix.sh` 用 uv 安装 CPython 3.10–3.15 并在
    `.matrix/` 下为每个版本建 venv。`scripts/run-test-matrix.sh` 每次并发 `MATRIX_CONCURRENCY`
    个版本（默认 3 个，六个版本分两波），每个版本给 `MATRIX_JOBS` 个 xdist worker；默认值把机器
@@ -105,6 +109,8 @@ F821 检查仍然启用。Markdown 制表符检查允许围栏代码块中的 TS
 并在报告的总覆盖率低于 `fail_under` 阈值时失败。报告的总覆盖率是合并值
 `(覆盖行数 + 覆盖分支数) / (有效行数 + 有效分支数)`，因此只增加行而不覆盖其分支同样会拉低该值。
 此外，分支覆盖率必须保持在全部有效分支的 95% 及以上。
+
+阈值是下限，不是目标。每当一次发布或一次大改动把实测总覆盖率明显抬升到 `fail_under` 之上，应在同一次变更里把 `fail_under` 抬到新水位下方约 1 个点的位置，避免缓慢侵蚀悄无声息地通过：一个永不移动的闸门，会慢慢变得没有意义。与之配套的分支覆盖率、单次提交与 Codacy 规则见 `AGENTS.md`。
 
 查看缺口：
 
@@ -150,6 +156,16 @@ CLI 是规范面：新能力先落在 CLI 与核心函数，TUI 只调用同一�
 新增或修改 CLI 命令/flag 时，必须在同一 commit 更新注册表：扩展 `implemented`
 条目的 `params`/`waived` 映射，或将命令登记为 `cli-only`/`planned` 并写明理由，
 否则 parity 测试失败。
+
+## TUI 竞态缺陷
+
+Textual 的消息循环让若干失败变成时序相关：widget 还没挂载、reactive 还没绘制、通知已入队但还没投递。注册表里已有三条此类记录（ODR-0027、ODR-0050、ODR-0051），三条都是矩阵或 CI 事后发现的。改动 `operon/tui/` 时，三条规则适用：
+
+- **断言 UI 状态前必须谓词等待。** 等待**被测的那个具体状态**——widget 已存在、标签读出 X、通知文本已到达——绝不写"裸 `pilot.pause()` 之后直接读"，更不直接读 `app._notifications`。
+- **框架级 guard 的修理走最小覆盖。** 当缺陷来自 Textual 本身（例如 `Select` 在选项尚未 compose 时被赋值 label），在能覆盖所有调用路径的最小 wrapper 里修，而不是修在"恰好先失败"的那个调用点上。
+- **改动后本地以随机序至少跑 3 次 TUI 测试模块**（`python -m pytest tests/unit/test_tui*.py`）。矩阵与 CI 会跑全量，但三次有序运行能在几秒内暴露绝大多数竞态，而不是等到二十分钟的 CI 腿。
+
+时序相关的测试失败是**要登记的缺陷**，不是可以重跑带过的 flake：上面三条都在修复落地前先复现过，每条修复都带一条 `@pytest.mark.bug("ODR-XXXX")` 的回归测试。
 
 ## 文档同步
 

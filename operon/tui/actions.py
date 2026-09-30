@@ -1127,7 +1127,7 @@ def save_profile(
     ``known_version`` preserves the editor's last observed file version if
     the file disappears before its first snapshot is recorded.
     """
-    from operon.profiles import load_profile
+    from operon.profiles import invalidate_profile_cache, load_profile
     from operon.tui.data import config_version_floor
     from operon.utils import now_iso
 
@@ -1193,6 +1193,7 @@ def save_profile(
         + yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
     )
     with _saved_config(path, text, previous_text, f"profile {name!r}"):
+        invalidate_profile_cache(project.profiles_dir)
         loaded = load_profile(project.profiles_dir, name, expected_kind=kind)
         profile_document = json.dumps(
             loaded, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -1257,7 +1258,12 @@ def save_recipe(
     ``known_version`` is the editor's version floor; current file and
     snapshot versions are checked again at save time.
     """
-    from operon.tools import get_recipe, get_tool, load_tools_config
+    from operon.tools import (
+        get_recipe,
+        get_tool,
+        invalidate_tools_config_cache,
+        load_tools_config,
+    )
     from operon.tui.data import config_version_floor
 
     _validate_config_name("recipe", recipe_name)
@@ -1312,6 +1318,7 @@ def save_recipe(
         + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     )
     with _saved_config(path, text, previous_text, f"recipe {recipe_name!r}"):
+        invalidate_tools_config_cache(project)
         load_tools_config(project)
         recipe = get_recipe(project, recipe_name)
         tool = get_tool(project, tool_name)
@@ -1369,7 +1376,12 @@ def save_tool(
     hand-written comments; every saved version is preserved verbatim in
     ``recipe_snapshots`` (see ``operon recipes history/show``).
     """
-    from operon.tools import get_tool, list_analyses, load_tools_config
+    from operon.tools import (
+        get_tool,
+        invalidate_tools_config_cache,
+        list_analyses,
+        load_tools_config,
+    )
 
     _validate_config_name("tool", tool_name)
     if not isinstance(tool_doc, dict):
@@ -1411,6 +1423,7 @@ def save_tool(
         + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     )
     with _saved_config(path, text, previous_text, f"tool {tool_name!r}"):
+        invalidate_tools_config_cache(project)
         load_tools_config(project)
         tool = get_tool(project, tool_name)
         recipes = [
@@ -1473,7 +1486,12 @@ def save_tools_defaults(
     hand-written comments; every saved version is preserved verbatim in
     ``recipe_snapshots`` (see ``operon recipes history/show``).
     """
-    from operon.tools import get_tool, list_analyses, load_tools_config
+    from operon.tools import (
+        get_tool,
+        invalidate_tools_config_cache,
+        list_analyses,
+        load_tools_config,
+    )
 
     if not isinstance(conda_doc, dict):
         raise ValidationError("the conda section: document must be a mapping")
@@ -1502,6 +1520,7 @@ def save_tools_defaults(
         + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     )
     with _saved_config(path, text, previous_text, "the conda section"):
+        invalidate_tools_config_cache(project)
         after = _tool_launchers(project, load_tools_config(project))
         changed = {name for name, prefix in after.items() if before.get(name) != prefix}
         recipes = [
