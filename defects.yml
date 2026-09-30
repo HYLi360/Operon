@@ -1698,7 +1698,7 @@ defects:
     overlap, and a slow query cannot pile up threads. Panel subclasses keep their own generation guard
     (ODR-45), which already dropped a superseded *payload*; this fixes the superseded *request*, which
     that guard could not see.
-  fix_commit: null
+  fix_commit: 'c4f97d25e16c8788584ca63af5dc05f292cd010d'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui.py::test_runs_filter_applied_while_a_load_is_in_flight_is_not_lost
@@ -1725,7 +1725,7 @@ defects:
     The removal now names the row it is removing, and the renumber skips exactly that row instead of
     trusting the DOM to have finished pruning. A survivor renumbered before its own on_mount was already
     correct — compose renders the title from the current index — so no other change was needed.
-  fix_commit: null
+  fix_commit: '307cffd0b91bf04276269f43b0cfb2adf964421e'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_config.py::test_command_row_renumbered_while_the_removed_row_is_still_mounted
@@ -1749,7 +1749,7 @@ defects:
     the two completion assertions use it instead of sampling the rack. The regression test drives a
     deliberately slowed run_pipeline so the turn between the worker finishing and the toast landing is
     wide enough to be meaningful, and asserts the wait finds the text.
-  fix_commit: null
+  fix_commit: '1fbde27dd116d844a10e0358d4509b04dabbceb8'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_pipeline.py::test_the_completion_notification_arrives_after_the_modal_closes
