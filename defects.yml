@@ -1517,7 +1517,7 @@ defects:
     in interpreter sensitivity.
   severity: 'low'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run the pinning test, or open the classification editor so a rule row carrying a `source` is
     mounted. Textual stores the value in `Select._watch_value` and only then looks up the
@@ -1536,7 +1536,7 @@ defects:
     keep that distance too. Two regressions pin the fix: one removes the label from a mounted control
     and asserts the assignment survives and the retry paints it, one pins the give-up warning.
   fix_commit: 'e959c70937f70489fb1e36b20e66d7f6679981fb'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_config.py::test_fitting_select_survives_a_paint_whose_label_has_not_composed
     - tests/unit/test_tui_common_guard.py::test_fitting_select_paint_gives_up_by_name
@@ -1552,7 +1552,7 @@ defects:
     the status line had already shown the finished push.
   severity: 'low'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Drive PushModal through the Remotes screen, confirm a push in which one file fails, wait for the two
     result rows, then read app._notifications immediately: Textual's App.notify queues a Notify message,
@@ -1568,7 +1568,7 @@ defects:
     test - all wait for the notification they assert with it, so the class is fixed and not just the
     reported site. The three tests carry @pytest.mark.bug("ODR-51").
   fix_commit: '46c850fff390b4147aae38a02c3af06a98721667'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_remotes.py::test_push_modal_shows_plan_results_and_stays_open_on_failure
     - tests/unit/test_tui_remotes.py::test_remotes_check_button_probes_and_reports_failures
@@ -1587,7 +1587,7 @@ defects:
     worktree only shifts the timing.
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     python -m pytest intermittently fails
     tests/unit/test_ruff_suppression_format.py::test_ruff_format_does_not_move_line_suppressions with
@@ -1607,7 +1607,7 @@ defects:
     set excludes a staged tree while keeping the source. On a clean tree the new listing covers exactly
     the files the old walk covered.
   fix_commit: 'ae7e3fbc2edf6802cab17f67e8867847a6bb1ecb'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_ruff_suppression_format.py::test_python_files_skips_distribution_artifacts_without_git
     - tests/unit/test_ruff_suppression_format.py::test_python_files_in_a_checkout_are_the_tracked_set
@@ -1626,7 +1626,7 @@ defects:
     while it waited for 'saved bhlh_tiers version 2'; the same instrument was green on its earlier runs.
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     python -m pytest tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end passes
     on an idle runner. Running that test with six seconds inserted in front of its notification wait
@@ -1643,7 +1643,7 @@ defects:
     an hour and asserted the wait still found it; before the fixture landed it failed with the CI
     traceback.
   fix_commit: '61906c3c940cabc40fce3d7cba701dc2cb45b026'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_config.py::test_notification_waits_survive_an_expired_toast
 - id: ODR-54
@@ -1655,7 +1655,7 @@ defects:
     did
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     python -m pytest tests/unit/test_tui_table_import.py::test_modal_drops_result_after_teardown
     --durations=3 -q --no-cov reports 124.28s call for a test whose assertions all complete in under a
@@ -1669,7 +1669,7 @@ defects:
     assertions are done instead of after them. The budget stays generous for a loaded runner, which is
     what it exists for, but it is no longer spent on a green test.
   fix_commit: 'dd2572153b69f8fc6b0c31a6f468467bb02cb2b7'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_a_parked_worker_is_released_before_the_scenario_returns
 - id: ODR-55
@@ -1681,7 +1681,7 @@ defects:
     was in flight never ran, so the table kept answering the previous question
   severity: 'medium'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     RunsPanel.reload, AnalysisJobsModal.reload and AnalysisHitsModal.reload each opened with `if
     self._loading: return`, so a request made while a read was in flight was discarded rather than
@@ -1699,7 +1699,7 @@ defects:
     (ODR-45), which already dropped a superseded *payload*; this fixes the superseded *request*, which
     that guard could not see.
   fix_commit: 'c4f97d25e16c8788584ca63af5dc05f292cd010d'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui.py::test_runs_filter_applied_while_a_load_is_in_flight_is_not_lost
 - id: ODR-56
@@ -1711,7 +1711,7 @@ defects:
     still mounted left the survivor labelled step 2
   severity: 'medium'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     ConfigPanel.on_command_row_remove_requested awaits row.remove() and then calls
     _renumber_command_rows, which numbered every CommandRow the DOM still held. Textual's remove()
@@ -1726,7 +1726,7 @@ defects:
     trusting the DOM to have finished pruning. A survivor renumbered before its own on_mount was already
     correct — compose renders the title from the current index — so no other change was needed.
   fix_commit: '307cffd0b91bf04276269f43b0cfb2adf964421e'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_config.py::test_command_row_renumbered_while_the_removed_row_is_still_mounted
 - id: ODR-57
@@ -1736,7 +1736,7 @@ defects:
   affected: 'the run-pipeline TUI tests: two tests asserted a toast the app had not posted yet'
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     App.notify posts a Notify message rather than recording the toast inline, so the text lands a
     message-loop turn later. test_tui_pipeline.py read _notifications(app) straight after _settled,
@@ -1750,6 +1750,6 @@ defects:
     deliberately slowed run_pipeline so the turn between the worker finishing and the toast landing is
     wide enough to be meaningful, and asserts the wait finds the text.
   fix_commit: '1fbde27dd116d844a10e0358d4509b04dabbceb8'
-  fixed_in: null
+  fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_pipeline.py::test_the_completion_notification_arrives_after_the_modal_closes
