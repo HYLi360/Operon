@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Start with `operon doctor`: one read-only pass over every recorded condition that needs attention — failed/interrupted runs, REVIEW/FAIL decisions, and files whose status is not healthy. It exits `1` when anything needs attention and `2` when the check itself cannot complete; the sections below drill into the states it reports.
+
 ## Checksum and format problems
 
 ```bash

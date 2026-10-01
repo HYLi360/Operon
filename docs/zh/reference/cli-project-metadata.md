@@ -81,6 +81,20 @@ operon status [--entity-type TYPE] [--entity-id ID] [--include-retired]
 打印 `entity_state` 中的实体状态与说明。默认不显示有效退役实体；
 `--include-retired` 用于历史审计。
 
+## doctor
+
+```bash
+operon doctor [--format {text,json}] [--limit N]
+```
+
+对需要优先处理的记录做一次只读巡检：failed/interrupted 的 workflow 运行；当前有效判定（curated 覆盖优先）为 `REVIEW` 或 `FAIL` 的实体；以及状态不属于 `CHECKSUM_VERIFIED`/`STANDARDIZED` 的文件。命令以只读方式打开数据库，不写入任何内容，也不执行迁移。
+
+- `--format text`（默认）输出纯文本报告；`--format json` 输出下方的机读文档。
+- `--limit N` 把每个来源列表（runs、decisions、files）截断为前 N 行（顺序确定）；summary 始终按全部记录计数，分页报表不会隐藏总数。`--limit 0`（默认）列出全部条目。
+- 退出码：`0` 无需关注；`1` 至少一项需要关注；`2` 检查本身无法完成（项目或数据库不可读）——检查失败绝不会被报告为健康。
+
+JSON 文档包含稳定的 `schema_version`（`1`）、按 kind 计数的 `summary`（`failed_run`、`decision_review`、`decision_fail`、`file_unhealthy`）以及 `items`：每项带有稳定的 `id`、`kind`、`severity`、它描述的对象 `object`（`<类型>:<id>`）、可定位该项的 `suggested_command`，以及记录的 `details`。TUI 的 Home 仪表盘渲染同一份聚合（`data.attention_report`），两个表面不会漂移。
+
 ## schema
 
 ```bash

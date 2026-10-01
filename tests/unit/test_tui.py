@@ -29,6 +29,7 @@ from textual.widgets import (
 )
 from textual.widgets.data_table import RowKey
 
+from operon import health
 from operon.cli import main
 from operon.config import Project
 from operon.demo import init_demo
@@ -217,17 +218,25 @@ def test_project_summary(demo_project: Project) -> None:
     assert summary["latest_release"]["version"] == "2026.08.demo"
 
 
-def test_attention_items(demo_project: Project, tmp_path: Path) -> None:
+def test_attention_report(demo_project: Project, tmp_path: Path) -> None:
     # The demo run history is clean, but its decisions still need review.
-    demo_attention = data.attention_items(demo_project)
-    assert demo_attention["failed_run_count"] == 0
-    assert demo_attention["runs"] == []
-    assert demo_attention["decisions"], "demo project should have REVIEW/FAIL decisions"
-    for row in demo_attention["decisions"]:
-        assert (row.get("curated_decision") or row["decision"]) in {"REVIEW", "FAIL"}
+    demo_report = data.attention_report(demo_project)
+    assert demo_report.totals[health.KIND_FAILED_RUN] == 0
+    demo_runs = [
+        item for item in demo_report.items if item.kind == health.KIND_FAILED_RUN
+    ]
+    assert demo_runs == []
+    demo_decisions = [
+        item
+        for item in demo_report.items
+        if item.kind in (health.KIND_DECISION_REVIEW, health.KIND_DECISION_FAIL)
+    ]
+    assert demo_decisions, "demo project should have REVIEW/FAIL decisions"
+    for item in demo_decisions:
+        assert item.details["decision"] in {"REVIEW", "FAIL"}
 
-    # A project with real failures surfaces them: the count is the full total,
-    # while the runs page honours the limit; healthy files stay out.
+    # A project with real failures surfaces them: the totals are the full
+    # counts, while the page honours the per-list limit; healthy files stay out.
     from operon.database import Database
     from operon.workflow import log_run
 
@@ -259,18 +268,33 @@ def test_attention_items(demo_project: Project, tmp_path: Path) -> None:
     finally:
         db.close()
 
-    attention = data.attention_items(project)
-    assert attention["failed_run_count"] == 2
-    assert len(attention["runs"]) == 2
-    assert all(r["status"] in {"failed", "interrupted"} for r in attention["runs"])
-    assert [f["file_id"] for f in attention["files"]] == ["FIL_000001"]
+    report = data.attention_report(project)
+    assert report.totals[health.KIND_FAILED_RUN] == 2
+    runs = [item for item in report.items if item.kind == health.KIND_FAILED_RUN]
+    assert len(runs) == 2
+    assert all(item.details["status"] in {"failed", "interrupted"} for item in runs)
+    files = [item for item in report.items if item.kind == health.KIND_FILE_UNHEALTHY]
+    assert [item.object_id for item in files] == ["FIL_000001"]
     assert all(
-        f["status"] not in data.HEALTHY_FILE_STATUSES for f in attention["files"]
+        item.details["status"] not in health.HEALTHY_FILE_STATUSES for item in files
     )
 
-    page = data.attention_items(project, limit=1)
-    assert page["failed_run_count"] == 2, "the count is the total, not the page"
-    assert len(page["runs"]) == 1, "the page honours the limit"
+    page = data.attention_report(project, limit=1)
+    assert page.totals[health.KIND_FAILED_RUN] == 2, "the total is not the page"
+    page_runs = [item for item in page.items if item.kind == health.KIND_FAILED_RUN]
+    assert len(page_runs) == 1, "the page honours the limit"
+
+
+def test_home_fetch_reads_the_shared_report_at_its_page(
+    demo_project: Project,
+) -> None:
+    """Home's fetch is the shared aggregation, read at its own page size."""
+    from operon.tui.screens.home import ATTENTION_PAGE
+
+    payload = HomePanel(demo_project)._fetch()
+    assert payload["attention"] == data.attention_report(
+        demo_project, limit=ATTENTION_PAGE
+    )
 
 
 def test_entity_tree(demo_project: Project) -> None:
@@ -643,7 +667,7 @@ def test_data_layer_never_writes(demo_project: Project, tmp_path: Path) -> None:
     os.chmod(db_path, 0o444)
     try:
         data.project_summary(project)
-        data.attention_items(project)
+        data.attention_report(project)
         data.entity_tree(project)
         data.entity_tree(project, include_retired=True)
         data.entity_detail(project, "assembly", "ASM_000001")
@@ -1074,23 +1098,27 @@ def test_detail_text_builders(demo_project: Project) -> None:
 
     home = HomePanel(demo_project)
     home.summary = None
-    home.attention = {
-        "failed_run_count": 25,
-        "runs": [
-            {
-                "run_id": f"WF_{i}",
-                "status": "failed",
-                "step": "qc",
-                "entity_type": None,
-                "entity_id": None,
-                "started_at": "-",
-                "error": None,
-            }
+    home.attention = health.AttentionReport(
+        items=tuple(
+            health.AttentionItem(
+                id=f"failed_run:run:WF_{i}",
+                kind=health.KIND_FAILED_RUN,
+                severity="error",
+                object=f"run:WF_{i}",
+                suggested_command=f"operon workflow show WF_{i}",
+                details={
+                    "step": "qc",
+                    "status": "failed",
+                    "entity_type": None,
+                    "entity_id": None,
+                    "started_at": "-",
+                    "error": None,
+                },
+            )
             for i in range(10)
-        ],
-        "decisions": [],
-        "files": [],
-    }
+        ),
+        totals={health.KIND_FAILED_RUN: 25},
+    )
     home.recent_runs = []
     text = home._build_text().plain
     assert "and 15 more failed/interrupted runs" in text

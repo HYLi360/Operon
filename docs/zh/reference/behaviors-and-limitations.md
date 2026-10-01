@@ -266,7 +266,7 @@
 ## CLI 约定
 
 - **已知问题：字段数超标的 coverage 报告会让 TUI 查看器崩溃。** `data.read_coverage_report` 原样返回行数据，因此手工编辑过的 `reports/coverage/COV_*/coverage_*.tsv` 若某行字段数多于表头，`CoveragePanel` 会在应用线程抛出 `ValueError: More values provided than there are columns.`，而不是显示内联错误（`tui/screens/coverage.py`）。
-- **退出码：** 0 成功；1 为运行时/SQLite/OSError（包括 release/export 的 `FileExistsError`）以及 `qc`/`verify`/`analyze`/`push`/`pull`/`evict`/`backup verify`/`report coverage` 中任何逐条目失败；2 为所有 `OperonError`（校验、冲突、校验和、远程、配置）；130 为首次中断（伴随“进度已保存、可重跑同一命令”的提示——仅对可续跑的 NCBI 适配器与分析路径成立）；第二次信号为 `128+signum`（`cli.py`、`shutdown.py`）。映射按异常类别进行，因此处理函数中未捕获的 `sqlite3.Error`、`RuntimeError`、`OSError` 或 `ValueError` 也会以 1 返回并把消息前缀为 `error:`，即使该失败属于编程错误而非运行时状况；该链条之外的异常类型（`KeyError`、`yaml.YAMLError`）会以 traceback 逃逸并以退出码 1 结束。退出码 130 背后的可续跑中断语义见 [analyze](cli-analysis.md#analyze)。
+- **退出码：** 0 成功；1 为运行时/SQLite/OSError（包括 release/export 的 `FileExistsError`）以及 `qc`/`verify`/`analyze`/`push`/`pull`/`evict`/`backup verify`/`report coverage` 中任何逐条目失败；2 为所有 `OperonError`（校验、冲突、校验和、远程、配置）；130 为首次中断（伴随“进度已保存、可重跑同一命令”的提示——仅对可续跑的 NCBI 适配器与分析路径成立）；第二次信号为 `128+signum`（`cli.py`、`shutdown.py`）。映射按异常类别进行，因此处理函数中未捕获的 `sqlite3.Error`、`RuntimeError`、`OSError` 或 `ValueError` 也会以 1 返回并把消息前缀为 `error:`，即使该失败属于编程错误而非运行时状况；该链条之外的异常类型（`KeyError`、`yaml.YAMLError`）会以 traceback 逃逸并以退出码 1 结束。退出码 130 背后的可续跑中断语义见 [analyze](cli-analysis.md#analyze)。`doctor` 在此映射之上有自己的显式契约：0 无需关注，1 至少一项需要关注，2 检查本身无法完成——检查失败绝不会被报告为健康（见 [doctor](cli-project-metadata.md#doctor)）。
 
 ## 推迟到 1.0 版本
 
