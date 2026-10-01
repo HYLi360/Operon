@@ -30,9 +30,24 @@ A Python-based, **file-based database** designed for large-scale genomic data, u
 
 ## Install
 
+### For production
+
+We recommend install `operon` by `pipx` or `uvx`.
+
 ```bash
-# Install the published package
-python3 -m venv .venv
+pipx install operon
+# or
+uvx install operon
+```
+
+To upgrade, use `pipx upgrade operon`/`uvx upgrade operon`.
+
+### Install from source code
+
+```bash
+git clone https://github.com/HYLi360/Operon.git
+cd Operon
+python3 -m venv .venv      # Py 3.10-3.15 are acceptable
 source .venv/bin/activate
 python -m pip install OperonDBS
 ```
