@@ -78,6 +78,20 @@ operon status [--entity-type TYPE] [--entity-id ID] [--include-retired]
 
 Prints entity states and messages from `entity_state`. Effectively retired entities are hidden by default; use `--include-retired` for historical audits.
 
+## doctor
+
+```bash
+operon doctor [--format {text,json}] [--limit N]
+```
+
+One read-only pass over the conditions a curator should look at first: failed or interrupted workflow runs, current decisions whose effective value is `REVIEW` or `FAIL` (a curated override wins), and files whose status is not `CHECKSUM_VERIFIED` or `STANDARDIZED`. The command opens the database read-only, writes nothing, and runs no migration.
+
+- `--format text` (default) prints a plain-text report; `--format json` prints the machine-readable document described below.
+- `--limit N` caps each source list — runs, decisions, files — at its first N rows in the same deterministic order; the summary counts every recorded condition, so a paged report never hides a total. `--limit 0` (default) lists every item.
+- Exit codes: `0` nothing needs attention; `1` at least one item needs attention; `2` the check itself could not complete (the project or its database could not be read) — a failed check never reports as healthy.
+
+The JSON document carries a stable `schema_version` (`1`), a `summary` counting every item per kind (`failed_run`, `decision_review`, `decision_fail`, `file_unhealthy`), and `items`: each item has a stable `id`, its `kind`, a `severity`, the `object` it is about (`<type>:<id>`), a `suggested_command` that addresses it, and the record's `details`. The TUI Home dashboard renders the same aggregation (`data.attention_report`), so the two surfaces cannot drift apart.
+
 ## schema
 
 ```bash

@@ -151,6 +151,27 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--entity-id")
     p.add_argument("--include-retired", action="store_true")
 
+    p = sub.add_parser(
+        "doctor",
+        help="report project-health attention items (read-only; exit code 0 = "
+        "nothing needs attention, 1 = some items need attention, 2 = the check "
+        "could not complete)",
+    )
+    p.add_argument(
+        "--format",
+        dest="fmt",
+        choices=["text", "json"],
+        default="text",
+        help="output format (default: the human-readable report)",
+    )
+    p.add_argument(
+        "--limit",
+        type=_nonnegative_int,
+        default=0,
+        help="cap each source list (runs, decisions, files) at N items "
+        "(default: 0 = every item; the summary always counts everything)",
+    )
+
     p = sub.add_parser("schema", help="show schema path or dump it")
     p.add_argument("--dump", action="store_true")
 
@@ -1541,6 +1562,41 @@ def _cmd_status(args: argparse.Namespace, db: Database) -> int:
             )
         )
     return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Report the project-health attention items (``operon doctor``).
+
+    Read-only by construction: the shared aggregation in :mod:`operon.health`
+    opens its own short-lived read-only connection, so no writable database is
+    ever opened and no migration can run.  Exit status is part of the
+    contract: ``0`` = nothing needs attention, ``1`` = at least one item needs
+    attention, ``2`` = the check itself could not complete (the project or its
+    database could not be read) — a failed check never reports as healthy.
+    """
+    from operon import health as health_module
+
+    try:
+        project = load_project(args.project)
+        report = health_module.collect_attention_items(project, limit=args.limit)
+    except OperonError:
+        raise
+    # A failed check must never look like a clean bill of health: anything
+    # unexpected becomes an error (exit code 2), never an empty report.
+    except Exception as exc:
+        raise OperonError(f"doctor could not inspect the project: {exc}") from exc
+    if args.fmt == "json":
+        print(
+            json.dumps(
+                health_module.attention_payload(report),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    else:
+        print(health_module.render_attention_text(report))
+    return 0 if report.total == 0 else 1
 
 
 def _cmd_schema(args: argparse.Namespace, project: Project) -> int:
@@ -3668,6 +3724,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_tui(args)
         if args.command == "config":
             return _cmd_config(args)
+        if args.command == "doctor":
+            return _cmd_doctor(args)
         project, db = _open_project(args)
         try:
             handlers = {

@@ -14,6 +14,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from operon import health
 from operon.config import Project
 from operon.database import Database
 from operon.errors import ValidationError
@@ -28,9 +29,6 @@ ENTITY_TABLES: dict[str, tuple[str, str]] = {
 
 ENTITY_TYPES = list(ENTITY_TABLES)
 
-HEALTHY_FILE_STATUSES = frozenset({"CHECKSUM_VERIFIED", "STANDARDIZED"})
-ATTENTION_RUN_STATUSES = frozenset({"failed", "interrupted"})
-ATTENTION_DECISIONS = frozenset({"REVIEW", "FAIL"})
 
 _ENTITY_NAMES = {
     "organism": "scientific_name",
@@ -57,10 +55,6 @@ def _rows(db: Database, sql: str, params: Iterable[Any] = ()) -> list[dict[str, 
 def _row(db: Database, sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
     rows = _rows(db, sql, params)
     return rows[0] if rows else None
-
-
-def _effective_decision(row: dict[str, Any]) -> str:
-    return str(row.get("curated_decision") or row.get("decision") or "")
 
 
 def project_summary(project: Project) -> dict[str, Any]:
@@ -92,44 +86,16 @@ def project_summary(project: Project) -> dict[str, Any]:
     }
 
 
-def attention_items(project: Project, *, limit: int = 10) -> dict[str, Any]:
-    """Return the items a curator should look at first."""
-    with _open(project) as db:
-        run_rows = _rows(
-            db,
-            "SELECT run_id, step, status, entity_type, entity_id, started_at, error "
-            "FROM workflow_runs WHERE status IN ('failed', 'interrupted') "
-            "ORDER BY julianday(started_at) DESC LIMIT ?",
-            (limit,),
-        )
-        run_count = int(
-            _row(
-                db,
-                "SELECT COUNT(*) AS n FROM workflow_runs WHERE status IN ('failed', 'interrupted')",
-            )["n"]
-        )
-        decision_rows = [
-            row
-            for row in _rows(
-                db,
-                "SELECT entity_type, entity_id, profile, decision, curated_decision, "
-                "reason_codes, evaluated_at FROM current_decisions",
-            )
-            if _effective_decision(row) in ATTENTION_DECISIONS
-        ]
-        file_rows = _rows(
-            db,
-            "SELECT file_id, entity_type, entity_id, file_role, relative_path, status "
-            f"FROM files WHERE status NOT IN ({', '.join('?' for _ in HEALTHY_FILE_STATUSES)}) "
-            "ORDER BY file_id LIMIT ?",  # nosec B608 # fixed mappings and SQL fragments; filter values are bound
-            (*sorted(HEALTHY_FILE_STATUSES), limit),
-        )
-    return {
-        "failed_run_count": run_count,
-        "runs": run_rows,
-        "decisions": decision_rows,
-        "files": file_rows,
-    }
+def attention_report(project: Project, *, limit: int = 0) -> health.AttentionReport:
+    """Return the shared project-health aggregation (``operon doctor``'s own read).
+
+    The TUI never re-derives attention: this is the CLI-first core
+    (:mod:`operon.health`), read with the caller's page size, so the Home
+    dashboard and ``operon doctor`` cannot drift apart.  ``limit=0`` reads every
+    recorded condition (the CLI's mode); the Home dashboard reads a per-list
+    page and renders the untruncated totals.
+    """
+    return health.collect_attention_items(project, limit=limit)
 
 
 def _retired_keys(db: Database) -> set[tuple[str, str]]:

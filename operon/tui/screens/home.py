@@ -9,6 +9,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
+from operon import health
 from operon.config import Project
 from operon.tui import data
 from operon.tui.screens.common import (
@@ -19,6 +20,9 @@ from operon.tui.screens.common import (
     styled_status,
 )
 
+ATTENTION_PAGE = 10
+"""Items shown per source list in the dashboard's attention page (the rest is counted)."""
+
 
 class HomePanel(Panel):
     """Project overview: counts, decisions, latest release, attention items."""
@@ -27,7 +31,7 @@ class HomePanel(Panel):
         super().__init__(id="home")
         self.project = project
         self.summary: dict[str, Any] | None = None
-        self.attention: dict[str, Any] | None = None
+        self.attention: health.AttentionReport | None = None
         self.recent_runs: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
@@ -69,7 +73,7 @@ class HomePanel(Panel):
     def _fetch(self) -> dict[str, Any]:
         return {
             "summary": data.project_summary(self.project),
-            "attention": data.attention_items(self.project),
+            "attention": data.attention_report(self.project, limit=ATTENTION_PAGE),
             "recent_runs": data.list_workflow_runs(self.project, limit=10),
         }
 
@@ -135,32 +139,57 @@ class HomePanel(Panel):
         text.append("\n")
 
         text.append("Attention needed\n", style="bold underline")
-        attention = self.attention or {}
-        items = 0
-        for record in attention.get("runs") or []:
-            items += 1
+        attention = self.attention or health.AttentionReport(items=(), totals={})
+        run_items = [
+            item for item in attention.items if item.kind == health.KIND_FAILED_RUN
+        ]
+        decision_items = [
+            item
+            for item in attention.items
+            if item.kind in (health.KIND_DECISION_REVIEW, health.KIND_DECISION_FAIL)
+        ]
+        file_items = [
+            item for item in attention.items if item.kind == health.KIND_FILE_UNHEALTHY
+        ]
+        for item in run_items:
             text.append("  ")
-            text.append(styled_status(record.get("status")))
-            text.append(f"  run {record['run_id']}  {record.get('step', '-')}\n")
-        if (attention.get("failed_run_count") or 0) > len(attention.get("runs") or []):
+            text.append(styled_status(item.details.get("status")))
+            text.append(f"  run {item.object_id}  {item.details.get('step', '-')}\n")
+        failed_total = attention.totals.get(health.KIND_FAILED_RUN, 0)
+        if failed_total > len(run_items):
             text.append(
-                f"  … and {attention['failed_run_count'] - len(attention.get('runs', []))} "
+                f"  … and {failed_total - len(run_items)} "
                 "more failed/interrupted runs\n",
                 style="dim",
             )
-        for row in attention.get("decisions") or []:
-            items += 1
-            effective = row.get("curated_decision") or row.get("decision")
+        for item in decision_items:
             text.append("  ")
-            text.append(styled_decision(effective))
+            text.append(styled_decision(item.details.get("decision")))
             text.append(
-                f"  {row['entity_type']} {row['entity_id']}  ({row.get('profile', '-')})\n"
+                f"  {item.object_type} {item.object_id}  "
+                f"({item.details.get('profile', '-')})\n"
             )
-        for row in attention.get("files") or []:
-            items += 1
+        decision_total = attention.totals.get(
+            health.KIND_DECISION_REVIEW, 0
+        ) + attention.totals.get(health.KIND_DECISION_FAIL, 0)
+        if decision_total > len(decision_items):
+            text.append(
+                f"  … and {decision_total - len(decision_items)} more decisions "
+                "need review\n",
+                style="dim",
+            )
+        for item in file_items:
             text.append("  ", style=None)
-            text.append(Text(str(row["status"]), style="red"))
-            text.append(f"  file {row['file_id']}  {row.get('relative_path', '-')}\n")
-        if not items:
+            text.append(Text(str(item.details["status"]), style="red"))
+            text.append(
+                f"  file {item.object_id}  {item.details.get('relative_path', '-')}\n"
+            )
+        file_total = attention.totals.get(health.KIND_FILE_UNHEALTHY, 0)
+        if file_total > len(file_items):
+            text.append(
+                f"  … and {file_total - len(file_items)} more unhealthy files\n",
+                style="dim",
+            )
+        if not attention.total:
             text.append("  nothing needs attention\n", style="dim green")
         return text

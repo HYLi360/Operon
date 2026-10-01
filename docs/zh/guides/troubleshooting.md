@@ -1,5 +1,7 @@
 # 故障排查
 
+先运行 `operon doctor`：一次只读巡检覆盖所有需要关注的记录——failed/interrupted 运行、REVIEW/FAIL 判定与状态不健康的文件。有需处理项时退出码为 `1`，检查本身无法完成时为 `2`；下文各节展开它报告的具体状态。
+
 ## Checksum 与格式问题
 
 ```bash

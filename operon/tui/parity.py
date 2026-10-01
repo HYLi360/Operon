@@ -462,6 +462,19 @@ REGISTRY: tuple[ParityEntry, ...] = (
         },
     ),
     ParityEntry(
+        ("doctor",),
+        STATUS_IMPLEMENTED,
+        note="read-only: the Home dashboard's Attention needed section renders "
+        "the same shared aggregation (`data.attention_report` → the core "
+        "`operon.health.collect_attention_items`, the CLI-first home of the "
+        "checks); the JSON envelope stays machine-only",
+        actions="data.attention_report",
+        params={
+            "limit": "context: the Home dashboard's attention page (`home.ATTENTION_PAGE`, 10 items per list)"
+        },
+        waived={"fmt": _MACHINE_OUTPUT_CLI_ONLY},
+    ),
+    ParityEntry(
         ("show",),
         STATUS_IMPLEMENTED,
         note="entity detail view: `data.entity_detail` reads the entity row, "

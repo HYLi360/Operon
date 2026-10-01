@@ -59,6 +59,7 @@ Operon 是一个 Python 编写、以文件为载体的数据库系统，面向�
 ├── fanout.py                 # 把已登记序列文件按数据派生拆分为 per-unit FASTA，
 │                             # 落在 `analysis/derived/` 下，由配方 `file_role_prefix` 选择
 ├── files.py                  # 不可变清单归档与校验
+├── health.py                 # 项目健康巡检：doctor 与 TUI Home 共用的 attention 聚合
 ├── import_wizard.py
 ├── __init__.py
 ├── lifecycle.py              # 可审计、可回退的实体退役
