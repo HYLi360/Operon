@@ -28,9 +28,24 @@
 
 ## 安装
 
+### 用于生产环境
+
+我们推荐使用 `pipx` 或 `uvx` 安装 `operon`。
+
 ```bash
-# 安装 PyPI 发布包
-python3 -m venv .venv
+pipx install operon
+# 或
+uvx install operon
+```
+
+更新请使用 `pipx upgrade operon`/`uvx upgrade operon`。
+
+### 从源码安装
+
+```bash
+git clone https://github.com/HYLi360/Operon.git
+cd Operon
+python3 -m venv .venv      # Py 3.10-3.15 均可
 source .venv/bin/activate
 python -m pip install OperonDBS
 ```

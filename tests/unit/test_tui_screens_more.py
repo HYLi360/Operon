@@ -39,6 +39,7 @@ from textual.widgets import (
 )
 from textual.widgets.data_table import RowKey
 
+from operon import health
 from operon.config import Project
 from operon.database import DDL, Database
 from operon.demo import init_demo
@@ -1971,20 +1972,25 @@ def test_home_panel_attention_files_render(demo_template: Project) -> None:
     home = HomePanel(demo_template)
     home.summary = None
     home.recent_runs = []
-    home.attention = {
-        "failed_run_count": 0,
-        "runs": [],
-        "decisions": [],
-        "files": [
-            {
-                "file_id": "FIL_7",
-                "status": "MISSING",
-                "relative_path": "raw/reads/missing.fastq",
-            }
-        ],
-    }
+    home.attention = health.AttentionReport(
+        items=(
+            health.AttentionItem(
+                id="file_unhealthy:file:FIL_7",
+                kind=health.KIND_FILE_UNHEALTHY,
+                severity="warning",
+                object="file:FIL_7",
+                suggested_command="operon verify --file-id FIL_7",
+                details={
+                    "status": "MISSING",
+                    "relative_path": "raw/reads/missing.fastq",
+                },
+            ),
+        ),
+        totals={health.KIND_FILE_UNHEALTHY: 12},
+    )
     text = home._build_text().plain
     assert "file FIL_7  raw/reads/missing.fastq" in text
+    assert "and 11 more unhealthy files" in text
     assert "nothing needs attention" not in text
 
 
