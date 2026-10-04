@@ -1809,7 +1809,7 @@ defects:
   disposition: |
     Decode plugin JSON and JSONL with a shared strict reader that rejects nonfinite numeric values
     before schema validation or canonical hashing. Preserve normal import-qc decoding and output.
-  fix_commit: null
+  fix_commit: '8478b0019894275f33ce7590b761dcffe740f048'
   fixed_in: null
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_reject_nonstandard_json_constants_in_extra
