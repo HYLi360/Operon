@@ -41,3 +41,5 @@ inode 共享，可对 `standardized/` 或 release 显式使用硬链接。
 镜像，对象存储（S3 等）同样属于扩展方向。数据依赖的扇出并不需要数组作业：
 `operon fanout` 把每个单元准入为独立的 manifest 文件，`analyze` 配合
 `file_role_prefix` recipe 即可通过任意后端逐单元各提交一个作业。
+
+第二阶段[插件文件契约](../reference/plugin-contract.md)定义载荷、事件、预设片段与可视化 bundle；实现保留内置集成。

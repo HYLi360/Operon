@@ -33,6 +33,7 @@ cli-workflow
 cli-tui
 cli-taxonomy-lifecycle-admin
 cli-config
+plugin-contract
 recipe-overview
 recipe-fields
 recipe-parsers-examples
@@ -46,3 +47,5 @@ resolved-issues
 ```text
 operon [--project PATH] [-v | --version] <子命令> [参数]
 ```
+
+- [插件文件契约](plugin-contract.md)

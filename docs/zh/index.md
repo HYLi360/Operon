@@ -37,3 +37,5 @@ contributor/index
 ## 核心概念
 
 设计不变量统一在[架构总览](architecture/overview.md)中说明。
+
+插件开发者请阅读[文件契约](reference/plugin-contract.md)。

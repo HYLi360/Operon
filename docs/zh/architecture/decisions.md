@@ -51,3 +51,7 @@
 - **第三方只读访问 SQLite**——是否承诺一份文档化的只读表/列面（bundle 之外），以及若承诺，schema 抬升时配套多长的迁移窗口。
 - **bundle 演进政策**——`bundle_schema_version` 的兼容承诺细则（现行假设：只增字段；破坏性变更抬主版本并附迁移说明）。
 - **事件 schema 的归属**——事件 schema 内嵌在插件契约中，还是单独成文。
+
+## 第二阶段文件契约
+
+[插件契约](../reference/plugin-contract.md)明确版本拒绝、bundle 演进、hits 导入和预设冲突。执法者随第二阶段命令与契约测试落地；EXT-4、EXT-6 在命令落地前保持 planned。事件 Schema 作为独立包资源发布，直读 SQLite 兼容仍开放。

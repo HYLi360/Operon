@@ -70,3 +70,7 @@ either outcome.
   a major bump plus a migration note for anything breaking).
 - **Event stream ownership** — whether the event schema is embedded in the
   plugin contract or ships as its own document.
+
+## Phase-two file contract
+
+The [plugin contract](../reference/plugin-contract.md) specifies version rejection, bundle evolution, hits import and preset conflicts. Enforcement lands with the phase-two commands and contract tests; EXT-4 and EXT-6 remain planned until those commands land. Event schemas ship as independent package resources; direct SQLite compatibility remains open.
