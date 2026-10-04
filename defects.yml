@@ -1753,3 +1753,24 @@ defects:
   fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_pipeline.py::test_the_completion_notification_arrives_after_the_modal_closes
+- id: ODR-58
+  title: 'View bundle reuse ignored unexpected directories and directory symlinks'
+  reported: '2026-10-04'
+  introduced_in: '49400cf01bdaaae1d2078eb01976ac9939b194f7'
+  affected: |
+    The API-extension branch; an existing view bundle with an additional empty directory or directory
+    symlink
+  severity: 'low'
+  component: 'reports'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_view_bundle.py -k extra_directories -n 0 --no-cov. Both scenarios
+    accepted a destination with an unexpected directory instead of raising ConflictError. The original
+    comparison enumerated regular files only.
+  disposition: |
+    Compare every bundle member, including directories, and refuse any symbolic link before reusing
+    existing output. The regression fails on the original producer for both cases.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_view_bundle.py::test_bundle_reuse_rejects_extra_directories_and_symlinks

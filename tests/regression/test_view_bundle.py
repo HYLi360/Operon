@@ -129,3 +129,21 @@ def test_qc_report_formats_and_filters(project, tmp_path, fmt, wide):
             entity_id="ASM_000001",
             include_retired=True,
         )
+
+
+@pytest.mark.bug("ODR-58")
+@pytest.mark.parametrize("kind", ["directory", "symlink"])
+def test_bundle_reuse_rejects_extra_directories_and_symlinks(project, tmp_path, kind):
+    out = tmp_path / "view"
+    with closing(Database(project.db_path, read_only=True)) as db:
+        export_view_bundle(db, out)
+        extra = out / "unexpected"
+        if kind == "directory":
+            extra.mkdir()
+        else:
+            external = tmp_path / "external"
+            external.mkdir()
+            extra.symlink_to(external, target_is_directory=True)
+        with pytest.raises(ConflictError):
+            export_view_bundle(db, out)
+        assert extra.exists()

@@ -75,15 +75,20 @@ def _entities(db: Database) -> list[dict[str, Any]]:
 
 
 def _same_bundle(left: Path, right: Path) -> bool:
-    left_members = sorted(p.relative_to(left) for p in left.rglob("*") if p.is_file())
-    right_members = sorted(
-        p.relative_to(right) for p in right.rglob("*") if p.is_file()
-    )
-    return left_members == right_members and all(
-        not (left / p).is_symlink()
-        and (left / p).read_bytes() == (right / p).read_bytes()
-        for p in left_members
-    )
+    left_members = sorted(p.relative_to(left) for p in left.rglob("*"))
+    right_members = sorted(p.relative_to(right) for p in right.rglob("*"))
+    if left_members != right_members:
+        return False
+    for member in left_members:
+        source, expected = left / member, right / member
+        if source.is_symlink():
+            return False
+        if expected.is_dir():
+            if not source.is_dir():
+                return False
+        elif not source.is_file() or source.read_bytes() != expected.read_bytes():
+            return False
+    return True
 
 
 def export_view_bundle(db: Database, output: str | Path) -> Path:
