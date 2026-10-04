@@ -15,7 +15,7 @@ from typing import Any
 
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ExternalToolError
+from operon.errors import ExternalToolError, ValidationError
 from operon.shutdown import ShutdownRequested, cleanup_completed, graceful_shutdown
 from operon.utils import now_iso
 
@@ -49,6 +49,7 @@ def run_analysis(
     runtime_parameters: dict[str, str] | None = None,
     progress_callback: Callable[[int, int, str, str], None] | None = None,
     cancel_event: threading.Event | None = None,
+    events: str | None = None,
 ) -> list[dict[str, Any]]:
     """Execute one configured analysis over all matching manifest files.
 
@@ -86,6 +87,8 @@ def run_analysis(
 
     from operon.execution import get_executor
 
+    if events and len(files) > 1 and "${file_id}" not in events:
+        raise ValidationError("multiple analysis inputs require ${file_id} in --events")
     recipe_slurm = recipe.raw.get("slurm")
     executor = get_executor(
         project,
@@ -121,6 +124,7 @@ def run_analysis(
                     array_concurrency=slurm_config.array_concurrency,
                     progress_callback=progress_callback,
                     cancel_event=cancel_event,
+                    events=events,
                 )
             for index, file_record in enumerate(files, start=1):
                 _raise_if_cancelled(cancel_event)
@@ -141,6 +145,7 @@ def run_analysis(
                         executor=executor,
                         keep_partial=keep_partial,
                         runtime_parameters=resolved_parameters,
+                        events=events,
                     )
                 except ShutdownRequested:
                     # Bookkeeping already finalized in run_analysis_for_file;
@@ -179,6 +184,7 @@ def _run_analysis_two_phase(
     array_concurrency: int | None,
     progress_callback: Callable[[int, int, str, str], None] | None,
     cancel_event: threading.Event | None = None,
+    events: str | None = None,
 ) -> list[dict[str, Any]]:
     """Array-enabled analyze: plan per file, submit once, collect per task.
 
@@ -210,6 +216,7 @@ def _run_analysis_two_phase(
                 threads=threads,
                 executor=executor,
                 runtime_parameters=runtime_parameters,
+                events=events,
             )
         except ShutdownRequested:
             raise
@@ -380,7 +387,13 @@ def _execute_analysis_array(
             for index, plan in indexed_plans:
                 try:
                     executor._stage_inputs(client, sftp, plan.stage_inputs)
-                    plan.backups = executor._reset_outputs(sftp, [plan.output_path])
+                    plan.backups = executor._reset_outputs(
+                        sftp,
+                        [
+                            plan.output_path,
+                            *([plan.events_path] if plan.events_path else []),
+                        ],
+                    )
                 except Exception as exc:
                     _fail_analysis_execution(
                         project, db, plan, exc, keep_partial=keep_partial
@@ -447,7 +460,14 @@ def _execute_analysis_array(
             try:
                 if sftp is not None and plan.backups:
                     if result.exit_code == 0 and not result.error:
-                        executor._pull_outputs(client, sftp, [plan.output_path])
+                        executor._pull_outputs(
+                            client,
+                            sftp,
+                            [
+                                plan.output_path,
+                                *([plan.events_path] if plan.events_path else []),
+                            ],
+                        )
                         executor._drop_output_backups(sftp, plan.backups)
                     else:
                         executor._restore_output_backups(sftp, plan.backups)
@@ -462,7 +482,10 @@ def _execute_analysis_array(
                     entity_type=plan.file_record["entity_type"],
                     entity_id=plan.file_record["entity_id"],
                     parameter_set=f"{recipe.name}:{plan.version}",
-                    expected_outputs=[plan.output_path],
+                    expected_outputs=[
+                        plan.output_path,
+                        *([plan.events_path] if plan.events_path else []),
+                    ],
                     cwd=project.root,
                     tool=tool.name,
                     tool_version=plan.version,
@@ -583,7 +606,14 @@ def _finalize_interrupted_array(
             )
             if sftp is not None and plan.backups:
                 if exit_code == 0:
-                    executor._pull_outputs(client, sftp, [plan.output_path])
+                    executor._pull_outputs(
+                        client,
+                        sftp,
+                        [
+                            plan.output_path,
+                            *([plan.events_path] if plan.events_path else []),
+                        ],
+                    )
                     executor._drop_output_backups(sftp, plan.backups)
                 else:
                     executor._restore_output_backups(sftp, plan.backups)
@@ -598,7 +628,10 @@ def _finalize_interrupted_array(
                 entity_type=plan.file_record["entity_type"],
                 entity_id=plan.file_record["entity_id"],
                 parameter_set=f"{recipe.name}:{plan.version}",
-                expected_outputs=[plan.output_path],
+                expected_outputs=[
+                    plan.output_path,
+                    *([plan.events_path] if plan.events_path else []),
+                ],
                 cwd=project.root,
                 tool=tool.name,
                 tool_version=plan.version,

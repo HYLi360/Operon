@@ -527,6 +527,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         STATUS_IMPLEMENTED,
         actions="actions.run_analysis",
         modal="operon.tui.screens.analyze::AnalyzeModal",
+        waived={"events": "CLI plugin event sidecar API; no event-path TUI form"},
         params={
             "analysis": "analyze-recipe",
             "param": "analyze-param-<name> (one widget per recipe parameter)",
@@ -587,6 +588,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("tools", "add-preset"),
         STATUS_CLI_ONLY,
         note="Declarative plugin file API; --dry-run validates merge conflicts before publication.",
+    ),
+    ParityEntry(
+        ("import-events",),
+        STATUS_CLI_ONLY,
+        note="Plugin JSONL file API; dry-run validates facts and draft conflicts before import.",
     ),
     ParityEntry(
         ("qc-measure",),
@@ -755,6 +761,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         STATUS_IMPLEMENTED,
         actions="actions.run_external",
         modal="operon.tui.screens.run_external::RunExternalModal",
+        waived={"events": "CLI plugin event sidecar API; no event-path TUI form"},
         params={
             "step": "external-step",
             "command_line": "external-command",

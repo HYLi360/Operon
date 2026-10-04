@@ -8,11 +8,13 @@ never enters the cache fingerprint."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+from string import Template
 from typing import Any
 
 from operon.config import Project
@@ -70,6 +72,7 @@ class _AnalysisExecution:
     stdout_path: Path
     stderr_path: Path
     started: str
+    events_path: Path | None = None
     backups: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -93,6 +96,8 @@ class _PlanContext:
     executor: Any
     runtime_parameters: dict[str, str] | None
 
+    events: str | None = None
+    events_path: Path | None = None
     remote_only: bool = False
     input_path: Path | None = None
     actual_sha: str = ""
@@ -268,6 +273,27 @@ def _plan_output_paths(ctx: _PlanContext) -> None:
             f"and ensure parent directories also avoid that substring (rendered path: {output_path})"
         )
     ctx.output_rel = output_path.relative_to(project.root).as_posix()
+    if ctx.events:
+        try:
+            rendered = Template(ctx.events).substitute(
+                file_id=ctx.file_record["file_id"], output=str(output_path)
+            )
+        except (KeyError, ValueError) as exc:
+            raise ValidationError(
+                "events template supports only ${file_id} and ${output}"
+            ) from exc
+        path = Path(rendered)
+        if not path.is_absolute():
+            path = project.root / path
+        path = path.resolve()
+        if (
+            not path.is_relative_to(project.analysis_root.resolve())
+            or path == output_path.resolve()
+        ):
+            raise ValidationError(
+                "analysis events must be a separate path under analysis/"
+            )
+        ctx.events_path = path
 
 
 def _render_plan_commands(ctx: _PlanContext) -> None:
@@ -367,6 +393,11 @@ def _probe_plan_versions(ctx: _PlanContext) -> None:
             else None
         ),
     )
+
+    if ctx.events_path:
+        ctx.parameter_sha = hashlib.sha256(
+            f"{ctx.parameter_sha}:events:{ctx.events_path}".encode()
+        ).hexdigest()
 
 
 def _lookup_cached_job(ctx: _PlanContext) -> None:
@@ -646,6 +677,9 @@ def _insert_running_job(ctx: _PlanContext) -> None:
     # Force/uncached runs must produce a fresh output; an old file from a
     # superseded job must not satisfy expected-output validation.
     _remove_output_artifact(ctx.project, ctx.output_path)
+    if ctx.events_path:
+        ctx.events_path.parent.mkdir(parents=True, exist_ok=True)
+        _remove_output_artifact(ctx.project, ctx.events_path)
     started = now_iso()
     job = {
         "analysis_name": recipe.name,
@@ -714,6 +748,7 @@ def _build_analysis_execution(ctx: _PlanContext) -> _AnalysisExecution:
         stdout_path=logs / f"{run_id}.stdout.log",
         stderr_path=logs / f"{run_id}.stderr.log",
         started=ctx.started,
+        events_path=ctx.events_path,
     )
 
 
@@ -729,6 +764,7 @@ def plan_analysis_for_file(
     threads: int = 4,
     executor: Any = None,
     runtime_parameters: dict[str, str] | None = None,
+    events: str | None = None,
 ) -> dict[str, Any] | _AnalysisExecution:
     """Apply every per-file decision short of execution.
 
@@ -745,10 +781,11 @@ def plan_analysis_for_file(
         config=config,
         file_record=file_record,
         dry_run=dry_run,
-        force=force,
+        force=force or bool(events),
         threads=threads,
         executor=executor,
         runtime_parameters=runtime_parameters,
+        events=events,
     )
     _verify_plan_input(ctx)
     _prepare_plan_database(ctx)

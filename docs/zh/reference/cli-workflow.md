@@ -94,3 +94,12 @@ run ID 不存在时属于校验错误，退出码为 2。
 生命周期事件及其他领域历史仍通过各自专用命令或只读 SQL 查看；目前没有统一的跨表事件
 时间线。全文检索与运行历史的交互式分析也明确延后，待后端事件模型和运维接口成熟后
 再作为整体 UX 项目建设；当前只提供稳定、可脚本化的 CLI 输出。
+
+## 插件事件导入
+
+`operon import-events --run RUN_ID --file events.jsonl [--out adopt.json] [--dry-run]`
+写入指标事实并生成 adopt 草稿。未知类型跳过计数；未知版本或后续无效行全批拒绝，
+不写任何内容。同 run/event ID 重导入 no-op，改内容冲突。metric 的 parameter_set
+添加稳定 `:events:<run/event hash>` 后缀，保留独立归属。
+`run-external --events PATH` 声明并登记 JSONL sidecar，SSH 随其他产物拉回；
+不替插件追加命令参数，不自动导入。见[文件契约](plugin-contract.md)。

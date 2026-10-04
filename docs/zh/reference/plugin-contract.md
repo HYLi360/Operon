@@ -27,7 +27,7 @@ measurement、hits、events 与 bundle 的初始版本均为整数 `1`，独立�
 
 adopt 清单是 JSON list，每项必有 `path`、`entity_type`、`entity_id`、`role`、
 `derived_from`（非空 file ID list）；可选 `format`、`compression`、
-`workflow_run_id`。通过 `operon adopt --manifest PATH` 显式采纳；同字节幂等，
+`workflow_run_id`。通过 `operon adopt --from-manifest PATH` 显式采纳；同字节幂等，
 同实体/role 的不同字节冲突。事件只产生清单草稿，不自动采纳。
 
 ## 测量载荷
@@ -138,3 +138,6 @@ item，导入器补产出 `workflow_run_id`，拒绝冲突的 run。未知类型
 确定，TSV 正确转义；`qc_wide.tsv` 与 `report qc --wide --format tsv` 字节一致。
 消费者验证哈希再读取，不反写数据库；可视化依赖只属于插件发行版。
 可运行示例随实现提供。
+
+metric 事件的 parameter_set 添加稳定 `:events:<run/event hash>` 后缀，保留
+不同事件的独立归属。分析 sidecar 须为 `analysis/` 下独立路径。

@@ -452,6 +452,7 @@ def run_external_command(
     run_id: str | None = None,
     commands: Iterable[Iterable[str]] | None = None,
     command_details: Iterable[dict[str, Any]] | None = None,
+    events: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run an external QC/analysis tool deterministically.
 
@@ -524,6 +525,13 @@ def run_external_command(
         if not path.is_absolute():
             path = base / path
         resolved_outputs.append(path)
+    if events:
+        events_path = Path(events)
+        if not events_path.is_absolute():
+            events_path = base / events_path
+        extra_details = {**(extra_details or {}), "events_path": str(events_path)}
+        if events_path not in resolved_outputs:
+            resolved_outputs.append(events_path)
     input_entries: list[dict[str, Any]] = []
     resolved_inputs: list[Path] = []
     for raw_input in inputs:

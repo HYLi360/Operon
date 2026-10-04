@@ -229,3 +229,8 @@ without replacing existing definitions. Identical fragments are no-ops; conflict
 are rejected before publication. The save is atomic, round-trip validated and
 snapshotted per affected recipe; failure restores original bytes.
 See [plugin file contracts](plugin-contract.md) for the fragment format.
+
+`analyze --events PATH` declares a separate sidecar under `analysis/`. Multiple
+inputs require `${file_id}` in the template; `${output}` is also supported. Event
+requests force fresh execution and enter the cache fingerprint; no existing
+output can silently satisfy the new sidecar contract.

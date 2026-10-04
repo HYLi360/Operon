@@ -414,6 +414,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser(
+        "import-events", help="import plugin facts and generate adopt drafts"
+    )
+    p.add_argument("--run", required=True)
+    p.add_argument("--file", required=True)
+    p.add_argument("--out", help="adopt draft destination")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser(
         "qc-measure",
         help="measure built-in QC metrics for one file without a project "
         "(runs anywhere, e.g. on an HPC node; JSON payload for 'import-qc')",
@@ -522,6 +530,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--cwd")
     p.add_argument("--timeout", type=float)
+    p.add_argument("--events", help="declare the plugin event JSONL output path")
     p.add_argument(
         "--backend",
         choices=["local", "slurm", "ssh"],
@@ -572,6 +581,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it",
     )
+    p.add_argument("--events", help="declare the plugin event JSONL output path")
     p.add_argument(
         "--backend",
         choices=["local", "slurm", "ssh"],
@@ -1276,7 +1286,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
         (args.command == "tools" and args.dry_run)
-        or (args.command == "import-hits" and args.dry_run)
+        or (args.command in {"import-hits", "import-events"} and args.dry_run)
         or args.command == "query"
         or args.command == "environments"
         or args.command == "workflow"
@@ -1941,6 +1951,18 @@ def _cmd_alignment_qc(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_events(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.events import import_events, plan_events_import
+
+    result = (
+        plan_events_import(db, project, args.run, args.file, output=args.out)
+        if args.dry_run
+        else import_events(db, project, args.run, args.file, output=args.out)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _cmd_import_hits(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.hits_import import import_hits, plan_hits_import
 
@@ -2028,6 +2050,7 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
         inputs=args.inputs,
         extra_details=extra_details,
         run_id=run_id,
+        events=args.events,
     )
     print(
         json.dumps(
@@ -2108,6 +2131,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         keep_partial=args.keep_partial,
         runtime_parameters=_parse_runtime_parameters(args.param),
         progress_callback=None if args.dry_run else progress,
+        events=args.events,
     )
     headers = [
         "file_id",
@@ -3815,6 +3839,7 @@ def main(argv: list[str] | None = None) -> int:
                 "verify": lambda: _cmd_verify(args, project, db),
                 "standardize": lambda: _cmd_standardize(args, project, db),
                 "qc": lambda: _cmd_qc(args, project, db),
+                "import-events": lambda: _cmd_import_events(args, project, db),
                 "import-hits": lambda: _cmd_import_hits(args, project, db),
                 "import-qc": lambda: _cmd_import_qc(args, project, db),
                 "run-external": lambda: _cmd_run_external(args, project, db),

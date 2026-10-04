@@ -38,7 +38,7 @@ the command, backend, versions, inputs and status in `workflow_runs`.
 For adoption, emit a JSON list. Each item requires `path`, `entity_type`,
 `entity_id`, `role`, `derived_from` (a nonempty list of manifest file IDs).
 Optional fields are `format`, `compression`, `workflow_run_id`. Submit this list
-with `operon adopt --manifest PATH`; identical bytes reuse identity, differing
+with `operon adopt --from-manifest PATH`; identical bytes reuse identity, differing
 bytes for the same entity/role are a conflict. Event artifacts produce drafts
 only: adoption is a separate explicit operation.
 
@@ -176,3 +176,7 @@ TSV escaping. `qc_wide.tsv` equals `report qc --wide --format tsv` byte for byte
 Consumers verify member hashes before reading and never reverse-write a bundle
 into the database. Visualization dependencies belong to the add-on distribution.
 Runnable examples accompany the implementation.
+
+Metric event parameter sets receive a stable `:events:<run/event hash>` suffix
+so separate events remain independently attributable. Analysis sidecars must
+be separate paths under `analysis/`.

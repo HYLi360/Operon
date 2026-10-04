@@ -487,3 +487,5 @@ CI workflow exporting `OPERON_PARITY_STRICT=1`, so a gap that reappears as
 `import-hits` is CLI-only for plugin payloads; `--dry-run` is its validated preview.
 
 `tools add-preset` is CLI-only for declarative fragments with a read-only preview.
+
+`import-events` and the `analyze`/`run-external --events` file API are CLI-only.

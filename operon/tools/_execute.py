@@ -24,14 +24,15 @@ from ._results import parse_and_store_results
 
 
 def _env_policy_extra_details(plan: _AnalysisExecution) -> dict[str, Any] | None:
+    details = {"events_path": str(plan.events_path)} if plan.events_path else {}
     env_decision = plan.env_decision
     if (
         env_decision is not None
         and not env_decision["reuse"]
         and env_decision["details"]
     ):
-        return {"environment_policy_check": env_decision["details"]}
-    return None
+        details["environment_policy_check"] = env_decision["details"]
+    return details or None
 
 
 def _analysis_error_result(
@@ -78,7 +79,10 @@ def _execute_analysis_plan(
         entity_type=plan.file_record["entity_type"],
         entity_id=plan.file_record["entity_id"],
         parameter_set=f"{recipe.name}:{plan.version}",
-        expected_outputs=[plan.output_path],
+        expected_outputs=[
+            plan.output_path,
+            *([plan.events_path] if plan.events_path else []),
+        ],
         cwd=project.root,
         tool=tool.name,
         tool_version=plan.version,
@@ -177,6 +181,8 @@ def _interrupt_analysis_execution(
         )
     if not keep_partial:
         _remove_output_artifact(project, plan.output_path)
+        if plan.events_path:
+            _remove_output_artifact(project, plan.events_path)
         if plan.work_dir is not None:
             _remove_output_artifact(project, plan.work_dir)
 
@@ -211,6 +217,7 @@ def run_analysis_for_file(
     executor: Any = None,
     keep_partial: bool = False,
     runtime_parameters: dict[str, str] | None = None,
+    events: str | None = None,
 ) -> dict[str, Any]:
     if executor is None:
         from operon.execution import get_executor
@@ -236,6 +243,7 @@ def run_analysis_for_file(
                 executor=owned_executor,
                 keep_partial=keep_partial,
                 runtime_parameters=runtime_parameters,
+                events=events,
             )
         finally:
             close = getattr(owned_executor, "close", None)
@@ -253,6 +261,7 @@ def run_analysis_for_file(
         threads=threads,
         executor=executor,
         runtime_parameters=runtime_parameters,
+        events=events,
     )
     if not isinstance(plan, _AnalysisExecution):
         return plan

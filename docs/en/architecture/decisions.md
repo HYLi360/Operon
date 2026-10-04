@@ -38,7 +38,7 @@ the same invariants as project requirements.
 | EXT-1 | Analysis add-ons are **independent CLI distributions** invoked as subprocesses through recipes (`operon analyze`) or `operon run-external`. Operon is not their runtime dependency, and they do not import it. | binding | [Extension boundaries](extensibility.md), [External analysis](external-analysis.md) |
 | EXT-2 | Why not in-process hooks: execution is subprocess-based and backend-agnostic (local / Slurm / SSH) under one provenance contract. An in-process hook would run only on the controller host and fall out of provenance, cache fingerprinting and environment comparison. Entry-point hooks are deferred, not rejected. | binding | [Extension boundaries](extensibility.md) |
 | EXT-3 | The entry-point / `operon.api` design is **deferred**. It is reconsidered when at least two external plugins need in-process behaviour, or when a custom result parser or executor backend is required. | deferred | this page |
-| EXT-4 | Add-ons may emit an optional events JSONL stream, imported with `operon import-events`: `metric` events become QC results, `artifact` events become `adopt` manifest drafts. Unknown event types are skipped and counted; an unknown `schema_version` is an error and writes nothing. | planned | this page |
+| EXT-4 | Add-ons may emit an optional events JSONL stream, imported with `operon import-events`: `metric` events become QC results, `artifact` events become `adopt` manifest drafts. Unknown event types are skipped and counted; an unknown `schema_version` is an error and writes nothing. | binding | [Plugin contract](../reference/plugin-contract.md); `tests/regression/test_plugin_events.py` |
 | EXT-5 | Events carry **facts, not judgements**: a plugin may report what it measured or produced, never a state, a decision or a QC verdict — those come only from versioned profiles (INV-4). | binding (follows from INV-4) | this page |
 | EXT-6 | Visualization add-ons read a `report view` bundle (a read-only directory with a `bundle_schema_version` and per-member checksums). They never write to the project database. | binding | [Plugin contract](../reference/plugin-contract.md); `tests/regression/test_view_bundle.py` |
 | EXT-7 | Plugin distributions inherit the current developer and licence of Operon; distribution names and hosting remain open. | binding | this page |
@@ -65,12 +65,9 @@ either outcome.
 - **Read-only SQLite access for third-party consumers** — whether to commit to
   a documented read-only table/column surface (beyond the bundle) and, if so,
   what migration window accompanies a schema bump.
-- **Bundle evolution policy** — the exact compatibility promise for
-  `bundle_schema_version` (the working assumption is append-only fields, with
-  a major bump plus a migration note for anything breaking).
-- **Event stream ownership** — whether the event schema is embedded in the
-  plugin contract or ships as its own document.
 
 ## Phase-two file contract
 
-The [plugin contract](../reference/plugin-contract.md) specifies version rejection, bundle evolution, hits import and preset conflicts. Enforcement lands with the phase-two commands and contract tests; EXT-4 and EXT-6 remain planned until those commands land. Event schemas ship as independent package resources; direct SQLite compatibility remains open.
+The [plugin contract](../reference/plugin-contract.md) specifies version rejection, bundle evolution, hits import and preset conflicts. Enforcement: `import-hits`, `import-events`, `tools add-preset`, `report view` and their contract tests; EXT-4 and EXT-6 are implemented. Event schemas ship as independent package resources; direct SQLite compatibility remains open.
+
+Hits evidence is append-only per completed job: identities and row keys are validated, identical imports are no-ops, and changed evidence conflicts (`tests/regression/test_hits_import.py`). Preset fragments are additive, atomically restored on failure and snapshotted per affected recipe (`tests/regression/test_plugin_presets.py`).

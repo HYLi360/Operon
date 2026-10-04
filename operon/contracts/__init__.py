@@ -39,6 +39,15 @@ def _validate(value: Any, schema: dict[str, Any], path: str, name: str) -> None:
     def fail(message: str) -> None:
         raise ValidationError(f"{name} payload {path}: {message}")
 
+    for branch in schema.get("allOf", []):
+        _validate(value, branch, path, name)
+    if "if" in schema:
+        try:
+            _validate(value, schema["if"], path, name)
+        except ValidationError:
+            pass
+        else:
+            _validate(value, schema["then"], path, name)
     types = schema.get("type", [])
     if isinstance(types, str):
         types = [types]
