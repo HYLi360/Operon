@@ -15,5 +15,6 @@ prune docs/_build
 recursive-include operon *.py *.pyx *.tcss *.json
 recursive-include operon/tui/assets *.png *.z *.md
 recursive-include tests *.py
+recursive-include examples/plugins *.py *.md
 exclude operon/qc/_parsers.c
 exclude operon/qc/_alignment.c

@@ -362,3 +362,5 @@ micromamba create -p ./restored-env --file explicit.txt
 {{ db_schema }} 之前捕获的记录缺少可比较的子指纹，比对记为 `unavailable` 并回退
 到 `warn` 行为，而不会强制重算——旧运行缺少指纹绝不意味着环境相同。测试实际
 重算时使用 `analyze --force`；`run-external` 也会直接执行命令。
+
+可实跑[独立 toy 插件文件闭环](../reference/plugin-examples.md)。

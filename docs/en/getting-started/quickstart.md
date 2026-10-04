@@ -34,3 +34,5 @@ Expected demo outcomes:
 - Other entities pass.
 
 The release directory for this demo is `./demo-project/releases/2026.08.demo`; verify it as described in [Create a release](first-project.md#create-a-release).
+
+Try the [standalone toy plugin file loop](../reference/plugin-examples.md).

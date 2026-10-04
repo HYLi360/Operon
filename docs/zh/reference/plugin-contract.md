@@ -141,3 +141,8 @@ item，导入器补产出 `workflow_run_id`，拒绝冲突的 run。未知类型
 
 metric 事件的 parameter_set 添加稳定 `:events:<run/event hash>` 后缀，保留
 不同事件的独立归属。分析 sidecar 须为 `analysis/` 下独立路径。
+
+可实跑[独立 toy 插件文件闭环](plugin-examples.md)。
+
+结构性 ID、大小、rank 和坐标须在 SQLite 有符号 64-bit 整数范围内；数值证据
+存为有限的 SQLite REAL 值。

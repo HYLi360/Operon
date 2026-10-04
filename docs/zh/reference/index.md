@@ -34,6 +34,7 @@ cli-tui
 cli-taxonomy-lifecycle-admin
 cli-config
 plugin-contract
+plugin-examples
 recipe-overview
 recipe-fields
 recipe-parsers-examples
@@ -49,3 +50,5 @@ operon [--project PATH] [-v | --version] <子命令> [参数]
 ```
 
 - [插件文件契约](plugin-contract.md)
+
+- [可运行 toy 插件示例](plugin-examples.md)

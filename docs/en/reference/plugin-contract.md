@@ -180,3 +180,8 @@ Runnable examples accompany the implementation.
 Metric event parameter sets receive a stable `:events:<run/event hash>` suffix
 so separate events remain independently attributable. Analysis sidecars must
 be separate paths under `analysis/`.
+
+Try the [standalone toy plugin file loop](plugin-examples.md).
+
+Structural IDs, sizes, ranks and coordinates fit SQLite signed 64-bit integers;
+numeric evidence is stored as finite SQLite REAL values.
