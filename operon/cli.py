@@ -1001,9 +1001,14 @@ def _parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("report", help="render queryable project and release reports")
     report_sub = p.add_subparsers(dest="report_kind", required=True)
+    rp = report_sub.add_parser("view", help="export a read-only visualization bundle")
+    rp.add_argument("--out", required=True)
     rp = report_sub.add_parser("qc", help="show or export long-form QC results")
     rp.add_argument("--entity-type")
     rp.add_argument("--entity-id")
+    rp.add_argument("--wide", action="store_true", help="pivot QC metrics by entity")
+    rp.add_argument("--format", choices=["text", "tsv", "json"], default="text")
+    rp.add_argument("--out", help="write the QC report atomically")
     rp.add_argument(
         "--export", action="store_true", help="write qc/aggregate TSV files"
     )
@@ -1266,7 +1271,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
         or args.command == "status"
         or (
             args.command == "report"
-            and args.report_kind in {"qc", "decisions", "analysis", "metadata"}
+            and args.report_kind in {"qc", "decisions", "analysis", "metadata", "view"}
         )
         or (args.command in {"retire", "restore"} and not args.apply)
         or (args.command == "backup" and args.backup_command == "create")
@@ -2942,6 +2947,31 @@ def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) 
 
 def _cmd_qc_table(args: argparse.Namespace, project: Project, db: Database) -> int:
     include_retired = getattr(args, "include_retired", False)
+    if (
+        getattr(args, "wide", False)
+        or getattr(args, "format", "text") != "text"
+        or getattr(args, "out", None)
+    ):
+        from operon.utils import atomic_write_text
+        from operon.view_bundle import render_qc_report
+
+        text = render_qc_report(
+            db,
+            args.format,
+            wide=args.wide,
+            entity_type=args.entity_type,
+            entity_id=args.entity_id,
+            include_retired=include_retired,
+        )
+        if args.out:
+            atomic_write_text(args.out, text)
+        else:
+            print(text, end="")
+        if args.export:
+            print(
+                f"wrote {export_qc_tsv(db, project, args.entity_type, include_retired=include_retired)}"
+            )
+        return 0
     if include_retired:
         table = print_qc_table(
             db,
@@ -3040,6 +3070,11 @@ def _cmd_taxonomy(args: argparse.Namespace, project: Project, db: Database) -> i
 
 
 def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.report_kind == "view":
+        from operon.view_bundle import export_view_bundle
+
+        print(f"wrote {export_view_bundle(db, args.out)}")
+        return 0
     if args.report_kind == "qc":
         return _cmd_qc_table(args, project, db)
     if args.report_kind == "decisions":

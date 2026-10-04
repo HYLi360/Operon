@@ -175,3 +175,14 @@ A bare accession that matches multiple entities is rejected with a request to us
 When the identifier matches no entity or accession, `show` falls back to the `sequences` table: if the identifier is a seqid of a FASTA record measured by built-in QC, the output lists every matching sequence with its length, owning entity, file ID, and manifest path (`--json` emits `{"query": ..., "match": "sequence", "sequences": [...]}`). If neither lookup matches, the identifier is reported as not found.
 
 `show` uses a read-only SQLite connection, so it is safe against read-only mounts or read-only database copies. If a non-empty `operon.sqlite-wal` still exists on read-only media, the command refuses the immutable fallback and asks you to checkpoint on a writable mount first, rather than ignoring unmerged transactions and showing stale data.
+
+## Visualization bundle and machine-readable QC
+
+`operon report view --out DIR` stages and atomically publishes a deterministic,
+read-only bundle. Identical output is reused; differing existing output conflicts.
+No database provenance is written. See [plugin file contracts](plugin-contract.md)
+for members and version policy.
+
+`operon report qc --wide --format tsv [--out PATH]` uses the identical pivot and
+TSV escaping as `qc_wide.tsv`. Omit `--wide` for the long table; `--format` also
+supports `text` and `json`. Existing default text and `--export` remain available.

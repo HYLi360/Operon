@@ -40,7 +40,7 @@ the same invariants as project requirements.
 | EXT-3 | The entry-point / `operon.api` design is **deferred**. It is reconsidered when at least two external plugins need in-process behaviour, or when a custom result parser or executor backend is required. | deferred | this page |
 | EXT-4 | Add-ons may emit an optional events JSONL stream, imported with `operon import-events`: `metric` events become QC results, `artifact` events become `adopt` manifest drafts. Unknown event types are skipped and counted; an unknown `schema_version` is an error and writes nothing. | planned | this page |
 | EXT-5 | Events carry **facts, not judgements**: a plugin may report what it measured or produced, never a state, a decision or a QC verdict — those come only from versioned profiles (INV-4). | binding (follows from INV-4) | this page |
-| EXT-6 | Visualization add-ons read a `report view` bundle (a read-only directory with a `bundle_schema_version` and per-member checksums). They never write to the project database. | planned | this page |
+| EXT-6 | Visualization add-ons read a `report view` bundle (a read-only directory with a `bundle_schema_version` and per-member checksums). They never write to the project database. | binding | [Plugin contract](../reference/plugin-contract.md); `tests/regression/test_view_bundle.py` |
 | EXT-7 | Plugin distributions inherit the current developer and licence of Operon; distribution names and hosting remain open. | binding | this page |
 
 ## Contracts and gates

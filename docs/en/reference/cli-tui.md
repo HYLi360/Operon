@@ -481,3 +481,5 @@ CI workflow exporting `OPERON_PARITY_STRICT=1`, so a gap that reappears as
 - **`show --scope organism`** — that query returns every descendant of the
   owning organism (thousands of rows in a real project), while the entity detail
   answers for the selected entity only. The wide graph stays a CLI query.
+
+`report view` is CLI-only for external visualization consumers; the new QC format/wide/out options are CLI file API options.

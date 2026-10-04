@@ -434,6 +434,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         },
     ),
     ParityEntry(
+        ("report", "view"),
+        STATUS_CLI_ONLY,
+        note="Visualization file API: external consumers request a complete bundle directory.",
+    ),
+    ParityEntry(
         ("report", "qc"),
         STATUS_IMPLEMENTED,
         note="read-only: the Entities screen (nav `2`) entity detail renders the "
@@ -443,6 +448,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "no provenance rows). The export's type filter mirrors `--entity-type` "
         "and defaults to the selected entity's type",
         actions="data.entity_metrics",
+        waived={
+            "wide": "CLI file API; TUI exports the shared QC TSV pair",
+            "format": "CLI file API; TUI exports the shared QC TSV pair",
+            "out": "CLI file API; TUI uses its export destination",
+        },
         params={
             "entity_type": "context: Entities screen selection",
             "entity_id": "context: Entities screen selection",

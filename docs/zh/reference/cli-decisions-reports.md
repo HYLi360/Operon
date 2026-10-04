@@ -258,3 +258,13 @@ manifest 路径（`--json` 输出 `{"query": ..., "match": "sequence", "sequence
 只读连接，因此可安全检查只读挂载或只读数据库副本。若只读介质上仍有非空
 `operon.sqlite-wal`，命令会拒绝 immutable 回退并要求先在可写挂载上 checkpoint，避免忽略
 未合并事务而显示过期数据。
+
+## 可视化 bundle 与机器可读 QC
+
+`operon report view --out DIR` 先 staging 再原子发布确定性只读 bundle；相同内容
+复用，不同既有内容冲突，不写数据库 provenance。成员和版本政策见
+[插件文件契约](plugin-contract.md)。
+
+`operon report qc --wide --format tsv [--out PATH]` 与 `qc_wide.tsv` 共用 pivot
+和 TSV 转义。省略 `--wide` 输出长表；格式还支持 `text`、`json`。原有默认文本
+和 `--export` 保留。

@@ -28,7 +28,7 @@
 | EXT-3 | entry-point / `operon.api` 设计**暂缓**。立项判据：≥2 个外部插件确有进程内需求，或需要自定义 result parser / executor 后端。 | 暂缓 | 本页 |
 | EXT-4 | 插件可以额外产出事件 JSONL，用 `operon import-events` 回载：`metric` 事件进 QC 结果，`artifact` 事件成为 `adopt` 清单草稿。未知事件类型跳过并计数；未知 `schema_version` 报错且不写盘。 | 待实现 | 本页 |
 | EXT-5 | 事件承载的是**事实，而非判定**：插件可以报告它测量到或产出了什么，永远不能报告状态、决策或 QC 结论——那些只来自版本化 profile（见 INV-4）。 | 生效（由 INV-4 推出） | 本页 |
-| EXT-6 | 可视化插件只读 `report view` bundle（带 `bundle_schema_version` 与各成员校验和的只读目录），永不写项目数据库。 | 待实现 | 本页 |
+| EXT-6 | 可视化插件只读 `report view` bundle（带 `bundle_schema_version` 与各成员校验和的只读目录），永不写项目数据库。 | 生效 | [插件契约](../reference/plugin-contract.md)；`tests/regression/test_view_bundle.py` |
 | EXT-7 | 插件发行版继承 Operon 当前的开发者与许可证；发行名与托管位置待定。 | 生效 | 本页 |
 
 ## 契约与闸门
