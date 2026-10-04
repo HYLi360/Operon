@@ -1789,7 +1789,7 @@ defects:
   disposition: |
     Bound structural integers in the packaged schemas to SQLite signed integers, validate those bounds
     before binding, and normalize finite real metrics to their SQLite REAL representation.
-  fix_commit: null
+  fix_commit: 'fc590e980869d5a00709487aa782792748f80517'
   fixed_in: null
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_payload_rejects_job_id_outside_sqlite_integer_range
