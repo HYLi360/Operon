@@ -408,6 +408,12 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--file", dest="tsv_file", required=True)
 
     p = sub.add_parser(
+        "import-hits", help="import independent parser evidence for a completed job"
+    )
+    p.add_argument("--file", required=True)
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser(
         "qc-measure",
         help="measure built-in QC metrics for one file without a project "
         "(runs anywhere, e.g. on an HPC node; JSON payload for 'import-qc')",
@@ -1263,7 +1269,8 @@ def _parser() -> argparse.ArgumentParser:
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
-        args.command == "query"
+        (args.command == "import-hits" and args.dry_run)
+        or args.command == "query"
         or args.command == "environments"
         or args.command == "workflow"
         or args.command == "show"
@@ -1924,6 +1931,18 @@ def _cmd_alignment_qc(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     sys.stdout.write(render_summary_json(result.summary))
+    return 0
+
+
+def _cmd_import_hits(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.hits_import import import_hits, plan_hits_import
+
+    result = (
+        plan_hits_import(db, args.file)
+        if args.dry_run
+        else import_hits(db, project, args.file)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -3777,6 +3796,7 @@ def main(argv: list[str] | None = None) -> int:
                 "verify": lambda: _cmd_verify(args, project, db),
                 "standardize": lambda: _cmd_standardize(args, project, db),
                 "qc": lambda: _cmd_qc(args, project, db),
+                "import-hits": lambda: _cmd_import_hits(args, project, db),
                 "import-qc": lambda: _cmd_import_qc(args, project, db),
                 "run-external": lambda: _cmd_run_external(args, project, db),
                 "tools-check": lambda: _cmd_tools_check(project),

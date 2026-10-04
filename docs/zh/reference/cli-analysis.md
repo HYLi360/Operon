@@ -343,3 +343,10 @@ operon environments export ENVIRONMENT_ID [--format {explicit,yaml}]
 默认的 `explicit` 格式锁定安装包 URL 和 SHA-256（缺失时回退 MD5），仅覆盖兼容平台上的
 Conda 管理安装包。YAML 包含包名/版本/build 约束及 channel，不含原始 prefix，需要重新求解依赖。
 pip/本地修改和激活脚本不在两种导出的恢复范围内。参阅[外部分析指南](../guides/external-analysis.md)中的重建流程。
+
+## 导入插件证据
+
+`operon import-hits --file hits.json [--dry-run]` 校验 completed job 和清单输入，
+原样保存 summary/hits/alignments；相同证据 no-op，不同证据冲突。只读预览
+执行完整校验和冲突检查，见[插件契约](plugin-contract.md)。
+`result_parser: plugin:<name>` 由插件负责解析，内置解析器保留。

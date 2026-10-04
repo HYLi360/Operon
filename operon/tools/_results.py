@@ -47,6 +47,10 @@ def parse_and_store_results(
     runtime_parameters: dict[str, str] | None = None,
 ) -> tuple[int, int, int, int, int]:
     """Parse tool output and synchronize summary + top hits + alignments into SQLite."""
+    if recipe.result_parser.startswith("plugin:"):
+        if not recipe.result_parser.removeprefix("plugin:").strip():
+            raise ValidationError("plugin result_parser requires a name")
+        return 0, 0, 0, 0, 0
     hits, alignments = parse_hits(output_path, recipe)
     metrics: list[dict[str, Any]] = []
     if recipe.result_parser == "busco_json":

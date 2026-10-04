@@ -505,3 +505,6 @@ tools:
 - `tools-check` 通过；
 - `analyze --dry-run --limit 1` 的完整命令符合预期；
 - 单个小输入实跑并核对 `report analysis` 与 `report qc` 后，再批量运行。
+
+`result_parser: plugin:<name>` 声明外部解析器，Operon 不解析其产物，须显式
+`import-hits`；其他未知解析器名称仍报错。

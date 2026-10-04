@@ -579,6 +579,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         note="development-era adapter anomaly repair tool; not a workflow",
     ),
     ParityEntry(
+        ("import-hits",),
+        STATUS_CLI_ONLY,
+        note="Plugin evidence file API with a validated read-only dry-run; no TUI form is provided.",
+    ),
+    ParityEntry(
         ("qc-measure",),
         STATUS_CLI_ONLY,
         note="project-independent measurement command for the remote QC "
