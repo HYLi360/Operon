@@ -79,6 +79,7 @@ New resolved issues are appended to the ODR table.
 | ODR-58 | Reports | View bundle reuse compares directory members as well as files and refuses directory symlinks, so extra empty directories cannot masquerade as identical output. |
 
 | ODR-59 | API | Structural payload integers are checked against SQLite signed-integer bounds before binding; finite numeric evidence uses SQLite REAL representation. |
+| ODR-60 | Plugin API | Plugin JSON/JSONL rejects nonfinite numbers at decoding, including nested alignment extras and unknown event types; invalid input raises ValidationError before any write. |
 
 ## K series (historical)
 

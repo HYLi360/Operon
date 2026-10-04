@@ -15,10 +15,26 @@ from typing import Any
 from operon.errors import ValidationError
 
 
+def _reject_constant(value: str) -> None:
+    raise ValueError(f"nonstandard JSON constant {value}")
+
+
+def _parse_float(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"JSON number is not finite: {value}")
+    return result
+
+
+def decode_json(text: str) -> Any:
+    """Decode plugin JSON with finite numeric values only."""
+    return json.loads(text, parse_constant=_reject_constant, parse_float=_parse_float)
+
+
 def read_json(source: str | Path) -> Any:
     """Read JSON and report malformed input as a domain validation error."""
     try:
-        return json.loads(Path(source).read_text(encoding="utf-8"))
+        return decode_json(Path(source).read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ValidationError(f"{source}: invalid JSON: {exc}") from exc
 

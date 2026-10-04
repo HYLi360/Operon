@@ -1793,3 +1793,24 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_payload_rejects_job_id_outside_sqlite_integer_range
+- id: ODR-60
+  title: 'Nonfinite JSON numbers escaped plugin payload decoding'
+  reported: '2026-10-04'
+  introduced_in: 'dbf4fccebcfe27c56c0b3e669b39883b68a74934'
+  affected: |
+    The API-extension branch; nonfinite numbers nested in alignment extra fields or unknown event types
+  severity: 'low'
+  component: 'api'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_hits_import.py tests/regression/test_plugin_events.py -k
+    nonstandard_json -n 0 --no-cov. All eight cases raised a bare ValueError during canonical hashing
+    instead of ValidationError because Python's JSON decoder accepted nonstandard constants.
+  disposition: |
+    Decode plugin JSON and JSONL with a shared strict reader that rejects nonfinite numeric values
+    before schema validation or canonical hashing. Preserve normal import-qc decoding and output.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_hits_import.py::test_hits_reject_nonstandard_json_constants_in_extra
+    - tests/regression/test_plugin_events.py::test_events_reject_nonstandard_json_constants_in_unknown_types

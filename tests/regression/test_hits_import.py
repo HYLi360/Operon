@@ -291,3 +291,15 @@ def test_bad_producing_workflow_is_rejected(setup, details, status):
     with pytest.raises(ValidationError):
         import_hits(db, project, source)
     assert counts(db) == before
+
+
+@pytest.mark.bug("ODR-60")
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e999"])
+def test_hits_reject_nonstandard_json_constants_in_extra(setup, literal):
+    project, db, source, payload = setup
+    before = counts(db)
+    payload["alignments"][0]["extra"]["nested"] = ["INVALID_NUMBER"]
+    source.write_text(json.dumps(payload).replace('"INVALID_NUMBER"', literal))
+    with pytest.raises(ValidationError, match="invalid JSON"):
+        import_hits(db, project, source)
+    assert counts(db) == before

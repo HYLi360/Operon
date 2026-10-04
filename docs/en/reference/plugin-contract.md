@@ -185,3 +185,6 @@ Try the [standalone toy plugin file loop](plugin-examples.md).
 
 Structural IDs, sizes, ranks and coordinates fit SQLite signed 64-bit integers;
 numeric evidence is stored as finite SQLite REAL values.
+
+Plugin JSON/JSONL decoding rejects nonfinite numbers, including `NaN`,
+`Infinity` and decimal exponents that overflow a finite REAL.

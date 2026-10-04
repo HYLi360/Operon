@@ -411,3 +411,20 @@ def test_draft_restored_when_database_commit_fails(
         import_events(db, project, "WF_EVENTS", source, output=out)
     assert (out.read_bytes() if out.exists() else None) == saved
     assert counts(db) == before
+
+
+@pytest.mark.bug("ODR-60")
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e999"])
+def test_events_reject_nonstandard_json_constants_in_unknown_types(setup, literal):
+    project, db, source, events = setup
+    before = counts(db)
+    events[-1]["data"] = {"nested": ["INVALID_NUMBER"]}
+    source.write_text(
+        ("\n".join(json.dumps(event) for event in events) + "\n").replace(
+            '"INVALID_NUMBER"', literal
+        )
+    )
+    with pytest.raises(ValidationError, match="invalid event JSON"):
+        import_events(db, project, "WF_EVENTS", source)
+    assert counts(db) == before
+    assert not (project.analysis_root / "event-drafts" / "WF_EVENTS.json").exists()

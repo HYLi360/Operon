@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from operon.contracts import validate_payload
+from operon.contracts import decode_json, validate_payload
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.hits_import import canonical_hash, validate_file_identity, workflow_details
@@ -125,7 +125,7 @@ def _prepare(
         if not line.strip():
             continue
         try:
-            event = json.loads(line)
+            event = decode_json(line)
         except ValueError as exc:
             raise ValidationError(f"{source}:{index}: invalid event JSON") from exc
         validate_payload(event, "events")

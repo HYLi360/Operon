@@ -71,6 +71,7 @@
 | ODR-58 | 报表 | view bundle 重用同时比较目录与文件并拒绝目录符号链接，额外空目录不能伪装成相同产物。 |
 
 | ODR-59 | API | 结构性载荷整数在绑定前校验 SQLite 有符号整数范围；有限数值证据使用 SQLite REAL 表示。 |
+| ODR-60 | 插件 API | 插件 JSON/JSONL 在解码时拒绝非有限数值，包括 alignment extra 与未知事件类型的嵌套字段；无效输入在任何写入前以 ValidationError 拒绝。 |
 
 ## K 系列（历史）
 

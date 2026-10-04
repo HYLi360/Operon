@@ -146,3 +146,6 @@ metric 事件的 parameter_set 添加稳定 `:events:<run/event hash>` 后缀，
 
 结构性 ID、大小、rank 和坐标须在 SQLite 有符号 64-bit 整数范围内；数值证据
 存为有限的 SQLite REAL 值。
+
+插件 JSON/JSONL 解码拒绝非有限数值，包括 `NaN`、`Infinity` 和超过有限 REAL
+范围的十进制指数。
