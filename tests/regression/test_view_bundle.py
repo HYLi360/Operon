@@ -147,3 +147,39 @@ def test_bundle_reuse_rejects_extra_directories_and_symlinks(project, tmp_path, 
         with pytest.raises(ConflictError):
             export_view_bundle(db, out)
         assert extra.exists()
+
+
+def test_bundle_reuse_rejects_links_and_respects_an_existing_snapshot(
+    project, tmp_path
+):
+    out = tmp_path / "view"
+    with closing(Database(project.db_path, read_only=True)) as db:
+        db.conn.execute("BEGIN")
+        export_view_bundle(db, out)
+        assert db.conn.in_transaction
+        member = out / "files.tsv"
+        saved = tmp_path / "saved.tsv"
+        member.rename(saved)
+        member.symlink_to(saved)
+        with pytest.raises(ConflictError):
+            export_view_bundle(db, out)
+        linked = tmp_path / "linked"
+        linked.symlink_to(out, target_is_directory=True)
+        with pytest.raises(ConflictError):
+            export_view_bundle(db, linked)
+
+
+def test_bundle_directory_type_conflict(tmp_path):
+    from operon.view_bundle import _same_bundle
+
+    left, right = tmp_path / "left", tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    (left / "coverage").write_text("not a directory")
+    (right / "coverage").mkdir()
+    assert not _same_bundle(left, right)
+    (left / "coverage").unlink()
+    (left / "coverage").mkdir()
+    (left / "member").mkdir()
+    (right / "member").write_text("bytes")
+    assert not _same_bundle(left, right)

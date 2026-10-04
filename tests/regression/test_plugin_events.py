@@ -284,3 +284,130 @@ def test_analyze_event_sidecar_is_recorded_and_requires_fresh_execution(
     for template in ("${unknown}", "../outside.jsonl", "${output}"):
         outcome = run_analysis(project, db, "toy_sidecar", limit=1, events=template)[0]
         assert outcome["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "bad-ledger",
+        "bad-entry",
+        "missing-file",
+        "bad-json",
+        "input-output",
+        "database-output",
+        "unrelated-draft",
+        "empty-parents",
+    ],
+)
+def test_event_validation_boundaries_preserve_bytes(setup, tmp_path, mode):
+    project, db, source, events = setup
+    out = tmp_path / "draft.json"
+    if mode in {"bad-ledger", "bad-entry"}:
+        details = {"event_imports": [] if mode == "bad-ledger" else {"a": 42}}
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE workflow_runs SET execution_details=? WHERE run_id='WF_EVENTS'",
+                (json.dumps(details),),
+            )
+    elif mode == "missing-file":
+        source.unlink()
+    elif mode == "bad-json":
+        source.write_text(source.read_text() + "{\n")
+    elif mode == "input-output":
+        out = source
+    elif mode == "database-output":
+        out = project.db_path
+    elif mode == "unrelated-draft":
+        out.write_text("keep")
+    else:
+        events[1]["artifact"]["derived_from"] = []
+        source.write_text("\n".join(json.dumps(e) for e in events))
+    before = counts(db)
+    saved = out.read_bytes() if out.exists() else None
+    with pytest.raises((ValidationError, ConflictError)):
+        import_events(db, project, "WF_EVENTS", source, output=out)
+    assert counts(db) == before
+    assert (out.read_bytes() if out.exists() else None) == saved
+
+
+@pytest.mark.parametrize("kind", ["metric", "artifact", "metric-file"])
+def test_event_scope_cannot_cross_the_producing_entity(setup, kind):
+    project, db, source, events = setup
+    original = events[0]["metric"]["entity_id"]
+    other = db.conn.execute(
+        "SELECT assembly_id FROM assemblies WHERE assembly_id != ? LIMIT 1", (original,)
+    ).fetchone()[0]
+    if kind == "artifact":
+        events = [events[1]]
+        events[0]["artifact"]["entity_id"] = other
+    else:
+        events = [events[0]]
+        events[0]["metric"]["entity_id"] = other
+        if kind == "metric-file":
+            with db.transaction():
+                db.conn.execute(
+                    "UPDATE workflow_runs SET entity_type=NULL,entity_id=NULL WHERE run_id='WF_EVENTS'"
+                )
+    source.write_text("\n".join(json.dumps(e) for e in events))
+    before = counts(db)
+    with pytest.raises(ValidationError):
+        import_events(db, project, "WF_EVENTS", source)
+    assert counts(db) == before
+
+
+def test_entity_metric_blank_lines_and_unsafe_run_filename(setup):
+    project, db, source, events = setup
+    metric = events[0]
+    metric["metric"].pop("file")
+    metric["metric"].pop("metric_numeric")
+    source.write_text("\n  \n" + json.dumps(metric) + "\n")
+    result = import_events(db, project, "WF_EVENTS", source)
+    assert result["metric_count"] == 1
+    assert result["draft"] is None
+    row = db.conn.execute(
+        "SELECT input_identity FROM qc_results WHERE tool='toy'"
+    ).fetchone()
+    assert row[0].startswith("entity:")
+    unsafe = dict(
+        db.conn.execute(
+            "SELECT * FROM workflow_runs WHERE run_id='WF_EVENTS'"
+        ).fetchone()
+    )
+    unsafe["run_id"] = "../unsafe"
+    db.insert_row("workflow_runs", unsafe)
+    with pytest.raises(ValidationError, match="filename"):
+        import_events(db, project, "../unsafe", source)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_draft_restored_when_database_commit_fails(
+    setup, tmp_path, monkeypatch, existing
+):
+    from contextlib import contextmanager
+
+    project, db, source, events = setup
+    out = tmp_path / "draft.json"
+    if existing:
+        import_events(db, project, "WF_EVENTS", source, output=out)
+        artifact = json.loads(json.dumps(events[1]))
+        artifact["event_id"] = "a2"
+        artifact["artifact"]["role"] = "toy_second"
+        artifact["artifact"]["path"] = str(tmp_path / "second.fa")
+        source.write_text(json.dumps(artifact))
+    saved = out.read_bytes() if out.exists() else None
+    before = counts(db)
+    original = db.transaction
+
+    @contextmanager
+    def fail_commit():
+        outermost = not db.conn.in_transaction
+        with original() as conn:
+            yield conn
+            if outermost:
+                raise RuntimeError("commit failure")
+
+    monkeypatch.setattr(db, "transaction", fail_commit)
+    with pytest.raises(RuntimeError, match="commit failure"):
+        import_events(db, project, "WF_EVENTS", source, output=out)
+    assert (out.read_bytes() if out.exists() else None) == saved
+    assert counts(db) == before

@@ -331,6 +331,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
                 tool=None,
                 inputs=[],
                 threads=None,
+                events=None,
             ),
             project,
             db,
@@ -360,6 +361,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
                 tool=None,
                 inputs=[],
                 threads=None,
+                events=None,
             ),
             project,
             db,
@@ -396,6 +398,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
         backend=None,
         keep_partial=False,
         param=[],
+        events=None,
     )
     assert cli._cmd_analyze(args, project, db) == 1
     assert "1 job(s) left" in capsys.readouterr().out
@@ -419,6 +422,7 @@ def _run_external_ns(**overrides):
         tool=None,
         inputs=[],
         threads=None,
+        events=None,
     )
     values.update(overrides)
     return ns(**values)

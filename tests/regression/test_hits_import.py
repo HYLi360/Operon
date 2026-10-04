@@ -247,3 +247,47 @@ def test_unrepresentable_real_metric_is_rejected(setup):
     with pytest.raises(ValidationError):
         import_hits(db, project, source)
     assert counts(db) == before
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("status", "failed"),
+        ("workflow_run_id", "missing"),
+        ("input_sha256", "wrong"),
+        ("entity_id", "other"),
+    ],
+)
+def test_job_validation_before_evidence_write(setup, field, value):
+    project, db, source, payload = setup
+    with db.transaction():
+        db.conn.execute(
+            f"UPDATE analysis_jobs SET {field}=? WHERE job_id=?",
+            (value, payload["job_id"]),
+        )
+    before = counts(db)
+    with pytest.raises(ValidationError):
+        import_hits(db, project, source)
+    assert counts(db) == before
+
+
+@pytest.mark.parametrize(
+    "details,status",
+    [
+        ("{}", "failed"),
+        ("{", "completed"),
+        ("[]", "completed"),
+        ('{"hits_imports": []}', "completed"),
+    ],
+)
+def test_bad_producing_workflow_is_rejected(setup, details, status):
+    project, db, source, _payload = setup
+    with db.transaction():
+        db.conn.execute(
+            "UPDATE workflow_runs SET execution_details=?,status=? WHERE run_id='WF_TOY'",
+            (details, status),
+        )
+    before = counts(db)
+    with pytest.raises(ValidationError):
+        import_hits(db, project, source)
+    assert counts(db) == before

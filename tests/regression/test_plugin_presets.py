@@ -166,3 +166,18 @@ def test_round_trip_failure_rolls_back(setup, monkeypatch):
     ):
         add_preset(project, db, source)
     assert project.tools_config_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("text", ["[", "[]", "tools: []", "tools: {bad: []}"])
+def test_malformed_yaml_or_existing_config_writes_nothing(setup, text):
+    project, source, _payload = setup
+    source.write_text(text)
+    before = project.tools_config_path.read_bytes()
+    with pytest.raises(ValidationError):
+        plan_preset_import(project, source)
+    assert project.tools_config_path.read_bytes() == before
+    if text == "tools: {bad: []}":
+        project.tools_config_path.write_text(text)
+        source.write_text("version: 1\ntools: {}\n")
+        with pytest.raises(ValidationError):
+            plan_preset_import(project, source)
