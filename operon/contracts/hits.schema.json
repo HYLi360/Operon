@@ -23,6 +23,7 @@
             "type": "object"
           },
           "hit_rank": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": "integer"
           },
@@ -33,6 +34,7 @@
             ]
           },
           "query_end": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": [
               "integer",
@@ -44,6 +46,7 @@
             "type": "string"
           },
           "query_start": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": [
               "integer",
@@ -51,6 +54,7 @@
             ]
           },
           "subject_end": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": [
               "integer",
@@ -62,6 +66,7 @@
             "type": "string"
           },
           "subject_start": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": [
               "integer",
@@ -90,6 +95,7 @@
           "type": "string"
         },
         "size_bytes": {
+          "maximum": 9223372036854775807,
           "minimum": 0,
           "type": "integer"
         }
@@ -106,6 +112,7 @@
         "additionalProperties": false,
         "properties": {
           "hit_rank": {
+            "maximum": 9223372036854775807,
             "minimum": 1,
             "type": "integer"
           },
@@ -149,6 +156,7 @@
       "type": "array"
     },
     "job_id": {
+      "maximum": 9223372036854775807,
       "minimum": 1,
       "type": "integer"
     },
@@ -186,6 +194,7 @@
     },
     "schema_version": {
       "const": 1,
+      "maximum": 9223372036854775807,
       "type": "integer"
     }
   },

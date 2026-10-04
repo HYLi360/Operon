@@ -132,6 +132,9 @@ def _prepare(db: Database, source: str | Path) -> dict[str, Any]:
         keys = set()
         for item in payload[section]:
             row = {column: item.get(column) for column in columns}
+            for column in ("metric_numeric", "evalue", "bitscore", "percent_identity"):
+                if column in row and row[column] is not None:
+                    row[column] = float(row[column])
             if table == "analysis_alignments":
                 row["extra_json"] = (
                     json.dumps(item["extra"], sort_keys=True, ensure_ascii=False)

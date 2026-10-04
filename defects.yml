@@ -1774,3 +1774,22 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/regression/test_view_bundle.py::test_bundle_reuse_rejects_extra_directories_and_symlinks
+- id: ODR-59
+  title: 'Plugin payload integers could overflow SQLite parameter binding'
+  reported: '2026-10-04'
+  introduced_in: 'dbf4fccebcfe27c56c0b3e669b39883b68a74934'
+  affected: |
+    The API-extension branch; plugin payloads with an oversized job ID, rank, coordinate or file size
+  severity: 'low'
+  component: 'api'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_hits_import.py -k outside_sqlite -n 0 --no-cov. A job_id of 1 << 80
+    escaped validation and raised OverflowError during SQLite lookup instead of a ValidationError.
+  disposition: |
+    Bound structural integers in the packaged schemas to SQLite signed integers, validate those bounds
+    before binding, and normalize finite real metrics to their SQLite REAL representation.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_hits_import.py::test_hits_payload_rejects_job_id_outside_sqlite_integer_range

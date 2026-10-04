@@ -213,3 +213,37 @@ def test_plugin_parser_declaration_preserves_existing_evidence(setup, monkeypatc
         _results.parse_and_store_results(
             db, project, recipe, None, "", {}, payload["job_id"], source, ""
         )
+
+
+@pytest.mark.bug("ODR-59")
+def test_hits_payload_rejects_job_id_outside_sqlite_integer_range(setup):
+    project, db, source, payload = setup
+    before = counts(db)
+    payload["job_id"] = 1 << 80
+    source.write_text(json.dumps(payload))
+    with pytest.raises(ValidationError):
+        import_hits(db, project, source)
+    assert counts(db) == before
+
+
+@pytest.mark.bug("ODR-59")
+def test_real_metrics_accept_finite_numbers_outside_integer_range(setup):
+    project, db, source, payload = setup
+    payload["hits"][0]["metric_numeric"] = 1 << 80
+    source.write_text(json.dumps(payload))
+    import_hits(db, project, source)
+    stored = db.conn.execute(
+        "SELECT metric_numeric FROM analysis_hits WHERE job_id=?", (payload["job_id"],)
+    ).fetchone()[0]
+    assert stored == float(1 << 80)
+
+
+@pytest.mark.bug("ODR-59")
+def test_unrepresentable_real_metric_is_rejected(setup):
+    project, db, source, payload = setup
+    before = counts(db)
+    payload["hits"][0]["metric_numeric"] = 10**400
+    source.write_text(json.dumps(payload))
+    with pytest.raises(ValidationError):
+        import_hits(db, project, source)
+    assert counts(db) == before

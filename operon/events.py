@@ -51,6 +51,8 @@ def _metric(
             f"entity:{metric['entity_type']}:{metric['entity_id']}"
         )
     metric["metric_value"] = str(metric["metric_value"])
+    if metric.get("metric_numeric") is not None:
+        metric["metric_numeric"] = float(metric["metric_numeric"])
     # Each event remains independently attributable even for equal metric keys.
     metric["parameter_set"] += (
         f":events:{canonical_hash([parent['run_id'], event['event_id']])[:16]}"

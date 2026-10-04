@@ -35,6 +35,15 @@ def validate_payload(payload: Any, name: str) -> None:
     _validate(payload, read_json(path), "$", name)
 
 
+def _finite_number(value: Any) -> bool:
+    if type(value) not in {int, float}:
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _validate(value: Any, schema: dict[str, Any], path: str, name: str) -> None:
     def fail(message: str) -> None:
         raise ValidationError(f"{name} payload {path}: {message}")
@@ -56,7 +65,7 @@ def _validate(value: Any, schema: dict[str, Any], path: str, name: str) -> None:
         "array": isinstance(value, list),
         "string": isinstance(value, str),
         "integer": type(value) is int,
-        "number": type(value) in {int, float} and math.isfinite(value),
+        "number": _finite_number(value),
         "null": value is None,
     }
     if types and not any(matches[kind] for kind in types):
@@ -87,7 +96,7 @@ def _validate(value: Any, schema: dict[str, Any], path: str, name: str) -> None:
         if "pattern" in schema and not re.fullmatch(schema["pattern"], value):
             fail("string does not match the required pattern")
     elif type(value) in {int, float}:
-        if not math.isfinite(value):
-            fail("number must be finite")
         if "minimum" in schema and value < schema["minimum"]:
             fail(f"number must be >= {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            fail(f"number must be <= {schema['maximum']}")
