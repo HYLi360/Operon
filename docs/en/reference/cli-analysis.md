@@ -221,3 +221,11 @@ its manifest input, then stores the supplied summary/hits/alignments unchanged.
 Identical evidence is a no-op; differing evidence conflicts. The read-only
 preview validates all rows and conflicts. See [plugin contracts](plugin-contract.md).
 Recipes using `result_parser: plugin:<name>` own parsing; built-in parsers remain.
+
+## Add a preset fragment
+
+`operon tools add-preset --file preset.yaml [--dry-run]` adds new tools/recipes
+without replacing existing definitions. Identical fragments are no-ops; conflicts
+are rejected before publication. The save is atomic, round-trip validated and
+snapshotted per affected recipe; failure restores original bytes.
+See [plugin file contracts](plugin-contract.md) for the fragment format.

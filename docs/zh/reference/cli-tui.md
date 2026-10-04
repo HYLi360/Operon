@@ -397,3 +397,5 @@ token 列表、`path`，或留空表示“没有 `run_method` 键”。表单只
 `report view` 是外部可视化消费者的 CLI-only 文件 API；QC 的 format/wide/out 新选项同属 CLI 文件 API。
 
 `import-hits` 为插件载荷的 CLI-only 接口，`--dry-run` 提供完整预览。
+
+`tools add-preset` 为声明式片段的 CLI-only 接口，提供只读预览。

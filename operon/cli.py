@@ -528,6 +528,12 @@ def _parser() -> argparse.ArgumentParser:
         help="execution backend (default: execution.backend in project.yaml)",
     )
 
+    p = sub.add_parser("tools", help="manage declarative external-tool presets")
+    tools_sub = p.add_subparsers(dest="tools_command", required=True)
+    tp = tools_sub.add_parser("add-preset", help="merge a plugin preset fragment")
+    tp.add_argument("--file", required=True)
+    tp.add_argument("--dry-run", action="store_true")
+
     p = sub.add_parser(
         "tools-check", help="detect configured external tools and their versions"
     )
@@ -1269,7 +1275,8 @@ def _parser() -> argparse.ArgumentParser:
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
-        (args.command == "import-hits" and args.dry_run)
+        (args.command == "tools" and args.dry_run)
+        or (args.command == "import-hits" and args.dry_run)
         or args.command == "query"
         or args.command == "environments"
         or args.command == "workflow"
@@ -2031,6 +2038,18 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
             ensure_ascii=False,
         )
     )
+    return 0
+
+
+def _cmd_tools(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.tools._presets import add_preset, plan_preset_import
+
+    result = (
+        plan_preset_import(project, args.file)
+        if args.dry_run
+        else add_preset(project, db, args.file)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -3799,6 +3818,7 @@ def main(argv: list[str] | None = None) -> int:
                 "import-hits": lambda: _cmd_import_hits(args, project, db),
                 "import-qc": lambda: _cmd_import_qc(args, project, db),
                 "run-external": lambda: _cmd_run_external(args, project, db),
+                "tools": lambda: _cmd_tools(args, project, db),
                 "tools-check": lambda: _cmd_tools_check(project),
                 "analyze": lambda: _cmd_analyze(args, project, db),
                 "extract-domains": lambda: _cmd_extract_domains(args, project, db),

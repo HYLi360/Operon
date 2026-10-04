@@ -129,3 +129,6 @@ operon --project . tools-check
 ```
 
 The version string participates in the cache identity. After a program upgrade, results produced by the old version are never reused by mistake, even if every other parameter is identical.
+
+Plugin authors may distribute additive tools/recipes fragments for `tools add-preset`;
+see the [file contract](plugin-contract.md#preset-fragments). Built-in presets remain.

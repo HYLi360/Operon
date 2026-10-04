@@ -350,3 +350,9 @@ pip/本地修改和激活脚本不在两种导出的恢复范围内。参阅[外
 原样保存 summary/hits/alignments；相同证据 no-op，不同证据冲突。只读预览
 执行完整校验和冲突检查，见[插件契约](plugin-contract.md)。
 `result_parser: plugin:<name>` 由插件负责解析，内置解析器保留。
+
+## 添加预设片段
+
+`operon tools add-preset --file preset.yaml [--dry-run]` 增加工具/recipe，
+不替换既有定义；相同片段 no-op，冲突在发布前拒绝。保存为原子写、往返校验，
+逐受影响 recipe 留快照，失败恢复原字节。格式见[插件文件契约](plugin-contract.md)。

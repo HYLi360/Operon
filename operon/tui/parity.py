@@ -584,6 +584,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         note="Plugin evidence file API with a validated read-only dry-run; no TUI form is provided.",
     ),
     ParityEntry(
+        ("tools", "add-preset"),
+        STATUS_CLI_ONLY,
+        note="Declarative plugin file API; --dry-run validates merge conflicts before publication.",
+    ),
+    ParityEntry(
         ("qc-measure",),
         STATUS_CLI_ONLY,
         note="project-independent measurement command for the remote QC "

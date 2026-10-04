@@ -139,7 +139,12 @@ def load_tools_config(project: Project) -> dict[str, Any]:
 
 
 def get_tool(project: Project, tool_name: str) -> ToolSpec:
-    config = load_tools_config(project)
+    return _tool_from_config(project, tool_name, load_tools_config(project))
+
+
+def _tool_from_config(
+    project: Project, tool_name: str, config: dict[str, Any]
+) -> ToolSpec:
     tools = config.get("tools", {})
     if tool_name not in tools:
         available = ", ".join(sorted(tools.keys())) or "(none)"
@@ -200,7 +205,10 @@ def get_tool(project: Project, tool_name: str) -> ToolSpec:
 
 
 def get_recipe(project: Project, analysis_name: str) -> Recipe:
-    config = load_tools_config(project)
+    return _recipe_from_config(analysis_name, load_tools_config(project))
+
+
+def _recipe_from_config(analysis_name: str, config: dict[str, Any]) -> Recipe:
     for tool_name, raw_tool in config.get("tools", {}).items():
         if not isinstance(raw_tool, dict):
             continue
