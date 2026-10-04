@@ -1770,7 +1770,7 @@ defects:
   disposition: |
     Compare every bundle member, including directories, and refuse any symbolic link before reusing
     existing output. The regression fails on the original producer for both cases.
-  fix_commit: null
+  fix_commit: '9d85dca2f2ee507f1b2209e089ecd6865fb7cc99'
   fixed_in: null
   regression_tests:
     - tests/regression/test_view_bundle.py::test_bundle_reuse_rejects_extra_directories_and_symlinks
