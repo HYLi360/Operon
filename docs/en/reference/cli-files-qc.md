@@ -104,3 +104,7 @@ entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version,
 Optional columns: `file_id`, `file_sha256`, `metric_unit`, and `evaluated_at`. `file_id` and `file_sha256` must match the manifest when provided.
 
 For a `qc-measure` JSON payload the target file is resolved by `file.file_id`, or by reverse lookup of `file.sha256` when the payload has no file ID (an ambiguous checksum is rejected). The payload SHA-256/size must match the manifest; a payload measured by a different `operon` version only triggers a warning. A FASTA payload's `sequences` map is synced into the `sequences` table for the resolved file. Both input forms recompute the affected entities' QC state after the import and record an `import-qc` step in `workflow_runs`.
+
+The existing `qc-measure` payload is described by the packaged JSON Schema
+`operon/qc/measure.schema.json`; see [plugin file contracts](plugin-contract.md).
+The Schema adds no runtime dependency and does not change `import-qc` behaviour.

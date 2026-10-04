@@ -12,7 +12,7 @@ recursive-include .github *.yml
 recursive-include benchmarks *.tsv
 recursive-include docs *.css *.html *.js *.md *.po *.py *.txt
 prune docs/_build
-recursive-include operon *.py *.pyx *.tcss
+recursive-include operon *.py *.pyx *.tcss *.json
 recursive-include operon/tui/assets *.png *.z *.md
 recursive-include tests *.py
 exclude operon/qc/_parsers.c

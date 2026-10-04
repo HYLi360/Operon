@@ -1,0 +1,122 @@
+{
+  "$comment": "See docs/en/reference/cli-files-qc.md and docs/zh/reference/cli-files-qc.md; describes existing qc-measure output without changing import-qc.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "file": {
+      "additionalProperties": false,
+      "properties": {
+        "file_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_role": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "format": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "[a-fA-F0-9]{64}",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes",
+        "format",
+        "file_role"
+      ],
+      "type": "object"
+    },
+    "metrics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "metric_name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "metric_numeric": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metric_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric_value": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          },
+          "parameter_set": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "qc_stage": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "qc_stage",
+          "metric_name",
+          "metric_value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "parameter_set": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "parser_backend": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "sequences": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "tool": {
+      "const": "operon.builtin",
+      "type": "string"
+    },
+    "tool_version": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tool",
+    "tool_version",
+    "parameter_set",
+    "file",
+    "metrics"
+  ],
+  "type": "object"
+}

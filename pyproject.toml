@@ -73,6 +73,8 @@ operon = "operon.cli:main"
 include = ["operon*"]
 
 [tool.setuptools.package-data]
+"operon.contracts" = ["*.json"]
+"operon.qc" = ["*.json"]
 "operon.tui" = ["*.tcss", "assets/*.png", "assets/*.z", "assets/*.md"]
 
 [tool.pytest.ini_options]
