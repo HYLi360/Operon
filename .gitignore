@@ -57,7 +57,8 @@ cobertura.xml
 htmlcov/
 
 # Sphinx build output
-/docs/_build/
+docs/_build/
 
 # other files we don't want be recorded by git
-/others/
+others/
+.commandcode/
