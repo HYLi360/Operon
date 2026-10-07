@@ -1814,3 +1814,25 @@ defects:
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_reject_nonstandard_json_constants_in_extra
     - tests/regression/test_plugin_events.py::test_events_reject_nonstandard_json_constants_in_unknown_types
+- id: ODR-61
+  title: 'Read-only queries denied the integrity pragmas the recovery procedure relies on'
+  reported: '2026-10-07'
+  introduced_in: '06abafd6d6a5bb59c2d8c11e6ef9fe48b7f2bb50'
+  affected: |
+    Recovery and baseline workflows: the read-only PRAGMA whitelist that ships with the readonly_query
+    authorizer does not cover integrity_check and foreign_key_check, so the recovery runbook's
+    documented section 3 baseline (`operon query "PRAGMA integrity_check"` and `PRAGMA
+    foreign_key_check`) fails with `not authorized` although both pragmas are read-only analytics.
+  severity: 'medium'
+  component: 'database'
+  status: 'fixed'
+  reproduction: |
+    Run operon --project <any project> query "PRAGMA integrity_check" (or PRAGMA foreign_key_check).
+    Both fail with `error: query failed: not authorized` on the current code.
+  disposition: |
+    The read-only PRAGMA whitelist gained integrity_check and foreign_key_check, so the documented
+    recovery baseline runs as written; every writable PRAGMA stays denied.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_database_edges_more.py::test_readonly_query_allows_the_integrity_pragmas

@@ -72,6 +72,17 @@ def test_readonly_query_authorizer_and_entity_id_validation(db):
         db.next_id("unknown")
 
 
+@pytest.mark.bug("ODR-61")
+def test_readonly_query_allows_the_integrity_pragmas(db):
+    # The recovery runbook's read-only baseline relies on both.
+    rows = db.readonly_query("PRAGMA integrity_check")
+    assert [row["integrity_check"] for row in rows] == ["ok"]
+    assert db.readonly_query("PRAGMA foreign_key_check") == []
+    # writable pragmas stay denied
+    with pytest.raises(sqlite3.DatabaseError):
+        db.readonly_query("PRAGMA wal_checkpoint")
+
+
 @pytest.mark.bug("ODR-12")
 def test_concurrent_writable_opens_do_not_collide_on_view_rebuild(db):
     """Writable opens serialize their view rebuild on the writer lock."""
