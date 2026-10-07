@@ -67,11 +67,12 @@
 | ODR-0052 | Tests | ruff 抑制守卫不再把目录遍历当作事实来源：改为向 git 索取已跟踪文件集（`git ls-files -z -- '*.py'`），这是精确的且不会与构建竞争；基于形状的遍历只作为无 git 检出时的回退。该回退会跳过 `PKG-INFO` 暂存树、`*.egg-info`、`dist/` 以及编辑器/缓存目录，读取循环也能容忍扫描中途消失的文件。 |
 | ODR-0053 | Tests | 已抛出的通知现在在整个测试期间保持可读：`tests/conftest.py` 携带一个 autouse fixture `durable_notifications`，全套件把 `App.NOTIFICATION_TIMEOUT` 提升到测试长度级别，而不是让每个读取方各自绕开 Textual 五秒的默认值。 |
 | ODR-0054 | Tests | `test_modal_drops_result_after_teardown` 不再每次都睡完整个 120 秒的交接预算：场景把释放事件作为最后一步、在返回 runner 之前完成设置，而不是留给 `finally`，因此通过的测试不再按整份预算占住一个 worker——该测试原本耗时 124 秒，并把每一次运行的墙钟上限都钉死在这一单个测试的节奏上。`test_a_parked_worker_is_released_before_the_scenario_returns` 通用地锁定了该性质，方式是给运行计时，而不是断言一个刚刚自己设过的标志位。 |
-
-| ODR-58 | 报表 | view bundle 重用同时比较目录与文件并拒绝目录符号链接，额外空目录不能伪装成相同产物。 |
-
-| ODR-59 | API | 结构性载荷整数在绑定前校验 SQLite 有符号整数范围；有限数值证据使用 SQLite REAL 表示。 |
-| ODR-60 | 插件 API | 插件 JSON/JSONL 在解码时拒绝非有限数值，包括 alignment extra 与未知事件类型的嵌套字段；无效输入在任何写入前以 ValidationError 拒绝。 |
+| ODR-0055 | TUI | 在读取进行中提交的过滤请求不再被丢弃：`WorkerResults.begin_load` 登记该请求、`end_load` 在进行中的读取渲染完成后启动它；runs 面板、analysis-jobs 模态与 analysis-hits 模态的 reload 都改走这一共享通道——最新的过滤器总是生效，读取互不重叠，慢查询也不会堆积线程。ODR-45 的载荷丢弃守卫保持不变。 |
+| ODR-0056 | TUI | 从 recipe 编辑器命令链移除行时现在会指名被删的行，重新编号精确跳过该行，而不是信任 DOM 已完成剪除，因此幸存步骤不再沿用被删步骤的编号。 |
+| ODR-0057 | Tests | run-pipeline 模块的通知断言现在先谓词等待：模块获得与 ODR-27 给 `test_tui_config.py` 相同形态的 `_await_notification` 辅助，替换两处直接采样通知栈的断言，并由一条驱动故意放慢的 `run_pipeline` 的回归测试支撑，晚一轮才落地的 toast 不再被提前读取。 |
+| ODR-0058 | 报表 | view bundle 重用同时比较目录与文件并拒绝目录符号链接，额外空目录不能伪装成相同产物。 |
+| ODR-0059 | API | 结构性载荷整数在绑定前校验 SQLite 有符号整数范围；有限数值证据使用 SQLite REAL 表示。 |
+| ODR-0060 | 插件 API | 插件 JSON/JSONL 在解码时拒绝非有限数值，包括 alignment extra 与未知事件类型的嵌套字段；无效输入在任何写入前以 ValidationError 拒绝。 |
 
 ## K 系列（历史）
 

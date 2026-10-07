@@ -75,11 +75,12 @@ New resolved issues are appended to the ODR table.
 | ODR-0052 | Tests | The ruff-suppression guard no longer treats a tree walk as the source of truth: it asks git for the tracked set (`git ls-files -z -- '*.py'`), which is exact and cannot race a build, and keeps the shape-based walk only as the fallback for checkouts without git. That fallback skips `PKG-INFO` staging trees, `*.egg-info`, `dist/` and editor/cache directories, and the read loop tolerates a file that vanishes mid-scan. |
 | ODR-0053 | Tests | A raised notification now stays readable for the whole test: `tests/conftest.py` carries one autouse fixture, `durable_notifications`, raising `App.NOTIFICATION_TIMEOUT` to a test-length lifetime suite-wide, instead of every reader working around Textual's five-second default. |
 | ODR-0054 | Tests | `test_modal_drops_result_after_teardown` no longer sleeps out its whole 120 s handoff budget: the scenario sets the release event as its last act, before returning to the runner, instead of leaving it to the `finally`, so a green test stops pinning a worker for the full budget — it cost 124 s and capped the wall clock of every run at that one test's pace. `test_a_parked_worker_is_released_before_the_scenario_returns` pins the property generally, by timing the run rather than asserting a flag it just set. |
-
-| ODR-58 | Reports | View bundle reuse compares directory members as well as files and refuses directory symlinks, so extra empty directories cannot masquerade as identical output. |
-
-| ODR-59 | API | Structural payload integers are checked against SQLite signed-integer bounds before binding; finite numeric evidence uses SQLite REAL representation. |
-| ODR-60 | Plugin API | Plugin JSON/JSONL rejects nonfinite numbers at decoding, including nested alignment extras and unknown event types; invalid input raises ValidationError before any write. |
+| ODR-0055 | TUI | A filter request made while a read was in flight is no longer dropped: `WorkerResults.begin_load` latches it and `end_load` starts it once the in-flight read has rendered, and the runs panel, the analysis-jobs modal and the analysis-hits modal route their reload through that one shared latch — the newest filter always wins, reads never overlap and a slow query cannot pile up threads. The ODR-45 payload-drop guard is unchanged. |
+| ODR-0056 | TUI | Removing a step from the recipe editor's commands chain now names the row being removed, and the renumber skips exactly that row instead of trusting the DOM to have finished pruning, so the surviving step no longer keeps the removed step's number. |
+| ODR-0057 | Tests | The run-pipeline module's notification assertions now wait on a predicate: one `_await_notification` helper (the same shape ODR-27 gave `test_tui_config.py`) replaces the two direct rack reads, backed by a regression that drives a deliberately slowed `run_pipeline`, so a toast landing a turn later is no longer sampled too early. |
+| ODR-0058 | Reports | View bundle reuse compares directory members as well as files and refuses directory symlinks, so extra empty directories cannot masquerade as identical output. |
+| ODR-0059 | API | Structural payload integers are checked against SQLite signed-integer bounds before binding; finite numeric evidence uses SQLite REAL representation. |
+| ODR-0060 | Plugin API | Plugin JSON/JSONL rejects nonfinite numbers at decoding, including nested alignment extras and unknown event types; invalid input raises ValidationError before any write. |
 
 ## K series (historical)
 
