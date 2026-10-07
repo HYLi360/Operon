@@ -11,3 +11,5 @@ Deduplication is implemented by layer: byte-level duplication is already guarant
 For scale, SQLite WAL plus indexes suits metadata on the order of millions of rows, and all sequence parsing is streaming; if inode sharing is explicitly acceptable, hard links can be used for `standardized/` or releases.
 
 Execution backends extend along the abstraction in `execution.py`: `local`, `slurm`, and `ssh` are provided today, and a new backend only needs to implement the same executor interface to plug into `run-external`/`analyze`. Cloud-vendor SDKs (AWS Batch, GCP Batch, etc.) and Slurm array jobs are not yet supported; remote storage currently consists of SFTP mirrors only, and object storage (S3 and the like) is likewise an extension direction. Data-dependent fan-out does not require array jobs: `operon fanout` admits each unit as its own manifest file, and `analyze` with a `file_role_prefix` recipe then submits one job per unit through any backend.
+
+The phase-two [plugin file contracts](../reference/plugin-contract.md) define payloads, events, preset fragments and visualization bundles; implementation retains the built-in integrations.

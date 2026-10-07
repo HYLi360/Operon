@@ -1753,3 +1753,64 @@ defects:
   fixed_in: '0.9.1'
   regression_tests:
     - tests/unit/test_tui_pipeline.py::test_the_completion_notification_arrives_after_the_modal_closes
+- id: ODR-58
+  title: 'View bundle reuse ignored unexpected directories and directory symlinks'
+  reported: '2026-10-04'
+  introduced_in: '49400cf01bdaaae1d2078eb01976ac9939b194f7'
+  affected: |
+    The API-extension branch; an existing view bundle with an additional empty directory or directory
+    symlink
+  severity: 'low'
+  component: 'reports'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_view_bundle.py -k extra_directories -n 0 --no-cov. Both scenarios
+    accepted a destination with an unexpected directory instead of raising ConflictError. The original
+    comparison enumerated regular files only.
+  disposition: |
+    Compare every bundle member, including directories, and refuse any symbolic link before reusing
+    existing output. The regression fails on the original producer for both cases.
+  fix_commit: '9d85dca2f2ee507f1b2209e089ecd6865fb7cc99'
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_view_bundle.py::test_bundle_reuse_rejects_extra_directories_and_symlinks
+- id: ODR-59
+  title: 'Plugin payload integers could overflow SQLite parameter binding'
+  reported: '2026-10-04'
+  introduced_in: 'dbf4fccebcfe27c56c0b3e669b39883b68a74934'
+  affected: |
+    The API-extension branch; plugin payloads with an oversized job ID, rank, coordinate or file size
+  severity: 'low'
+  component: 'api'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_hits_import.py -k outside_sqlite -n 0 --no-cov. A job_id of 1 << 80
+    escaped validation and raised OverflowError during SQLite lookup instead of a ValidationError.
+  disposition: |
+    Bound structural integers in the packaged schemas to SQLite signed integers, validate those bounds
+    before binding, and normalize finite real metrics to their SQLite REAL representation.
+  fix_commit: 'fc590e980869d5a00709487aa782792748f80517'
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_hits_import.py::test_hits_payload_rejects_job_id_outside_sqlite_integer_range
+- id: ODR-60
+  title: 'Nonfinite JSON numbers escaped plugin payload decoding'
+  reported: '2026-10-04'
+  introduced_in: 'dbf4fccebcfe27c56c0b3e669b39883b68a74934'
+  affected: |
+    The API-extension branch; nonfinite numbers nested in alignment extra fields or unknown event types
+  severity: 'low'
+  component: 'api'
+  status: 'fixed'
+  reproduction: |
+    Run pytest tests/regression/test_hits_import.py tests/regression/test_plugin_events.py -k
+    nonstandard_json -n 0 --no-cov. All eight cases raised a bare ValueError during canonical hashing
+    instead of ValidationError because Python's JSON decoder accepted nonstandard constants.
+  disposition: |
+    Decode plugin JSON and JSONL with a shared strict reader that rejects nonfinite numeric values
+    before schema validation or canonical hashing. Preserve normal import-qc decoding and output.
+  fix_commit: '8478b0019894275f33ce7590b761dcffe740f048'
+  fixed_in: null
+  regression_tests:
+    - tests/regression/test_hits_import.py::test_hits_reject_nonstandard_json_constants_in_extra
+    - tests/regression/test_plugin_events.py::test_events_reject_nonstandard_json_constants_in_unknown_types

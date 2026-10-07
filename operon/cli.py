@@ -408,6 +408,20 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--file", dest="tsv_file", required=True)
 
     p = sub.add_parser(
+        "import-hits", help="import independent parser evidence for a completed job"
+    )
+    p.add_argument("--file", required=True)
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser(
+        "import-events", help="import plugin facts and generate adopt drafts"
+    )
+    p.add_argument("--run", required=True)
+    p.add_argument("--file", required=True)
+    p.add_argument("--out", help="adopt draft destination")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser(
         "qc-measure",
         help="measure built-in QC metrics for one file without a project "
         "(runs anywhere, e.g. on an HPC node; JSON payload for 'import-qc')",
@@ -516,11 +530,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--cwd")
     p.add_argument("--timeout", type=float)
+    p.add_argument("--events", help="declare the plugin event JSONL output path")
     p.add_argument(
         "--backend",
         choices=["local", "slurm", "ssh"],
         help="execution backend (default: execution.backend in project.yaml)",
     )
+
+    p = sub.add_parser("tools", help="manage declarative external-tool presets")
+    tools_sub = p.add_subparsers(dest="tools_command", required=True)
+    tp = tools_sub.add_parser("add-preset", help="merge a plugin preset fragment")
+    tp.add_argument("--file", required=True)
+    tp.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser(
         "tools-check", help="detect configured external tools and their versions"
@@ -560,6 +581,7 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it",
     )
+    p.add_argument("--events", help="declare the plugin event JSONL output path")
     p.add_argument(
         "--backend",
         choices=["local", "slurm", "ssh"],
@@ -1001,9 +1023,14 @@ def _parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("report", help="render queryable project and release reports")
     report_sub = p.add_subparsers(dest="report_kind", required=True)
+    rp = report_sub.add_parser("view", help="export a read-only visualization bundle")
+    rp.add_argument("--out", required=True)
     rp = report_sub.add_parser("qc", help="show or export long-form QC results")
     rp.add_argument("--entity-type")
     rp.add_argument("--entity-id")
+    rp.add_argument("--wide", action="store_true", help="pivot QC metrics by entity")
+    rp.add_argument("--format", choices=["text", "tsv", "json"], default="text")
+    rp.add_argument("--out", help="write the QC report atomically")
     rp.add_argument(
         "--export", action="store_true", help="write qc/aggregate TSV files"
     )
@@ -1258,7 +1285,9 @@ def _parser() -> argparse.ArgumentParser:
 def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
     project = load_project(args.project)
     read_only = (
-        args.command == "query"
+        (args.command == "tools" and args.dry_run)
+        or (args.command in {"import-hits", "import-events"} and args.dry_run)
+        or args.command == "query"
         or args.command == "environments"
         or args.command == "workflow"
         or args.command == "show"
@@ -1266,7 +1295,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
         or args.command == "status"
         or (
             args.command == "report"
-            and args.report_kind in {"qc", "decisions", "analysis", "metadata"}
+            and args.report_kind in {"qc", "decisions", "analysis", "metadata", "view"}
         )
         or (args.command in {"retire", "restore"} and not args.apply)
         or (args.command == "backup" and args.backup_command == "create")
@@ -1922,6 +1951,30 @@ def _cmd_alignment_qc(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_events(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.events import import_events, plan_events_import
+
+    result = (
+        plan_events_import(db, project, args.run, args.file, output=args.out)
+        if args.dry_run
+        else import_events(db, project, args.run, args.file, output=args.out)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _cmd_import_hits(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.hits_import import import_hits, plan_hits_import
+
+    result = (
+        plan_hits_import(db, args.file)
+        if args.dry_run
+        else import_hits(db, project, args.file)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _cmd_import_qc(args: argparse.Namespace, project: Project, db: Database) -> int:
     from operon.qc.imports import import_qc
 
@@ -1997,6 +2050,7 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
         inputs=args.inputs,
         extra_details=extra_details,
         run_id=run_id,
+        events=args.events,
     )
     print(
         json.dumps(
@@ -2007,6 +2061,18 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
             ensure_ascii=False,
         )
     )
+    return 0
+
+
+def _cmd_tools(args: argparse.Namespace, project: Project, db: Database) -> int:
+    from operon.tools._presets import add_preset, plan_preset_import
+
+    result = (
+        plan_preset_import(project, args.file)
+        if args.dry_run
+        else add_preset(project, db, args.file)
+    )
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0
 
 
@@ -2065,6 +2131,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         keep_partial=args.keep_partial,
         runtime_parameters=_parse_runtime_parameters(args.param),
         progress_callback=None if args.dry_run else progress,
+        events=args.events,
     )
     headers = [
         "file_id",
@@ -2942,6 +3009,31 @@ def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) 
 
 def _cmd_qc_table(args: argparse.Namespace, project: Project, db: Database) -> int:
     include_retired = getattr(args, "include_retired", False)
+    if (
+        getattr(args, "wide", False)
+        or getattr(args, "format", "text") != "text"
+        or getattr(args, "out", None)
+    ):
+        from operon.utils import atomic_write_text
+        from operon.view_bundle import render_qc_report
+
+        text = render_qc_report(
+            db,
+            args.format,
+            wide=args.wide,
+            entity_type=args.entity_type,
+            entity_id=args.entity_id,
+            include_retired=include_retired,
+        )
+        if args.out:
+            atomic_write_text(args.out, text)
+        else:
+            print(text, end="")
+        if args.export:
+            print(
+                f"wrote {export_qc_tsv(db, project, args.entity_type, include_retired=include_retired)}"
+            )
+        return 0
     if include_retired:
         table = print_qc_table(
             db,
@@ -3040,6 +3132,11 @@ def _cmd_taxonomy(args: argparse.Namespace, project: Project, db: Database) -> i
 
 
 def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.report_kind == "view":
+        from operon.view_bundle import export_view_bundle
+
+        print(f"wrote {export_view_bundle(db, args.out)}")
+        return 0
     if args.report_kind == "qc":
         return _cmd_qc_table(args, project, db)
     if args.report_kind == "decisions":
@@ -3742,8 +3839,11 @@ def main(argv: list[str] | None = None) -> int:
                 "verify": lambda: _cmd_verify(args, project, db),
                 "standardize": lambda: _cmd_standardize(args, project, db),
                 "qc": lambda: _cmd_qc(args, project, db),
+                "import-events": lambda: _cmd_import_events(args, project, db),
+                "import-hits": lambda: _cmd_import_hits(args, project, db),
                 "import-qc": lambda: _cmd_import_qc(args, project, db),
                 "run-external": lambda: _cmd_run_external(args, project, db),
+                "tools": lambda: _cmd_tools(args, project, db),
                 "tools-check": lambda: _cmd_tools_check(project),
                 "analyze": lambda: _cmd_analyze(args, project, db),
                 "extract-domains": lambda: _cmd_extract_domains(args, project, db),

@@ -37,3 +37,5 @@ contributor/index
 ## Core concepts
 
 The design invariants are stated once in the [Architecture overview](architecture/overview.md#design-goals).
+
+Plugin developers: read the [file contracts](reference/plugin-contract.md).

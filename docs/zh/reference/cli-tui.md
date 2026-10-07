@@ -393,3 +393,11 @@ token 列表、`path`，或留空表示“没有 `run_method` 键”。表单只
   获取它的正途。
 - **`show --scope organism`**——该查询返回所属 organism 的全部后代（真实项目里可达数千行），而实体
   详情只回答被选中的实体；这种宽图查询留在 CLI。
+
+`report view` 是外部可视化消费者的 CLI-only 文件 API；QC 的 format/wide/out 新选项同属 CLI 文件 API。
+
+`import-hits` 为插件载荷的 CLI-only 接口，`--dry-run` 提供完整预览。
+
+`tools add-preset` 为声明式片段的 CLI-only 接口，提供只读预览。
+
+`import-events` 与 `analyze`/`run-external --events` 文件 API 为 CLI-only。

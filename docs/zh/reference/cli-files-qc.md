@@ -133,3 +133,7 @@ entity_type, entity_id, qc_stage, metric_name, metric_value, tool, tool_version,
 `file_id`/`file_sha256` 提供时必须与 manifest 一致。
 
 对于 `qc-measure` JSON payload，目标文件按 `file.file_id` 定位；payload 无文件 ID 时按 `file.sha256` 反查（checksum 匹配多条 manifest 记录时拒绝）。payload 的 SHA-256/大小必须与 manifest 一致；由不同 `operon` 版本度量的 payload 只产生警告。FASTA payload 的 `sequences` 映射会同步进所定位文件的 `sequences` 表。两种输入形式在导入后都会重算受影响实体的 QC 状态，并在 `workflow_runs` 中记录一条 `import-qc` 步骤。
+
+现有 `qc-measure` 载荷的 JSON Schema 随包发布在
+`operon/qc/measure.schema.json`，见[插件文件契约](plugin-contract.md)。
+Schema 不新增运行时依赖，也不改变 `import-qc` 行为。

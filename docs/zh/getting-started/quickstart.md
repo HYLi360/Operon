@@ -34,3 +34,5 @@ operon --project ./demo-project report qc --entity-type assembly
 - 其他实体 PASS。
 
 验证 release：本演示的目录是 `./demo-project/releases/2026.08.demo`，具体步骤见[创建 release](first-project.md)。
+
+可实跑[独立 toy 插件文件闭环](../reference/plugin-examples.md)。

@@ -343,3 +343,20 @@ operon environments export ENVIRONMENT_ID [--format {explicit,yaml}]
 默认的 `explicit` 格式锁定安装包 URL 和 SHA-256（缺失时回退 MD5），仅覆盖兼容平台上的
 Conda 管理安装包。YAML 包含包名/版本/build 约束及 channel，不含原始 prefix，需要重新求解依赖。
 pip/本地修改和激活脚本不在两种导出的恢复范围内。参阅[外部分析指南](../guides/external-analysis.md)中的重建流程。
+
+## 导入插件证据
+
+`operon import-hits --file hits.json [--dry-run]` 校验 completed job 和清单输入，
+原样保存 summary/hits/alignments；相同证据 no-op，不同证据冲突。只读预览
+执行完整校验和冲突检查，见[插件契约](plugin-contract.md)。
+`result_parser: plugin:<name>` 由插件负责解析，内置解析器保留。
+
+## 添加预设片段
+
+`operon tools add-preset --file preset.yaml [--dry-run]` 增加工具/recipe，
+不替换既有定义；相同片段 no-op，冲突在发布前拒绝。保存为原子写、往返校验，
+逐受影响 recipe 留快照，失败恢复原字节。格式见[插件文件契约](plugin-contract.md)。
+
+`analyze --events PATH` 声明 `analysis/` 下独立 sidecar；多输入模板须含
+`${file_id}`，也支持 `${output}`。请求事件强制新执行并进入缓存指纹，既有产物
+不能静默满足新的 sidecar 契约。

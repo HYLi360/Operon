@@ -1,0 +1,210 @@
+{
+  "$comment": "See docs/{en,zh}/reference/plugin-contract.md; facts supplied by independent parsers, never recalculated.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "alignments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bitscore": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evalue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "extra": {
+            "type": "object"
+          },
+          "hit_rank": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "percent_identity": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "query_end": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "query_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "query_start": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "subject_end": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "subject_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject_start": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "query_id",
+          "subject_id",
+          "hit_rank"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "file": {
+      "additionalProperties": false,
+      "properties": {
+        "file_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "[a-fA-F0-9]{64}",
+          "type": "string"
+        },
+        "size_bytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_id",
+        "sha256",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "hits": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "hit_rank": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "metric_name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "metric_numeric": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metric_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric_value": {
+            "type": "string"
+          },
+          "query_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_name",
+          "metric_value",
+          "query_id",
+          "subject_id",
+          "hit_rank"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "job_id": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "metric_name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "metric_numeric": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "metric_unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metric_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_name",
+          "metric_value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "maximum": 9223372036854775807,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "file",
+    "results",
+    "hits",
+    "alignments"
+  ],
+  "type": "object"
+}

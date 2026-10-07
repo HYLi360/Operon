@@ -481,3 +481,11 @@ CI workflow exporting `OPERON_PARITY_STRICT=1`, so a gap that reappears as
 - **`show --scope organism`** — that query returns every descendant of the
   owning organism (thousands of rows in a real project), while the entity detail
   answers for the selected entity only. The wide graph stays a CLI query.
+
+`report view` is CLI-only for external visualization consumers; the new QC format/wide/out options are CLI file API options.
+
+`import-hits` is CLI-only for plugin payloads; `--dry-run` is its validated preview.
+
+`tools add-preset` is CLI-only for declarative fragments with a read-only preview.
+
+`import-events` and the `analyze`/`run-external --events` file API are CLI-only.

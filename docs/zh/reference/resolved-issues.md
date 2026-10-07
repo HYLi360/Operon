@@ -68,6 +68,11 @@
 | ODR-0053 | Tests | 已抛出的通知现在在整个测试期间保持可读：`tests/conftest.py` 携带一个 autouse fixture `durable_notifications`，全套件把 `App.NOTIFICATION_TIMEOUT` 提升到测试长度级别，而不是让每个读取方各自绕开 Textual 五秒的默认值。 |
 | ODR-0054 | Tests | `test_modal_drops_result_after_teardown` 不再每次都睡完整个 120 秒的交接预算：场景把释放事件作为最后一步、在返回 runner 之前完成设置，而不是留给 `finally`，因此通过的测试不再按整份预算占住一个 worker——该测试原本耗时 124 秒，并把每一次运行的墙钟上限都钉死在这一单个测试的节奏上。`test_a_parked_worker_is_released_before_the_scenario_returns` 通用地锁定了该性质，方式是给运行计时，而不是断言一个刚刚自己设过的标志位。 |
 
+| ODR-58 | 报表 | view bundle 重用同时比较目录与文件并拒绝目录符号链接，额外空目录不能伪装成相同产物。 |
+
+| ODR-59 | API | 结构性载荷整数在绑定前校验 SQLite 有符号整数范围；有限数值证据使用 SQLite REAL 表示。 |
+| ODR-60 | 插件 API | 插件 JSON/JSONL 在解码时拒绝非有限数值，包括 alignment extra 与未知事件类型的嵌套字段；无效输入在任何写入前以 ValidationError 拒绝。 |
+
 ## K 系列（历史）
 
 | # | 领域 | 修复结果 |

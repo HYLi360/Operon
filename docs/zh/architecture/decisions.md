@@ -26,9 +26,9 @@
 | EXT-1 | 分析插件是**独立发行的 CLI**，经由配方（`operon analyze`）或 `operon run-external` 以子进程方式调起。Operon 不是它的运行时依赖，插件也不得 import Operon。 | 生效 | [扩展边界](extensibility.md)、[外部分析执行模型](external-analysis.md) |
 | EXT-2 | 为什么不做进程内钩子：执行从设计上就是"子进程 + 跨后端"（local / Slurm / SSH）并共用一套 provenance 契约；进程内钩子只能在控制机本机运行，会与 provenance、缓存指纹与环境比对脱钩。entry-point 钩子是**暂缓**，不是否定。 | 生效 | [扩展边界](extensibility.md) |
 | EXT-3 | entry-point / `operon.api` 设计**暂缓**。立项判据：≥2 个外部插件确有进程内需求，或需要自定义 result parser / executor 后端。 | 暂缓 | 本页 |
-| EXT-4 | 插件可以额外产出事件 JSONL，用 `operon import-events` 回载：`metric` 事件进 QC 结果，`artifact` 事件成为 `adopt` 清单草稿。未知事件类型跳过并计数；未知 `schema_version` 报错且不写盘。 | 待实现 | 本页 |
+| EXT-4 | 插件可以额外产出事件 JSONL，用 `operon import-events` 回载：`metric` 事件进 QC 结果，`artifact` 事件成为 `adopt` 清单草稿。未知事件类型跳过并计数；未知 `schema_version` 报错且不写盘。 | 生效 | [插件契约](../reference/plugin-contract.md)；`tests/regression/test_plugin_events.py` |
 | EXT-5 | 事件承载的是**事实，而非判定**：插件可以报告它测量到或产出了什么，永远不能报告状态、决策或 QC 结论——那些只来自版本化 profile（见 INV-4）。 | 生效（由 INV-4 推出） | 本页 |
-| EXT-6 | 可视化插件只读 `report view` bundle（带 `bundle_schema_version` 与各成员校验和的只读目录），永不写项目数据库。 | 待实现 | 本页 |
+| EXT-6 | 可视化插件只读 `report view` bundle（带 `bundle_schema_version` 与各成员校验和的只读目录），永不写项目数据库。 | 生效 | [插件契约](../reference/plugin-contract.md)；`tests/regression/test_view_bundle.py` |
 | EXT-7 | 插件发行版继承 Operon 当前的开发者与许可证；发行名与托管位置待定。 | 生效 | 本页 |
 
 ## 契约与闸门
@@ -49,5 +49,9 @@
 记录在此的目的是让它们**在 `docs/` 里被回答**，而不是只在计划草稿里。在这些行被提升为决策之前，外部消费者不得依赖其中任何一种结果。
 
 - **第三方只读访问 SQLite**——是否承诺一份文档化的只读表/列面（bundle 之外），以及若承诺，schema 抬升时配套多长的迁移窗口。
-- **bundle 演进政策**——`bundle_schema_version` 的兼容承诺细则（现行假设：只增字段；破坏性变更抬主版本并附迁移说明）。
-- **事件 schema 的归属**——事件 schema 内嵌在插件契约中，还是单独成文。
+
+## 第二阶段文件契约
+
+[插件契约](../reference/plugin-contract.md)明确版本拒绝、bundle 演进、hits 导入和预设冲突。执法者为 `import-hits`、`import-events`、`tools add-preset`、`report view` 和契约测试；EXT-4、EXT-6 已实现。事件 Schema 作为独立包资源发布，直读 SQLite 兼容仍开放。
+
+hits 证据按 completed job 追加：身份与行键校验，相同导入 no-op，不同证据冲突（`tests/regression/test_hits_import.py`）。预设片段只增不覆盖，失败原子恢复，逐受影响 recipe 留快照（`tests/regression/test_plugin_presets.py`）。

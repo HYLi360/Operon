@@ -213,3 +213,24 @@ platform. YAML contains name/version/build constraints and channels, omits the
 original prefix, and requires dependency solving. Pip/local modifications and
 activation scripts are outside both exports. See the
 [reconstruction workflow](../guides/external-analysis.md#reconstruct-a-captured-conda-environment).
+
+## Import plugin evidence
+
+`operon import-hits --file hits.json [--dry-run]` validates a completed job and
+its manifest input, then stores the supplied summary/hits/alignments unchanged.
+Identical evidence is a no-op; differing evidence conflicts. The read-only
+preview validates all rows and conflicts. See [plugin contracts](plugin-contract.md).
+Recipes using `result_parser: plugin:<name>` own parsing; built-in parsers remain.
+
+## Add a preset fragment
+
+`operon tools add-preset --file preset.yaml [--dry-run]` adds new tools/recipes
+without replacing existing definitions. Identical fragments are no-ops; conflicts
+are rejected before publication. The save is atomic, round-trip validated and
+snapshotted per affected recipe; failure restores original bytes.
+See [plugin file contracts](plugin-contract.md) for the fragment format.
+
+`analyze --events PATH` declares a separate sidecar under `analysis/`. Multiple
+inputs require `${file_id}` in the template; `${output}` is also supported. Event
+requests force fresh execution and enter the cache fingerprint; no existing
+output can silently satisfy the new sidecar contract.

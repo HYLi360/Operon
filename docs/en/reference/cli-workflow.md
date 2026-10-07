@@ -115,3 +115,14 @@ not yet one cross-table event timeline. Full-text search and an interactive
 analysis of run history are also intentionally deferred until the backend event
 model and operational interfaces are mature. The current interface is stable,
 scriptable CLI output only.
+
+## Plugin event import
+
+`operon import-events --run RUN_ID --file events.jsonl [--out adopt.json] [--dry-run]`
+imports metric facts and emits an adopt draft. Unknown types are skipped/countable;
+unsupported versions or invalid later lines write nothing. Repeated run/event IDs
+are no-ops, changed content conflicts. Metric parameter sets receive a stable
+`:events:<run/event hash>` suffix to retain independent attribution.
+`run-external --events PATH` declares and records an expected JSONL sidecar; it is
+transferred by SSH like other outputs. It does not add arguments to the plugin
+or automatically import events. See [file contracts](plugin-contract.md).

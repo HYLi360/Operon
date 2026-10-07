@@ -434,6 +434,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         },
     ),
     ParityEntry(
+        ("report", "view"),
+        STATUS_CLI_ONLY,
+        note="Visualization file API: external consumers request a complete bundle directory.",
+    ),
+    ParityEntry(
         ("report", "qc"),
         STATUS_IMPLEMENTED,
         note="read-only: the Entities screen (nav `2`) entity detail renders the "
@@ -443,6 +448,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "no provenance rows). The export's type filter mirrors `--entity-type` "
         "and defaults to the selected entity's type",
         actions="data.entity_metrics",
+        waived={
+            "wide": "CLI file API; TUI exports the shared QC TSV pair",
+            "format": "CLI file API; TUI exports the shared QC TSV pair",
+            "out": "CLI file API; TUI uses its export destination",
+        },
         params={
             "entity_type": "context: Entities screen selection",
             "entity_id": "context: Entities screen selection",
@@ -517,6 +527,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         STATUS_IMPLEMENTED,
         actions="actions.run_analysis",
         modal="operon.tui.screens.analyze::AnalyzeModal",
+        waived={"events": "CLI plugin event sidecar API; no event-path TUI form"},
         params={
             "analysis": "analyze-recipe",
             "param": "analyze-param-<name> (one widget per recipe parameter)",
@@ -567,6 +578,21 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("ncbi-reconcile",),
         STATUS_CLI_ONLY,
         note="development-era adapter anomaly repair tool; not a workflow",
+    ),
+    ParityEntry(
+        ("import-hits",),
+        STATUS_CLI_ONLY,
+        note="Plugin evidence file API with a validated read-only dry-run; no TUI form is provided.",
+    ),
+    ParityEntry(
+        ("tools", "add-preset"),
+        STATUS_CLI_ONLY,
+        note="Declarative plugin file API; --dry-run validates merge conflicts before publication.",
+    ),
+    ParityEntry(
+        ("import-events",),
+        STATUS_CLI_ONLY,
+        note="Plugin JSONL file API; dry-run validates facts and draft conflicts before import.",
     ),
     ParityEntry(
         ("qc-measure",),
@@ -735,6 +761,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         STATUS_IMPLEMENTED,
         actions="actions.run_external",
         modal="operon.tui.screens.run_external::RunExternalModal",
+        waived={"events": "CLI plugin event sidecar API; no event-path TUI form"},
         params={
             "step": "external-step",
             "command_line": "external-command",

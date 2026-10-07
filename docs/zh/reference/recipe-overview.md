@@ -152,3 +152,6 @@ operon --project . tools-check
 
 版本字符串参与缓存身份。程序升级后，即使其余参数完全相同，也不会错误复用旧版本
 生成的结果。
+
+插件作者可分发增量 tools/recipes 片段供 `tools add-preset` 导入，
+见[文件契约](plugin-contract.md)；内置预设保留。

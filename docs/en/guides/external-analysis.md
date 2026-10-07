@@ -326,3 +326,5 @@ so the comparison is logged as `unavailable` and falls back to `warn` behavior
 rather than forcing a recompute — missing fingerprints in older runs never
 imply an environment match. Use `analyze --force` when testing an actual
 recomputation; `run-external` also executes the command directly.
+
+Try the [standalone toy plugin file loop](../reference/plugin-examples.md).

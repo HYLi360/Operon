@@ -440,3 +440,6 @@ Before saving a new recipe, confirm item by item:
 - `tools-check` passes;
 - The full command from `analyze --dry-run --limit 1` matches expectations;
 - A single small input has been run for real and `report analysis` cross-checked against `report qc` before batch execution.
+
+`result_parser: plugin:<name>` declares an external parser. Operon does not parse
+its output; use `import-hits` explicitly. Other unknown parser names still fail.

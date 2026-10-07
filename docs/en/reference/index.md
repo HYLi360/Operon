@@ -33,6 +33,8 @@ cli-workflow
 cli-tui
 cli-taxonomy-lifecycle-admin
 cli-config
+plugin-contract
+plugin-examples
 recipe-overview
 recipe-fields
 recipe-parsers-examples
@@ -46,3 +48,7 @@ All commands use the following form:
 ```text
 operon [--project PATH] [-v | --version] <subcommand> [arguments]
 ```
+
+- [Plugin file contracts](plugin-contract.md)
+
+- [Runnable toy plugin examples](plugin-examples.md)
