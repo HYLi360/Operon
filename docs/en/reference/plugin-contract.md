@@ -80,7 +80,7 @@ All three arrays are required (and may be empty). `results` maps to
 `analysis_alignments`. The existing completed `analysis_jobs` row supplies
 entity, analysis name, tool, parameters and parent workflow. Its input hash and
 file identity must match the current manifest. Obtain the job ID from
-`operon query --sql 'SELECT job_id FROM analysis_jobs ...'` after `analyze`.
+`operon query 'SELECT job_id FROM analysis_jobs ...'` after `analyze`.
 
 Ranks are positive integers **per query**, supplied by the plugin. Summary keys
 are metric names; hit keys are `(query_id, hit_rank, metric_name)`; alignment keys

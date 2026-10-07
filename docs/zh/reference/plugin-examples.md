@@ -8,7 +8,7 @@
 
 ```bash
 operon init-demo /tmp/operon-plugin-demo
-operon --project /tmp/operon-plugin-demo query --sql \
+operon --project /tmp/operon-plugin-demo query \
   "SELECT file_id, entity_type, entity_id, relative_path FROM files WHERE entity_type='assembly' ORDER BY file_id LIMIT 1"
 ```
 
@@ -72,7 +72,7 @@ operon --project /tmp/operon-plugin-demo tools add-preset --file toy-preset.yaml
 operon --project /tmp/operon-plugin-demo tools add-preset --file toy-preset.yaml
 operon --project /tmp/operon-plugin-demo analyze --analysis toy_analysis --limit 1 \
   --events '${output}.${file_id}.events.jsonl'
-operon --project /tmp/operon-plugin-demo query --sql \
+operon --project /tmp/operon-plugin-demo query \
   "SELECT job_id, file_id, workflow_run_id FROM analysis_jobs WHERE analysis_name='toy_analysis' ORDER BY job_id DESC LIMIT 1"
 python examples/plugins/toy_analysis.py --input INPUT_PATH --out /tmp/toy-hits.json \
   --file-id FILE_ID --entity-type assembly --entity-id ENTITY_ID --job-id JOB_ID

@@ -63,7 +63,7 @@ adopt 清单是 JSON list，每项必有 `path`、`entity_type`、`entity_id`、
 三个数组必需且可为空，分别写入 `analysis_results`、`analysis_hits`、
 `analysis_alignments`。既有 completed `analysis_jobs` 提供实体、分析名、工具、
 参数与父 workflow；输入哈希和三段文件身份必须与清单一致。`analyze` 完成后可用
-`operon query --sql 'SELECT job_id FROM analysis_jobs ...'` 取得 job ID。
+`operon query 'SELECT job_id FROM analysis_jobs ...'` 取得 job ID。
 
 rank 是插件提供的每 query 正整数；summary 键为 metric_name，hit 键为
 `(query_id, hit_rank, metric_name)`，alignment 键为 `(query_id, hit_rank)`，
