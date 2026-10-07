@@ -1832,7 +1832,7 @@ defects:
   disposition: |
     The read-only PRAGMA whitelist gained integrity_check and foreign_key_check, so the documented
     recovery baseline runs as written; every writable PRAGMA stays denied.
-  fix_commit: null
+  fix_commit: 'cb4b42ad225d78f51d9eac8252af3970d6bfecd9'
   fixed_in: null
   regression_tests:
     - tests/unit/test_database_edges_more.py::test_readonly_query_allows_the_integrity_pragmas

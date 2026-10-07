@@ -81,6 +81,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0058 | Reports | View bundle reuse compares directory members as well as files and refuses directory symlinks, so extra empty directories cannot masquerade as identical output. |
 | ODR-0059 | API | Structural payload integers are checked against SQLite signed-integer bounds before binding; finite numeric evidence uses SQLite REAL representation. |
 | ODR-0060 | Plugin API | Plugin JSON/JSONL rejects nonfinite numbers at decoding, including nested alignment extras and unknown event types; invalid input raises ValidationError before any write. |
+| ODR-0061 | Database API | The read-only query PRAGMA whitelist covers the integrity pragmas as well: `integrity_check` and `foreign_key_check` run through `operon query` exactly as the recovery procedure documents, while every writable PRAGMA stays denied. |
 
 ## K series (historical)
 
