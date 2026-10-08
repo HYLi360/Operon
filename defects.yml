@@ -1836,3 +1836,26 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_database_edges_more.py::test_readonly_query_allows_the_integrity_pragmas
+- id: ODR-62
+  title: 'The table-import tests read notifications before the app had raised them'
+  reported: '2026-10-08'
+  introduced_in: null
+  affected: 'the table-import TUI tests: two tests asserted a toast the app had not posted yet'
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    App.notify posts a Notify message rather than recording the toast inline, so the text lands a
+    message-loop turn later. test_tui_table_import.py sampled _notifications(app) once right after the
+    modal dismissed and asserted a 'table import (organisms): 2 inserted' entry from that read. CI run
+    37566958718 caught it on macOS 3.14 as `assert False` behind a table import that had actually
+    written both rows. This is the same unguarded read ODR-57 fixed in test_tui_pipeline.py; the
+    table-import module kept two copies of its own.
+  disposition: |
+    Both notification assertions in test_tui_table_import.py become predicate waits on the notification
+    rack, the same fix shape as ODR-27 and ODR-57, and both tests carry the ODR-62 bug marker.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_table_import.py::test_import_preview_gate_unlocks_confirm_and_writes
+    - tests/unit/test_tui_table_import.py::test_template_mode_command_text_and_confirm

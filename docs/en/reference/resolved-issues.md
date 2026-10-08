@@ -82,6 +82,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0059 | API | Structural payload integers are checked against SQLite signed-integer bounds before binding; finite numeric evidence uses SQLite REAL representation. |
 | ODR-0060 | Plugin API | Plugin JSON/JSONL rejects nonfinite numbers at decoding, including nested alignment extras and unknown event types; invalid input raises ValidationError before any write. |
 | ODR-0061 | Database API | The read-only query PRAGMA whitelist covers the integrity pragmas as well: `integrity_check` and `foreign_key_check` run through `operon query` exactly as the recovery procedure documents, while every writable PRAGMA stays denied. |
+| ODR-0062 | Tests | The table-import module's notification assertions wait on a predicate instead of sampling the notification rack once after the modal dismisses, so a toast that lands a message-loop turn later (CI run 37566958718, macOS 3.14) no longer turns a correct import into a failed assertion. |
 
 ## K series (historical)
 

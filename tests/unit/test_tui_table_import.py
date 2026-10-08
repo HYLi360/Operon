@@ -389,6 +389,7 @@ def test_home_screen_opens_import_table_modal(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-62")
 def test_template_mode_command_text_and_confirm(
     project: Project, tmp_path: Path, monkeypatch
 ) -> None:
@@ -430,15 +431,19 @@ def test_template_mode_command_text_and_confirm(
                 "template modal dismissal",
                 timeout=HANDOFF_TIMEOUT,
             )
-            assert any(
-                "template written to" in message
-                for _severity, message in _notifications(app)
+            await _wait_until(
+                lambda: any(
+                    "template written to" in message
+                    for _severity, message in _notifications(app)
+                ),
+                "template notification to land",
             )
 
     _run(scenario())
     assert calls == [((project, "samples", str(tmp_path / "t.csv")), {})]
 
 
+@pytest.mark.bug("ODR-62")
 def test_import_preview_gate_unlocks_confirm_and_writes(
     project: Project, tmp_path: Path
 ) -> None:
@@ -501,9 +506,12 @@ def test_import_preview_gate_unlocks_confirm_and_writes(
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
-            assert any(
-                "table import (organisms): 2 inserted" in message
-                for _severity, message in _notifications(app)
+            await _wait_until(
+                lambda: any(
+                    "table import (organisms): 2 inserted" in message
+                    for _severity, message in _notifications(app)
+                ),
+                "table import notification to land",
             )
 
     _run(scenario())
