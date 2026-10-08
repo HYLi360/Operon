@@ -1854,7 +1854,7 @@ defects:
   disposition: |
     Both notification assertions in test_tui_table_import.py become predicate waits on the notification
     rack, the same fix shape as ODR-27 and ODR-57, and both tests carry the ODR-62 bug marker.
-  fix_commit: null
+  fix_commit: 'af060c515e6d39cb8afbd526f5bbfe933857967f'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_import_preview_gate_unlocks_confirm_and_writes
