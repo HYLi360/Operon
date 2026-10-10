@@ -1903,7 +1903,7 @@ defects:
     stay on record as provenance, and `select-sequences`/`extract-domains` surface the number of ignored
     older completed jobs as a stderr warning and as `ignored_completed_jobs` in the run's
     execution_details, the same convention classify-sequences established.
-  fix_commit: null
+  fix_commit: '59c959a944b344d34cb43ce9a972fcd22c450193'
   fixed_in: null
   regression_tests:
     - tests/unit/test_sequence_tools.py::TestExtractDomains::test_only_latest_completed_job_contributes
