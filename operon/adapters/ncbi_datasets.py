@@ -108,7 +108,7 @@ from ._ncbi_storage import (
     _require_disk_space,
 )
 
-# Deliberate re-export surface for the CLI (operon/cli.py), the TUI
+# Deliberate re-export surface for the CLI (operon/cli/), the TUI
 # (operon/tui/actions.py), operon/ncbi_reconcile.py and the tests.  Kept in
 # the sorted order ruff's RUF022 expects.
 __all__ = [

@@ -6,7 +6,7 @@ The five core design invariants are stated once in the [Architecture overview](.
 
 ## Repository structure
 
-- `operon/`: the Python package; CLI entry points are `operon/cli.py` and `operon/__main__.py`.
+- `operon/`: the Python package; CLI entry points are `operon/cli/` and `operon/__main__.py`.
 - `operon/adapters/`: external source adapters, currently NCBI Datasets.
 - `operon/qc/`: home for all QC functionality — streaming sequence-file parsers, built-in QC, and alignment QC (`alignment.py`). `parsers.py` is the pure-Python behavioral reference; `_parsers.pyx` is the Cython implementation used in production. The two must keep metrics and error texts identical through parity regression tests.
 - `operon/execution.py`: the `local`, `slurm`, and `ssh` execution backends.

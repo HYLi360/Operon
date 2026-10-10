@@ -73,7 +73,7 @@
 
 | 模块 | 主要职责 |
 |---|---|
-| `operon/cli.py` | argparse 命令解析、命令分发、人类可读输出 |
+| `operon/cli/` | argparse 命令解析、命令分发、人类可读输出 |
 | `operon/config.py` | 读取 `project.yaml`，定位项目根目录，生成目录结构 |
 | `operon/schema.py` | 内置元数据字段定义、类型校验与规范化、派生 TSV 写出 |
 | `operon/database.py` | SQLite DDL、WAL/外键/索引、开发期兼容迁移与 schema 2.2–{{ db_schema }} 增量迁移、事务、只读查询 |

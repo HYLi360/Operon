@@ -22,6 +22,8 @@ import yaml
 
 from operon import cli, qc, rules
 from operon import files as files_mod
+from operon.cli import _decisions as cli_decisions
+from operon.cli import _files as cli_files
 from operon.cli import main
 from operon.config import Project, load_project
 from operon.database import Database
@@ -524,11 +526,13 @@ def test_evaluate_cli_warns_and_confirms_curated_reevaluation(
         db.close()
 
     # Non-interactive: refuses before any write.
-    real_evaluate_all = cli.evaluate_all
+    real_evaluate_all = cli_decisions.evaluate_all
     monkeypatch.setattr(cli.sys, "stdin", _TTY(False))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(False))
     monkeypatch.setattr(
-        cli, "evaluate_all", lambda *_a: pytest.fail("evaluated without confirmation")
+        cli_decisions,
+        "evaluate_all",
+        lambda *_a: pytest.fail("evaluated without confirmation"),
     )
     assert (
         main(["--project", str(project.root), "evaluate", "--entity-type", "assembly"])
@@ -548,7 +552,7 @@ def test_evaluate_cli_warns_and_confirms_curated_reevaluation(
     assert "Evaluation cancelled; no rows were changed." in capsys.readouterr().out
 
     # --yes proceeds through the real evaluation.
-    monkeypatch.setattr(cli, "evaluate_all", real_evaluate_all)
+    monkeypatch.setattr(cli_decisions, "evaluate_all", real_evaluate_all)
     monkeypatch.setattr(cli.sys, "stdin", _TTY(False))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(False, sink=captured_stdout))
     assert (
@@ -1713,7 +1717,9 @@ def test_run_pipeline_honours_interactive_cancellation(project, monkeypatch):
     monkeypatch.setattr(cli.sys, "stdin", _TTY(True))
     monkeypatch.setattr(cli.sys, "stdout", _TTY(True))
     monkeypatch.setattr(
-        cli, "ingest_file", lambda *_a, **_k: pytest.fail("ingest ran after declining")
+        cli_files,
+        "ingest_file",
+        lambda *_a, **_k: pytest.fail("ingest ran after declining"),
     )
     assert (
         main(

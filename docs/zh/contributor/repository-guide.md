@@ -6,7 +6,7 @@
 
 ## 仓库结构
 
-- `operon/`：Python 包；CLI 入口为 `operon/cli.py` 和 `operon/__main__.py`。
+- `operon/`：Python 包；CLI 入口为 `operon/cli/` 和 `operon/__main__.py`。
 - `operon/adapters/`：外部来源适配器，目前包括 NCBI Datasets。
 - `operon/qc/`：所有 QC 功能的家——流式序列文件解析器、内置 QC，以及比对 QC（`alignment.py`）。`parsers.py` 是纯 Python 行为参考；`_parsers.pyx` 是生产使用的 Cython 实现。两者必须通过 parity 回归测试保持指标和错误文本一致。
 - `operon/execution.py`：`local`、`slurm` 和 `ssh` 执行后端。

@@ -45,7 +45,9 @@ Operon 是一个 Python 编写、以文件为载体的数据库系统，面向�
 │   └── timetree.py            # 从最新 TimeTree 数据库取物种分歧时间
 ├── backup.py                 # 为当前 operon 数据库生成备份
 ├── classify.py               # 版本化 sequence_classification profile，标注 sequence_labels
-├── cli.py                    # CLI 入口
+├── cli                       # CLI 入口包：__init__.py 组装 parser、分发与兼容再导出；
+│                             # _common.py 为共享 argparse 类型与辅助，其余 _<域>.py
+│                             # 各自承载一组命令的 add_*_parser 与 _cmd_* 处理器
 ├── config.py                 # 项目配置与目录布局
 ├── coverage.py               # 基于快照的 NCBI Taxonomy 覆盖率分母
 ├── database.py               # SQLite schema 与迁移

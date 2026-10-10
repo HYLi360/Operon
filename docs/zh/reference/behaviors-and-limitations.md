@@ -40,8 +40,8 @@
 - **重跑 `qc` 或 `evaluate` 不会降级已有决定的实体。** 批量 QC 与自动重评估都走受守卫的状态写入：处于 `ACCEPTED`/`REVIEW`/`REJECTED`/`RELEASED` 的实体保持其生命周期状态，同时新鲜的 QC 证据与 decision 行照常记录；只有显式的 `curate` 或 `set-state --force` 才能移动它（`workflow.py`、`qc/__init__.py`、`rules.py`）。
 - **可写打开在单个 immediate 事务内重建派生视图。** `current_decisions`、`effective_retired_entities` 与 `current_entity_lifecycle` 在写锁保护下删除并重建，因此并发的 `operon` 进程（或 CLI 与 TUI）会等待而不是在重建中途相撞（`database.py`）。
 - **每次可写打开都会重建 schema 对象。** 视图重建会改变 `PRAGMA schema_version`，即使没有任何数据变化也会在每次可写打开时写入 WAL；只读命令在此之前就返回（`database.py`）。
-- **来自更新 schema 的数据库会被静默接受。** 没有任何代码读取或比较存储的 `database/SCHEMA` 标记，`SCHEMA_VERSION` 只被写入和报告：旧二进制会打开该数据库，用自己的版本字符串重写标记并重建自己的视图（`database.py`、`cli.py`）。
-- **`project.yaml` 不做校验，`init` 也不是原子的。** 缺失或改名的键会抛出裸 `KeyError`（traceback，退出码 1）而非配置错误；`Project.init` 先写 `project.yaml`，因此后续失败会留下半初始化项目——`Project.find` 会接受它，而重试会拒绝重新初始化（`config.py`、`cli.py`）。
+- **来自更新 schema 的数据库会被静默接受。** 没有任何代码读取或比较存储的 `database/SCHEMA` 标记，`SCHEMA_VERSION` 只被写入和报告：旧二进制会打开该数据库，用自己的版本字符串重写标记并重建自己的视图（`database.py`、`cli/`）。
+- **`project.yaml` 不做校验，`init` 也不是原子的。** 缺失或改名的键会抛出裸 `KeyError`（traceback，退出码 1）而非配置错误；`Project.init` 先写 `project.yaml`，因此后续失败会留下半初始化项目——`Project.find` 会接受它，而重试会拒绝重新初始化（`config.py`、`cli/`）。
 - **三个默认配置键没有任何读取方。** `resources.max_memory_gb`、`qc.sample_reads_for_duplicates` 与 `project.description` 由 `operon init` 写入，但没有任何代码路径读取（只有 `resources.default_threads` 与 `qc.default_profile` 会被消费），设置它们既无效果也无警告（`config.py`、`tools/_run.py`）。
 
 ## 时间戳、日志与排序
@@ -50,7 +50,7 @@
 - **`logs/workflow.jsonl` 与数据库可能不一致。** JSONL run 记录的追加没有进程间锁，且在数据库提交之后才落盘，事务回滚会丢弃其缓冲记录；每条记录以一次追加加 `fsync` 写入，因此现实风险是缺失、重复或乱序的行，而不是半行（`utils.py`、`workflow.py`）。
 - **run 的输入身份嵌入绝对路径。** `workflow_runs.input_sha256` 是 `path:sha256` 行列表的哈希；相同内容位于不同路径（项目搬移）会得到不同的输入身份（`workflow.py`）。
 - **run 的输入身份在不同步骤之间不可比。** 外部命令哈希的是 `path:sha256` 列表，而内置 QC 存的是文件的纯 SHA-256，因此同一文件在不同步骤得到不同的 `input_sha256`；`log_run` 还把 `tool_version` 默认成 `operon` 版本，于是 ingest 与 QC 行会把 Operon 本身记为工具（`workflow.py`、`qc/__init__.py`）。
-- **输出条数限制是隐式的。** `workflow list` 默认 50 行（`--limit 0` 为不限，`--to` 为开区间；见 [workflow list](cli-workflow.md)），`report analysis` 默认 20 行且无截断提示，而 `report qc` 与 `report decisions` 不设上限；空结果会打印 `(no QC results)`、`(no decisions)`、`(no analysis results)` 之类的字面哨兵（`cli.py`、`reports.py`）。
+- **输出条数限制是隐式的。** `workflow list` 默认 50 行（`--limit 0` 为不限，`--to` 为开区间；见 [workflow list](cli-workflow.md)），`report analysis` 默认 20 行且无截断提示，而 `report qc` 与 `report decisions` 不设上限；空结果会打印 `(no QC results)`、`(no decisions)`、`(no analysis results)` 之类的字面哨兵（`cli/`、`reports.py`）。
 - **失败记账是尽力而为的。** 在失败或中断路径于 `try`/`except Exception: pass` 中写入自己的 `workflow_runs` 行、随后重新抛出原始异常的地方，记账写入一旦失败就会被吞掉，因此失败命令可能让 run 行停留在 `running`，且没有任何记账失败的痕迹（`import_wizard.py`、`taxonomy.py`、`adapters/ncbi_datasets.py`）。
 - **执行环境探测失败是静默的。** 环境采集失败时 run 正常完成，只是没有 `environment_id`，也没有警告（`workflow.py`）。
 
@@ -62,9 +62,9 @@
 - **更改 QC 采样参数会累积行。** QC 结果按参数集 upsert；用不同 `--sample-size`/`--phred-offset` 重跑 `qc` 会新增一组平行行而非替换，`latest_metrics` 中最新的静默胜出（`database.py`）。
 - **阈值语义是闭区间，集合比较按字符串。** `>=`/`<=` 为闭，`between` 两端皆闭，`in`/`not_in` 把指标值当字符串比较，缺少 `operator` 的规则恒通过（`rules.py`）。profile 结构缺口（缺 `min`/`max`/`values`）的行为见 [QC profile 指南](../guides/qc-profiles.md)。
 - **`curate` 接受任意判定字符串。** 值会被转大写但不校验是否属于判定枚举；无法识别的值原样存储，并把实体映射到 `QC_COMPLETE`（`rules.py`）。
-- **损坏的 profile 只影响它自己指向的那一个。** `evaluate` 只加载指定的单个 profile 文件，`analyze` 根本不读 profile，因此两者都不会枚举 `config/profiles/`；该目录中的草稿或改到一半的 YAML 只有在遮蔽了指定 profile 时才有影响，整目录列举只属于 TUI 的 profile 界面（`rules.py`、`profiles.py`）。当被指定的 profile 存在 YAML 语法错误时，命令以 traceback 和退出码 1 失败，而不是 `error:` 消息，因为 `yaml.YAMLError` 不是 `OperonError`（`cli.py`）。
-- **人工覆盖会在重新评估后保留。** 最新自动判定沿用当前 `curated_*` 字段；显式 `curate` 才会改变生命周期（`rules.py`、`cli.py`）。
-- **数值规则作用在文本指标上会晚失败。** `latest_metrics` 可能返回文本值，数值算子随后抛出裸 `ValueError`，CLI 只打印无上下文的 `error: ...` 并以退出码 1 结束，而不是给出指名规则或指标的错误（`database.py`、`rules.py`、`cli.py`）。
+- **损坏的 profile 只影响它自己指向的那一个。** `evaluate` 只加载指定的单个 profile 文件，`analyze` 根本不读 profile，因此两者都不会枚举 `config/profiles/`；该目录中的草稿或改到一半的 YAML 只有在遮蔽了指定 profile 时才有影响，整目录列举只属于 TUI 的 profile 界面（`rules.py`、`profiles.py`）。当被指定的 profile 存在 YAML 语法错误时，命令以 traceback 和退出码 1 失败，而不是 `error:` 消息，因为 `yaml.YAMLError` 不是 `OperonError`（`cli/`）。
+- **人工覆盖会在重新评估后保留。** 最新自动判定沿用当前 `curated_*` 字段；显式 `curate` 才会改变生命周期（`rules.py`、`cli/`）。
+- **数值规则作用在文本指标上会晚失败。** `latest_metrics` 可能返回文本值，数值算子随后抛出裸 `ValueError`，CLI 只打印无上下文的 `error: ...` 并以退出码 1 结束，而不是给出指名规则或指标的错误（`database.py`、`rules.py`、`cli/`）。
 
 ## 内置 QC 解析
 
@@ -78,7 +78,7 @@
 - **配对 reads 匹配会被静默跳过**——当同批 FASTQ 没有 manifest 行或不在磁盘上时，既无指标也无警告（`qc/__init__.py`）。
 - **损坏的 FASTA 长度缓存会被静默重建。** 摘要/计数不匹配时删除并重建缓存（`qc/__init__.py`）。
 - **Cython 与纯 Python 解析器零容忍差异。** 指标与错误消息字符串必须逐字节一致；由 `tests/regression/test_cython_parser_parity.py` 强制。
-- **`qc --file-id` 仍会继承同层文件的失败。** 实体状态聚合所有同层文件，因此只针对一个健康文件的运行会在同层文件 `QC_FAILED` 时以 1 退出；对 `REMOTE_ONLY` 文件执行 `--file-id` 时，唯一结果被跳过，同样以 1 退出（`qc/__init__.py`、`cli.py`）。
+- **`qc --file-id` 仍会继承同层文件的失败。** 实体状态聚合所有同层文件，因此只针对一个健康文件的运行会在同层文件 `QC_FAILED` 时以 1 退出；对 `REMOTE_ONLY` 文件执行 `--file-id` 时，唯一结果被跳过，同样以 1 退出（`qc/__init__.py`、`cli/`）。
 - **R1/R2 配对信任未经校验的同层字节。** 同批 FASTQ 通过直接重读计数，没有 manifest 校验和检查，因此保持记录数不变的字节级损坏既不会改变配对指标，也不会影响报告出的完整性（`qc/__init__.py`、`qc/parsers.py`）。
 - **annotation 会继承同层文件的失败。** assembly 与 protein 输入在 GFF3 解析之前校验，因此缺失或变化的同层文件会在 annotation 上记录 `parseable=0` 并使其失败（`qc/__init__.py`）。
 - **重复 seqid 会放大长度并削弱 GFF3 坐标检查。** 长度映射把同名 seqid 的每条记录相加，因此含重复 seqid 的 assembly 会报告偏大的总量，超出真实记录长度的 feature 末端仍可能通过坐标检查（`qc/parsers.py`、`qc/__init__.py`）。
@@ -241,7 +241,7 @@
 ## 备份与导入向导
 
 - **打开数据库失败会关闭连接。** `Database.__init__` 中 DDL 或迁移抛错时（例如 `operon.sqlite` 损坏），连接会在异常离开构造函数之前关闭，只读打开路径同理——失败的打开既不会泄漏句柄，也不会残留文件锁（`database.py`）。
-- **`backup create` 通过 SQLite backup API 快照。** 默认 `--scope` 为 `control`，而每个范围——包括 `control`——都会内嵌一份完整的 SQLite 快照，快照用 backup API 取得，因此即使其他连接正在写入也保持一致，且不复制 WAL 文件（`backup.py`、`cli.py`）。
+- **`backup create` 通过 SQLite backup API 快照。** 默认 `--scope` 为 `control`，而每个范围——包括 `control`——都会内嵌一份完整的 SQLite 快照，快照用 backup API 取得，因此即使其他连接正在写入也保持一致，且不复制 WAL 文件（`backup.py`、`cli/`）。
 - **`results` 范围不能恢复数据。** 它在 control 之上增加 QC/analysis/reports/taxonomy/releases，但排除 `raw/` 与 `standardized/`；只有 `full` 包含数据字节，且目标目录必须在项目根之外且不存在（见[备份与迁移指南](../guides/backup-migration.md)）（`backup.py`）。
 - **备份对跳过内容保持沉默。** 缺失的范围目录被无提示跳过，因此备份可以在遗漏 `releases/` 的情况下成功；只有文件与符号链接会被登记和校验（空目录不可见），`verify` 从不打开 SQLite 快照，而缺少 `size_bytes`/`sha256` 的 manifest 条目会以裸 `KeyError` traceback 逃逸（`backup.py`）。
 - **只有部分符号链接会被重定位。** `standardized/` 下指向项目内部的绝对符号链接会在创建备份时改写为相对目标；相对链接、树中其他位置的链接以及指向项目外部的绝对目标保留原文，而且没有 restore 命令（`backup.py`）。
@@ -266,7 +266,7 @@
 ## CLI 约定
 
 - **已知问题：字段数超标的 coverage 报告会让 TUI 查看器崩溃。** `data.read_coverage_report` 原样返回行数据，因此手工编辑过的 `reports/coverage/COV_*/coverage_*.tsv` 若某行字段数多于表头，`CoveragePanel` 会在应用线程抛出 `ValueError: More values provided than there are columns.`，而不是显示内联错误（`tui/screens/coverage.py`）。
-- **退出码：** 0 成功；1 为运行时/SQLite/OSError（包括 release/export 的 `FileExistsError`）以及 `qc`/`verify`/`analyze`/`push`/`pull`/`evict`/`backup verify`/`report coverage` 中任何逐条目失败；2 为所有 `OperonError`（校验、冲突、校验和、远程、配置）；130 为首次中断（伴随“进度已保存、可重跑同一命令”的提示——仅对可续跑的 NCBI 适配器与分析路径成立）；第二次信号为 `128+signum`（`cli.py`、`shutdown.py`）。映射按异常类别进行，因此处理函数中未捕获的 `sqlite3.Error`、`RuntimeError`、`OSError` 或 `ValueError` 也会以 1 返回并把消息前缀为 `error:`，即使该失败属于编程错误而非运行时状况；该链条之外的异常类型（`KeyError`、`yaml.YAMLError`）会以 traceback 逃逸并以退出码 1 结束。退出码 130 背后的可续跑中断语义见 [analyze](cli-analysis.md#analyze)。`doctor` 在此映射之上有自己的显式契约：0 无需关注，1 至少一项需要关注，2 检查本身无法完成——检查失败绝不会被报告为健康（见 [doctor](cli-project-metadata.md#doctor)）。
+- **退出码：** 0 成功；1 为运行时/SQLite/OSError（包括 release/export 的 `FileExistsError`）以及 `qc`/`verify`/`analyze`/`push`/`pull`/`evict`/`backup verify`/`report coverage` 中任何逐条目失败；2 为所有 `OperonError`（校验、冲突、校验和、远程、配置）；130 为首次中断（伴随“进度已保存、可重跑同一命令”的提示——仅对可续跑的 NCBI 适配器与分析路径成立）；第二次信号为 `128+signum`（`cli/`、`shutdown.py`）。映射按异常类别进行，因此处理函数中未捕获的 `sqlite3.Error`、`RuntimeError`、`OSError` 或 `ValueError` 也会以 1 返回并把消息前缀为 `error:`，即使该失败属于编程错误而非运行时状况；该链条之外的异常类型（`KeyError`、`yaml.YAMLError`）会以 traceback 逃逸并以退出码 1 结束。退出码 130 背后的可续跑中断语义见 [analyze](cli-analysis.md#analyze)。`doctor` 在此映射之上有自己的显式契约：0 无需关注，1 至少一项需要关注，2 检查本身无法完成——检查失败绝不会被报告为健康（见 [doctor](cli-project-metadata.md#doctor)）。
 
 ## 推迟到 1.0 版本
 

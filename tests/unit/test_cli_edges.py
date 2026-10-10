@@ -12,6 +12,10 @@ from types import SimpleNamespace
 import pytest
 
 from operon import cli
+from operon.cli import _decisions as cli_decisions
+from operon.cli import _files as cli_files
+from operon.cli import _metadata as cli_metadata
+from operon.cli import _report as cli_report
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -131,7 +135,7 @@ def test_add_entities_accession_and_fk_validation(project_db, capsys):
 def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys):
     project, db = project_db
     monkeypatch.setattr(
-        cli,
+        cli_files,
         "verify_files",
         lambda *_a: [
             {
@@ -154,16 +158,18 @@ def test_verify_standardize_qc_and_sync_outputs(project_db, monkeypatch, capsys)
     )
     assert cli._cmd_verify(ns(file_id=[]), project, db) == 1
     assert "MISSING" in capsys.readouterr().out
-    monkeypatch.setattr(cli, "verify_files", lambda *_a: [])
+    monkeypatch.setattr(cli_files, "verify_files", lambda *_a: [])
     assert cli._cmd_verify(ns(file_id=["F1"]), project, db) == 0
     assert "verified 0" in capsys.readouterr().out
 
     monkeypatch.setattr(
-        cli, "standardize_file", lambda *_a, **_k: {"action": "linked", "target": "x"}
+        cli_files,
+        "standardize_file",
+        lambda *_a, **_k: {"action": "linked", "target": "x"},
     )
     assert cli._cmd_standardize(ns(file_id=["F1"], link="copy"), project, db) == 0
     monkeypatch.setattr(
-        cli,
+        cli_files,
         "standardize_all",
         lambda *_a, **_k: [
             {"file_id": "F1", "action": "cached", "target": "x"},
@@ -636,7 +642,7 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(
     with pytest.raises(ValidationError, match="entity-type is required"):
         cli._cmd_evaluate(ns(entity_id="X", entity_type=None, profile="p"), project, db)
     monkeypatch.setattr(
-        cli,
+        cli_decisions,
         "evaluate_entity",
         lambda *_a: {
             "entity_type": "organism",
@@ -652,7 +658,7 @@ def test_remotes_evaluate_pipeline_and_simple_report_branches(
         )
         == 0
     )
-    monkeypatch.setattr(cli, "evaluate_all", lambda *_a: [])
+    monkeypatch.setattr(cli_decisions, "evaluate_all", lambda *_a: [])
     assert (
         cli._cmd_evaluate(
             ns(entity_id=None, entity_type=None, profile="p"), project, db
@@ -717,7 +723,7 @@ def test_run_pipeline_preflights_curated_evaluation_before_ingest(
     monkeypatch.setattr(cli.sys, "stdin", NotTTY())
     monkeypatch.setattr(cli.sys, "stdout", NotTTY())
     monkeypatch.setattr(
-        cli,
+        cli_files,
         "ingest_file",
         lambda *_a, **_k: pytest.fail("ingest ran before confirmation"),
     )
@@ -737,18 +743,18 @@ def test_run_pipeline_preflights_curated_evaluation_before_ingest(
 
 def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, capsys):
     project, db = project_db
-    monkeypatch.setattr(cli, "print_qc_table", lambda *_a: "qc")
-    monkeypatch.setattr(cli, "export_qc_tsv", lambda *_a: Path("qc.tsv"))
+    monkeypatch.setattr(cli_report, "print_qc_table", lambda *_a: "qc")
+    monkeypatch.setattr(cli_report, "export_qc_tsv", lambda *_a: Path("qc.tsv"))
     assert (
         cli._cmd_qc_table(
             ns(entity_type=None, entity_id=None, export=True), project, db
         )
         == 0
     )
-    monkeypatch.setattr(cli, "print_decisions", lambda *_a: "decisions")
+    monkeypatch.setattr(cli_report, "print_decisions", lambda *_a: "decisions")
     assert cli._cmd_decisions(ns(profile=None), project, db) == 0
     monkeypatch.setattr(
-        cli,
+        cli_report,
         "report_coverage",
         lambda *_a, **_k: {
             "scope_kind": "metadata",
@@ -771,7 +777,9 @@ def test_report_import_show_query_and_error_dispatch(project_db, monkeypatch, ca
     )
     args = ns(report_kind="coverage", reference_set="R1", release=None)
     assert cli._cmd_report(args, project, db) == 1
-    monkeypatch.setattr(cli, "export_metadata_report", lambda *_a: Path("metadata"))
+    monkeypatch.setattr(
+        cli_report, "export_metadata_report", lambda *_a: Path("metadata")
+    )
     assert cli._cmd_report(ns(report_kind="metadata", output=None), project, db) == 0
     with pytest.raises(ValidationError, match="unknown report kind"):
         cli._cmd_report(ns(report_kind="unknown"), project, db)
@@ -853,7 +861,7 @@ def test_ingest_remote_source_cleans_temporary_artifact(
         observed.update(source=source, source_url=kwargs["source_url"])
         return {"file_id": "FIL_1", "relative_path": "archive/x", "sha256": "a" * 64}
 
-    monkeypatch.setattr(cli, "ingest_file", fake_ingest)
+    monkeypatch.setattr(cli_files, "ingest_file", fake_ingest)
     args = ns(
         source="remote://mirror/archive/x",
         source_url=None,
@@ -881,7 +889,7 @@ def test_ingest_remote_source_cleans_temporary_artifact_after_failure(
     temporary.write_text(">x\nAC\n", encoding="utf-8")
     monkeypatch.setattr("operon.remotes.fetch_url_to_temp", lambda *_a: temporary)
     monkeypatch.setattr(
-        cli,
+        cli_files,
         "ingest_file",
         lambda *_a, **_k: (_ for _ in ()).throw(ValidationError("bad")),
     )
@@ -912,7 +920,7 @@ def test_ingest_local_source_does_not_use_remote_staging(
         observed.update(source=value, source_url=kwargs["source_url"])
         return {"file_id": "FIL_1", "relative_path": "archive/x", "sha256": "a" * 64}
 
-    monkeypatch.setattr(cli, "ingest_file", fake_ingest)
+    monkeypatch.setattr(cli_files, "ingest_file", fake_ingest)
     assert (
         cli._cmd_ingest(
             ns(
@@ -938,12 +946,14 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
     project_db, monkeypatch, capsys
 ):
     project, db = project_db
-    monkeypatch.setattr(cli, "import_ncbi_taxonomy", lambda *_a: {"snapshot": "T1"})
     monkeypatch.setattr(
-        cli, "compile_reference_set", lambda *_a: {"reference_set": "R1"}
+        cli_report, "import_ncbi_taxonomy", lambda *_a: {"snapshot": "T1"}
     )
     monkeypatch.setattr(
-        cli,
+        cli_report, "compile_reference_set", lambda *_a: {"reference_set": "R1"}
+    )
+    monkeypatch.setattr(
+        cli_report,
         "list_taxonomy_snapshots",
         lambda *_a: [
             {
@@ -958,7 +968,7 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
         ],
     )
     monkeypatch.setattr(
-        cli,
+        cli_report,
         "list_reference_sets",
         lambda *_a: [
             {
@@ -1003,7 +1013,7 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
     ):
         routed = []
         monkeypatch.setattr(
-            cli, handler, lambda *_a, routed=routed: routed.append(kind) or 7
+            cli_report, handler, lambda *_a, routed=routed: routed.append(kind) or 7
         )
         assert cli._cmd_report(ns(report_kind=kind), project, db) == 7
         assert routed == [kind]
@@ -1021,10 +1031,10 @@ def test_interactive_table_import_conflict_and_confirmation_paths(
         "unchanged": 0,
     }
     monkeypatch.setattr(cli.Schema, "from_file", lambda *_a: schema)
-    monkeypatch.setattr(cli, "preview_table_import", lambda *_a: preview)
+    monkeypatch.setattr(cli_metadata, "preview_table_import", lambda *_a: preview)
     applied = []
     monkeypatch.setattr(
-        cli,
+        cli_metadata,
         "apply_table_import",
         lambda *_a, **kwargs: applied.append(kwargs["on_conflict"]) or {"updated": 1},
     )
@@ -1106,7 +1116,7 @@ def test_remaining_cli_boolean_branches(project_db, monkeypatch, capsys, tmp_pat
         },
     )
 
-    monkeypatch.setattr(cli, "print_qc_table", lambda *_a: "qc")
+    monkeypatch.setattr(cli_report, "print_qc_table", lambda *_a: "qc")
     assert (
         cli._cmd_qc_table(
             ns(entity_type=None, entity_id=None, export=False), project, db

@@ -87,7 +87,7 @@ How the principles map to implementations:
 
 | Module | Main responsibilities |
 |---|---|
-| `operon/cli.py` | argparse command parsing, dispatch, human-readable output |
+| `operon/cli/` | argparse command parsing, dispatch, human-readable output |
 | `operon/config.py` | Reads `project.yaml`, locates the project root, generates the directory structure |
 | `operon/schema.py` | Built-in metadata field definitions, type validation and normalization, derived TSV output |
 | `operon/database.py` | SQLite DDL, WAL/foreign keys/indexes, development-time compatibility migrations and incremental schema 2.2–{{ db_schema }} migrations, transactions, read-only queries |

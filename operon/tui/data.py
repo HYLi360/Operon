@@ -763,7 +763,7 @@ def normalize_workflow_time(value: str) -> str:
 
     ``Z`` suffixes become ``+00:00`` and naive values are interpreted in the
     local timezone, exactly like ``--from``/``--to`` on the command line
-    (``operon.cli._workflow_time``); anything else raises ``ValidationError``
+    (``operon.cli._common._workflow_time``); anything else raises ``ValidationError``
     with the CLI's message.
     """
     from datetime import datetime
