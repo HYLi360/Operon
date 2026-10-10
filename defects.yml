@@ -1836,3 +1836,46 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_database_edges_more.py::test_readonly_query_allows_the_integrity_pragmas
+- id: ODR-63
+  title: |
+    Sequence selection counts alignments from stale completed jobs after a reference-database change
+  reported: '2026-10-10'
+  introduced_in: null
+  affected: |
+    Any project where the same (analysis, file) pair is re-run after its recipe's reference database
+    changes identity, for example by repointing `database:` in config/tools.yaml. The previous job keeps
+    `status: 'completed'` because supersession only matches an identical parameter fingerprint, while
+    `operon select-sequences`, `operon extract-domains` and the classification engine read every
+    completed job's `analysis_alignments` rows for the file. Rows produced with the retired reference
+    database are therefore counted alongside the new ones.
+  severity: 'medium'
+  component: 'tools'
+  status: 'open'
+  reproduction: |
+    Observed on the PROJECT_BHLH project (database schema 2.11). Step 1: `hmmsearch_pf00010` pointed at
+    `hmm/PF00010/PF00010.hmm`; its single completed job for FIL_000003 (ANN_000001, job_id 1109,
+    2026-09-20, ssh launcher, database_identity c3b01653bbe6...) wrote
+    analysis/hmmsearch_pf00010/ANN_000001/FIL_000003.protein_fasta.domtblout. Step 2: the HMM was moved
+    to `resources/hmm/PF00010/PF00010.hmm`, the recipe was repointed, and all 499 release-260919 protein
+    FASTAs were re-run with `--force` (FIL_000003 now job_id 1112, database_identity b4cbb43e7b48...).
+    Job 1109 stayed `status='completed'`; only a same-fingerprint predecessor is superseded (job 1111
+    was superseded by 1112 with an identical fingerprint). Step 3: `operon select-sequences --file-id
+    FIL_000003 --analysis hmmsearch_pf00010 --evalue-max 1e-5 --min-span 30` selects the correct 95
+    sequences, but the written manifest counts 260 qualifying alignment rows (hit_count, best_evalue)
+    instead of 130, because `_alignment_rows()` joins `analysis_jobs` on `status='completed'` only and
+    never on the job's database identity.
+    
+    Verified with: SELECT COUNT(*) FROM analysis_alignments a JOIN analysis_jobs j ON j.job_id =
+    a.job_id WHERE a.file_id='FIL_000003' AND a.analysis_name='hmmsearch_pf00010' AND
+    j.status='completed'; which returns 260 (130 per job). Restricting to j.database_identity LIKE
+    'b4cbb43e%' returns 130. The selected set itself was unaffected here; a case where the retired
+    database contributed the only qualifying hit would change which sequences are selected.
+  disposition: |
+    Registered during the bHLH PF00010 re-run, before any fix. No code change in this change set; the
+    maintainer takes the fix in a later commit. Candidate directions: exclude rows whose job's database
+    identity or parameter fingerprint differs from the current plan, or supersede every completed
+    predecessor of the same (analysis, file) pair when a new job completes rather than only the
+    fingerprint-identical one.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
