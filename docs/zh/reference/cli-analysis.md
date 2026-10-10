@@ -116,7 +116,7 @@ operon analyze --analysis busco_lineage \
   --param lineage_dataset=fabales_odb12.2
 ```
 
-`report analysis` 显示所有仍为 `completed` 的参数变体；不会只保留同 recipe 的最新一条。
+`report analysis` 只读取每个文件最新的 `completed` 作业，因此每个文件只贡献一个参数变体。
 
 中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`analyze` 会优雅停机——
 
@@ -188,7 +188,8 @@ operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
 ```
 
 - 默认显示 `analysis_results` 汇总指标。
-- `--hits` 显示 `completed` 作业存储在 `analysis_alignments` 中的结构化比对命中行，列为
+- `--hits` 显示 `analysis_alignments` 中每个 analysis+file 最新一个 `completed` 作业的结构化比对命中行（更早的
+  completed 作业仍保留在记录中，但不贡献行），列为
   `analysis_name`、`entity_type`、`entity_id`、`query_id`、`subject_id`、`hit_rank`、
   `query_start`、`query_end`、`subject_start`、`subject_end`、`evalue`、`bitscore`、
   `percent_identity`。这些行是完整的解析命中集合，而不是被 `max_hits_per_query` 截断的
@@ -211,7 +212,8 @@ operon extract-domains --file-id FIL_... \
   --out FASTA [--manifest TSV]
 ```
 
-- 从 `analysis_alignments`（只统计 `completed` 作业）中存储的 query 区间切割一个 manifest
+- 从 `analysis_alignments`（只统计每个 analysis 最新一个 `completed` 作业；更早的 completed 作业被忽略，其计数以
+  `ignored_completed_jobs` 报告）中存储的 query 区间切割一个 manifest
   FASTA 的对应子序列。`--analysis` 指定提供区间的已完成分析；`--subject-like`（SQL LIKE，
   同时匹配 `subject_id` 与 `extra_json` 中的 `short_name`）与 `--evalue-max` 进一步收窄。
   也可以用 `--regions-tsv` 提供外部坐标（列为 `seqid,start,end`，可选 `subject`、`evalue`），
@@ -239,7 +241,8 @@ operon select-sequences --file-id FIL_... \
   --out FASTA [--manifest TSV]
 ```
 
-- 输出一个 manifest FASTA 中序列在 `analysis_alignments`（只统计 `completed` 作业）有（或
+- 输出一个 manifest FASTA 中序列在 `analysis_alignments`（只统计每个 analysis 最新一个
+  `completed` 作业；更早的 completed 作业被忽略，其计数以 `ignored_completed_jobs` 报告）有（或
   没有）匹配命中的子集。重复的 `--analysis` 之间是 OR（任一 analysis 命中即计入）；
   `--subject-like`、`--evalue-max`、`--min-span`、`--hit-type`（与 `extra_json` 中
   `hit_type` 精确匹配）之间是 AND。一个条件都不给属于错误。

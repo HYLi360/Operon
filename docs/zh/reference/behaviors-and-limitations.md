@@ -114,7 +114,7 @@
 - **版本探测有硬上限，并在 `logs/` 下暂存。** 它使用硬编码的 120 秒超时，并把临时输出暂存在项目的 `logs/` 目录下；两者都不可配置（`tools/_probe.py`）。
 - **命令链只校验最后一步的输出。** 中间产物在 run 被记为 `completed` 之前从不检查，因此链可以在中间产物缺失的情况下“完成”（`workflow.py`）。
 - **被采纳的 lineage 边只插不改。** `(derived_file_id, input_file_id)` 上的 `INSERT OR IGNORE` 意味着重复采纳永远不会更新 `workflow_run_id`，而且根本不存在更新路径（不同字节抛 `ConflictError`）；首个绝对源路径作为 `source_url` 胜出，相对 manifest 路径按项目根而非工作目录解析，也没有自引用或环检测（`lineage.py`）。
-- **`extract-domains`/`select-sequences` 会读取所有已完成作业。** 比对来自该文件的所有已完成作业，没有“最新作业”选择，源 FASTA 也从不做校验和验证（`sequence_tools.py`）。
+- **`extract-domains`/`select-sequences` 只读取每个 analysis+file 最新的 completed 作业，且会明说。** 同一组合下更早的 completed 作业——例如 recipe 的参考数据库身份变化后留下的旧作业（supersession 只匹配完全相同的指纹）——按 supersede 纪律被忽略；计数非零时会打印警告，并作为 `ignored_completed_jobs` 记入 run 的 `execution_details`。源 FASTA 从不做校验和验证（`sequence_tools.py`）。
 - **序列抽取按字节原样复制。** 子序列保留 gap 与简并码，`--min-length` 在加侧翼之前过滤，顺序与命名按字典序（`seq10` 排在 `seq2` 之前），`--all-regions` 的 header 使用加侧翼后的坐标；`--regions-tsv` 中非正的起点会被拒绝，而来自数据库的坐标会被截到 1（`sequence_tools.py`）。
 - **空结果与重复抽取都是静默的。** 空结果是 0 字节 FASTA 且退出码 0，原因只写在可选 manifest 中；既有输出被静默覆盖且从不登记；非空 `sequences` 注册表会替换由 FASTA 推导的 seqid 全集（但 FASTA 仍会被解析以取序列体）；重复 seqid 保留第一条记录（`sequence_tools.py`）。
 - **分类标签按 profile 名称索引，并在任何指标变化时重新审计。** `sequence_labels` 以 `(file_id, seqid, profile_name)` 唯一，因此 profile 版本升级会就地覆盖标签；`details_json` 嵌入观测到的 hit，因此指标变化会让每个标签重新审计，即使标签本身未变；删除只针对当前范围内的文件，因此范围外的陈旧标签会残留（`classify.py`、`database.py`）。

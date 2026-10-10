@@ -115,7 +115,7 @@ operon report analysis [--analysis NAME] [--entity-type TYPE] [--entity-id ID] \
 ```
 
 - By default, displays summary metrics from `analysis_results`.
-- `--hits` displays the structured alignment hit rows stored in `analysis_alignments` for `completed` jobs, with columns `analysis_name`, `entity_type`, `entity_id`, `query_id`, `subject_id`, `hit_rank`, `query_start`, `query_end`, `subject_start`, `subject_end`, `evalue`, `bitscore`, `percent_identity`. The rows are the full parsed hit set, not the `max_hits_per_query`-truncated EAV view.
+- `--hits` displays the structured alignment hit rows stored in `analysis_alignments` for the latest `completed` job per analysis and file (older completed jobs stay on record but do not contribute rows), with columns `analysis_name`, `entity_type`, `entity_id`, `query_id`, `subject_id`, `hit_rank`, `query_start`, `query_end`, `subject_start`, `subject_end`, `evalue`, `bitscore`, `percent_identity`. The rows are the full parsed hit set, not the `max_hits_per_query`-truncated EAV view.
 - `--format` selects the `--hits` rendering: an aligned `text` table (default), `tsv` with a header row, or a `json` array. `--out PATH` writes the chosen format atomically to a file instead of stdout.
 - `--query-id`, `--subject-id`, and `--evalue-max` filter the `--hits` rows (e-value filter keeps rows with `evalue <= VALUE`). All of `--format`/`--out`/`--query-id`/`--subject-id`/`--evalue-max` require `--hits`; passing any of them without it is a validation error.
 - `--limit` defaults to 20.
@@ -131,7 +131,7 @@ operon extract-domains --file-id FIL_... \
   --out FASTA [--manifest TSV]
 ```
 
-- Extracts query intervals stored in `analysis_alignments` (only `completed` jobs count) as substrings of one manifest FASTA. `--analysis` names the completed analysis whose alignments define the regions; `--subject-like` (SQL LIKE matched against `subject_id` and the hit's `short_name` in `extra_json`) and `--evalue-max` narrow them. Alternatively `--regions-tsv` supplies external coordinates with columns `seqid,start,end` (optional `subject`,`evalue`) for regions that did not come from an analysis.
+- Extracts query intervals stored in `analysis_alignments` (only the latest `completed` job per analysis counts; older completed jobs are ignored and their count is reported as `ignored_completed_jobs`) as substrings of one manifest FASTA. `--analysis` names the completed analysis whose alignments define the regions; `--subject-like` (SQL LIKE matched against `subject_id` and the hit's `short_name` in `extra_json`) and `--evalue-max` narrow them. Alternatively `--regions-tsv` supplies external coordinates with columns `seqid,start,end` (optional `subject`,`evalue`) for regions that did not come from an analysis.
 - `--flank` (default 5) extends each region on both sides, truncated at sequence boundaries; `--min-length` (default 30) discards shorter regions before flanking.
 - `--best-only` (default) keeps the single best-evalue region per query and headers stay the plain seqid; `--all-regions` emits one record per region with headers `<seqid>|region:<start>-<end>` using the extracted (post-flank, boundary-truncated) coordinates.
 - The output FASTA is written atomically. `--manifest` records every candidate region — including excluded ones with their reason (`missing_coordinates`, `below_min_length`, `seqid_not_in_fasta`, `region_outside_sequence`) — with source file, analysis, subject, original and extracted coordinates, length, and e-value.
@@ -147,7 +147,7 @@ operon select-sequences --file-id FIL_... \
   --out FASTA [--manifest TSV]
 ```
 
-- Writes the subset of one manifest FASTA whose sequences have (or lack) matching alignment hits in `analysis_alignments` (only `completed` jobs count). A repeated `--analysis` is OR-ed (a hit in any listed analysis counts); `--subject-like`, `--evalue-max`, `--min-span`, and `--hit-type` (exact match against the hit's `hit_type` in `extra_json`) are AND-ed. Passing no criterion at all is an error.
+- Writes the subset of one manifest FASTA whose sequences have (or lack) matching alignment hits in `analysis_alignments` (only the latest `completed` job per analysis counts; older completed jobs are ignored and their count is reported as `ignored_completed_jobs`). A repeated `--analysis` is OR-ed (a hit in any listed analysis counts); `--subject-like`, `--evalue-max`, `--min-span`, and `--hit-type` (exact match against the hit's `hit_type` in `extra_json`) are AND-ed. Passing no criterion at all is an error.
 - `--require-hit` (default) keeps sequences with at least one matching hit; `--require-no-hit` keeps the complement, computed against the full seqid set of the `sequences` table (falling back to scanning the FASTA itself when the table has no rows for the file).
 - `--entity-type`/`--entity-id` restrict which jobs' alignments count, supporting per-taxon batch strategies.
 - `--manifest` lists every sequence of the file with its selection state and evidence (`matched_analysis`, `best_evalue`, `best_subject`, `hit_count`).

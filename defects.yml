@@ -1873,7 +1873,7 @@ defects:
     database are therefore counted alongside the new ones.
   severity: 'medium'
   component: 'tools'
-  status: 'open'
+  status: 'fixed'
   reproduction: |
     Observed on the PROJECT_BHLH project (database schema 2.11). Step 1: `hmmsearch_pf00010` pointed at
     `hmm/PF00010/PF00010.hmm`; its single completed job for FIL_000003 (ANN_000001, job_id 1109,
@@ -1894,11 +1894,19 @@ defects:
     'b4cbb43e%' returns 130. The selected set itself was unaffected here; a case where the retired
     database contributed the only qualifying hit would change which sequences are selected.
   disposition: |
-    Registered during the bHLH PF00010 re-run, before any fix. No code change in this change set; the
-    maintainer takes the fix in a later commit. Candidate directions: exclude rows whose job's database
-    identity or parameter fingerprint differs from the current plan, or supersede every completed
-    predecessor of the same (analysis, file) pair when a new job completes rather than only the
-    fingerprint-identical one.
+    Read-side latest-wins, extending the supersede discipline classify-sequences already followed to the
+    remaining readers (the registration's mention of the classification engine was inaccurate:
+    classify.py always read only the latest completed job). `_alignment_rows()` in sequence_tools.py and
+    the `report analysis --hits` query (CLI and its TUI mirror) now join the latest completed job per
+    (analysis_name, file_id), so rows from older completed jobs no longer count. The write side is
+    unchanged on purpose: supersession still matches only an identical fingerprint, older completed jobs
+    stay on record as provenance, and `select-sequences`/`extract-domains` surface the number of ignored
+    older completed jobs as a stderr warning and as `ignored_completed_jobs` in the run's
+    execution_details, the same convention classify-sequences established.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_sequence_tools.py::TestExtractDomains::test_only_latest_completed_job_contributes
+    - tests/unit/test_sequence_tools.py::TestSelectSequences::test_only_latest_completed_job_contributes
+    - tests/unit/test_sequence_tools.py::TestSelectSequences::test_report_hits_reads_only_the_latest_completed_job
+    - tests/unit/test_tui.py::test_analysis_hits_reads_only_the_latest_completed_job

@@ -2412,6 +2412,43 @@ def test_analysis_hits_filters_and_retired(tmp_path: Path) -> None:
     assert len(data.analysis_hits(project, include_retired=True)) == 3
 
 
+@pytest.mark.bug("ODR-63")
+def test_analysis_hits_reads_only_the_latest_completed_job(tmp_path: Path) -> None:
+    """A stale completed job (e.g. left over after a reference-database
+    change) must not contribute rows to the hits panel."""
+    from operon.database import Database
+
+    project = Project.init(tmp_path / "hits-project")
+    _seed_hits(project)
+    db = Database(project.db_path)
+    try:
+        db.conn.execute("PRAGMA foreign_keys=OFF")
+        with db.transaction():
+            db.conn.execute(
+                "INSERT INTO analysis_jobs(job_id, analysis_name, entity_type, entity_id,"
+                " file_id, tool, tool_version, parameter_set, parameter_sha256,"
+                " input_sha256, database_identity, status, started_at) VALUES "
+                "(4,'blastn_nt','organism','ORG_000001','F1','blastn','2','p','sha','in',"
+                " 'db-new','completed','t')"
+            )
+            db.conn.execute(
+                "INSERT INTO analysis_alignments(job_id, analysis_name, entity_type,"
+                " entity_id, query_id, subject_id, file_id, hit_rank, query_start,"
+                " query_end, subject_start, subject_end, evalue, bitscore,"
+                " percent_identity) VALUES "
+                "(4,'blastn_nt','organism','ORG_000001','q7','s7','F1',1,1,9,1,9,"
+                " 1e-9,42.0,97.0)"
+            )
+    finally:
+        db.close()
+
+    rows = data.analysis_hits(project, limit=100)
+    assert [(row["entity_id"], row["query_id"]) for row in rows] == [
+        ("ORG_000001", "q7"),
+        ("ORG_000002", "q2"),
+    ]
+
+
 def test_sequence_label_readers(tmp_path: Path) -> None:
     from operon.database import Database
     from operon.utils import sha256_file

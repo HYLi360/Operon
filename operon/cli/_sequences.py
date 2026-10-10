@@ -234,6 +234,13 @@ def _cmd_extract_domains(
         f"excluded {result['excluded']} (see manifest)"
     )
     print(f"output: {result['output']}")
+    if result["ignored_completed_jobs"]:
+        print(
+            f"warning: ignored {result['ignored_completed_jobs']} older completed "
+            f"analysis job(s); only the latest completed job per analysis and file "
+            f"contributes alignments",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -282,6 +289,13 @@ def _cmd_select_sequences(
         f"excluded {result['excluded']}"
     )
     print(f"output: {result['output']}")
+    if result["ignored_completed_jobs"]:
+        print(
+            f"warning: ignored {result['ignored_completed_jobs']} older completed "
+            f"analysis job(s); only the latest completed job per analysis and file "
+            f"contributes alignments",
+            file=sys.stderr,
+        )
     return 0
 
 

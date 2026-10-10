@@ -326,6 +326,11 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
                    a.evalue, a.bitscore, a.percent_identity
             FROM analysis_alignments a
             JOIN analysis_jobs j ON j.job_id = a.job_id
+            JOIN (
+                SELECT analysis_name, file_id, MAX(job_id) AS latest_job_id
+                FROM analysis_jobs WHERE status='completed'
+                GROUP BY analysis_name, file_id
+            ) latest ON latest.latest_job_id = a.job_id
             WHERE j.status='completed'
         """
         if (

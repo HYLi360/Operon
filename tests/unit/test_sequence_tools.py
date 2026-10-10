@@ -6,6 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
@@ -155,7 +157,12 @@ class _SequenceToolProject(PytestAssertions):
         failed_job = self._add_job("cdd", status="failed")
         self._add_alignment(failed_job, "cdd", "p5", "must_not_count", 1, 1, 30, 1e-50)
 
-    def _add_job(self, analysis: str, status: str = "completed") -> int:
+    def _add_job(
+        self,
+        analysis: str,
+        status: str = "completed",
+        database_identity: str = "db",
+    ) -> int:
         self.db.insert_row(
             "analysis_jobs",
             {
@@ -168,7 +175,7 @@ class _SequenceToolProject(PytestAssertions):
                 "parameter_set": "default",
                 "parameter_sha256": "p" * 64,
                 "input_sha256": self.file_row["sha256"],
-                "database_identity": "db",
+                "database_identity": database_identity,
                 "status": status,
                 "started_at": "2026-01-01T00:00:00+00:00",
             },
@@ -412,6 +419,28 @@ class TestExtractDomains(_SequenceToolProject):
         self.assertIn("operon pull", capsys.readouterr().err)
         self.assertFalse(out.exists())
 
+    @pytest.mark.bug("ODR-63")
+    def test_only_latest_completed_job_contributes(self, capsys):
+        # A re-run after the recipe's reference database changed leaves the
+        # previous job completed (supersession only matches an identical
+        # fingerprint); only the latest completed job may define regions.
+        new_job = self._add_job("cdd", database_identity="db-new")
+        self._add_alignment(new_job, "cdd", "p5", "bhlh_family", 1, 1, 30, 1e-12)
+        out = self.root / "domains.faa"
+        self.assertEqual(
+            self._run_extract("--analysis", "cdd", "--out", str(out)),
+            0,
+        )
+        self.assertEqual([h for h, _s in self._read_fasta(out)], ["p5"])
+        self.assertIn(
+            "ignored 1 older completed analysis job(s)", capsys.readouterr().err
+        )
+        runs = self.db.query(
+            "SELECT execution_details FROM workflow_runs WHERE step='extract-domains'"
+        )
+        details = json.loads(runs[0]["execution_details"])
+        self.assertEqual(details["ignored_completed_jobs"], 1)
+
 
 class TestSelectSequences(_SequenceToolProject):
     def test_require_hit_selects_matching_sequences(self):
@@ -578,3 +607,57 @@ class TestSelectSequences(_SequenceToolProject):
         self.assertEqual(self._run_select("--analysis", "cdd", "--out", str(out)), 2)
         self.assertIn("operon pull", capsys.readouterr().err)
         self.assertFalse(out.exists())
+
+    @pytest.mark.bug("ODR-63")
+    def test_only_latest_completed_job_contributes(self, capsys):
+        # Reproduces ODR-63: a re-run after the recipe's reference database
+        # changed leaves the previous job completed (supersession only matches
+        # an identical fingerprint). The stale job's alignments must not count
+        # toward selection, hit_count or best_evalue.
+        new_job = self._add_job("cdd", database_identity="db-new")
+        self._add_alignment(new_job, "cdd", "p5", "bhlh_family", 1, 1, 30, 1e-12)
+        out = self.root / "subset.faa"
+        manifest = self.root / "selection.tsv"
+        self.assertEqual(
+            self._run_select(
+                "--analysis", "cdd", "--out", str(out), "--manifest", str(manifest)
+            ),
+            0,
+        )
+        self.assertEqual([h for h, _s in self._read_fasta(out)], ["p5"])
+        rows = {r["seqid"]: r for r in self._read_manifest(manifest)}
+        self.assertEqual(rows["p1"]["hit_count"], "0")
+        self.assertEqual(rows["p1"]["selected"], "0")
+        self.assertEqual(rows["p5"]["hit_count"], "1")
+        self.assertEqual(float(rows["p5"]["best_evalue"]), 1e-12)
+        self.assertIn(
+            "ignored 1 older completed analysis job(s)", capsys.readouterr().err
+        )
+        runs = self.db.query(
+            "SELECT execution_details FROM workflow_runs WHERE step='select-sequences'"
+        )
+        details = json.loads(runs[0]["execution_details"])
+        self.assertEqual(details["ignored_completed_jobs"], 1)
+
+    @pytest.mark.bug("ODR-63")
+    def test_report_hits_reads_only_the_latest_completed_job(self, capsys):
+        new_job = self._add_job("cdd", database_identity="db-new")
+        self._add_alignment(new_job, "cdd", "p5", "bhlh_family", 1, 1, 30, 1e-12)
+        self.assertEqual(
+            main(
+                [
+                    "--project",
+                    str(self.root),
+                    "report",
+                    "analysis",
+                    "--hits",
+                    "--format",
+                    "json",
+                    "--analysis",
+                    "cdd",
+                ]
+            ),
+            0,
+        )
+        rows = json.loads(capsys.readouterr().out)
+        self.assertEqual([row["query_id"] for row in rows], ["p5"])

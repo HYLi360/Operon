@@ -1,8 +1,9 @@
 """Alignment-driven sequence extraction and selection.
 
-Both commands read query intervals stored in ``analysis_alignments`` (only
-jobs with ``status='completed'`` count) and materialize FASTA subsets of one
-manifest sequence file.  They never mutate metadata beyond a single
+Both commands read query intervals stored in ``analysis_alignments``; under
+the supersede discipline only the latest completed job per (analysis, file)
+contributes rows, and older completed jobs are counted and surfaced as
+``ignored_completed_jobs``.  They never mutate metadata beyond a single
 ``workflow_runs`` provenance record; the outputs re-enter the manifest
 through ``operon adopt``.
 """
@@ -139,9 +140,33 @@ def _alignment_rows(
         "a.query_start, a.query_end, a.evalue, a.extra_json "
         "FROM analysis_alignments a "
         "JOIN analysis_jobs j ON j.job_id = a.job_id "
+        "JOIN ("
+        "SELECT analysis_name, file_id, MAX(job_id) AS latest_job_id "
+        "FROM analysis_jobs WHERE status='completed' "
+        "GROUP BY analysis_name, file_id"
+        ") latest ON latest.latest_job_id = a.job_id "
         f"WHERE {' AND '.join(conditions)}"  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
     )
     return [dict(row) for row in db.conn.execute(sql, parameters).fetchall()]
+
+
+def _ignored_completed_jobs(
+    db: Database, file_id: str, analyses: Iterable[str] = ()
+) -> int:
+    """Count non-latest completed jobs for the file (optionally narrowed to
+    the named analyses) — the jobs ``_alignment_rows`` ignores."""
+    conditions = ["file_id=?", "status='completed'"]
+    parameters: list[Any] = [file_id]
+    analyses = list(analyses)
+    if analyses:
+        conditions.append(f"analysis_name IN ({', '.join('?' for _ in analyses)})")
+        parameters.extend(analyses)
+    row = db.conn.execute(
+        "SELECT COUNT(*) AS jobs, COUNT(DISTINCT analysis_name) AS used "
+        f"FROM analysis_jobs WHERE {' AND '.join(conditions)}",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
+        parameters,
+    ).fetchone()
+    return int(row["jobs"]) - int(row["used"])
 
 
 def _format_fasta(records: list[tuple[str, str]]) -> str:
@@ -209,6 +234,7 @@ class _ExtractContext:
     sequences: dict[str, str] = field(default_factory=dict)
     records: list[tuple[str, str]] = field(default_factory=list)
     manifest_rows: list[dict[str, Any]] = field(default_factory=list)
+    ignored_completed_jobs: int = 0
 
 
 def _validate_region_source(ctx: _ExtractContext) -> None:
@@ -245,6 +271,9 @@ def _collect_analysis_candidates(ctx: _ExtractContext) -> None:
             }
         )
     ctx.candidates = candidates
+    ctx.ignored_completed_jobs = _ignored_completed_jobs(
+        ctx.db, ctx.file_id, [ctx.analysis]
+    )
 
 
 def _collect_tsv_candidates(ctx: _ExtractContext) -> None:
@@ -431,6 +460,7 @@ def _log_extraction_run(ctx: _ExtractContext) -> dict[str, Any]:
                     "evalue_max": ctx.evalue_max,
                     "extracted": extracted_count,
                     "excluded": excluded_count,
+                    "ignored_completed_jobs": ctx.ignored_completed_jobs,
                     "output": str(ctx.out),
                     "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
                 },
@@ -442,6 +472,7 @@ def _log_extraction_run(ctx: _ExtractContext) -> dict[str, Any]:
     return {
         "extracted": extracted_count,
         "excluded": excluded_count,
+        "ignored_completed_jobs": ctx.ignored_completed_jobs,
         "output": str(ctx.out),
         "manifest": str(ctx.manifest) if ctx.manifest is not None else None,
     }
@@ -608,6 +639,7 @@ def select_sequences(
         "selected": len(selected_set),
         "excluded": len(universe_set) - len(selected_set),
         "matched_not_in_fasta": len(set(matched) - universe_set),
+        "ignored_completed_jobs": _ignored_completed_jobs(db, file_id, analyses),
     }
     log_run(
         db,
@@ -645,6 +677,7 @@ def select_sequences(
         "total": stats["total"],
         "selected": stats["selected"],
         "excluded": stats["excluded"],
+        "ignored_completed_jobs": stats["ignored_completed_jobs"],
         "output": str(out),
         "manifest": str(manifest) if manifest is not None else None,
     }

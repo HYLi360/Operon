@@ -797,7 +797,13 @@ def test_select_sequences_cli_records_entity_scope(project_db, monkeypatch, caps
 
     def fake_select(_db, _project, **kwargs):
         captured.update(kwargs)
-        return {"selected": 1, "total": 4, "excluded": 3, "output": "out.fa"}
+        return {
+            "selected": 1,
+            "total": 4,
+            "excluded": 3,
+            "ignored_completed_jobs": 0,
+            "output": "out.fa",
+        }
 
     monkeypatch.setattr("operon.sequence_tools.select_sequences", fake_select)
     args = SimpleNamespace(
