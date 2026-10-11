@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
 
+# Every step carries a name that says which command it ran; together they read as
+# the release's checklist in the run's step list, which is where a blocked
+# release is triaged from. tests/unit/test_ci_workflow_steps.py enforces it.
 jobs:
   verify-release:
     runs-on: ubuntu-24.04
@@ -14,16 +17,19 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - name: Check Out the Tagged Commit
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - name: Set Up the Python Environment
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip pyyaml
-      - name: The tagged commit passed its own CI run
+      - name: Upgrade pip and PyYAML
+        run: python -m pip install --upgrade pip pyyaml
+      - name: Require a Green test.yml Run on the Tagged Commit
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -37,11 +43,11 @@ jobs:
             echo "::error::test.yml on $sha concluded '$conclusion'; rerun it (gh run rerun) before releasing"
             exit 1
           fi
-      - name: Import the maintainer's published GPG key
+      - name: Import the Maintainer's Published GPG Key
         run: |
           curl -sSL "https://github.com/${{ github.repository_owner }}.gpg" | gpg --import
           gpg --list-keys --with-colons | grep '^pub' | wc -l
-      - name: Release preflight
+      - name: Run the Release Preflight
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: scripts/release-preflight.sh --ci --tag "$RELEASE_TAG"
@@ -50,13 +56,15 @@ jobs:
     needs: verify-release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - name: Check Out the Repository Code
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - name: Set Up the Python Environment
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - name: Verify release tag
+      - name: Verify the Release Tag Matches pyproject.toml
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: >-
@@ -64,10 +72,14 @@ jobs:
           version = tomllib.load(open('pyproject.toml', 'rb'))['project']['version'];
           expected = f'v{version}'; actual = os.environ['RELEASE_TAG'];
           assert actual == expected, f'release tag {actual!r} does not match {expected!r}'"
-      - run: python -m pip install --upgrade build twine
-      - run: python -m build --sdist
-      - run: python -m twine check dist/*
-      - uses: actions/upload-artifact@v7
+      - name: Upgrade build and twine
+        run: python -m pip install --upgrade build twine
+      - name: Build the Source Distribution (sdist)
+        run: python -m build --sdist
+      - name: Check the Source Distribution With twine
+        run: python -m twine check dist/*
+      - name: Upload the Source Distribution as an Artifact
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-sdist
           path: dist/*.tar.gz
@@ -77,17 +89,22 @@ jobs:
     needs: verify-release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - name: Check Out the Repository Code
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - name: Set Up the Python Environment
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[docs]'
-      - run: |
-          sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
-          sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
+      - name: Upgrade the pip Installer
+        run: python -m pip install --upgrade pip
+      - name: Install Operon With Its Documentation Dependencies
+        run: python -m pip install -e '.[docs]'
+      - name: Build English Documentation (Strict)
+        run: sphinx-build -W --keep-going -b html docs/en docs/_build/en/html
+      - name: Build Chinese Documentation (Strict)
+        run: sphinx-build -W --keep-going -b html docs/zh docs/_build/zh/html
 
   wheels:
     needs: verify-release
@@ -106,14 +123,18 @@ jobs:
             artifact: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Check Out the Repository Code
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - name: Set Up the Python Environment
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - run: python -m pip install cibuildwheel==4.2.0
-      - run: python -m cibuildwheel --output-dir wheelhouse
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==4.2.0
+      - name: Build the Wheels With cibuildwheel
+        run: python -m cibuildwheel --output-dir wheelhouse
         env:
           CIBW_ARCHS: ${{ matrix.architecture }}
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*"
@@ -122,7 +143,8 @@ jobs:
             python -c "import operon; import operon.qc._parsers;
             import operon.qc._alignment;
             print(operon.__version__)" && operon --help
-      - uses: actions/upload-artifact@v7
+      - name: Upload the Wheels as an Artifact
+        uses: actions/upload-artifact@v7
         with:
           name: python-package-wheel-${{ matrix.artifact }}
           path: wheelhouse/*.whl
@@ -139,9 +161,11 @@ jobs:
       # NOT a hardcoding token
       id-token: write  # nosemgrep: security.hard-coded-tokens
     steps:
-      - uses: actions/download-artifact@v8
+      - name: Download the Built Artifacts
+        uses: actions/download-artifact@v8
         with:
           pattern: python-package-*
           path: dist/
           merge-multiple: true
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

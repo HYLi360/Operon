@@ -230,6 +230,12 @@ PyPI，且 `.github/workflows/publish.yml` 的 `verify-release` 作业必须看�
 运行为 `success` **且** `scripts/release-preflight.sh --ci --tag <tag>` 通过，才会构建与上传；
 细节见 `docs/*/contributor/pypi-release.md`。
 
+CI 的每一步都必须有名字，且名字要能独立说明它跑了什么：红绿是从 GitHub 报告的步骤列表读出来的，一个
+把 `pip install -e '.[test]'` 与 `python -m pytest` 塞在一起、名字却叫 "Upgrade pip" 的步骤，会让一次
+测试失败看起来像基础设施抖动。拆分只是解决个案，命名规则才防复发：
+`tests/unit/test_ci_workflow_steps.py` 强制两个 workflow 的每一步都有名字、同一 job 内名字唯一，且
+pytest 不得与 `pip install` 同处一步。
+
 项目使用 `pytest-xdist` 并行测试：**不要**在测试之间共享状态，否则会出现随机失败。
 
 参考耗时（本机 i7-13700HX 实测，仅供参考，不是承诺）：`python -m pytest` 全量约 3–4 分钟（覆盖率
