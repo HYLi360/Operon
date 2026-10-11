@@ -59,6 +59,7 @@ from operon.tui.screens.config import (
 )
 from operon.tui.screens.config_classification import (
     BestByRow,
+    ClassificationRuleRow,
     ClassificationSaveModal,
     classification_form_supported,
 )
@@ -3599,6 +3600,7 @@ def test_two_editor_rebuilds_in_one_turn_leave_one_generation(project: Project) 
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.bug("ODR-69")
 def test_classification_editor_row_buttons_add_and_remove(project: Project) -> None:
     """Every add/remove button in the classification editor edits its own row.
 
@@ -3649,7 +3651,13 @@ def test_classification_editor_row_buttons_add_and_remove(project: Project) -> N
                 pilot, panel, ".classrule-row", 4, ".classrule-label"
             )
             rules[3].query_one(".classrule-remove", Button).press()
-            await _await_rows(pilot, panel, ".classrule-row", 3, ".classrule-label")
+            # A removal lands a turn after the press; a >= count gate cannot
+            # observe it, so wait for the row to actually leave the tree
+            # (ODR-69).
+            await _wait_until(
+                lambda: len(list(panel.query(".classrule-row"))) == 3,
+                "the removed rule row to leave the tree",
+            )
 
             # A rule's when condition (a filter editor, removed through its own ✕).
             rule_a = (
@@ -3668,6 +3676,67 @@ def test_classification_editor_row_buttons_add_and_remove(project: Project) -> N
             expected = json.loads(json.dumps(BHLH_PROFILE))
             expected["rules"][0]["when"] = []
             assert panel._compose_classification_document() == expected
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-69")
+def test_classification_rule_row_stops_answering_once_removal_is_requested(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rule row whose removal is in flight must not reach the document.
+
+    ``row.remove()`` lands a turn after the ✕ press; a save composed inside
+    that window used to include the row being removed (ODR-69).  Hold the
+    removal here so the compose happens exactly inside the window: the row is
+    still in the tree, and the document must already be without it.
+    """
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+    release = asyncio.Event()
+    original_remove = ClassificationRuleRow.remove
+
+    def held_remove(self):
+        async def slow() -> Any:
+            await release.wait()
+            return await original_remove(self)
+
+        return slow()
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await _await_form_ready(pilot, panel)
+            rows = await _await_rows(
+                pilot, panel, ".classrule-row", 3, ".classrule-label"
+            )
+            removed_label = rows[-1].query_one(".classrule-label", Input).value
+
+            monkeypatch.setattr(ClassificationRuleRow, "remove", held_remove)
+            rows[-1].query_one(".classrule-remove", Button).press()
+            await _wait_until(
+                lambda: rows[-1].removal_pending,
+                "the removal request to reach the panel",
+            )
+            # The removal is still in flight, the row still mounted — and the
+            # composed document must already be without it.
+            document = panel._compose_classification_document()
+            labels = [rule["label"] for rule in document["rules"]]
+            assert removed_label not in labels
+            assert len(labels) == 2
+
+            monkeypatch.undo()
+            release.set()
+            await _wait_until(
+                lambda: len(list(panel.query(".classrule-row"))) == 2,
+                "the removed row to leave the tree",
+            )
+            labels = [
+                rule["label"]
+                for rule in panel._compose_classification_document()["rules"]
+            ]
+            assert labels == ["A", "U"]
 
     _run(scenario())
 

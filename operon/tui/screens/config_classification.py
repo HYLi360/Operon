@@ -574,6 +574,9 @@ class ClassificationRuleRow(ComposedRows, Vertical):
         self.original = dict(rule)
         self.extras = _extras(self.original, RULE_MODELED_KEYS)
         self.source_names = list(source_names)
+        #: Set once removal is requested: the row no longer answers for the
+        #: form while the removal is still landing (ODR-69).
+        self.removal_pending = False
 
     def compose(self) -> ComposeResult:
         mode = self._original_mode()

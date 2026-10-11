@@ -1622,6 +1622,7 @@ class ConfigPanel(Panel):
             "rules": [
                 row.rule_document()
                 for row in self.query(".classrule-row").results(ClassificationRuleRow)
+                if not row.removal_pending
             ],
         }
         for key, value in original.items():
@@ -2721,11 +2722,14 @@ class ConfigPanel(Panel):
         event.row.remove()
         self._refresh_rule_sources()
 
-    def on_classification_rule_row_remove_requested(
+    async def on_classification_rule_row_remove_requested(
         self, event: ClassificationRuleRow.RemoveRequested
     ) -> None:
         event.stop()
-        event.row.remove()
+        # Removal is deferred; until it lands, the row no longer answers for
+        # the form (ODR-69).
+        event.row.removal_pending = True
+        await event.row.remove()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         if event.text_area.id == "recipe-arguments":
