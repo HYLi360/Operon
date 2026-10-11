@@ -17,6 +17,7 @@ from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.css.query import NoMatches
 from textual.widgets import Button, DataTable, Input, ProgressBar, Select, Static
 
 from operon.config import Project
@@ -386,10 +387,9 @@ class SyncModal(WriteModal):
         yield DataTable(id="sync-results")
         yield Static("", id="sync-status", classes="modal-info")
 
-    def on_mount(self) -> None:
+    def on_form_ready(self) -> None:
         self.query_one("#sync-progress", ProgressBar).display = False
         self.query_one("#sync-results", DataTable).display = False
-        super().on_mount()
         self._refresh_plan()
 
     # -- form state -----------------------------------------------------------
@@ -414,8 +414,13 @@ class SyncModal(WriteModal):
 
     def _refresh_plan(self) -> None:
         """Show the local side of the selection the transfer will start from."""
-        values = self._values()
-        plan = self.query_one("#sync-plan", Static)
+        try:
+            values = self._values()
+            plan = self.query_one("#sync-plan", Static)
+        except NoMatches:
+            # A Changed message can land while the form is still composing or
+            # already tearing down (ODR-65); the plan preview is best-effort.
+            return
         if not values["remote"]:
             plan.update(Text("select a remote first", style="dim"))
             return
@@ -619,9 +624,8 @@ class EvictModal(SyncModal):
         yield DataTable(id="evict-plan")
         yield Static("", id="evict-gate", classes="modal-info")
 
-    def on_mount(self) -> None:
+    def on_form_ready(self) -> None:
         self.query_one("#evict-plan", DataTable).display = False
-        super().on_mount()
         self._arm_gate("press *Verify remote copies* to check the mirror first")
 
     def _arm_gate(self, message: str) -> None:
@@ -633,7 +637,10 @@ class EvictModal(SyncModal):
 
     def _refresh_plan(self) -> None:
         # Any edit invalidates the verdict the gate was armed with.
-        self._arm_gate("selection changed — press *Verify remote copies* again")
+        try:
+            self._arm_gate("selection changed — press *Verify remote copies* again")
+        except NoMatches:
+            return  # form tearing down (ODR-65); the modal is going away anyway
         super()._refresh_plan()
 
     def _check(self) -> None:

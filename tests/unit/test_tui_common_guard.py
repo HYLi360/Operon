@@ -343,6 +343,74 @@ def test_write_modal_preview_defers_while_command_text_inputs_compose() -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-65")
+def test_write_modal_on_form_ready_runs_after_the_command_anchor() -> None:
+    """The form-composed hook fires once #modal-command is really mounted.
+
+    Subclass work that reads the form (query_one, set_confirm_enabled, ...)
+    belongs in on_form_ready, not on_mount: the base defers the hook until the
+    anchor exists.  Querying #modal-command from inside the hook must succeed —
+    were it to run a turn early the lookup would raise and the app would fail
+    at teardown.
+    """
+    ran: list[str] = []
+
+    class Probe(_ProbeModal):
+        def on_form_ready(self) -> None:
+            value = self.query_one("#probe-input", Input).value
+            self.query_one("#modal-command", Static)  # the anchor is present
+            ran.append(value)
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(80, 24)):
+            modal = Probe()
+            await app.push_screen(modal)
+            await wait_until(lambda: ran == ["seed"], "on_form_ready to run")
+            assert modal.is_mounted
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-65")
+def test_write_modal_on_form_ready_never_fires_without_the_anchor() -> None:
+    """A form that never composes must not run the hook, and must not crash.
+
+    Withhold #modal-command so the readiness probe never lands: on_form_ready
+    must stay uncalled even though it would raise, and the modal — and the app
+    — must survive the retry budget running out.
+    """
+    called: list[bool] = []
+
+    class Probe(_ProbeModal):
+        def on_form_ready(self) -> None:
+            called.append(True)
+            raise AssertionError("on_form_ready ran before the form composed")
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(80, 24)) as pilot:
+            modal = Probe()
+            modal._command_refresh_retry_limit = 3
+            original_compose = modal.compose
+
+            def without_command() -> Any:
+                for child in original_compose():
+                    if not (isinstance(child, Static) and child.id == "modal-command"):
+                        yield child
+
+            modal.compose = without_command
+            await app.push_screen(modal)
+            await wait_until(lambda: modal.is_mounted, "the modal to mount")
+            for _ in range(6):  # let the retry budget run out
+                await pilot.pause()
+            assert not called, "on_form_ready must not run without #modal-command"
+            assert modal.is_mounted
+            assert app.is_running
+
+    _run(scenario())
+
+
 # -- classification rows route their own messages -----------------------------
 
 

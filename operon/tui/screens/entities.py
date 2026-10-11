@@ -127,8 +127,7 @@ class LifecycleModal(WriteModal):
         )
         yield Input(placeholder="evidence (optional)", id="lifecycle-evidence")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.set_confirm_enabled(False)
         self._load_plan()
 
@@ -722,8 +721,7 @@ class AddRecordModal(WriteModal):
         with Horizontal(classes="config-buttons"):
             yield Button("Add field", id="add-field-row")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.query_one("#add-fields", MountTracked).mount_later(
             FieldRow(),
             when_present=".field-row",

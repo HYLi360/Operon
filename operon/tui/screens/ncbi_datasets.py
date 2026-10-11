@@ -109,8 +109,7 @@ class NcbiDatasetsModal(WriteModal):
             yield Button("Dry run (preflight)", id="ncbi-preflight-button")
         yield RichLog(id="ncbi-preview", max_lines=200, wrap=True, markup=False)
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         # Running for real only unlocks after a clean dry run.
         self.set_confirm_enabled(False)
 

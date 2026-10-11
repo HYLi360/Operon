@@ -91,8 +91,7 @@ class ImportTableModal(WriteModal):
         yield Static("", id="table-status", classes="modal-info")
         yield DataTable(id="table-preview-table", cursor_type="row")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.query_one("#table-preview-table", DataTable).add_columns(
             "key", "action", "changed_fields"
         )

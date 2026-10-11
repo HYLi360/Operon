@@ -238,8 +238,7 @@ class ImportQcModal(WriteModal):
         yield Button("Preview import", id="qc-import-preview-button")
         yield Static("", id="qc-import-status", classes="modal-info")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.set_confirm_enabled(False)
 
     def _path(self) -> str:
@@ -413,8 +412,7 @@ class PipelineModal(WriteModal):
         yield Button("Preview pipeline", id="pipeline-preview-button")
         yield Static("", id="pipeline-status", classes="modal-info")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.set_confirm_enabled(False)
 
     def _values(self) -> dict[str, Any]:
@@ -608,8 +606,7 @@ class QcModal(WriteModal):
         yield ProgressBar(total=max(self.total, 1), id="qc-progress")
         yield Static("", id="qc-status", classes="modal-info")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.query_one("#qc-progress", ProgressBar).display = False
 
     def command_text(self) -> str:

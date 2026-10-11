@@ -142,8 +142,7 @@ class AnalyzeModal(WriteModal):
         yield Static("", id="analyze-status", classes="modal-info")
         yield Static("", id="analyze-plan")
 
-    def on_mount(self) -> None:
-        super().on_mount()
+    def on_form_ready(self) -> None:
         self.query_one("#analyze-progress", ProgressBar).display = False
         self.query_one("#analyze-plan", Static).display = False
         if self.fixed_recipe:

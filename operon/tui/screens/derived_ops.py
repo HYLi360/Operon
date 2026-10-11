@@ -626,7 +626,7 @@ class FanoutModal(WriteModal):
             yield Button("Dry run (preflight)", id="fanout-preview-button")
         yield DataTable(id="fanout-preview-table", cursor_type="row")
 
-    def on_mount(self) -> None:
+    def on_form_ready(self) -> None:
         table = self.query_one("#fanout-preview-table", DataTable)
         table.add_columns("unit", "sequences", "role", "status")
         # Running for real only unlocks after a clean dry run.
