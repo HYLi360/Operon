@@ -423,3 +423,70 @@ def test_no_backend_premise_holds_where_the_keychain_exists(
     with pytest.raises(SecretError, match="no user-scoped secret backend"):
         require_backend(config_dir=scratch)
     assert secret_status(environ={}, config_dir=scratch)["active_backend"] is None
+
+
+# --- failure-message and backend-error edges --------------------------------
+
+
+def test_message_prefers_content_and_falls_back_to_the_exit_code() -> None:
+    """A blank stderr must fall through to stdout, then to the exit code."""
+    whitespace_only = secret_module.subprocess.CompletedProcess(
+        ["tool"], 7, stdout=b"", stderr=b"\n"
+    )
+    assert secret_module._message(whitespace_only) == "exit code 7"
+
+    stdout_only = secret_module.subprocess.CompletedProcess(
+        ["tool"], 7, stdout=b"real failure\nsecond line\n", stderr=b"  \n"
+    )
+    assert secret_module._message(stdout_only) == "real failure"
+
+
+def test_run_maps_a_checked_command_failure_to_secret_error(monkeypatch) -> None:
+    def failing_run(command, **_kwargs):
+        raise secret_module.subprocess.CalledProcessError(
+            1, command, stderr=b"cannot open session\nmore detail\n"
+        )
+
+    monkeypatch.setattr(secret_module.subprocess, "run", failing_run)
+    with pytest.raises(SecretError, match="secret-tool failed: cannot open session"):
+        SecretToolBackend().store("ncbi.api_key", "value")
+
+
+def test_systemd_creds_encrypt_failure_is_reported(
+    with_systemd_creds: Path, monkeypatch
+) -> None:
+    config_dir = with_systemd_creds / "cfg"
+    backend = SystemdCredsBackend(config_dir / "secrets")
+    monkeypatch.setenv("FAKE_CREDS_FAIL", "1")
+    with pytest.raises(SecretError, match="systemd-creds encrypt failed"):
+        backend.store("ncbi.api_key", "systemd-value")
+    assert not (config_dir / "secrets" / "ncbi.api_key.cred").exists()
+
+
+def test_mac_keychain_get_reads_stdout_and_treats_blank_as_missing(monkeypatch) -> None:
+    outputs = iter([b"keychain-value\n", b"\n"])
+
+    def _run(command, *, stdin=None, check=False):
+        return secret_module.subprocess.CompletedProcess(command, 0, next(outputs), b"")
+
+    monkeypatch.setattr(secret_module, "_run", _run)
+    backend = MacKeychainBackend()
+    assert backend.get("ncbi.api_key") == "keychain-value"
+    assert backend.get("ncbi.api_key") is None
+
+
+def test_mac_keychain_store_failure_is_reported(monkeypatch) -> None:
+    def _run(command, *, stdin=None, check=False):
+        if command[1] == "add-generic-password":
+            return secret_module.subprocess.CompletedProcess(
+                command, 1, b"", b"user interaction is not allowed\n"
+            )
+        return secret_module.subprocess.CompletedProcess(command, 0, b"", b"")
+
+    monkeypatch.setattr(secret_module, "_run", _run)
+    with pytest.raises(SecretError, match="keychain store failed: user interaction"):
+        MacKeychainBackend().store("ncbi.api_key", "keychain-value")
+
+
+def test_clear_secret_without_backend_reports_nothing_removed(scratch: Path) -> None:
+    assert clear_secret("ncbi.api_key", config_dir=scratch) is False

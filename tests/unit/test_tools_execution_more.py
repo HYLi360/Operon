@@ -1656,3 +1656,4 @@ def test_run_analysis_for_file_failure_keeps_partial_work_directory(
         / f"{record['file_id']}.genome_fasta.out.work"
     )
     assert work_dir.is_dir()
+
