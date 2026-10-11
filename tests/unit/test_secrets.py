@@ -236,6 +236,16 @@ def test_systemd_creds_decrypt_failure_is_actionable(
         read_secret("ncbi.api_key", config_dir=config_dir)
 
 
+def test_systemd_creds_encrypt_failure_is_actionable(
+    with_systemd_creds: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("FAKE_CREDS_FAIL", "1")
+    with pytest.raises(SecretError, match="systemd-creds encrypt failed"):
+        store_secret(
+            "ncbi.api_key", "systemd-value", config_dir=with_systemd_creds / "cfg"
+        )
+
+
 # --- macOS keychain backend --------------------------------------------------
 
 
@@ -277,6 +287,35 @@ def test_mac_keychain_round_trip(tmp_path: Path, monkeypatch) -> None:
 def test_mac_backend_is_darwin_only() -> None:
     backend = MacKeychainBackend()
     assert backend.available() is (sys.platform == "darwin")
+
+
+def test_mac_keychain_get_returns_the_stored_value(tmp_path: Path, monkeypatch) -> None:
+    def _run(command, *, stdin=None, check=False):
+        return secret_module.subprocess.CompletedProcess(
+            command, 0, b"keychain-value\n", b""
+        )
+
+    monkeypatch.setattr(secret_module, "_run", _run)
+    assert MacKeychainBackend().get("ncbi.api_key") == "keychain-value"
+
+
+def test_mac_keychain_get_empty_stdout_is_none(tmp_path: Path, monkeypatch) -> None:
+    def _run(command, *, stdin=None, check=False):
+        return secret_module.subprocess.CompletedProcess(command, 0, b"\n", b"")
+
+    monkeypatch.setattr(secret_module, "_run", _run)
+    assert MacKeychainBackend().get("ncbi.api_key") is None
+
+
+def test_mac_keychain_store_failure_is_actionable(tmp_path: Path, monkeypatch) -> None:
+    def _run(command, *, stdin=None, check=False):
+        return secret_module.subprocess.CompletedProcess(
+            command, 1, b"", b"security: write error"
+        )
+
+    monkeypatch.setattr(secret_module, "_run", _run)
+    with pytest.raises(SecretError, match="keychain store failed: security"):
+        MacKeychainBackend().store("ncbi.api_key", "value")
 
 
 # --- failure modes and reporting --------------------------------------------
