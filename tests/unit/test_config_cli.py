@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import stat
@@ -12,12 +13,14 @@ import yaml
 
 from operon import config as config_module
 from operon import secrets as secrets_module
+from operon.cli import _config as cli_config
 from operon.cli import main
 from operon.config import (
     USER_CONFIG_FILENAME,
     USER_CONFIG_SCHEMA_VERSION,
     user_config_path,
 )
+from operon.errors import ValidationError
 
 
 @pytest.fixture(autouse=True)
@@ -308,3 +311,89 @@ def test_config_works_outside_a_project(monkeypatch, tmp_path, capsys) -> None:
     assert main(["config", "set", "identity.actor", "roaming"]) == 0
     assert main(["config", "show"]) == 0
     assert "roaming" in capsys.readouterr().out
+
+
+# --- remaining dispatch branches ---------------------------------------------
+
+
+def test_config_check_accepts_a_file_with_only_known_keys(capsys) -> None:
+    path = user_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("schema_version: 1\nidentity:\n  actor: alice\n", encoding="utf-8")
+    path.chmod(0o600)
+    assert main(["config", "check"]) == 0
+    captured = capsys.readouterr()
+    assert f"{path}: valid YAML" in captured.out
+    assert "ignoring unknown keys" not in captured.err
+
+
+def test_config_secret_list_reports_stored_secrets(monkeypatch, capsys) -> None:
+    report = {
+        "active_backend": "systemd-creds",
+        "backends": [{"name": "systemd-creds", "available": True, "active": True}],
+        "secrets": [
+            {
+                "name": "ncbi.api_key",
+                "env_var": "NCBI_API_KEY",
+                "env_set": False,
+                "stored": True,
+            },
+        ],
+    }
+    monkeypatch.setattr(secrets_module, "secret_status", lambda **kwargs: report)
+    assert main(["config", "secret", "list"]) == 0
+    captured = capsys.readouterr()
+    assert "active backend: systemd-creds" in captured.out
+    assert "ncbi.api_key: stored in systemd-creds" in captured.out
+
+
+def test_config_secret_get_warns_when_stdout_is_a_terminal(monkeypatch, capsys) -> None:
+    class _TtyStdout(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        secrets_module, "read_secret", lambda name, **kwargs: "stored-value"
+    )
+    stream = _TtyStdout()
+    monkeypatch.setattr("sys.stdout", stream)
+    assert main(["config", "secret", "get", "ncbi.api_key"]) == 0
+    assert "warning: printing a secret to the terminal" in capsys.readouterr().err
+    assert stream.getvalue().strip() == "stored-value"
+
+
+def test_config_secret_set_prompts_on_a_terminal(monkeypatch, capsys) -> None:
+    class _TtyStdin(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    stored: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        secrets_module,
+        "store_secret",
+        lambda name, value, **kwargs: stored.append((name, value)) or "fake-backend",
+    )
+    monkeypatch.setattr("sys.stdin", _TtyStdin(""))
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        "getpass.getpass", lambda prompt: prompts.append(prompt) or "hidden-value"
+    )
+    assert main(["config", "secret", "set", "ncbi.api_key"]) == 0
+    assert stored == [("ncbi.api_key", "hidden-value")]
+    assert prompts == ["ncbi.api_key (input hidden): "]
+    assert "stored ncbi.api_key in fake-backend" in capsys.readouterr().out
+
+
+def test_config_secret_rejects_an_unsupported_command() -> None:
+    # argparse only admits the registered subcommands, so the defensive raise
+    # is exercised through the handler directly.
+    unsupported = "explode"
+    with pytest.raises(ValidationError, match="unsupported config secret command"):
+        cli_config._cmd_config_secret(argparse.Namespace(secret_command=unsupported))
+
+
+def test_config_rejects_an_unsupported_command(tmp_path, monkeypatch) -> None:
+    instance = config_module.UserConfig(tmp_path / "config.yml")
+    monkeypatch.setattr(config_module, "user_config", lambda: instance)
+    with pytest.raises(ValidationError, match="unsupported config command"):
+        cli_config._cmd_config(argparse.Namespace(config_command="explode"))
