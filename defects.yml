@@ -1933,7 +1933,7 @@ defects:
     The wait now predicates on the state the test asserts — the survivor's title ('step 1 (logical
     owner)') observed once exactly one row remains — so the renumbering is awaited instead of sampled;
     the arguments and the chain note are read after that predicate holds.
-  fix_commit: null
+  fix_commit: 'd166237801932b21a8017e19055bf42d1070dd3d'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tui_config.py::test_config_screen_commands_chain_validation_and_step_rows
