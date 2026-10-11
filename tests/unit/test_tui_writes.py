@@ -136,6 +136,24 @@ async def _wait_until(
         await asyncio.sleep(0.05)
 
 
+async def _await_notification(app, needle: str = "", severity: str = "") -> None:
+    """Wait for a raised notification matching ``needle`` and/or ``severity``.
+
+    ``App.notify`` queues a message, so a callback that has already updated its
+    widgets raises the notification a message-loop turn later: reading
+    ``app._notifications`` straight after the widgets turns a correct flow into
+    an intermittent failure on a slow interpreter (ODR-72).
+    """
+    await _wait_until(
+        lambda: any(
+            (not severity or notification.severity == severity)
+            and (not needle or needle in str(notification.message))
+            for notification in app._notifications
+        ),
+        f"the notification {needle or severity!r}",
+    )
+
+
 async def _await_rows(pilot, root, selector: str, count: int, child: str) -> list:
     """Wait until ``root`` holds ``count`` ``selector`` rows whose ``child`` exists.
 
@@ -1968,6 +1986,7 @@ def test_run_external_modal_preview_run_and_detail(
     assert out.read_text(encoding="utf-8").strip() == "ok"
 
 
+@pytest.mark.bug("ODR-72")
 def test_run_external_modal_failed_command_opens_record(
     project: Project, tmp_path: Path
 ) -> None:
@@ -1997,12 +2016,7 @@ def test_run_external_modal_failed_command_opens_record(
             )
             await _settled(app)
             assert isinstance(app.screen, RunDetailScreen)
-            assert any(
-                severity == "error" and "failed" in message
-                for severity, message in [
-                    (n.severity, n.message) for n in app._notifications
-                ]
-            )
+            await _await_notification(app, needle="failed", severity="error")
             assert "exit code 3" in await _await_detail_text(app, "exit code 3")
 
     _run(scenario())
@@ -2010,6 +2024,7 @@ def test_run_external_modal_failed_command_opens_record(
     assert row["status"] == "failed"
 
 
+@pytest.mark.bug("ODR-72")
 def test_run_external_modal_cannot_be_cancelled_while_running(
     project: Project, monkeypatch
 ) -> None:
@@ -2064,11 +2079,8 @@ def test_run_external_modal_cannot_be_cancelled_while_running(
             modal.action_cancel()
             await pilot.pause()
             assert app.screen is modal
-            assert any(
-                severity == "warning" and "cannot be interrupted" in message
-                for severity, message in [
-                    (n.severity, n.message) for n in app._notifications
-                ]
+            await _await_notification(
+                app, needle="cannot be interrupted", severity="warning"
             )
             assert dismissed == []
             assert all(widget.disabled for widget in modal.query("Input, Select"))
