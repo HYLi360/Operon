@@ -1062,3 +1062,81 @@ def test_a_parked_worker_is_released_before_the_scenario_returns(
         f"event: the run took {teardown_seconds:.1f}s of its "
         f"{HANDOFF_TIMEOUT:.0f}s budget"
     )
+
+
+# ---------------------------------------------------------------------------
+# ImportTableModal: change routing and the in-flight run guards
+# ---------------------------------------------------------------------------
+
+
+def test_modal_ignores_foreign_changes_and_freezes_the_form_during_runs(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """The change handlers route by id; the run guards freeze mode and Confirm.
+
+    No composed widget carries an id outside the ``table-`` namespace, so the
+    False arms of the two change handlers are only reachable by delivering the
+    events directly.  The mode switch, a form edit, and ``confirm()`` are then
+    exercised while a worker is nominally in flight — the window their guards
+    close: a mode switch must not re-evaluate the preview button, an edit must
+    not unlock Confirm through the template mode, and confirm() must stay
+    silent.
+    """
+    source = _inserts_csv(tmp_path / "rows.csv")
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = ImportTableModal(project)
+            app.push_screen(modal)
+            await _push(pilot, modal, "#table-file")
+
+            # Change events from widgets that are not `table-*` are ignored,
+            # with or without an id.
+            modal.on_input_changed(Input.Changed(Input(id="elsewhere"), "x"))
+            modal.on_select_changed(
+                Select.Changed(Select([("a", "a")], id="elsewhere"), "a")
+            )
+            modal.on_input_changed(Input.Changed(Input(), "x"))
+            modal.on_select_changed(Select.Changed(Select([("a", "a")]), "a"))
+            await pilot.pause()
+            assert modal.query_one("#confirm", Button).disabled
+            assert not modal.query_one("#table-preview-button", Button).disabled
+
+            (await _q(modal, "#table-file", Input)).value = str(source)
+            await _click(pilot, "#table-preview-button")
+            await _wait_until(lambda: modal.preview is not None, "preview to land")
+
+            # A run in flight freezes the mode switch: switching to template
+            # would otherwise disable the preview button right here.
+            modal.running = True
+            (await _q(modal, "#table-mode", Select)).value = "template"
+            await pilot.pause()
+            assert not modal.query_one("#table-preview-button", Button).disabled
+
+            # ... and an edit mid-run cannot unlock Confirm through the
+            # template mode: the running guard answers False first.
+            (await _q(modal, "#table-file", Input)).value = str(source) + "-other"
+            await _wait_until(
+                lambda: modal.preview is None, "the edit to discard the preview"
+            )
+            assert modal.query_one("#confirm", Button).disabled
+
+            # confirm() itself is silent while the run is in flight; once the
+            # run ends, the same call reaches the start path again.
+            started: list[tuple] = []
+            monkeypatch.setattr(modal, "_start_run", lambda *args: started.append(args))
+            modal.confirm()
+            await pilot.pause()
+            assert started == []
+            modal.running = False
+            (await _q(modal, "#table-template-out", Input)).value = str(
+                tmp_path / "template.csv"
+            )
+            await pilot.pause()
+            modal.confirm()
+            await pilot.pause()
+            assert [args[0] for args in started] == ["template"]
+
+    _run(scenario())

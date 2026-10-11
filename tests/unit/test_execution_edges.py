@@ -8,6 +8,7 @@ import signal
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -992,3 +993,264 @@ def test_remote_slurm_run_array_timeout_cancels_and_reports_partial(
     assert "timeout after 1s" in results[1].error
     assert results[1].details["cancellation_requested"] is True
     assert results[1].details["array_job_id"] == "4242"
+
+
+def test_array_tasks_inherit_cwd_and_threads_from_the_first_task():
+    tasks, cwd, threads = execution._prepare_array_tasks(
+        [
+            {
+                "run_id": "a",
+                "command": "true",
+                "cwd": "/projects/p",
+                "threads": "3",
+                "stdout_path": Path("/projects/p/logs/a.out"),
+                "stderr_path": Path("/projects/p/logs/a.err"),
+            },
+            {
+                "run_id": "b",
+                "command": "true",
+                "cwd": "/projects/p",
+                "threads": 3,
+                "stdout_path": Path("/projects/p/logs/b.out"),
+                "stderr_path": Path("/projects/p/logs/b.err"),
+            },
+        ],
+        cwd=None,
+        threads=None,
+        default_cwd="/default",
+    )
+    assert cwd == "/projects/p"
+    assert threads == 3
+    assert [task.index for task in tasks] == [1, 2]
+
+
+def test_array_probe_shell_degrades_an_unsplittable_command():
+    assert execution._array_probe_shell("echo 'unclosed") == execution.probe_shell([])
+    assert execution._array_probe_shell("echo hi") == execution.probe_shell(
+        ["echo", "hi"]
+    )
+
+
+def test_drop_and_restore_output_backups_swallow_cleanup_errors(tmp_path, monkeypatch):
+    ssh = execution.SSHExecutor(
+        project(tmp_path), {"host": "host"}, execution.SlurmConfig()
+    )
+    sftp = FakeSFTP()
+
+    def broken(_sftp, _path):
+        raise OSError("cleanup refused")
+
+    monkeypatch.setattr("operon.remotes._remove_remote_tree", broken)
+    ssh._drop_output_backups(sftp, [("remote", "backup")])
+    ssh._restore_output_backups(sftp, [("remote", "backup")])
+
+
+def test_reset_outputs_propagates_a_non_missing_rename_failure(tmp_path):
+    root = tmp_path / "project"
+    remote_root = tmp_path / "remote"
+    (root / "analysis").mkdir(parents=True)
+    (remote_root / "analysis").mkdir(parents=True)
+    previous = remote_root / "analysis" / "out.txt"
+    previous.write_text("old result", encoding="utf-8")
+    client = FakeSSHClient()
+    ssh = execution.SSHExecutor(
+        project(root),
+        {"host": "host", "remote_root": str(remote_root)},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
+
+    def deny(_src, _dst):
+        raise OSError(13, "Permission denied")
+
+    client.sftp.rename = deny
+    with pytest.raises(OSError, match="Permission denied"):
+        ssh._reset_outputs(client.sftp, [root / "analysis" / "out.txt"])
+
+
+def test_run_direct_interrupt_survives_a_failing_termination(tmp_path, monkeypatch):
+    class Channel:
+        def __init__(self):
+            self.closed = False
+
+        def recv_ready(self):
+            raise KeyboardInterrupt()
+
+        def close(self):
+            self.closed = True
+
+    class Stream:
+        def __init__(self, channel):
+            self.channel = channel
+
+    class Client:
+        def __init__(self):
+            self.channel = Channel()
+
+        def exec_command(self, _command):
+            return None, Stream(self.channel), Stream(self.channel)
+
+    client = Client()
+    ssh = execution.SSHExecutor(
+        project(tmp_path),
+        {"host": "host"},
+        execution.SlurmConfig(),
+        client_factory=lambda _self: client,
+    )
+
+    def failing_termination(*_args, **_kwargs):
+        raise OSError("control connection lost")
+
+    monkeypatch.setattr(ssh, "_terminate_remote_process", failing_termination)
+    with pytest.raises(KeyboardInterrupt):
+        ssh._run_direct(
+            client,
+            ["true"],
+            cwd=None,
+            stdout_path=tmp_path / "out.log",
+            stderr_path=tmp_path / "err.log",
+            timeout=None,
+            run_id="r1",
+        )
+    assert client.channel.closed
+
+
+def _remote_run_array(executor, tasks, **kwargs):
+    """Call the remote Slurm array entry point (None on non-Slurm backends)."""
+    return cast(Any, executor.run_array)(tasks, **kwargs)
+
+
+def test_remote_slurm_run_array_submission_failures(tmp_path, monkeypatch):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+    monkeypatch.setattr(ssh, "_remote_exec", lambda *_a, **_k: (1, "sbatch: error"))
+    with pytest.raises(RemoteError, match="remote sbatch submission failed"):
+        _remote_run_array(ssh, _array_tasks(root / "logs"), cwd=root)
+
+    monkeypatch.setattr(ssh, "_remote_exec", lambda *_a, **_k: (0, "not-a-job-id"))
+    with pytest.raises(RemoteError, match="could not parse sbatch job id"):
+        _remote_run_array(ssh, _array_tasks(root / "logs"), cwd=root)
+
+
+def test_remote_slurm_run_array_squeue_failure_is_fatal(tmp_path, monkeypatch):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "4242"
+        return 1, "squeue: transient failure"
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    with pytest.raises(RemoteError, match="remote squeue failed"):
+        _remote_run_array(ssh, _array_tasks(root / "logs"), cwd=root)
+
+
+def test_remote_slurm_run_array_invalid_job_id_breaks_the_poll_loop(
+    tmp_path, monkeypatch
+):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 1, "slurm_load_jobs error: Invalid job id specified"
+        if command.startswith("sacct"):
+            return 0, ""
+        return 1, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    results = _remote_run_array(ssh, _array_tasks(root / "logs"), cwd=root)
+    assert [r.scheduler_job_id for r in results] == ["4242_1", "4242_2"]
+    assert all(r.exit_code is None for r in results)
+    # No probe file exists on the remote side, so no environment is reported.
+    assert all("environment" not in r.details for r in results)
+
+
+def test_remote_slurm_run_array_timeout_reports_cancellation_error(
+    tmp_path, monkeypatch
+):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 0, "4242"
+        if command.startswith("scancel"):
+            return 1, "scancel: access denied"
+        return 1, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    times = iter([0, 2, 2])
+    monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
+    results = _remote_run_array(
+        ssh, _array_tasks(root / "logs"), cwd=root, timeout=1, batch_id="RB"
+    )
+    assert results[0].details["cancellation_requested"] is False
+    assert results[0].details["cancellation_error"] == "scancel: access denied"
+    assert results[1].details["cancellation_error"] == "scancel: access denied"
+
+
+def test_remote_slurm_run_array_interrupt_survives_failed_exitcode_pull(
+    tmp_path, monkeypatch
+):
+    ssh, root, _remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+    calls = []
+
+    def fake_exec(_client, command, **_kwargs):
+        calls.append(command)
+        if command.startswith("sbatch"):
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 0, "4242"
+        return 0, ""
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+
+    def failing_pull(*_args, **_kwargs):
+        raise OSError("sftp connection dropped")
+
+    monkeypatch.setattr(ssh, "_sftp_get_if_exists", failing_pull)
+
+    def interrupting_sleep(_seconds):
+        raise ShutdownRequested(signal.SIGINT)
+
+    monkeypatch.setattr(execution.time, "sleep", interrupting_sleep)
+    with pytest.raises(ShutdownRequested):
+        _remote_run_array(ssh, _array_tasks(root / "logs"), cwd=root, batch_id="RB")
+    assert any(command.startswith("scancel") for command in calls)
+
+
+def test_remote_slurm_run_array_timeout_reads_exitcodes_and_probe_environment(
+    tmp_path, monkeypatch
+):
+    ssh, root, remote_root, _client = _remote_array_executor(tmp_path, monkeypatch)
+
+    def fake_exec(_client, command, **_kwargs):
+        if command.startswith("sbatch"):
+            # Staging removes stale probe files before submission; the remote
+            # job writes the fresh probe after the queue accepts the array.
+            (remote_root / "logs" / "r1.env").write_text(
+                "hostname=compute-01\nos=Linux\n", encoding="utf-8"
+            )
+            return 0, "4242"
+        if command.startswith("squeue"):
+            return 0, "4242"
+        if command.startswith("scancel"):
+            return 0, ""
+        if "r1.exitcode" in command:
+            return 0, "0\n"
+        raise OSError("control connection lost")
+
+    monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
+    times = iter([0, 2, 2])
+    monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
+    results = _remote_run_array(
+        ssh, _array_tasks(root / "logs"), cwd=root, timeout=1, batch_id="RB"
+    )
+    assert results[0].exit_code == 0
+    assert results[0].details["environment"]["hostname"] == _hashed_hostname(
+        "compute-01"
+    )
+    assert results[1].exit_code is None
+    assert "environment" not in results[1].details

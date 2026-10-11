@@ -21,7 +21,7 @@ from operon.config import load_project
 from operon.database import Database
 from operon.errors import EntityNotFoundError, ExternalToolError, ValidationError
 from operon.schema import check_row_references
-from operon.utils import sha256_file
+from operon.utils import format_table, sha256_file
 
 
 @pytest.fixture
@@ -1013,7 +1013,9 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
     ):
         routed = []
         monkeypatch.setattr(
-            cli_report, handler, lambda *_a, routed=routed: routed.append(kind) or 7
+            cli_report,
+            handler,
+            lambda *_a, routed=routed, kind=kind: routed.append(kind) or 7,
         )
         assert cli._cmd_report(ns(report_kind=kind), project, db) == 7
         assert routed == [kind]
@@ -1138,3 +1140,32 @@ def test_remaining_cli_boolean_branches(project_db, monkeypatch, capsys, tmp_pat
         cli, "_cmd_init", lambda _args: (_ for _ in ()).throw(OSError("disk"))
     )
     assert main(["init", str(tmp_path / "other")]) == 1
+
+
+# --- shared output helpers ----------------------------------------------------
+
+
+def test_print_table_prints_the_formatted_table(capsys):
+    cli._print_table(["name", "value"], [["alpha", 1], ["beta", None]])
+    assert (
+        capsys.readouterr().out
+        == format_table(["name", "value"], [["alpha", 1], ["beta", None]]) + "\n"
+    )
+
+
+def test_add_prints_warnings_reported_by_the_core(project_db, monkeypatch, capsys):
+    project, db = project_db
+    monkeypatch.setattr(
+        cli_metadata,
+        "add_metadata_record",
+        lambda *_a, **_k: {
+            "entity_type": "sample",
+            "entity_id": "SMP_000099",
+            "warnings": ["unknown field 'nickname' for sample"],
+        },
+    )
+    args = ns(entity_type="sample", record_id="SMP_000099", field=[])
+    assert cli._cmd_add(args, project, db) == 0
+    captured = capsys.readouterr()
+    assert "warning: unknown field 'nickname' for sample" in captured.err
+    assert "added sample SMP_000099" in captured.out

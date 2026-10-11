@@ -84,6 +84,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0061 | Database API | The read-only query PRAGMA whitelist covers the integrity pragmas as well: `integrity_check` and `foreign_key_check` run through `operon query` exactly as the recovery procedure documents, while every writable PRAGMA stays denied. |
 | ODR-0062 | Tests | The table-import module's notification assertions wait on a predicate instead of sampling the notification rack once after the modal dismisses, so a toast that lands a message-loop turn later (CI run 37566958718, macOS 3.14) no longer turns a correct import into a failed assertion. |
 | ODR-0063 | Analysis | `select-sequences`, `extract-domains` and `report analysis --hits` (CLI and TUI) now read only the latest completed job per analysis and file, so alignments produced with a retired reference database — the old job stays `completed` because supersession only matches an identical fingerprint — no longer inflate `hit_count`/`best_evalue` or change which sequences are selected; the ignored older jobs are counted and surfaced as `ignored_completed_jobs`, the convention `classify-sequences` already followed. |
+| ODR-0064 | TUI tests | The config screen's chain-removal test now waits on the survivor's renumbered title (the state it asserts) instead of the command-row count: the DOM removal lands one task step before the handler renumbers the chain, so a count-only wait could sample the old label on a loaded runner. |
 
 ## K series (historical)
 

@@ -303,22 +303,14 @@ def _cmd_report(args: argparse.Namespace, project: Project, db: Database) -> int
     raise ValidationError(f"unknown report kind {args.report_kind!r}")
 
 
-def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
-    out_format = getattr(args, "format", "text") or "text"
-    out_path = getattr(args, "out", None)
-    query_id = getattr(args, "query_id", None)
-    subject_id = getattr(args, "subject_id", None)
-    evalue_max = getattr(args, "evalue_max", None)
-    if not args.hits and (
-        out_path
-        or out_format != "text"
-        or query_id
-        or subject_id
-        or evalue_max is not None
-    ):
-        raise ValidationError(
-            "--format/--out/--query-id/--subject-id/--evalue-max require --hits"
-        )
+def _analysis_results_query(
+    args: argparse.Namespace,
+    db: Database,
+    query_id: Any,
+    subject_id: Any,
+    evalue_max: Any,
+) -> tuple[str, list[Any]]:
+    """Build the hits/results query; fragments stay constant, values are bound."""
     if args.hits:
         sql = """
             SELECT a.analysis_name, a.entity_type, a.entity_id, a.query_id, a.subject_id,
@@ -390,6 +382,26 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
     else:
         sql += " ORDER BY r.entity_id, r.metric_name, j.job_id DESC LIMIT ?"
     params.append(int(args.limit))
+    return sql, params
+
+
+def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
+    out_format = getattr(args, "format", "text") or "text"
+    out_path = getattr(args, "out", None)
+    query_id = getattr(args, "query_id", None)
+    subject_id = getattr(args, "subject_id", None)
+    evalue_max = getattr(args, "evalue_max", None)
+    if not args.hits and (
+        out_path
+        or out_format != "text"
+        or query_id
+        or subject_id
+        or evalue_max is not None
+    ):
+        raise ValidationError(
+            "--format/--out/--query-id/--subject-id/--evalue-max require --hits"
+        )
+    sql, params = _analysis_results_query(args, db, query_id, subject_id, evalue_max)
     rows = db.conn.execute(sql, params).fetchall()
     if args.hits:
         headers = (
@@ -423,9 +435,5 @@ def _cmd_analysis_results(args: argparse.Namespace, db: Database) -> int:
     if not rows:
         print("(no analysis results)")
     else:
-        print(
-            format_table(
-                list(rows[0].keys()), ([r[c] for c in rows[0].keys()] for r in rows)
-            )
-        )
+        print(format_table(list(rows[0].keys()), (list(row) for row in rows)))
     return 0

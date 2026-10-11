@@ -1238,6 +1238,38 @@ def test_import_qc_tsv_deduplicates_entities(project, tmp_path, capsys):
         db.close()
 
 
+def test_qc_report_wide_export_writes_the_aggregate_tables(project, tmp_path, capsys):
+    db = Database(project.db_path)
+    try:
+        _graph(db)
+    finally:
+        db.close()
+    table = tmp_path / "qc.tsv"
+    table.write_text(
+        "entity_type\tentity_id\tqc_stage\tmetric_name\tmetric_value\ttool\t"
+        "tool_version\tparameter_set\n"
+        "assembly\tASM_000001\texternal\tmetric_a\t1\ttool\t1\tp\n",
+        encoding="utf-8",
+    )
+    assert (
+        main(["--project", str(project.root), "import-qc", "--file", str(table)]) == 0
+    )
+    capsys.readouterr()
+
+    # The wide pivot re-renders the report and additionally exports both TSV
+    # aggregates; the export line names the wide table it just wrote.
+    assert (
+        main(["--project", str(project.root), "report", "qc", "--wide", "--export"])
+        == 0
+    )
+    captured = capsys.readouterr()
+    wide = project.qc_root / "aggregate" / "qc_results.wide.tsv"
+    assert f"wrote {wide}" in captured.out
+    lines = wide.read_text(encoding="utf-8").splitlines()
+    assert "metric_a" in lines[0]
+    assert "ASM_000001" in lines[1]
+
+
 def test_analysis_report_filters_json_tsv_and_output_file(project, tmp_path, capsys):
     db = Database(project.db_path)
     try:

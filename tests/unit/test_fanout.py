@@ -609,3 +609,41 @@ def test_fanout_cli(project_db, tmp_path, capsys):
         )
         == 2
     )
+
+
+def test_fanout_rollback_removes_a_directory_at_a_created_target(
+    project_db, tmp_path, monkeypatch
+):
+    project, db, source = project_db
+    assignments = _register_assignments(
+        db, project, tmp_path, "unit\tseqid\nSF01\tp1\nSF02\tp2\n"
+    )
+    real_ingest = ingest_file
+    calls = []
+    sabotaged: list[Path] = []
+
+    def sabotaging_ingest(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        record = real_ingest(*args, **kwargs)
+        target = project.root / record["relative_path"]
+        # A stale directory can occupy the target before the rollback runs;
+        # the cleanup must remove it instead of leaving it behind.
+        target.unlink()
+        target.mkdir()
+        (target / "stale").write_text("x", encoding="utf-8")
+        sabotaged.append(target)
+        return record
+
+    monkeypatch.setattr("operon.fanout.ingest_file", sabotaging_ingest)
+    with pytest.raises(KeyboardInterrupt):
+        _fanout(db, project, assignments, source)
+    assert sabotaged and not sabotaged[0].exists()
+    runs = [
+        dict(row)
+        for row in db.conn.execute(
+            "SELECT * FROM workflow_runs WHERE step='fanout'"
+        ).fetchall()
+    ]
+    assert [run["status"] for run in runs] == ["interrupted"]

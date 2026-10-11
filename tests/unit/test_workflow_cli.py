@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +15,13 @@ from operon import cli
 from operon.cli import main
 from operon.config import Project
 from operon.database import Database
-from operon.workflow import get_run, list_runs, log_run
+from operon.workflow import (
+    get_run,
+    list_runs,
+    log_run,
+    record_execution_result,
+    run_external_command,
+)
 
 
 @pytest.fixture
@@ -407,3 +414,96 @@ def test_workflow_command_uses_read_only_database(workflow_project, capsys):
     finally:
         os.chmod(root, original_dir_mode)
         os.chmod(workflow_project.db_path, original_db_mode)
+
+
+def test_run_external_command_resolves_relative_events_into_expected_outputs(
+    workflow_project,
+):
+    db = Database(workflow_project.db_path)
+    events = "events/run.events.jsonl"
+    script = (
+        "from pathlib import Path; "
+        "Path('events').mkdir(exist_ok=True); "
+        "Path('events/run.events.jsonl').write_text('event\\n')"
+    )
+    try:
+        record = run_external_command(
+            db,
+            workflow_project,
+            [sys.executable, "-c", script],
+            step="sidecar",
+            cwd=workflow_project.root,
+            expected_outputs=[events],
+            events=events,
+            tool="toy-sidecar",
+        )
+    finally:
+        db.close()
+    assert record["status"] == "completed"
+    details = json.loads(record["execution_details"])
+    # The relative events path resolves against cwd, and because it is already
+    # a declared expected output it is not duplicated in the output guards.
+    assert details["events_path"] == str(workflow_project.root / events)
+    assert (workflow_project.root / events).is_file()
+
+
+class _FakeArrayResult:
+    """Duck-typed ``run_array`` task result for ``record_execution_result``."""
+
+    def __init__(
+        self,
+        *,
+        exit_code: int = 0,
+        error: str | None = None,
+        details: dict | None = None,
+        scheduler_job_id: str | None = None,
+    ) -> None:
+        self.exit_code = exit_code
+        self.error = error
+        self.details = dict(details or {})
+        self.scheduler_job_id = scheduler_job_id
+
+
+def test_record_execution_result_without_entity_resolves_relative_outputs(
+    workflow_project,
+):
+    db = Database(workflow_project.db_path)
+    try:
+        (workflow_project.root / "summary.json").write_text("{}", encoding="utf-8")
+        record = record_execution_result(
+            db,
+            workflow_project,
+            _FakeArrayResult(scheduler_job_id="JOB_1"),
+            run_id="WF_ARRAY_0001",
+            argv=["tool", "array-task"],
+            step="array",
+            cwd=workflow_project.root,
+            expected_outputs=["summary.json"],
+        )
+        stored = get_run(db, "WF_ARRAY_0001")
+    finally:
+        db.close()
+    assert record["status"] == "completed"
+    assert stored["status"] == "completed"
+    assert record["scheduler_job_id"] == "JOB_1"
+    # A duck-typed result without a resources document reports no usage.
+    assert record["max_rss_mb"] is None
+    assert record["avg_rss_mb"] is None
+    assert record["cpu_seconds"] is None
+
+
+def test_record_execution_result_zero_exit_with_error_is_failed(workflow_project):
+    db = Database(workflow_project.db_path)
+    try:
+        record = record_execution_result(
+            db,
+            workflow_project,
+            _FakeArrayResult(exit_code=0, error="stderr reported errors"),
+            run_id="WF_ARRAY_0002",
+            argv=["tool", "array-task"],
+            step="array",
+        )
+    finally:
+        db.close()
+    assert record["status"] == "failed"
+    assert record["error"] == "stderr reported errors"

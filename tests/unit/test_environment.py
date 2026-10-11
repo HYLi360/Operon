@@ -285,6 +285,24 @@ class TestEnvironmentSummary(PytestAssertions):
         multiple = {"hardware": {"nvidia_gpus": ["A100, 535.1", "A100, 535.1"]}}
         self.assertEqual(environment_summary(multiple), "2x A100 (driver 535.1)")
 
+    def test_gpu_without_driver_information_omits_the_suffix(self):
+        # nvidia-smi may report only a name (or a name with an empty driver
+        # field); the summary must not fabricate a driver segment.
+        self.assertEqual(
+            environment_summary({"hardware": {"nvidia_gpus": ["NVIDIA A100"]}}),
+            "NVIDIA A100",
+        )
+        self.assertEqual(
+            environment_summary({"hardware": {"nvidia_gpus": ["NVIDIA A100, "]}}),
+            "NVIDIA A100",
+        )
+        self.assertEqual(
+            environment_summary(
+                {"hardware": {"nvidia_gpus": ["Tesla T4", "A100, 535.1"]}}
+            ),
+            "2x Tesla T4",
+        )
+
 
 class TestEnvironmentSchema(PytestAssertions):
     def setup_method(self):

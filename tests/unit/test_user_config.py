@@ -394,3 +394,68 @@ def test_sys_module_name_is_not_shadowed() -> None:
     assert operon_secrets.__name__ == "operon.secrets"
     assert "randbelow" in dir(stdlib_secrets)
     assert sys.version_info >= (3, 10)
+
+
+# --- defensive branches -------------------------------------------------------
+
+
+def test_get_reports_missing_and_scalar_paths_as_unset(tmp_path: Path) -> None:
+    """A dotted key that dead-ends at an absent or scalar node reads unset."""
+    path = tmp_path / "config.yml"
+    path.write_text("identity: alice\n", encoding="utf-8")
+    instance = UserConfig(path)
+    assert instance.get("ghost.key") is None  # absent top-level node
+    assert instance.get("ncbi.phone") is None  # absent leaf under a mapping
+    assert instance.get("identity.actor") is None  # scalar where a mapping is due
+
+
+def test_set_repairs_scalar_and_null_intermediate_nodes(tmp_path: Path) -> None:
+    """A hand-written scalar or null node is replaced when a nested key is set."""
+    path = tmp_path / "config.yml"
+    path.write_text("identity: alice\nui: null\n", encoding="utf-8")
+    instance = UserConfig(path)
+    assert instance.set("identity.actor", "bob") == "bob"
+    assert instance.set("ui.splash", "text") == "text"
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert document["identity"] == {"actor": "bob"}
+    assert document["ui"] == {"splash": "text"}
+
+
+def test_normalize_user_value_skips_lowercasing_for_non_string_choices(
+    monkeypatch,
+) -> None:
+    """Choice validation leaves an already typed value untouched.
+
+    No shipped key combines a non-string type with choices, so the branch is
+    reached through a registered int-typed choice list.
+    """
+    monkeypatch.setitem(config_module.USER_CONFIG_CHOICES, "schema_version", (1, 2))
+    assert normalize_user_value("schema_version", 1) == 1
+
+
+def test_unreadable_file_is_a_config_error(tmp_path: Path, monkeypatch) -> None:
+    """An OS-level read failure surfaces as ``ConfigError``, never as OSError."""
+    path = tmp_path / "config.yml"
+    path.write_text("identity:\n  actor: alice\n", encoding="utf-8")
+    real_read_text = Path.read_text
+
+    def _fail_read(self: Path, *args, **kwargs):
+        if self == path:
+            raise OSError("simulated I/O failure")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _fail_read)
+    with pytest.raises(ConfigError, match="cannot be read"):
+        UserConfig(path).load()
+
+
+def test_reset_restores_a_fresh_copy_of_the_defaults(tmp_path: Path) -> None:
+    instance = UserConfig(tmp_path / "config.yml")
+    instance.set("identity.actor", "alice")
+    instance.set("ncbi.email", "mutated@example.org")
+    instance.reset()
+    assert instance.data == USER_CONFIG_DEFAULT
+    assert instance.actor == ""
+    # The reset document is a copy: mutating it never touches the constant.
+    instance.set("identity.actor", "mutated")
+    assert USER_CONFIG_DEFAULT["identity"]["actor"] == ""

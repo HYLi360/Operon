@@ -274,6 +274,47 @@ def test_run_pipeline_fetches_remote_sources_like_ingest(
     assert not staged.exists()  # the temporary fetch is gone
 
 
+def test_run_pipeline_cleans_up_a_fetched_directory_tree(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """A remote source fetched as a directory tree is removed after ingest."""
+    fetched = tmp_path / "fetched-tree"
+    (fetched / "nested").mkdir(parents=True)
+    (fetched / "nested" / "reads.fasta").write_text(">r1\nACGT\n", encoding="utf-8")
+
+    def fake_fetch(_project, _url):
+        return fetched
+
+    monkeypatch.setattr("operon.remotes.fetch_url_to_temp", fake_fetch)
+    _fresh_assembly(project, "ASM_000903")
+    lines: list[str] = []
+    db = Database(project.db_path)
+    try:
+        result = run_pipeline(
+            db,
+            project,
+            source="remote://mirror/batch",
+            entity_type="assembly",
+            entity_id="ASM_000903",
+            role="genome_fasta",
+            fmt="directory",
+            compression="none",
+            progress=lines.append,
+        )
+        file_row = dict(
+            db.conn.execute(
+                "SELECT * FROM files WHERE file_id=?", (result["file_id"],)
+            ).fetchone()
+        )
+    finally:
+        db.close()
+
+    assert lines[0] == "[1/4] ingest remote://mirror/batch"
+    assert file_row["format"] == "directory"
+    assert file_row["source_url"] == "remote://mirror/batch"
+    assert not fetched.exists()  # the whole fetched tree is gone, not just a file
+
+
 def test_reason_list_normalizes_decision_payloads() -> None:
     assert reason_list(["a", "b"]) == ["a", "b"]
     assert reason_list('["a", "b"]') == ["a", "b"]

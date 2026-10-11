@@ -239,7 +239,7 @@ def _cmd_alignment_qc(args: argparse.Namespace) -> int:
     try:
         result = alignment_qc(args.alignment)
         write_alignment_qc(result, args.outdir)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - top-level CLI boundary: any error becomes exit 1  # pylint: disable=broad-exception-caught
         print(f"error: {exc}", file=sys.stderr)
         return 1
     sys.stdout.write(render_summary_json(result.summary))

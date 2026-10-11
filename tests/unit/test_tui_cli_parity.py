@@ -155,6 +155,16 @@ def test_strict_mode_flags_planned_entries(monkeypatch: pytest.MonkeyPatch) -> N
     assert parity.strict_violations() == []
 
 
+def test_command_text_renders_multi_word_commands() -> None:
+    entry = parity.ParityEntry(("import", "dataset"), STATUS_IMPLEMENTED)
+    assert entry.command_text == "import dataset"
+
+
+def test_cli_options_rejects_an_unknown_command() -> None:
+    with pytest.raises(KeyError, match="unknown CLI command: import bad"):
+        parity.cli_options(("import", "bad"))
+
+
 # -- Layer 2: parameter mapping ------------------------------------------------
 #
 # Mapping convention (see operon/tui/parity.py): ``params``/``waived`` are

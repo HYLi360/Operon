@@ -664,3 +664,326 @@ def test_tick_status_stops_timer_once_not_running(project: Project) -> None:
     modal._tick_status()
     assert timer.stopped
     assert modal._status_timer is None
+
+
+# ---------------------------------------------------------------------------
+# Coverage: preview switches, guard rails, cancel actions, status ticks
+# ---------------------------------------------------------------------------
+
+
+def test_command_text_covers_every_optional_switch(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accession-file")
+            accession_file = str(project.root / "accs.txt")
+            (await _q(modal, "#ncbi-accession-file", Input)).value = accession_file
+            (await _q(modal, "#ncbi-api-key", Input)).value = "secret-key"
+            (await _q(modal, "#ncbi-resume-run", Input)).value = "WF_000042"
+            (await _q(modal, "#ncbi-no-archive-files", Checkbox)).value = True
+            (await _q(modal, "#ncbi-dry-run", Checkbox)).value = True
+            (await _q(modal, "#ncbi-no-preserve-source", Checkbox)).value = True
+            (await _q(modal, "#ncbi-plan-only", Checkbox)).value = True
+
+            command = modal.command_text()
+            ns = parse_command_text(command)
+            assert ns.accession_file == accession_file
+            assert ns.api_key == "secret-key"
+            assert ns.resume_run == "WF_000042"
+            assert ns.no_archive_files is True
+            assert ns.dry_run is True
+            assert ns.no_preserve_source is True
+            assert ns.plan_only is True
+            assert ns.standardize is False
+
+    _run(scenario())
+
+
+def test_foreign_form_events_keep_the_preflight(project: Project, monkeypatch) -> None:
+    monkeypatch.setattr(actions, "ncbi_datasets", lambda *a, **k: _preflight_payload())
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accessions")
+            (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
+            await _click(pilot, "#ncbi-preflight-button")
+            await _wait_until(
+                lambda: (
+                    modal.preflight is not None
+                    and "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight to land",
+            )
+            preview = _log_text(modal.query_one("#ncbi-preview", RichLog))
+            command = modal.command_text()
+
+            # Unrelated widgets never invalidate the stored preflight.
+            modal.on_input_changed(Input.Changed(input=Input(id="other"), value="zzz"))
+            modal.on_checkbox_changed(
+                Checkbox.Changed(Checkbox("other", id="other-check"), True)
+            )
+
+            assert modal.preflight is not None
+            assert _log_text(modal.query_one("#ncbi-preview", RichLog)) == preview
+            assert modal.command_text() == command
+            assert not (await _q(modal, "#confirm", Button)).disabled
+
+    _run(scenario())
+
+
+def test_preflight_empty_form_and_reentrancy_guard(
+    project: Project, monkeypatch
+) -> None:
+    def stub(*args, **kwargs):  # pragma: no cover - must never run
+        raise AssertionError("preflight must not reach the core")
+
+    monkeypatch.setattr(actions, "ncbi_datasets", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-inputs")
+
+            await _click(pilot, "#ncbi-preflight-button")
+            await _wait_until(
+                lambda: (
+                    "provide at least one --input, --accession, or --accession-file"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "empty-form error",
+            )
+            assert not modal.preflight_running
+
+            # A re-entrant call while another preflight is in flight is a no-op.
+            modal.preflight_running = True
+            modal.run_preflight()
+            modal.preflight_running = False
+            assert modal.preflight is None
+
+    _run(scenario())
+
+
+def test_preflight_preview_reports_skipped_and_messages(
+    project: Project, monkeypatch
+) -> None:
+    def stub(*args, **kwargs):
+        payload = _preflight_payload()
+        payload["skipped_existing"] = ["GCF_000000001.1"]
+        payload["messages"] = "note: cached metadata reused"
+        return payload
+
+    monkeypatch.setattr(actions, "ncbi_datasets", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accessions")
+            (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
+            await _click(pilot, "#ncbi-preflight-button")
+            await _wait_until(
+                lambda: (
+                    "skipped (already archived): GCF_000000001.1"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "skipped line in the preview",
+            )
+            assert "note: cached metadata reused" in _log_text(
+                modal.query_one("#ncbi-preview", RichLog)
+            )
+            assert not (await _q(modal, "#confirm", Button)).disabled
+
+    _run(scenario())
+
+
+def test_confirm_guard_paths_keep_the_run_from_starting(
+    project: Project, monkeypatch
+) -> None:
+    def stub(*args, **kwargs):  # pragma: no cover - guarded paths never call the core
+        raise AssertionError("the core must not run")
+
+    monkeypatch.setattr(actions, "ncbi_datasets", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accessions")
+            (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
+
+            # Already running: a second Confirm is a no-op.
+            modal.running = True
+            modal.confirm()
+            modal.running = False
+            assert modal._run_kwargs == {}
+
+            # No preflight yet: Confirm refuses and says why.
+            modal.confirm()
+            await _wait_until(
+                lambda: (
+                    "run the dry run (preflight) first"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "missing-preflight error",
+            )
+            assert not modal.running
+            assert modal._run_kwargs == {}
+
+            # The form turned invalid after a clean preflight: the numbers are
+            # re-validated when the run is confirmed.
+            (await _q(modal, "#ncbi-timeout", Input)).value = "abc"
+            await pilot.pause()
+            modal.preflight = _preflight_payload()
+            modal.confirm()
+            await _wait_until(
+                lambda: (
+                    "timeout must be a number"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "late validation error",
+            )
+            assert not modal.running
+            assert modal._run_kwargs == {}
+            assert (await _q(modal, "#confirm", Button)).disabled
+
+    _run(scenario())
+
+
+def test_escape_cancels_a_running_import_cooperatively(
+    project: Project, monkeypatch
+) -> None:
+    calls: list[dict] = []
+
+    def stub(*args, **kwargs):
+        calls.append(kwargs)
+        if "cancel_event" not in kwargs:
+            return _preflight_payload()
+        cancel_event = kwargs["cancel_event"]
+        deadline = time.monotonic() + 20.0
+        while not cancel_event.is_set():
+            if time.monotonic() > deadline:
+                raise AssertionError("cancel_event was never set")
+            time.sleep(0.05)
+        raise actions.NcbiDatasetsCancelled()
+
+    monkeypatch.setattr(actions, "ncbi_datasets", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accessions")
+            (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
+            await _click(pilot, "#ncbi-preflight-button")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight to finish",
+            )
+            await _click(pilot, "#confirm")
+            await _wait_until(lambda: modal.running, "run to start")
+
+            # A second Confirm while running must not spawn another worker.
+            modal.confirm()
+            assert len(calls) == 2
+
+            # Escape while running asks the core to stop cooperatively.
+            await pilot.press("escape")
+            await _wait_until(
+                lambda: (
+                    "cancelled" == _static_text(modal.query_one("#ncbi-status", Static))
+                ),
+                "cancelled status",
+            )
+            assert not modal.running
+
+            # A cancel request with no event yet (defensive arm) is a no-op.
+            modal._cancel_event = None
+            modal.running = True
+            modal._request_cancel()
+            modal.running = False
+            assert "cancelling" in _static_text(modal.query_one("#ncbi-status", Static))
+            assert modal._cancel_event is None
+
+            # Escape again, now idle, dismisses the modal.
+            await pilot.press("escape")
+            await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
+
+    _run(scenario())
+
+
+def test_tick_status_updates_elapsed_while_running(project: Project) -> None:
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-status")
+
+            modal.running = True
+            modal._started = time.monotonic()
+            modal._tick_status()
+            assert (
+                _static_text(modal.query_one("#ncbi-status", Static))
+                == "running… (0s elapsed)"
+            )
+
+            modal.running = False
+            modal._tick_status()
+            assert modal._status_timer is None
+
+    _run(scenario())
+
+
+def test_run_failure_is_shown_inline_and_unlocks_confirm(
+    project: Project, monkeypatch
+) -> None:
+    def stub(*args, **kwargs):
+        if "cancel_event" not in kwargs:
+            return _preflight_payload()
+        raise RuntimeError("download exploded")
+
+    monkeypatch.setattr(actions, "ncbi_datasets", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 60)) as pilot:
+            await _settled(app)
+            modal = NcbiDatasetsModal(project)
+            await _push(pilot, modal, "#ncbi-accessions")
+            (await _q(modal, "#ncbi-accessions", Input)).value = ACCESSION
+            await _click(pilot, "#ncbi-preflight-button")
+            await _wait_until(
+                lambda: (
+                    "preflight clean"
+                    in _log_text(modal.query_one("#ncbi-preview", RichLog))
+                ),
+                "preflight to finish",
+            )
+            await _click(pilot, "#confirm")
+            await _wait_until(
+                lambda: (
+                    "download exploded"
+                    in _static_text(modal.query_one("#modal-error", Static))
+                ),
+                "inline run failure",
+            )
+            assert not modal.running
+            assert _static_text(modal.query_one("#ncbi-status", Static)) == ""
+            assert not (await _q(modal, "#confirm", Button)).disabled
+            assert app.screen is modal
+
+    _run(scenario())

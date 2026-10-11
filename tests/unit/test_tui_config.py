@@ -4662,6 +4662,7 @@ def test_config_screen_commands_chain_loads_and_saves(project: Project) -> None:
     assert recipe.arguments == []
 
 
+@pytest.mark.bug("ODR-64")
 def test_config_screen_commands_chain_validation_and_step_rows(
     project: Project,
 ) -> None:
@@ -4733,9 +4734,21 @@ def test_config_screen_commands_chain_validation_and_step_rows(
 
             # Drop the first step: the survivor is renumbered and inherits the
             # owner label, and the note follows the chain the form now holds.
+            # The removal lands a task step before the renumbering runs, so the
+            # wait must be on the title itself, not on the row count: the count
+            # is already one while the survivor still shows its old label.
             await pilot.pause()
             _command_rows(panel)[0].query_one(".command-remove", Button).press()
-            await _wait_until(lambda: len(_command_rows(panel)) == 1, "the step to go")
+            await _wait_until(
+                lambda: (
+                    len(_command_rows(panel)) == 1
+                    and _static_text(
+                        _command_rows(panel)[0].query_one(".command-title", Static)
+                    )
+                    == "step 1  (logical owner)"
+                ),
+                "the survivor to be renumbered",
+            )
             rows = _command_rows(panel)
             assert "step 1  (logical owner)" == _static_text(
                 rows[0].query_one(".command-title", Static)
@@ -5174,5 +5187,669 @@ def test_fitting_select_survives_a_paint_whose_label_has_not_composed() -> None:
                 lambda: _static_text(current.query_one("#label", Static)) == "core",
                 "the retried paint to reach the label",
             )
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Defensive arms and guard exits
+# ---------------------------------------------------------------------------
+
+
+def test_parameter_line_drops_empty_choices_and_pattern_flags() -> None:
+    """`choices=`/`pattern=` with nothing after them add no key at all."""
+    assert _parse_parameter_line("theta=1; choices=") == ("theta", {"default": 1}, [])
+    assert _parse_parameter_line("theta=1; pattern=") == ("theta", {"default": 1}, [])
+
+
+def test_row_handlers_ignore_buttons_that_are_not_remove_buttons() -> None:
+    """The row-level button guards answer only their own remove button."""
+    rule = RuleRow({"metric": "m", "operator": ">=", "value": "1", "code": "C"})
+    posted: list = []
+    rule.post_message = posted.append  # the guard is observable without a tree
+    rule.on_button_pressed(Button.Pressed(Button("note", classes="rule-note")))
+    assert posted == []
+    rule.on_button_pressed(Button.Pressed(Button("x", classes="rule-remove")))
+    assert len(posted) == 1 and isinstance(posted[0], RuleRow.RemoveRequested)
+
+    row = CommandRow({"arguments": ["a"]})
+    posted = []
+    row.post_message = posted.append
+    row.on_button_pressed(Button.Pressed(Button("note", classes="command-note")))
+    assert posted == []
+    row.on_button_pressed(Button.Pressed(Button("x", classes="command-remove")))
+    assert len(posted) == 1 and isinstance(posted[0], CommandRow.RemoveRequested)
+    assert CommandRow.RemoveRequested(row).control is row
+
+    # Renumbering a row whose subtree is still composing moves only the number.
+    fresh = CommandRow({"arguments": []}, 2)
+    fresh.set_index(7)
+    assert fresh.index == 7 and fresh.form_ready is False
+
+    # A snapshot view closes only through its cancel button.
+    view = SnapshotViewModal("probe", {"a": 1})
+    view.on_button_pressed(Button.Pressed(Button("note", id="other-probe")))
+    assert view._dismissed is False
+
+
+def test_command_row_document_edges() -> None:
+    """The block keeps unmodeled keys and re-adds the version keys it owns."""
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(120, 40)) as pilot:
+            full = CommandRow(
+                {
+                    "arguments": ["alpha", "beta"],
+                    "version_args": ["-v"],
+                    "version_pattern": r"v(\d+)",
+                    "future_key": 7,
+                },
+                1,
+            )
+            bare = CommandRow({"arguments": ["solo"]}, 2)
+            noargs = CommandRow({"version_args": ["-v"]}, 3)
+            await app.screen.mount(full, bare, noargs)
+            await _await_rows(pilot, app.screen, CommandRow, 3, ".command-arguments")
+
+            # Blanked version fields drop both keys; the unknown key stays.
+            full.query_one(".command-version-args", Input).value = ""
+            full.query_one(".command-version-pattern", Input).value = ""
+            await pilot.pause()
+            assert full.command_document() == {
+                "arguments": ["alpha", "beta"],
+                "future_key": 7,
+            }
+
+            # A block that never held them gains them from the inputs.
+            bare.query_one(".command-version-args", Input).value = "-version"
+            bare.query_one(".command-version-pattern", Input).value = r"v(\d+)"
+            await pilot.pause()
+            assert bare.command_document() == {
+                "arguments": ["solo"],
+                "version_args": ["-version"],
+                "version_pattern": r"v(\d+)",
+            }
+
+            # A block without `arguments` gets the composed list appended last.
+            noargs.query_one(".command-arguments", TextArea).text = "makeblastdb"
+            await pilot.pause()
+            assert noargs.command_document() == {
+                "version_args": ["-v"],
+                "arguments": ["makeblastdb"],
+            }
+
+    _run(scenario())
+
+
+def test_history_modal_ignores_an_extra_row_and_unknown_buttons(
+    project: Project,
+) -> None:
+    """The history modal selects only recorded rows and its own buttons."""
+    from textual.coordinate import Coordinate
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            _select_profile(panel, "assembly_production_v1")
+            await pilot.pause()
+            await _click(pilot, "#profile-history")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, HistoryModal)
+            table = modal.query_one("#history-table", DataTable)
+            assert table.row_count == 1
+
+            # A cursor on a row the modal never recorded selects nothing.
+            table.add_row("99999", "9", "deadbeef00", "2024-01-01T00:00:00", "0")
+            table.cursor_coordinate = Coordinate(1, 0)
+            await pilot.pause()
+            assert modal._selected() is None
+
+            # ... and an unknown button on a real selection is ignored.
+            table.cursor_coordinate = Coordinate(0, 0)
+            await pilot.pause()
+            assert modal._selected() is not None
+            modal.on_button_pressed(Button.Pressed(Button("probe", id="tui-probe")))
+            await pilot.pause()
+            assert modal._dismissed is False and app.screen is modal
+
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, HistoryModal)
+
+    _run(scenario())
+
+
+def test_config_panel_guards_answer_nothing_loaded(project: Project) -> None:
+    """Every save/history/run entry point with nothing loaded is a no-op."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            assert app.screen is panel.screen  # no modal is up
+
+            panel._start_profile_save()
+            panel._start_classification_save()
+            panel._start_coverage_save()
+            panel._start_recipe_save()
+            panel._open_profile_history()
+            panel._open_recipe_history()
+            panel._open_run_analysis()
+            await pilot.pause()
+            assert app.screen is panel.screen
+
+            # A payload-less — or name-less — completion callback is a no-op,
+            # and the reload it starts lands without touching an editor.
+            panel._on_profile_saved(None)
+            panel._on_classification_saved(None)
+            panel._on_coverage_saved(None)
+            panel._on_conda_saved(None)
+            panel._on_profile_saved({"unchanged": True})
+            panel._on_classification_saved({"custom": 1})
+            panel._on_coverage_saved({"custom": 1})
+            panel._on_tool_saved({"custom": 1})
+            panel._on_recipe_saved({"custom": 1})
+            await _settled(app)
+            await pilot.pause()
+            assert app.screen is panel.screen
+
+    _run(scenario())
+
+
+def test_config_panel_dispatch_guards(project: Project) -> None:
+    """Re-entrant checks and selections that name nothing are ignored."""
+    from textual.widgets.data_table import RowKey
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+
+            # A tools-check while one is already running is refused.
+            panel.checking_tools = True
+            panel._start_tools_check()
+            assert panel.query_one("#tools-check", Button).disabled is False
+            panel.checking_tools = False
+
+            # Selections for other lists, empty indexes, and rows whose key
+            # value is None are ignored.
+            other = ListView(id="other-list")
+            await app.screen.mount(other)
+            await pilot.pause()
+            profiles = panel.query_one("#profiles-list", ListView)
+            panel.on_list_view_selected(ListView.Selected(other, None, None))
+            panel.on_list_view_selected(ListView.Selected(profiles, None, None))
+            panel.on_list_view_selected(ListView.Selected(profiles, None, 999))
+            recipes = panel.query_one("#recipes-table", DataTable)
+            panel.on_data_table_row_selected(
+                DataTable.RowSelected(recipes, 0, RowKey(None))
+            )
+
+            # An unknown button id falls off the end of the dispatch chain.
+            panel.on_button_pressed(Button.Pressed(Button("probe", id="tui-probe")))
+            await pilot.pause()
+            assert app.screen is panel.screen
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Mounting refusals for the remaining editors
+# ---------------------------------------------------------------------------
+
+
+def test_editor_saves_refuse_a_form_that_is_still_mounting(
+    project: Project,
+) -> None:
+    """A rebuild left mid-flight makes every editor's save wait (ODR-23)."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _await_form_ready(pilot, panel)
+
+            # The qc save has no inline error area: the wait is a notification.
+            panel._load_profile("reads_qc_v1")
+            panel._start_profile_save()  # same turn: the rule rows are on their way
+            assert not isinstance(app.screen, ProfileSaveModal)
+            await _await_notification(pilot, app, panel.FORM_MOUNTING_MESSAGE)
+            await _await_form_ready(pilot, panel)
+
+            # The tool save answers inline.
+            panel._load_tool("busco")
+            panel._load_profile("reads_qc_v1")
+            panel._start_tool_save()
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(
+                panel.query_one("#tool-save-error", Static)
+            )
+            assert not isinstance(app.screen, ToolSaveModal)
+            await _await_form_ready(pilot, panel)
+
+            # So does the conda-defaults save.
+            panel._load_profile("reads_qc_v1")
+            panel._start_conda_save()
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(
+                panel.query_one("#conda-save-error", Static)
+            )
+            assert not isinstance(app.screen, CondaDefaultsSaveModal)
+            await _await_form_ready(pilot, panel)
+
+            # And the coverage save, once its editor holds a real document.
+            panel._load_profile("coverage_viridiplantae_v1")
+            panel._load_profile("reads_qc_v1")
+            panel._start_coverage_save()
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(
+                panel.query_one("#coverage-save-error", Static)
+            )
+            assert not isinstance(app.screen, CoverageSaveModal)
+            await _await_form_ready(pilot, panel)
+
+            # And the recipe save, once its editor holds a recipe.
+            panel._load_recipe("blastn_nt")
+            await _await_form_ready(pilot, panel)
+            panel._load_profile("reads_qc_v1")
+            panel._start_recipe_save()
+            assert panel.FORM_MOUNTING_MESSAGE in _static_text(
+                panel.query_one("#recipe-save-error", Static)
+            )
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Classification composition and the classify run flow
+# ---------------------------------------------------------------------------
+
+
+def test_classification_compose_skips_rows_that_have_not_composed(
+    project: Project,
+) -> None:
+    """Blank or input-less source rows compose nothing and skip cleanly."""
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            await _await_rows(pilot, panel, ".source-row", 1, ".source-name")
+
+            # A freshly added source carries no name yet: nothing is composed.
+            await _click(pilot, "#classification-add-source")
+            rows = await _await_rows(pilot, panel, ".source-row", 2, ".source-name")
+            document = panel._compose_classification_document()
+            assert set(document["sources"]) == {"core"}
+
+            # Unmodeled document keys survive the composition verbatim.
+            panel.classification_doc = dict(
+                panel.classification_doc or {}, custom_key="kept"
+            )
+            document = panel._compose_classification_document()
+            assert document["custom_key"] == "kept"
+
+            # A row whose name input is gone is skipped, not read blindly.
+            await rows[1].query_one(".source-name", Input).remove()
+            await pilot.pause()
+            assert panel._source_names() == ["core"]
+
+    _run(scenario())
+
+
+def test_config_screen_classify_run_flow(project: Project) -> None:
+    """Running a classification reads the file; its result reloads the panel."""
+    from operon.tui.screens.classify import ClassifyModal
+
+    _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("bhlh_tiers")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            # The run reads the file: deleting it under the UI answers with a
+            # notification instead of pushing a modal.  The button is pressed
+            # directly: the sidebar's button row overflows its column here and
+            # a positional click lands on the classification editor instead.
+            def press_run() -> None:
+                panel.query_one("#profile-run", Button).press()
+
+            profile_path = project.profiles_dir / "bhlh_tiers.yaml"
+            profile_path.unlink()
+            press_run()
+            await pilot.pause()
+            await _await_notification(
+                pilot, app, "save the classification profile before running it"
+            )
+            assert not isinstance(app.screen, ClassifyModal)
+
+            # With the file back the run opens the modal, and the modal's
+            # result reloads the panel.
+            _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
+            generation = panel._load_generation
+            press_run()
+            await _wait_until(
+                lambda: isinstance(app.screen, ClassifyModal), "the classify modal"
+            )
+            modal = app.screen
+            modal.dismiss({"profile": "bhlh_tiers"})
+            await _wait_until(
+                lambda: app.screen is not modal, "the classify modal to close"
+            )
+            await _wait_until(
+                lambda: panel._load_generation > generation, "the panel to reload"
+            )
+
+            # A cancelled run reports no payload: the panel is left as it is.
+            settled = panel._load_generation
+            panel._after_classify(None)
+            assert panel._load_generation == settled
+            await _settled(app)
+
+    _run(scenario())
+
+
+def test_config_screen_recipe_run_flow(project: Project) -> None:
+    """Running a recipe opens the analysis modal; cancelling changes nothing."""
+    from operon.tui.screens.analyze import AnalyzeModal
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(170, 55)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            panel.query_one("#recipe-run", Button).press()
+            await _wait_until(
+                lambda: isinstance(app.screen, AnalyzeModal), "the analysis modal"
+            )
+            modal = app.screen
+            modal.dismiss(None)
+            await _wait_until(
+                lambda: app.screen is not modal, "the analysis modal to close"
+            )
+            await _settled(app)
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Coverage editor edges
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_editor_preserves_a_foreign_taxonomy_source(
+    project: Project,
+) -> None:
+    """A taxonomy source the form does not offer survives a save round-trip."""
+    document = json.loads(json.dumps(VIRIDIPLANTAE_COVERAGE))
+    document["taxonomy"] = {"source": "GTDB"}
+    _write_coverage_profile(project, "cov_gtdb", document)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("cov_gtdb")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+            assert panel.query_one("#coverage-taxonomy-source", Select).value == "GTDB"
+
+            # The composed document keeps the source: the save is a no-op.
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert isinstance(app.screen, CoverageSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _settled(app)
+            await pilot.pause()
+            await _await_notification(pilot, app, "cov_gtdb: unchanged")
+            assert not isinstance(app.screen, CoverageSaveModal)
+
+    _run(scenario())
+    loaded = data.get_profile_document(project, "cov_gtdb", kind="taxonomy_coverage")
+    assert loaded["taxonomy"]["source"] == "GTDB"
+
+
+def test_coverage_compose_edges(project: Project) -> None:
+    """Sections that are not mappings compose empty; blanks compose nothing."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("coverage_viridiplantae_v1")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            # A document whose sections are not mappings composes empty ones.
+            panel.coverage_doc = {
+                "kind": actions.COVERAGE_KIND,
+                "version": 1,
+                "taxonomy": "not-a-mapping",
+                "scope": "not-a-mapping",
+                "targets": "not-a-mapping",
+                "filters": "not-a-mapping",
+                "thresholds": "not-a-mapping",
+            }
+            panel.query_one("#coverage-root-taxids", Input).value = ""
+            panel.query_one("#coverage-rank-family", Checkbox).value = False
+            panel.query_one("#coverage-rank-genus", Checkbox).value = False
+            panel.query_one("#coverage-exclude-extinct", Checkbox).value = False
+            panel.query_one("#coverage-exclude-subtrees", Input).value = ""
+            panel.query_one("#coverage-exclude-patterns", TextArea).text = ""
+            document = panel._compose_coverage_document()
+            assert document["taxonomy"] == {"source": "NCBI"}
+            assert document["scope"] == {}
+            assert document["targets"] == {}
+            assert document["filters"] == {}
+            assert document["thresholds"] == {}
+
+            # A checked rank with an unmodeled threshold entry and a blank
+            # input keeps only the unmodeled keys; unchecked ranks stay out.
+            panel.coverage_doc = {
+                "kind": actions.COVERAGE_KIND,
+                "version": 1,
+                "thresholds": {"family": "not-a-mapping"},
+            }
+            panel.query_one("#coverage-rank-family", Checkbox).value = True
+            panel.query_one("#coverage-threshold-family", Input).value = ""
+            await pilot.pause()
+            document = panel._compose_coverage_document()
+            assert document["thresholds"] == {"family": {}}
+
+    _run(scenario())
+
+
+def test_coverage_editor_inline_rank_and_subtree_guards(project: Project) -> None:
+    """Ranks must be chosen and the subtree list must be positive integers."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            panel._load_profile("coverage_viridiplantae_v1")
+            await pilot.pause()
+            await _await_form_ready(pilot, panel)
+
+            panel.query_one("#coverage-rank-family", Checkbox).value = False
+            panel.query_one("#coverage-rank-genus", Checkbox).value = False
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert "at least one target rank is required" in _static_text(
+                panel.query_one("#coverage-save-error", Static)
+            )
+            assert not isinstance(app.screen, CoverageSaveModal)
+
+            panel.query_one("#coverage-rank-family", Checkbox).value = True
+            panel.query_one("#coverage-exclude-subtrees", Input).value = "9903, abc"
+            await _click(pilot, "#coverage-save")
+            await pilot.pause()
+            assert "excluded subtrees must be positive integers; got 'abc'" in (
+                _static_text(panel.query_one("#coverage-save-error", Static))
+            )
+            assert not isinstance(app.screen, CoverageSaveModal)
+
+    _run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Tool, conda, and recipe editor edges
+# ---------------------------------------------------------------------------
+
+
+def test_tool_editor_unknown_tool_and_unchanged_save(project: Project) -> None:
+    """An unknown tool notifies; an untouched form saves nothing."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+
+            # An unknown name is answered with a notification, not a crash.
+            panel._load_tool("ghost_tool")
+            await _await_notification(pilot, app, "unknown tool 'ghost_tool'")
+            assert panel.current_tool is None
+
+            # Blanking the version-args field drops the key from the form.
+            panel._load_tool("busco")
+            await pilot.pause()
+            panel.query_one("#tool-version-args", TextArea).text = ""
+            await pilot.pause()
+            assert "version_args" not in panel._compose_tool_document()
+
+            # The untouched form composes the file it came from: the save
+            # reports "unchanged" instead of writing.
+            panel._load_tool("busco")
+            await pilot.pause()
+            panel.query_one("#tool-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#tool-save")
+            await pilot.pause()
+            assert isinstance(app.screen, ToolSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _await_notification(pilot, app, "busco: unchanged — nothing written")
+            assert not isinstance(app.screen, ToolSaveModal)
+
+    _run(scenario())
+
+
+def test_conda_defaults_blank_and_unchanged(project: Project) -> None:
+    """Blanked conda fields compose no keys; the untouched form is unchanged."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+
+            await _click(pilot, "#conda-save")
+            await pilot.pause()
+            assert isinstance(app.screen, CondaDefaultsSaveModal)
+            await _click(pilot, "#confirm")
+            await pilot.pause()
+            await _await_notification(
+                pilot, app, "conda defaults: unchanged — nothing written"
+            )
+            assert not isinstance(app.screen, CondaDefaultsSaveModal)
+
+            # Blanking both fields composes a document with no conda keys at
+            # all: the modal says so, and cancel keeps the file untouched.
+            panel.query_one("#conda-bin", Input).value = ""
+            panel.query_one("#conda-run-args", TextArea).text = ""
+            await _click(pilot, "#conda-save")
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, CondaDefaultsSaveModal)
+            assert "(no conda keys)" in _static_text(
+                modal.query_one(".modal-info", Static)
+            )
+            await _click(pilot, "#cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, CondaDefaultsSaveModal)
+
+    _run(scenario())
+
+
+def test_recipe_editor_keeps_a_result_parser_it_does_not_model(
+    project: Project,
+) -> None:
+    """An unknown result_parser is offered back as a preserved option."""
+    config = yaml.safe_load(project.tools_config_path.read_text(encoding="utf-8"))
+    config["tools"]["blastn"]["recipes"]["custom_parser_probe"] = {
+        "description": "unknown parser probe",
+        "file_role": "genome_fasta",
+        "format": "fasta",
+        "arguments": ["-query", "${input}"],
+        "result_parser": "custom_tabular_probe",
+    }
+    project.tools_config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("custom_parser_probe")
+            await pilot.pause()
+            assert (
+                panel.query_one("#recipe-result-parser", Select).value
+                == "custom_tabular_probe"
+            )
+
+    _run(scenario())
+
+
+def test_recipe_editor_refuses_a_bad_parameter_name_and_negative_slurm(
+    project: Project,
+) -> None:
+    """Parameter names and slurm numbers are validated before the modal opens."""
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            panel = await _open_config(app, pilot)
+            await _open_tools_tab(panel, pilot)
+            panel._load_recipe("blastn_nt")
+            await pilot.pause()
+
+            # A parameter name the core's grammar cannot hold is refused inline.
+            panel.query_one("#recipe-parameters", TextArea).text = "1bad=x"
+            await pilot.pause()
+            panel.query_one("#recipe-editor", VerticalScroll).scroll_end(animate=False)
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "invalid parameter name '1bad'" in _static_text(
+                panel.query_one("#recipe-save-error", Static)
+            )
+            assert not isinstance(app.screen, RecipeSaveModal)
+
+            # A negative slurm mem_gb is refused with the core's wording.
+            panel.query_one("#recipe-parameters", TextArea).text = ""
+            panel.query_one("#recipe-slurm-mem-gb", Input).value = "-1"
+            await pilot.pause()
+            await _click(pilot, "#recipe-save")
+            await pilot.pause()
+            assert "slurm mem_gb must be an integer >= 0" in _static_text(
+                panel.query_one("#recipe-save-error", Static)
+            )
+            assert not isinstance(app.screen, RecipeSaveModal)
 
     _run(scenario())

@@ -931,6 +931,114 @@ def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
     assert ("file_integrity", "parseable") not in metrics
 
 
+def test_verification_probe_stat_failure_reports_missing(
+    project_db, tmp_path, monkeypatch
+):
+    project, db = project_db
+    source = tmp_path / "probe.fa"
+    source.write_text(">x\nA\n", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
+    path = project.root / row["relative_path"]
+    # Ingestion cached the verification; the probe failure below must clear it.
+    assert db.query(
+        "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+    )
+    monkeypatch.setattr(
+        Path,
+        "is_file",
+        lambda _self: (_ for _ in ()).throw(OSError("stat probe failed")),
+    )
+    matched, info = files.verify_local_file_identity(db, row, path)
+    # An OSError from the existence probe is reported like a missing artifact,
+    # and the derived verification cache row is cleared with it.
+    assert not matched and not info["exists"]
+    assert info["verification_method"] == "missing"
+    assert (
+        db.query(
+            "SELECT * FROM local_file_verifications WHERE file_id=?", (row["file_id"],)
+        )
+        == []
+    )
+
+
+def test_directory_verification_reports_size_and_hash_failures(
+    project_db, tmp_path, monkeypatch
+):
+    project, db = project_db
+    directory = tmp_path / "results"
+    directory.mkdir()
+    (directory / "a.txt").write_text("alpha", encoding="utf-8")
+    row = files.ingest_file(
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
+    )
+    path = project.root / row["relative_path"]
+    real_path_size = files.path_size_bytes
+
+    monkeypatch.setattr(
+        files,
+        "path_size_bytes",
+        lambda _path: (_ for _ in ()).throw(OSError("tree size")),
+    )
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "stat_error"
+    assert "tree size" in info["error"]
+
+    monkeypatch.setattr(files, "path_size_bytes", real_path_size)
+    monkeypatch.setattr(
+        files,
+        "sha256_path",
+        lambda _path: (_ for _ in ()).throw(OSError("tree hash")),
+    )
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "sha256_error"
+    assert "tree hash" in info["error"]
+
+
+def test_standardize_repairs_entity_state_for_verified_target(project_db, tmp_path):
+    from operon.workflow import set_state
+
+    project, db = project_db
+    source = tmp_path / "genome.fa"
+    source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
+    first = files.standardize_file(db, project, row["file_id"])
+    assert first["action"] == "copy"
+    assert db.get_entity_state("assembly", "ASM_000001") == "STANDARDIZED"
+
+    # Simulate the crash window between publishing the standardized target and
+    # committing the entity state: the target exists and verifies, so the
+    # retry repairs STANDARDIZED instead of failing on the state machine.
+    set_state(
+        db,
+        "assembly",
+        "ASM_000001",
+        "CHECKSUM_VERIFIED",
+        "simulated crash window",
+        actor="tester",
+    )
+    again = files.standardize_file(db, project, row["file_id"])
+    assert again["action"] == "skipped"
+    assert db.get_entity_state("assembly", "ASM_000001") == "STANDARDIZED"
+    audit = db.query(
+        "SELECT new_value, actor FROM changes "
+        "WHERE object_type='entity_state' AND object_id='assembly:ASM_000001' "
+        "ORDER BY change_id"
+    )
+    assert audit[-1]["new_value"] == "STANDARDIZED"
+    assert audit[-1]["actor"] == "operon standardize"
+
+
 def test_verify_identity_oserror_during_exists_check_reports_missing(
     project_db, tmp_path, monkeypatch
 ):
