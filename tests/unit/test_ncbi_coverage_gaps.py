@@ -1921,3 +1921,4 @@ def test_parallel_download_without_event_keeps_internal_cancellation(
     )
     assert len(completed) == 1
     assert consumed[0][0] == ["GCF_000000001.1"]
+
