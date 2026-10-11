@@ -132,29 +132,31 @@ def _cmd_init_demo(args: argparse.Namespace) -> int:
 
 
 def _cmd_status(args: argparse.Namespace, db: Database) -> int:
-    sql = "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state WHERE entity_type != 'database'"
+    fragments = [
+        "SELECT entity_type, entity_id, state, message, updated_at FROM entity_state WHERE entity_type != 'database'"
+    ]
     params: list[Any] = []
     if not getattr(args, "include_retired", False) and db.lifecycle_schema_available():
-        sql += (
-            " AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
+        fragments.append(
+            "AND NOT EXISTS (SELECT 1 FROM effective_retired_entities r "
             "WHERE r.entity_type=entity_state.entity_type "
             "AND r.entity_id=entity_state.entity_id)"
         )
     if args.entity_type:
-        sql += " AND entity_type=?"
+        fragments.append("AND entity_type=?")
         params.append(args.entity_type)
     if args.entity_id:
-        sql += " AND entity_id=?"
+        fragments.append("AND entity_id=?")
         params.append(args.entity_id)
-    sql += " ORDER BY entity_type, entity_id"
-    rows = db.conn.execute(sql, params).fetchall()
+    fragments.append("ORDER BY entity_type, entity_id")
+    rows = db.conn.execute(" ".join(fragments), params).fetchall()
     if not rows:
         print("no entity states recorded yet")
     else:
         print(
             format_table(
                 ["entity_type", "entity_id", "state", "message", "updated_at"],
-                ([r[c] for c in r.keys()] for r in rows),
+                (list(row) for row in rows),
             )
         )
     return 0
@@ -236,11 +238,7 @@ def _cmd_query(args: argparse.Namespace, db: Database) -> int:
     except Exception as exc:
         raise ValidationError(f"query failed: {exc}") from exc
     if rows:
-        print(
-            format_table(
-                list(rows[0].keys()), ([r[c] for c in rows[0].keys()] for r in rows)
-            )
-        )
+        print(format_table(list(rows[0].keys()), (list(row) for row in rows)))
     else:
         print("(no rows)")
     return 0

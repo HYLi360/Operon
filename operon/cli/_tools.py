@@ -183,7 +183,7 @@ def _cmd_run_external(args: argparse.Namespace, project: Project, db: Database) 
                 config = load_tools_config(project)
                 tool_version, raw_output = detect_tool_version_record(tool_spec, config)
                 extra_details = {"tool_version_raw": raw_output}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - version detection is best-effort and must never block the command  # pylint: disable=broad-exception-caught
                 # Version detection must never block the actual command.
                 print(
                     f"warning: version detection for {args.tool!r} failed: {exc}",

@@ -1013,7 +1013,9 @@ def test_taxonomy_and_report_dispatch_cover_all_supported_kinds(
     ):
         routed = []
         monkeypatch.setattr(
-            cli_report, handler, lambda *_a, routed=routed: routed.append(kind) or 7
+            cli_report,
+            handler,
+            lambda *_a, routed=routed, kind=kind: routed.append(kind) or 7,
         )
         assert cli._cmd_report(ns(report_kind=kind), project, db) == 7
         assert routed == [kind]

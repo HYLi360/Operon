@@ -235,155 +235,163 @@ def _environment_summary_text(db: Database, environment_id: str) -> str | None:
 
 def _cmd_workflow(args: argparse.Namespace, db: Database) -> int:
     if args.workflow_command == "list":
-        if (
-            args.started_from is not None
-            and args.started_to is not None
-            and datetime.fromisoformat(args.started_from)
-            >= datetime.fromisoformat(args.started_to)
-        ):
-            raise ValidationError("--from must be earlier than --to")
-        records = list_runs(
-            db,
-            started_from=args.started_from,
-            started_to=args.started_to,
-            run_id=args.run_id,
-            steps=args.step,
-            statuses=args.status,
-            entity_type=args.entity_type,
-            entity_id=args.entity_id,
-            parent_run_id=args.parent_run_id,
-            resumes_run_id=args.resumes_run_id,
-            tool=args.tool,
-            executor=args.executor,
-            limit=args.limit,
-            offset=args.offset,
-            oldest_first=args.oldest_first,
-        )
-        serialized = [_workflow_json_record(record) for record in records]
-        if args.format == "json":
-            print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
-        elif args.format == "jsonl":
-            for record in serialized:
-                print(json.dumps(record, ensure_ascii=False, sort_keys=True))
-        elif not records:
-            print("no workflow runs matched")
-        else:
-            print(
-                format_table(
-                    ["started_local", "status", "step", "entity", "duration", "run_id"],
-                    (
-                        [
-                            _workflow_started_local(record["started_at"]),
-                            _compact_workflow_value(record["status"], 11),
-                            _compact_workflow_value(record["step"], 16),
-                            _compact_workflow_value(
-                                ":".join(
-                                    filter(
-                                        None,
-                                        (
-                                            record.get("entity_type"),
-                                            record.get("entity_id"),
-                                        ),
-                                    )
-                                ),
-                                20,
-                            ),
-                            _compact_workflow_value(_workflow_duration(record), 10),
-                            record["run_id"],
-                        ]
-                        for record in records
-                    ),
-                )
-            )
+        _workflow_list(args, db)
         return 0
 
     if args.workflow_command == "show":
-        record = get_run(db, args.run_id)
-        if record is None:
-            raise ValidationError(f"workflow run does not exist: {args.run_id}")
-        if args.follow and args.format == "json":
-            raise ValidationError("--follow cannot be combined with --format json")
-        serialized = _workflow_json_record(record)
-        if args.format == "json":
-            print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
-            return 0
-        entity = ":".join(
-            filter(None, (record.get("entity_type"), record.get("entity_id")))
-        )
-        _print_workflow_section(
-            "Workflow run",
-            [
-                ("run_id", record["run_id"]),
-                ("status", record["status"]),
-                ("step", record["step"]),
-                ("entity", entity or None),
-                ("parent_run_id", record.get("parent_run_id")),
-                ("resumes_run_id", record.get("resumes_run_id")),
-            ],
-        )
-        print()
-        _print_workflow_section(
-            "Timing and resources",
-            [
-                ("started_at", record.get("started_at")),
-                ("finished_at", record.get("finished_at")),
-                ("duration", _workflow_duration(record)),
-                ("threads", record.get("threads")),
-                ("max_rss_mb", record.get("max_rss_mb")),
-                ("avg_rss_mb", record.get("avg_rss_mb")),
-                ("cpu_seconds", record.get("cpu_seconds")),
-            ],
-        )
-        print()
-        environment_id = record.get("environment_id")
-        _print_workflow_section(
-            "Execution",
-            [
-                ("command", record.get("command")),
-                ("tool", record.get("tool")),
-                ("tool_version", record.get("tool_version")),
-                ("parameter_set", record.get("parameter_set")),
-                ("executor", record.get("executor")),
-                ("scheduler_job_id", record.get("scheduler_job_id")),
-                ("exit_code", record.get("exit_code")),
-                ("environment_id", environment_id),
-                (
-                    "environment",
-                    _environment_summary_text(db, environment_id)
-                    if environment_id
-                    else None,
-                ),
-            ],
-        )
-        print()
-        _print_workflow_section(
-            "Artifacts and logs",
-            [
-                ("input_sha256", record.get("input_sha256")),
-                ("output_sha256", record.get("output_sha256")),
-                ("log_file", record.get("log_file")),
-                ("stdout_file", record.get("stdout_file")),
-                ("stderr_file", record.get("stderr_file")),
-            ],
-        )
-        print()
-        _print_workflow_section("Outcome", [("error", record.get("error"))])
-        print("\nExecution details")
-        details = serialized.get("execution_details")
-        if isinstance(details, (dict, list)):
-            print(json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True))
-        else:
-            print("-" if details in (None, "") else details)
-        if args.follow:
-            print()
-            return follow_run_logs(
-                lambda: get_run(db, args.run_id),
-                load_project(args.project).logs_root,
-                args.run_id,
-            )
-        return 0
+        return _workflow_show(args, db)
 
     raise ValidationError(f"unknown workflow command {args.workflow_command!r}")
+
+
+def _workflow_list(args: argparse.Namespace, db: Database) -> None:
+    if (
+        args.started_from is not None
+        and args.started_to is not None
+        and datetime.fromisoformat(args.started_from)
+        >= datetime.fromisoformat(args.started_to)
+    ):
+        raise ValidationError("--from must be earlier than --to")
+    records = list_runs(
+        db,
+        started_from=args.started_from,
+        started_to=args.started_to,
+        run_id=args.run_id,
+        steps=args.step,
+        statuses=args.status,
+        entity_type=args.entity_type,
+        entity_id=args.entity_id,
+        parent_run_id=args.parent_run_id,
+        resumes_run_id=args.resumes_run_id,
+        tool=args.tool,
+        executor=args.executor,
+        limit=args.limit,
+        offset=args.offset,
+        oldest_first=args.oldest_first,
+    )
+    serialized = [_workflow_json_record(record) for record in records]
+    if args.format == "json":
+        print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
+    elif args.format == "jsonl":
+        for record in serialized:
+            print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+    elif not records:
+        print("no workflow runs matched")
+    else:
+        print(
+            format_table(
+                ["started_local", "status", "step", "entity", "duration", "run_id"],
+                (
+                    [
+                        _workflow_started_local(record["started_at"]),
+                        _compact_workflow_value(record["status"], 11),
+                        _compact_workflow_value(record["step"], 16),
+                        _compact_workflow_value(
+                            ":".join(
+                                filter(
+                                    None,
+                                    (
+                                        record.get("entity_type"),
+                                        record.get("entity_id"),
+                                    ),
+                                )
+                            ),
+                            20,
+                        ),
+                        _compact_workflow_value(_workflow_duration(record), 10),
+                        record["run_id"],
+                    ]
+                    for record in records
+                ),
+            )
+        )
+
+
+def _workflow_show(args: argparse.Namespace, db: Database) -> int:
+    record = get_run(db, args.run_id)
+    if record is None:
+        raise ValidationError(f"workflow run does not exist: {args.run_id}")
+    if args.follow and args.format == "json":
+        raise ValidationError("--follow cannot be combined with --format json")
+    serialized = _workflow_json_record(record)
+    if args.format == "json":
+        print(json.dumps(serialized, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    entity = ":".join(
+        filter(None, (record.get("entity_type"), record.get("entity_id")))
+    )
+    _print_workflow_section(
+        "Workflow run",
+        [
+            ("run_id", record["run_id"]),
+            ("status", record["status"]),
+            ("step", record["step"]),
+            ("entity", entity or None),
+            ("parent_run_id", record.get("parent_run_id")),
+            ("resumes_run_id", record.get("resumes_run_id")),
+        ],
+    )
+    print()
+    _print_workflow_section(
+        "Timing and resources",
+        [
+            ("started_at", record.get("started_at")),
+            ("finished_at", record.get("finished_at")),
+            ("duration", _workflow_duration(record)),
+            ("threads", record.get("threads")),
+            ("max_rss_mb", record.get("max_rss_mb")),
+            ("avg_rss_mb", record.get("avg_rss_mb")),
+            ("cpu_seconds", record.get("cpu_seconds")),
+        ],
+    )
+    print()
+    environment_id = record.get("environment_id")
+    _print_workflow_section(
+        "Execution",
+        [
+            ("command", record.get("command")),
+            ("tool", record.get("tool")),
+            ("tool_version", record.get("tool_version")),
+            ("parameter_set", record.get("parameter_set")),
+            ("executor", record.get("executor")),
+            ("scheduler_job_id", record.get("scheduler_job_id")),
+            ("exit_code", record.get("exit_code")),
+            ("environment_id", environment_id),
+            (
+                "environment",
+                _environment_summary_text(db, environment_id)
+                if environment_id
+                else None,
+            ),
+        ],
+    )
+    print()
+    _print_workflow_section(
+        "Artifacts and logs",
+        [
+            ("input_sha256", record.get("input_sha256")),
+            ("output_sha256", record.get("output_sha256")),
+            ("log_file", record.get("log_file")),
+            ("stdout_file", record.get("stdout_file")),
+            ("stderr_file", record.get("stderr_file")),
+        ],
+    )
+    print()
+    _print_workflow_section("Outcome", [("error", record.get("error"))])
+    print("\nExecution details")
+    details = serialized.get("execution_details")
+    if isinstance(details, (dict, list)):
+        print(json.dumps(details, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print("-" if details in (None, "") else details)
+    if args.follow:
+        print()
+        return follow_run_logs(
+            lambda: get_run(db, args.run_id),
+            load_project(args.project).logs_root,
+            args.run_id,
+        )
+    return 0
 
 
 def _cmd_show(args: argparse.Namespace, db: Database) -> int:
@@ -395,51 +403,72 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
             include_superseded=getattr(args, "include_superseded", False),
             include_retired=getattr(args, "include_retired", False),
         )
-    except EntityNotFoundError:
-        hits = sequence_hits(db, args.identifier)
-        if not hits:
-            raise
-        if args.json:
-            print(
-                json.dumps(
-                    {"query": args.identifier, "match": "sequence", "sequences": hits},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 0
-        print(f"Matched:  sequence {args.identifier}")
-        print(f"\nSequences ({len(hits)})")
-        print(
-            format_table(
-                [
-                    "seqid",
-                    "length",
-                    "entity_type",
-                    "entity_id",
-                    "file_id",
-                    "relative_path",
-                ],
-                (
-                    [
-                        row[column]
-                        for column in (
-                            "seqid",
-                            "length",
-                            "entity_type",
-                            "entity_id",
-                            "file_id",
-                            "relative_path",
-                        )
-                    ]
-                    for row in hits
-                ),
-            )
-        )
-        return 0
+    except EntityNotFoundError as exc:
+        return _show_sequence_matches(args, db, exc)
     if args.json:
         print(json.dumps(graph, ensure_ascii=False, indent=2))
         return 0
+    _print_entity_summary(graph)
+    for title, rows, columns in _entity_show_sections(graph):
+        print(f"\n{title} ({len(rows)})")
+        print(
+            format_table(
+                columns, ([row.get(column) for column in columns] for row in rows)
+            )
+            if rows
+            else "(none)"
+        )
+    return 0
+
+
+def _show_sequence_matches(
+    args: argparse.Namespace, db: Database, not_found: EntityNotFoundError
+) -> int:
+    """Fall back to sequence hits when the identifier names no entity graph."""
+    hits = sequence_hits(db, args.identifier)
+    if not hits:
+        raise not_found
+    if args.json:
+        print(
+            json.dumps(
+                {"query": args.identifier, "match": "sequence", "sequences": hits},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print(f"Matched:  sequence {args.identifier}")
+    print(f"\nSequences ({len(hits)})")
+    print(
+        format_table(
+            [
+                "seqid",
+                "length",
+                "entity_type",
+                "entity_id",
+                "file_id",
+                "relative_path",
+            ],
+            (
+                [
+                    row[column]
+                    for column in (
+                        "seqid",
+                        "length",
+                        "entity_type",
+                        "entity_id",
+                        "file_id",
+                        "relative_path",
+                    )
+                ]
+                for row in hits
+            ),
+        )
+    )
+    return 0
+
+
+def _print_entity_summary(graph: dict[str, Any]) -> None:
     organism = graph["organism"]
     print(f"Organism: {organism['organism_id']}  {organism['scientific_name']}")
     print(
@@ -458,6 +487,11 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
                 f"{row['namespace']}:{row['accession']}" for row in accession_rows
             )
         )
+
+
+def _entity_show_sections(
+    graph: dict[str, Any],
+) -> list[tuple[str, list[dict[str, Any]], list[str]]]:
     sections = [
         (
             "Sources",
@@ -542,16 +576,24 @@ def _cmd_show(args: argparse.Namespace, db: Database) -> int:
                 ],
             )
         )
-    for title, rows, columns in sections:
-        print(f"\n{title} ({len(rows)})")
-        print(
-            format_table(
-                columns, ([row.get(column) for column in columns] for row in rows)
-            )
-            if rows
-            else "(none)"
+    return sections
+
+
+def _confirm_lifecycle_apply(command: str, action: str, plan: dict[str, Any]) -> bool:
+    """Interactive confirmation for ``--apply``; batch runs must pass ``--yes``."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValidationError(
+            f"{command} --apply requires --yes outside an interactive terminal"
         )
-    return 0
+    import questionary
+
+    target = plan["target"]
+    return bool(
+        questionary.confirm(
+            f"Apply {action} to {target['entity_type']} {target['entity_id']}? ",
+            default=False,
+        ).ask()
+    )
 
 
 def _cmd_lifecycle(args: argparse.Namespace, project: Project, db: Database) -> int:
@@ -568,21 +610,9 @@ def _cmd_lifecycle(args: argparse.Namespace, project: Project, db: Database) -> 
             raise ValidationError(plan["blocker"])
         print(json.dumps({**plan, "applied": False}, ensure_ascii=False, indent=2))
         return 0
-    if not args.yes:
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
-            raise ValidationError(
-                f"{args.command} --apply requires --yes outside an interactive terminal"
-            )
-        import questionary
-
-        target = plan["target"]
-        confirmed = questionary.confirm(
-            f"Apply {action} to {target['entity_type']} {target['entity_id']}? ",
-            default=False,
-        ).ask()
-        if not confirmed:
-            print(f"{args.command.capitalize()} cancelled; no rows were changed.")
-            return 0
+    if not args.yes and not _confirm_lifecycle_apply(args.command, action, plan):
+        print(f"{args.command.capitalize()} cancelled; no rows were changed.")
+        return 0
     actor = resolve_actor(args.actor) or ""
     if not actor:
         raise ValidationError(
