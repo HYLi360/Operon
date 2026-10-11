@@ -22,11 +22,12 @@ pytest.importorskip("textual")
 from textual.app import App
 from textual.containers import Vertical
 from textual.css.query import NoMatches
-from textual.widgets import Select, Static
+from textual.widgets import Input, Select, Static
 from textual.widgets._select import SelectCurrent
 
 from operon.tui.screens.common import (
     FittingSelect,
+    WriteModal,
     backend_select_options,
     project_default_backend,
     remount,
@@ -233,6 +234,85 @@ def test_fitting_select_paint_gives_up_by_name() -> None:
                 assert select.is_mounted, "the control outlives the failed paint"
                 assert "paint-probe" in recorder.messages[0]
                 assert str(select.value) == "core", "the value stands"
+
+    _run(scenario())
+
+
+# -- the write-modal command preview survives a form that is not composed -----
+
+
+class _ProbeModal(WriteModal):
+    """Smallest WriteModal: one input the command text reads."""
+
+    def __init__(self) -> None:
+        super().__init__("probe")
+
+    def compose_form(self):
+        yield Input("seed", id="probe-input")
+
+    def command_text(self) -> str:
+        value = self.query_one("#probe-input", Input).value
+        return f"operon probe {value}"
+
+    def confirm(self) -> None:
+        self.dismiss(True)
+
+
+@pytest.mark.bug("ODR-65")
+def test_write_modal_preview_defers_until_modal_command_composes() -> None:
+    """on_mount's preview refresh must not raise while the form composes.
+
+    The form lives two compose levels below the modal, so a Mount dispatched
+    before the grandchildren landed raised NoMatches out of refresh_command
+    (ODR-65).  Withhold #modal-command here so every attempt misses: the
+    refresh must defer a turn at a time, run its budget out, and leave the
+    modal — and the app — alive.
+    """
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(80, 24)) as pilot:
+            modal = _ProbeModal()
+            modal._command_refresh_retry_limit = 3
+            original_compose = modal.compose
+
+            def without_command() -> Any:
+                for child in original_compose():
+                    if not (isinstance(child, Static) and child.id == "modal-command"):
+                        yield child
+
+            modal.compose = without_command
+            await app.push_screen(modal)
+            await wait_until(lambda: modal.is_mounted, "the modal to mount")
+            for _ in range(6):  # let the retry budget run out
+                await pilot.pause()
+            assert modal.is_mounted
+            assert app.is_running
+
+    _run(scenario())
+
+
+@pytest.mark.bug("ODR-65")
+def test_write_modal_preview_defers_while_command_text_inputs_compose() -> None:
+    """command_text() reads form inputs; those can be missing at Mount too.
+
+    Same window as the sibling test, one lookup earlier: the subclass's
+    command_text reached for its input before the form composed and raised
+    NoMatches out of on_mount (ODR-65).  The refresh defers instead.
+    """
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(80, 24)) as pilot:
+            modal = _ProbeModal()
+            modal._command_refresh_retry_limit = 3
+            modal.compose_form = lambda: iter([])  # no #probe-input anywhere
+            await app.push_screen(modal)
+            await wait_until(lambda: modal.is_mounted, "the modal to mount")
+            for _ in range(6):  # let the retry budget run out
+                await pilot.pause()
+            assert modal.is_mounted
+            assert app.is_running
 
     _run(scenario())
 

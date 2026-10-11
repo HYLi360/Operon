@@ -792,12 +792,30 @@ class WriteModal(DismissOnce, WorkerResults, ModalScreen):
         """The equivalent ``operon`` CLI command for the current inputs."""
         return ""
 
+    #: How many turns a deferred command-preview refresh retries before
+    #: giving up (the same budget ``FittingSelect`` uses for its mount).
+    _command_refresh_retry_limit = 50
+
     def on_mount(self) -> None:
         self.refresh_command()
 
-    def refresh_command(self) -> None:
-        command = self.command_text()
-        view = self.query_one("#modal-command", Static)
+    def refresh_command(self, _attempt: int = 0) -> None:
+        """Repaint the equivalent-CLI line, deferring while the form composes.
+
+        The form lives two compose levels below the modal, so ``on_mount`` —
+        and the ``Changed`` handlers that fire while the form is mounting or
+        being torn down — can run before ``#modal-command``, or before the
+        inputs :meth:`command_text` reads, are in the tree (ODR-65).  Defer a
+        turn at a time until they are, and stop once the modal is gone or the
+        retry budget runs out.
+        """
+        try:
+            command = self.command_text()
+            view = self.query_one("#modal-command", Static)
+        except NoMatches:
+            if self.is_running and _attempt < self._command_refresh_retry_limit:
+                self.call_after_refresh(self.refresh_command, _attempt + 1)
+            return
         view.update(Text(f"$ {command}", style="dim") if command else Text(""))
 
     def show_error(self, exc: BaseException | str) -> None:
