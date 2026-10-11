@@ -189,6 +189,28 @@ def test_preview_rejects_invalid_tables_keys_rows_and_references(
         preview_table_import(db, schema, "accessions", accession)
 
 
+def test_preview_allows_a_blank_reference_when_the_schema_is_relaxed(
+    project_db, tmp_path
+):
+    """A customized schema may drop the link field's ``required`` flag.
+
+    Reference validation only runs for rows that carry a value: an empty
+    (optional) reference is passed through untouched instead of being
+    looked up in the parent table, and the preview still completes.
+    """
+    _project, db, schema = project_db
+    schema.tables["samples"]["fields"]["organism_id"].pop("required")
+    source = _csv(
+        tmp_path / "samples.csv",
+        ["sample_id", "strain"],
+        [{"sample_id": "SMP_000001", "strain": "   "}],
+    )
+    preview = preview_table_import(db, schema, "samples", source)
+    assert preview["insert"] == 1
+    assert preview["items"][0]["action"] == "insert"
+    assert preview["items"][0]["row"]["organism_id"] is None
+
+
 def test_apply_conflict_policies_and_state_updates(project_db, tmp_path):
     _project, db, schema = project_db
     source = _csv(

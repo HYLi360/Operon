@@ -1117,6 +1117,57 @@ def test_plan_builder_organism_sample_and_annotation_lookup_fallbacks(project_db
     )
 
 
+def test_annotation_bridge_without_the_legacy_record_table(project_db):
+    """Pre-2.6 databases have no ``ncbi_annotation_records`` table at all.
+
+    The canonical-accession bridge must still find the stored annotation
+    through the metadata rows alone; the claimed-set scan of the identity
+    table is skipped when the table is absent.
+    """
+    _project, db = project_db
+    db.insert_row(
+        "organisms",
+        {
+            "organism_id": "ORG_000001",
+            "scientific_name": "Example species",
+            "taxon_id": 123,
+        },
+    )
+    db.insert_row(
+        "samples",
+        {
+            "sample_id": "SMP_000001",
+            "organism_id": "ORG_000001",
+            "biosample_accession": "SAMN000001",
+        },
+    )
+    db.insert_row(
+        "assemblies",
+        {
+            "assembly_id": "ASM_000001",
+            "sample_id": "SMP_000001",
+            "assembly_accession": "GCF_000000001.1",
+            "assembly_version": 1,
+        },
+    )
+    db.insert_row(
+        "annotations",
+        {
+            "annotation_id": "ANN_000001",
+            "assembly_id": "ASM_000001",
+            "annotation_source": "NCBI RefSeq",
+            "annotation_version": 1,
+        },
+    )
+    db.conn.execute("DROP TABLE ncbi_annotation_records")
+    db.conn.commit()
+    builder = ncbi._PlanBuilder(db)
+    builder.plan.canonical_accessions["ASM_000001"] = "GCF_000000001.1"
+    assert (
+        builder._ensure_annotation("ASM_000001", "GCF_000000001.1", {}) == "ANN_000001"
+    )
+
+
 def test_entrez_fallback_validation_empty_and_complete_records(monkeypatch):
     with pytest.raises(ValidationError, match="requires --email"):
         ncbi.fetch_entrez_assembly_reports(["GCF_000000001.1"], email=None)

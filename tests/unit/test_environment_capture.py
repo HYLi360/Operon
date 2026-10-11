@@ -325,6 +325,20 @@ def test_failed_capture_is_not_cached(monkeypatch):
     assert len(calls) == 2
 
 
+def test_failed_document_is_not_cached(monkeypatch):
+    """A probe that reports its own failure must not poison the batch cache.
+
+    The probe can exit 0 and still hand back a ``capture_status: failed``
+    document (for example a truncated legacy probe); the failed capture is
+    returned to the caller but never memoized, so the next command re-probes
+    instead of reusing the glitch.
+    """
+    calls = _counting_probe(monkeypatch, stdout="capture_status=failed\n")
+    assert capture_local(["true"])["capture_status"] == "failed"
+    assert capture_local(["true"])["capture_status"] == "failed"
+    assert len(calls) == 2
+
+
 def test_cached_document_is_isolated_from_caller_edits(monkeypatch):
     calls = _counting_probe(monkeypatch)
     first = capture_local(["true"])
@@ -406,6 +420,22 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
     assert probe_command(["micromamba"]) is None
     with pytest.raises(ValidationError):
         export_conda(document(), "unsupported")
+
+
+def test_unavailable_probe_output_is_explicit():
+    """A probe reporting the timeout utility missing stays machine-readable.
+
+    Legacy probes emitted ``capture_unavailable=1`` when neither GNU
+    ``timeout`` nor the POSIX watcher could bound the probe; the parse path
+    keeps that verdict recognizable instead of silently degrading it into a
+    partial document.
+    """
+    env = parse_probe_output("capture_schema=1\ncapture_unavailable=1\n")
+    assert env == {
+        "capture_schema": 1,
+        "capture_status": "unavailable",
+        "reason": "timeout utility unavailable",
+    }
 
 
 @pytest.mark.bug("ODR-33")

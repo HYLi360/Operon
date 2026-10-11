@@ -227,3 +227,53 @@ def test_metadata_columns_export_empty_and_metric_conservative_fallback(db):
 def test_missing_file_status_raises(db):
     with pytest.raises(EntityNotFoundError, match="does not exist"):
         db.set_file_status("FIL_999999", "REMOTE_ONLY", reason="x", actor="test")
+
+
+def test_read_only_immutable_retry_closes_handle_and_reraises(tmp_path):
+    """A read-only directory forces the WAL open onto the immutable retry; a
+    corrupt main file must still close the retried handle before re-raising."""
+    directory = tmp_path / "read-only-mount"
+    directory.mkdir()
+    path = directory / "operon.sqlite"
+    Database(path).close()
+    payload = bytearray(path.read_bytes())
+    payload[100:108] = b"\xff" * 8  # clobber the page-1 schema btree header
+    path.write_bytes(bytes(payload))
+    Path(f"{path}-wal").write_bytes(b"")  # empty WAL: the side-file guard passes
+    Path(f"{path}-shm").unlink(missing_ok=True)
+    original_mode = directory.stat().st_mode
+    directory.chmod(0o555)
+    try:
+        # mode=ro cannot build the shared-memory index here, so the open falls
+        # back to immutable mode, where the clobbered schema is surfaced.
+        with pytest.raises(sqlite3.DatabaseError, match="malformed"):
+            Database(path, read_only=True)
+    finally:
+        directory.chmod(original_mode)
+
+
+def test_read_only_pragma_setup_failure_closes_connection(tmp_path, monkeypatch):
+    """A driver failure during the read-only PRAGMA setup must not leak the
+    already-open handle: the constructor closes it and re-raises."""
+    path = tmp_path / "operon.sqlite"
+    Database(path).close()
+    real_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    class FailingBusyTimeout(sqlite3.Connection):
+        def execute(self, sql, parameters=(), /):
+            if sql == "PRAGMA busy_timeout=30000":
+                raise sqlite3.OperationalError("busy_timeout unavailable")
+            return super().execute(sql, parameters)
+
+    def connect_to_test_database(*_args, **_kwargs):
+        connection = real_connect(str(path), factory=FailingBusyTimeout)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr("operon.database.sqlite3.connect", connect_to_test_database)
+    with pytest.raises(sqlite3.OperationalError, match="busy_timeout unavailable"):
+        Database(path, read_only=True)
+    assert len(opened) == 1
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        opened[0].execute("SELECT 1")

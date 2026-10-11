@@ -693,3 +693,16 @@ def test_cli_network_failure_exit_code(project, patch_network, capsys):
     assert exit_code == 2
     _, err = capsys.readouterr()
     assert "failed" in err
+
+
+def test_cli_pairwise_unknown_taxon_name_reports_missing_candidate(
+    project, monkeypatch, capsys
+):
+    """A client returning an empty candidate list hits the resolver's guard."""
+    monkeypatch.setattr(timetree.TimeTreeClient, "resolve_taxon", lambda self, name: [])
+    exit_code = _run_cli(
+        project, "timetree", "pairwise", "--taxon", "Ghostium", "--taxon-id", "9606"
+    )
+    assert exit_code == 2
+    _, err = capsys.readouterr()
+    assert "no candidate" in err

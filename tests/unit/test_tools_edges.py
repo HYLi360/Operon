@@ -1523,3 +1523,65 @@ def test_version_and_database_identity_caches_expire_after_ttl(tmp_path, monkeyp
     monkeypatch.setattr(tools._probe, "_IDENTITY_CACHE_TTL_SECONDS", 0)
     assert tools.database_identity(p, recipe(database="ref.db")) != first
     tools._DATABASE_IDENTITY_CACHE.clear()
+
+
+def test_directory_fingerprint_skips_directory_entries(tmp_path):
+    directory = tmp_path / "db"
+    nested = directory / "sub"
+    nested.mkdir(parents=True)
+    (directory / "pool.fa").write_text(">a\nAC\n", encoding="utf-8")
+    (nested / "inner.fa").write_text(">b\nGT\n", encoding="utf-8")
+    baseline = tools._directory_fingerprint(directory)
+    # Directories are skipped, so an empty one contributes nothing.
+    (directory / "empty").mkdir()
+    assert tools._directory_fingerprint(directory) == baseline
+    # Files nested below a skipped directory still count.
+    (nested / "inner2.fa").write_text(">c\nAA\n", encoding="utf-8")
+    assert tools._directory_fingerprint(directory) != baseline
+
+
+def test_interrupt_analysis_execution_removes_partial_artifacts(tmp_path):
+    from operon.database import Database
+    from operon.tools._execute import _interrupt_analysis_execution
+    from operon.tools._plan import _AnalysisExecution
+
+    p = project(tmp_path)
+    job_dir = p.analysis_root / "analysis" / "job"
+    job_dir.mkdir(parents=True)
+    output = job_dir / "hits.tsv"
+    events = job_dir / "hits.jsonl"
+    output.write_text("partial hits\n", encoding="utf-8")
+    events.write_text("{}\n", encoding="utf-8")
+    db = Database(tmp_path / "meta.sqlite")
+    try:
+        plan = _AnalysisExecution(
+            file_record={
+                "file_id": "FIL_000001",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+            },
+            job_id=7,
+            run_id="run-1",
+            argv_steps=[],
+            commands=None,
+            command_details=None,
+            command_display="tool run",
+            version="1.0",
+            threads=1,
+            output_path=output,
+            output_rel="analysis/job/hits.tsv",
+            work_dir=None,
+            stage_inputs=(),
+            env_decision=None,
+            runtime_parameters=None,
+            stdout_path=job_dir / "stdout.log",
+            stderr_path=job_dir / "stderr.log",
+            started="2026-01-01T00:00:00+00:00",
+            events_path=events,
+        )
+        _interrupt_analysis_execution(p, db, plan, KeyboardInterrupt())
+    finally:
+        db.close()
+    # Both the partial output and the partial events file are dropped.
+    assert not output.exists()
+    assert not events.exists()

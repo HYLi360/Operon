@@ -118,3 +118,11 @@ def test_protein_empty_duplicate_stops_and_optional_match(tmp_path):
     assert stats["protein_missing_start_count"] == 1
     assert stats["protein_missing_stop_count"] == 2
     assert stats["cds_protein_count_match"] == 1
+
+
+def test_n50_post_loop_fallback_when_no_prefix_reaches_half():
+    # Real sequence lengths are non-negative, so the in-loop return always
+    # fires there; the post-loop fallback is only observable when no prefix
+    # (including the running total) reaches half of the final sum.
+    assert parsers._n50([-5]) == (-5.0, 1)
+    assert parsers._n50([4, 3]) == (4.0, 1)
