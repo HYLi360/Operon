@@ -77,6 +77,14 @@
 | ODR-0062 | 测试 | table-import 模块的通知断言改为谓词等待，不再在 modal 关闭后对通知栈采样一次，晚一个消息循环轮次才落地的 toast（CI run 37566958718，macOS 3.14）不会再把正确的导入误判为断言失败。 |
 | ODR-0063 | 分析 | `select-sequences`、`extract-domains` 与 `report analysis --hits`（CLI 与 TUI）现在只读取每个 analysis+file 最新的 completed 作业：用已退役参考数据库产生的比对行（旧作业仍保持 `completed`，因为 supersession 只匹配完全相同的指纹）不再抬高 `hit_count`/`best_evalue`，也不再改变被选中的序列集合；被忽略的旧作业会计数并以 `ignored_completed_jobs` 呈现——沿用 `classify-sequences` 已有的约定。 |
 | ODR-0064 | TUI 测试 | 配置界面的"链条删除"测试改为等待幸存行重编号后的标题（即断言的状态），而不是命令行数：DOM 删除会比处理器重编号链条早一个任务步落地，只看计数的等待在繁忙 runner 上可能取到旧标签。 |
+| ODR-0065 | TUI | 写入模态框的挂载期工作不再读取只组装了一半的表单：`refresh_command` 逐轮延迟，直到 `#modal-command` 与 `command_text()` 要读的输入都进入组件树；十一个 `on_mount` 触碰 compose 树的子类把这部分工作迁入了 `on_form_ready`——基类用同一组有界重试驱动的钩子，钩子调用本身也在重试之内（曾观测到某个表单同级组件比锚点更晚落地）。`SyncModal` 的计划预览对拆解期间到达的 `Changed` 消息加了同样的守卫。 |
+| ODR-0066 | TUI | TUI 构造的每个 `Select` 现在都是 `FittingSelect`（17 个界面模块共 69 处构造点）：裸 select 在负载下会与自身的 compose 竞争——Textual 的 `_on_mount` 在这些子组件存在之前就去取 `SelectOverlay`，`_watch_value` 去取折叠控件的 `#label`。一个守护测试扫描 `operon/tui`，裸构造无法再回来。 |
+| ODR-0067 | TUI 测试 | 配置界面测试中每个 profile 加载入口后的首次行读取都以 `_await_form_ready`（保存路径自己使用的挂载信号）为门：`_select_profile` 之后只跟裸 `pilot.pause()` 可能读到空编辑器，因为延迟的 remount 要晚一个事件循环轮次才落地。 |
+| ODR-0068 | TUI 测试 | 测试不再在 `Select` 的挂载期初始化完成前读/写它的值（此前值为 `Select.NULL`）：rule-operator 的读取、分类 source 的赋值、remotes 预填分支现在都等待值本身。 |
+| ODR-0069 | TUI | 被删除的分类规则行不再进入组合出的文档：处理器给该行打上 `removal_pending` 标记并等待删除落地，`_compose_classification_document` 跳过带标记的行——删除在途时落地的保存不会再把被删规则写进 profile。 |
+| ODR-0070 | TUI 测试 | NCBI Datasets 的测试改为通过 `_await_notification` 谓词等待入队的通知，不再在 toast 落地前一轮读取通知列表。 |
+| ODR-0071 | TUI 测试 | backup 与 set-state 的 CLI-parity 测试改为等待模态框的 dismissal 回调，而不是在 worker 侧动作完成后立即断言——dismissal 要晚一次交接才在 UI 线程落地。 |
+| ODR-0072 | TUI 测试 | run-external 的写测试改为等待入队的错误通知，不再在模态框 dismissal 之后立即读 `app._notifications`；由 CI 的 ubuntu-24.04/3.10 腿（run 38148089207）抓到。 |
 
 ## K 系列（历史）
 

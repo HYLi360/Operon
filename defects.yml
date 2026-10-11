@@ -1946,7 +1946,7 @@ defects:
     2026-10-11, rounds 1-6).
   severity: 'medium'
   component: 'tui'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Six randomized-order rounds of tests/unit/test_tui*.py under the jitter harness
     (PYTHONPATH=others/tui-race, -p tui_jitter -p shuffle_order, OPERON_TUI_JITTER_MS=0.5
@@ -1968,11 +1968,24 @@ defects:
     impact is an aborted on_mount/handler (a dead command preview), not a crash; the 30 ms mount knob
     makes the window reliably observable.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run (others/tui-race); fix pending in a
-    follow-up change.
-  fix_commit: null
+    Fixed in three commits (e5755f8, 4f9f341, 111da2d). refresh_command defers a turn at a time
+    (bounded, FittingSelect-style) until #modal-command and the inputs command_text() reads are in the
+    tree, and stops once the modal is gone. WriteModal gained on_form_ready, a subclass hook the base
+    drives from the same retry, and the eleven WriteModal subclasses whose on_mount touched the compose
+    tree moved that work into it; the hook call itself shares the retry after a form sibling was
+    observed lagging the #modal-command anchor ('#analyze-progress'), with a named give-up warning.
+    SyncModal._refresh_plan and EvictModal's gate re-arm guard the same NoMatches for a Changed message
+    landing while the form composes or tears down. The regression tests withhold #modal-command or the
+    probe input so every attempt misses, pin that on_form_ready fires only once the form answers, and
+    mount the hook's widget a turn late.
+  fix_commit: '111da2d2220dbc384fe385fb43706b7b94b74e5a'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_common_guard.py::test_write_modal_preview_defers_until_modal_command_composes
+    - tests/unit/test_tui_common_guard.py::test_write_modal_preview_defers_while_command_text_inputs_compose
+    - tests/unit/test_tui_common_guard.py::test_write_modal_on_form_ready_runs_after_the_command_anchor
+    - tests/unit/test_tui_common_guard.py::test_write_modal_on_form_ready_never_fires_without_the_anchor
+    - tests/unit/test_tui_common_guard.py::test_write_modal_form_hook_retries_when_a_form_sibling_lags_the_anchor
 - id: ODR-66
   title: |
     Modal form selects stay bare, so Textual's Select._on_mount hits NoMatches on SelectOverlay under
@@ -1984,7 +1997,7 @@ defects:
     files_ops, run_external, backup, entities modals).
   severity: 'medium'
   component: 'tui'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     In the 2026-10-11 jitter stress run (six randomized-order rounds, same harness as ODR-65),
     test_config_screen_recipe_run_flow raised textual.css.query.NoMatches: No nodes match
@@ -2003,11 +2016,14 @@ defects:
     SelectCurrent.update (textual/widgets/_select.py:557/615/256) on the bare
     Select(id='standardize-link') — mount-time value initialization racing the select's own compose.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (adopt FittingSelect or guard the
-    overlay lookup for modal selects) pending in a follow-up change.
-  fix_commit: null
+    Fixed. All 69 bare Select constructions across the 17 screen modules now build FittingSelect, whose
+    mount guards and retries cover the overlay and collapsed-label lookups; the config editors were
+    converted under ODR-23. A guard test scans operon/tui for bare Select constructions so the unguarded
+    widget cannot come back.
+  fix_commit: '7d2185b6c36150bb232d5833d9497ae69c43e3c9'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_common_guard.py::test_tui_constructs_no_bare_selects
 - id: ODR-67
   title: 'Config-screen tests read rule rows before the deferred remount lands'
   reported: '2026-10-11'
@@ -2016,7 +2032,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     In the 2026-10-11 jitter rounds (harness as ODR-65): test_config_screen_add_and_remove_rule_rows
     round 5 raised IndexError at tests/unit/test_tui_config.py:1474 (panel._rule_rows('required')[0] on
@@ -2028,11 +2044,25 @@ defects:
     MountTracked lands a turn later (common.py:432-465), and these tests read the rows after a bare
     pilot.pause() with no _await_form_ready/_await_rows in between. Same family as ODR-23/ODR-27.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (wait on form_ready/_await_rows
-    before reading rows) pending in a follow-up change.
-  fix_commit: null
+    Fixed in two commits (8e8581e, 052d16a). Every profile-load entry in tests/unit/test_tui_config.py —
+    _select_profile, _load_profile, the new-profile modal confirm, list selection, reload-after-save —
+    is now gated on _await_form_ready (the save path's own _form_mounting signal) before the first row
+    read. Ten tests carry the marker: the three the stress run reddened and the seven more the follow-up
+    audit found ungated (one reddened by a later jitter run). Tests that read inside the mounting window
+    by design (ODR-35/ODR-36) were left as they are.
+  fix_commit: '052d16a7d8d70c260cf47a33af3e07fff522e93b'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_config_screen_profile_save_end_to_end
+    - tests/unit/test_tui_config.py::test_config_screen_save_error_stays_inline
+    - tests/unit/test_tui_config.py::test_config_screen_add_and_remove_rule_rows
+    - tests/unit/test_tui_config.py::test_config_screen_profile_unmodeled_keys_survive_save
+    - tests/unit/test_tui_config.py::test_config_screen_profile_rule_fallbacks_and_unknown_operator
+    - tests/unit/test_tui_config.py::test_config_screen_new_profile_is_created_as_version_1
+    - tests/unit/test_tui_config.py::test_config_screen_new_profile_with_existing_name_opens_it
+    - tests/unit/test_tui_config.py::test_config_screen_list_and_table_selection_loads_editors
+    - tests/unit/test_tui_config.py::test_config_screen_new_classification_profile
+    - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
 - id: ODR-68
   title: 'Tests read or assign a Select''s value before its mount-time initialization settles'
   reported: '2026-10-11'
@@ -2041,7 +2071,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     In the 2026-10-11 jitter rounds (harness as ODR-65): test_config_screen_add_and_remove_rule_rows
     rounds 1/3/4 asserted Select.NULL == '>' on '.rule-operator' (tests/unit/test_tui_config.py:1510) —
@@ -2057,11 +2087,17 @@ defects:
     evict branch of the same test already waits on the value (test_tui_remotes.py:1038-1040), the push
     branch does not.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (predicate on the Select
-    value/options_ready before reading or assigning) pending in a follow-up change.
-  fix_commit: null
+    Fixed. The reads and assignments now predicate on the Select's value (or _await_form_ready, which
+    covers options_ready): the rule-operator reads wait for the operator value, the classification
+    source assignment waits for the row's select to be ready, and the remotes push/pull prefill branches
+    wait for remote.value == 'mirror' the way the evict branch already did.
+  fix_commit: '8fd65fd44955ca77dc23c7dff608c49636d1a154'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_config_screen_add_and_remove_rule_rows
+    - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
+    - tests/unit/test_tui_remotes.py::test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror
+    - tests/unit/test_tui_remotes.py::test_remotes_evict_and_push_buttons_open_prefilled_dialogs
 - id: ODR-69
   title: 'A removed classification-rule row is still composed because its removal is never awaited'
   reported: '2026-10-11'
@@ -2071,7 +2107,7 @@ defects:
     flight.
   severity: 'medium'
   component: 'tui'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     test_classification_editor_row_buttons_add_and_remove failed in jitter rounds 3 and 6 of the
     2026-10-11 run (harness as ODR-65): panel._compose_classification_document() returned a 4th rule
@@ -2086,11 +2122,16 @@ defects:
     confirmed save in that window would persist the removed rule. Same stale-row shape as ODR-30, whose
     fix covers MountTracked.replace_children but not a plain row.remove().
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (await/track the removal app-side,
-    and wait for the exact row count test-side) pending in a follow-up change.
-  fix_commit: null
+    Fixed. on_classification_rule_row_remove_requested flags the row removal_pending and awaits the
+    removal, exactly like the command-row sibling, and _compose_classification_document skips a row
+    whose removal was requested, so a save composed while the removal is in flight can no longer persist
+    the removed rule. The row-buttons test waits for the exact tree count after a removal; the
+    regression test holds the removal open and composes inside the window.
+  fix_commit: '1b52d44c6fdc8e3453364c8d257b3e73093c97e3'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_classification_editor_row_buttons_add_and_remove
+    - tests/unit/test_tui_config.py::test_classification_rule_row_stops_answering_once_removal_is_requested
 - id: ODR-70
   title: |
     test_tui_ncbi_datasets reads the notification list before the queued notification is delivered
@@ -2100,7 +2141,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     test_cancel_sets_event_and_unlocks_controls failed in jitter rounds 5 and 6 of the 2026-10-11 run
     (harness as ODR-65): the assertion that _notifications(app) contains a ('warning', 'cancelled')
@@ -2111,11 +2152,14 @@ defects:
     same shape in test_tui_remotes.py by adding _await_notification (:59-75); the ncbi module never got
     the helper.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (wait on the notification via an
-    _await_notification-style predicate) pending in a follow-up change.
-  fix_commit: null
+    Fixed. test_tui_ncbi_datasets gained an _await_notification helper (the pattern ODR-51 established
+    in test_tui_remotes) and both direct notification-list reads — the cancel test and the preflight
+    test — wait for the expected entry instead of reading the list a turn early.
+  fix_commit: '4148e5b34beec6cdb3bde96ada361fd785b88e30'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_ncbi_datasets.py::test_preflight_gate_unlocks_confirm_and_real_run_writes
+    - tests/unit/test_tui_ncbi_datasets.py::test_cancel_sets_event_and_unlocks_controls
 - id: ODR-71
   title: 'CLI-parity modal tests assert the dismissal callback before the worker-to-UI dismissal lands'
   reported: '2026-10-11'
@@ -2124,7 +2168,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     test_backup_create_modal_command_text_matches_action_kwargs (round 2) and
     test_set_state_modal_command_text_matches_action_kwargs (round 4) of the 2026-10-11 jitter run
@@ -2136,11 +2180,13 @@ defects:
     the dismissal lands after the run_test block exits. Sibling tests in the same module already wait
     for the callback (:557, :750, :821); these two sites missed it. ODR-27 family.
   disposition: |
-    Registered from the 2026-10-11 randomized jitter stress run; fix (wait on the dismissed callback, as
-    the sibling tests do) pending in a follow-up change.
-  fix_commit: null
+    Fixed. Both parity tests wait for the dismissal callback (bool(dismissed)) after the worker-side
+    action, mirroring the sibling sites that already did.
+  fix_commit: 'aed1b107b186c50215eeede9365ef9ef31af370b'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_cli_parity.py::test_backup_create_modal_command_text_matches_action_kwargs
+    - tests/unit/test_tui_cli_parity.py::test_set_state_modal_command_text_matches_action_kwargs
 - id: ODR-72
   title: 'test_tui_writes reads app._notifications before the queued error notification is delivered'
   reported: '2026-10-11'
@@ -2150,7 +2196,7 @@ defects:
     (2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'open'
+  status: 'fixed'
   reproduction: |
     CI run 38148089207 (pytest (ubuntu-24.04, 3.10) leg):
     test_run_external_modal_failed_command_opens_record waits for the RunExternalModal dismissal and
@@ -2160,8 +2206,11 @@ defects:
     _await_notification helper exists in tests/unit/test_tui_remotes.py:59-75 but this module reads
     app._notifications directly.
   disposition: |
-    Registered from CI run 38148089207; fix (wait on the notification via an _await_notification-style
-    predicate) pending.
-  fix_commit: null
+    Fixed. test_tui_writes gained the same _await_notification helper, and both direct
+    app._notifications reads — the failed-command test and the cannot-cancel test — wait for the queued
+    entry.
+  fix_commit: 'bb3332399fa9d8fa535e6f3a7ce32de0e0531542'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_writes.py::test_run_external_modal_failed_command_opens_record
+    - tests/unit/test_tui_writes.py::test_run_external_modal_cannot_be_cancelled_while_running
