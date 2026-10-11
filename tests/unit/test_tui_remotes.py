@@ -858,6 +858,7 @@ def test_sync_modal_refuses_to_close_while_running(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-68")
 def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
     tmp_path: Path,
 ) -> None:
@@ -889,7 +890,11 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
             await _click(pilot, "#remotes-push")
             await _wait_until(lambda: isinstance(app.screen, PushModal), "push dialog")
             modal = app.screen
-            assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
+            # _q waits for the Select to exist, not for its mount-time value to
+            # settle: predicate on the value, as the evict branch does (ODR-68).
+            remote = await _q(modal, "#sync-remote", Select)
+            await _wait_until(lambda: remote.value == "mirror", "the prefilled remote")
+            assert remote.value == "mirror"
             assert modal.command_text() == "operon push --remote mirror"
             modal.action_cancel()
             await _wait_until(
@@ -899,7 +904,9 @@ def test_push_and_pull_buttons_open_the_dialog_prefilled_with_the_mirror(
             await _click(pilot, "#remotes-pull")
             await _wait_until(lambda: isinstance(app.screen, PullModal), "pull dialog")
             modal = app.screen
-            assert (await _q(modal, "#sync-remote", Select)).value == "mirror"
+            remote = await _q(modal, "#sync-remote", Select)
+            await _wait_until(lambda: remote.value == "mirror", "the prefilled remote")
+            assert remote.value == "mirror"
             assert modal.command_text() == "operon pull --remote mirror"
             modal.action_cancel()
 
@@ -1358,6 +1365,7 @@ def test_remotes_write_buttons_warn_when_nothing_is_configured(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-68")
 def test_remotes_evict_and_push_buttons_open_prefilled_dialogs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1417,7 +1425,12 @@ def test_remotes_evict_and_push_buttons_open_prefilled_dialogs(
             await _click(pilot, "#remotes-push")
             await _wait_until(lambda: isinstance(app.screen, PushModal), "push dialog")
             push = app.screen
-            assert (await _q(push, "#sync-remote", Select)).value == "mirror"
+            # Same mount-time window as the evict branch above (ODR-68).
+            push_select = await _q(push, "#sync-remote", Select)
+            await _wait_until(
+                lambda: push_select.value == "mirror", "the prefilled remote"
+            )
+            assert push_select.value == "mirror"
             push.confirm()
             result_table = await _q(push, "#sync-results", DataTable)
             await _wait_until(lambda: result_table.row_count == 1, "result rows")

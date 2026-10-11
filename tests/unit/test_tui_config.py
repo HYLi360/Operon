@@ -1462,6 +1462,7 @@ def _write_only_working_tool(project: Project, tmp_path: Path) -> None:
 
 
 @pytest.mark.bug("ODR-67")
+@pytest.mark.bug("ODR-68")
 def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -> None:
     """✕ removes a rule row; both "add rule" buttons append modelled defaults."""
     removed_controls: list[object] = []
@@ -1505,6 +1506,10 @@ def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -
             )
             assert len(panel._rule_rows("required")) == 6
             added = added_rows[-1]
+            # The row's operator Select adopts its value a turn after the row
+            # composes; a bare _await_rows (which gates on the metric Input)
+            # lands before that, so wait for the form to settle (ODR-68).
+            await _await_form_ready(pilot, panel)
             assert added.query_one(".rule-operator", Select).value == ">="
             added.query_one(".rule-metric", Input).value = "gene_count"
             added.query_one(".rule-value", Input).value = "7"
@@ -1520,6 +1525,8 @@ def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -
             )
             assert len(panel._rule_rows("warnings")) == 3
             warn = warn_rows[-1]
+            # Same mount-time window as the required row above (ODR-68).
+            await _await_form_ready(pilot, panel)
             assert warn.query_one(".rule-operator", Select).value == ">"
             warn.query_one(".rule-metric", Input).value = "n_percent"
             warn.query_one(".rule-value", Input).value = "2"
@@ -2993,6 +3000,7 @@ def test_save_classification_profile_versions_and_validation(project: Project) -
 
 @pytest.mark.bug("ODR-27")
 @pytest.mark.bug("ODR-67")
+@pytest.mark.bug("ODR-68")
 def test_config_classification_editor_end_to_end(project: Project) -> None:
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
 
@@ -3060,6 +3068,10 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             assert "extra" in [
                 value for _, value in source_select._options
             ]  # refreshed
+            # The new row's source Select adopts its value a turn after the row
+            # composes; wait for it before assigning, or the mount-time
+            # initialization overwrites the assignment (ODR-68).
+            await _await_form_ready(pilot, panel)
             source_select.value = "extra"
             # The editor scrolls: press the button directly (Pilot.click needs
             # the target inside the visible area, and the selector matches rows).
