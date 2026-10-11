@@ -178,6 +178,23 @@ def _notifications(app) -> list[tuple[str, str]]:
     return [(n.severity, str(n.message)) for n in app._notifications]
 
 
+async def _await_notification(app, needle: str = "", severity: str = "") -> None:
+    """Wait for a raised notification matching ``needle`` and/or ``severity``.
+
+    ``App.notify`` queues a message, so a callback that has already updated its
+    widgets raises the notification a message-loop turn later: reading
+    ``app._notifications`` straight after the widgets turns a correct flow into
+    an intermittent failure on a slow interpreter (ODR-70).
+    """
+    await _wait_until(
+        lambda: any(
+            (not severity or sev == severity) and (not needle or needle in message)
+            for sev, message in _notifications(app)
+        ),
+        f"the notification {needle or severity!r}",
+    )
+
+
 def parse_command_text(text: str):
     """Parse a modal's equivalent-command preview with the real CLI parser."""
     import shlex
@@ -369,6 +386,7 @@ def test_home_screen_opens_modal_and_wizard(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-70")
 def test_preflight_gate_unlocks_confirm_and_real_run_writes(
     project: Project, tmp_path: Path
 ) -> None:
@@ -414,9 +432,7 @@ def test_preflight_gate_unlocks_confirm_and_real_run_writes(
 
             await _click(pilot, "#confirm")
             await _wait_until(lambda: app.screen is not modal, "modal to dismiss")
-            assert any(
-                "NCBI Datasets import" in message for _, message in _notifications(app)
-            )
+            await _await_notification(app, needle="NCBI Datasets import")
 
     _run(scenario())
     rows = _query(
@@ -559,6 +575,7 @@ def test_failed_preflight_keeps_confirm_locked(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-70")
 def test_cancel_sets_event_and_unlocks_controls(project: Project, monkeypatch) -> None:
     def stub(*args, **kwargs):
         if kwargs.get("plan_only"):
@@ -604,10 +621,7 @@ def test_cancel_sets_event_and_unlocks_controls(project: Project, monkeypatch) -
             assert not modal.running
             assert not (await _q(modal, "#ncbi-accessions", Input)).disabled
             assert not (await _q(modal, "#confirm", Button)).disabled
-            assert any(
-                severity == "warning" and "cancelled" in message
-                for severity, message in _notifications(app)
-            )
+            await _await_notification(app, needle="cancelled", severity="warning")
 
     _run(scenario())
 
