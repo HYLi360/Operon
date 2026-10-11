@@ -411,6 +411,40 @@ def test_write_modal_on_form_ready_never_fires_without_the_anchor() -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-65")
+def test_write_modal_form_hook_retries_when_a_form_sibling_lags_the_anchor() -> None:
+    """The #modal-command anchor is necessary but not sufficient.
+
+    Under load a form sibling can mount after the anchor does, so a hook that
+    fired on the anchor alone still raised NoMatches out of its own lookup
+    (ODR-65, the residual '#analyze-progress' window).  The hook must be
+    retried, not abandoned: the widget it reads mounts a turn late here, and
+    the hook still has to run.
+    """
+
+    class LateModal(_ProbeModal):
+        def __init__(self) -> None:
+            super().__init__()
+            self.hook_ran = False
+
+        def on_form_ready(self) -> None:
+            self.query_one("#late-widget", Static)
+            self.hook_ran = True
+
+    async def scenario() -> None:
+        app = App()
+        async with app.run_test(size=(80, 24)):
+            modal = LateModal()
+            await app.push_screen(modal)
+            await wait_until(lambda: modal.is_mounted, "the modal to mount")
+            form = modal.query_one("#modal-form")
+            await form.mount(Static("late", id="late-widget"))
+            await wait_until(lambda: modal.hook_ran, "the form hook to run")
+            assert modal.is_mounted
+
+    _run(scenario())
+
+
 # -- classification rows route their own messages -----------------------------
 
 

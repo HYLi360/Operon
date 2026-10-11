@@ -806,18 +806,25 @@ class WriteModal(DismissOnce, WorkerResults, ModalScreen):
         A subclass ``on_mount`` that reaches into its own form ran while the
         modal's subtree could still be composing under load (ODR-65): the form
         widgets are yielded two compose levels below the modal, so a lookup can
-        miss them.  Retry a turn at a time until ``#modal-command`` — and with
-        it the ``compose_form`` children yielded before it — is mounted, then
-        hand over to the subclass hook; give up once the modal is gone or the
-        same budget :meth:`refresh_command` uses runs out.
+        miss them.  The ``#modal-command`` anchor is necessary but not
+        sufficient — a form sibling can still lag it under load — so the hook
+        call itself stays inside the same retry: a turn at a time until the
+        whole form answers, giving up once the modal is gone or the same
+        budget :meth:`refresh_command` uses runs out.
         """
         try:
             self.query_one("#modal-command", Static)
+            self.on_form_ready()
         except NoMatches:
-            if self.is_running and attempt < self._command_refresh_retry_limit:
+            if not self.is_running:
+                return
+            if attempt < self._command_refresh_retry_limit:
                 self.call_after_refresh(self._when_form_ready, attempt + 1)
-            return
-        self.on_form_ready()
+            else:
+                self.log.warning(
+                    "form of %s never composed; mount-time setup skipped",
+                    type(self).__name__,
+                )
 
     def on_form_ready(self) -> None:
         """Subclass hook: runs once the composed form widgets are in the tree."""
