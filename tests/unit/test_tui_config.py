@@ -812,6 +812,7 @@ def _select_profile(panel: ConfigPanel, name: str) -> None:
     panel._load_profile(name)
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_profile_save_end_to_end(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -823,6 +824,10 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
             _select_profile(panel, "assembly_production_v1")
             await pilot.pause()
             assert panel.current_profile == "assembly_production_v1"
+            # The render goes through remount, which lands the rows a turn
+            # later: read them only once the deferred rebuild has composed
+            # (ODR-67).
+            await _await_form_ready(pilot, panel)
             assert len(panel._rule_rows("required")) == 6
             assert len(panel._rule_rows("warnings")) == 2
             assert not panel.query_one("#profile-save", Button).disabled
@@ -846,6 +851,8 @@ def test_config_screen_profile_save_end_to_end(project: Project) -> None:
             await pilot.pause()
             assert not isinstance(app.screen, ProfileSaveModal)
             # Editor reloaded from disk after the save; no duplicated rule rows.
+            # The reload remounts the rows, so wait for it before counting.
+            await _await_form_ready(pilot, panel)
             assert len(panel._rule_rows("required")) == 6
 
     _run(scenario())
@@ -1454,6 +1461,7 @@ def _write_only_working_tool(project: Project, tmp_path: Path) -> None:
 # --- profile editor: rules, extras, and validation --------------------------
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -> None:
     """✕ removes a rule row; both "add rule" buttons append modelled defaults."""
     removed_controls: list[object] = []
@@ -1472,6 +1480,10 @@ def test_config_screen_add_and_remove_rule_rows(project: Project, monkeypatch) -
             panel = await _open_config(app, pilot)
             _select_profile(panel, "assembly_production_v1")
             await pilot.pause()
+            # The render goes through remount, which lands the rows a turn
+            # later: read them only once the deferred rebuild has composed
+            # (ODR-67).
+            await _await_form_ready(pilot, panel)
             first_rule = panel._rule_rows("required")[0]
             removed["metric"] = first_rule.query_one(".rule-metric", Input).value
             await _click(pilot, ".rule-remove")
@@ -2980,6 +2992,7 @@ def test_save_classification_profile_versions_and_validation(project: Project) -
 
 
 @pytest.mark.bug("ODR-27")
+@pytest.mark.bug("ODR-67")
 def test_config_classification_editor_end_to_end(project: Project) -> None:
     _write_classification_profile(project, "bhlh_tiers", BHLH_PROFILE)
 
@@ -3008,9 +3021,6 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
                 panel.query_one("#classification-file-role", Input).value
                 == "protein_fasta"
             )
-            assert len(list(panel.query(".source-row"))) == 1
-            assert len(list(panel.query(".classrule-row"))) == 3
-            assert len(list(panel.query(".bestby-row"))) == 2
             # Rows mount a message-loop turn after their container is emptied and
             # compose their inputs a turn after that: wait for the inputs before
             # reading the form, or the composition sees half-built rows (ODR-23).
@@ -3023,6 +3033,10 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             # … and for the Selects they hold, which take their value a turn
             # after the row composes (ODR-26).
             await _await_form_ready(pilot, panel)
+            # The deferred remount has landed, so the rows are countable (ODR-67).
+            assert len(list(panel.query(".source-row"))) == 1
+            assert len(list(panel.query(".classrule-row"))) == 3
+            assert len(list(panel.query(".bestby-row"))) == 2
             # The form reproduces the on-disk document exactly.
             assert panel._compose_classification_document() == BHLH_PROFILE
             assert not panel.query_one("#classification-save", Button).disabled
