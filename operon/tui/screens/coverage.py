@@ -28,7 +28,12 @@ from textual.widgets import (
 
 from operon.config import Project
 from operon.tui import actions, data
-from operon.tui.screens.common import Panel, WriteModal, styled_decision
+from operon.tui.screens.common import (
+    FittingSelect,
+    Panel,
+    WriteModal,
+    styled_decision,
+)
 from operon.tui.screens.taxonomy import CompileReferenceSetModal, TaxonomyImportModal
 
 SCOPE_OPTIONS = [("project metadata", "metadata"), ("frozen release", "release")]
@@ -129,14 +134,14 @@ class CoveragePanel(Panel):
                 )
             yield Static("Generate report", classes="modal-label")
             with Horizontal(id="coverage-form"):
-                yield Select([], id="coverage-reference-set", allow_blank=True)
-                yield Select(
+                yield FittingSelect([], id="coverage-reference-set", allow_blank=True)
+                yield FittingSelect(
                     SCOPE_OPTIONS,
                     value="metadata",
                     id="coverage-scope",
                     allow_blank=False,
                 )
-                yield Select([], id="coverage-release", allow_blank=True)
+                yield FittingSelect([], id="coverage-release", allow_blank=True)
                 yield Button("Generate", id="coverage-generate", variant="primary")
             yield Static("", id="coverage-error")
             yield Static("Reports", classes="modal-label")

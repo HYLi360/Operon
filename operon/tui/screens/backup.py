@@ -22,7 +22,7 @@ from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import WriteModal
+from operon.tui.screens.common import FittingSelect, WriteModal
 
 #: The CLI's ``--scope`` choices, in parser order (the TUI never invents one).
 BACKUP_SCOPES = ("control", "results", "full")
@@ -47,7 +47,7 @@ class BackupModal(WriteModal):
             "the Verify backup dialog.",
             classes="modal-info",
         )
-        yield Select(
+        yield FittingSelect(
             [(scope, scope) for scope in BACKUP_SCOPES],
             value="control",
             allow_blank=False,

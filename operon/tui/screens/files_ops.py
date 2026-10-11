@@ -12,7 +12,7 @@ from textual.widgets import Button, Checkbox, Input, ProgressBar, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, WriteModal
+from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, FittingSelect, WriteModal
 
 HEALTHY_VERIFY_STATUSES = frozenset({"CHECKSUM_VERIFIED", "REMOTE_ONLY"})
 
@@ -47,7 +47,7 @@ class IngestModal(WriteModal):
             id="ingest-source",
         )
         yield Static("Entity type", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             ENTITY_TYPE_OPTIONS,
             value=self.selected.get("entity_type") or "assembly",
             id="ingest-entity-type",
@@ -187,7 +187,7 @@ class StandardizeModal(WriteModal):
             )
         yield Static(text, classes="modal-info")
         yield Static("Link kind", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             LINK_KIND_OPTIONS,
             value=self.link_kind,
             id="standardize-link",
@@ -381,7 +381,7 @@ class PipelineModal(WriteModal):
             id="pipeline-source",
         )
         yield Static("Entity type", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             PIPELINE_ENTITY_TYPE_OPTIONS,
             value=self.selected.get("entity_type") or "assembly",
             id="pipeline-entity-type",
@@ -398,7 +398,7 @@ class PipelineModal(WriteModal):
             id="pipeline-role",
         )
         yield Static("QC profile", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             self._profile_options(),
             value=self._default_profile(),
             id="pipeline-profile",
@@ -598,7 +598,7 @@ class QcModal(WriteModal):
         yield Static(
             "FASTQ Phred offset (auto assumes 33 when ambiguous)", classes="modal-label"
         )
-        yield Select(
+        yield FittingSelect(
             [("33", "33"), ("64", "64"), ("auto", "auto")],
             value="33",
             allow_blank=False,

@@ -29,7 +29,7 @@ from operon.import_wizard import (
     _synchronize_new_entity_links,
 )
 from operon.tui import actions, data
-from operon.tui.screens.common import DismissOnce, WorkerResults
+from operon.tui.screens.common import DismissOnce, FittingSelect, WorkerResults
 
 CREATE_NEW = "__new__"
 
@@ -130,7 +130,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                     with VerticalScroll(id="page-source"):
                         yield Static("[1] Source", classes="wizard-heading")
                         yield Static("Source classification", classes="modal-label")
-                        yield Select(
+                        yield FittingSelect(
                             SOURCE_TYPE_OPTIONS,
                             value="insdc",
                             id="iw-source-type",
@@ -161,7 +161,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                         )
                     with VerticalScroll(id="page-organism"):
                         yield Static("[2] Organism", classes="wizard-heading")
-                        yield Select(
+                        yield FittingSelect(
                             [("Create a new organism", CREATE_NEW)],
                             value=CREATE_NEW,
                             id="iw-organism-choice",
@@ -182,7 +182,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                                 id="iw-organism-rank",
                             )
                             yield Static("Taxonomy source", classes="modal-label")
-                            yield Select(
+                            yield FittingSelect(
                                 TAXONOMY_SOURCE_OPTIONS,
                                 id="iw-organism-taxonomy-source",
                             )
@@ -192,7 +192,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                             )
                     with VerticalScroll(id="page-sample"):
                         yield Static("[3] Sample", classes="wizard-heading")
-                        yield Select(
+                        yield FittingSelect(
                             [("Create a new sample", CREATE_NEW)],
                             value=CREATE_NEW,
                             id="iw-sample-choice",
@@ -224,20 +224,26 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                                 id="iw-run-experiment",
                             )
                             yield Static("Library strategy", classes="modal-label")
-                            yield Select(LIBRARY_STRATEGY_OPTIONS, id="iw-run-strategy")
+                            yield FittingSelect(
+                                LIBRARY_STRATEGY_OPTIONS, id="iw-run-strategy"
+                            )
                             yield Static("Library source", classes="modal-label")
-                            yield Select(LIBRARY_SOURCE_OPTIONS, id="iw-run-source")
+                            yield FittingSelect(
+                                LIBRARY_SOURCE_OPTIONS, id="iw-run-source"
+                            )
                             yield Static("Library layout", classes="modal-label")
-                            yield Select(LIBRARY_LAYOUT_OPTIONS, id="iw-run-layout")
+                            yield FittingSelect(
+                                LIBRARY_LAYOUT_OPTIONS, id="iw-run-layout"
+                            )
                             yield Static("Sequencing platform", classes="modal-label")
-                            yield Select(PLATFORM_OPTIONS, id="iw-run-platform")
+                            yield FittingSelect(PLATFORM_OPTIONS, id="iw-run-platform")
                             yield Input(
                                 placeholder="instrument model (optional)",
                                 id="iw-run-instrument",
                             )
                     with VerticalScroll(id="page-assembly"):
                         yield Static("[5] Assembly", classes="wizard-heading")
-                        yield Select(
+                        yield FittingSelect(
                             [("Create a new assembly", CREATE_NEW)],
                             value=CREATE_NEW,
                             id="iw-assembly-choice",
@@ -258,13 +264,15 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                                 id="iw-assembly-version",
                             )
                             yield Static("Assembly level", classes="modal-label")
-                            yield Select(ASSEMBLY_LEVEL_OPTIONS, id="iw-assembly-level")
+                            yield FittingSelect(
+                                ASSEMBLY_LEVEL_OPTIONS, id="iw-assembly-level"
+                            )
                             yield Input(
                                 placeholder="assembly software and parameters (optional)",
                                 id="iw-assembly-method",
                             )
                             yield Static("Source database", classes="modal-label")
-                            yield Select(
+                            yield FittingSelect(
                                 SOURCE_DATABASE_OPTIONS, id="iw-assembly-source-db"
                             )
                     with VerticalScroll(id="page-annotation"):
@@ -273,7 +281,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                             "Record an annotation release", id="iw-annotation-enabled"
                         )
                         with VerticalScroll(id="iw-annotation-form"):
-                            yield Select(
+                            yield FittingSelect(
                                 [("Create a new annotation", CREATE_NEW)],
                                 value=CREATE_NEW,
                                 id="iw-annotation-choice",

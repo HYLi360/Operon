@@ -27,7 +27,7 @@ from textual.widgets import Button, DataTable, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions
-from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, WriteModal
+from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, FittingSelect, WriteModal
 
 
 def _split_ids(text: str) -> list[str]:
@@ -64,7 +64,7 @@ class ExtractModal(WriteModal):
             classes="modal-info",
         )
         yield Static("Region source (mutually exclusive)", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [("analysis hits", "analysis"), ("regions tsv", "tsv")],
             value="analysis",
             id="extract-source-kind",
@@ -74,7 +74,7 @@ class ExtractModal(WriteModal):
         yield Input(
             placeholder="regions tsv path", id="extract-regions-tsv", disabled=True
         )
-        yield Select(
+        yield FittingSelect(
             [("best hit only", "best"), ("all regions", "all")],
             value="best",
             id="extract-region-mode",
@@ -236,14 +236,16 @@ class SelectSequencesModal(WriteModal):
         )
         yield Input(placeholder="hit type (extra_json hit_type)", id="select-hit-type")
         yield Static("Hit requirement (mutually exclusive)", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [("require a hit", "hit"), ("require no hit", "no-hit")],
             value="hit",
             id="select-requirement",
             allow_blank=False,
         )
         yield Static("Entity filter (optional)", classes="modal-label")
-        yield Select(ENTITY_TYPE_OPTIONS, id="select-entity-type", allow_blank=True)
+        yield FittingSelect(
+            ENTITY_TYPE_OPTIONS, id="select-entity-type", allow_blank=True
+        )
         yield Input(placeholder="entity id", id="select-entity-id")
         yield Input(placeholder="out path (required)", id="select-out")
         yield Input(placeholder="manifest tsv (optional)", id="select-manifest")
@@ -367,7 +369,7 @@ class AdoptModal(WriteModal):
 
     def compose_form(self) -> Iterable[Any]:
         yield Static("Mode", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [("single file", "single"), ("manifest file", "manifest")],
             value="single",
             id="adopt-mode",
@@ -377,7 +379,7 @@ class AdoptModal(WriteModal):
         yield Input(
             value=self.initial_path, placeholder="path (required)", id="adopt-path"
         )
-        yield Select(
+        yield FittingSelect(
             ENTITY_TYPE_OPTIONS,
             value=self.initial_entity_type or "annotation",
             id="adopt-entity-type",
@@ -607,7 +609,7 @@ class FanoutModal(WriteModal):
             placeholder="source file ids (comma separated; at least one)",
             id="fanout-sources",
         )
-        yield Select(
+        yield FittingSelect(
             ENTITY_TYPE_OPTIONS,
             value="annotation",
             id="fanout-entity-type",

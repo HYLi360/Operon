@@ -21,7 +21,7 @@ from textual.widgets import Button, DataTable, Input, ProgressBar, Select, Stati
 
 from operon.config import Project
 from operon.tui import actions, data
-from operon.tui.screens.common import Panel, WriteModal
+from operon.tui.screens.common import FittingSelect, Panel, WriteModal
 
 
 def parse_file_ids(value: str) -> list[str]:
@@ -363,7 +363,7 @@ class SyncModal(WriteModal):
     def compose_form(self) -> Iterable[Any]:
         yield Static(self.info_text(), classes="modal-info")
         with Horizontal(id="sync-form"):
-            yield Select(
+            yield FittingSelect(
                 [(name, name) for name in self.remotes],
                 prompt="select a remote" if self.remotes else "no remotes configured",
                 value=self.initial_remote or Select.NULL,

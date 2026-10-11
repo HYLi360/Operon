@@ -111,14 +111,16 @@ class AnalyzeModal(WriteModal):
             yield Static(f"Recipe: {self.fixed_recipe}", classes="modal-info")
         else:
             yield Static("Recipe", classes="modal-label")
-            yield Select(
+            yield FittingSelect(
                 [(f"{row['tool']}.{row['name']}", row["name"]) for row in self.recipes],
                 prompt="select a recipe",
                 id="analyze-recipe",
                 allow_blank=True,
             )
         yield Static("Entity type (blank = recipe default)", classes="modal-label")
-        yield Select(ENTITY_TYPE_OPTIONS, id="analyze-entity-type", allow_blank=True)
+        yield FittingSelect(
+            ENTITY_TYPE_OPTIONS, id="analyze-entity-type", allow_blank=True
+        )
         yield Input(placeholder="entity id (blank = all)", id="analyze-entity-id")
         yield Input(placeholder="limit (blank = all files)", id="analyze-limit")
         yield Input(
@@ -179,7 +181,7 @@ class AnalyzeModal(WriteModal):
             if isinstance(choices, list) and choices:
                 options = [(str(choice), str(choice)) for choice in choices]
                 widgets.append(
-                    Select(
+                    FittingSelect(
                         options,
                         value=str(default) if default is not None else Select.NULL,
                         id=widget_id,

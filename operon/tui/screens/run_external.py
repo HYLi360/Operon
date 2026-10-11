@@ -24,6 +24,7 @@ from operon.errors import ValidationError
 from operon.tui import actions
 from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
+    FittingSelect,
     WriteModal,
     backend_select_options,
 )
@@ -58,7 +59,9 @@ class RunExternalModal(WriteModal):
             placeholder="e.g. busco -i in.fa -o out -m genome", id="external-command"
         )
         yield Static("Entity (optional)", classes="modal-label")
-        yield Select(ENTITY_TYPE_OPTIONS, id="external-entity-type", allow_blank=True)
+        yield FittingSelect(
+            ENTITY_TYPE_OPTIONS, id="external-entity-type", allow_blank=True
+        )
         yield Input(placeholder="entity id", id="external-entity-id")
         yield Static(
             "Tool (optional; its version is detected from config/tools.yaml)",
@@ -82,7 +85,7 @@ class RunExternalModal(WriteModal):
         )
         yield Input(placeholder="timeout seconds (blank = none)", id="external-timeout")
         yield Static("Execution backend", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             backend_select_options(self.project), value="", id="external-backend"
         )
         yield Static(

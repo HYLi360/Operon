@@ -15,6 +15,7 @@ from textual.widgets import Checkbox, DataTable, Input, Select, Static
 from operon.config import Project, resolve_actor
 from operon.tui import actions, data
 from operon.tui.screens.common import (
+    FittingSelect,
     Panel,
     WriteModal,
     capture_table_view,
@@ -52,14 +53,16 @@ class EvaluateModal(WriteModal):
             label = f"{self.selected['entity_type']}:{self.selected['entity_id']}"
             scope_options.append((f"Selected entity {label}", "selected"))
         yield Static("Scope", classes="modal-label")
-        yield Select(scope_options, value="all", id="evaluate-scope", allow_blank=False)
+        yield FittingSelect(
+            scope_options, value="all", id="evaluate-scope", allow_blank=False
+        )
         yield Static("Profile", classes="modal-label")
         default = (
             self.default_profile
             if self.default_profile in self.profiles
             else (self.profiles[0] if self.profiles else self.default_profile)
         )
-        yield Select(
+        yield FittingSelect(
             [(name, name) for name in self.profiles] or [(default, default)],
             value=default,
             id="evaluate-profile",
@@ -132,7 +135,7 @@ class CurateModal(WriteModal):
         )
         yield Static("New decision", classes="modal-label")
         initial = current if current in DECISION_VALUES else Select.NULL
-        yield Select(
+        yield FittingSelect(
             [(value, value) for value in DECISION_VALUES],
             value=initial,
             id="curate-decision",
@@ -239,10 +242,10 @@ class DecisionsPanel(Panel):
     def compose(self) -> ComposeResult:
         with Vertical(id="decisions-layout"):
             with Horizontal(id="decisions-filters"):
-                yield Select(
+                yield FittingSelect(
                     [(ALL, ALL)], value=ALL, id="decisions-profile", allow_blank=False
                 )
-                yield Select(
+                yield FittingSelect(
                     [(ALL, ALL)] + [(value, value) for value in FILTER_DECISIONS],
                     value=ALL,
                     id="decisions-decision",

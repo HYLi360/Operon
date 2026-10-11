@@ -15,6 +15,7 @@ from operon.config import Project
 from operon.tui import data
 from operon.tui.screens.common import (
     ErrorDialog,
+    FittingSelect,
     Panel,
     capture_table_view,
     human_size,
@@ -73,7 +74,7 @@ class FilesPanel(Panel):
                 yield Input(
                     placeholder="filter by id / entity / path", id="files-filter"
                 )
-                yield Select(
+                yield FittingSelect(
                     [(ALL_STATUSES, ALL_STATUSES)],
                     value=ALL_STATUSES,
                     id="files-status",

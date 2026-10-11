@@ -19,7 +19,7 @@ from textual.widgets import Button, Input, Select, Static
 
 from operon.config import Project
 from operon.tui import actions, data
-from operon.tui.screens.common import WriteModal
+from operon.tui.screens.common import FittingSelect, WriteModal
 
 
 class TaxonomyImportModal(WriteModal):
@@ -168,7 +168,7 @@ class CompileReferenceSetModal(WriteModal):
                 "one from the Config screen or by hand before compiling",
                 classes="modal-info",
             )
-        yield Select(
+        yield FittingSelect(
             [
                 (f"{row['name']} (v{row['version']})", row["name"])
                 for row in self.profiles
@@ -183,7 +183,7 @@ class CompileReferenceSetModal(WriteModal):
                 "Import taxonomy… button first",
                 classes="modal-info",
             )
-        yield Select(
+        yield FittingSelect(
             [
                 (row["taxonomy_version"], row["taxonomy_version"])
                 for row in self.snapshots

@@ -28,6 +28,7 @@ from operon.errors import ValidationError
 from operon.tui import data
 from operon.tui.screens.common import (
     DismissOnce,
+    FittingSelect,
     Panel,
     WorkerResults,
     capture_table_view,
@@ -183,7 +184,7 @@ class RunsPanel(Panel):
     def compose(self) -> ComposeResult:
         with Vertical(id="runs-layout"):
             with Horizontal(id="runs-filters"):
-                yield Select(
+                yield FittingSelect(
                     [(ALL_STATUSES, ALL_STATUSES)] + [(s, s) for s in RUN_STATUSES],
                     value=ALL_STATUSES,
                     id="runs-status",
@@ -367,7 +368,7 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
             yield Label("Analysis jobs", id="modal-title")
             with Horizontal(id="jobs-filters"):
                 yield Input(placeholder="analysis contains", id="jobs-analysis")
-                yield Select(
+                yield FittingSelect(
                     [(name, name) for name in ANALYSIS_JOB_CHOICES],
                     value=ALL_STATUSES,
                     id="jobs-status",

@@ -33,6 +33,7 @@ from operon.config import Project
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     ENTITY_TYPE_OPTIONS,
+    FittingSelect,
     Panel,
     WriteModal,
     human_size,
@@ -191,7 +192,7 @@ class PublishPanel(Panel):
                             id="release-version",
                         )
                         yield Static("Profile", classes="modal-label")
-                        yield Select([], id="release-profile", allow_blank=True)
+                        yield FittingSelect([], id="release-profile", allow_blank=True)
                         yield Checkbox(
                             "Copy files (--copy-files)",
                             value=True,
@@ -200,7 +201,7 @@ class PublishPanel(Panel):
                         yield Static(
                             "Link kind (when not copying)", classes="modal-label"
                         )
-                        yield Select(
+                        yield FittingSelect(
                             LINK_KIND_OPTIONS,
                             value="copy",
                             id="release-link",
@@ -227,7 +228,7 @@ class PublishPanel(Panel):
                     with Horizontal(id="export-fields"):
                         with Vertical(classes="export-column"):
                             yield Static("Entity type", classes="modal-label")
-                            yield Select(
+                            yield FittingSelect(
                                 ENTITY_TYPE_OPTIONS,
                                 id="export-entity-type",
                                 allow_blank=True,
@@ -247,15 +248,17 @@ class PublishPanel(Panel):
                             yield Static(
                                 "Decision (requires profile)", classes="modal-label"
                             )
-                            yield Select(
+                            yield FittingSelect(
                                 [(value, value) for value in DECISION_VALUES],
                                 id="export-decision",
                                 allow_blank=True,
                             )
                             yield Static("Profile", classes="modal-label")
-                            yield Select([], id="export-profile", allow_blank=True)
+                            yield FittingSelect(
+                                [], id="export-profile", allow_blank=True
+                            )
                             yield Static("Link kind", classes="modal-label")
-                            yield Select(
+                            yield FittingSelect(
                                 EXPORT_LINK_KIND_OPTIONS,
                                 value="copy",
                                 id="export-link",

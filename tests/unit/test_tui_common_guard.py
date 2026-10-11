@@ -12,6 +12,8 @@ Textual uses to route a message back to its row, were likewise unexercised.
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -236,6 +238,30 @@ def test_fitting_select_paint_gives_up_by_name() -> None:
                 assert str(select.value) == "core", "the value stands"
 
     _run(scenario())
+
+
+@pytest.mark.bug("ODR-66")
+def test_tui_constructs_no_bare_selects() -> None:
+    """Every Select the TUI builds is a FittingSelect.
+
+    A bare ``Select`` races its own compose under load: Textual's
+    ``_on_mount`` reaches for the overlay, and ``_init_selected_option`` /
+    ``_watch_value`` for the collapsed control's ``#label``, before those
+    children exist (ODR-66).  ``FittingSelect`` guards exactly those lookups,
+    so the guard is only worth its name if nothing constructs the unguarded
+    widget any more.
+    """
+    import operon.tui
+
+    offenders: list[str] = []
+    for source in Path(operon.tui.__file__).parent.rglob("*.py"):
+        if source.name == "common.py":
+            continue  # FittingSelect itself wraps Select there
+        for lineno, line in enumerate(source.read_text().splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if re.search(r"(?<![\w.])Select\(", code):
+                offenders.append(f"{source.name}:{lineno}")
+    assert offenders == []
 
 
 # -- the write-modal command preview survives a form that is not composed -----

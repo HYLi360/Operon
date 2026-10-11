@@ -32,6 +32,7 @@ from operon.tui import actions, data
 from operon.tui.screens.common import (
     ComposedRows,
     DismissOnce,
+    FittingSelect,
     MountTracked,
     Panel,
     WorkerResults,
@@ -112,7 +113,7 @@ class LifecycleModal(WriteModal):
         yield Static("loading plan…", id="lifecycle-plan", classes="modal-info")
         if self.action == "RETIRE":
             yield Static("Reason code", classes="modal-label")
-            yield Select(
+            yield FittingSelect(
                 [(code, code) for code in sorted(RETIRE_REASON_CODES)],
                 value="other",
                 id="lifecycle-reason-code",
@@ -302,7 +303,7 @@ class SetStateModal(WriteModal):
             "reason and the actor as its author"
         )
         yield Static(info, id="set-state-info", classes="modal-info")
-        yield Select(
+        yield FittingSelect(
             [(state, state) for state in sorted(VALID_STATES)],
             prompt="target state",
             id="set-state-state",
@@ -599,7 +600,7 @@ class ExportQcModal(WriteModal):
         options = [("all entity types", "")] + [
             (kind, kind) for kind in sorted(ENTITY_TABLES)
         ]
-        yield Select(
+        yield FittingSelect(
             options,
             value=self.initial_entity_type,
             id="qc-export-type",
@@ -704,7 +705,7 @@ class AddRecordModal(WriteModal):
 
     def compose_form(self) -> Iterable[Any]:
         yield Static("entity type", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [(name, name) for name in data.ENTITY_TYPES],
             value=data.ENTITY_TYPES[0],
             id="add-entity-type",
@@ -849,7 +850,7 @@ class AddAccessionModal(WriteModal):
 
     def compose_form(self) -> Iterable[Any]:
         yield Static("internal entity (must be active)", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [(name, name) for name in data.ENTITY_TYPES],
             value=self._prefill_type
             if self._prefill_type in data.ENTITY_TYPES
@@ -962,7 +963,7 @@ class NextIdModal(WriteModal):
             classes="modal-info",
         )
         yield Static("entity type", classes="modal-label")
-        yield Select(
+        yield FittingSelect(
             [(name, name) for name in NEXT_ID_TYPES],
             value=NEXT_ID_TYPES[0],
             id="nextid-entity-type",

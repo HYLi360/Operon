@@ -30,7 +30,7 @@ from textual.widgets import Button, DataTable, Input, Select, Static
 from operon.config import Project
 from operon.table_import import IMPORTABLE_TABLES
 from operon.tui import actions
-from operon.tui.screens.common import WriteModal
+from operon.tui.screens.common import FittingSelect, WriteModal
 
 ON_CONFLICT_OPTIONS = [
     ("error (abort when rows would change)", "error"),
@@ -60,13 +60,13 @@ class ImportTableModal(WriteModal):
             "the CLI would, with the same changes audit rows.",
             classes="modal-info",
         )
-        yield Select(
+        yield FittingSelect(
             [(table, table) for table in IMPORTABLE_TABLES],
             value="organisms",
             allow_blank=False,
             id="table-table",
         )
-        yield Select(
+        yield FittingSelect(
             [
                 ("Import file (preview, then apply)", "import"),
                 ("Generate template", "template"),
@@ -80,7 +80,7 @@ class ImportTableModal(WriteModal):
             placeholder="template output .csv/.xlsx path (--template)",
             id="table-template-out",
         )
-        yield Select(
+        yield FittingSelect(
             ON_CONFLICT_OPTIONS,
             prompt="on-conflict (blank = the CLI default)",
             allow_blank=True,

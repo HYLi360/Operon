@@ -1049,7 +1049,7 @@ class ConfigPanel(Panel):
                         )
                         yield Input(id="tool-version-pattern")
                         yield Static("Run method", classes="modal-label")
-                        yield Select(
+                        yield FittingSelect(
                             TOOL_RUN_METHOD_OPTIONS,
                             id="tool-run-method",
                             prompt="no run_method (run directly)",
@@ -1100,7 +1100,7 @@ class ConfigPanel(Panel):
                         yield Static("Description", classes="modal-label")
                         yield Input(id="recipe-description")
                         yield Static("Entity type (blank = *)", classes="modal-label")
-                        yield Select(
+                        yield FittingSelect(
                             ENTITY_TYPE_OPTIONS,
                             id="recipe-entity-type",
                             allow_blank=True,
@@ -1115,7 +1115,7 @@ class ConfigPanel(Panel):
                         yield Static(
                             "Input kind (blank = key absent)", classes="modal-label"
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [(kind, kind) for kind in ARTIFACT_KINDS],
                             id="recipe-input-kind",
                             allow_blank=True,
@@ -1123,7 +1123,7 @@ class ConfigPanel(Panel):
                         yield Static(
                             "Output kind (blank = key absent)", classes="modal-label"
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [(kind, kind) for kind in ARTIFACT_KINDS],
                             id="recipe-output-kind",
                             allow_blank=True,
@@ -1132,7 +1132,7 @@ class ConfigPanel(Panel):
                         yield Input(
                             placeholder="database_version", id="recipe-database-version"
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [(mode, mode) for mode in DATABASE_MODES],
                             id="recipe-database-mode",
                             allow_blank=True,
@@ -1146,7 +1146,7 @@ class ConfigPanel(Panel):
                             "'warn')",
                             classes="modal-label",
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [(policy, policy) for policy in ENVIRONMENT_POLICIES],
                             id="recipe-environment-policy",
                             allow_blank=True,
@@ -1170,7 +1170,7 @@ class ConfigPanel(Panel):
                             placeholder="slurm poll_interval (seconds)",
                             id="recipe-slurm-poll-interval",
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [("true", "true"), ("false", "false")],
                             id="recipe-slurm-array",
                             allow_blank=True,
@@ -1225,7 +1225,7 @@ class ConfigPanel(Panel):
                             yield Button("Add step", id="recipe-add-command")
                         yield Static("", id="recipe-command-note")
                         yield Static("Result parser", classes="modal-label")
-                        yield Select(
+                        yield FittingSelect(
                             [(parser, parser) for parser in RESULT_PARSERS],
                             value="none",
                             id="recipe-result-parser",
@@ -1235,7 +1235,7 @@ class ConfigPanel(Panel):
                         yield Static(
                             "HMMER mode (blank = key absent)", classes="modal-label"
                         )
-                        yield Select(
+                        yield FittingSelect(
                             [(mode, mode) for mode in HMMER_MODES],
                             id="recipe-hmmer-mode",
                             allow_blank=True,

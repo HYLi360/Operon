@@ -24,6 +24,7 @@ from operon.config import Project
 from operon.tui import actions, data
 from operon.tui.screens.common import (
     DismissOnce,
+    FittingSelect,
     WorkerResults,
     capture_table_view,
     restore_table_view,
@@ -79,7 +80,7 @@ class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
                 yield Checkbox("include retired", id="hits-include-retired")
             yield DataTable(id="hits-table", cursor_type="row")
             with Horizontal(id="hits-export"):
-                yield Select(
+                yield FittingSelect(
                     [("text", "text"), ("tsv", "tsv"), ("json", "json")],
                     value="text",
                     id="hits-format",
