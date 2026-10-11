@@ -929,3 +929,100 @@ def test_builtin_qc_passes_directory_checksum_stage(project_db, tmp_path):
     assert metrics[("file_integrity", "sha256_match")] in ("1", "True", "true")
     # No parser exists for directory trees: parseable stays unmeasured.
     assert ("file_integrity", "parseable") not in metrics
+
+
+def test_verify_identity_oserror_during_exists_check_reports_missing(
+    project_db, tmp_path, monkeypatch
+):
+    _project, db = project_db
+    path = tmp_path / "x"
+    path.write_text("x", encoding="utf-8")
+    oom_error = lambda _self: (_ for _ in ()).throw(OSError("stat"))
+    monkeypatch.setattr(Path, "is_file", oom_error)
+    monkeypatch.setattr(Path, "is_dir", oom_error)
+
+    file_record = {
+        "file_id": "F",
+        "sha256": "0" * 64,
+        "size_bytes": 1,
+        "format": "fasta",
+    }
+    matched, info = files.verify_local_file_identity(db, file_record, path)
+    assert (
+        not matched and not info["exists"] and info["verification_method"] == "missing"
+    )
+
+    directory_record = dict(file_record, file_id="D", format="directory")
+    matched, info = files.verify_local_file_identity(db, directory_record, path)
+    assert (
+        not matched and not info["exists"] and info["verification_method"] == "missing"
+    )
+
+
+def test_verify_directory_identity_stat_and_hash_errors(
+    project_db, tmp_path, monkeypatch
+):
+    project, db = project_db
+    directory = tmp_path / "results"
+    directory.mkdir()
+    (directory / "a.txt").write_text("alpha", encoding="utf-8")
+    row = files.ingest_file(
+        db,
+        project,
+        directory,
+        "annotation",
+        "ANN_000001",
+        "analysis_output",
+        fmt="directory",
+        compression="none",
+    )
+    path = project.root / row["relative_path"]
+
+    real_size = files.path_size_bytes
+    monkeypatch.setattr(
+        files,
+        "path_size_bytes",
+        lambda _p: (_ for _ in ()).throw(OSError("stat")),
+    )
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "stat_error"
+    monkeypatch.setattr(files, "path_size_bytes", real_size)
+
+    monkeypatch.setattr(
+        files,
+        "sha256_path",
+        lambda _p: (_ for _ in ()).throw(OSError("read")),
+    )
+    matched, info = files.verify_local_file_identity(db, row, path)
+    assert not matched and info["verification_method"] == "sha256_error"
+    assert not info["sha256_match"]
+
+
+def test_standardize_repairs_entity_state_after_crash_window(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "genome.fa"
+    source.write_text(">ctg1\nACGTACGT\n", encoding="utf-8")
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "genome_fasta"
+    )
+    # Simulate the crash window: the standardized target was published but the
+    # state commit never happened, so the entity is still CHECKSUM_VERIFIED.
+    target = (
+        project.standardized_root
+        / "assemblies"
+        / "ASM_000001"
+        / Path(row["relative_path"]).name
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes((project.root / row["relative_path"]).read_bytes())
+    assert db.get_entity_state("assembly", "ASM_000001") == "CHECKSUM_VERIFIED"
+
+    result = files.standardize_file(db, project, row["file_id"])
+    assert result["action"] == "skipped"
+    assert db.get_entity_state("assembly", "ASM_000001") == "STANDARDIZED"
+    assert (
+        db.conn.execute(
+            "SELECT status FROM files WHERE file_id=?", (row["file_id"],)
+        ).fetchone()["status"]
+        == "STANDARDIZED"
+    )
