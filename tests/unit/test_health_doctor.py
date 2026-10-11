@@ -373,3 +373,15 @@ def test_tui_adapter_reads_the_core_function(monkeypatch) -> None:
 )
 def test_severity_map_covers_every_kind(kind: str, severity: str) -> None:
     assert health.SEVERITY_BY_KIND[kind] == severity
+
+
+def test_item_context_falls_back_to_the_object_for_unknown_kinds() -> None:
+    """A kind this module does not know yet still gets its factual object line."""
+    item = health.AttentionItem(
+        id="future_kind:run:WF_9",
+        kind="future_kind",
+        severity="warning",
+        object="run:WF_9",
+        suggested_command="operon workflow show WF_9",
+    )
+    assert health.item_context(item) == "run:WF_9"

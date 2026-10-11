@@ -449,6 +449,41 @@ def test_release_scope_rejects_unsupported_and_untraceable_members(tmp_path):
         coverage._release_scope(db, project, "v1")
 
 
+def test_release_scope_rejects_a_member_whose_type_stringifies_outside_the_guard(
+    tmp_path,
+):
+    """The organism_for fallback catches accepted-type guard/dispatch drift.
+
+    The guard compares the raw row value against ``ACCEPTED_FILE_TYPES`` while
+    ``organism_for`` dispatches on ``str(value)``; a value that passes the
+    guard but stringifies to an unhandled type must be rejected as untraceable
+    instead of being silently attributed to an organism.
+    """
+
+    class _DriftedType:
+        """Membership-compatible with an accepted type, stringified otherwise."""
+
+        def __hash__(self) -> int:
+            return hash("organism")
+
+        def __eq__(self, other: object) -> bool:
+            return other == "organism"
+
+        def __str__(self) -> str:
+            return "unhandled_type"
+
+    member = {
+        "file_id": "F1",
+        "entity_type": _DriftedType(),
+        "entity_id": "ORG_1",
+        "sha256": "a",
+        "size_bytes": 1,
+    }
+    _root, _release, project, db = _release_fixture(tmp_path, [member])
+    with pytest.raises(ValidationError, match="cannot be traced"):
+        coverage._release_scope(db, project, "v1")
+
+
 @pytest.fixture
 def project_db(tmp_path: Path):
     assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -358,3 +359,91 @@ def test_decision_reason_code_formats(project_db):
     assert "A, B" in text
     db.conn.execute("UPDATE decisions SET reason_codes='not-json'")
     assert "not-json" in reports.print_decisions(db)
+
+
+def test_report_rows_render_missing_keys_as_blanks_and_reject_unknown_formats(
+    project_db,
+):
+    """``render_report_rows`` maps keys a row lacks to ``None``/empty cells.
+
+    Both exception shapes the renderer promises to absorb are exercised: dict
+    rows raise ``KeyError`` and sqlite3 rows raise ``IndexError``.
+    """
+    _project, db = project_db
+    sqlite_row = db.conn.execute("SELECT 'x' AS present").fetchone()
+    rows = [{"present": "x"}, sqlite_row]
+    headers = ["present", "absent"]
+
+    rendered = json.loads(reports.render_report_rows(rows, "json", headers=headers))
+    assert rendered == [{"present": "x", "absent": None}] * 2
+    assert reports.render_report_rows(rows, "tsv", headers=headers) == (
+        "present\tabsent\nx\t\nx\t\n"
+    )
+
+    with pytest.raises(ValidationError, match="unknown report format: xml"):
+        reports.render_report_rows(rows, "xml", headers=headers)
+
+
+def test_supersession_and_source_lookups_skip_sql_for_empty_id_sets(project_db):
+    """The defensive empty arms return empty results without touching the DB."""
+    _project, db = project_db
+    supersessions, superseded = entity_view._fetch_supersessions(db, [])
+    assert supersessions == [] and superseded == set()
+
+    graph: dict = {"files": []}
+    entity_view._fetch_sources(SimpleNamespace(), [], graph)
+    assert graph["sources"] == [] and graph["source_links"] == []
+
+
+def test_release_path_taken_by_a_file_is_not_an_interrupted_publication(project_db):
+    """A plain file squatting the release path is operator data, not a crash orphan."""
+    project, db = project_db
+    _write_empty_scope_profile(project)
+    project.releases_root.mkdir(parents=True, exist_ok=True)
+    squat = project.releases_root / "v-file"
+    squat.write_text("operator bytes", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="not an interrupted publication"):
+        release.create_release(db, project, "v-file", "p")
+    assert squat.read_text(encoding="utf-8") == "operator bytes"
+
+
+def test_release_rollback_skips_cleanup_when_the_tree_was_never_published(
+    project_db, monkeypatch
+):
+    """The rollback handler removes a published tree only when one exists."""
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
+    _write_empty_scope_profile(project)
+    source = project.root / "raw" / "file"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("y", encoding="utf-8")
+    monkeypatch.setattr(
+        release,
+        "release_files_for",
+        lambda *_a: [_member("raw/file", sha256_path(source))],
+    )
+    final_root = project.releases_root / "never-published"
+    real_replace = release.os.replace
+
+    def never_materialize_publish(source_path, destination, *args, **kwargs):
+        if Path(destination) == final_root:
+            return None  # the publish rename never happened
+        return real_replace(source_path, destination, *args, **kwargs)
+
+    monkeypatch.setattr(release.os, "replace", never_materialize_publish)
+    monkeypatch.setattr(
+        release,
+        "set_state",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("state failure")),
+    )
+    with pytest.raises(RuntimeError, match="state failure"):
+        release.create_release(db, project, "never-published", "p")
+    assert not final_root.exists()
+    assert list(project.releases_root.iterdir()) == []  # staging cleaned up too
+    assert (
+        db.conn.execute(
+            "SELECT 1 FROM releases WHERE version='never-published'"
+        ).fetchone()
+        is None
+    )
