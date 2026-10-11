@@ -1132,3 +1132,614 @@ def test_evict_modal_rearms_the_gate_when_the_selection_changes(
             assert confirm.disabled
 
     _run(scenario())
+
+
+# -- probe/status edge cases and sync-modal guards -----------------------------
+
+
+def test_remotes_check_with_no_remotes_keeps_the_empty_state(tmp_path: Path) -> None:
+    """An empty probe result stops at the empty-state render, not the summary."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+
+    project = _project_with_remotes(tmp_path, {})
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            button = await _q(app.screen, "#remotes-check", Button)
+            await _click(pilot, "#remotes-check")
+            await _wait_until(lambda: not button.disabled, "the check to finish")
+            status = _static_text(await _q(app.screen, "#remotes-status", Static))
+            assert "no remotes configured" in status
+            # Without the empty-payload guard this would read "checked 0 remote(s)".
+            assert "checked" not in status
+
+    _run(scenario())
+
+
+def test_remotes_check_reports_a_clean_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every remote answering ok lands in the green summary and a notification."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+    rows = [
+        {
+            "name": "mirror",
+            "type": "sftp",
+            "address": "hpc.example.org:22",
+            "root": "/data",
+            "files": 2,
+            "status": "ok",
+            "error": "",
+        }
+    ]
+    monkeypatch.setattr(
+        actions, "check_remotes", lambda project: [dict(row) for row in rows]
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            button = await _q(app.screen, "#remotes-check", Button)
+            await _click(pilot, "#remotes-check")
+            status = await _q(app.screen, "#remotes-status", Static)
+            await _wait_until(
+                lambda: "1 ok, 0 failed" in _static_text(status), "the green summary"
+            )
+            await _wait_until(lambda: not button.disabled, "the check to finish")
+            await _await_notification(app, needle="checked 1 remote(s)")
+
+    _run(scenario())
+
+
+def test_remotes_check_surfaces_a_probe_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashing action is rendered inline and the status line is cleared."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+
+    def explode(_project: Project) -> list[dict[str, Any]]:
+        raise OSError("sftp stack exploded")
+
+    monkeypatch.setattr(actions, "check_remotes", explode)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            button = await _q(app.screen, "#remotes-check", Button)
+            await _click(pilot, "#remotes-check")
+            error = await _q(app.screen, "#remotes-error", Static)
+            await _wait_until(
+                lambda: "sftp stack exploded" in _static_text(error), "the error line"
+            )
+            await _wait_until(lambda: not button.disabled, "the check to finish")
+            status = _static_text(await _q(app.screen, "#remotes-status", Static))
+            assert "checking" not in status
+
+    _run(scenario())
+
+
+def test_remotes_check_guard_and_status_while_a_probe_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second check is refused, and a mid-probe reload keeps the status line."""
+    pytest.importorskip("textual")
+    import threading
+
+    from textual.widgets import Button, DataTable, Input, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import RemotesPanel
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+    first = _ingest(project, "one.fa")
+    second = _ingest(project, "two.fa", 2)
+    _add_location(project, first, "mirror")
+    _add_location(project, second, "mirror")
+    release = threading.Event()
+    started = threading.Event()
+    rows = [
+        {
+            "name": "mirror",
+            "type": "sftp",
+            "address": "hpc.example.org:22",
+            "root": "/data",
+            "files": 2,
+            "status": "ok",
+            "error": "",
+        }
+    ]
+
+    def blocking(_project: Project) -> list[dict[str, Any]]:
+        started.set()
+        assert release.wait(SETTLE_TIMEOUT)
+        return [dict(row) for row in rows]
+
+    monkeypatch.setattr(actions, "check_remotes", blocking)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            table = await _q(app.screen, "#locations-table", DataTable)
+            await _wait_until(lambda: table.row_count == 2, "residency rows")
+            button = await _q(app.screen, "#remotes-check", Button)
+            await _click(pilot, "#remotes-check")
+            await _wait_until(started.is_set, "the probe to start")
+
+            # A second check while one is in flight is refused, not queued.
+            app.query_one(RemotesPanel)._check()
+            await _await_notification(app, needle="already running", severity="warning")
+
+            # A residency reload while the probe runs keeps the status line.
+            (await _q(app.screen, "#locations-filter", Input)).value = first["file_id"]
+            await _click(pilot, "#locations-apply")
+            await _wait_until(lambda: table.row_count == 1, "the filtered reload")
+            status = await _q(app.screen, "#remotes-status", Static)
+            assert "checking connectivity" in _static_text(status)
+
+            release.set()
+            await _wait_until(lambda: not button.disabled, "the probe to finish")
+            assert "1 ok, 0 failed" in _static_text(status)
+            await _settled(app)
+
+    _run(scenario())
+
+
+def test_remotes_write_buttons_warn_when_nothing_is_configured(
+    tmp_path: Path,
+) -> None:
+    """Push/Evict without a remotes section warn instead of opening a dialog."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal, PushModal
+
+    project = _project_with_remotes(tmp_path, {})
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            await _q(app.screen, "#remotes-push", Button)
+            await _click(pilot, "#remotes-push")
+            await _click(pilot, "#remotes-evict")
+
+            def warned_twice() -> bool:
+                return (
+                    sum(
+                        1
+                        for notification in app._notifications
+                        if notification.severity == "warning"
+                        and "no remotes configured" in str(notification.message)
+                    )
+                    >= 2
+                )
+
+            await _wait_until(warned_twice, "both warnings")
+            assert not isinstance(app.screen, (EvictModal, PushModal))
+
+    _run(scenario())
+
+
+def test_remotes_evict_and_push_buttons_open_prefilled_dialogs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both sync buttons prefill the mirror and hand their result to the screen."""
+    pytest.importorskip("textual")
+    from textual.widgets import DataTable, Select
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal, PushModal
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+    results = [
+        {
+            "file_id": "FIL_000001",
+            "relative_path": "raw/x.fa",
+            "status": "uploaded",
+            "error": None,
+        }
+    ]
+    calls = spy_action(monkeypatch, "push", results)
+    reloads: list[list[str] | None] = []
+    real_locations = data.list_locations
+
+    def spy(project_arg: Project, *, file_ids: Any = None, limit: int = 0) -> Any:
+        reloads.append(None if file_ids is None else list(file_ids))
+        return real_locations(project_arg, file_ids=file_ids, limit=limit)
+
+    monkeypatch.setattr(data, "list_locations", spy)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            table = await _q(app.screen, "#remotes-table", DataTable)
+            await _wait_until(lambda: table.row_count == 1, "remote row")
+
+            await _click(pilot, "#remotes-evict")
+            await _wait_until(
+                lambda: isinstance(app.screen, EvictModal), "evict dialog"
+            )
+            evict = app.screen
+            remote_select = await _q(evict, "#sync-remote", Select)
+            await _wait_until(
+                lambda: remote_select.value == "mirror", "the prefilled remote"
+            )
+            evict.action_cancel()
+            await _wait_until(
+                lambda: not isinstance(app.screen, EvictModal), "evict dialog to close"
+            )
+
+            baseline = len(reloads)
+            await _click(pilot, "#remotes-push")
+            await _wait_until(lambda: isinstance(app.screen, PushModal), "push dialog")
+            push = app.screen
+            assert (await _q(push, "#sync-remote", Select)).value == "mirror"
+            push.confirm()
+            result_table = await _q(push, "#sync-results", DataTable)
+            await _wait_until(lambda: result_table.row_count == 1, "result rows")
+            push.action_cancel()
+            await _wait_until(
+                lambda: not isinstance(app.screen, PushModal), "push dialog to close"
+            )
+            # A truthy result reloads every panel (the residency listing reruns).
+            await _wait_until(lambda: len(reloads) > baseline, "panels reloaded")
+
+    _run(scenario())
+    assert calls and calls[0][0][1] == "mirror"
+
+
+def test_remotes_locations_note_when_the_row_cap_is_reached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reaching the residency cap points at the --file-id filter."""
+    pytest.importorskip("textual")
+    from textual.widgets import Static
+
+    from operon.tui.app import OperonApp
+
+    project = _project_with_remotes(tmp_path, {})
+    _add_location(project, _ingest(project, "one.fa"), "mirror")
+    # The row cap is a module constant; one row is enough to be at or above it.
+    monkeypatch.setattr(data, "LOCATIONS_LIMIT", 1)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            note = await _q(app.screen, "#locations-note", Static)
+            await _wait_until(
+                lambda: "showing the first 1 residency rows" in _static_text(note),
+                "the cap note",
+            )
+
+    _run(scenario())
+
+
+def test_remotes_selected_remote_falls_back_without_a_row_or_a_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty table and a failing cursor lookup both degrade to a safe name."""
+    pytest.importorskip("textual")
+    from textual.widgets import DataTable
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import RemotesPanel
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            app.action_switch_screen("remotes")
+            await pilot.pause()
+            panel = app.query_one(RemotesPanel)
+            table = await _q(app.screen, "#remotes-table", DataTable)
+            await _wait_until(lambda: table.row_count == 1, "remote row")
+
+            def broken(_coordinate: Any) -> Any:
+                raise RuntimeError("no cell for this coordinate")
+
+            monkeypatch.setattr(table, "coordinate_to_cell_key", broken)
+            assert panel._selected_remote() == "mirror"
+            panel.remotes = []
+            assert panel._selected_remote() == ""
+            table.clear()
+            assert panel._selected_remote() == ""
+
+            # A button the panel does not own is ignored, not misrouted.
+            from types import SimpleNamespace
+
+            panel.on_button_pressed(
+                SimpleNamespace(button=SimpleNamespace(id="foreign-button"))
+            )
+
+    _run(scenario())
+
+
+def test_push_modal_renders_a_plan_error_inline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failing plan preview is rendered as a hint, not raised out of the form."""
+    pytest.importorskip("textual")
+    from textual.widgets import Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PushModal
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+
+    def explode(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise OSError("preview exploded")
+
+    monkeypatch.setattr(data, "sync_preview", explode)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = PushModal(project, remote="mirror")
+            await _pilot_push(pilot, modal, "#sync-plan")
+            plan = await _q(modal, "#sync-plan", Static)
+            await _wait_until(
+                lambda: "preview exploded" in _static_text(plan), "the plan error"
+            )
+
+    _run(scenario())
+
+
+def test_sync_modal_confirm_guards_and_cancel_while_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirm refuses an unselected/vanished remote and a running transfer."""
+    pytest.importorskip("textual")
+    import threading
+    from types import SimpleNamespace
+
+    from textual.widgets import Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import PushModal
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+    release = threading.Event()
+    started = threading.Event()
+
+    def blocking(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        started.set()
+        assert release.wait(SETTLE_TIMEOUT)
+        return []
+
+    monkeypatch.setattr(actions, "push", blocking)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+
+            # No remote selected: Confirm refuses before any worker starts.
+            untouched = PushModal(project)
+            await _pilot_push(pilot, untouched, "#sync-remote")
+            untouched.confirm()
+            assert "select a remote first" in _static_text(
+                await _q(untouched, "#modal-error", Static)
+            )
+
+            # A remote that vanished from the config between open and confirm.
+            vanished = PushModal(project, remote="mirror")
+            await _pilot_push(pilot, vanished, "#sync-remote")
+            vanished.remotes = ["ghost"]
+            vanished.confirm()
+            assert "unknown remote 'mirror'" in _static_text(
+                await _q(vanished, "#modal-error", Static)
+            )
+
+            # Events from widgets the dialog does not own are ignored.
+            untouched.on_input_changed(
+                SimpleNamespace(input=SimpleNamespace(id="foreign-input"))
+            )
+            untouched.on_select_changed(
+                SimpleNamespace(select=SimpleNamespace(id="foreign-select"))
+            )
+
+            running = PushModal(project, remote="mirror")
+            await _pilot_push(pilot, running, "#sync-remote")
+            running.confirm()
+            await _wait_until(started.is_set, "the transfer to start")
+            running.confirm()  # refused: a run is already in flight
+            await _click(pilot, "#cancel")
+            await _await_notification(app, needle="cannot be interrupted")
+            assert app.screen is running, "a running transfer must not close"
+
+            release.set()
+            await _settled(app)
+            running.action_cancel()
+            await _wait_until(
+                lambda: app.screen is not running, "the running dialog to close"
+            )
+            vanished.action_cancel()
+            await _wait_until(
+                lambda: app.screen is not vanished, "the second dialog to close"
+            )
+            untouched.action_cancel()
+            await _wait_until(
+                lambda: app.screen is not untouched, "the first dialog to close"
+            )
+
+    _run(scenario())
+
+
+def test_evict_modal_check_errors_stay_inline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing remote and an unreachable mirror both fail the gate, not the dialog."""
+    pytest.importorskip("textual")
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+
+    def explode(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        raise OSError("mirror unreachable")
+
+    monkeypatch.setattr(actions, "evict_plan", explode)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+
+            # No mirror selected: the pre-flight refuses before probing.
+            bare = EvictModal(project)
+            await _pilot_push(pilot, bare, "#evict-check")
+            (await _q(bare, "#evict-check", Button)).press()
+            error = await _q(bare, "#modal-error", Static)
+            await _wait_until(
+                lambda: "select a remote first" in _static_text(error),
+                "the missing-remote error",
+            )
+            assert (await _q(bare, "#evict-check", Button)).disabled is False
+            bare.action_cancel()
+            await _wait_until(
+                lambda: not isinstance(app.screen, EvictModal), "the dialog to close"
+            )
+
+            # A mirror that cannot be reached fails the gate, not the dialog.
+            modal = EvictModal(project, remote="mirror")
+            await _pilot_push(pilot, modal, "#evict-check")
+            await _click(pilot, "#evict-check")
+            gate = await _q(modal, "#evict-gate", Static)
+            await _wait_until(
+                lambda: "verification failed" in _static_text(gate),
+                "the gate to re-arm",
+            )
+            assert "mirror unreachable" in _static_text(
+                await _q(modal, "#modal-error", Static)
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled
+
+    _run(scenario())
+
+
+def test_evict_modal_guards_while_the_check_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second check and a confirm() during the pre-flight are both refused."""
+    pytest.importorskip("textual")
+    import threading
+
+    from textual.widgets import Button, Static
+
+    from operon.tui.app import OperonApp
+    from operon.tui.screens.remotes import EvictModal
+
+    project = _project_with_remotes(
+        tmp_path,
+        {"mirror": {"type": "sftp", "host": "hpc.example.org", "root": "/data"}},
+    )
+    release = threading.Event()
+    started = threading.Event()
+
+    def blocking(
+        _project: Project, _remote: str, _file_ids: Any = None
+    ) -> list[dict[str, Any]]:
+        started.set()
+        assert release.wait(SETTLE_TIMEOUT)
+        return []
+
+    monkeypatch.setattr(actions, "evict_plan", blocking)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = EvictModal(project, remote="mirror")
+            await _pilot_push(pilot, modal, "#evict-check")
+            await _click(pilot, "#evict-check")
+            await _wait_until(started.is_set, "the pre-flight to start")
+
+            # A second pre-flight while one runs is refused.
+            modal._check()
+            assert modal.checking is True
+
+            # confirm() during the check is refused: no gate error is written.
+            modal.confirm()
+            assert "verify the remote copies first" not in _static_text(
+                await _q(modal, "#modal-error", Static)
+            )
+            assert app.screen is modal
+
+            release.set()
+            gate = await _q(modal, "#evict-gate", Static)
+            await _wait_until(
+                lambda: "nothing selected" in _static_text(gate),
+                "the empty-plan gate",
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled
+            modal.action_cancel()
+            await _wait_until(
+                lambda: not isinstance(app.screen, EvictModal), "the dialog to close"
+            )
+            await _settled(app)
+
+    _run(scenario())

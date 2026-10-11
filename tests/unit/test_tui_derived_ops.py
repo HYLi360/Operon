@@ -997,3 +997,298 @@ def test_write_modal_drops_a_result_that_arrives_after_teardown(
             assert app.is_running
 
     _run(scenario())
+
+
+# -- confirm guards, inline errors, and repeated-change no-ops -----------------
+
+
+async def _await_notification(app, needle: str) -> None:
+    """Wait for the raised notification matching ``needle``."""
+    await _wait_until(
+        lambda: any(needle in str(item.message) for item in app._notifications),
+        f"the notification {needle!r}",
+    )
+
+
+def test_float_or_none_rejects_garbage() -> None:
+    from operon.tui.screens.derived_ops import _float_or_none
+
+    assert _float_or_none("  ") is None
+    assert _float_or_none("1e-3") == 1e-3
+    assert _float_or_none("not a number") is None
+
+
+def test_extract_and_select_modal_confirm_guards(
+    derived_project: Project, tmp_path: Path
+) -> None:
+    """The missing-field pre-checks and foreign events of both modals."""
+    from types import SimpleNamespace
+
+    file_id = _file_id(derived_project, "protein_fasta")
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+
+            no_file = ExtractModal(derived_project, None)
+            await _push(pilot, no_file, "#extract-out")
+            no_file.confirm()
+            assert "select a file first" in _static_text(
+                await _q(no_file, "#modal-error", Static)
+            )
+
+            extract = ExtractModal(derived_project, file_id)
+            await _push(pilot, extract, "#extract-out")
+            (await _q(extract, "#extract-out", Input)).value = str(tmp_path / "x.faa")
+            extract.on_input_changed(
+                SimpleNamespace(input=SimpleNamespace(id="foreign-input"))
+            )
+            extract.confirm()
+            assert "exactly one of --analysis or --regions-tsv" in _static_text(
+                await _q(extract, "#modal-error", Static)
+            )
+
+            select_plain = SelectSequencesModal(derived_project, None)
+            await _push(pilot, select_plain, "#select-out")
+            select_plain.confirm()
+            assert "select a file first" in _static_text(
+                await _q(select_plain, "#modal-error", Static)
+            )
+
+            select = SelectSequencesModal(derived_project, file_id)
+            await _push(pilot, select, "#select-out")
+            select.on_input_changed(
+                SimpleNamespace(input=SimpleNamespace(id="foreign-input"))
+            )
+            select.on_select_changed(
+                SimpleNamespace(select=SimpleNamespace(id="foreign-select"))
+            )
+            select.confirm()
+            assert "out path is required" in _static_text(
+                await _q(select, "#modal-error", Static)
+            )
+            (await _q(select, "#select-out", Input)).value = str(tmp_path / "s.faa")
+            (await _q(select, "#select-analysis-1", Input)).value = "cdd"
+            (await _q(select, "#select-manifest", Input)).value = str(
+                tmp_path / "manifest.tsv"
+            )
+            assert "--manifest" in select.command_text()
+
+    _run(scenario())
+
+
+def test_adopt_modal_confirm_guards(derived_project: Project, tmp_path: Path) -> None:
+    """Manifest mode needs a path and a preview; single mode the identifiers."""
+    from types import SimpleNamespace
+
+    source = tmp_path / "guards.faa"
+    source.write_text(">p1\n" + "G" * 25 + "\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+
+            manifest_modal = AdoptModal(derived_project)
+            await _push(pilot, manifest_modal, "#adopt-preview-button")
+            (await _q(manifest_modal, "#adopt-mode", Select)).value = "manifest"
+            manifest_modal.confirm()
+            assert "manifest path is required" in _static_text(
+                await _q(manifest_modal, "#modal-error", Static)
+            )
+            (await _q(manifest_modal, "#adopt-manifest", Input)).value = str(
+                tmp_path / "later.json"
+            )
+            manifest_modal.confirm()
+            assert "preview the manifest first" in _static_text(
+                await _q(manifest_modal, "#modal-error", Static)
+            )
+
+            single = AdoptModal(derived_project, path=str(source))
+            await _push(pilot, single, "#adopt-role")
+            single.on_input_changed(
+                SimpleNamespace(input=SimpleNamespace(id="foreign-input"))
+            )
+            single.confirm()
+            assert "single-file adopt requires entity id, role" in _static_text(
+                await _q(single, "#modal-error", Static)
+            )
+            (await _q(single, "#adopt-entity-id", Input)).value = "ANN_000001"
+            (await _q(single, "#adopt-role", Input)).value = "unit_role"
+            single.confirm()
+            assert "at least one derived_from FILE_ID" in _static_text(
+                await _q(single, "#modal-error", Static)
+            )
+
+    _run(scenario())
+
+
+def test_adopt_modal_manifest_preview_error_and_repeated_change(
+    derived_project: Project, tmp_path: Path
+) -> None:
+    """A failed preview stays inline; a repeated change for the same path keeps it."""
+    file_id = _file_id(derived_project, "protein_fasta")
+    source = tmp_path / "preview-source.faa"
+    source.write_text(">p1\n" + "G" * 25 + "\n", encoding="utf-8")
+    manifest = tmp_path / "preview-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "path": str(source),
+                    "entity_type": "annotation",
+                    "entity_id": "ANN_000001",
+                    "role": "preview_ui_role",
+                    "derived_from": [file_id],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            modal = AdoptModal(derived_project)
+            await _push(pilot, modal, "#adopt-preview-button")
+            (await _q(modal, "#adopt-mode", Select)).value = "manifest"
+            preview_button = await _q(modal, "#adopt-preview-button", Button)
+            await _wait_until(
+                lambda: not preview_button.disabled, "manifest mode to arm the preview"
+            )
+
+            # A manifest that cannot be read stays inline and blocks Confirm.
+            (await _q(modal, "#adopt-manifest", Input)).value = str(
+                tmp_path / "missing-manifest.json"
+            )
+            preview_button.press()
+            view = await _q(modal, "#adopt-preview", Static)
+            await _wait_until(
+                lambda: "adopt manifest not found" in _static_text(view),
+                "the preview error",
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled is True
+
+            (await _q(modal, "#adopt-manifest", Input)).value = str(manifest)
+            preview_button.press()
+            await _wait_until(
+                lambda: "manifest parsed: 1 item(s)" in _static_text(view),
+                "the manifest preview",
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled is False
+
+            # A queued/repeated change for the same path keeps the verdict.
+            manifest_input = await _q(modal, "#adopt-manifest", Input)
+            modal.on_input_changed(Input.Changed(manifest_input, manifest_input.value))
+            assert "manifest parsed: 1 item(s)" in _static_text(view)
+            assert (await _q(modal, "#confirm", Button)).disabled is False
+
+    _run(scenario())
+
+
+def test_adopt_modal_reports_a_reused_registration(
+    derived_project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file_id = _file_id(derived_project, "protein_fasta")
+    source = tmp_path / "reuse.faa"
+    source.write_text(">p1\n" + "T" * 25 + "\n", encoding="utf-8")
+    payload = {"registered": 1, "reused": 1, "file_ids": ["FIL_000001"], "items": []}
+
+    def stub(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return payload
+
+    monkeypatch.setattr(actions, "adopt", stub)
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            modal = AdoptModal(
+                derived_project,
+                path=str(source),
+                derived_from=[file_id],
+                entity_type="annotation",
+                entity_id="ANN_000001",
+            )
+            await _push(pilot, modal, "#adopt-preview-button")
+            (await _q(modal, "#adopt-role", Input)).value = "reuse_role"
+            (await _q(modal, "#confirm", Button)).press()
+            await _await_notification(app, "reused an identical registration")
+            await _wait_until(
+                lambda: not isinstance(app.screen, AdoptModal), "the modal to close"
+            )
+
+    _run(scenario())
+
+
+def test_fanout_modal_missing_inputs_and_dry_run_failures(
+    derived_project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dry run names missing inputs and renders a failure inline."""
+    from types import SimpleNamespace
+
+    assignments = _file_id(derived_project, "assignments")
+    source = _file_id(derived_project, "protein_fasta")
+    real_fanout = actions.fanout
+    calls: list[int] = []
+
+    def flaky(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("dry run exploded")
+        return real_fanout(*args, **kwargs)
+
+    monkeypatch.setattr(actions, "fanout", flaky)
+
+    async def scenario() -> None:
+        app = OperonApp(derived_project)
+        async with app.run_test(size=(160, 55)) as pilot:
+            await _settled(app)
+            modal = FanoutModal(derived_project)
+            await _push(pilot, modal, "#fanout-preview-table")
+            (await _q(modal, "#fanout-assignments", Input)).value = assignments
+            (await _q(modal, "#fanout-entity-type", Select)).value = "annotation"
+            (await _q(modal, "#fanout-entity-id", Input)).value = "ANN_000001"
+            (await _q(modal, "#fanout-role-prefix", Input)).value = "guard_units"
+
+            # The dry run names every missing input it needs.
+            preview_button = await _q(modal, "#fanout-preview-button", Button)
+            preview_button.press()
+            error = await _q(modal, "#modal-error", Static)
+            await _wait_until(
+                lambda: "fanout requires source file ids" in _static_text(error),
+                "the missing-sources error",
+            )
+
+            # A dry run that raises stays inline and keeps Confirm shut.
+            (await _q(modal, "#fanout-sources", Input)).value = source
+            preview_button.press()
+            view = await _q(modal, "#fanout-preview", Static)
+            await _wait_until(
+                lambda: "dry run failed" in _static_text(view), "the dry-run error"
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled is True
+
+            # A clean dry run unlocks Confirm...
+            preview_button.press()
+            await _wait_until(
+                lambda: "planned unit(s)" in _static_text(view), "the dry-run preview"
+            )
+            assert (await _q(modal, "#confirm", Button)).disabled is False
+
+            # ...foreign events are ignored, and a repeated change keeps it.
+            modal.on_select_changed(
+                SimpleNamespace(select=SimpleNamespace(id="foreign-select"))
+            )
+            modal.on_input_changed(
+                SimpleNamespace(input=SimpleNamespace(id="foreign-input"))
+            )
+            role_input = await _q(modal, "#fanout-role-prefix", Input)
+            modal.on_input_changed(Input.Changed(role_input, role_input.value))
+            assert "planned unit(s)" in _static_text(view)
+            assert (await _q(modal, "#confirm", Button)).disabled is False
+
+    _run(scenario())
+    assert len(calls) >= 2
