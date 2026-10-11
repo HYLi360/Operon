@@ -906,6 +906,7 @@ def test_profile_editor_scrolls_to_all_rules(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_save_error_stays_inline(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -913,6 +914,10 @@ def test_config_screen_save_error_stays_inline(project: Project) -> None:
             panel = await _open_config(app, pilot)
             _select_profile(panel, "reads_qc_v1")
             await pilot.pause()
+            # The render goes through remount, which lands the rows a turn
+            # later: read them only once the deferred rebuild has composed
+            # (ODR-67).
+            await _await_form_ready(pilot, panel)
             panel._rule_rows("required")[1].query_one(".rule-metric", Input).value = ""
             await _click(pilot, "#profile-save")
             await pilot.pause()
@@ -1584,6 +1589,7 @@ warnings: []
 """
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_profile_unmodeled_keys_survive_save(project: Project) -> None:
     path = _write_profile_probe(project, "probe_extras_v1", PROBE_EXTRAS_PROFILE)
 
@@ -1594,6 +1600,8 @@ def test_config_screen_profile_unmodeled_keys_survive_save(project: Project) -> 
             _select_profile(panel, "probe_extras_v1")
             await pilot.pause()
             assert panel.current_profile == "probe_extras_v1"
+            # The deferred remount lands the rule rows a turn later (ODR-67).
+            await _await_form_ready(pilot, panel)
             assert len(panel._rule_rows("required")) == 2
             assert "preserved as-is: review_note" in _static_text(
                 panel.query_one("#profile-extras-note", Static)
@@ -1673,6 +1681,7 @@ warnings: []
 """
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_profile_rule_fallbacks_and_unknown_operator(
     project: Project,
 ) -> None:
@@ -1689,6 +1698,8 @@ def test_config_screen_profile_rule_fallbacks_and_unknown_operator(
             panel = await _open_config(app, pilot)
             _select_profile(panel, "probe_incomplete_v1")
             await pilot.pause()
+            # The deferred remount lands the rule rows a turn later (ODR-67).
+            await _await_form_ready(pilot, panel)
             rows = panel._rule_rows("required")
             assert len(rows) == 5  # the non-mapping rule is skipped
             # An operator the form does not offer stays selected and preserved.
@@ -1806,6 +1817,7 @@ def test_config_screen_new_profile_cancel_and_invalid_name(project: Project) -> 
     ]
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_new_profile_is_created_as_version_1(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -1818,6 +1830,9 @@ def test_config_screen_new_profile_is_created_as_version_1(project: Project) -> 
             ).value = "assembly_strict_v1"
             await _click(pilot, "#confirm")
             await pilot.pause()
+            # Creating a profile renders through remount: wait for it before
+            # reading the (empty) rule sections (ODR-67).
+            await _await_form_ready(pilot, panel)
             heading = _static_text(panel.query_one("#profile-heading", Static))
             assert (
                 "assembly_strict_v1" in heading
@@ -1879,6 +1894,7 @@ def test_config_screen_new_profile_is_created_as_version_1(project: Project) -> 
     assert [row["profile_version"] for row in rows] == [1]
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_new_profile_with_existing_name_opens_it(
     project: Project,
 ) -> None:
@@ -1892,6 +1908,9 @@ def test_config_screen_new_profile_with_existing_name_opens_it(
             await _click(pilot, "#confirm")
             await pilot.pause()
             assert not isinstance(app.screen, NewProfileModal)
+            # Opening an existing profile renders through remount; wait before
+            # reading its rule rows (ODR-67).
+            await _await_form_ready(pilot, panel)
             assert panel.current_profile == "reads_qc_v1"
             assert "reads_qc_v1" in _static_text(
                 panel.query_one("#profile-heading", Static)
@@ -2677,6 +2696,7 @@ def test_config_screen_recipe_deleted_under_the_ui(
     assert recipe.raw["database_mode"] == "mutable_cache"
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_list_and_table_selection_loads_editors(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -2692,6 +2712,9 @@ def test_config_screen_list_and_table_selection_loads_editors(project: Project) 
             assert await pilot.click(list_view.children[index].query_one(Label))
             await pilot.pause()
             assert panel.current_profile == "reads_qc_v1"
+            # Selecting a profile renders through remount: wait for the rule
+            # rows before counting them (ODR-67).
+            await _await_form_ready(pilot, panel)
             assert len(panel._rule_rows("required")) == 4
             assert not panel.query_one("#profile-save", Button).disabled
 
@@ -3107,6 +3130,8 @@ def test_config_classification_editor_end_to_end(project: Project) -> None:
             assert not isinstance(app.screen, ClassificationSaveModal)
             await _await_notification(pilot, app, "saved bhlh_tiers version 2")
             # The editor reloaded from disk: the freshly saved structure renders.
+            # The reload remounts the rows, so wait for it before counting.
+            await _await_form_ready(pilot, panel)
             assert len(list(panel.query(".source-row"))) == 2
             assert len(list(panel.query(".classrule-row"))) == 4
 
@@ -3215,6 +3240,7 @@ def test_config_classification_editor_guards_and_readonly(project: Project) -> N
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-67")
 def test_config_screen_new_classification_profile(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)
@@ -3228,6 +3254,9 @@ def test_config_screen_new_classification_profile(project: Project) -> None:
             ).value = "sequence_classification"
             await _click(pilot, "#confirm")
             await pilot.pause()
+            # Creating a classification profile renders through remount: wait
+            # before reading its (empty) rows (ODR-67).
+            await _await_form_ready(pilot, panel)
             heading = _static_text(panel.query_one("#classification-heading", Static))
             assert "new_tiers" in heading and "new profile (not saved yet)" in heading
             assert (
