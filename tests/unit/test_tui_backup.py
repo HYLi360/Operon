@@ -408,7 +408,11 @@ def test_backup_modal_refuses_cancel_while_running(
     def blocking_create(*args, **kwargs):
         started.set()
         released.wait(HANDOFF_TIMEOUT)
-        return {"path": "/tmp/slow-backup", "scope": "control", "file_count": 1}
+        return {
+            "path": str(tmp_path / "slow-backup"),
+            "scope": "control",
+            "file_count": 1,
+        }
 
     monkeypatch.setattr(actions, "create_backup", blocking_create)
 
@@ -567,3 +571,134 @@ def test_verify_modal_drops_result_after_teardown(
         _run(scenario())
     finally:
         released.set()
+
+
+def test_backup_modal_ignores_foreign_events_and_guards_reentry(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """Foreign Changed events are inert; a Confirm re-entry starts no second run."""
+    released = threading.Event()
+    started = threading.Event()
+    calls: list[str] = []
+
+    def blocking_create(*args, **kwargs):
+        calls.append("create")
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
+        return {
+            "path": str(tmp_path / "slow-backup"),
+            "scope": "control",
+            "file_count": 1,
+        }
+
+    monkeypatch.setattr(actions, "create_backup", blocking_create)
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = BackupModal(project)
+            app.push_screen(modal)
+            await _push(pilot, modal, "#backup-output")
+
+            # Changed events from controls this dialog does not own are inert.
+            modal.on_select_changed(
+                Select.Changed(
+                    Select([("control", "control")], id="stray-select"), "control"
+                )
+            )
+            modal.on_input_changed(Input.Changed(Input(id="stray-input"), "x"))
+            assert modal.command_text() == "operon backup create --output '…'"
+
+            (await _q(modal, "#backup-output", Input)).value = str(tmp_path / "slow")
+            await _click(pilot, "#confirm")
+            await _wait_until(
+                started.is_set,
+                "create to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
+            assert modal.running is True
+            # A second Confirm while the worker runs must not start another one.
+            modal.confirm()
+            assert modal.running is True
+            released.set()
+            await _wait_until(
+                lambda: app.screen is not modal,
+                "modal to close",
+                timeout=HANDOFF_TIMEOUT,
+            )
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert calls == ["create"]
+
+
+def test_verify_modal_ignores_foreign_events_and_guards_idle_cancel(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """A foreign input event is inert; running re-entry and idle cancel are safe."""
+    released = threading.Event()
+    started = threading.Event()
+    calls: list[str] = []
+
+    def blocking_verify(path):
+        calls.append(path)
+        started.set()
+        released.wait(HANDOFF_TIMEOUT)
+        return {
+            "path": str(path),
+            "scope": "control",
+            "checked": 1,
+            "unexpected": 0,
+            "ok": True,
+            "failures": [],
+        }
+
+    monkeypatch.setattr(actions, "verify_backup", blocking_verify)
+    target = tmp_path / "verified"
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = VerifyBackupModal()
+            app.push_screen(modal)
+            await _push(pilot, modal, "#backup-verify-input")
+
+            # An Input.Changed from a control this dialog does not own is inert.
+            modal.on_input_changed(Input.Changed(Input(id="stray-input"), "x"))
+            assert modal.command_text() == "operon backup verify --input '…'"
+
+            (await _q(modal, "#backup-verify-input", Input)).value = str(target)
+            await _click(pilot, "#confirm")
+            await _wait_until(
+                started.is_set,
+                "verify to have reached the core",
+                timeout=HANDOFF_TIMEOUT,
+            )
+            assert modal.running is True
+            # A second Confirm while the worker runs must not start another one.
+            modal.confirm()
+            assert modal.running is True
+            released.set()
+            await _wait_until(
+                lambda: (
+                    "result:"
+                    in _static_text(
+                        app.screen.query_one("#backup-verify-results", Static)
+                    )
+                ),
+                "the verify result to render",
+                timeout=HANDOFF_TIMEOUT,
+            )
+            # Cancelling an idle dialog (no worker running) closes it.
+            await pilot.press("escape")
+            await _wait_until(lambda: app.screen is not modal, "modal to close")
+
+    try:
+        _run(scenario())
+    finally:
+        released.set()
+    assert calls == [str(target)]
