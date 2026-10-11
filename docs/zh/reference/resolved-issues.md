@@ -76,6 +76,7 @@
 | ODR-0061 | 数据库 API | 只读查询的 PRAGMA 白名单同样覆盖完整性检查项：`integrity_check` 与 `foreign_key_check` 可以像恢复流程写的那样经 `operon query` 执行，其余可写 PRAGMA 仍被拒绝。 |
 | ODR-0062 | 测试 | table-import 模块的通知断言改为谓词等待，不再在 modal 关闭后对通知栈采样一次，晚一个消息循环轮次才落地的 toast（CI run 37566958718，macOS 3.14）不会再把正确的导入误判为断言失败。 |
 | ODR-0063 | 分析 | `select-sequences`、`extract-domains` 与 `report analysis --hits`（CLI 与 TUI）现在只读取每个 analysis+file 最新的 completed 作业：用已退役参考数据库产生的比对行（旧作业仍保持 `completed`，因为 supersession 只匹配完全相同的指纹）不再抬高 `hit_count`/`best_evalue`，也不再改变被选中的序列集合；被忽略的旧作业会计数并以 `ignored_completed_jobs` 呈现——沿用 `classify-sequences` 已有的约定。 |
+| ODR-0064 | TUI 测试 | 配置界面的"链条删除"测试改为等待幸存行重编号后的标题（即断言的状态），而不是命令行数：DOM 删除会比处理器重编号链条早一个任务步落地，只看计数的等待在繁忙 runner 上可能取到旧标签。 |
 
 ## K 系列（历史）
 

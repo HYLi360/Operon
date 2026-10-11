@@ -4662,6 +4662,7 @@ def test_config_screen_commands_chain_loads_and_saves(project: Project) -> None:
     assert recipe.arguments == []
 
 
+@pytest.mark.bug("ODR-64")
 def test_config_screen_commands_chain_validation_and_step_rows(
     project: Project,
 ) -> None:
@@ -4733,9 +4734,21 @@ def test_config_screen_commands_chain_validation_and_step_rows(
 
             # Drop the first step: the survivor is renumbered and inherits the
             # owner label, and the note follows the chain the form now holds.
+            # The removal lands a task step before the renumbering runs, so the
+            # wait must be on the title itself, not on the row count: the count
+            # is already one while the survivor still shows its old label.
             await pilot.pause()
             _command_rows(panel)[0].query_one(".command-remove", Button).press()
-            await _wait_until(lambda: len(_command_rows(panel)) == 1, "the step to go")
+            await _wait_until(
+                lambda: (
+                    len(_command_rows(panel)) == 1
+                    and _static_text(
+                        _command_rows(panel)[0].query_one(".command-title", Static)
+                    )
+                    == "step 1  (logical owner)"
+                ),
+                "the survivor to be renumbered",
+            )
             rows = _command_rows(panel)
             assert "step 1  (logical owner)" == _static_text(
                 rows[0].query_one(".command-title", Static)

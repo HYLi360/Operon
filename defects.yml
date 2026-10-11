@@ -1910,3 +1910,30 @@ defects:
     - tests/unit/test_sequence_tools.py::TestSelectSequences::test_only_latest_completed_job_contributes
     - tests/unit/test_sequence_tools.py::TestSelectSequences::test_report_hits_reads_only_the_latest_completed_job
     - tests/unit/test_tui.py::test_analysis_hits_reads_only_the_latest_completed_job
+- id: ODR-64
+  title: 'TUI chain-removal test sampled the survivor''s title before the renumbering ran'
+  reported: '2026-10-11'
+  introduced_in: null
+  affected: 'Unreleased coverage work (PR #6); reddened the pytest (macos-latest, 3.11) CI leg once.'
+  severity: 'low'
+  component: 'tests'
+  status: 'fixed'
+  reproduction: |
+    test_config_screen_commands_chain_validation_and_step_rows removes the first step of a two-command
+    chain, waits for the command-row count to drop to one, and then reads the survivor's title. Pressing
+    the remove button posts CommandRow.RemoveRequested; the handler awaits row.remove() and only then
+    calls _renumber_command_rows(). The DOM removal lands one task step before the awaiting handler
+    resumes, so the count predicate can turn true while the survivor still carries its old label. The
+    pytest (macos-latest, 3.11) leg observed exactly that: assert 'step 1 (logical owner)' == 'step 2'.
+    Ten local runs and eleven other CI legs passed, so the interleaving needs a loaded event loop.
+    
+    The same pattern was not present in the other added TUI tests: their count waits observe a widget
+    appearing, which Textual only does once its composed subtree exists.
+  disposition: |
+    The wait now predicates on the state the test asserts — the survivor's title ('step 1 (logical
+    owner)') observed once exactly one row remains — so the renumbering is awaited instead of sampled;
+    the arguments and the chain note are read after that predicate holds.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_tui_config.py::test_config_screen_commands_chain_validation_and_step_rows
