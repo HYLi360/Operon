@@ -1670,6 +1670,7 @@ def test_taxonomy_compile_modal_command_text_matches_action_kwargs(
     assert dismissed == [payload]
 
 
+@pytest.mark.bug("ODR-71")
 def test_backup_create_modal_command_text_matches_action_kwargs(
     project: Project,
     tmp_path: Path,
@@ -1706,6 +1707,13 @@ def test_backup_create_modal_command_text_matches_action_kwargs(
 
             modal.confirm()
             await _wait_until(lambda: len(calls) == 1, "backup create call")
+            # Dismissal lands on the UI thread a worker-handoff later, so wait
+            # for the callback before leaving the run_test block (ODR-71).
+            await _wait_until(
+                lambda: bool(dismissed),
+                "backup modal dismissed",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     _run(scenario())
     args, kwargs = calls[0]
@@ -2051,6 +2059,7 @@ def test_export_metadata_report_matches_the_cli_bytes(
     _assert_same_export(cli_all, tui_all)
 
 
+@pytest.mark.bug("ODR-71")
 def test_set_state_modal_command_text_matches_action_kwargs(
     project: Project,
     monkeypatch: pytest.MonkeyPatch,
@@ -2110,6 +2119,13 @@ def test_set_state_modal_command_text_matches_action_kwargs(
 
             modal.confirm()
             await _wait_until(lambda: len(calls) == 1, "set-state call")
+            # Dismissal lands on the UI thread a worker-handoff later, so wait
+            # for the callback before leaving the run_test block (ODR-71).
+            await _wait_until(
+                lambda: bool(dismissed),
+                "set-state modal dismissed",
+                timeout=HANDOFF_TIMEOUT,
+            )
 
     _run(scenario())
     args, kwargs = calls[0]
