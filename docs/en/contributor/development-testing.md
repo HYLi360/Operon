@@ -206,10 +206,12 @@ fact. When your change touches `operon/tui/`, three rules apply:
   assigned before the option is composed), fix it in the smallest wrapper that
   covers every call path rather than at the one call site that happened to
   fail first.
-- **Run the TUI modules at least three times locally, in random order**
-  (`python -m pytest tests/unit/test_tui*.py`). The matrix and CI run the whole
-  suite, but three ordered runs surface most races in seconds rather than in a
-  twenty-minute CI leg.
+- **Run the TUI suite three times locally, in random order and under timing
+  jitter** — `scripts/tui-race-stress.sh` is the tool: it loops
+  `tests/unit/test_tui*.py` three times with pytest-randomly and the
+  `scripts/tui_jitter.py` harness loaded (its docstring explains the knobs).
+  The matrix and CI run the whole suite, but three jittered runs surface most
+  races in minutes rather than in a twenty-minute CI leg.
 
 A timing-dependent test failure is a defect to register, not a flake to
 re-run: every record above was reproduced before its fix landed, and each fix

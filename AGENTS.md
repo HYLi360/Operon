@@ -378,7 +378,8 @@ Metadata schema version: ZZZZZ
   也不得直接读 `app._notifications`。
 - 框架级 guard 的修理要走 `FittingSelect` 式的**最小覆盖**：在能覆盖全部调用路径的最小封装里修，
   而不是修在恰好先失败的那个调用点。
-- 改动后，以随机序在本地执行**至少 3 次** `pytest tests/unit/test_tui*.py`，以充分暴露竞态问题。
+- 改动后，用 `scripts/tui-race-stress.sh` 在本地循环运行 **3 次** TUI 测试套件（随机序 + 延迟抖动），
+  以充分暴露竞态问题。
 
 背景、命名与「最小覆盖」的判定标准见
 `docs/*/contributor/development-testing.md` 的「TUI 竞态缺陷」小节；那里的规则与本节等效，

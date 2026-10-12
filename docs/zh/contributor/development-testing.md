@@ -163,7 +163,7 @@ Textual 的消息循环让若干失败变成时序相关：widget 还没挂载�
 
 - **断言 UI 状态前必须谓词等待。** 等待**被测的那个具体状态**——widget 已存在、标签读出 X、通知文本已到达——绝不写"裸 `pilot.pause()` 之后直接读"，更不直接读 `app._notifications`。
 - **框架级 guard 的修理走最小覆盖。** 当缺陷来自 Textual 本身（例如 `Select` 在选项尚未 compose 时被赋值 label），在能覆盖所有调用路径的最小 wrapper 里修，而不是修在"恰好先失败"的那个调用点上。
-- **改动后本地以随机序至少跑 3 次 TUI 测试模块**（`python -m pytest tests/unit/test_tui*.py`）。矩阵与 CI 会跑全量，但三次有序运行能在几秒内暴露绝大多数竞态，而不是等到二十分钟的 CI 腿。
+- **改动后本地以随机序、带延迟抖动跑 3 次 TUI 测试套件**——用 `scripts/tui-race-stress.sh`：它循环三次 `tests/unit/test_tui*.py`，加载 pytest-randomly 与 `scripts/tui_jitter.py` 抖动插件（各旋钮见插件 docstring）。矩阵与 CI 会跑全量，但三次抖动运行能在几分钟内暴露绝大多数竞态，而不是等到二十分钟的 CI 腿。
 
 时序相关的测试失败是**要登记的缺陷**，不是可以重跑带过的 flake：上面三条都在修复落地前先复现过，每条修复都带一条 `@pytest.mark.bug("ODR-XXXX")` 的回归测试。
 
