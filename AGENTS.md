@@ -191,7 +191,9 @@ Operon 是一个 Python 编写、以文件为载体的数据库系统，面向�
 ├── defects.sh            # - 列出、查看或登记 defects.yml 中的缺陷
 ├── release-preflight.sh  # 发布前检查
 ├── run-test-matrix.sh    # \
-└── setup-test-matrix.sh  # - 本地测试矩阵：必须先 setup 再 run
+├── setup-test-matrix.sh  # - 本地测试矩阵：必须先 setup 再 run
+├── tui-race-stress.sh    # 以随机序 + 延迟抖动循环运行 TUI 套件（§5.7）
+└── tui_jitter.py         # TUI 延迟抖动 pytest 插件（被 tui-race-stress.sh 加载）
 ```
 
 ## 三、环境、测试与构建
