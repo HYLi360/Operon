@@ -2214,3 +2214,56 @@ defects:
   regression_tests:
     - tests/unit/test_tui_writes.py::test_run_external_modal_failed_command_opens_record
     - tests/unit/test_tui_writes.py::test_run_external_modal_cannot_be_cancelled_while_running
+- id: ODR-73
+  title: 'Shipped rpsblast_cdd chain cannot run: rpsbproc exits 2 without a data directory'
+  reported: '2026-10-12'
+  introduced_in: null
+  affected: |
+    The shipped default `rpsblast` / `rpsblast_cdd` recipe (operon/tools/_defaults.py) and the worked
+    example built on it in docs/*/reference/recipe-parsers-examples.md 10.5 render a second command
+    without `-d`, so `rpsbproc` cannot locate the CDD dump data files it needs (Cdd.00.pdb, Cdd.00.aux,
+    Cdd.00.loo, Cdd.00.freq, Cdd.pal). rpsbproc looks for them in `./data` below the current working
+    directory and beside its own binary; neither exists in a normal environment, so every job of this
+    recipe fails at `step 2/2` with exit code 2 and "Cannot find data files" — the recommended CDD
+    pipeline cannot run as shipped. The recipe's `database` path already names the CDD index directory,
+    which is exactly where the data files live, so the fix is one argument (`-d ${database}`).
+  severity: 'medium'
+  component: 'tools'
+  status: 'open'
+  reproduction: |
+    On this machine (Linux, rpsblast 2.17.0+ / rpsbproc 0.5.1 from the `blaster` env, local CDD release
+    of 2024-03-29: 8.0 GB, 10 volumes, holding Cdd.00.pdb / Cdd.00.aux / Cdd.00.loo / Cdd.00.freq and
+    Cdd.pal). A 10,000-sequence FASTA was searched with the recipe's first command, producing the ASN.1
+    intermediate the chain passes on:
+    
+    rpsblast -query sample_10k.faa -db /run/media/hyli360/.../cdd/Cdd -out hits.asn -outfmt 11 \ -evalue
+    0.001 -num_threads 24 # exit 0, hits.asn = 466,464,400 bytes
+    
+    Then the recipe's second command, verbatim:
+    
+    rpsbproc -i hits.asn -o out.tsv -e 0.001 -m rep -> "Post-RPSBLAST Processing Utility v0.5.1 ...
+    Cannot find data files", exit 2, out.tsv 0 bytes
+    
+    Two working invocations, same input:
+    
+    rpsbproc -d /run/media/hyli360/.../cdd -i hits.asn -o out_d.tsv -e 0.001 -m rep -> exit 0, 2,849,716
+    bytes, 205 sessions / 5,701 queries / 11,390 domain rows (cd /run/media/hyli360/.../cdd && rpsbproc
+    -i <abs>/hits.asn -o <abs>/out_cwd.tsv -e 0.001 -m rep) -> exit 0 as well, i.e. any way of exposing
+    the data directory works.
+    
+    `rpsbproc -help` documents it: "-d, --data-path ... By default, the program will look in 'data'
+    directory in current directory and the directory where the program is located"; no `data` directory
+    exists beside the binary in the `blaster` env. The pattern had never been exercised end to end: the
+    repository's tests fake the tool, so the missing flag only surfaces on a real run.
+  disposition: |
+    Registered while building the project-side preset for the bHLH stage-2 CDD scan
+    (others/config/rpsblast_cdd_preset.yaml), which therefore carries `-d ${database}` and `version: 2`.
+    The project-side preset is not a core change: the shipped default in operon/tools/_defaults.py, the
+    documented example in docs/*/reference/recipe-parsers-examples.md 10.5, and a test that runs the
+    chain against a stub that actually behaves like rpsbproc are left to the maintainer. Candidate fix:
+    append `-d ${database}` to the shipped second command (the recipe's `database` already names the CDD
+    index directory), document the requirement in both language trees, and add a regression test that
+    asserts the rendered rpsbproc argv carries a data directory.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
