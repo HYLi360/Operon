@@ -16,7 +16,7 @@ After archiving or an explicit `verify` completes a full SHA-256 computation suc
 
 Annotation QC applies the same identity verification to the associated assembly/protein inputs read at runtime; `--rehash` covers both the primary input and these associated inputs. The assembly's `seqid -> length` mapping is written atomically to `qc/cache/fasta_lengths/` keyed by `file_id + sha256 + size_bytes + cache format`. This index is deletable, rebuildable derived data: when missing or corrupt it is rebuilt by streaming the FASTA, it can be reused across processes while the content identity is unchanged, and it does not enter the metadata source of truth.
 
-Beyond the cache, every measured FASTA syncs its `seqid -> length` map into the `sequences` table (`UNIQUE(file_id, seqid)`, carrying the entity and the file's SHA-256), and annotation QC syncs the map of the assembly FASTA it reads. The table answers "which entity/file contains this seqid" without re-parsing — used by the `show` seqid fallback and available to read-only SQL — and is rebuilt by re-running QC.
+Beyond the cache, every measured FASTA syncs its `seqid -> length` map into the `sequences` table (`PRIMARY KEY (file_id, seqid)`, WITHOUT ROWID), and annotation QC syncs the map of the assembly FASTA it reads. The table answers "which entity/file contains this seqid" without re-parsing — used by the `show` seqid fallback and available to read-only SQL — and is rebuilt by re-running QC.
 
 External tool metrics can enter the same long table through `import-qc`, or be executed in a structured way with provenance through `run-external`.
 

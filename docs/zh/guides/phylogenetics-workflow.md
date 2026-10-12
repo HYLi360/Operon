@@ -143,11 +143,12 @@ operon query "SELECT l.derived_file_id, f.file_role
 
 新增的两张表让序列级问题不必重新解析文件即可回答：
 
-- `sequences` 为每条 FASTA 记录保存一行（`file_id`、`entity_type`、`entity_id`、`seqid`、`length`），由内置 QC 自动填充。查询某个 seqid 属于哪个 assembly：
+- `sequences` 为每条 FASTA 记录保存一行（`file_id`、`seqid`、`length`），由内置 QC 自动填充。查询某个 seqid 属于哪个 assembly：
 
 ```bash
-operon query "SELECT entity_type, entity_id, file_id, length
-              FROM sequences WHERE seqid = 'NW_012345678.1'"
+operon query "SELECT f.entity_type, f.entity_id, s.file_id, s.length
+              FROM sequences s JOIN files f ON f.file_id = s.file_id
+              WHERE s.seqid = 'NW_012345678.1'"
 
 # 或者让 show 在 ID 不是实体时回退到 sequences 表：
 operon show NW_012345678.1

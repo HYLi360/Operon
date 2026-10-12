@@ -121,7 +121,7 @@ def _resolve_seqids(
 ) -> dict[str, str]:
     """Map every assigned seqid to exactly one source file_id.
 
-    Resolution uses the ``sequences`` registry (UNIQUE(file_id, seqid))
+    Resolution uses the ``sequences`` registry (PRIMARY KEY (file_id, seqid))
     restricted to the declared source files.  A seqid found in no source is a
     hard error listing every unresolvable seqid; a seqid found in more than
     one source is ambiguous and must be disambiguated by narrowing
@@ -181,15 +181,6 @@ def _load_source_bodies(
             raise ChecksumError(
                 f"source file {file_id} failed manifest verification "
                 f"({info.get('verification_method')}); run 'operon verify' before fanout"
-            )
-        stale = db.conn.execute(
-            "SELECT 1 FROM sequences WHERE file_id=? AND file_sha256<>? LIMIT 1",
-            (file_id, record["sha256"]),
-        ).fetchone()
-        if stale is not None:
-            raise ValidationError(
-                f"sequences registry for {file_id} predates the current file bytes; "
-                "re-run 'operon qc' on the source file before fanout"
             )
         for seqid, sequence in iter_fasta(path):
             if seqid in needed and seqid not in bodies:

@@ -57,11 +57,11 @@ def sequence_hits(db: Database, identifier: str) -> list[dict[str, Any]]:
     """Return every sequences-table row whose seqid matches ``identifier``."""
     rows = db.conn.execute(
         """
-        SELECT s.seqid, s.length, s.entity_type, s.entity_id, s.file_id, f.relative_path
+        SELECT s.seqid, s.length, f.entity_type, f.entity_id, s.file_id, f.relative_path
         FROM sequences s
         JOIN files f ON f.file_id = s.file_id
         WHERE s.seqid=?
-        ORDER BY s.entity_type, s.entity_id, s.file_id
+        ORDER BY f.entity_type, f.entity_id, s.file_id
         """,
         (identifier.strip(),),
     ).fetchall()

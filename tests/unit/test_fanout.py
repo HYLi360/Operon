@@ -54,9 +54,6 @@ def project_db(tmp_path: Path):
             "sequences",
             {
                 "file_id": source["file_id"],
-                "file_sha256": source["sha256"],
-                "entity_type": "annotation",
-                "entity_id": "ANN_000001",
                 "seqid": seqid,
                 "length": length,
             },
@@ -259,9 +256,6 @@ def test_fanout_ambiguous_seqid_across_sources(project_db, tmp_path):
             "sequences",
             {
                 "file_id": second["file_id"],
-                "file_sha256": second["sha256"],
-                "entity_type": "annotation",
-                "entity_id": "ANN_000001",
                 "seqid": seqid,
                 "length": length,
             },

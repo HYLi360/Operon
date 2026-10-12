@@ -210,9 +210,6 @@ def derived_project(tmp_path: Path) -> Project:
                 "sequences",
                 {
                     "file_id": row["file_id"],
-                    "file_sha256": row["sha256"],
-                    "entity_type": "annotation",
-                    "entity_id": "ANN_000001",
                     "seqid": seqid,
                     "length": len(sequence),
                 },

@@ -22,11 +22,7 @@ class TestSchema210(PytestAssertions):
         self.assertEqual(
             self.db.table_columns("sequences"),
             [
-                "sequence_row_id",
                 "file_id",
-                "file_sha256",
-                "entity_type",
-                "entity_id",
                 "seqid",
                 "length",
             ],
@@ -61,12 +57,12 @@ class TestSchema210(PytestAssertions):
         }
         for name in (
             "idx_sequences_seqid",
-            "idx_sequences_entity",
             "idx_analysis_alignments_query",
             "idx_analysis_alignments_subject",
             "idx_analysis_alignments_job",
         ):
             self.assertIn(name, indexes)
+        self.assertFalse("idx_sequences_entity" in indexes)
         row = self.db.conn.execute(
             "SELECT migration_id FROM schema_migrations "
             "WHERE migration_id='2.10-sequences-alignments'"
@@ -85,7 +81,7 @@ class TestSchema210(PytestAssertions):
         conn.commit()
         conn.close()
         migrated = Database(path)
-        self.assertIn("sequence_row_id", migrated.table_columns("sequences"))
+        self.assertIn("seqid", migrated.table_columns("sequences"))
         self.assertIn("alignment_id", migrated.table_columns("analysis_alignments"))
         row = migrated.conn.execute(
             "SELECT migration_id FROM schema_migrations "
@@ -96,5 +92,5 @@ class TestSchema210(PytestAssertions):
         migrated.close()
         again = Database(path)
         self.addCleanup(again.close)
-        self.assertIn("sequence_row_id", again.table_columns("sequences"))
+        self.assertIn("seqid", again.table_columns("sequences"))
         self.assertIn("alignment_id", again.table_columns("analysis_alignments"))

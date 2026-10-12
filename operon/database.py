@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,7 +22,7 @@ from operon.errors import EntityNotFoundError, ValidationError
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_PREFIXES, ENTITY_TABLES, Schema
 from operon.sql import quote_identifier
 
-SCHEMA_VERSION = "2.11"
+SCHEMA_VERSION = "2.12"
 
 MANUAL_TABLES = [
     "organisms",
@@ -331,15 +332,11 @@ CREATE TABLE IF NOT EXISTS analysis_hits (
     hit_rank INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sequences (
-    sequence_row_id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_id TEXT NOT NULL REFERENCES files(file_id),
-    file_sha256 TEXT NOT NULL,
-    entity_type TEXT NOT NULL,
-    entity_id TEXT NOT NULL,
     seqid TEXT NOT NULL,
     length INTEGER NOT NULL,
-    UNIQUE (file_id, seqid)
-);
+    PRIMARY KEY (file_id, seqid)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS analysis_alignments (
     alignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL REFERENCES analysis_jobs(job_id),
@@ -364,7 +361,6 @@ CREATE INDEX IF NOT EXISTS idx_analysis_jobs_name ON analysis_jobs(analysis_name
 CREATE INDEX IF NOT EXISTS idx_analysis_hits_job ON analysis_hits(job_id, query_id, hit_rank);
 CREATE INDEX IF NOT EXISTS idx_analysis_hits_query ON analysis_hits(analysis_name, query_id);
 CREATE INDEX IF NOT EXISTS idx_sequences_seqid ON sequences(seqid);
-CREATE INDEX IF NOT EXISTS idx_sequences_entity ON sequences(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_query ON analysis_alignments(analysis_name, query_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_subject ON analysis_alignments(subject_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_alignments_job ON analysis_alignments(job_id, query_id, hit_rank);
@@ -751,6 +747,7 @@ class Database:
             self._migrate_schema_2_9()
             self._migrate_schema_2_10()
             self._migrate_schema_2_11()
+            self._migrate_schema_2_12()
             self._ensure_current_schema_objects()
             self._conn.execute(
                 "INSERT INTO entity_state (entity_type, entity_id, state, message, updated_at) "
@@ -1038,15 +1035,11 @@ class Database:
         self._conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS sequences (
-                sequence_row_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_id TEXT NOT NULL REFERENCES files(file_id),
-                file_sha256 TEXT NOT NULL,
-                entity_type TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
                 seqid TEXT NOT NULL,
                 length INTEGER NOT NULL,
-                UNIQUE (file_id, seqid)
-            );
+                PRIMARY KEY (file_id, seqid)
+            ) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS analysis_alignments (
                 alignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id INTEGER NOT NULL REFERENCES analysis_jobs(job_id),
@@ -1067,7 +1060,6 @@ class Database:
                 extra_json TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_sequences_seqid ON sequences(seqid);
-            CREATE INDEX IF NOT EXISTS idx_sequences_entity ON sequences(entity_type, entity_id);
             CREATE INDEX IF NOT EXISTS idx_analysis_alignments_query ON analysis_alignments(analysis_name, query_id);
             CREATE INDEX IF NOT EXISTS idx_analysis_alignments_subject ON analysis_alignments(subject_id);
             CREATE INDEX IF NOT EXISTS idx_analysis_alignments_job ON analysis_alignments(job_id, query_id, hit_rank);
@@ -1111,6 +1103,60 @@ class Database:
             "INSERT OR IGNORE INTO schema_migrations "
             "(migration_id, migration_sha256, applied_at, workflow_run_id) "
             "VALUES('2.11-sequence-labels', ?, datetime('now'), NULL)",
+            (migration_sha256,),
+        )
+
+    def _migrate_schema_2_12(self) -> None:
+        """Rebuild the sequences registry without redundant per-row columns.
+
+        file_sha256, entity_type and entity_id duplicate the referenced
+        ``files`` row (a file_id always refers to one immutable byte
+        identity), sequence_row_id has no readers, and no query filters
+        sequences by entity columns.  The rebuild merges the table and its
+        UNIQUE(file_id, seqid) index into a single WITHOUT ROWID b-tree and
+        drops the unused entity index; the VACUUM afterwards returns the
+        freed pages to the filesystem.  Both steps run once per database and
+        can take a long time on large registries.
+        """
+        if "sequence_row_id" in self.table_columns("sequences"):
+            print(
+                "operon: applying one-time schema 2.12 migration: rebuilding "
+                "the sequences registry and vacuuming the database; this can "
+                "take a long time on large projects",
+                file=sys.stderr,
+            )
+            with self.transaction():
+                self._conn.execute(
+                    """
+                    CREATE TABLE sequences_2_12 (
+                        file_id TEXT NOT NULL REFERENCES files(file_id),
+                        seqid TEXT NOT NULL,
+                        length INTEGER NOT NULL,
+                        PRIMARY KEY (file_id, seqid)
+                    ) WITHOUT ROWID
+                    """
+                )
+                self._conn.execute(
+                    "INSERT INTO sequences_2_12 (file_id, seqid, length) "
+                    "SELECT file_id, seqid, length FROM sequences"
+                )
+                self._conn.execute("DROP TABLE sequences")
+                self._conn.execute("ALTER TABLE sequences_2_12 RENAME TO sequences")
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_sequences_seqid ON sequences(seqid)"
+                )
+            # Earlier migrations leave an implicit transaction open (legacy
+            # sqlite3 isolation level), so commit explicitly before VACUUM.
+            self._conn.commit()
+            self._conn.execute("VACUUM")
+        migration_document = "operon schema 2.12: slim sequences registry"
+        migration_sha256 = hashlib.sha256(
+            migration_document.encode("utf-8")
+        ).hexdigest()
+        self._conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations "
+            "(migration_id, migration_sha256, applied_at, workflow_run_id) "
+            "VALUES('2.12-sequences-slim', ?, datetime('now'), NULL)",
             (migration_sha256,),
         )
 

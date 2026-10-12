@@ -111,7 +111,7 @@ BUSCO lineage 使用 `analysis:busco_lineage:lineage_dataset=<name>`。长表完
 | `analysis_jobs` | 外部分析作业：命令、版本、参数指纹、输入/数据库指纹、输出 checksum、缓存状态；completed cache 由部分唯一索引 `idx_analysis_jobs_completed_cache` 表达，键为 `(analysis_name, file_id, parameter_sha256, input_sha256, database_identity)` 且带 `WHERE status='completed'`，因此 superseded 或失败的行永远不会满足缓存查找；`recipe_snapshot_id` 回指产生该作业的 recipe 快照 |
 | `recipe_snapshots` | 内容寻址的 recipe 快照（recipe 原文 + 引用 tool spec 原文的规范化 JSON 及其 SHA-256），`UNIQUE(recipe_name, recipe_version, recipe_sha256)` 去重；由 `analyze` 记录 |
 | `analysis_results` / `analysis_hits` | 同步到数据库的分析汇总指标与 top hits 长表 |
-| `sequences` | 每条 FASTA 记录一行（`file_id`、`file_sha256`、`entity_type`、`entity_id`、`seqid`、`length`；`UNIQUE(file_id, seqid)`），由内置 FASTA QC 填充（annotation QC 还会同步其 assembly 的序列），`import-qc` 导入 `qc-measure` payload 时也会写入；支撑 `show` 与只读 SQL 的 seqid 反查 |
+| `sequences` | 每条 FASTA 记录一行（`file_id`、`seqid`、`length`；`PRIMARY KEY (file_id, seqid)`，WITHOUT ROWID），由内置 FASTA QC 填充（annotation QC 还会同步其 assembly 的序列），`import-qc` 导入 `qc-measure` payload 时也会写入；支撑 `show` 与只读 SQL 的 seqid 反查（实体或校验和列需连接 `files` 表） |
 | `analysis_alignments` | 已完成分析作业解析出的每条比对命中各占一行（job/实体/文件身份、`query_id`、`subject_id`、`hit_rank`、query/subject 区间、`evalue`、`bitscore`、`percent_identity`、`extra_json`）；全量写入，不受 `max_hits_per_query` 截断，`report analysis --hits` 读取该表 |
 | `sequence_labels` | 逐序列的分类标签（`file_id`、`seqid`、`label`、`profile_name`、`profile_sha256`、`details_json`、`decided_at`；主键 `file_id + seqid + profile_name`），由 `operon classify-sequences` 依据版本化的 `sequence_classification` profile 写入；每次标签变更都在 `changes` 中留有审计 |
 | `taxonomy_snapshots` | NCBI Taxonomy 版本、来源 manifest 身份、节点数与导入状态 |

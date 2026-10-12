@@ -105,6 +105,17 @@ profile 的内容哈希、可审计的判定细节与判定时间戳，由 `oper
 对应测试为 `tests/unit/test_schema_2_11.py` 的 `test_schema_2_11_tables_exist`
 与 `test_migration_backfills_dropped_2_11_objects`。
 
+`Database._migrate_schema_2_12()` 把 2.10/2.11 时代项目的 `sequences` 注册表
+重建为瘦身形态：`(file_id, seqid, length)`，`PRIMARY KEY (file_id, seqid)`，
+WITHOUT ROWID 表；删除逐行冗余的 `sequence_row_id`、`file_sha256`、`entity_type`、
+`entity_id` 四列（全部可从所引用的 `files` 行推出）与未被任何查询使用的
+`idx_sequences_entity` 索引。重建在一个 immediate 事务内复制全部数据行，随后执行
+`VACUUM` 把释放的页归还文件系统；在注册了数千万条序列的项目上，这是一次性操作，
+慢速磁盘上可能耗时数十分钟，项目的首次可写打开（任意 CLI 命令或 TUI）都会执行它。
+只读打开永不触发迁移。迁移幂等（已是瘦身形态的库跳过重建，只补账本记录），账本记录为
+`2.12-sequences-slim`。引用过被删列的只读 SQL 消费者应改为连接 `files` 表。
+对应测试位于 `tests/unit/test_schema_2_12.py`。
+
 对应回归测试位于 `tests/regression/test_correctness.py` 的
 `test_v1_qc_and_decisions_migrate_without_data_loss`。删除迁移代码时应同时删除该测试，
 并把不兼容旧数据库写入 1.0 发布说明。

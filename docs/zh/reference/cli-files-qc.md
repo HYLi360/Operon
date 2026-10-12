@@ -74,7 +74,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   下，仅在完整内容身份相同时复用；`--rehash` 会重新校验源 SHA-256，但已验证的索引
   仍可继续使用。具体保证见 [QC 流水线](../architecture/qc-and-rules.md)。
 - 每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表
-  （`file_id + file_sha256 + 实体 + seqid + length`，复用同一份长度缓存），支撑
+  （`file_id + seqid + length`，复用同一份长度缓存），支撑
   `show` 与 `query` 的 seqid 反查。annotation GFF3 的 QC 会额外地把它实际读取的
   assembly FASTA 的序列同步进表。同一文件的行在每次成功度量时整体替换。
 - 每处理完一个文件会打印一行进度：`[i/N] file_id: OK` 或

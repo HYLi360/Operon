@@ -532,9 +532,6 @@ class TestClassifySequences(PytestAssertions):
                 "sequences",
                 {
                     "file_id": "FILE_PROTEINS",
-                    "file_sha256": "abc123",
-                    "entity_type": "annotation",
-                    "entity_id": "ANN_000001",
                     "seqid": f"g{index}",
                     "length": 100,
                 },

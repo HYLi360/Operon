@@ -30,7 +30,7 @@ annotation QC 对运行时读取的 assembly/protein 关联输入执行同一身
 流式扫描 FASTA 重建，内容身份不变时可跨进程复用，不进入 metadata 事实来源。
 
 除缓存外，每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表
-（`UNIQUE(file_id, seqid)`，携带所属实体与文件 SHA-256），annotation QC 会同步它实际
+（`PRIMARY KEY (file_id, seqid)`，WITHOUT ROWID），annotation QC 会同步它实际
 读取的 assembly FASTA 的映射。该表无需重新解析即可回答"某个 seqid 属于哪个实体/文件"，
 支撑 `show` 的 seqid 回退查询，也可供只读 SQL 使用；重跑 QC 即可重建。
 

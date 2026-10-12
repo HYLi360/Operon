@@ -457,17 +457,9 @@ def _sync_sequences(
     with db.transaction():
         db.conn.execute("DELETE FROM sequences WHERE file_id=?", (record["file_id"],))
         db.conn.executemany(
-            "INSERT INTO sequences (file_id, file_sha256, entity_type, entity_id, seqid, length) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sequences (file_id, seqid, length) VALUES (?, ?, ?)",
             [
-                (
-                    record["file_id"],
-                    record["sha256"],
-                    record["entity_type"],
-                    record["entity_id"],
-                    seqid,
-                    int(length),
-                )
+                (record["file_id"], seqid, int(length))
                 for seqid, length in lengths.items()
             ],
         )

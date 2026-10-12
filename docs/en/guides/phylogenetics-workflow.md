@@ -140,11 +140,12 @@ operon query "SELECT l.derived_file_id, f.file_role
 
 Two schema additions make sequence-level questions answerable without re-parsing files:
 
-- `sequences` holds one row per FASTA record (`file_id`, `entity_type`, `entity_id`, `seqid`, `length`), populated automatically by built-in QC. To find which assembly contains a seqid:
+- `sequences` holds one row per FASTA record (`file_id`, `seqid`, `length`), populated automatically by built-in QC. To find which assembly contains a seqid:
 
 ```bash
-operon query "SELECT entity_type, entity_id, file_id, length
-              FROM sequences WHERE seqid = 'NW_012345678.1'"
+operon query "SELECT f.entity_type, f.entity_id, s.file_id, s.length
+              FROM sequences s JOIN files f ON f.file_id = s.file_id
+              WHERE s.seqid = 'NW_012345678.1'"
 
 # Or let show fall back to the sequences table when the ID is not an entity:
 operon show NW_012345678.1

@@ -1462,9 +1462,6 @@ def fanout_project(tmp_path: Path):
             "sequences",
             {
                 "file_id": source["file_id"],
-                "file_sha256": source["sha256"],
-                "entity_type": "annotation",
-                "entity_id": "ANN_000001",
                 "seqid": seqid,
                 "length": length,
             },
@@ -1546,11 +1543,11 @@ def test_fanout_rejects_tampered_source_bytes(fanout_project):
 def test_fanout_rejects_a_stale_sequence_registry(fanout_project):
     project, db, source, assignments = fanout_project
     db.conn.execute(
-        "UPDATE sequences SET file_sha256='stale' WHERE file_id=? AND seqid='p2'",
+        "UPDATE sequences SET seqid='stale_seq' WHERE file_id=? AND seqid='p2'",
         (source["file_id"],),
     )
     db.conn.commit()
-    with pytest.raises(ValidationError, match="predates the current file bytes"):
+    with pytest.raises(ValidationError, match="do not resolve against the source"):
         _fanout(db, project, source, assignments)
 
 
@@ -1560,9 +1557,6 @@ def test_fanout_rejects_a_seqid_absent_from_the_fasta(fanout_project):
         "sequences",
         {
             "file_id": source["file_id"],
-            "file_sha256": source["sha256"],
-            "entity_type": "annotation",
-            "entity_id": "ANN_000001",
             "seqid": "ghost",
             "length": 10,
         },
@@ -1800,9 +1794,6 @@ def seq_project(tmp_path: Path):
             "sequences",
             {
                 "file_id": record["file_id"],
-                "file_sha256": record["sha256"],
-                "entity_type": "annotation",
-                "entity_id": "ANN_000001",
                 "seqid": seqid,
                 "length": length,
             },

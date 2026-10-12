@@ -91,9 +91,6 @@ class _SequenceToolProject(PytestAssertions):
                 "sequences",
                 {
                     "file_id": self.file_id,
-                    "file_sha256": self.file_row["sha256"],
-                    "entity_type": "annotation",
-                    "entity_id": "ANN_000001",
                     "seqid": seqid,
                     "length": len(sequence),
                 },

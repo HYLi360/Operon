@@ -78,4 +78,4 @@ def test_database_schema_version_is_the_release_marker() -> None:
     """The single literal pin of the current database schema version."""
     from operon.database import SCHEMA_VERSION
 
-    assert SCHEMA_VERSION == "2.11"
+    assert SCHEMA_VERSION == "2.12"

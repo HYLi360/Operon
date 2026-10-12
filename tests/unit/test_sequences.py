@@ -85,7 +85,10 @@ class TestSequences(PytestAssertions):
 
     def _sequence_rows(self, file_id: str) -> list:
         return self.db.query(
-            "SELECT * FROM sequences WHERE file_id=? ORDER BY seqid", (file_id,)
+            "SELECT s.*, f.entity_type, f.entity_id, f.sha256 AS file_sha256 "
+            "FROM sequences s JOIN files f ON f.file_id=s.file_id "
+            "WHERE s.file_id=? ORDER BY s.seqid",
+            (file_id,),
         )
 
     def test_fasta_qc_populates_sequences(self):
