@@ -56,13 +56,13 @@ rpsblast_cdd_outfmt6:
   entity_type: annotation
   file_role: protein_fasta
   format: fasta
-  database: /data/db/cdd/Cdd
+  database: /data/db/cdd
   database_version: "3.21"
   output_subdir: rpsblast_cdd
   output_suffix: .rpsblast.tsv
   arguments:
     - -db
-    - ${database}
+    - ${database}/Cdd
     - -query
     - ${input}
     - -out
@@ -85,6 +85,8 @@ rpsblast_cdd_outfmt6:
   pident_column: pident
   max_hits_per_query: 5
 ```
+
+`database` names the CDD index directory: a BLAST index prefix such as `/data/db/cdd/Cdd` is not a path that exists, so it cannot pass the reference-database check, and the recipe rebuilds the prefix as `${database}/Cdd`.
 
 When the rpsblast run is post-processed by `rpsbproc` (the recommended CDD pipeline), use a `commands` chain with the `rpsbproc_tabular` parser — see below.
 
@@ -188,7 +190,7 @@ tools:
         entity_type: annotation
         file_role: protein_fasta
         format: fasta
-        database: /path/to/cdd/Cdd
+        database: /path/to/cdd
         database_version: ""
         output_subdir: rpsblast_cdd
         output_suffix: .rpsbproc.tsv
@@ -198,7 +200,7 @@ tools:
               - -query
               - ${input}
               - -db
-              - ${database}
+              - ${database}/Cdd
               - -out
               - ${work_dir}/hits.asn
               - -outfmt
@@ -209,6 +211,8 @@ tools:
               - ${threads}
           - arguments:
               - rpsbproc
+              - -d
+              - ${database}
               - -i
               - ${work_dir}/hits.asn
               - -o
@@ -223,7 +227,7 @@ tools:
         max_hits_per_query: 5
 ```
 
-Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. The first step inherits the parent `rpsblast` tool version, while the second records the independent `rpsbproc -version` result in step provenance; both probed versions participate in the cache identity, so an `rpsbproc` upgrade alone already invalidates the exact cache. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
+Step 1 writes the ASN.1 archive into the per-run `${work_dir}`; step 2 renders it into `${output}`; the scratch directory is cleaned up after the run. The first step inherits the parent `rpsblast` tool version, while the second records the independent `rpsbproc -version` result in step provenance; both probed versions participate in the cache identity, so an `rpsbproc` upgrade alone already invalidates the exact cache. Step 2 must also expose the data directory with `-d ${database}`: `rpsbproc` looks for the CDD dump files (`Cdd.00.pdb`, `.aux`, `.loo`, `.freq`, and `Cdd.pal`) in `./data` and beside its own binary, and aborts the whole job with exit code 2 (`Cannot find data files`) when it cannot find them. `database` therefore names the index *directory* — a prefix such as `/path/to/cdd/Cdd` is not a path that exists and cannot satisfy the reference-database check — while step 1 rebuilds the prefix as `${database}/Cdd`. rpsbproc flags differ between builds, so adjust the second command block to the locally installed rpsbproc version.
 
 ## BUSCO example
 

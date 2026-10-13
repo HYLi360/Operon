@@ -75,13 +75,13 @@ rpsblast_cdd_outfmt6:
   entity_type: annotation
   file_role: protein_fasta
   format: fasta
-  database: /data/db/cdd/Cdd
+  database: /data/db/cdd
   database_version: "3.21"
   output_subdir: rpsblast_cdd
   output_suffix: .rpsblast.tsv
   arguments:
     - -db
-    - ${database}
+    - ${database}/Cdd
     - -query
     - ${input}
     - -out
@@ -104,6 +104,9 @@ rpsblast_cdd_outfmt6:
   pident_column: pident
   max_hits_per_query: 5
 ```
+
+`database` 指 CDD 索引**目录**：像 `/data/db/cdd/Cdd` 这样的 BLAST 索引前缀不是存在的
+路径，无法通过参考数据库检查；recipe 会在参数里把它重组为 `${database}/Cdd`。
 
 如果 rpsblast 的结果改由 `rpsbproc` 后处理（推荐的 CDD 流程），应使用 `commands` 命令链
 配合 `rpsbproc_tabular` parser——见下文。
@@ -237,7 +240,7 @@ tools:
         entity_type: annotation
         file_role: protein_fasta
         format: fasta
-        database: /path/to/cdd/Cdd
+        database: /path/to/cdd
         database_version: ""
         output_subdir: rpsblast_cdd
         output_suffix: .rpsbproc.tsv
@@ -247,7 +250,7 @@ tools:
               - -query
               - ${input}
               - -db
-              - ${database}
+              - ${database}/Cdd
               - -out
               - ${work_dir}/hits.asn
               - -outfmt
@@ -258,6 +261,8 @@ tools:
               - ${threads}
           - arguments:
               - rpsbproc
+              - -d
+              - ${database}
               - -i
               - ${work_dir}/hits.asn
               - -o
@@ -275,7 +280,11 @@ tools:
 第 1 步把 ASN.1 归档写入本次运行的 `${work_dir}`，第 2 步把它渲染为 `${output}`；暂存
 目录在运行结束后清理。第 1 步继承顶层 `rpsblast` tool 的版本，第 2 步则在 step provenance
 中独立记录 `rpsbproc -version` 的结果；两个探测到的版本都参与缓存身份，因此仅升级
-`rpsbproc` 也足以使精确缓存失效。rpsbproc 的参数在不同构建间有差异，请按本地安装的
+`rpsbproc` 也足以使精确缓存失效。第 2 步还必须用 `-d ${database}` 指明数据目录：`rpsbproc` 会在 `./data` 与自身所在目录查找
+CDD 的 dump 文件（`Cdd.00.pdb`、`.aux`、`.loo`、`.freq` 与 `Cdd.pal`），找不到就以退出码 2
+（`Cannot find data files`）中止整个作业。因此 `database` 指的是索引**目录**——像
+`/path/to/cdd/Cdd` 这样的前缀不是存在的路径，无法通过参考数据库检查——而第 1 步把前缀
+重组为 `${database}/Cdd`。rpsbproc 的参数在不同构建间有差异，请按本地安装的
 rpsbproc 版本调整第二个命令块。
 
 ## BUSCO 示例

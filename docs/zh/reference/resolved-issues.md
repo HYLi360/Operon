@@ -85,6 +85,7 @@
 | ODR-0070 | TUI 测试 | NCBI Datasets 的测试改为通过 `_await_notification` 谓词等待入队的通知，不再在 toast 落地前一轮读取通知列表。 |
 | ODR-0071 | TUI 测试 | backup 与 set-state 的 CLI-parity 测试改为等待模态框的 dismissal 回调，而不是在 worker 侧动作完成后立即断言——dismissal 要晚一次交接才在 UI 线程落地。 |
 | ODR-0072 | TUI 测试 | run-external 的写测试改为等待入队的错误通知，不再在模态框 dismissal 之后立即读 `app._notifications`；由 CI 的 ubuntu-24.04/3.10 腿（run 38148089207）抓到。 |
+| ODR-0073 | 分析 | 随附的 `rpsblast_cdd` 命令链现在真的能跑：`database` 指 CDD 索引目录，第 1 步把 BLAST 前缀重组为 `${database}/Cdd`，第 2 步用 `-d ${database}` 让 `rpsbproc` 找到 CDD dump 文件，不再让每个作业在 `step 2/2` 以退出码 2（`Cannot find data files`）失败。 |
 
 ## K 系列（历史）
 

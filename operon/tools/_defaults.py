@@ -243,7 +243,11 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                     "entity_type": "annotation",
                     "file_role": "protein_fasta",
                     "format": "fasta",
-                    "database": "/path/to/cdd/Cdd",
+                    # The CDD index *directory*. A BLAST index prefix such as
+                    # /path/to/cdd/Cdd is not a path that exists, so it cannot
+                    # satisfy the reference-database check; the first command
+                    # rebuilds the prefix as ${database}/Cdd.
+                    "database": "/path/to/cdd",
                     "database_version": "",
                     "output_subdir": "rpsblast_cdd",
                     "output_suffix": ".rpsbproc.tsv",
@@ -254,7 +258,7 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                                 "-query",
                                 "${input}",
                                 "-db",
-                                "${database}",
+                                "${database}/Cdd",
                                 "-out",
                                 "${work_dir}/hits.asn",
                                 "-outfmt",
@@ -268,6 +272,13 @@ DEFAULT_TOOLS_CONFIG: dict[str, Any] = {
                         {
                             "arguments": [
                                 "rpsbproc",
+                                # rpsbproc looks for its CDD dump data files
+                                # (Cdd.00.pdb/.aux/.loo/.freq, Cdd.pal) in ./data
+                                # and beside its own binary; without -d every job
+                                # fails at step 2/2 with exit 2 ("Cannot find
+                                # data files").
+                                "-d",
+                                "${database}",
                                 "-i",
                                 "${work_dir}/hits.asn",
                                 "-o",

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
+import sys
 import textwrap
 from dataclasses import replace
 from pathlib import Path
@@ -1585,3 +1587,111 @@ def test_interrupt_analysis_execution_removes_partial_artifacts(tmp_path):
     # Both the partial output and the partial events file are dropped.
     assert not output.exists()
     assert not events.exists()
+
+
+@pytest.mark.bug("ODR-73")
+def test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory(
+    tmp_path, monkeypatch
+):
+    """The shipped CDD chain must hand rpsbproc the directory holding its dump files.
+
+    rpsbproc resolves ``Cdd.00.pdb``/``.aux``/``.loo``/``.freq`` and ``Cdd.pal``
+    through ``-d``, falling back to ``./data`` and to its own directory; neither
+    exists for a normally installed binary, so the shipped chain without ``-d``
+    failed every job at ``step 2/2`` with exit 2 ("Cannot find data files").
+    ``database`` names the index *directory*, because a BLAST index prefix such as
+    ``/path/to/cdd/Cdd`` is not a path that exists and so cannot pass the
+    reference-database check — the first command rebuilds it as ``${database}/Cdd``.
+    """
+    p = project(tmp_path)
+    monkeypatch.setattr(
+        tools._config,
+        "load_tools_config",
+        lambda _p: copy.deepcopy(tools.DEFAULT_TOOLS_CONFIG),
+    )
+    r = tools.get_recipe(p, "rpsblast_cdd")
+
+    cdd = tmp_path / "cdd"
+    cdd.mkdir()
+    for name in ("Cdd.00.pdb", "Cdd.00.aux", "Cdd.00.loo", "Cdd.00.freq", "Cdd.pal"):
+        (cdd / name).write_text("dump\n", encoding="utf-8")
+    query = tmp_path / "proteins.faa"
+    query.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    output = tmp_path / "out.tsv"
+
+    def render(step: list[str]) -> list[str]:
+        return tools.render_arguments(
+            r,
+            input_path=query,
+            output_path=output,
+            database_path=cdd,
+            threads=2,
+            file_record={
+                "file_id": "FIL_000001",
+                "file_role": "protein_fasta",
+                "entity_type": "annotation",
+                "entity_id": "ANN_000001",
+            },
+            work_dir=work_dir,
+            arguments=step,
+        )
+
+    assert len(r.commands) == 2
+    blast = render(r.commands[0].arguments)
+    assert blast[blast.index("-db") + 1] == str(cdd / "Cdd")
+    proc = render(r.commands[1].arguments)
+    assert proc[proc.index("-d") + 1] == str(cdd)
+
+    # A stub that resolves the data files exactly as rpsbproc documents: -d
+    # first, then ./data, then the program's own directory.
+    stub = tmp_path / "fakerpsbproc.py"
+    stub.write_text(
+        textwrap.dedent(
+            """
+            import sys
+            from pathlib import Path
+            args = sys.argv[1:]
+            candidates = []
+            if "-d" in args:
+                candidates.append(Path(args[args.index("-d") + 1]))
+            candidates.append(Path.cwd() / "data")
+            candidates.append(Path(__file__).resolve().parent)
+            for candidate in candidates:
+                if (candidate / "Cdd.pal").is_file():
+                    break
+            else:
+                print("Cannot find data files", file=sys.stderr)
+                raise SystemExit(2)
+            with open(args[args.index("-o") + 1], "w") as handle:
+                handle.write("DATA\\nENDDATA\\n")
+            """
+        ).strip(),
+        encoding="utf-8",
+    )
+
+    index = proc.index("-d")
+    without_data_dir = [*proc[:index], *proc[index + 2 :]]
+
+    with_dir = subprocess.run(
+        [sys.executable, str(stub), *proc],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert with_dir.returncode == 0, with_dir.stderr
+    assert output.is_file()
+
+    output.unlink()
+    missing = subprocess.run(
+        [sys.executable, str(stub), *without_data_dir],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert missing.returncode == 2
+    assert "Cannot find data files" in missing.stderr
+    assert not output.exists()

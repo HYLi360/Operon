@@ -93,6 +93,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0070 | TUI tests | The NCBI Datasets tests wait for the queued notification through an `_await_notification` predicate instead of reading the notification list a turn before the toast lands. |
 | ODR-0071 | TUI tests | The backup and set-state CLI-parity tests wait for the modal's dismissal callback instead of asserting it right after the worker-side action — the dismissal lands on the UI thread a handoff later. |
 | ODR-0072 | TUI tests | The run-external write tests wait for the queued error notification instead of reading `app._notifications` right after the modal dismissal; caught by CI on the ubuntu-24.04/3.10 leg (run 38148089207). |
+| ODR-0073 | Analysis | The shipped `rpsblast_cdd` chain can now run: `database` names the CDD index directory, step 1 rebuilds the BLAST prefix as `${database}/Cdd`, and step 2 passes `-d ${database}` so `rpsbproc` finds its CDD dump files instead of failing every job at `step 2/2` with exit code 2 (`Cannot find data files`). |
 
 ## K series (historical)
 
