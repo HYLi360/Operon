@@ -1902,7 +1902,11 @@ defects:
     unchanged on purpose: supersession still matches only an identical fingerprint, older completed jobs
     stay on record as provenance, and `select-sequences`/`extract-domains` surface the number of ignored
     older completed jobs as a stderr warning and as `ignored_completed_jobs` in the run's
-    execution_details, the same convention classify-sequences established.
+    execution_details, the same convention classify-sequences established. The same change set also
+    replaced accurate statements about `report analysis`'s default metrics summary — which keeps every
+    `completed` variant — in docs/zh/reference/cli-analysis.md and
+    docs/*/reference/recipe-parsers-examples.md with the alignment-reader rule; e496a19 scoped those
+    sentences back to the alignment readers.
   fix_commit: '59c959a944b344d34cb43ce9a972fcd22c450193'
   fixed_in: null
   regression_tests:

@@ -66,7 +66,7 @@ operon analyze --analysis busco_lineage \
   --param lineage_dataset=fabales_odb12.2
 ```
 
-`report analysis` displays every parameter variant still marked `completed`; it does not retain only the latest run for a recipe.
+`report analysis` displays every parameter variant still marked `completed`; it does not retain only the latest run for a recipe. The alignment readers — `report analysis --hits`, `select-sequences`, and `extract-domains` — do read only the latest `completed` job per analysis and file, as the command reference below states.
 
 Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, `analyze`:
 
