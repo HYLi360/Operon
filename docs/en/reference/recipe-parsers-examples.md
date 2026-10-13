@@ -362,7 +362,7 @@ analysis:busco_lineage:lineage_dataset=fabales_odb12.2
 analysis:busco_lineage:lineage_dataset=eudicotyledons_odb12.2
 ```
 
-`report analysis --analysis busco_lineage` reads only the latest `completed` job per file, so each file contributes exactly one parameter variant; when the same exact parameters are re-run with `--force`, the old job is marked `superseded`, and when a file is re-run under changed parameters or a changed reference database, the earlier completed job stays on record but no longer contributes hits.
+`report analysis --analysis busco_lineage` shows every parameter variant that is still `completed`, so both lineages stay visible; the alignment readers (`report analysis --hits`, `select-sequences`, and `extract-domains`) read only the latest `completed` job per file, so each file contributes exactly one variant's hits. When the same exact parameters are re-run with `--force`, the old job is marked `superseded`, and when a file is re-run under changed parameters or a changed reference database, the earlier completed job stays on record but no longer contributes hits.
 
 The `qc_results` long table is the source of truth and fully expresses coexisting results. `qc_results.wide.tsv` is only suitable for browsing and exploratory statistics: same-named metrics must be collapsed into one column, so it shows the most recent value. A formal QC profile should not rely on this implicit "latest value"; it should use `source.qc_stage` to state whether to consume the auto-lineage stage or a fixed-lineage stage.
 

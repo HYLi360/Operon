@@ -116,7 +116,9 @@ operon analyze --analysis busco_lineage \
   --param lineage_dataset=fabales_odb12.2
 ```
 
-`report analysis` 只读取每个文件最新的 `completed` 作业，因此每个文件只贡献一个参数变体。
+`report analysis` 显示所有仍为 `completed` 的参数变体，不会只保留同 recipe 的最新一条；而比对读取路径——
+`report analysis --hits`、`select-sequences` 与 `extract-domains`——只读取每个 analysis+file 最新的
+`completed` 作业，见下文命令参考。
 
 中断与优雅停机：运行期间收到 Ctrl+C（SIGINT）或 SIGTERM 时，`analyze` 会优雅停机——
 

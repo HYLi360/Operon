@@ -419,8 +419,10 @@ analysis:busco_lineage:lineage_dataset=fabales_odb12.2
 analysis:busco_lineage:lineage_dataset=eudicotyledons_odb12.2
 ```
 
-`report analysis --analysis busco_lineage` 只读取每个文件最新的 `completed` 作业，因此每个文件只贡献一个参数变体；同一精确
-参数被 `--force` 重跑时，旧 job 标记为 `superseded`；当某文件在参数或参考数据库变化后重跑时，更早的 completed 作业仍保留在记录中，但不再贡献命中行。
+`report analysis --analysis busco_lineage` 展示全部仍为 `completed` 的参数变体，因此两个 lineage 都可见；比对读取
+路径（`report analysis --hits`、`select-sequences`、`extract-domains`）只读取每个文件最新的 `completed` 作业，因此每个
+文件只贡献一个变体的命中。同一精确参数被 `--force` 重跑时，旧 job 标记为 `superseded`；当某文件在参数或参考数据库
+变化后重跑时，更早的 completed 作业仍保留在记录中，但不再贡献命中行。
 
 `qc_results` 长表是事实来源，能够完整表达共存结果。`qc_results.wide.tsv` 只适合浏览和
 探索性统计：同名 metric 必须折叠成一列，因此会显示最近的一个值。正式 QC profile 不应
