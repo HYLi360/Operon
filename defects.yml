@@ -2338,7 +2338,7 @@ defects:
     tests/unit/test_docs_remote_execution.py pins all three claims — the `execution_details` row and the
     `workflow_runs` row in both trees, and the `workflow_runs` DDL in operon/database.py that the new
     row points at. Reverting either guide fails four of its five tests (checked before committing).
-  fix_commit: null
+  fix_commit: '385db509a513e3b5d22770afcd3beb06e4ddbb08'
   fixed_in: null
   regression_tests:
     - tests/unit/test_docs_remote_execution.py::test_checklist_keeps_the_scheduler_job_id_out_of_execution_details
