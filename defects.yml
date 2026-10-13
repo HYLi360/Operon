@@ -2271,7 +2271,7 @@ defects:
     (`-d`, then `./data`, then its own directory): with the shipped arguments it exits 0, and the same
     argv with the `-d` pair removed exits 2 with "Cannot find data files". The project-side preset in
     others/config/ is unchanged and stays valid — it never used the prefix convention.
-  fix_commit: null
+  fix_commit: 'aa0aaa1c65ce0a1a75947d46a3785a7f99abbcb9'
   fixed_in: null
   regression_tests:
     - tests/unit/test_tools_edges.py::test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory
