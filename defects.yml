@@ -2279,3 +2279,66 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_tools_edges.py::test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory
+- id: ODR-74
+  title: |
+    The remote smoke-run checklist looks for the scheduler job id in execution_details, which never
+    carries it
+  reported: '2026-10-13'
+  introduced_in: null
+  affected: |
+    docs/en/guides/remote-execution.md:131 — the "Reference smoke run" verification table, row
+    `execution_details`, promises `scheduler_job_id` among the keys of that JSON document:
+    "`scheduler_job_id`, `slurm_elapsed_seconds`, `host`, and the remote `script` path under
+    `remote_root/logs/`". docs/zh/guides/remote-execution.md:178 carries the same row in Chinese.
+    
+    The SSH+Slurm path never writes that key. A completed remote run records exactly `backend`,
+    `environment`, `host`, `scheduler`, `script`, `slurm_elapsed_seconds`, `steps`.
+    
+    The id is a *column* of `workflow_runs` (`operon/database.py:223`), filled from
+    `ExecResult.scheduler_job_id` (`operon/execution.py`) and read from there by both surfaces
+    (`operon/tui/data.py:1011` selects `r.scheduler_job_id`; `operon/cli/_inspect.py:357` prints it).
+    
+    Impact: a verifier following the checklist — the only place the guide tells them to look — finds no
+    job id and concludes it was not recorded, while the value is present and correct one column over.
+  severity: 'low'
+  component: 'tools'
+  status: 'open'
+  reproduction: |
+    First real remote run of the fixed rpsblast_cdd chain (ODR-73), 2026-10-13, SSH backend with a slurm
+    scheduler:
+    
+    operon --project others/operon analyze --analysis rpsblast_cdd --entity-id ANN_000378 --limit 1 ->
+    WF_20261013_220158+0800_f5d839c2, status completed, exit 0 -> analysis_jobs job_id 1611: launcher
+    "conda run -n blaster [ssh:lihuanyu@202.117.107.236]", output_sha256 4c21501d…, recipe_snapshot_id
+    1038
+    
+    Inspect the run's details document (keys only, sorted):
+    
+    >>> sorted(json.loads(details)) ['backend', 'environment', 'host', 'scheduler', 'script',
+    'slurm_elapsed_seconds', 'steps'] >>> details['slurm_elapsed_seconds'], details['host'],
+    details['script'] (88.0, '202.117.107.236',
+    '/home/lizhonghu/lihuanyu/operon/project_bhlh/logs/WF_20261013_220158+0800_f5d839c2-s2.sbatch')
+    
+    So the three keys the table also lists are present; `scheduler_job_id` is not. The job id is one
+    column over:
+    
+    SELECT scheduler_job_id, executor FROM workflow_runs WHERE run_id =
+    'WF_20261013_220158+0800_f5d839c2' -> 53970 | ssh:lihuanyu@202.117.107.236
+    
+    Source check: `grep -rn "scheduler_job_id" operon/ --include=*.py` shows the column declaration, the
+    producers that set `ExecResult.scheduler_job_id`, and the readers of the column — no writer puts the
+    key inside the details JSON.
+  disposition: |
+    Documentation-only. Both language trees should stop naming `scheduler_job_id` in the
+    `execution_details` row and give it its own row pointing at the `workflow_runs` column (the same row
+    can carry `executor`, which is what labels the ssh target). No code change and no behaviour change:
+    the value is recorded today, only the checklist that says where to look is wrong.
+    
+    Found while validating the first remote run of the ODR-73 fix, so it sits in the same area as ODR-73
+    and can be fixed in the same pass. Closing it still needs a regression test: a fixed record without
+    `regression_tests` fails tests/unit/test_defect_registry.py:111, so the wording fix should ship with
+    a docs-guard test (in the style of test_docs_versions.py / test_docs_projects.py) that pins where
+    the checklist says the scheduler job id is read from.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
