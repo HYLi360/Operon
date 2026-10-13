@@ -175,7 +175,8 @@ operon pull --remote mycluster --file-id FIL_000001                     # 取回
 | 位置 | 核对内容 |
 |---|---|
 | `analysis_jobs` | `launcher = [ssh:user@host]`、`status = completed`、`output_sha256`、`environment_id`、`recipe_snapshot_id`，以及 `command` 中解析后的数据库路径 |
-| `execution_details` | `scheduler_job_id`、`slurm_elapsed_seconds`、`host`，以及 `remote_root/logs/` 下的远端 `script` 路径 |
+| `execution_details` | `slurm_elapsed_seconds`、`host`，以及 `remote_root/logs/` 下的远端 `script` 路径 |
+| `workflow_runs` | `scheduler_job_id` 保存 Slurm 作业号，`executor` 标明 ssh 目标（`ssh:<user>@<host>`） |
 | `execution_environments` | 探针描述的是**计算节点**（CPU 型号、cpuset），而非登录节点 |
 | 远端主机 | `logs/<run_id>.sbatch` 只含改写后的路径——`cd` 与所有位于 `remote_root` 内的项目路径；`<run_id>.exitcode` 为 `0` |
 | 两侧 | 拉回输出的 SHA-256 与远端文件的 `sha256sum` 一致 |
