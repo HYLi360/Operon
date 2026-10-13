@@ -94,6 +94,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0071 | TUI tests | The backup and set-state CLI-parity tests wait for the modal's dismissal callback instead of asserting it right after the worker-side action — the dismissal lands on the UI thread a handoff later. |
 | ODR-0072 | TUI tests | The run-external write tests wait for the queued error notification instead of reading `app._notifications` right after the modal dismissal; caught by CI on the ubuntu-24.04/3.10 leg (run 38148089207). |
 | ODR-0073 | Analysis | The shipped `rpsblast_cdd` chain can now run: `database` names the CDD index directory, step 1 rebuilds the BLAST prefix as `${database}/Cdd`, and step 2 passes `-d ${database}` so `rpsbproc` finds its CDD dump files instead of failing every job at `step 2/2` with exit code 2 (`Cannot find data files`). |
+| ODR-0074 | Remote execution | The smoke-run checklist now reads the Slurm job id and the ssh target from the `workflow_runs` row's `scheduler_job_id`/`executor` columns instead of promising them inside `execution_details`, where the SSH+Slurm path never writes them; `tests/unit/test_docs_remote_execution.py` pins both tables and the schema they describe. |
 
 ## K series (historical)
 

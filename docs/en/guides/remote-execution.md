@@ -128,7 +128,8 @@ Then check both planes:
 | Where | What to verify |
 |---|---|
 | `analysis_jobs` | `launcher = [ssh:user@host]`, `status = completed`, `output_sha256`, `environment_id`, `recipe_snapshot_id`, and a `command` naming the resolved database |
-| `execution_details` | `scheduler_job_id`, `slurm_elapsed_seconds`, `host`, and the remote `script` path under `remote_root/logs/` |
+| `execution_details` | `slurm_elapsed_seconds`, `host`, and the remote `script` path under `remote_root/logs/` |
+| `workflow_runs` | `scheduler_job_id` holds the Slurm job id and `executor` names the ssh target (`ssh:<user>@<host>`) |
 | `execution_environments` | the probe describes the **compute node** (CPU model, cpuset), not the login node |
 | remote host | `logs/<run_id>.sbatch` contains rewritten paths only — the `cd` and every project path inside `remote_root`; `<run_id>.exitcode` holds `0` |
 | both sides | the retrieved output's SHA-256 equals `sha256sum` of the remote file |

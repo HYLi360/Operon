@@ -2302,7 +2302,7 @@ defects:
     job id and concludes it was not recorded, while the value is present and correct one column over.
   severity: 'low'
   component: 'tools'
-  status: 'open'
+  status: 'fixed'
   reproduction: |
     First real remote run of the fixed rpsblast_cdd chain (ODR-73), 2026-10-13, SSH backend with a slurm
     scheduler:
@@ -2329,16 +2329,18 @@ defects:
     producers that set `ExecResult.scheduler_job_id`, and the readers of the column — no writer puts the
     key inside the details JSON.
   disposition: |
-    Documentation-only. Both language trees should stop naming `scheduler_job_id` in the
-    `execution_details` row and give it its own row pointing at the `workflow_runs` column (the same row
-    can carry `executor`, which is what labels the ssh target). No code change and no behaviour change:
-    the value is recorded today, only the checklist that says where to look is wrong.
+    Documentation-only, fixed by rewriting the verification table in both language trees: the
+    `execution_details` row now lists only `slurm_elapsed_seconds`, `host` and the staged `script` path,
+    and a new `workflow_runs` row carries `scheduler_job_id` (the Slurm job id) plus `executor` (the ssh
+    target). No code change: the value was always recorded, only the checklist said where to look, and
+    no other sentence in either tree placed the id inside `execution_details`.
     
-    Found while validating the first remote run of the ODR-73 fix, so it sits in the same area as ODR-73
-    and can be fixed in the same pass. Closing it still needs a regression test: a fixed record without
-    `regression_tests` fails tests/unit/test_defect_registry.py:111, so the wording fix should ship with
-    a docs-guard test (in the style of test_docs_versions.py / test_docs_projects.py) that pins where
-    the checklist says the scheduler job id is read from.
+    tests/unit/test_docs_remote_execution.py pins all three claims — the `execution_details` row and the
+    `workflow_runs` row in both trees, and the `workflow_runs` DDL in operon/database.py that the new
+    row points at. Reverting either guide fails four of its five tests (checked before committing).
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_docs_remote_execution.py::test_checklist_keeps_the_scheduler_job_id_out_of_execution_details
+    - tests/unit/test_docs_remote_execution.py::test_checklist_names_the_workflow_runs_columns_that_hold_the_job_id
+    - tests/unit/test_docs_remote_execution.py::test_workflow_runs_declares_the_columns_the_checklist_points_at
