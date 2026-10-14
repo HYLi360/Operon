@@ -2444,3 +2444,32 @@ defects:
     - tests/unit/test_execution.py::test_lost_reconnect_raises_remote_unavailable_error
     - tests/unit/test_remotes.py::test_ssh_client_transport_configures_keepalive
     - tests/unit/test_tools_run_edges.py::test_sequential_ssh_batch_aborts_when_reconnect_fails
+- id: ODR-77
+  title: |
+    The runs-filters modal test waits only for the modal screen and then queries its filter input
+    unguarded, so under load the query races the modal's mount
+  reported: '2026-10-14'
+  introduced_in: null
+  affected: |
+    tests/unit/test_tui_screens_more.py test_runs_more_filters_accept_resumes_run_id: after pressing
+    "#runs-more" the test waits for `isinstance(app.screen, RunsFiltersModal)` — true as soon as the
+    screen is current — and then assigns `modal.query_one("#runs-filter-resumes-run-id", Input).value`
+    without first awaiting the input's mount; the presence wait only ran after the assignment. Textual
+    composes a screen's widgets asynchronously, so on a loaded machine the assignment can beat the
+    widget's mount and raise `NoMatches`.
+  severity: 'low'
+  component: 'tests'
+  status: 'confirmed'
+  reproduction: |
+    Observed once under scripts/tui-race-stress.sh (3 rounds, round seeds 1-3) on a machine at load ~9:
+    round 2 (pytest-randomly seed 2) failed this test with `textual.dom.NoMatches`. The jitter harness
+    injected 0.0 ms that round, so the window was opened by real system load rather than an injected
+    delay; reruns of round 2 passed, and the identical full-suite run on a checkout without the
+    analyze-detach feature diff also passed (732 tests), attributing the trigger to that diff's timing
+    shift and the defect itself to the unguarded query order.
+  disposition: |
+    Open. Fix under way: the gate must require the modal screen and the `#runs-filter-resumes-run-id`
+    input together before any query; the test is marked as this defect's regression test.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
