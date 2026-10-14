@@ -2420,7 +2420,7 @@ defects:
     nothing is lost, but an unattended multi-day batch is unusable in this state.
   severity: 'high'
   component: 'execution'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Production SSH+Slurm deployment, 2026-10-14 (internal records others/rpsblast-batch-20261014.log and
     others/plans/2026-10-14_2246-analyze-detach.md): `analyze --analysis rpsblast_cdd_archive` over 535
@@ -2437,6 +2437,10 @@ defects:
     remaining file. Natural companion of the detached-execution capability
     (others/plans/2026-10-14_2246-analyze-detach.md): a batch that outlives its terminal needs this
     resilience to run unattended.
-  fix_commit: null
+  fix_commit: 'abaac93a45256aa5a0a6f193f47443e0dc34362e'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_execution.py::test_dead_cached_transport_is_replaced_by_a_fresh_client
+    - tests/unit/test_execution.py::test_lost_reconnect_raises_remote_unavailable_error
+    - tests/unit/test_remotes.py::test_ssh_client_transport_configures_keepalive
+    - tests/unit/test_tools_run_edges.py::test_sequential_ssh_batch_aborts_when_reconnect_fails
