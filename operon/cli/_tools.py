@@ -113,6 +113,13 @@ def add_analyze_parser(sub):
         action="store_true",
         help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it",
     )
+    p.add_argument(
+        "--detach",
+        action="store_true",
+        help="relaunch this analysis as an independent background session and "
+        "return immediately; console output goes to "
+        "logs/analyze-detach-<timestamp>.log, progress to the recorded runs",
+    )
     p.add_argument("--events", help="declare the plugin event JSONL output path")
     p.add_argument(
         "--backend",
@@ -266,6 +273,31 @@ def _parse_runtime_parameters(items: list[str]) -> dict[str, str]:
 
 
 def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if args.detach:
+        from operon.tools import get_recipe
+        from operon.tools._detach import spawn_detached_analysis
+
+        if args.dry_run:
+            raise ValidationError("--detach cannot be combined with --dry-run")
+        get_recipe(project, args.analysis)  # fail fast on an unknown recipe
+        pid, log_path = spawn_detached_analysis(
+            project,
+            analysis=args.analysis,
+            entity_type=args.entity_type,
+            entity_id=args.entity_id,
+            limit=args.limit,
+            threads=args.threads,
+            backend=args.backend,
+            force=args.force,
+            keep_partial=args.keep_partial,
+            events=args.events,
+            parameters=_parse_runtime_parameters(args.param),
+        )
+        print(f"detached analyze: pid {pid}")
+        print(f"console log: {log_path}")
+        print(f"watch: operon inspect workflow list --step analysis:{args.analysis}")
+        print(f"stop: kill {pid}")
+        return 0
     from operon.tools import run_analysis
 
     phase_labels = {

@@ -89,6 +89,14 @@ operon analyze --analysis blastn_nt --dry-run
 
 Useful batch controls: `--limit N` processes only the first N matching files (in `file_id` order), and `--threads` overrides the recipe default.
 
+Long batches do not need to own the terminal they were started from. `--detach` relaunches the analysis as a background session and returns immediately, printing the PID and the console log path (`logs/analyze-detach-<timestamp>.log`):
+
+```bash
+operon analyze --analysis blastn_nt --detach
+```
+
+The session keeps running after the terminal — or the TUI — closes. `operon inspect workflow list --step analysis:blastn_nt` shows per-file progress; the TUI Runs screen shows the same rows live. In the TUI's analyze form, the same behavior is available as a "Run detached" toggle: confirming hands the batch to a background session and reports its PID. `kill <pid>` stops the batch the way Ctrl+C would, and re-running the same command finishes whatever remains — completed files are reused from the cache.
+
 Inspect synchronized results:
 
 ```bash

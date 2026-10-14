@@ -1155,3 +1155,101 @@ def test_analyze_modal_real_cancel_click_stays_open_while_running(
     finally:
         released.set()
     assert dismissed == [{"cancelled": True, "done": 0, "total": 0}]
+
+
+def test_analyze_modal_detach_launches_background_session(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """A detached confirm must spawn the standalone session, never a worker."""
+    _write_fake_tool(project, tmp_path)
+    spawned: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        actions,
+        "preflight_backend",
+        lambda *_a, **_k: {"backend": "local", "description": "local"},
+    )
+    monkeypatch.setattr(
+        actions,
+        "run_analysis",
+        lambda *_a, **_k: pytest.fail(
+            "detached launches must not start the in-app worker"
+        ),
+    )
+    monkeypatch.setattr(
+        actions,
+        "spawn_analysis_detached",
+        lambda *args, **kwargs: (
+            spawned.append((args, kwargs)) or (4242, tmp_path / "console.log")
+        ),
+    )
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            app.push_screen(modal, dismissed.append)
+            await _wait_until(
+                lambda: bool(modal.query("#analyze-param-marker")),
+                "parameter controls mounted",
+            )
+            checkbox = modal.query_one("#analyze-detach", Checkbox)
+            assert checkbox.value is False
+            checkbox.value = True
+            modal.query_one("#analyze-param-marker", Input).value = "TT"
+            modal.query_one("#analyze-limit", Input).value = "2"
+            await _wait_until(
+                lambda: "--detach" in modal.command_text(),
+                "command preview carries --detach",
+            )
+            modal.confirm()
+            await pilot.pause()
+            await _wait_until(lambda: bool(spawned), "detached spawn invoked")
+            await _wait_until(lambda: bool(dismissed), "modal dismissed with handle")
+            await _settled(app)
+
+    _run(scenario())
+
+    _, kwargs = spawned[0]
+    assert kwargs["analysis"] == "fake_nt"
+    assert kwargs["entity_id"] is None
+    assert kwargs["limit"] == 2
+    assert dismissed == [{"detached": True, "pid": 4242, "total": 0, "results": []}]
+
+
+def test_analyze_modal_detach_and_dry_run_conflict(
+    project: Project, tmp_path: Path, monkeypatch
+) -> None:
+    """--detach together with --dry-run is rejected inline: nothing spawns."""
+    _write_fake_tool(project, tmp_path)
+    spawned: list = []
+    monkeypatch.setattr(
+        actions,
+        "spawn_analysis_detached",
+        lambda *args, **kwargs: (
+            spawned.append((args, kwargs)) or (4242, tmp_path / "console.log")
+        ),
+    )
+    dismissed: list = []
+
+    async def scenario() -> None:
+        app = OperonApp(project)
+        async with app.run_test(size=(160, 50)) as pilot:
+            await _settled(app)
+            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            app.push_screen(modal, dismissed.append)
+            await _wait_until(
+                lambda: bool(modal.query("#analyze-param-marker")),
+                "parameter controls mounted",
+            )
+            modal.query_one("#analyze-detach", Checkbox).value = True
+            modal.query_one("#analyze-dry-run", Checkbox).value = True
+            await _settled(app)
+            modal.confirm()
+            await pilot.pause()
+            await _settled(app)
+            assert not spawned
+            assert not dismissed
+
+    _run(scenario())

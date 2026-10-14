@@ -389,6 +389,42 @@ def preflight_backend(
             close()
 
 
+def spawn_analysis_detached(
+    project: Project,
+    *,
+    analysis: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    limit: int | None = None,
+    threads: int | None = None,
+    backend: str | None = None,
+    force: bool = False,
+    keep_partial: bool = False,
+    parameters: dict[str, str] | None = None,
+) -> tuple[int, Any]:
+    """Launch ``analysis`` as a detached background ``analyze`` session.
+
+    Same effect as ``operon analyze --detach``: the batch runs in its own OS
+    session and keeps going after the app closes, with progress visible through
+    the recorded runs. Returns ``(pid, console_log_path)``.
+    """
+    from operon.tools._detach import spawn_detached_analysis
+
+    _validate_backend_choice(backend)
+    return spawn_detached_analysis(
+        project,
+        analysis=analysis,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        limit=limit,
+        threads=threads,
+        backend=backend,
+        force=force,
+        keep_partial=keep_partial,
+        parameters=parameters,
+    )
+
+
 def run_analysis(
     project: Project,
     analysis: str,

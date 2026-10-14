@@ -96,6 +96,18 @@ operon analyze --analysis blastn_nt --dry-run
 批量控制：`--limit N` 只处理按 `file_id` 排序的前 N 个匹配文件；`--threads` 覆盖 recipe
 默认线程数。
 
+长批次不必占用启动它的终端。`--detach` 把分析重新启动为后台会话并立即返回，打印 PID 与
+控制台日志路径（`logs/analyze-detach-<时间戳>.log`）：
+
+```bash
+operon analyze --analysis blastn_nt --detach
+```
+
+会话在终端——或 TUI——关闭后继续运行。`operon inspect workflow list --step
+analysis:blastn_nt` 显示逐文件进度；TUI Runs 界面实时显示同样的行。TUI 的 analyze 表单
+以 "Run detached" 开关提供相同行为：确认后批次交给后台会话并报告 PID。`kill <pid>` 与
+Ctrl+C 语义一致；重跑同一命令即可补完剩余文件——已完成文件由缓存复用。
+
 查看同步结果：
 
 ```bash
