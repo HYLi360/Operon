@@ -2402,3 +2402,41 @@ defects:
     - tests/unit/test_execution.py::test_chain_output_produced_before_last_step_is_pulled
     - tests/unit/test_execution.py::test_failed_chain_restores_previous_remote_output
     - tests/unit/test_execution.py::test_interrupted_chain_restores_previous_remote_output
+- id: ODR-76
+  title: |
+    SSH batch execution keeps one lazily-created transport for the whole run, so a dropped connection
+    fails every remaining file instantly with no keepalive, reconnection, or early abort
+  reported: '2026-10-14'
+  introduced_in: null
+  affected: |
+    operon/execution.py `SSHExecutor` caches its SSH client in `self._client` on the first `_connect()`
+    (line ~1221) and reuses it for the executor's whole lifetime; nothing re-establishes it except an
+    explicit `close()`, and no transport keepalive is configured. A multi-file `analyze` batch therefore
+    holds one connection for hours (a single long chain step already exceeds common NAT/router idle
+    windows). Once the transport dies, every remaining file's planning and execution raises
+    `paramiko.ssh_exception.SSHException: SSH session not active`; the per-file isolation path then
+    records one identical `error` analysis_jobs row per remaining file and the batch exits with a
+    nearly-empty success count. Completed files keep their results and the rest remain candidates, so
+    nothing is lost, but an unattended multi-day batch is unusable in this state.
+  severity: 'high'
+  component: 'execution'
+  status: 'confirmed'
+  reproduction: |
+    Production SSH+Slurm deployment, 2026-10-14 (internal records others/rpsblast-batch-20261014.log and
+    others/plans/2026-10-14_2246-analyze-detach.md): `analyze --analysis rpsblast_cdd_archive` over 535
+    candidates. Files 1-2 completed (job 1619 19:00:57 -> 21:50:02, job 1620 21:50:43 -> 22:08:10); the
+    transport then died, and all 533 remaining files failed within minutes with the identical
+    `SSHException: SSH session not active` (analysis_jobs 1621+ all `error`); the batch printed
+    `analysis rpsblast_cdd_archive: 2/535 succeeded` and exited 0. Code reading pins the mechanism:
+    `SSHExecutor._connect()` returns the cached dead client forever (`if self._client is None` is the
+    only reconnection condition) and no keepalive is set anywhere.
+  disposition: |
+    Open. Candidate fix: configure a transport keepalive and treat a dead cached client as a
+    reconnectable condition — re-establish the client (per operation or per file), and abort or
+    interrupt the batch when reconnection fails instead of emitting one identical error row per
+    remaining file. Natural companion of the detached-execution capability
+    (others/plans/2026-10-14_2246-analyze-detach.md): a batch that outlives its terminal needs this
+    resilience to run unattended.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
