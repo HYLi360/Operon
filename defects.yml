@@ -2489,15 +2489,17 @@ defects:
     failed the assertion.
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Observed once under scripts/tui-race-stress.sh (round 1, pytest-randomly seed 1, after the ODR-77
     fix landed) on the same loaded machine: the entry test failed with `AssertionError: assert 'config'
     == 'runs'` right after the modal-dismissal wait. The sibling failure-dialog test shares the shape
     but had not gone red. Rounds 2-3 passed, mirroring the load-dependent window.
   disposition: |
-    Open. Fix under way: both tests wait for the "#main" switcher to reach "runs" (the entry test
-    additionally keeps its error-dialog check), and both carry this defect's regression marker.
-  fix_commit: null
+    Fixed by waiting for the "#main" ContentSwitcher to reach "runs" in both tests, which carry this
+    defect's regression marker.
+  fix_commit: '8c782763db217a5a2974a08a1a4791f9600c5e2f'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_analyze.py::test_config_screen_run_analysis_entry
+    - tests/unit/test_tui_analyze.py::test_analysis_failure_callback_shows_error_dialog
