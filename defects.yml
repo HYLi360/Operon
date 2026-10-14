@@ -2459,7 +2459,7 @@ defects:
     widget's mount and raise `NoMatches`.
   severity: 'low'
   component: 'tests'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Observed once under scripts/tui-race-stress.sh (3 rounds, round seeds 1-3) on a machine at load ~9:
     round 2 (pytest-randomly seed 2) failed this test with `textual.dom.NoMatches`. The jitter harness
@@ -2470,6 +2470,7 @@ defects:
   disposition: |
     Open. Fix under way: the gate must require the modal screen and the `#runs-filter-resumes-run-id`
     input together before any query; the test is marked as this defect's regression test.
-  fix_commit: null
+  fix_commit: 'fe808ea08c26bd6d5527673d3d6bbe28df360d1f'
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_tui_screens_more.py::test_runs_more_filters_accept_resumes_run_id
