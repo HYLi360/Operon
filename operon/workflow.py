@@ -463,7 +463,11 @@ def run_external_command(
     ``commands`` replaces the single ``argv`` with an ordered chain of argv
     lists executed through the same executor under one run record: the first
     non-zero step aborts the chain (the error names the failing step) and each
-    step's argv and exit code are listed in ``execution_details``.
+    step's argv and exit code are listed in ``execution_details``. Any step may
+    produce the expected outputs: on executors with chain-scoped output hooks
+    (the SSH backend) existing remote outputs are backed up before the first
+    step and pulled back only after the last step, with the backups restored on
+    any failure or interrupt.
 
     ``command_details`` supplies provenance collected by the caller for each
     command (for example executable and version information). Its length must
@@ -578,46 +582,91 @@ def run_external_command(
                 environment = probe()
             except Exception:  # noqa: BLE001 - probe failures must never affect the run  # pylint: disable=broad-exception-caught
                 environment = None
+        # Backends with chain-scoped output hooks (the SSH backend) back up
+        # existing remote outputs before the first step and pull them after the
+        # last one: a mid-chain step may legitimately produce the final
+        # artifact, so per-step reset/pull around the last step would rename
+        # that artifact away before retrieval. The backups are restored on any
+        # failure or interrupt and dropped only once the pulled outputs verify.
+        chain_outputs = bool(resolved_outputs) and all(
+            callable(getattr(executor, attr, None))
+            for attr in (
+                "reset_expected_outputs",
+                "pull_expected_outputs",
+                "restore_expected_outputs",
+            )
+        )
         step_records: list[dict[str, Any]] = []
         result = None
-        for step_index, step_argv in enumerate(argv_steps, start=1):
-            if len(argv_steps) > 1:
-                step_stdout = logs / f"{run_id}.step{step_index}.stdout.log"
-                step_stderr = logs / f"{run_id}.step{step_index}.stderr.log"
-                step_run_id = f"{run_id}-s{step_index}"
-            else:
-                step_stdout, step_stderr, step_run_id = stdout_file, stderr_file, run_id
-            result = executor.run(
-                step_argv,
-                cwd=cwd,
-                stdout_path=step_stdout,
-                stderr_path=step_stderr,
-                timeout=timeout,
-                threads=threads,
-                run_id=step_run_id,
-                stage_inputs=resolved_stage_inputs if step_index == 1 else (),
-                expected_outputs=resolved_outputs
-                if step_index == len(argv_steps)
-                else (),
-            )
-            step_record = dict(step_details[step_index - 1]) if step_details else {}
-            step_record.update(
-                {
-                    "index": step_index,
-                    "argv": step_argv,
-                    "exit_code": result.exit_code,
-                    "stdout_file": str(step_stdout),
-                    "stderr_file": str(step_stderr),
-                }
-            )
-            if result.details.get("environment"):
-                environment = result.details["environment"]
-                with db.transaction():
-                    step_record["environment_id"] = db.record_environment(environment)
-            step_records.append(step_record)
-            stdout_file, stderr_file = step_stdout, step_stderr
-            if result.exit_code != 0 or result.error:
-                break
+        output_backups: Any = None
+        output_backups_settled = False
+        try:
+            if chain_outputs:
+                output_backups = executor.reset_expected_outputs(resolved_outputs)
+            for step_index, step_argv in enumerate(argv_steps, start=1):
+                if len(argv_steps) > 1:
+                    step_stdout = logs / f"{run_id}.step{step_index}.stdout.log"
+                    step_stderr = logs / f"{run_id}.step{step_index}.stderr.log"
+                    step_run_id = f"{run_id}-s{step_index}"
+                else:
+                    step_stdout, step_stderr, step_run_id = (
+                        stdout_file,
+                        stderr_file,
+                        run_id,
+                    )
+                result = executor.run(
+                    step_argv,
+                    cwd=cwd,
+                    stdout_path=step_stdout,
+                    stderr_path=step_stderr,
+                    timeout=timeout,
+                    threads=threads,
+                    run_id=step_run_id,
+                    stage_inputs=resolved_stage_inputs if step_index == 1 else (),
+                    expected_outputs=resolved_outputs
+                    if not chain_outputs and step_index == len(argv_steps)
+                    else (),
+                )
+                step_record = dict(step_details[step_index - 1]) if step_details else {}
+                step_record.update(
+                    {
+                        "index": step_index,
+                        "argv": step_argv,
+                        "exit_code": result.exit_code,
+                        "stdout_file": str(step_stdout),
+                        "stderr_file": str(step_stderr),
+                    }
+                )
+                if result.details.get("environment"):
+                    environment = result.details["environment"]
+                    with db.transaction():
+                        step_record["environment_id"] = db.record_environment(
+                            environment
+                        )
+                step_records.append(step_record)
+                stdout_file, stderr_file = step_stdout, step_stderr
+                if result.exit_code != 0 or result.error:
+                    break
+            if chain_outputs:
+                if result.exit_code != 0 or result.error:
+                    output_backups_settled = True
+                    executor.restore_expected_outputs(output_backups)
+                else:
+                    try:
+                        executor.pull_expected_outputs(output_backups, resolved_outputs)
+                        output_backups_settled = True
+                    except BaseException:
+                        output_backups_settled = True
+                        executor.restore_expected_outputs(output_backups)
+                        raise
+        except BaseException:
+            if (
+                chain_outputs
+                and output_backups is not None
+                and not output_backups_settled
+            ):
+                executor.restore_expected_outputs(output_backups)
+            raise
         record.update(
             exit_code=result.exit_code,
             status="completed" if result.exit_code == 0 else "failed",

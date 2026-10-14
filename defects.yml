@@ -2369,7 +2369,7 @@ defects:
     manual rename) while the previous artifact's bytes are gone.
   severity: 'high'
   component: 'tools'
-  status: 'confirmed'
+  status: 'fixed'
   reproduction: |
     Reproduced twice on the production SSH+Slurm deployment, 2026-10-14 (internal record
     others/rpsblast-raw-retention-20261014.md, section 3): recipe `rpsblast_cdd` (2 steps, output
@@ -2386,11 +2386,19 @@ defects:
     SSHExecutor with a non-empty `remote_root` — the run fails with the same error and the remote
     artifact is gone from its canonical path.
   disposition: |
-    Planned: treat the expected-output lifecycle as chain-scoped on backends that need it. Reset (back
-    up) existing remote outputs before the first step, run every step without per-step reset/pull, and
-    pull + verify only after the last step succeeds, restoring the backups on any failure or interrupt —
-    so neither a mid-chain producer nor the final retrieval can destroy the artifact. Backends on a
-    shared filesystem (local, slurm) are unaffected because they ignore `expected_outputs` entirely.
+    Fixed by making the expected-output lifecycle chain-scoped. `run_external_command`
+    (operon/workflow.py) no longer attaches `expected_outputs` to the last chain step; when the executor
+    offers the chain-scoped hooks it backs up existing remote outputs before the first step, runs every
+    step without per-step reset/pull, and pulls + verifies only after the last step, restoring the
+    backups on any failure or interrupt. `SSHExecutor` (operon/execution.py) gained the three hooks —
+    `reset_expected_outputs`, `pull_expected_outputs`, `restore_expected_outputs` — wrapping the
+    existing `_reset_outputs` / `_pull_outputs` / `_restore_output_backups`; its per-call `run(...,
+    expected_outputs=...)` contract is unchanged for direct callers, and the local/slurm backends ignore
+    `expected_outputs` as before. The documented restriction "only the last step must produce
+    `${output}`" is lifted in docs/*/reference/cli-analysis.md and docs/*/reference/recipe-fields.md.
   fix_commit: null
   fixed_in: null
-  regression_tests: []
+  regression_tests:
+    - tests/unit/test_execution.py::test_chain_output_produced_before_last_step_is_pulled
+    - tests/unit/test_execution.py::test_failed_chain_restores_previous_remote_output
+    - tests/unit/test_execution.py::test_interrupted_chain_restores_previous_remote_output

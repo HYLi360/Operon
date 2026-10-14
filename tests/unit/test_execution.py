@@ -1239,6 +1239,129 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertFalse(local_output.exists())
         self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
 
+    @pytest.mark.bug("ODR-75")
+    def test_chain_output_produced_before_last_step_is_pulled(self):
+        remote_root = self.root / "remote-chain"
+        remote_root.mkdir()
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        local_output = self.root / "analysis" / "out.txt"
+
+        record = run_external_command(
+            self.db,
+            self.project,
+            ["true"],
+            step="test:chain-mid-output",
+            cwd=self.root,
+            executor=executor,
+            commands=[
+                ["bash", "-c", 'echo new-result > "$1"', "bash", str(local_output)],
+                ["true"],
+            ],
+            expected_outputs=[local_output],
+        )
+
+        self.assertEqual(record["status"], "completed")
+        # The artifact written by step 1 survives the chain: it is pulled back
+        # locally and stays at the canonical remote path.
+        self.assertEqual(local_output.read_text().strip(), "new-result")
+        self.assertEqual(previous.read_text().strip(), "new-result")
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    @pytest.mark.bug("ODR-75")
+    def test_failed_chain_restores_previous_remote_output(self):
+        remote_root = self.root / "remote-chain-fail"
+        remote_root.mkdir()
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        local_output = self.root / "analysis" / "out.txt"
+
+        with self.assertRaisesRegex(RuntimeError, "step 2/2 failed"):
+            run_external_command(
+                self.db,
+                self.project,
+                ["true"],
+                step="test:chain-mid-output-fail",
+                cwd=self.root,
+                executor=executor,
+                commands=[
+                    ["bash", "-c", 'echo new-result > "$1"', "bash", str(local_output)],
+                    ["bash", "-c", "exit 3"],
+                ],
+                expected_outputs=[local_output],
+            )
+
+        # Step 1 overwrote the artifact after it was backed up, so the failure
+        # restores the previous remote bytes instead of losing them.
+        self.assertEqual(previous.read_text(), "old result")
+        self.assertFalse(local_output.exists())
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
+    @pytest.mark.bug("ODR-75")
+    def test_interrupted_chain_restores_previous_remote_output(self, monkeypatch):
+        remote_root = self.root / "remote-chain-interrupt"
+        remote_root.mkdir()
+        previous = remote_root / "analysis" / "out.txt"
+        previous.parent.mkdir(parents=True)
+        previous.write_text("old result", encoding="utf-8")
+        client = FakeSSHClient()
+        hanging = _HangingChannel()
+        payload_count = 0
+
+        def fake_exec(command, timeout=None):
+            nonlocal payload_count
+            client.commands.append(command)
+            if command.startswith("setsid "):
+                payload_count += 1
+                if payload_count > 1:
+                    # Step 2 hangs; the monkeypatched sleep below interrupts it.
+                    stream = _HangingStream(hanging)
+                    return None, stream, stream
+                # Step 1 really runs, writing its output into the mirror.
+                return FakeSSHClient.exec_command(client, command, timeout=timeout)
+            proc = subprocess.CompletedProcess(command, 0, b"", b"")
+            channel = _FakeChannel(proc)
+            return (
+                None,
+                _FakeStream(proc.stdout, channel),
+                _FakeStream(proc.stderr, channel),
+            )
+
+        client.exec_command = fake_exec
+
+        def interrupting_sleep(_seconds):
+            raise ShutdownRequested(signal.SIGINT)
+
+        monkeypatch.setattr("operon.execution.time.sleep", interrupting_sleep)
+        executor = self._executor(remote_root=str(remote_root), client=client)
+        local_output = self.root / "analysis" / "out.txt"
+        with self.assertRaises(ShutdownRequested):
+            run_external_command(
+                self.db,
+                self.project,
+                ["true"],
+                step="test:chain-interrupt",
+                cwd=self.root,
+                executor=executor,
+                commands=[
+                    ["bash", "-c", 'echo new-result > "$1"', "bash", str(local_output)],
+                    ["true"],
+                ],
+                expected_outputs=[local_output],
+            )
+        # The interrupt arrives while step 2 is running — after step 1 already
+        # overwrote the artifact — so the sweep restores the previous remote
+        # bytes instead of leaving the partial chain's output in place.
+        self.assertEqual(previous.read_text(), "old result")
+        self.assertFalse(local_output.exists())
+        self.assertEqual(list(remote_root.rglob("*.operon-prev-*")), [])
+
     def test_remote_database_contract_requires_reference_and_creates_mutable_cache(
         self,
     ):

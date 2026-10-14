@@ -1342,6 +1342,49 @@ class SSHExecutor:
         finally:
             sftp.close()
 
+    # -- chain-scoped output lifecycle --------------------------------------
+
+    def reset_expected_outputs(
+        self, expected_outputs: Iterable[Any]
+    ) -> list[tuple[str, str]]:
+        """Back up existing remote outputs before a command chain starts.
+
+        A chain runs as one ``run`` call per step; resetting around only the
+        last call would rename away an artifact an earlier step just produced.
+        The returned backups stay alive until the caller either pulls the
+        outputs (:meth:`pull_expected_outputs`) or restores the backups
+        (:meth:`restore_expected_outputs`).
+        """
+        sftp = self.client.open_sftp()
+        try:
+            return self._reset_outputs(sftp, expected_outputs)
+        finally:
+            sftp.close()
+
+    def pull_expected_outputs(
+        self, backups: list[tuple[str, str]], expected_outputs: Iterable[Any]
+    ) -> None:
+        """Pull and verify the chain's outputs, then drop their backups.
+
+        On a pull or verification failure the backups are left untouched; the
+        caller decides whether to restore them.
+        """
+        client = self._connect()
+        sftp = client.open_sftp()
+        try:
+            self._pull_outputs(client, sftp, expected_outputs)
+            self._drop_output_backups(sftp, backups)
+        finally:
+            sftp.close()
+
+    def restore_expected_outputs(self, backups: list[tuple[str, str]]) -> None:
+        """Best-effort restore of backed-up outputs after a failed chain."""
+        sftp = self.client.open_sftp()
+        try:
+            self._restore_output_backups(sftp, backups)
+        finally:
+            sftp.close()
+
     # -- staging -----------------------------------------------------------
 
     def _stage_inputs(

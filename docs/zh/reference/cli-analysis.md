@@ -78,7 +78,8 @@ recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（�
 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`，每步的 argv 与退出码记录在该次运行的
 `execution_details.steps` 中。中间产物放在确定性的 `${work_dir}` 暂存目录（输出旁的
 `<output_name>.work`），运行前删除重建、结束或失败后移除；`--keep-partial` 会保留它。
-只有最后一步需要产出 `${output}`。渲染后的 `commands` 参与参数指纹。字段契约见
+任何一步都可以产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次，SSH
+后端的远端输出备份与取回覆盖整条链而非产出它的那一步。渲染后的 `commands` 参与参数指纹。字段契约见
 [Recipe 字段参考](recipe-fields.md) 的"命令链"一节，完整示例见
 [结果解析器与示例](recipe-parsers-examples.md) 的 `rpsblast_cdd`。
 

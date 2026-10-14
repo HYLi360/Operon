@@ -280,7 +280,8 @@ commands:
 - 每一步有独立日志 `logs/<run_id>.step<N>.stdout.log` / `.stderr.log`；该步的 `argv`、
   `executable`、`tool_version`、`tool_version_raw`、`version_source`、`version_command` 与
   `exit_code` 都记录在本次运行的 `execution_details.steps` 中。
-- 只有最后一步需要产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次。
+- 任何一步都可以产出 `${output}`；非空检查、内容哈希与结果解析在整条链完成后执行一次，SSH
+  后端的远端输出备份与取回覆盖整条链而非产出它的那一步。
 - 渲染后的 `commands` 与版本探测声明保存在 recipe 快照中。每个探测到的步骤版本也会混入
   缓存指纹，因此升级任何一步的程序（例如 `rpsbproc`）都会使精确缓存失效——即使 recipe
   文本与主工具版本没有变化；验证输出收养仍然适用，与主工具升级时完全相同。
