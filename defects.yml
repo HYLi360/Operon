@@ -2396,7 +2396,7 @@ defects:
     expected_outputs=...)` contract is unchanged for direct callers, and the local/slurm backends ignore
     `expected_outputs` as before. The documented restriction "only the last step must produce
     `${output}`" is lifted in docs/*/reference/cli-analysis.md and docs/*/reference/recipe-fields.md.
-  fix_commit: null
+  fix_commit: '78341a02d113d129f9369b08c27af827e62ed086'
   fixed_in: null
   regression_tests:
     - tests/unit/test_execution.py::test_chain_output_produced_before_last_step_is_pulled
