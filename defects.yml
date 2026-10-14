@@ -1771,7 +1771,7 @@ defects:
     Compare every bundle member, including directories, and refuse any symbolic link before reusing
     existing output. The regression fails on the original producer for both cases.
   fix_commit: '9d85dca2f2ee507f1b2209e089ecd6865fb7cc99'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/regression/test_view_bundle.py::test_bundle_reuse_rejects_extra_directories_and_symlinks
 - id: ODR-59
@@ -1790,7 +1790,7 @@ defects:
     Bound structural integers in the packaged schemas to SQLite signed integers, validate those bounds
     before binding, and normalize finite real metrics to their SQLite REAL representation.
   fix_commit: 'fc590e980869d5a00709487aa782792748f80517'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_payload_rejects_job_id_outside_sqlite_integer_range
 - id: ODR-60
@@ -1810,7 +1810,7 @@ defects:
     Decode plugin JSON and JSONL with a shared strict reader that rejects nonfinite numeric values
     before schema validation or canonical hashing. Preserve normal import-qc decoding and output.
   fix_commit: '8478b0019894275f33ce7590b761dcffe740f048'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/regression/test_hits_import.py::test_hits_reject_nonstandard_json_constants_in_extra
     - tests/regression/test_plugin_events.py::test_events_reject_nonstandard_json_constants_in_unknown_types
@@ -1833,7 +1833,7 @@ defects:
     The read-only PRAGMA whitelist gained integrity_check and foreign_key_check, so the documented
     recovery baseline runs as written; every writable PRAGMA stays denied.
   fix_commit: 'cb4b42ad225d78f51d9eac8252af3970d6bfecd9'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_database_edges_more.py::test_readonly_query_allows_the_integrity_pragmas
 - id: ODR-62
@@ -1855,7 +1855,7 @@ defects:
     Both notification assertions in test_tui_table_import.py become predicate waits on the notification
     rack, the same fix shape as ODR-27 and ODR-57, and both tests carry the ODR-62 bug marker.
   fix_commit: 'af060c515e6d39cb8afbd526f5bbfe933857967f'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_table_import.py::test_import_preview_gate_unlocks_confirm_and_writes
     - tests/unit/test_tui_table_import.py::test_template_mode_command_text_and_confirm
@@ -1908,7 +1908,7 @@ defects:
     docs/*/reference/recipe-parsers-examples.md with the alignment-reader rule; e496a19 scoped those
     sentences back to the alignment readers.
   fix_commit: '59c959a944b344d34cb43ce9a972fcd22c450193'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_sequence_tools.py::TestExtractDomains::test_only_latest_completed_job_contributes
     - tests/unit/test_sequence_tools.py::TestSelectSequences::test_only_latest_completed_job_contributes
@@ -1938,7 +1938,7 @@ defects:
     owner)') observed once exactly one row remains — so the renumbering is awaited instead of sampled;
     the arguments and the chain note are read after that predicate holds.
   fix_commit: 'd166237801932b21a8017e19055bf42d1070dd3d'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_config.py::test_config_screen_commands_chain_validation_and_step_rows
 - id: ODR-65
@@ -1983,7 +1983,7 @@ defects:
     probe input so every attempt misses, pin that on_form_ready fires only once the form answers, and
     mount the hook's widget a turn late.
   fix_commit: '111da2d2220dbc384fe385fb43706b7b94b74e5a'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_common_guard.py::test_write_modal_preview_defers_until_modal_command_composes
     - tests/unit/test_tui_common_guard.py::test_write_modal_preview_defers_while_command_text_inputs_compose
@@ -2025,7 +2025,7 @@ defects:
     converted under ODR-23. A guard test scans operon/tui for bare Select constructions so the unguarded
     widget cannot come back.
   fix_commit: '7d2185b6c36150bb232d5833d9497ae69c43e3c9'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_common_guard.py::test_tui_constructs_no_bare_selects
 - id: ODR-67
@@ -2055,7 +2055,7 @@ defects:
     audit found ungated (one reddened by a later jitter run). Tests that read inside the mounting window
     by design (ODR-35/ODR-36) were left as they are.
   fix_commit: '052d16a7d8d70c260cf47a33af3e07fff522e93b'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_config.py::test_config_screen_profile_save_end_to_end
     - tests/unit/test_tui_config.py::test_config_screen_save_error_stays_inline
@@ -2096,7 +2096,7 @@ defects:
     source assignment waits for the row's select to be ready, and the remotes push/pull prefill branches
     wait for remote.value == 'mirror' the way the evict branch already did.
   fix_commit: '8fd65fd44955ca77dc23c7dff608c49636d1a154'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_config.py::test_config_screen_add_and_remove_rule_rows
     - tests/unit/test_tui_config.py::test_config_classification_editor_end_to_end
@@ -2132,7 +2132,7 @@ defects:
     the removed rule. The row-buttons test waits for the exact tree count after a removal; the
     regression test holds the removal open and composes inside the window.
   fix_commit: '1b52d44c6fdc8e3453364c8d257b3e73093c97e3'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_config.py::test_classification_editor_row_buttons_add_and_remove
     - tests/unit/test_tui_config.py::test_classification_rule_row_stops_answering_once_removal_is_requested
@@ -2160,7 +2160,7 @@ defects:
     in test_tui_remotes) and both direct notification-list reads — the cancel test and the preflight
     test — wait for the expected entry instead of reading the list a turn early.
   fix_commit: '4148e5b34beec6cdb3bde96ada361fd785b88e30'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_ncbi_datasets.py::test_preflight_gate_unlocks_confirm_and_real_run_writes
     - tests/unit/test_tui_ncbi_datasets.py::test_cancel_sets_event_and_unlocks_controls
@@ -2187,7 +2187,7 @@ defects:
     Fixed. Both parity tests wait for the dismissal callback (bool(dismissed)) after the worker-side
     action, mirroring the sibling sites that already did.
   fix_commit: 'aed1b107b186c50215eeede9365ef9ef31af370b'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_cli_parity.py::test_backup_create_modal_command_text_matches_action_kwargs
     - tests/unit/test_tui_cli_parity.py::test_set_state_modal_command_text_matches_action_kwargs
@@ -2214,7 +2214,7 @@ defects:
     app._notifications reads — the failed-command test and the cannot-cancel test — wait for the queued
     entry.
   fix_commit: 'bb3332399fa9d8fa535e6f3a7ce32de0e0531542'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_writes.py::test_run_external_modal_failed_command_opens_record
     - tests/unit/test_tui_writes.py::test_run_external_modal_cannot_be_cancelled_while_running
@@ -2276,7 +2276,7 @@ defects:
     argv with the `-d` pair removed exits 2 with "Cannot find data files". The project-side preset in
     others/config/ is unchanged and stays valid — it never used the prefix convention.
   fix_commit: 'aa0aaa1c65ce0a1a75947d46a3785a7f99abbcb9'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tools_edges.py::test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory
 - id: ODR-74
@@ -2339,7 +2339,7 @@ defects:
     `workflow_runs` row in both trees, and the `workflow_runs` DDL in operon/database.py that the new
     row points at. Reverting either guide fails four of its five tests (checked before committing).
   fix_commit: '385db509a513e3b5d22770afcd3beb06e4ddbb08'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_docs_remote_execution.py::test_checklist_keeps_the_scheduler_job_id_out_of_execution_details
     - tests/unit/test_docs_remote_execution.py::test_checklist_names_the_workflow_runs_columns_that_hold_the_job_id
@@ -2397,7 +2397,7 @@ defects:
     `expected_outputs` as before. The documented restriction "only the last step must produce
     `${output}`" is lifted in docs/*/reference/cli-analysis.md and docs/*/reference/recipe-fields.md.
   fix_commit: '78341a02d113d129f9369b08c27af827e62ed086'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_execution.py::test_chain_output_produced_before_last_step_is_pulled
     - tests/unit/test_execution.py::test_failed_chain_restores_previous_remote_output
@@ -2438,7 +2438,7 @@ defects:
     (others/plans/2026-10-14_2246-analyze-detach.md): a batch that outlives its terminal needs this
     resilience to run unattended.
   fix_commit: 'abaac93a45256aa5a0a6f193f47443e0dc34362e'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_execution.py::test_dead_cached_transport_is_replaced_by_a_fresh_client
     - tests/unit/test_execution.py::test_lost_reconnect_raises_remote_unavailable_error
