@@ -710,6 +710,7 @@ def test_analyze_modal_cancel_and_failure_paths(project: Project, monkeypatch) -
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.bug("ODR-78")
 def test_config_screen_run_analysis_entry(project: Project, tmp_path: Path) -> None:
     _write_fake_tool(project, tmp_path)
 
@@ -748,7 +749,12 @@ def test_config_screen_run_analysis_entry(project: Project, tmp_path: Path) -> N
             await _settled(app)
             # Success callback: no failures, all panels reloaded, Runs screen shown.
             assert not isinstance(app.screen, ErrorDialog)
-            assert app.query_one("#main", ContentSwitcher).current == "runs"
+            # ODR-78: the dismiss callback's panel reload and screen switch
+            # land a turn after dismissal; wait for them.
+            await _wait_until(
+                lambda: app.query_one("#main", ContentSwitcher).current == "runs",
+                "the runs screen to become current",
+            )
 
     _run(scenario())
     assert (
@@ -760,6 +766,7 @@ def test_config_screen_run_analysis_entry(project: Project, tmp_path: Path) -> N
     )
 
 
+@pytest.mark.bug("ODR-78")
 def test_analysis_failure_callback_shows_error_dialog(
     project: Project, tmp_path: Path
 ) -> None:
@@ -791,7 +798,11 @@ def test_analysis_failure_callback_shows_error_dialog(
             )
             await pilot.press("escape")
             await pilot.pause()
-            assert app.query_one("#main", ContentSwitcher).current == "runs"
+            # ODR-78: the same deferred callback switch, after the dialog closes.
+            await _wait_until(
+                lambda: app.query_one("#main", ContentSwitcher).current == "runs",
+                "the runs screen to become current",
+            )
             assert any(
                 severity == "warning" and "0/3 succeeded" in message
                 for severity, message in _notifications(app)
