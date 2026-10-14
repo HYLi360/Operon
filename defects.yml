@@ -2344,3 +2344,53 @@ defects:
     - tests/unit/test_docs_remote_execution.py::test_checklist_keeps_the_scheduler_job_id_out_of_execution_details
     - tests/unit/test_docs_remote_execution.py::test_checklist_names_the_workflow_runs_columns_that_hold_the_job_id
     - tests/unit/test_docs_remote_execution.py::test_workflow_runs_declares_the_columns_the_checklist_points_at
+- id: ODR-75
+  title: |
+    SSH command chains attach expected-output reset/pull to the last step only, so an output produced by
+    an earlier step is renamed away and the run fails retrieval
+  reported: '2026-10-14'
+  introduced_in: null
+  affected: |
+    operon/workflow.py `run_external_command` runs a recipe's `commands` chain as one executor call per
+    step but passes `expected_outputs` only to the last step (`if step_index == len(argv_steps)`). On
+    the SSH backend (`operon/execution.py` `SSHExecutor.run`) that parameter drives both sides of the
+    output lifecycle around that single call: `_reset_outputs` renames any existing remote output to
+    `<path>.operon-prev-<uuid>` before the step runs, and `_pull_outputs` retrieves it afterwards.
+    
+    For a chain whose final artifact is produced before the last step (e.g. a 3-step rpsblast ->
+    rpsbproc -> compress recipe whose `${output}` is written by step 2), this breaks twice: the
+    producing step overwrites the previous remote output in place before any backup exists, and the last
+    step's `_reset_outputs` then renames the freshly written new artifact away, so `_pull_outputs` finds
+    nothing at the canonical remote path. The run is recorded `failed` with `expected output missing or
+    empty: <local path>` even though every step exited 0 and the remote artifact was written correctly;
+    the local artifact was already deleted at planning time (`_insert_running_job` ->
+    `_remove_output_artifact`) and the failure path does not bring it back. End state observed on the
+    remote mirror: the new artifact left behind as `<artifact>.operon-prev-<uuid>` (recoverable by a
+    manual rename) while the previous artifact's bytes are gone.
+  severity: 'high'
+  component: 'tools'
+  status: 'confirmed'
+  reproduction: |
+    Reproduced twice on the production SSH+Slurm deployment, 2026-10-14 (internal record
+    others/rpsblast-raw-retention-20261014.md, section 3): recipe `rpsblast_cdd` (2 steps, output
+    written by the last step) completes and its artifact lands locally (job ids 1612/1615/1617), while
+    `rpsblast_cdd_staged` (5 steps, output written by step 2) and `rpsblast_cdd_archive` (3 steps,
+    output written by step 2) both fail with `expected output missing or empty: <local path>`. Every
+    per-step `.exitcode` file reads 0 and the remote artifact carries the step's write timestamp; the
+    failure happens only in the client-side retrieve/verify phase. Afterwards the remote artifact sits
+    at `<artifact>.operon-prev-<uuid>` with intact content and the local artifact is empty.
+    
+    Minimal reproduction: append any step (e.g. `zstd -1 -o ...`) to the working two-step `rpsblast_cdd`
+    recipe and run one file; or, without a cluster, call `run_external_command` with
+    `commands=[step_that_writes_output, ["true"]]` and `expected_outputs=[output]` through an
+    SSHExecutor with a non-empty `remote_root` — the run fails with the same error and the remote
+    artifact is gone from its canonical path.
+  disposition: |
+    Planned: treat the expected-output lifecycle as chain-scoped on backends that need it. Reset (back
+    up) existing remote outputs before the first step, run every step without per-step reset/pull, and
+    pull + verify only after the last step succeeds, restoring the backups on any failure or interrupt —
+    so neither a mid-chain producer nor the final retrieval can destroy the artifact. Backends on a
+    shared filesystem (local, slurm) are unaffected because they ignore `expected_outputs` entirely.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
