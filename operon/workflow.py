@@ -20,7 +20,12 @@ from typing import Any, TextIO
 from operon import __version__
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ConflictError, OperonError, ValidationError
+from operon.errors import (
+    ConflictError,
+    OperonError,
+    RemoteUnavailableError,
+    ValidationError,
+)
 from operon.utils import append_jsonl, now_iso, path_is_nonempty, sha256_path
 
 VALID_STATES = {
@@ -554,6 +559,10 @@ def run_external_command(
         record["input_sha256"] = hashlib.sha256(combined.encode("utf-8")).hexdigest()
     owns_executor = executor is None
     environment: dict[str, Any] | None = None
+    # Set when the executor's connection is unrecoverable: the run is still
+    # recorded failed, but the original exception type propagates so batch
+    # callers can stop remaining files from producing identical errors.
+    re_raise: RemoteUnavailableError | None = None
     try:
         if executor is None:
             from operon.execution import get_executor
@@ -718,6 +727,12 @@ def run_external_command(
         )
     except OSError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
+    except RemoteUnavailableError as exc:
+        # A connection that cannot be re-established is batch-wide: keep the
+        # real exception type so callers abort the whole batch instead of
+        # burning the remaining files with identical per-file errors.
+        record.update(status="failed", error=str(exc), exit_code=None)
+        re_raise = exc
     except OperonError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
     except Exception as exc:  # noqa: BLE001 - failures are recorded as failed runs and re-raised  # pylint: disable=broad-exception-caught
@@ -744,6 +759,8 @@ def run_external_command(
     duration = time.monotonic() - started_monotonic
     record["duration_seconds"] = round(duration, 3)
     log_run(db, project, record)
+    if re_raise is not None:
+        raise re_raise
     if record.get("status") != "completed":
         raise RuntimeError(f"{step} failed: {record.get('error') or 'unknown error'}")
     return record

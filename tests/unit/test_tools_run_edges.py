@@ -17,7 +17,7 @@ from operon import execution, tools
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import RemoteError
+from operon.errors import RemoteError, RemoteUnavailableError
 from operon.shutdown import ShutdownRequested
 from operon.tools import run_analysis
 from tests.unit.test_tools_execution_more import (
@@ -347,6 +347,57 @@ def test_ssh_array_staging_failures_skip_submission_entirely(
         "failed",
     ]
     assert executor.sftp.closed
+
+
+@pytest.mark.bug("ODR-76")
+def test_sequential_ssh_batch_aborts_when_reconnect_fails(operon_project, monkeypatch):
+    """A lost SSH re-connect stops the batch instead of failing every file.
+
+    In the field (535-file rpsblast_cdd_archive) one dropped connection made
+    all 533 remaining files fail identically; the loop must abort after the
+    in-flight file is recorded, not convert a connection condition into
+    per-file errors.
+    """
+    project, db = operon_project
+    ingest_assembly(project, db, 1)
+    ingest_assembly(project, db, 2)
+    write_tool_config(project)
+    _stub_version_probe(monkeypatch)
+    executor = _ArrayExecutor()
+    # A chain recipe on a non-array executor keeps the sequential per-file loop.
+    executor.slurm = execution.SlurmConfig()
+    calls: list[list[str]] = []
+
+    def scripted_run(
+        argv,
+        *,
+        stdout_path=None,
+        stderr_path=None,
+        expected_outputs=(),
+        **_kwargs,
+    ):
+        calls.append([str(arg) for arg in argv])
+        if len(calls) == 1:
+            for path in expected_outputs:
+                output = Path(path)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text("sequential output\n", encoding="utf-8")
+            return execution.ExecResult(exit_code=0, details={})
+        raise RemoteUnavailableError(
+            "connection to ssh:test lost and re-connect failed: network unreachable"
+        )
+
+    executor.run = scripted_run
+    _install_array_executor(monkeypatch, executor)
+
+    with pytest.raises(RemoteUnavailableError):
+        run_analysis(project, db, "fake_recipe", backend="ssh")
+
+    statuses = [
+        job["status"] for job in db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+    ]
+    assert statuses == ["completed", "failed"]
+    assert len(calls) == 2
 
 
 def test_array_result_count_mismatch_fails_the_whole_batch(operon_project, monkeypatch):

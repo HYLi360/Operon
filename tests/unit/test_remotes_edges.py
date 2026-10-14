@@ -124,7 +124,10 @@ def test_connect_ssh_known_hosts_pinning_and_errors(monkeypatch):
             self.kwargs = kwargs
 
         def get_transport(self):
-            return SimpleNamespace(get_remote_server_key=lambda: Key())
+            return SimpleNamespace(
+                get_remote_server_key=lambda: Key(),
+                set_keepalive=lambda seconds: None,
+            )
 
         def get_host_keys(self):
             return self.host_keys

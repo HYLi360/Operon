@@ -21,7 +21,7 @@ from operon import execution
 from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
-from operon.errors import RemoteError, ValidationError
+from operon.errors import RemoteError, RemoteUnavailableError, ValidationError
 from operon.execution import (
     _SLURM_EXIT_CODE_RETRY_SECONDS,
     ExecResult,
@@ -128,6 +128,30 @@ class FakeSSHClient:
             _FakeStream(proc.stdout, channel),
             _FakeStream(proc.stderr, channel),
         )
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class _MortalTransport:
+    """Transport double whose liveness state the test controls."""
+
+    def __init__(self) -> None:
+        self._active = True
+
+    def is_active(self) -> bool:
+        return self._active
+
+
+class _MortalSSHClient:
+    """SSH client double exposing a transport the test can kill mid-batch."""
+
+    def __init__(self) -> None:
+        self.transport = _MortalTransport()
+        self.close_calls = 0
+
+    def get_transport(self) -> _MortalTransport:
+        return self.transport
 
     def close(self) -> None:
         self.close_calls += 1
@@ -878,6 +902,65 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(output.read_text().strip(), "remote-run")
         self.assertTrue(any("remote-run" in c for c in client.commands))
+
+    @pytest.mark.bug("ODR-76")
+    def test_dead_cached_transport_is_replaced_by_a_fresh_client(self):
+        clients: list[_MortalSSHClient] = []
+
+        def factory(_self):
+            client = _MortalSSHClient()
+            clients.append(client)
+            return client
+
+        executor = SSHExecutor(
+            self.project,
+            {"host": "fake.example.org", "user": "tester"},
+            SlurmConfig(),
+            client_factory=factory,
+        )
+        first = executor.client
+        first.transport._active = False  # the connection dropped
+        self.assertEqual(clients, [first])
+        second = executor.client
+        assert second is clients[1]
+        assert second is not first
+
+    @pytest.mark.bug("ODR-76")
+    def test_lost_reconnect_raises_remote_unavailable_error(self):
+        clients: list[_MortalSSHClient] = []
+
+        def factory(_self):
+            if not clients:
+                client = _MortalSSHClient()
+                clients.append(client)
+                return client
+            raise OSError("network unreachable")
+
+        executor = SSHExecutor(
+            self.project,
+            {"host": "fake.example.org", "user": "tester"},
+            SlurmConfig(),
+            client_factory=factory,
+        )
+        first = executor.client
+        assert first is clients[0]
+        clients[0].transport._active = False
+        with pytest.raises(RemoteUnavailableError) as excinfo:
+            _ = executor.client
+        self.assertIn("lost and re-connect failed", str(excinfo.value))
+
+    def test_first_connect_failure_is_not_masked_as_lost(self):
+        def factory(_self):
+            raise OSError("host resolution failure")
+
+        executor = SSHExecutor(
+            self.project,
+            {"host": "fake.example.org", "user": "tester"},
+            SlurmConfig(),
+            client_factory=factory,
+        )
+        with pytest.raises(OSError):
+            _ = executor.client
 
     def test_direct_execution_exit_code_and_stderr(self):
         executor = self._executor()

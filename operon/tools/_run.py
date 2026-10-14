@@ -15,7 +15,11 @@ from typing import Any
 
 from operon.config import Project
 from operon.database import Database
-from operon.errors import ExternalToolError, ValidationError
+from operon.errors import (
+    ExternalToolError,
+    RemoteUnavailableError,
+    ValidationError,
+)
 from operon.shutdown import ShutdownRequested, cleanup_completed, graceful_shutdown
 from operon.utils import now_iso
 
@@ -151,6 +155,11 @@ def run_analysis(
                     # Bookkeeping already finalized in run_analysis_for_file;
                     # stop the batch here and let the CLI report exit 130.
                     raise
+                except RemoteUnavailableError:
+                    # A lost re-connect is batch-wide: the connection cannot be
+                    # re-established, so every remaining file would fail
+                    # identically. Bookkeeping is already final; stop the batch.
+                    raise
                 except Exception as exc:  # noqa: BLE001 - per-file analysis failures become error results; interrupts re-raise  # pylint: disable=broad-exception-caught
                     result = _analysis_error_result(file_record, recipe, exc)
                 results.append(result)
@@ -273,6 +282,12 @@ def _run_analysis_two_phase(
                 project, db, plan, exc, keep_partial=keep_partial
             )
             cleanup_completed()
+            raise
+        except RemoteUnavailableError as exc:
+            # Same batch-wide condition as the sequential loop: record the
+            # in-flight file, then stop before the remaining files burn
+            # through with identical errors.
+            _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)
             raise
         except Exception as exc:
             _fail_analysis_execution(project, db, plan, exc, keep_partial=keep_partial)

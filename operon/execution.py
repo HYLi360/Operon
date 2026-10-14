@@ -42,7 +42,13 @@ except ImportError:  # pragma: no cover - the stdlib 'resource' module exists on
 from operon.config import Project
 from operon.environment import PROBE_SHELL_LINES, local_environment, parse_probe_output
 from operon.environment_capture import capture_local, probe_shell
-from operon.errors import ConflictError, ExternalToolError, RemoteError, ValidationError
+from operon.errors import (
+    ConflictError,
+    ExternalToolError,
+    RemoteError,
+    RemoteUnavailableError,
+    ValidationError,
+)
 from operon.shutdown import ShutdownRequested
 from operon.utils import iter_directory_entries, sha256_file, sha256_path
 
@@ -1106,6 +1112,18 @@ def _read_remote_probe_environment(sftp: Any, probe_path: str) -> dict[str, Any]
     return environment or None
 
 
+def _client_alive(client: Any) -> bool:
+    """Judge a cached SSH client's liveness from its transport, when it has one."""
+    get_transport = getattr(client, "get_transport", None)
+    if get_transport is None:
+        # Test doubles without a transport cannot be judged; trust them.
+        return True
+    transport = get_transport()
+    if transport is None:
+        return False
+    return bool(transport.is_active())
+
+
 class SSHExecutor:
     """Run commands on a remote host over SSH, optionally through remote Slurm."""
 
@@ -1219,22 +1237,45 @@ class SSHExecutor:
             return None
 
     def _connect(self) -> Any:
+        """Return the executor's SSH client, re-connecting when it has died."""
+        had_client = self._client is not None
+        if self._client is not None and not _client_alive(self._client):
+            # The transport dropped (NAT idle timeout, restart, network blip);
+            # a fresh connection must replace the dead cached client.
+            self._client = None
         if self._client is None:
             if self._client_factory is not None:
-                self._client = self._client_factory(self)
+
+                def create() -> Any:
+                    return self._client_factory(self)
+
             else:
                 from operon.remotes import connect_ssh
 
-                self._client = connect_ssh(
-                    self.host,
-                    user=self.user,
-                    port=self.port,
-                    key_file=self.key_file,
-                    connect_timeout=self.connect_timeout,
-                    known_hosts=self.known_hosts,
-                    host_key_sha256=self.host_key_sha256,
-                    insecure_accept_unknown_host=self.insecure_accept_unknown_host,
-                )
+                def create() -> Any:
+                    return connect_ssh(
+                        self.host,
+                        user=self.user,
+                        port=self.port,
+                        key_file=self.key_file,
+                        connect_timeout=self.connect_timeout,
+                        known_hosts=self.known_hosts,
+                        host_key_sha256=self.host_key_sha256,
+                        insecure_accept_unknown_host=self.insecure_accept_unknown_host,
+                    )
+
+            try:
+                self._client = create()
+            except Exception as exc:
+                if had_client:
+                    # A lost re-connect is a batch-wide condition, not a
+                    # per-file failure: callers abort instead of emitting one
+                    # identical error row per remaining file.
+                    raise RemoteUnavailableError(
+                        f"connection to {self.describe()} lost and re-connect "
+                        f"failed: {exc}"
+                    ) from exc
+                raise
         return self._client
 
     @property

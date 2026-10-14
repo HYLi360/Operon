@@ -19,6 +19,7 @@ from operon.database import Database
 from operon.errors import ConflictError, RemoteError, ValidationError
 from operon.files import ingest_file, verify_files
 from operon.remotes import (
+    _SSH_KEEPALIVE_SECONDS,
     SFTPStore,
     connect_ssh,
     evict_local,
@@ -101,6 +102,9 @@ class TestRemoteConfig(PytestAssertions):
             def connect(self, **kwargs):
                 self.connect_kwargs = kwargs
 
+            def get_transport(self):
+                return SimpleNamespace(set_keepalive=lambda seconds: None)
+
             def close(self):
                 self.closed = True
 
@@ -129,6 +133,45 @@ class TestRemoteConfig(PytestAssertions):
             "host-key verification is disabled for hpc.example.org:22"
             in capsys.readouterr().err
         )
+
+    @pytest.mark.bug("ODR-76")
+    def test_ssh_client_transport_configures_keepalive(self, monkeypatch):
+        intervals: list[int] = []
+
+        class Transport:
+            def set_keepalive(self, seconds):
+                intervals.append(seconds)
+
+        class Client:
+            closed = False
+
+            def load_system_host_keys(self):
+                pass
+
+            def set_missing_host_key_policy(self, policy):
+                pass
+
+            def connect(self, **kwargs):
+                pass
+
+            def get_transport(self):
+                return Transport()
+
+            def close(self):
+                self.closed = True
+
+        fake_paramiko = SimpleNamespace(
+            SSHClient=Client,
+            MissingHostKeyPolicy=type("Missing", (), {}),
+            RejectPolicy=type("Reject", (), {}),
+            AutoAddPolicy=type("Auto", (), {}),
+            SSHException=RuntimeError,
+        )
+        monkeypatch.setattr("operon.remotes.import_paramiko", lambda: fake_paramiko)
+
+        connect_ssh("hpc.example.org")
+
+        assert intervals == [_SSH_KEEPALIVE_SECONDS]
 
     def test_ssh_client_is_closed_when_authentication_fails(self, monkeypatch):
         class MissingHostKeyPolicy:
@@ -183,7 +226,10 @@ class TestRemoteConfig(PytestAssertions):
                 pass
 
             def get_transport(self):
-                return SimpleNamespace(get_remote_server_key=lambda: key)
+                return SimpleNamespace(
+                    get_remote_server_key=lambda: key,
+                    set_keepalive=lambda seconds: None,
+                )
 
             def close(self):
                 self.closed = True

@@ -149,6 +149,12 @@ def _host_key_fingerprint(key: Any) -> str:
     )
 
 
+# paramiko keepalive interval (seconds): traffic is sent over otherwise idle
+# sessions so NAT gateways and firewalls do not drop long-lived connections
+# between the steps of a batch.
+_SSH_KEEPALIVE_SECONDS = 30
+
+
 def connect_ssh(
     host: str,
     user: str = "",
@@ -228,6 +234,9 @@ def connect_ssh(
         raise RemoteError(
             f"cannot connect to {address}: {type(exc).__name__}: {exc}"
         ) from exc
+    transport = client.get_transport()
+    if transport is not None:
+        transport.set_keepalive(_SSH_KEEPALIVE_SECONDS)
     return client
 
 
