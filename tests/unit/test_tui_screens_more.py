@@ -2426,6 +2426,7 @@ def test_decisions_screen_include_retired_toggle(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-77")
 def test_runs_more_filters_accept_resumes_run_id(project: Project, monkeypatch) -> None:
     from operon.tui import data
     from operon.tui.app import OperonApp
@@ -2451,8 +2452,12 @@ def test_runs_more_filters_accept_resumes_run_id(project: Project, monkeypatch) 
             panel = app.screen.query_one(RunsPanel)
             await _wait_until(lambda: panel.runs != [], "runs")
             panel.query_one("#runs-more", Button).press()
+            # ODR-77: the modal's filter fields land a turn after its screen is
+            # current; under load the unguarded query lost that race.
             await _wait_until(
-                lambda: isinstance(app.screen, RunsFiltersModal), "filters dialog"
+                lambda: isinstance(app.screen, RunsFiltersModal)
+                and bool(app.screen.query("#runs-filter-resumes-run-id")),
+                "filters dialog with its filter fields",
             )
             modal = app.screen
             modal.query_one("#runs-filter-resumes-run-id", Input).value = runs[0][
