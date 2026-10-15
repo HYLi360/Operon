@@ -1762,7 +1762,7 @@ defects:
     symlink
   severity: 'low'
   component: 'reports'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run pytest tests/regression/test_view_bundle.py -k extra_directories -n 0 --no-cov. Both scenarios
     accepted a destination with an unexpected directory instead of raising ConflictError. The original
@@ -1782,7 +1782,7 @@ defects:
     The API-extension branch; plugin payloads with an oversized job ID, rank, coordinate or file size
   severity: 'low'
   component: 'api'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run pytest tests/regression/test_hits_import.py -k outside_sqlite -n 0 --no-cov. A job_id of 1 << 80
     escaped validation and raised OverflowError during SQLite lookup instead of a ValidationError.
@@ -1801,7 +1801,7 @@ defects:
     The API-extension branch; nonfinite numbers nested in alignment extra fields or unknown event types
   severity: 'low'
   component: 'api'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run pytest tests/regression/test_hits_import.py tests/regression/test_plugin_events.py -k
     nonstandard_json -n 0 --no-cov. All eight cases raised a bare ValueError during canonical hashing
@@ -1825,7 +1825,7 @@ defects:
     foreign_key_check`) fails with `not authorized` although both pragmas are read-only analytics.
   severity: 'medium'
   component: 'database'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Run operon --project <any project> query "PRAGMA integrity_check" (or PRAGMA foreign_key_check).
     Both fail with `error: query failed: not authorized` on the current code.
@@ -1843,7 +1843,7 @@ defects:
   affected: 'the table-import TUI tests: two tests asserted a toast the app had not posted yet'
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     App.notify posts a Notify message rather than recording the toast inline, so the text lands a
     message-loop turn later. test_tui_table_import.py sampled _notifications(app) once right after the
@@ -1873,7 +1873,7 @@ defects:
     database are therefore counted alongside the new ones.
   severity: 'medium'
   component: 'tools'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Observed on the PROJECT_BHLH project (database schema 2.11). Step 1: `hmmsearch_pf00010` pointed at
     `hmm/PF00010/PF00010.hmm`; its single completed job for FIL_000003 (ANN_000001, job_id 1109,
@@ -1921,7 +1921,7 @@ defects:
   affected: 'Unreleased coverage work (PR #6); reddened the pytest (macos-latest, 3.11) CI leg once.'
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     test_config_screen_commands_chain_validation_and_step_rows removes the first step of a two-command
     chain, waits for the command-row count to drop to one, and then reads the survivor's title. Pressing
@@ -1950,7 +1950,7 @@ defects:
     2026-10-11, rounds 1-6).
   severity: 'medium'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Six randomized-order rounds of tests/unit/test_tui*.py under the jitter harness
     (PYTHONPATH=others/tui-race, -p tui_jitter -p shuffle_order, OPERON_TUI_JITTER_MS=0.5
@@ -2001,7 +2001,7 @@ defects:
     files_ops, run_external, backup, entities modals).
   severity: 'medium'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     In the 2026-10-11 jitter stress run (six randomized-order rounds, same harness as ODR-65),
     test_config_screen_recipe_run_flow raised textual.css.query.NoMatches: No nodes match
@@ -2036,7 +2036,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     In the 2026-10-11 jitter rounds (harness as ODR-65): test_config_screen_add_and_remove_rule_rows
     round 5 raised IndexError at tests/unit/test_tui_config.py:1474 (panel._rule_rows('required')[0] on
@@ -2075,7 +2075,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     In the 2026-10-11 jitter rounds (harness as ODR-65): test_config_screen_add_and_remove_rule_rows
     rounds 1/3/4 asserted Select.NULL == '>' on '.rule-operator' (tests/unit/test_tui_config.py:1510) —
@@ -2111,7 +2111,7 @@ defects:
     flight.
   severity: 'medium'
   component: 'tui'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     test_classification_editor_row_buttons_add_and_remove failed in jitter rounds 3 and 6 of the
     2026-10-11 run (harness as ODR-65): panel._compose_classification_document() returned a 4th rule
@@ -2145,7 +2145,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     test_cancel_sets_event_and_unlocks_controls failed in jitter rounds 5 and 6 of the 2026-10-11 run
     (harness as ODR-65): the assertion that _notifications(app) contains a ('warning', 'cancelled')
@@ -2172,7 +2172,7 @@ defects:
     Unreleased test suite; reddens only under event-loop load (jitter stress run of 2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     test_backup_create_modal_command_text_matches_action_kwargs (round 2) and
     test_set_state_modal_command_text_matches_action_kwargs (round 4) of the 2026-10-11 jitter run
@@ -2200,7 +2200,7 @@ defects:
     (2026-10-11).
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     CI run 38148089207 (pytest (ubuntu-24.04, 3.10) leg):
     test_run_external_modal_failed_command_opens_record waits for the RunExternalModal dismissal and
@@ -2237,7 +2237,7 @@ defects:
     `database` must name the index directory — the same directory that holds the dump files.
   severity: 'medium'
   component: 'tools'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     On this machine (Linux, rpsblast 2.17.0+ / rpsbproc 0.5.1 from the `blaster` env, local CDD release
     of 2024-03-29: 8.0 GB, 10 volumes, holding Cdd.00.pdb / Cdd.00.aux / Cdd.00.loo / Cdd.00.freq and
@@ -2302,7 +2302,7 @@ defects:
     job id and concludes it was not recorded, while the value is present and correct one column over.
   severity: 'low'
   component: 'tools'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     First real remote run of the fixed rpsblast_cdd chain (ODR-73), 2026-10-13, SSH backend with a slurm
     scheduler:
@@ -2369,7 +2369,7 @@ defects:
     manual rename) while the previous artifact's bytes are gone.
   severity: 'high'
   component: 'tools'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Reproduced twice on the production SSH+Slurm deployment, 2026-10-14 (internal record
     others/rpsblast-raw-retention-20261014.md, section 3): recipe `rpsblast_cdd` (2 steps, output
@@ -2420,7 +2420,7 @@ defects:
     nothing is lost, but an unattended multi-day batch is unusable in this state.
   severity: 'high'
   component: 'execution'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Production SSH+Slurm deployment, 2026-10-14 (internal records others/rpsblast-batch-20261014.log and
     others/plans/2026-10-14_2246-analyze-detach.md): `analyze --analysis rpsblast_cdd_archive` over 535
@@ -2459,7 +2459,7 @@ defects:
     widget's mount and raise `NoMatches`.
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Observed once under scripts/tui-race-stress.sh (3 rounds, round seeds 1-3) on a machine at load ~9:
     round 2 (pytest-randomly seed 2) failed this test with `textual.dom.NoMatches`. The jitter harness
@@ -2489,7 +2489,7 @@ defects:
     failed the assertion.
   severity: 'low'
   component: 'tests'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Observed once under scripts/tui-race-stress.sh (round 1, pytest-randomly seed 1, after the ODR-77
     fix landed) on the same loaded machine: the entry test failed with `AssertionError: assert 'config'
