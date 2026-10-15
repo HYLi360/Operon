@@ -539,6 +539,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "dry_run": "analyze-dry-run",
             "force": "analyze-force",
             "keep_partial": "analyze-keep-partial",
+            "detach": "analyze-detach",
         },
     ),
     # -- intentionally CLI-only ---------------------------------------------

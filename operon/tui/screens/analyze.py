@@ -137,6 +137,10 @@ class AnalyzeModal(WriteModal):
             "Keep partial outputs on interrupt (--keep-partial)",
             id="analyze-keep-partial",
         )
+        yield Checkbox(
+            "Run detached — keeps running after this app closes (--detach)",
+            id="analyze-detach",
+        )
         yield Static(LOCAL_CANCEL_NOTE, id="analyze-cancel-note", classes="modal-info")
         yield ProgressBar(total=1, id="analyze-progress")
         yield Static("", id="analyze-status", classes="modal-info")
@@ -233,6 +237,7 @@ class AnalyzeModal(WriteModal):
             "dry_run": self.query_one("#analyze-dry-run", Checkbox).value,
             "force": self.query_one("#analyze-force", Checkbox).value,
             "keep_partial": self.query_one("#analyze-keep-partial", Checkbox).value,
+            "detach": self.query_one("#analyze-detach", Checkbox).value,
         }
 
     def command_text(self) -> str:
@@ -258,6 +263,7 @@ class AnalyzeModal(WriteModal):
             ("dry_run", "--dry-run"),
             ("force", "--force"),
             ("keep_partial", "--keep-partial"),
+            ("detach", "--detach"),
         ):
             if values[field]:
                 parts.append(flag)
@@ -305,6 +311,8 @@ class AnalyzeModal(WriteModal):
         try:
             limit = self._positive_int(values["limit"], "limit")
             threads = self._positive_int(values["threads"], "threads")
+            if values["detach"] and values["dry_run"]:
+                raise ValidationError("--detach cannot be combined with --dry-run")
             # Same validation the CLI applies, before any worker starts —
             # including the execution backend: a missing sbatch or an
             # incomplete SSH block is an inline error, not a failed run.
@@ -319,6 +327,26 @@ class AnalyzeModal(WriteModal):
             )
         except ValidationError as exc:
             self.show_error(exc)
+            return
+        if values["detach"]:
+            pid, log_path = actions.spawn_analysis_detached(
+                self.project,
+                analysis=values["analysis"],
+                entity_type=values["entity_type"] or None,
+                entity_id=values["entity_id"] or None,
+                limit=limit,
+                threads=threads,
+                backend=values["backend"] or None,
+                force=values["force"],
+                keep_partial=values["keep_partial"],
+                parameters=values["parameters"],
+            )
+            self.app.notify(
+                f"detached analyze: pid {pid} — console log {log_path}; "
+                "progress appears on the Runs screen — safe to close this app",
+                severity="information",
+            )
+            self.dismiss({"detached": True, "pid": pid, "total": 0, "results": []})
             return
         self._options = {
             "entity_type": values["entity_type"] or None,

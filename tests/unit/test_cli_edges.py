@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -403,6 +404,7 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
         threads=1,
         backend=None,
         keep_partial=False,
+        detach=False,
         param=[],
         events=None,
     )
@@ -412,6 +414,79 @@ def test_run_external_tools_and_analyze_output(project_db, monkeypatch, capsys):
     args.dry_run = False
     assert cli._cmd_analyze(args, project, db) == 0
     assert "0/0 succeeded" in capsys.readouterr().out
+
+
+def _analyze_ns(**overrides):
+    values = {
+        "analysis": "x",
+        "entity_type": None,
+        "entity_id": None,
+        "limit": None,
+        "threads": None,
+        "dry_run": False,
+        "force": False,
+        "keep_partial": False,
+        "detach": False,
+        "backend": None,
+        "param": [],
+        "events": None,
+    }
+    values.update(overrides)
+    return ns(**values)
+
+
+def test_analyze_detach_rejects_dry_run_and_unknown_recipe(project_db):
+    project, db = project_db
+    with pytest.raises(ValidationError, match="--detach cannot be combined"):
+        cli._cmd_analyze(_analyze_ns(detach=True, dry_run=True), project, db)
+    with pytest.raises(ValidationError, match="unknown analysis 'nosuch'"):
+        cli._cmd_analyze(_analyze_ns(detach=True, analysis="nosuch"), project, db)
+
+
+def test_analyze_detach_spawns_independent_session(project_db, monkeypatch, capsys):
+    from tests.unit.test_tools_execution_more import write_tool_config
+
+    project, db = project_db
+    write_tool_config(project)
+    spawned: dict = {}
+
+    def fake_popen(argv, **kwargs):
+        spawned["argv"] = list(argv)
+        spawned["kwargs"] = kwargs
+        return SimpleNamespace(pid=4242)
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    assert (
+        cli._cmd_analyze(
+            _analyze_ns(detach=True, analysis="fake_recipe", threads=4),
+            project,
+            db,
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    argv = spawned["argv"]
+    kwargs = spawned["kwargs"]
+    assert kwargs["start_new_session"] is True
+    assert kwargs["stdin"] == subprocess.DEVNULL
+    assert argv[:3] == [sys.executable, "-m", "operon"]
+    assert argv[3:5] == ["--project", str(project.root)]
+    assert argv[5:] == [
+        "analyze",
+        "--analysis",
+        "fake_recipe",
+        "--threads",
+        "4",
+    ]
+    assert "--detach" not in argv
+    assert "pid 4242" in out
+    assert "watch: operon inspect workflow list --step analysis:fake_recipe" in out
+    assert "kill 4242" in out
+    console_log = Path(out.split("console log: ", 1)[1].splitlines()[0])
+    assert console_log.exists()
+    header = console_log.read_text(encoding="utf-8").splitlines()[0]
+    assert header.startswith("# ") and "operon analyze (detached)" in header
 
 
 def _run_external_ns(**overrides):
