@@ -2471,7 +2471,7 @@ defects:
     Fixed by requiring the modal screen and the #runs-filter-resumes-run-id input together in the wait
     gate before any query.
   fix_commit: 'fe808ea08c26bd6d5527673d3d6bbe28df360d1f'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_screens_more.py::test_runs_more_filters_accept_resumes_run_id
 - id: ODR-78
@@ -2499,7 +2499,7 @@ defects:
     Fixed by waiting for the "#main" ContentSwitcher to reach "runs" in both tests, which carry this
     defect's regression marker.
   fix_commit: '8c782763db217a5a2974a08a1a4791f9600c5e2f'
-  fixed_in: null
+  fixed_in: '0.10.0'
   regression_tests:
     - tests/unit/test_tui_analyze.py::test_config_screen_run_analysis_entry
     - tests/unit/test_tui_analyze.py::test_analysis_failure_callback_shows_error_dialog
