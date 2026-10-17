@@ -145,11 +145,17 @@ project/
 ├── analysis/                 # 分析工作区（外部工具输出、下游分析）
 ├── reports/                  # decisions、汇总导出及 coverage 报告
 ├── taxonomy/reference_sets/  # 编译后的不可变 family/genus 分母与 provenance
+├── index/fasta_lengths/      # 可重建的派生索引缓存，按文件身份键控（不进入 manifest）
 ├── logs/workflow.jsonl       # 机器可读工作流日志（首次 workflow 运行时创建）
 ├── .operon/placeholders/     # REMOTE_ONLY 文件的小型、非权威指针
 │                             #   （首次远程 evict/pull 时创建）
 └── releases/                 # 不可变数据集发布快照
 ```
+
+在 `index/` 目录引入之前初始化的项目，其 FASTA 长度缓存仍位于迁移前的
+`qc/cache/fasta_lengths/`，首次使用时会收编进 `index/fasta_lengths/`。索引缓存有意
+不纳入任何备份 scope（`operon backup`）：它们是未登记、可重建的派生数据，项目恢复后
+按需惰性重建。
 
 数据生命周期：
 

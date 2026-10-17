@@ -14,7 +14,7 @@ import pytest
 
 from operon import qc as qc
 from operon.cli import main
-from operon.config import load_project
+from operon.config import Project, load_project
 from operon.database import Database
 from operon.errors import QCError
 
@@ -145,7 +145,9 @@ def test_fasta_cache_roundtrip_write_failure_and_cached_statuses(tmp_path, monke
         qc._write_fasta_length_cache(tmp_path / "failed.tsv", record, {"a": 1})
     assert not list(tmp_path.glob(".failed.tsv.*"))
 
-    project = SimpleNamespace(root=tmp_path, qc_root=tmp_path / "qc")
+    project = SimpleNamespace(
+        root=tmp_path, qc_root=tmp_path / "qc", index_root=tmp_path / "index"
+    )
     fasta = tmp_path / "assembly.fa"
     fasta.write_text(">a\nA\n", encoding="utf-8")
     monkeypatch.setattr(qc, "fasta_lengths", lambda _path: {"a": 1})
@@ -249,3 +251,57 @@ def test_qc_missing_file_and_qc_all_forwards_force_checksum(tmp_path, monkeypatc
         assert calls[0][1]["parameter_set"] == qc.DEFAULT_PARAMETER_SET
     finally:
         db.close()
+
+
+def test_index_root_falls_back_when_storage_key_is_missing(tmp_path):
+    project = Project(
+        root=tmp_path,
+        config={"storage": {"qc_root": "qc"}, "database": {"path": "operon.sqlite"}},
+        config_path=tmp_path / "project.yaml",
+    )
+    assert project.index_root == tmp_path / "index"
+
+
+def _legacy_fasta_length_cache(project, record):
+    return (
+        project.qc_root
+        / "cache"
+        / "fasta_lengths"
+        / f"{record['file_id']}.{record['sha256']}.v1.tsv"
+    )
+
+
+def test_fasta_length_cache_is_adopted_from_the_legacy_location(tmp_path, monkeypatch):
+    assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
+    project = load_project(tmp_path)
+    assert project.index_root == project.root / "index"
+    record = {"file_id": "F", "sha256": "a" * 64, "size_bytes": 1}
+    legacy = _legacy_fasta_length_cache(project, record)
+    qc._write_fasta_length_cache(legacy, record, {"a": 1})
+    fasta = tmp_path / "assembly.fa"
+    fasta.write_text(">a\nA\n", encoding="utf-8")
+
+    def _unreachable(_path):
+        raise AssertionError("the adopted cache must prevent a rescan")
+
+    monkeypatch.setattr(qc, "fasta_lengths", _unreachable)
+    lengths, info = qc._cached_fasta_lengths(project, record, fasta, {})
+    assert lengths == {"a": 1} and info["status"] == "hit"
+    assert info["relative_path"].startswith("index/fasta_lengths/")
+    assert not list(legacy.parent.glob("*.tsv"))
+
+
+def test_corrupt_legacy_fasta_length_cache_is_rebuilt(tmp_path, monkeypatch):
+    assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
+    project = load_project(tmp_path)
+    record = {"file_id": "F", "sha256": "a" * 64, "size_bytes": 1}
+    legacy = _legacy_fasta_length_cache(project, record)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("not-json\n", encoding="utf-8")
+    fasta = tmp_path / "assembly.fa"
+    fasta.write_text(">b\nAA\n", encoding="utf-8")
+    monkeypatch.setattr(qc, "fasta_lengths", lambda _path: {"b": 2})
+    lengths, info = qc._cached_fasta_lengths(project, record, fasta, {})
+    assert lengths == {"b": 2} and info["status"] == "built"
+    assert qc._fasta_length_cache_path(project, record).is_file()
+    assert not legacy.exists()

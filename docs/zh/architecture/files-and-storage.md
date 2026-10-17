@@ -15,7 +15,7 @@
 
 ## BGZF 归档压缩
 
-新项目默认把未压缩的 FASTA/FASTQ raw 归档存为确定性 [BGZF](https://samtools.github.io/hts-specs/)：`ingest`（以及 `run-pipeline` 的 ingest 阶段）遇到未压缩的序列文件时，先在归档目标旁改写为 BGZF，manifest 行记录的是**压缩后**字节（`compression: bgzip`、带 `.gz` 的 canonical 名称、压缩后的 SHA-256/size——身份以落盘字节为准，见 INV-3）。BGZF 块头不含 mtime，各块按固定大小独立 deflate，因此相同输入字节产生完全相同的输出字节。BGZF 是合法的多段 gzip 流，所有内置 QC 解析器和任何 gzip 透明的工具都能原样读取归档；块式结构同时支持随机读（`bgzip.BGZipReader` 可 seek）；按身份键控的 `qc/cache/fasta_lengths/` 长度缓存会在首次使用时按新校验和重建。
+新项目默认把未压缩的 FASTA/FASTQ raw 归档存为确定性 [BGZF](https://samtools.github.io/hts-specs/)：`ingest`（以及 `run-pipeline` 的 ingest 阶段）遇到未压缩的序列文件时，先在归档目标旁改写为 BGZF，manifest 行记录的是**压缩后**字节（`compression: bgzip`、带 `.gz` 的 canonical 名称、压缩后的 SHA-256/size——身份以落盘字节为准，见 INV-3）。BGZF 块头不含 mtime，各块按固定大小独立 deflate，因此相同输入字节产生完全相同的输出字节。BGZF 是合法的多段 gzip 流，所有内置 QC 解析器和任何 gzip 透明的工具都能原样读取归档；块式结构同时支持随机读（`bgzip.BGZipReader` 可 seek）；按身份键控的 `index/fasta_lengths/` 长度缓存会在首次使用时按新校验和重建。
 
 开关是 `project.yaml` 的 `storage.compress_archive`，每次 ingest 的解析顺序为：CLI 旗标 `--compress-archive`/`--no-compress-archive` > 项目键 > 键缺失。键缺失的旧项目保持明文存储——不会发生隐式迁移。源文件已是 gzip/BGZF 时原样存储；显式 `--compression` 参数固定存储形态；其他格式（GFF3、目录、二进制）永不转换。
 

@@ -116,7 +116,7 @@ Python/Cython parity 回归覆盖，指标字典和错误信息契约不变。
 2026-08-31 补齐 assembly FASTA 后，同一 18 个实体在 HDD 上每轮需要读取约 66.58 GB
 assembly，`assembly_fasta_lengths` 三轮分别为 417.9、403.7、403.4 秒，约占总耗时
 60%。因此长度映射现按 assembly 的 `file_id + sha256 + size_bytes + cache format` 保存
-到 `qc/cache/fasta_lengths/`：首次仍执行完整扫描，后续进程记录
+到 `index/fasta_lengths/`：首次仍执行完整扫描，后续进程记录
 `related_inputs[].length_cache.status=hit` 并只承担索引加载成本。缓存损坏会自动删除并
 重建；缓存头中的 SHA-256 摘要还会检测格式合法但内容已变化的索引行。JSONL 中
 `built`、`hit` 或 `write_failed` 明确记录本轮行为。

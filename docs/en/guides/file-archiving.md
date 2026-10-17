@@ -29,7 +29,7 @@ operon qc --entity-type run --entity-id RUN_000001
 
 Modern FASTQ defaults to Phred+33 for Q20/Q30. Use `--phred-offset 64` only for confirmed legacy Phred+64 data. If the encoding is uncertain, use `--phred-offset auto`; ambiguous input is recorded as `ambiguous_assumed_phred33`. R1 and R2 `read_count` values are stored under their own `input_identity`, and the paired check writes `paired_read_count_match`.
 
-`ingest` and `operon verify` perform full SHA-256 verification, and later `operon qc` runs reuse that result while the file's stat fingerprint is unchanged; the assembly `seqid -> length` index is cached under `qc/cache/fasta_lengths/` for the same content identity, and annotation QC applies the same identity check to the assembly/protein files it reads. Use `operon qc --rehash` for a full-byte audit (`operon verify` always performs full content verification). Both caches are deletable, rebuildable derived data; see the [QC pipeline](../architecture/qc-and-rules.md#qc-pipeline) for the guarantee.
+`ingest` and `operon verify` perform full SHA-256 verification, and later `operon qc` runs reuse that result while the file's stat fingerprint is unchanged; the assembly `seqid -> length` index is cached under `index/fasta_lengths/` for the same content identity, and annotation QC applies the same identity check to the assembly/protein files it reads. Use `operon qc --rehash` for a full-byte audit (`operon verify` always performs full content verification). Both caches are deletable, rebuildable derived data; see the [QC pipeline](../architecture/qc-and-rules.md#qc-pipeline) for the guarantee.
 
 ## Archive assemblies and annotations
 

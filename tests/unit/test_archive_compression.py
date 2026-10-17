@@ -214,7 +214,7 @@ def test_qc_runs_on_the_bgzip_archive_and_caches_lengths(project_db, tmp_path):
     assert metrics[("file_integrity", "sha256_match")] in ("1", "True", "true")
     assert metrics[("file_integrity", "parseable")] in ("1", "True", "true")
     assert float(metrics[("assembly_basic", "total_length")]) == 24
-    cache_dir = project.qc_root / "cache" / "fasta_lengths"
+    cache_dir = project.index_root / "fasta_lengths"
     caches = list(cache_dir.glob("*"))
     assert caches, "the fasta_lengths cache must be rebuilt for the new identity"
     assert "ctg1\t12" in caches[0].read_text(encoding="utf-8")

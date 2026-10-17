@@ -311,11 +311,44 @@ def _verify_related_input(
 
 def _fasta_length_cache_path(project: Project, record: dict[str, Any]) -> Path:
     return (
+        project.index_root
+        / "fasta_lengths"
+        / f"{record['file_id']}.{str(record['sha256']).lower()}.v1.tsv"
+    )
+
+
+def _legacy_fasta_length_cache_path(project: Project, record: dict[str, Any]) -> Path:
+    """Pre-relocation location of the fasta lengths cache.
+
+    Entries found here are adopted once into the index root; leftover empty
+    ``qc/cache/`` directories are intentionally left in place.
+    """
+    return (
         project.qc_root
         / "cache"
         / "fasta_lengths"
         / f"{record['file_id']}.{str(record['sha256']).lower()}.v1.tsv"
     )
+
+
+def _adopt_legacy_fasta_length_cache(
+    project: Project, cache_path: Path, record: dict[str, Any]
+) -> dict[str, int] | None:
+    """Best-effort adoption of a pre-relocation cache entry.
+
+    Identity validation happens inside the loader after the move, so corrupt
+    entries are rejected and removed as usual. Any filesystem failure simply
+    downgrades to a normal miss and the cache is rebuilt from the source.
+    """
+    legacy = _legacy_fasta_length_cache_path(project, record)
+    if not legacy.is_file():
+        return None
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(legacy, cache_path)
+    except OSError:
+        return None
+    return _load_fasta_length_cache(cache_path, record)
 
 
 def _fasta_length_cache_row(seqid: str, length: int) -> str:
@@ -423,6 +456,8 @@ def _cached_fasta_lengths(
         cache_path,
         record,
     )
+    if lengths is None:
+        lengths = _adopt_legacy_fasta_length_cache(project, cache_path, record)
     if lengths is not None:
         return lengths, {
             "status": "hit",

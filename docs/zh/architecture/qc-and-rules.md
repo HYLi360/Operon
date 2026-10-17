@@ -25,8 +25,9 @@
 
 annotation QC 对运行时读取的 assembly/protein 关联输入执行同一身份校验；`--rehash`
 同时覆盖主输入和这些关联输入。assembly 的 `seqid -> length` 映射按
-`file_id + sha256 + size_bytes + cache format` 原子写入
-`qc/cache/fasta_lengths/`。该索引属于可删除、可重建的派生数据：首次缺失或损坏时
+`file_id + sha256 + size_bytes + cache format` 原子写入项目根级索引缓存
+`index/fasta_lengths/`（原 `qc/cache/fasta_lengths/` 中的条目会在首次使用时
+尽力收编，收编仍经过同一身份校验）。该索引属于可删除、可重建的派生数据：首次缺失或损坏时
 流式扫描 FASTA 重建，内容身份不变时可跨进程复用，不进入 metadata 事实来源。
 
 除缓存外，每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表

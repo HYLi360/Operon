@@ -159,11 +159,14 @@ project/
 ├── analysis/                 # analysis workspace (external tool output, downstream analysis)
 ├── reports/                  # decisions, summary exports, and coverage reports
 ├── taxonomy/reference_sets/  # compiled immutable family/genus denominators and provenance
+├── index/fasta_lengths/      # rebuildable derived index caches, keyed by file identity (not part of the manifest)
 ├── logs/workflow.jsonl       # machine-readable workflow log (created on the first workflow run)
 ├── .operon/placeholders/     # small, non-authoritative pointers for REMOTE_ONLY files
 │                             #   (created on the first remote evict/pull)
 └── releases/                 # immutable dataset release snapshots
 ```
+
+Projects initialized before the `index/` directory existed keep their FASTA length cache at the pre-relocation location `qc/cache/fasta_lengths/`; it is adopted into `index/fasta_lengths/` on first use. Index caches are deliberately not part of any backup scope (`operon backup`): they are unregistered rebuildable derived data, and a restored project rebuilds them lazily.
 
 Data lifecycle:
 

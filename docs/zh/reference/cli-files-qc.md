@@ -85,7 +85,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
   指纹变化时自动重新计算 SHA-256。`--rehash` 无条件绕过该缓存，适合定期审计、迁移
   存储后的首轮检查或性能基线中的冷校验测试。对 annotation GFF3，它同时重新校验
   实际读取的 assembly 和 protein 关联输入，而不只是主 GFF3。
-- assembly FASTA 的 `seqid -> length` 映射是可重建缓存，位于 `qc/cache/fasta_lengths/`
+- assembly FASTA 的 `seqid -> length` 映射是可重建缓存，位于 `index/fasta_lengths/`
   下，仅在完整内容身份相同时复用；`--rehash` 会重新校验源 SHA-256，但已验证的索引
   仍可继续使用。具体保证见 [QC 流水线](../architecture/qc-and-rules.md)。
 - 每个度量过的 FASTA 还会把 `seqid -> length` 映射同步进 `sequences` 表

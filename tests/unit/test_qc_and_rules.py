@@ -448,7 +448,7 @@ class TestQCAndRules(PytestAssertions):
             self.assertEqual(scanner.call_count, 1)
 
             cache_files = list(
-                (self.project.qc_root / "cache" / "fasta_lengths").glob("*.tsv")
+                (self.project.index_root / "fasta_lengths").glob("*.tsv")
             )
             self.assertEqual(len(cache_files), 1)
             cache_lines = cache_files[0].read_text(encoding="utf-8").splitlines()

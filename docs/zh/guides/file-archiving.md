@@ -38,7 +38,7 @@ operon qc --entity-type run --entity-id RUN_000001
 
 `ingest` 和 `operon verify` 已经完整核对过 SHA-256；文件的 stat 指纹未变化时，后续
 `operon qc` 会复用这一结果；assembly 的 `seqid -> length` 索引按相同内容身份缓存在
-`qc/cache/fasta_lengths/` 下，annotation QC 对实际读取的 assembly/protein 也做同样的
+`index/fasta_lengths/` 下，annotation QC 对实际读取的 assembly/protein 也做同样的
 身份校验。需要强制重新读取全部字节审计时使用 `operon qc --rehash`（`operon verify`
 本身始终执行完整内容校验）。两种缓存都是可删除、可重建的派生数据，具体保证见
 [QC 流水线](../architecture/qc-and-rules.md)。

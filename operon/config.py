@@ -51,6 +51,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "logs_root": "logs",
         "releases_root": "releases",
         "taxonomy_root": "taxonomy",
+        "index_root": "index",
         "compress_archive": True,
     },
     "database": {
@@ -160,6 +161,10 @@ class Project:
         return self._resolve(self.config["storage"].get("taxonomy_root", "taxonomy"))
 
     @property
+    def index_root(self) -> Path:
+        return self._resolve(self.config["storage"].get("index_root", "index"))
+
+    @property
     def compress_archive(self) -> bool:
         """Whether plain FASTA/FASTQ sources are archived as deterministic BGZF.
 
@@ -194,12 +199,12 @@ class Project:
             self.qc_root / "assemblies",
             self.qc_root / "annotations",
             self.qc_root / "aggregate",
-            self.qc_root / "cache" / "fasta_lengths",
             self.analysis_root,
             self.reports_root,
             self.logs_root,
             self.releases_root,
             self.taxonomy_reference_sets_dir,
+            self.index_root / "fasta_lengths",
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
