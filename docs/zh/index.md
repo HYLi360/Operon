@@ -1,6 +1,6 @@
 # Operon 文档
 
-[项目概述](overview.md)介绍 Operon 的能力与适用边界：一个面向大规模基因组数据的文件型数据库。
+[项目概述](overview.md) 介绍了 Operon——一款用于存储大规模基因组数据的，基于文件的数据库，并列出了其功能和局限性。
 
 本文档对应 `operon` {{ operon_version }}、数据库内部 schema {{ db_schema }}、metadata schema {{ metadata_schema }}。文档按使用者任务分层，中文与英文页面保持相同的目录结构。
 
