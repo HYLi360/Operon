@@ -38,6 +38,7 @@ from operon.cli._decisions import (
     add_profiles_parser,
     add_run_pipeline_parser,
 )
+from operon.cli._features import _cmd_features, add_features_parser
 from operon.cli._files import (
     _cmd_backup,
     _cmd_backup_verify,
@@ -277,6 +278,7 @@ __all__ = [
     "add_export_parser",
     "add_extract_domains_parser",
     "add_fanout_parser",
+    "add_features_parser",
     "add_import_events_parser",
     "add_import_hits_parser",
     "add_import_parser",
@@ -361,6 +363,7 @@ _PARSER_BUILDERS = (
     add_export_parser,
     add_adopt_parser,
     add_fanout_parser,
+    add_features_parser,
     add_environments_parser,
     add_recipes_parser,
     add_profiles_parser,
@@ -464,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                 "export": lambda: _cmd_export(args, project, db),
                 "adopt": lambda: _cmd_adopt(args, project, db),
                 "fanout": lambda: _cmd_fanout(args, project, db),
+                "features": lambda: _cmd_features(args, project, db),
                 "recipes": lambda: _cmd_recipes(args, project, db),
                 "environments": lambda: _cmd_environments(args, db),
                 "profiles": lambda: _cmd_profiles(args, project, db),

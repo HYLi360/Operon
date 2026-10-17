@@ -67,7 +67,7 @@ operon qc
 - `assemblies.fasta_file_id`
 - `annotations.gff_file_id` / `cds_file_id` / `protein_file_id`
 
-同一 `annotation_gff3` 角色下的 `.gtf` 来源按同样方式存储（`format: gtf`、同样的 BGZF 默认）；内置 QC 仍只评估 GFF3。
+同一 `annotation_gff3` 角色下的 `.gtf` 来源按同样方式存储（`format: gtf`、同样的 BGZF 默认）；内置 QC 仍只评估 GFF3。每个注释归档在首次查询时还会获得 `index/features/` 下的扁平 feature 缓存——见 [Feature 索引命令](../reference/cli-features.md)。
 
 ## 导入外部 QC 结果
 

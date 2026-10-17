@@ -76,6 +76,7 @@ def _open_project(args: argparse.Namespace) -> tuple[Project, Database]:
         (args.command == "tools" and args.dry_run)
         or (args.command in {"import-hits", "import-events"} and args.dry_run)
         or args.command == "query"
+        or args.command == "features"
         or args.command == "environments"
         or args.command == "workflow"
         or args.command == "show"

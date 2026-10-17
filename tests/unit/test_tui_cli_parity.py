@@ -117,6 +117,14 @@ def test_cli_only_and_planned_entries_have_a_reason() -> None:
             )
 
 
+def test_feature_index_surface_is_registered_cli_only() -> None:
+    entries = {entry.command: entry for entry in REGISTRY}
+    for command in (("features", "query"), ("features", "stats")):
+        entry = entries[command]
+        assert entry.status == STATUS_CLI_ONLY
+        assert "feature" in entry.note.lower() or "parquet" in entry.note.lower()
+
+
 def test_implemented_entries_resolve_their_action() -> None:
     for entry in REGISTRY:
         if entry.status != STATUS_IMPLEMENTED:

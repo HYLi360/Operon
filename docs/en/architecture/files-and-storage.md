@@ -21,6 +21,28 @@ The switch is `storage.compress_archive` in `project.yaml`, resolved per ingest 
 
 `operon recompress` is the explicit one-shot migration for existing projects: it rewrites each eligible plain FASTA/FASTQ/GFF3/GTF archive in place (full re-hash of the current bytes, BGZF rewrite, decompressed re-hash as the content-preservation proof, then a per-field audited manifest update), deletes the file's recorded remote locations (the next `push` supersedes the stale remote copies), and rebuilds the `standardized/` view when the file was standardized. Release members are refused — releases are immutable — and remote-only or retired-entity files are skipped with a stated reason. Derived data keyed by the old SHA-256 (`qc_results`, `analysis_jobs`, the `fasta_lengths` cache) is naturally invalidated and lazily rebuilt; the `sequences` table, keyed by `file_id`, is unaffected. See [File and QC Commands](../reference/cli-files-qc.md#recompress).
 
+## Derived index caches
+
+`index/` is the project's shared home for **rebuildable derived index caches**
+(EXT-8). Entries are keyed by the manifest identity, never registered in the
+manifest, and therefore never enter a release snapshot or a backup — a
+restored project rebuilds whatever it needs lazily. The layout convention is
+`index/<kind>/…`:
+
+- `index/fasta_lengths/{file_id}.{sha256}.v1.tsv` — the assembly
+  `seqid -> length` map used by built-in QC (relocated from the pre-`index/`
+  layout `qc/cache/fasta_lengths/`; legacy entries are adopted on first use).
+- `index/features/{file_id}.{sha256}.v1/` — the flattened GFF3/GTF feature
+  cache (`data.parquet` + `meta.json` identity marker) behind
+  `operon features`; built lazily on first query and rebuilt transparently
+  when it is stale, corrupt or missing its commit marker. Row groups follow
+  source order (no global sort), so region filters prune on row-group
+  statistics; queries run through polars `scan_parquet` with projection and
+  predicate pushdown.
+
+Only `operon features` writes into the feature namespace; deletes thereof are
+always followed by a rebuild, never a dangling cache.
+
 ## Remote mirrors (SFTP)
 
 The `remotes:` section of `project.yaml` can configure one or more SFTP remote mirrors (`operon/remotes.py`), synchronizing manifest files to a remote without breaking the invariants of this section:

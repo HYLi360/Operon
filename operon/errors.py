@@ -21,6 +21,10 @@ class ValidationError(OperonError):
     """Metadata does not conform to its schema."""
 
 
+class FeatureIndexError(ValidationError):
+    """A flattened feature index is missing, stale or unusable for a query."""
+
+
 class EntityNotFoundError(OperonError):
     """A referenced entity does not exist."""
 

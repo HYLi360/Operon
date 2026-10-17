@@ -159,7 +159,8 @@ project/
 ├── analysis/                 # analysis workspace (external tool output, downstream analysis)
 ├── reports/                  # decisions, summary exports, and coverage reports
 ├── taxonomy/reference_sets/  # compiled immutable family/genus denominators and provenance
-├── index/fasta_lengths/      # rebuildable derived index caches, keyed by file identity (not part of the manifest)
+├── index/                    # rebuildable derived index caches (not part of the manifest)
+│   └── features/{file_id}.{sha256}.v1/   # flattened GFF3/GTF Parquet feature index (EXT-8)
 ├── logs/workflow.jsonl       # machine-readable workflow log (created on the first workflow run)
 ├── .operon/placeholders/     # small, non-authoritative pointers for REMOTE_ONLY files
 │                             #   (created on the first remote evict/pull)

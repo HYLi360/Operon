@@ -4,6 +4,7 @@
 
 - [项目与元数据命令](cli-project-metadata.md)
 - [文件与 QC 命令](cli-files-qc.md)
+- [Feature 索引命令](cli-features.md)
 - [外部分析命令](cli-analysis.md)
 - [远程存储命令](cli-remote.md)
 - [判定、发布与报告命令](cli-decisions-reports.md)
@@ -26,6 +27,7 @@
 
 cli-project-metadata
 cli-files-qc
+cli-features
 cli-analysis
 cli-remote
 cli-decisions-reports

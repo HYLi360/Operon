@@ -21,6 +21,21 @@
 
 `operon recompress` 是面向既有项目的显式一次性迁移：把每个符合条件的明文 FASTA/FASTQ/GFF3/GTF 归档原地重写（先完整复算当前字节，再 BGZF 改写，再对解压字节复算哈希作为内容保持证明，然后逐字段带审计地更新 manifest 行），删除该文件已登记的远程位置（下一次 `push` 会取代过时的远端副本），并在文件已标准化时重建 `standardized/` 视图。release 成员一律拒绝——release 不可变；remote-only 或已退役实体的文件跳过并写明原因。按旧 SHA-256 键控的派生数据（`qc_results`、`analysis_jobs`、`fasta_lengths` 缓存）自然失效、按需惰性重建；以 `file_id` 键控的 `sequences` 表不受影响。见[文件与 QC 命令](../reference/cli-files-qc.md#recompress)。
 
+## 派生索引缓存
+
+`index/` 是项目共享的**可重建派生索引缓存**目录（EXT-8）。条目按 manifest 身份键控、不登记进
+manifest，因此不进入 release 快照与备份——恢复后的项目按需惰性重建。目录布局约定为
+`index/<kind>/…`：
+
+- `index/fasta_lengths/{file_id}.{sha256}.v1.tsv` —— 内置 QC 使用的 assembly
+  `seqid -> length` 映射（自 `index/` 引入前的 `qc/cache/fasta_lengths/` 迁来；旧条目在首次使用时收编）。
+- `index/features/{file_id}.{sha256}.v1/` —— 扁平 GFF3/GTF feature 缓存（`data.parquet` +
+  `meta.json` 身份标记），由 `operon features` 消费；首次查询时惰性构建，过期、损坏或缺少提交标记时透明重建。
+  行组按源文件顺序写入（不全局排序），区域过滤靠行组统计修剪；查询经 polars `scan_parquet` 走
+  投影与谓词下推。
+
+只有 `operon features` 写入 feature 命名空间；那里的删除总与重建相伴，绝无悬空缓存。
+
 ## 远程镜像（SFTP）
 
 `project.yaml` 的 `remotes:` 段可配置一个或多个 SFTP 远程镜像（`operon/remotes.py`），

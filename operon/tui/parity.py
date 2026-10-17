@@ -574,6 +574,19 @@ REGISTRY: tuple[ParityEntry, ...] = (
         note="arbitrary read-only SQL is deliberately kept out of the TUI",
     ),
     ParityEntry(
+        ("features", "query"),
+        STATUS_CLI_ONLY,
+        note="feature-index queries print a machine-readable row set; the TUI "
+        "renders interactive views over the manifest/database, not derived "
+        "Parquet caches, so the feature index stays a CLI query",
+    ),
+    ParityEntry(
+        ("features", "stats"),
+        STATUS_CLI_ONLY,
+        note="feature-index aggregates print per-type/source/seqid tables; "
+        "the same exclusions as the 'features query' leaf apply",
+    ),
+    ParityEntry(
         ("migrate",),
         STATUS_CLI_ONLY,
         note="administrative schema migration; diagnostic/maintenance only",

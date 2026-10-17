@@ -4,6 +4,7 @@
 
 - [Project and Metadata Commands](cli-project-metadata.md)
 - [File and QC Commands](cli-files-qc.md)
+- [Feature Index Commands](cli-features.md)
 - [External Analysis Commands](cli-analysis.md)
 - [Remote Storage Commands](cli-remote.md)
 - [Decisions, Releases, and Reports](cli-decisions-reports.md)
@@ -26,6 +27,7 @@
 
 cli-project-metadata
 cli-files-qc
+cli-features
 cli-analysis
 cli-remote
 cli-decisions-reports

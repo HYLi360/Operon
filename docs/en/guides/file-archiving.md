@@ -55,7 +55,7 @@ operon qc
 - `assemblies.fasta_file_id`
 - `annotations.gff_file_id`, `cds_file_id`, and `protein_file_id`
 
-A `.gtf` source under the same `annotation_gff3` role is stored the same way (`format: gtf`, same BGZF default); built-in QC still evaluates GFF3 only.
+A `.gtf` source under the same `annotation_gff3` role is stored the same way (`format: gtf`, same BGZF default); built-in QC still evaluates GFF3 only. Every annotation archive also gets a flattened feature cache under `index/features/` on first query — see [Feature index commands](../reference/cli-features.md).
 
 ## Import external QC results
 
