@@ -14,8 +14,10 @@ from pathlib import Path
 from operon.backup import create_backup, verify_backup
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ValidationError
 from operon.files import (
     ingest_file,
+    recompress_files,
     standardize_all,
     standardize_file,
     verify_files,
@@ -68,6 +70,19 @@ def add_standardize_parser(sub):
     )
     p.add_argument("--file-id", action="append", default=[])
     p.add_argument("--link", choices=["hardlink", "symlink", "copy"], default="copy")
+
+
+def add_recompress_parser(sub):
+    p = sub.add_parser(
+        "recompress",
+        help="re-archive plain FASTA/FASTQ raw files as deterministic BGZF "
+        "(one-shot storage migration; push afterwards supersedes stale remote copies)",
+    )
+    p.add_argument("--file-id", action="append", default=[])
+    p.add_argument("--all", action="store_true", help="recompress every eligible file")
+    p.add_argument(
+        "--dry-run", action="store_true", help="report what would change, write nothing"
+    )
 
 
 def add_backup_parser(sub):
@@ -168,6 +183,31 @@ def _cmd_standardize(args: argparse.Namespace, project: Project, db: Database) -
             else:
                 print(f"{result['file_id']}: {result['action']} -> {result['target']}")
     return 1 if errors else 0
+
+
+def _cmd_recompress(args: argparse.Namespace, project: Project, db: Database) -> int:
+    if not args.file_id and not args.all:
+        raise ValidationError("recompress requires --file-id or --all")
+    results = recompress_files(db, project, args.file_id or None, dry_run=args.dry_run)
+    print(
+        format_table(
+            ["file_id", "relative_path", "status", "error"],
+            (
+                [
+                    r["file_id"],
+                    r.get("relative_path") or "",
+                    r["status"],
+                    r.get("error") or "",
+                ]
+                for r in results
+            ),
+        )
+    )
+    failed = [r for r in results if r["status"] == "error"]
+    if failed:
+        return 1
+    print(f"recompress: {len(results)} file(s) processed")
+    return 0
 
 
 def _cmd_backup(args: argparse.Namespace, project: Project, db: Database) -> int:

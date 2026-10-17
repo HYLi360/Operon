@@ -21,7 +21,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, RemoteError, ValidationError
-from operon.files import ingest_file, verify_files
+from operon.files import ingest_file, recompress_files, verify_files
 from operon.remotes import (
     _SSH_KEEPALIVE_SECONDS,
     SFTPStore,
@@ -428,6 +428,104 @@ class TestPushPull(PytestAssertions):
             (self.file_row["file_id"],),
         ).fetchone()
         self.assertEqual(location["status"], "CORRUPT")
+
+    def test_push_supersedes_a_recompressed_file(self, monkeypatch):
+        monkeypatch.setattr(
+            "operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient()
+        )
+        # A plain FASTA ingested as if before the compression default existed.
+        legacy_source = self.root / "legacy.fa"
+        legacy_source.write_text(">legacy\nACGTACGT\n", encoding="utf-8")
+        legacy = ingest_file(
+            self.db,
+            self.project,
+            legacy_source,
+            "assembly",
+            "ASM_000001",
+            "legacy_fasta",
+            compress_archive=False,
+        )
+        old_rel = legacy["relative_path"]
+        results = push(self.db, self.project, "mirror", [legacy["file_id"]])
+        self.assertEqual([r["status"] for r in results], ["uploaded"])
+        self.assertTrue((self.remote_dir / old_rel).exists())
+
+        # Recompressing locally moves the file to its .gz path and drops the
+        # recorded remote location.
+        (recompressed,) = recompress_files(self.db, self.project, [legacy["file_id"]])
+        self.assertEqual(recompressed["status"], "recompressed")
+        new_rel = recompressed["relative_path"]
+        self.assertEqual(new_rel, old_rel + ".gz")
+
+        # The next push uploads the new path and prunes the stale remote
+        # object and manifest entry, audited.
+        results = push(self.db, self.project, "mirror", [legacy["file_id"]])
+        self.assertEqual([r["status"] for r in results], ["uploaded"])
+        self.assertFalse((self.remote_dir / old_rel).exists())
+        self.assertTrue((self.remote_dir / new_rel).exists())
+        manifest = self._store().read_manifest()
+        self.assertFalse(old_rel in manifest["files"])
+        self.assertEqual(
+            manifest["files"][new_rel]["sha256"],
+            recompressed["sha256"],
+        )
+        audit = self.db.query(
+            "SELECT * FROM changes WHERE object_type='remote_file' AND object_id=?",
+            (f"mirror:{old_rel}",),
+        )
+        self.assertEqual(len(audit), 1)
+        self.assertEqual(audit[0]["field"], "superseded")
+        self.assertEqual(self._location_status(legacy["file_id"]), "AVAILABLE")
+
+        # A repeated push is a clean skip, with nothing left to prune.
+        results = push(self.db, self.project, "mirror", [legacy["file_id"]])
+        self.assertEqual([r["status"] for r in results], ["skipped"])
+
+    def test_push_still_refuses_genuine_divergence_after_recompress(self, monkeypatch):
+        monkeypatch.setattr(
+            "operon.remotes.connect_ssh", lambda *a, **k: FakeSSHClient()
+        )
+        legacy_source = self.root / "legacy.fa"
+        legacy_source.write_text(">legacy\nACGTACGT\n", encoding="utf-8")
+        legacy = ingest_file(
+            self.db,
+            self.project,
+            legacy_source,
+            "assembly",
+            "ASM_000001",
+            "legacy_fasta",
+            compress_archive=False,
+        )
+        push(self.db, self.project, "mirror", [legacy["file_id"]])
+        (recompressed,) = recompress_files(self.db, self.project, [legacy["file_id"]])
+        new_rel = recompressed["relative_path"]
+
+        # Foreign bytes at the *new* path are a genuine conflict, never a
+        # supersede: the remote copy is left untouched for manual resolution.
+        foreign = self.remote_dir / new_rel
+        foreign.parent.mkdir(parents=True, exist_ok=True)
+        foreign.write_text("foreign bytes", encoding="utf-8")
+        results = push(self.db, self.project, "mirror", [legacy["file_id"]])
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("ConflictError", results[0]["error"])
+        self.assertEqual(foreign.read_text(encoding="utf-8"), "foreign bytes")
+
+        # A manifest entry at the current path whose recorded identity does
+        # not match the local manifest row also refuses, exactly as before.
+        foreign.unlink()
+        with self._store() as store:
+            doc = store.read_manifest()
+            doc["files"][new_rel] = {
+                "file_id": legacy["file_id"],
+                "relative_path": new_rel,
+                "sha256": "0" * 64,
+                "size_bytes": 1,
+                "kind": "file",
+            }
+            store.write_manifest(doc)
+        results = push(self.db, self.project, "mirror", [legacy["file_id"]])
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("does not match local manifest", results[0]["error"])
 
     def _location_status(self, file_id: str) -> str:
         row = self.db.conn.execute(

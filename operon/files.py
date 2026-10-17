@@ -974,6 +974,242 @@ def verify_files(
     return results
 
 
+RECOMPRESS_FORMATS = ("fasta", "fastq")
+
+
+def recompress_files(
+    db: Database,
+    project: Project,
+    file_ids: list[str] | None = None,
+    *,
+    dry_run: bool = False,
+    actor: str | None = None,
+) -> list[dict[str, Any]]:
+    """Re-archive plain FASTA/FASTQ raw files as deterministic BGZF, in place.
+
+    A one-shot storage migration for projects created before the
+    ``storage.compress_archive`` default: each eligible manifest row
+    (``compression='none'``, FASTA/FASTQ, local bytes present, active entity)
+    is fully re-hashed, rewritten as BGZF next to the archive target, the
+    decompressed bytes are re-hashed to prove content preservation, and the
+    row's ``relative_path``/``sha256``/``size_bytes``/``compression`` are
+    updated with one ``changes`` audit row per field.  The file's
+    ``file_locations`` rows are deleted (audited): the stale remote bytes
+    become orphans the next ``push`` supersedes.
+
+    Release members are refused (releases are immutable); already-compressed
+    rows are no-ops.  ``dry_run=True`` only reports what would happen.
+
+    Derived data keyed by the old ``sha256`` (``qc_results``,
+    ``analysis_jobs``, the ``fasta_lengths`` cache) is naturally invalidated
+    and rebuilt lazily; ``sequences`` (keyed by ``file_id``) is unaffected.
+    """
+    resolved_actor = resolve_actor(actor) or "operon recompress"
+    if file_ids:
+        placeholders = ", ".join("?" for _ in file_ids)
+        rows = [
+            dict(row)
+            for row in db.conn.execute(
+                f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id",  # nosec B608 # values are bound
+                file_ids,
+            ).fetchall()
+        ]
+        found = {row["file_id"] for row in rows}
+        missing = [file_id for file_id in file_ids if file_id not in found]
+    else:
+        rows = [
+            dict(row)
+            for row in db.conn.execute(
+                "SELECT * FROM files WHERE compression='none' "
+                "AND format IN ('fasta','fastq') ORDER BY file_id"
+            ).fetchall()
+        ]
+        missing = []
+
+    results: list[dict[str, Any]] = [
+        {
+            "file_id": file_id,
+            "relative_path": None,
+            "status": "error",
+            "error": f"unknown file_id: {file_id}",
+        }
+        for file_id in missing
+    ]
+    for record in rows:
+        results.append(_recompress_file(db, project, record, resolved_actor, dry_run))
+    return results
+
+
+def _recompress_file(
+    db: Database, project: Project, record: dict[str, Any], actor: str, dry_run: bool
+) -> dict[str, Any]:
+    file_id = str(record["file_id"])
+    rel = str(record["relative_path"])
+    result: dict[str, Any] = {
+        "file_id": file_id,
+        "relative_path": rel,
+        "status": "",
+        "error": None,
+    }
+    try:
+        if str(record["compression"]) != "none":
+            result.update(status="skipped", error="already compressed")
+            return result
+        if str(record["format"]) not in RECOMPRESS_FORMATS:
+            result.update(
+                status="skipped",
+                error=f"format {record['format']!r} is not eligible for recompress",
+            )
+            return result
+        if db.is_entity_retired(str(record["entity_type"]), str(record["entity_id"])):
+            result.update(status="skipped", error="entity is retired")
+            return result
+        releases = [
+            str(row["release_version"])
+            for row in db.conn.execute(
+                "SELECT release_version FROM release_members WHERE file_id=? ORDER BY release_version",
+                (file_id,),
+            ).fetchall()
+        ]
+        if releases:
+            raise ConflictError(
+                f"{file_id} is a member of release(s) {', '.join(releases)}; "
+                "releases are immutable"
+            )
+        path = project.root / rel
+        if str(record.get("status")) == "REMOTE_ONLY" or not path.is_file():
+            result.update(
+                status="skipped",
+                error="local bytes absent; pull the file before recompressing",
+            )
+            return result
+
+        new_rel = rel + ".gz"
+        target = project.root / new_rel
+        _require_project_path(project, target)
+        if dry_run:
+            result.update(status="would_recompress", relative_path=new_rel)
+            return result
+
+        if sha256_path(path) != str(record["sha256"]) or path.stat().st_size != int(
+            record["size_bytes"]
+        ):
+            raise ChecksumError(
+                f"{file_id}: local bytes do not match the manifest; refusing to recompress"
+            )
+        staged = target.with_name(f".{target.name}.recompress-{uuid.uuid4().hex[:12]}")
+        try:
+            atomic_copy_bgzip(path, staged)
+            compressed_sha = sha256_path(staged)
+            # Content-preservation proof: the decompressed bytes must hash to
+            # the recorded plain-content checksum.
+            digest = hashlib.sha256()
+            with gzip.open(staged, "rb") as handle:
+                while True:
+                    chunk = handle.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+            if digest.hexdigest() != str(record["sha256"]):
+                raise ChecksumError(
+                    f"{file_id}: decompressed content does not match the manifest"
+                )
+            if target.exists():
+                if sha256_path(target) == compressed_sha:
+                    # Bytes already in place (interrupted earlier attempt).
+                    staged.unlink(missing_ok=True)
+                else:
+                    raise ConflictError(
+                        f"recompress target {target} exists with different bytes; "
+                        "refusing to overwrite"
+                    )
+            else:
+                os.replace(staged, target)
+        except BaseException:
+            staged.unlink(missing_ok=True)
+            raise
+        path.unlink()
+
+        new_size = target.stat().st_size
+        with db.transaction():
+            db.conn.execute(
+                "UPDATE files SET relative_path=?, sha256=?, size_bytes=?, compression='bgzip' "
+                "WHERE file_id=?",
+                (new_rel, compressed_sha, new_size, file_id),
+            )
+        for field, old_value, new_value in (
+            ("relative_path", rel, new_rel),
+            ("sha256", record["sha256"], compressed_sha),
+            ("size_bytes", record["size_bytes"], new_size),
+            ("compression", record["compression"], "bgzip"),
+        ):
+            db.record_change(
+                "files",
+                file_id,
+                field,
+                old_value,
+                new_value,
+                "recompress: plain sequence archive rewritten as deterministic BGZF",
+                actor=actor,
+            )
+        updated = dict(
+            record,
+            relative_path=new_rel,
+            sha256=compressed_sha,
+            size_bytes=new_size,
+            compression="bgzip",
+        )
+        clear_local_file_verification(db, file_id)
+        remember_local_file_verification(db, updated, target)
+
+        # The recorded remote copies point at the old bytes; the next push
+        # supersedes them (uploads the new path, prunes the old object).
+        locations = db.conn.execute(
+            "SELECT location_name, uri FROM file_locations WHERE file_id=?",
+            (file_id,),
+        ).fetchall()
+        if locations:
+            with db.transaction():
+                db.conn.execute(
+                    "DELETE FROM file_locations WHERE file_id=?", (file_id,)
+                )
+            for location in locations:
+                db.record_change(
+                    "file_location",
+                    f"{file_id}@{location['location_name']}",
+                    "location",
+                    location["uri"],
+                    None,
+                    "recompress invalidated the stale remote copy; the next push supersedes it",
+                    actor=actor,
+                )
+
+        if str(record.get("status")) == "STANDARDIZED":
+            # The standardized view carries the raw file's name; rebuild it
+            # under the new .gz name and drop the old target.
+            old_standardized = (
+                project.standardized_root
+                / raw_bucket(str(record["entity_type"]))
+                / str(record["entity_id"])
+                / Path(rel).name
+            )
+            if old_standardized.exists() or old_standardized.is_symlink():
+                if old_standardized.is_dir() and not old_standardized.is_symlink():
+                    shutil.rmtree(old_standardized)
+                else:
+                    old_standardized.unlink()
+            standardize_file(db, project, file_id)
+        result.update(
+            status="recompressed",
+            relative_path=new_rel,
+            sha256=compressed_sha,
+            size_bytes=new_size,
+        )
+    except Exception as exc:  # noqa: BLE001 - one failed file must not stop the batch  # pylint: disable=broad-exception-caught
+        result.update(status="error", error=f"{type(exc).__name__}: {exc}")
+    return result
+
+
 def standardize_file(
     db: Database, project: Project, file_id: str, link_kind: str = "copy"
 ) -> dict[str, Any]:

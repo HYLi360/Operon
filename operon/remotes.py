@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from operon.config import Project
+from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import (
     ConfigError,
@@ -861,6 +861,56 @@ def _assert_entry_matches_record(
         )
 
 
+def _prune_superseded_entries(
+    db: Database,
+    store: SFTPStore,
+    name: str,
+    record: dict[str, Any],
+    entries: dict[str, Any],
+    rel: str,
+    sha: str,
+    size: int,
+) -> bool:
+    """Drop remote manifest entries claiming the same file_id at a stale path.
+
+    A local recompress changes ``relative_path``/``sha256``/``size_bytes``: the
+    new path uploads as a fresh entry while the old object and entry would
+    linger as orphans.  The remote mirror follows the local truth, so the
+    stale object is removed and the entry dropped, with one audit row each.
+    """
+    stale = [
+        old_rel
+        for old_rel, old_entry in entries.items()
+        if old_rel != rel
+        and isinstance(old_entry, dict)
+        and str(old_entry.get("file_id", "")) == str(record["file_id"])
+    ]
+    for old_rel in stale:
+        old_entry = entries[old_rel]
+        _remove_remote_tree(store.sftp, store.remote_path(old_rel))
+        del entries[old_rel]
+        db.record_change(
+            "remote_file",
+            f"{name}:{old_rel}",
+            "superseded",
+            json.dumps(
+                {
+                    "relative_path": old_rel,
+                    "sha256": old_entry.get("sha256"),
+                    "size_bytes": old_entry.get("size_bytes"),
+                },
+                sort_keys=True,
+            ),
+            json.dumps(
+                {"relative_path": rel, "sha256": sha, "size_bytes": size},
+                sort_keys=True,
+            ),
+            f"local file {record['file_id']} was recompressed; superseded the stale remote copy",
+            actor=resolve_actor(),
+        )
+    return bool(stale)
+
+
 def push(
     db: Database, project: Project, name: str, file_ids: list[str] | None = None
 ) -> list[dict[str, Any]]:
@@ -945,6 +995,17 @@ def push(
                             "format": record.get("format"),
                             "synced_at": now_iso(),
                         }
+                        manifest_changed = True
+                    # A local recompress moves the file to a new path; the
+                    # stale entry/object for the same file_id is pruned so
+                    # the mirror follows the local truth.
+                    if result["status"] in {
+                        "skipped",
+                        "indexed",
+                        "uploaded",
+                    } and _prune_superseded_entries(
+                        db, store, name, record, entries, rel, sha, size
+                    ):
                         manifest_changed = True
                 except Exception as exc:  # noqa: BLE001 - one failed file must not stop the push batch  # pylint: disable=broad-exception-caught
                     result.update(status="error", error=f"{type(exc).__name__}: {exc}")

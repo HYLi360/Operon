@@ -723,6 +723,11 @@ REGISTRY: tuple[ParityEntry, ...] = (
         },
     ),
     ParityEntry(
+        ("recompress",),
+        STATUS_CLI_ONLY,
+        note="one-shot storage migration admin operation, intentionally CLI-driven",
+    ),
+    ParityEntry(
         ("import-qc",),
         STATUS_IMPLEMENTED,
         actions="actions.import_qc",
