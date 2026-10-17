@@ -10,10 +10,14 @@ failed or interrupted) including partial-output removal."""
 
 from __future__ import annotations
 
+import gzip
+import shutil
+from pathlib import Path
 from typing import Any
 
 from operon.config import Project
 from operon.database import Database
+from operon.errors import ExternalCommandFailed
 from operon.shutdown import ShutdownRequested, cleanup_completed
 from operon.utils import now_iso, sha256_path
 
@@ -75,29 +79,164 @@ def _execute_analysis_plan(
             and prepare is not None
         ):
             prepare(plan.work_dir, mutable_cache=True)
-    return run_external_command(
-        db,
-        project,
-        plan.argv_steps[0],
-        step=f"analysis:{recipe.name}",
-        entity_type=plan.file_record["entity_type"],
-        entity_id=plan.file_record["entity_id"],
-        parameter_set=f"{recipe.name}:{plan.version}",
-        expected_outputs=[
-            plan.output_path,
-            *([plan.events_path] if plan.events_path else []),
-        ],
-        cwd=project.root,
-        tool=tool.name,
-        tool_version=plan.version,
-        threads=plan.threads,
-        stage_inputs=plan.stage_inputs,
-        executor=executor,
-        run_id=plan.run_id,
-        commands=plan.commands,
-        command_details=plan.command_details,
-        extra_details=_env_policy_extra_details(plan),
+    try:
+        return run_external_command(
+            db,
+            project,
+            plan.argv_steps[0],
+            step=f"analysis:{recipe.name}",
+            entity_type=plan.file_record["entity_type"],
+            entity_id=plan.file_record["entity_id"],
+            parameter_set=f"{recipe.name}:{plan.version}",
+            expected_outputs=[
+                plan.output_path,
+                *([plan.events_path] if plan.events_path else []),
+            ],
+            cwd=project.root,
+            tool=tool.name,
+            tool_version=plan.version,
+            threads=plan.threads,
+            stage_inputs=plan.stage_inputs,
+            executor=executor,
+            run_id=plan.run_id,
+            commands=plan.commands,
+            command_details=plan.command_details,
+            extra_details=_env_policy_extra_details(plan),
+        )
+    except ExternalCommandFailed as exc:
+        exit_code = exc.record.get("exit_code")
+        compression = str(plan.file_record.get("compression") or "none")
+        eligible = (
+            compression in {"gzip", "bgzip"}
+            # Only a real tool failure (non-zero exit) is retried: exit_code
+            # None marks an infrastructure failure (timeout, transport, OS),
+            # where decompressing the input would change nothing.
+            and isinstance(exit_code, int)
+            and not isinstance(exit_code, bool)
+            and exit_code != 0
+            # A remote-only input has no local bytes to decompress.
+            and (project.root / str(plan.file_record["relative_path"])).is_file()
+        )
+        if not eligible:
+            raise
+        return _retry_with_decompressed_input(
+            project, db, recipe, tool, executor, plan, exc
+        )
+
+
+def _retry_with_decompressed_input(
+    project: Project,
+    db: Database,
+    recipe: Recipe,
+    tool: ToolSpec,
+    executor: Any,
+    plan: _AnalysisExecution,
+    first_error: ExternalCommandFailed,
+) -> dict[str, Any]:
+    """Re-run once with the compressed archive input decompressed to scratch.
+
+    Some tools cannot read gzip/BGZF input.  The scratch copy lives inside the
+    project root, so SSH staging and ``rewrite_remote_path`` work unchanged.
+    Content identity is untouched: ``analysis_jobs.input_sha256`` and the cache
+    fingerprint keep the compressed archive bytes; the retried run record
+    carries the actual argv plus the first error under
+    ``decompressed_input_fallback``.  A second failure merges both errors.
+    """
+    from operon.workflow import new_run_id, run_external_command
+
+    from ._config import launcher_prefix, load_tools_config, tool_command
+    from ._inputs import _resolve_database_path, render_arguments
+
+    archive = project.root / str(plan.file_record["relative_path"])
+    scratch_dir = plan.work_dir or (
+        plan.output_path.parent / f"{plan.output_path.name}.work"
     )
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    name = Path(str(plan.file_record["relative_path"])).name
+    if name.lower().endswith(".gz"):
+        name = name[:-3]
+    decompressed = scratch_dir / f"{name}.fallback"
+    with gzip.open(archive, "rb") as src, open(decompressed, "wb") as dst:
+        shutil.copyfileobj(src, dst, length=1024 * 1024)
+    config = load_tools_config(project)
+    database_path = _resolve_database_path(project, recipe)
+    if plan.commands is not None:
+        argv_steps = [
+            [
+                *launcher_prefix(tool, config),
+                *render_arguments(
+                    recipe,
+                    input_path=decompressed,
+                    output_path=plan.output_path,
+                    database_path=database_path,
+                    threads=plan.threads,
+                    file_record=plan.file_record,
+                    runtime_parameters=plan.runtime_parameters,
+                    work_dir=plan.work_dir,
+                    arguments=block.arguments,
+                ),
+            ]
+            for block in recipe.commands
+        ]
+    else:
+        argv_steps = [
+            [
+                *tool_command(tool, config),
+                *render_arguments(
+                    recipe,
+                    input_path=decompressed,
+                    output_path=plan.output_path,
+                    database_path=database_path,
+                    threads=plan.threads,
+                    file_record=plan.file_record,
+                    runtime_parameters=plan.runtime_parameters,
+                ),
+            ]
+        ]
+    extra_details = _env_policy_extra_details(plan) or {}
+    extra_details["decompressed_input_fallback"] = {
+        "path": str(decompressed),
+        "first_run_id": plan.run_id,
+        "first_error": str(first_error),
+    }
+    try:
+        return run_external_command(
+            db,
+            project,
+            argv_steps[0],
+            step=f"analysis:{recipe.name}",
+            entity_type=plan.file_record["entity_type"],
+            entity_id=plan.file_record["entity_id"],
+            parameter_set=f"{recipe.name}:{plan.version}",
+            expected_outputs=[
+                plan.output_path,
+                *([plan.events_path] if plan.events_path else []),
+            ],
+            cwd=project.root,
+            tool=tool.name,
+            tool_version=plan.version,
+            threads=plan.threads,
+            stage_inputs=(decompressed,) if plan.stage_inputs else (),
+            executor=executor,
+            run_id=new_run_id(),
+            commands=argv_steps if plan.commands is not None else None,
+            command_details=plan.command_details,
+            extra_details=extra_details,
+        )
+    except ExternalCommandFailed as second_error:
+        raise ExternalCommandFailed(
+            f"{first_error}; decompressed-input retry also failed: {second_error}",
+            record=second_error.record,
+        ) from second_error
+    finally:
+        if plan.work_dir is None:
+            # The scratch directory was created only for this retry; chain
+            # recipes leave theirs to the existing work_dir lifecycle.
+            decompressed.unlink(missing_ok=True)
+            try:
+                scratch_dir.rmdir()
+            except OSError:
+                pass
 
 
 def _finalize_analysis_execution(

@@ -253,7 +253,7 @@ def _run_analysis_two_phase(
     # chains keep the sequential per-file path.  Below two array-eligible
     # tasks the array buys nothing, so they fall back to per-file submission
     # as well.
-    array_plans = [(i, p) for i, p in pending if len(p.argv_steps) == 1]
+    array_plans = [(i, p) for i, p in pending if _array_eligible(p)]
     sequential = pending
     if len(array_plans) >= 2:
         _execute_analysis_array(
@@ -271,7 +271,7 @@ def _run_analysis_two_phase(
             total=total,
             cancel_event=cancel_event,
         )
-        sequential = [(i, p) for i, p in pending if len(p.argv_steps) != 1]
+        sequential = [(i, p) for i, p in pending if not _array_eligible(p)]
     for index, plan in sequential:
         _raise_if_cancelled(cancel_event)
         try:
@@ -305,6 +305,18 @@ def _run_analysis_two_phase(
                 str(outcome.get("status", "done")),
             )
     return [result for result in results if result is not None]
+
+
+def _array_eligible(plan: _AnalysisExecution) -> bool:
+    """A job array dispatches one shell line per task with no retry hook.
+
+    Multi-step chains keep the sequential per-file path, and so do compressed
+    inputs: only the per-file path can retry a failed tool with a decompressed
+    copy of the input.
+    """
+    return len(plan.argv_steps) == 1 and str(
+        plan.file_record.get("compression") or "none"
+    ) not in {"gzip", "bgzip"}
 
 
 class _CallbackAbortedBatch(Exception):

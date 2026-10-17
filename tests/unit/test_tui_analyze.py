@@ -128,7 +128,13 @@ def _query(project: Project, sql: str, params: tuple = ()) -> list[dict]:
 
 
 def _write_fake_tool(
-    project: Project, tmp_path: Path, *, slurm: dict | None = None
+    project: Project,
+    tmp_path: Path,
+    *,
+    slurm: dict | None = None,
+    entity_type: str = "assembly",
+    file_role: str = "genome_fasta",
+    fmt: str = "fasta",
 ) -> None:
     """Install a runnable fake BLAST-style tool plus a broken one.
 
@@ -136,7 +142,10 @@ def _write_fake_tool(
     declares one choices parameter (``mode``) and one required parameter
     (``marker``); ``fake_broken`` points at a missing executable so every
     file fails.  ``slurm`` adds a recipe-level ``slurm:`` block (e.g.
-    ``{"array": True}``) exactly like a hand-written recipe.
+    ``{"array": True}``) exactly like a hand-written recipe.  The entity
+    type/role/format can be retargeted (e.g. at the demo's GFF3 files, which
+    stay uncompressed under the bgzip storage default — a requirement for
+    the job-array path).
     """
     script = tmp_path / "fakeblast.py"
     script.write_text(
@@ -163,9 +172,9 @@ def _write_fake_tool(
                 "recipes": {
                     "fake_nt": {
                         "description": "fake recipe",
-                        "entity_type": "assembly",
-                        "file_role": "genome_fasta",
-                        "format": "fasta",
+                        "entity_type": entity_type,
+                        "file_role": file_role,
+                        "format": fmt,
                         "output_subdir": "fake_nt",
                         "output_suffix": ".out.tsv",
                         "arguments": [
@@ -973,7 +982,16 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
 ) -> None:
     """A cooperative cancel while the job array is queued: one scancel, and
     the unfinished tasks land as ``interrupted`` (no workflow_runs rows)."""
-    _write_fake_tool(project, tmp_path, slurm={"array": True})
+    # The demo's GFF3 files stay uncompressed under the bgzip storage default;
+    # compressed inputs are deliberately excluded from job arrays.
+    _write_fake_tool(
+        project,
+        tmp_path,
+        slurm={"array": True},
+        entity_type="annotation",
+        file_role="annotation_gff3",
+        fmt="gff3",
+    )
     project.config["execution"]["slurm"]["poll_interval"] = 0.01
     state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
 
@@ -1003,7 +1021,7 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
     # The array was cancelled with one scancel carrying its job id.
     assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
     jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
-    assert [job["status"] for job in jobs] == ["interrupted"] * 3
+    assert [job["status"] for job in jobs] == ["interrupted"] * 2
     assert (
         _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
         == []
@@ -1067,7 +1085,16 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
 ) -> None:
     """Cancel while the array is queued: scancel runs, the modal reports the
     cancelled batch, and tasks land as interrupted."""
-    _write_fake_tool(project, tmp_path, slurm={"array": True})
+    # The demo's GFF3 files stay uncompressed under the bgzip storage default;
+    # compressed inputs are deliberately excluded from job arrays.
+    _write_fake_tool(
+        project,
+        tmp_path,
+        slurm={"array": True},
+        entity_type="annotation",
+        file_role="annotation_gff3",
+        fmt="gff3",
+    )
     project.config["execution"]["slurm"]["poll_interval"] = 0.01
     state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
     dismissed: list[Any] = []
@@ -1109,9 +1136,9 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
 
     _run(scenario())
     assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
-    assert dismissed == [{"cancelled": True, "done": 3, "total": 3}]
+    assert dismissed == [{"cancelled": True, "done": 2, "total": 2}]
     jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
-    assert [job["status"] for job in jobs] == ["interrupted"] * 3
+    assert [job["status"] for job in jobs] == ["interrupted"] * 2
     assert (
         _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
         == []

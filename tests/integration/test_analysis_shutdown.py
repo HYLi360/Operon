@@ -300,7 +300,9 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertEqual(jobs[0]["status"], "failed")
         self.assertIsNotNone(jobs[0]["finished_at"])
         self.assertTrue(
-            jobs[0]["error"].startswith("RuntimeError: analysis:fake_nt failed")
+            jobs[0]["error"].startswith(
+                "ExternalCommandFailed: analysis:fake_nt failed"
+            )
         )
         self.assertIn("exit code 3", jobs[0]["error"])
         self.assertFalse("expected output missing" in jobs[0]["error"])

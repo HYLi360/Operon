@@ -1488,8 +1488,16 @@ class TestRpsbprocCommandChain(PytestAssertions):
         )
         proteins = self.root / "proteins.faa"
         proteins.write_text(">p1\nMPEPTIDE\n", encoding="utf-8")
+        # Chain mechanics stay on plain inputs; the compressed-input retry has
+        # its own coverage in tests/unit/test_tools_execution_more.py.
         return ingest_file(
-            self.db, self.project, proteins, "annotation", "ANN_000001", "protein_fasta"
+            self.db,
+            self.project,
+            proteins,
+            "annotation",
+            "ANN_000001",
+            "protein_fasta",
+            compress_archive=False,
         )
 
     def _output_dir(self) -> Path:

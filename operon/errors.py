@@ -4,6 +4,10 @@
 #  SPDX-License-Identifier: BSD-2-Clause
 """Exception types used across Operon."""
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class OperonError(Exception):
     """Base class for all Operon errors."""
@@ -52,3 +56,18 @@ class RemoteUnavailableError(RemoteError):
 
 class SecretError(OperonError):
     """A user-scoped secret backend is unavailable or a secret operation failed."""
+
+
+class ExternalCommandFailed(RuntimeError):
+    """An external command run failed; ``record`` carries the recorded run row.
+
+    The failed run is already written to ``workflow_runs`` before this is
+    raised.  It subclasses ``RuntimeError`` so existing ``except RuntimeError``
+    callers are unaffected.  ``record["exit_code"]`` is a non-zero ``int`` only
+    when the tool actually executed; infrastructure failures (timeout,
+    transport, OSError) leave it ``None``.
+    """
+
+    def __init__(self, message: str, record: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.record: dict[str, Any] = record or {}

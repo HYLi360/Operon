@@ -26,6 +26,7 @@ from operon.config import Project
 from operon.database import Database
 from operon.errors import (
     ConflictError,
+    ExternalCommandFailed,
     OperonError,
     RemoteUnavailableError,
     ValidationError,
@@ -766,7 +767,9 @@ def run_external_command(
     if re_raise is not None:
         raise re_raise
     if record.get("status") != "completed":
-        raise RuntimeError(f"{step} failed: {record.get('error') or 'unknown error'}")
+        raise ExternalCommandFailed(
+            f"{step} failed: {record.get('error') or 'unknown error'}", record
+        )
     return record
 
 

@@ -209,8 +209,8 @@ def test_array_planning_shutdown_is_reraised_and_closes_the_executor(
     operon_project, monkeypatch
 ):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     executor = _ArrayExecutor()
     _install_array_executor(monkeypatch, executor)
@@ -234,7 +234,10 @@ def test_array_planning_failure_reports_error_and_plans_the_rest(
 ):
     project, db = operon_project
     records = sorted(
-        (ingest_assembly(project, db, number) for number in (1, 2, 3)),
+        (
+            ingest_assembly(project, db, number, compress_archive=False)
+            for number in (1, 2, 3)
+        ),
         key=lambda record: record["file_id"],
     )
     write_tool_config(project)
@@ -275,8 +278,8 @@ def test_array_cache_hits_report_status_without_resubmitting(
     operon_project, monkeypatch
 ):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor()
@@ -304,7 +307,7 @@ def test_two_phase_single_plan_shutdown_interrupts_the_running_job(
     operon_project, monkeypatch
 ):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
+    ingest_assembly(project, db, 1, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor()
@@ -332,8 +335,8 @@ def test_ssh_array_staging_failures_skip_submission_entirely(
     operon_project, tmp_path, monkeypatch
 ):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor(name="ssh", remote_root=str(tmp_path / "mirror"))
@@ -363,8 +366,8 @@ def test_sequential_ssh_batch_aborts_when_reconnect_fails(operon_project, monkey
     per-file errors.
     """
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor()
@@ -406,8 +409,8 @@ def test_sequential_ssh_batch_aborts_when_reconnect_fails(operon_project, monkey
 
 def test_array_result_count_mismatch_fails_the_whole_batch(operon_project, monkeypatch):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor()
@@ -439,7 +442,10 @@ def test_array_result_count_mismatch_fails_the_whole_batch(operon_project, monke
 def test_array_collection_failure_keeps_finished_tasks(operon_project, monkeypatch):
     project, db = operon_project
     records = sorted(
-        (ingest_assembly(project, db, number) for number in (1, 2)),
+        (
+            ingest_assembly(project, db, number, compress_archive=False)
+            for number in (1, 2)
+        ),
         key=lambda record: record["file_id"],
     )
     write_tool_config(project)
@@ -471,8 +477,8 @@ def test_array_collection_shutdown_interrupts_unfinished_tasks(
     operon_project, monkeypatch
 ):
     project, db = operon_project
-    ingest_assembly(project, db, 1)
-    ingest_assembly(project, db, 2)
+    ingest_assembly(project, db, 1, compress_archive=False)
+    ingest_assembly(project, db, 2, compress_archive=False)
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor()
@@ -499,7 +505,10 @@ def test_ssh_array_callback_abort_restores_pending_backups(
 ):
     project, db = operon_project
     records = sorted(
-        (ingest_assembly(project, db, number) for number in (1, 2)),
+        (
+            ingest_assembly(project, db, number, compress_archive=False)
+            for number in (1, 2)
+        ),
         key=lambda record: record["file_id"],
     )
     write_tool_config(project)
@@ -540,7 +549,10 @@ def test_ssh_array_interrupt_finalize_failure_restores_backups_and_fails_tasks(
     operon_project, tmp_path, monkeypatch
 ):
     project, db = operon_project
-    records = [ingest_assembly(project, db, number) for number in (1, 2)]
+    records = [
+        ingest_assembly(project, db, number, compress_archive=False)
+        for number in (1, 2)
+    ]
     write_tool_config(project)
     _stub_version_probe(monkeypatch)
     executor = _ArrayExecutor(name="ssh", remote_root=str(tmp_path / "mirror"))

@@ -249,7 +249,7 @@ class TestAnalysisArray(PytestAssertions):
             yaml.safe_dump(tool_config, sort_keys=False), encoding="utf-8"
         )
 
-    def _add_assembly(self, number: int):
+    def _add_assembly(self, number: int, *, compress_archive: bool = False):
         self.db.insert_row(
             "organisms",
             {
@@ -273,6 +273,8 @@ class TestAnalysisArray(PytestAssertions):
         )
         fasta = self.root / f"asm{number}.fa"
         fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
+        # Array mechanics need uncompressed inputs: compressed inputs are
+        # deliberately routed to the sequential per-file path (retry hook).
         return ingest_file(
             self.db,
             self.project,
@@ -280,6 +282,7 @@ class TestAnalysisArray(PytestAssertions):
             "assembly",
             f"ASM_{number:06d}",
             "genome_fasta",
+            compress_archive=compress_archive,
         )
 
     def _output_path(self, file_row) -> Path:
@@ -402,6 +405,34 @@ class TestAnalysisArray(PytestAssertions):
             self.assertEqual(
                 self._output_path(row).read_text(), "q1\ts1\t99.0\t100\t1e-10\t500\n"
             )
+
+    def test_array_excludes_compressed_inputs_from_the_batch(self, monkeypatch):
+        """A compressed input takes the sequential path, which owns the retry hook."""
+        self._write_fake_blast()
+        self._write_tool_config(self.root / "fakeblast.py", slurm={"array": True})
+        plain = [self._add_assembly(1), self._add_assembly(2)]
+        compressed = self._add_assembly(3, compress_archive=True)
+        self.assertEqual(compressed["compression"], "bgzip")
+        self._fake_run(monkeypatch)
+        self._fake_run_array(monkeypatch)
+
+        results = run_analysis(self.project, self.db, "fake_nt", backend="slurm")
+
+        self.assertEqual([r["status"] for r in results], ["completed"] * 3)
+        # The two plain inputs formed one array; the compressed input ran
+        # through the per-file executor path instead.
+        self.assertEqual(len(self.array_calls), 1)
+        jobs = {j["file_id"]: j for j in self._jobs()}
+        self.assertEqual(
+            set(self.array_calls[0]["run_ids"]),
+            {jobs[row["file_id"]]["workflow_run_id"] for row in plain},
+        )
+        sequential_run_ids = {
+            call["run_id"] for call in self.run_calls if call["run_id"] is not None
+        }
+        self.assertEqual(
+            sequential_run_ids, {jobs[compressed["file_id"]]["workflow_run_id"]}
+        )
 
     def test_array_mixes_cache_hits_and_submissions(self, monkeypatch):
         self._write_fake_blast()
@@ -1080,6 +1111,8 @@ class TestAnalysisArrayRemote(PytestAssertions):
         )
         fasta = self.root / f"asm{number}.fa"
         fasta.write_text(f">ctg{number}\n" + "ACGT" * 600 + "\n", encoding="utf-8")
+        # Array mechanics need uncompressed inputs: compressed inputs are
+        # deliberately routed to the sequential per-file path (retry hook).
         return ingest_file(
             self.db,
             self.project,
@@ -1087,6 +1120,7 @@ class TestAnalysisArrayRemote(PytestAssertions):
             "assembly",
             f"ASM_{number:06d}",
             "genome_fasta",
+            compress_archive=False,
         )
 
     def _output_path(self, file_row) -> Path:

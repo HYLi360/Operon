@@ -25,6 +25,7 @@ import signal
 import stat as stat_module
 import subprocess
 import sys
+import textwrap
 import threading
 from pathlib import Path, PurePath
 from types import SimpleNamespace
@@ -167,7 +168,9 @@ def write_tool_config(
     )
 
 
-def ingest_assembly(project, db: Database, number: int) -> dict:
+def ingest_assembly(
+    project, db: Database, number: int, *, compress_archive: bool | None = None
+) -> dict:
     organism_id = f"ORG_{number:06d}"
     sample_id = f"SMP_{number:06d}"
     assembly_id = f"ASM_{number:06d}"
@@ -178,7 +181,15 @@ def ingest_assembly(project, db: Database, number: int) -> dict:
     db.insert_row("assemblies", {"assembly_id": assembly_id, "sample_id": sample_id})
     source = project.root / f"genome_{number}.fa"
     source.write_text(f">ctg{number}\n" + "ACGT" * 200 + "\n", encoding="utf-8")
-    return ingest_file(db, project, source, "assembly", assembly_id, "genome_fasta")
+    return ingest_file(
+        db,
+        project,
+        source,
+        "assembly",
+        assembly_id,
+        "genome_fasta",
+        compress_archive=compress_archive,
+    )
 
 
 def _ssh_executor(project, remote_root: Path, **config):
@@ -1661,3 +1672,308 @@ def test_run_analysis_for_file_failure_keeps_partial_work_directory(
     )
     assert work_dir.is_dir()
 
+
+# ---------------------------------------------------------------------------
+# compressed-input fallback: retry once with a decompressed copy
+# ---------------------------------------------------------------------------
+
+
+def _gz_sensitive_script(root: Path, *, fail_plain: bool = False) -> Path:
+    """A tool that only accepts plain input; optionally fails on that too."""
+    script = root / "gzsensitive.py"
+    extra = "raise SystemExit(4)\n" if fail_plain else ""
+    script.write_text(
+        textwrap.dedent("""
+        import sys
+        args = sys.argv[1:]
+        if '-version' in args:
+            print('gzsensitive: 1.0')
+            raise SystemExit(0)
+        src = args[args.index('--in') + 1]
+        out = args[args.index('--out') + 1]
+        blob = open(src, 'rb').read()
+        if blob[:2] == b'\\x1f\\x8b':
+            sys.stderr.write('cannot read gzip input\\n')
+            raise SystemExit(3)
+        """).lstrip()
+        + extra
+        + "open(out, 'w').write('rows=%d\\n' % blob.count(b'\\n'))\n",
+        encoding="utf-8",
+    )
+    return script
+
+
+def _gz_sensitive_tool_config(project, script: Path, *, arguments=None) -> None:
+    write_tool_config(
+        project,
+        executable=script,
+        recipe_document=base_recipe(
+            arguments=arguments or ["--in", "${input}", "--out", "${output}"]
+        ),
+        tool={
+            "run_method": sys.executable,
+            "version_args": ["-version"],
+            "version_pattern": r"gzsensitive:\s*([^\s]+)",
+        },
+    )
+
+
+def _analysis_runs(db: Database) -> list[dict]:
+    return db.query(
+        "SELECT * FROM workflow_runs WHERE step='analysis:fake_recipe' ORDER BY rowid"
+    )
+
+
+def test_compressed_input_retries_once_with_decompressed_copy(operon_project):
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    assert record["compression"] == "bgzip"  # the project default
+    _gz_sensitive_tool_config(project, _gz_sensitive_script(project.root))
+
+    (result,) = run_analysis(project, db, "fake_recipe")
+    assert result["status"] == "completed"
+
+    job = db.query("SELECT * FROM analysis_jobs")[0]
+    assert job["status"] == "completed"
+    # Provenance keeps the compressed archive identity, not the scratch copy.
+    assert job["input_sha256"] == record["sha256"]
+    runs = _analysis_runs(db)
+    assert [run["status"] for run in runs] == ["failed", "completed"]
+    assert "exit code 3" in runs[0]["error"]
+    details = json.loads(runs[1]["execution_details"])
+    fallback = details["decompressed_input_fallback"]
+    assert fallback["first_run_id"] == runs[0]["run_id"]
+    assert "exit code 3" in fallback["first_error"]
+    assert fallback["path"].endswith(".fallback")
+    # The retried command consumed the decompressed scratch copy; the
+    # single-command scratch directory is removed afterwards.
+    assert ".fallback" in runs[1]["command"]
+    assert not Path(fallback["path"]).exists()
+    assert not Path(fallback["path"]).parent.exists()
+    output = project.root / job["output_relative_path"]
+    assert output.read_text(encoding="utf-8").startswith("rows=")
+
+
+def test_compressed_input_infrastructure_failure_is_not_retried(
+    operon_project, monkeypatch
+):
+    project, db = operon_project
+    ingest_assembly(project, db, 1)
+    _gz_sensitive_tool_config(project, _gz_sensitive_script(project.root))
+
+    from operon.execution import LocalExecutor
+
+    real_run = LocalExecutor.run
+
+    def transport_failure(self, argv, **kwargs):
+        if "--in" in argv:
+            raise OSError("simulated transport failure")
+        return real_run(self, argv, **kwargs)
+
+    monkeypatch.setattr(LocalExecutor, "run", transport_failure)
+    (result,) = run_analysis(project, db, "fake_recipe")
+    assert result["status"] == "error"
+    assert "simulated transport failure" in result["error"]
+
+    # exit_code=None marks an infrastructure failure: exactly one run record,
+    # no fallback attempt.
+    runs = _analysis_runs(db)
+    assert len(runs) == 1
+    assert runs[0]["exit_code"] is None
+    job = db.query("SELECT * FROM analysis_jobs")[0]
+    assert job["status"] == "failed"
+
+
+def test_compressed_input_retry_failure_merges_both_errors(operon_project):
+    project, db = operon_project
+    ingest_assembly(project, db, 1)
+    _gz_sensitive_tool_config(
+        project, _gz_sensitive_script(project.root, fail_plain=True)
+    )
+
+    (result,) = run_analysis(project, db, "fake_recipe")
+    assert result["status"] == "error"
+    assert "exit code 3" in result["error"]
+    assert "decompressed-input retry also failed" in result["error"]
+    assert "exit code 4" in result["error"]
+
+    runs = _analysis_runs(db)
+    assert [run["status"] for run in runs] == ["failed", "failed"]
+    assert runs[0]["exit_code"] == 3 and runs[1]["exit_code"] == 4
+    job = db.query("SELECT * FROM analysis_jobs")[0]
+    assert job["status"] == "failed"
+    assert "decompressed-input retry also failed" in job["error"]
+
+
+def test_chain_recipe_retries_with_decompressed_input(operon_project):
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    assert record["compression"] == "bgzip"
+    script = project.root / "chainstep.py"
+    script.write_text(
+        textwrap.dedent("""
+        import sys
+        args = sys.argv[1:]
+        if '-version' in args:
+            print('chainstep: 2.0')
+            raise SystemExit(0)
+        src = args[args.index('--in') + 1]
+        out = args[args.index('--out') + 1]
+        blob = open(src, 'rb').read()
+        if blob[:2] == b'\\x1f\\x8b':
+            raise SystemExit(5)
+        open(out, 'w').write(str(len(blob)) + '\\n')
+        """).strip(),
+        encoding="utf-8",
+    )
+    write_tool_config(
+        project,
+        executable=script,
+        recipe_document=base_recipe(
+            arguments=[],
+            commands=[
+                {
+                    "arguments": [
+                        str(script),
+                        "--in",
+                        "${input}",
+                        "--out",
+                        "${work_dir}/stage1.txt",
+                    ],
+                    "version_args": ["-version"],
+                    "version_pattern": r"chainstep:\s*(\S+)",
+                },
+                {
+                    "arguments": [
+                        str(script),
+                        "--in",
+                        "${work_dir}/stage1.txt",
+                        "--out",
+                        "${output}",
+                    ]
+                },
+            ],
+        ),
+        tool={"run_method": sys.executable},
+    )
+
+    (result,) = run_analysis(project, db, "fake_recipe")
+    assert result["status"] == "completed"
+
+    job = db.query("SELECT * FROM analysis_jobs")[0]
+    assert job["status"] == "completed"
+    assert job["input_sha256"] == record["sha256"]
+    runs = _analysis_runs(db)
+    assert [run["status"] for run in runs] == ["failed", "completed"]
+    details = json.loads(runs[1]["execution_details"])
+    assert "decompressed_input_fallback" in details
+    # The chain rendered both steps against the decompressed scratch copy.
+    assert details["decompressed_input_fallback"]["path"] in runs[1]["command"]
+
+
+def test_array_eligibility_excludes_compressed_inputs():
+    from operon.tools._run import _array_eligible
+
+    plan = SimpleNamespace(argv_steps=[["tool"]], file_record={"compression": "bgzip"})
+    assert not _array_eligible(plan)
+    assert not _array_eligible(
+        SimpleNamespace(argv_steps=[["tool"]], file_record={"compression": "gzip"})
+    )
+    assert _array_eligible(
+        SimpleNamespace(argv_steps=[["tool"]], file_record={"compression": "none"})
+    )
+    assert not _array_eligible(
+        SimpleNamespace(
+            argv_steps=[["tool"], ["tool2"]], file_record={"compression": "none"}
+        )
+    )
+
+
+def test_compressed_input_fallback_stages_the_decompressed_copy_over_ssh(
+    operon_project, tmp_path, monkeypatch
+):
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    assert record["compression"] == "bgzip"
+    remote_root = tmp_path / "mirror"
+    remote_root.mkdir()
+    executor = _ssh_executor(project, remote_root)
+    _stub_version_probe(monkeypatch)
+    # Outside the project root, so the remote-path rewrite leaves the
+    # executable alone (only staged inputs are mirrored).
+    script = _gz_sensitive_script(tmp_path)
+    _gz_sensitive_tool_config(project, script)
+    analysis = recipe(
+        tool_name="faketool",
+        name="fake_recipe",
+        output_subdir="fake",
+        output_suffix=".out.tsv",
+        arguments=["--in", "${input}", "--out", "${output}"],
+    )
+    tool = tool_spec(
+        name="faketool",
+        executable=str(script),
+        run_method=sys.executable,
+    )
+
+    result = run_analysis_for_file(
+        project, db, analysis, tool, {}, record, executor=executor
+    )
+    assert result["status"] == "completed"
+
+    job = db.query("SELECT * FROM analysis_jobs")[0]
+    assert job["status"] == "completed"
+    assert job["input_sha256"] == record["sha256"]
+    runs = _analysis_runs(db)
+    assert [run["status"] for run in runs] == ["failed", "completed"]
+    details = json.loads(runs[1]["execution_details"])
+    fallback = details["decompressed_input_fallback"]
+    assert fallback["path"].endswith(".fallback")
+    # The recorded command addresses the local scratch copy; the staged
+    # bytes in the remote mirror prove the SSH staging path consumed it.
+    assert fallback["path"] in runs[1]["command"]
+    # The decompressed copy was staged into the remote mirror.
+    mirrored = list(remote_root.rglob("*.fallback"))
+    assert len(mirrored) == 1
+    assert mirrored[0].read_text(encoding="utf-8").startswith(">ctg1")
+
+
+def test_compressed_input_without_local_bytes_is_not_retried(
+    operon_project, monkeypatch, tmp_path
+):
+    """A remote-only compressed input cannot be decompressed locally."""
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    assert record["compression"] == "bgzip"
+    (project.root / record["relative_path"]).unlink()
+
+    from operon import workflow
+    from operon.errors import ExternalCommandFailed
+    from operon.tools._execute import _execute_analysis_plan
+
+    def failed_run(*_args, **_kwargs):
+        raise ExternalCommandFailed(
+            "analysis:fake_recipe failed: exit code 3", {"exit_code": 3}
+        )
+
+    monkeypatch.setattr(workflow, "run_external_command", failed_run)
+    plan = SimpleNamespace(
+        file_record=record,
+        argv_steps=[["tool", "--in", "input"]],
+        commands=None,
+        command_details=None,
+        version="1.0",
+        threads=1,
+        output_path=tmp_path / "out.tsv",
+        work_dir=None,
+        stage_inputs=(),
+        events_path=None,
+        run_id="WF_TEST",
+        env_decision=None,
+    )
+    with pytest.raises(ExternalCommandFailed, match="exit code 3"):
+        _execute_analysis_plan(
+            project, db, recipe(), tool_spec(), execution.LocalExecutor(), plan
+        )
+    # No decompressed scratch copy was produced next to the output.
+    assert list(tmp_path.glob("*.fallback")) == []
