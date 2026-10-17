@@ -70,7 +70,7 @@ Arbitrary commands go through `run-external`; configured recipes go through `ana
 
 ```bash
 operon run-external --step quast --backend ssh \
-  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta' \
+  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz' \
   --expected-output qc/quast_out/report.tsv
 
 operon analyze --analysis blastn_nt --backend ssh \
@@ -89,7 +89,7 @@ Install `operon` on the HPC (see the limitations below), measure the file in pla
 operon run-external --step qc_builtin --backend ssh \
   --entity-type assembly --entity-id ASM_000001 \
   --command 'operon qc-measure \
-    --file raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta \
+    --file raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz \
     --format fasta --role genome_fasta \
     --sha256 <sha256> --size-bytes <size> --file-id FIL_000001 \
     --out qc/metrics/FIL_000001.json' \

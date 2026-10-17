@@ -13,6 +13,14 @@
 
 `standardize` 默认**复制**到 `standardized/`，使 raw、standardized、release 三层互不共享可写 inode；`--link hardlink` 或 `--link symlink` 是显式兼容选项。
 
+## BGZF 归档压缩
+
+新项目默认把未压缩的 FASTA/FASTQ raw 归档存为确定性 [BGZF](https://samtools.github.io/hts-specs/)：`ingest`（以及 `run-pipeline` 的 ingest 阶段）遇到未压缩的序列文件时，先在归档目标旁改写为 BGZF，manifest 行记录的是**压缩后**字节（`compression: bgzip`、带 `.gz` 的 canonical 名称、压缩后的 SHA-256/size——身份以落盘字节为准，见 INV-3）。BGZF 块头不含 mtime，各块按固定大小独立 deflate，因此相同输入字节产生完全相同的输出字节。BGZF 是合法的多段 gzip 流，所有内置 QC 解析器和任何 gzip 透明的工具都能原样读取归档；块式结构同时支持随机读（`bgzip.BGZipReader` 可 seek）；按身份键控的 `qc/cache/fasta_lengths/` 长度缓存会在首次使用时按新校验和重建。
+
+开关是 `project.yaml` 的 `storage.compress_archive`，每次 ingest 的解析顺序为：CLI 旗标 `--compress-archive`/`--no-compress-archive` > 项目键 > 键缺失。键缺失的旧项目保持明文存储——不会发生隐式迁移。源文件已是 gzip/BGZF 时原样存储；显式 `--compression` 参数固定存储形态；其他格式（GFF3、目录、二进制）永不转换。
+
+`operon recompress` 是面向既有项目的显式一次性迁移：把每个符合条件的明文 FASTA/FASTQ 归档原地重写（先完整复算当前字节，再 BGZF 改写，再对解压字节复算哈希作为内容保持证明，然后逐字段带审计地更新 manifest 行），删除该文件已登记的远程位置（下一次 `push` 会取代过时的远端副本），并在文件已标准化时重建 `standardized/` 视图。release 成员一律拒绝——release 不可变；remote-only 或已退役实体的文件跳过并写明原因。按旧 SHA-256 键控的派生数据（`qc_results`、`analysis_jobs`、`fasta_lengths` 缓存）自然失效、按需惰性重建；以 `file_id` 键控的 `sequences` 表不受影响。见[文件与 QC 命令](../reference/cli-files-qc.md#recompress)。
+
 ## 远程镜像（SFTP）
 
 `project.yaml` 的 `remotes:` 段可配置一个或多个 SFTP 远程镜像（`operon/remotes.py`），

@@ -234,7 +234,7 @@ operon run-external \
   --entity-type assembly \
   --entity-id ASM_000001 \
   --expected-output qc/assemblies/ASM_000001/quast/report.tsv \
-  --command 'quast -o qc/assemblies/ASM_000001/quast raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta'
+  --command 'quast -o qc/assemblies/ASM_000001/quast raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz'
 ```
 
 - `--command` 使用 shell 风格引号解析，但不经过 shell，可避免注入。

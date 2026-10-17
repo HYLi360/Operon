@@ -466,6 +466,7 @@ Array submission is only a submission strategy, and it applies only when all of 
 
 1. The recipe opts in with `array: true`;
 2. The selected executor supports job arrays — the local Slurm backend always does, and the SSH backend does only with `execution.ssh.scheduler: slurm` (direct SSH and the local backend do not);
-3. At least two files in the batch actually need computation (cache hits and adopted outputs never enter the array).
+3. At least two files in the batch actually need computation (cache hits and adopted outputs never enter the array);
+4. The file's stored input is uncompressed — gzip/BGZF-archived inputs always take the per-file path, which owns the decompressed-input retry (see [External Analysis Commands](cli-analysis.md#analyze)); mixing is fine: plain batch members still form one array while compressed ones run per file.
 
 Whether a batch ran as one array job or as per-file jobs never enters the parameter fingerprint or cache identity, so a recipe shares the same completed cache with array submission on or off. Each file still gets its own `workflow_runs` row, with the per-task scheduler job ID recorded as `<array_id>_<task_index>`. See [External Analysis Commands](cli-analysis.md#analyze) for the runtime behavior and the [external analysis execution model](../architecture/external-analysis.md) for the design contract.

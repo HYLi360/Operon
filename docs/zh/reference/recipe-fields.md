@@ -558,7 +558,10 @@ array 只是一种提交策略，且只有以下条件全部满足时才生效�
 1. recipe 以 `array: true` 显式开启；
 2. 所选 executor 支持 job array——本地 Slurm 后端始终支持，SSH 后端仅在
    `execution.ssh.scheduler: slurm` 时支持（SSH 直连与 local 后端不支持）；
-3. 批次中至少有两个文件确实需要计算（缓存命中与收养的输出不会进入 array）。
+3. 批次中至少有两个文件确实需要计算（缓存命中与收养的输出不会进入 array）；
+4. 文件的存储输入未被压缩——gzip/BGZF 归档的输入一律走逐文件路径，由它携带解压重试
+   （见[外部分析命令](cli-analysis.md#analyze)）；混合批次照常工作：明文成员仍组成一个
+   array，压缩成员逐个运行。
 
 一个批次以单个 array 作业还是逐文件作业运行，从不进入参数指纹或缓存身份，因此同一
 recipe 在 array 开关两种状态下共享同一份完成缓存。每个文件仍有自己独立的

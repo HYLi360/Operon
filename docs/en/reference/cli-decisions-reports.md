@@ -112,10 +112,10 @@ A recipe declaring `file_role_prefix` with the same prefix then selects all unit
 operon run-pipeline \
   --source FILE --entity-type {run|assembly|annotation} --entity-id ID \
   --role ROLE [--format FMT] [--compression C] [--source-url URL] \
-  [--profile NAME] [--yes]
+  [--profile NAME] [--yes] [--compress-archive | --no-compress-archive]
 ```
 
-Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs. `--source` also accepts the `sftp://` and `remote://` URLs that `operon ingest` takes: the URL is fetched to a temporary file for the ingest stage and the temporary copy is removed once the stage returns, while `source_url` records the original URL.
+Runs `ingest -> standardize -> qc -> evaluate` in order. Any stage failure returns a non-zero exit code. When the evaluation would reuse existing curated decisions the command asks once before continuing; `--yes` skips that confirmation for non-interactive runs. `--source` also accepts the `sftp://` and `remote://` URLs that `operon ingest` takes: the URL is fetched to a temporary file for the ingest stage and the temporary copy is removed once the stage returns, while `source_url` records the original URL. `--compress-archive`/`--no-compress-archive` override the project's `storage.compress_archive` setting for the ingest stage, exactly as in [ingest](cli-files-qc.md#ingest).
 
 ## report
 

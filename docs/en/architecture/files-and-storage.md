@@ -13,6 +13,14 @@ Guarantees of `ingest`:
 
 `standardize` **copies** into `standardized/` by default, so the raw, standardized, and release layers never share writable inodes; `--link hardlink` or `--link symlink` is an explicit compatibility option.
 
+## BGZF archive compression
+
+New projects default to storing plain FASTA/FASTQ raw archives as deterministic [BGZF](https://samtools.github.io/hts-specs/): on `ingest` (and the ingest stage of `run-pipeline`) an uncompressed sequence file is first rewritten as BGZF next to the archive target, and the manifest row records the **compressed** bytes (`compression: bgzip`, a `.gz` canonical name, and the compressed SHA-256/size — identity binds the stored bytes, per INV-3). BGZF block headers carry no mtime and blocks deflate independently at a fixed size, so identical input bytes produce identical output bytes. BGZF is a valid multi-member gzip stream, so every built-in QC parser and any gzip-transparent tool reads the archive unchanged, while the block structure additionally supports random access (`bgzip.BGZipReader` can seek); the identity-keyed `qc/cache/fasta_lengths/` length cache is rebuilt against the new checksum on first use.
+
+The switch is `storage.compress_archive` in `project.yaml`, resolved per ingest as: the CLI flag `--compress-archive`/`--no-compress-archive` > the project key > absent key. Projects initialized before the key existed carry no such entry and keep plain storage — no migration happens implicitly. Sources already gzip/BGZF-compressed are stored as-is, an explicit `--compression` argument pins the storage form, and other formats (GFF3, directories, binaries) are never transformed.
+
+`operon recompress` is the explicit one-shot migration for existing projects: it rewrites each eligible plain FASTA/FASTQ archive in place (full re-hash of the current bytes, BGZF rewrite, decompressed re-hash as the content-preservation proof, then a per-field audited manifest update), deletes the file's recorded remote locations (the next `push` supersedes the stale remote copies), and rebuilds the `standardized/` view when the file was standardized. Release members are refused — releases are immutable — and remote-only or retired-entity files are skipped with a stated reason. Derived data keyed by the old SHA-256 (`qc_results`, `analysis_jobs`, the `fasta_lengths` cache) is naturally invalidated and lazily rebuilt; the `sequences` table, keyed by `file_id`, is unaffected. See [File and QC Commands](../reference/cli-files-qc.md#recompress).
+
 ## Remote mirrors (SFTP)
 
 The `remotes:` section of `project.yaml` can configure one or more SFTP remote mirrors (`operon/remotes.py`), synchronizing manifest files to a remote without breaking the invariants of this section:

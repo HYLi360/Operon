@@ -86,6 +86,16 @@ recipe 也可以用 `commands` 命令链代替单命令形式的 `arguments`（�
 非 `--dry-run` 执行时，`analyze` 会按处理进度逐文件打印进度行，形如
 `[i/N] file_id: running|done|failed`；dry-run 保持安静，只打印计划表格。
 
+压缩输入：以 gzip/BGZF 存储的 manifest 文件（新项目对明文 FASTA/FASTQ 的默认存储形态）
+按归档的 `.gz` 路径原样传给工具。读不了 gzip 输入的工具会以真实退出码失败；此时
+`analyze` 用输入的解压副本**重试一次**（副本写到项目根内的临时空间，SSH 后端上与其他输入
+一样经暂存），重试的运行记录在 `execution_details` 的 `decompressed_input_fallback` 下携带
+实际 argv 与首次错误。只有真实的工具失败（非零退出码）才触发重试；超时、传输错误等基础设施
+失败（没有退出码）绝不重试；重试仍失败时该 job 记为 failed，错误信息合并两段失败。
+provenance 不变：`analysis_jobs.input_sha256` 与缓存指纹都保持压缩归档身份。`run-external`
+不做这种重试：它的 argv 完全由用户控制。压缩输入从不进入 Slurm job array——它们一律走
+携带该重试的逐文件路径。
+
 `--backend` 覆盖 `project.yaml` 的 `execution.backend`，可选 `local`（默认）、
 `slurm`（本地 Slurm 集群提交）或 `ssh`（在 SSH 远程主机上执行）；工具版本探测
 也经同一后端执行。配置、前提与日志位置见 [Slurm 与 SSH 远程执行](../guides/remote-execution.md)。
@@ -96,10 +106,11 @@ Slurm array 提交：当 recipe 的 `slurm:` 块设置 `array: true`、所选 ex
 job array（本地 Slurm 后端，或 `scheduler: slurm` 的 SSH 后端）、且批次中至少有两个
 文件未命中缓存时，这些文件以单个 Slurm job array 提交，而非逐文件各提交一个作业；
 `array_concurrency: N` 限制同时运行的 array task 数量（Slurm `%N`）。其余情形一律
-沿用不变的逐文件提交路径。每个文件仍有自己独立的 `workflow_runs` 行，per-task
-scheduler job ID 记为 `<array_id>_<task_index>`。缓存行为不变：是否参与 array 从不
-进入参数指纹或缓存身份，因此缓存命中与输出收养在 array 开关两种状态下完全一致。见
-[Recipe 字段参考](recipe-fields.md) 的"Slurm array 提交"。
+沿用不变的逐文件提交路径。存储输入为 gzip/BGZF 压缩的文件被排除在 array 之外，一律走
+逐文件路径，因此混合批次仍由其明文成员组成一个 array。每个文件仍有自己独立的
+`workflow_runs` 行，per-task scheduler job ID 记为 `<array_id>_<task_index>`。缓存行为不变：
+是否参与 array 从不进入参数指纹或缓存身份，因此缓存命中与输出收养在 array 开关两种状态下
+完全一致。见 [Recipe 字段参考](recipe-fields.md) 的"Slurm array 提交"。
 
 `--dry-run` 只列出计划不执行：表格的 status 列为 `cached`（命中完成缓存）、
 `adoptable`（将收养已验证的旧输出）或 `planned`（将实际执行），output 列为

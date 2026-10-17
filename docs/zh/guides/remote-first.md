@@ -80,7 +80,7 @@ operon locations --file-id FIL_000001
 
 ```bash
 operon run-external --step quast --backend ssh \
-  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta' \
+  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz' \
   --expected-output qc/quast_out/report.tsv
 
 operon analyze --analysis blastn_nt --backend ssh \
@@ -103,7 +103,7 @@ payload 作为运行输出拉回，再导入 `qc_results`：
 operon run-external --step qc_builtin --backend ssh \
   --entity-type assembly --entity-id ASM_000001 \
   --command 'operon qc-measure \
-    --file raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta \
+    --file raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz \
     --format fasta --role genome_fasta \
     --sha256 <sha256> --size-bytes <size> --file-id FIL_000001 \
     --out qc/metrics/FIL_000001.json' \

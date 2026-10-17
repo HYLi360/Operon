@@ -1,5 +1,11 @@
 # 文件归档与内置 QC
 
+新项目默认把未压缩的 FASTA/FASTQ 归档存为确定性 BGZF（`project.yaml` 的
+`storage.compress_archive: true`）：未压缩的源在 ingest 时被改写为 BGZF，manifest 记录压缩后
+字节。已带 `.gz` 的源（如下面的例子）原样存储，所有内置 QC 解析器对两种形态都透明。单次运行
+可用 `operon ingest --no-compress-archive` 关闭，或在项目级把该键设为 `false`；既有项目的明文
+归档可随后用 `operon recompress` 迁移。见 [BGZF 归档压缩](../architecture/files-and-storage.md#bgzf-归档压缩)。
+
 ## 归档双端测序数据
 
 1. 先建立 sample 与 run：

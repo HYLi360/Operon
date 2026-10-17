@@ -48,6 +48,14 @@ accession，坐标来自 `from`/`to` 列，hit type/PSSM ID/short name 留在 `e
 hits 照常按 `max_hits_per_query` 截断。每个探测到的步骤版本都混入缓存指纹：升级任何一步的
 程序（即使 recipe 文本与主工具版本未变）都会使精确缓存失效，验证输出收养照常适用。
 
+以 gzip/BGZF 存储的输入（新项目对明文 FASTA/FASTQ 的默认归档形态）在所有后端上都按归档的
+`.gz` 路径交给工具。真正运行过并在此类输入上失败的工具（非零退出码）会用暂存在项目根内的
+解压副本重试一次；基础设施失败没有退出码，绝不重试；重试的运行记录在
+`decompressed_input_fallback` 下保留首次错误与实际 argv。身份与缓存从不接触临时副本：
+`analysis_jobs.input_sha256` 与参数指纹始终绑定压缩归档字节。`run-external` 不做重试——其
+argv 完全由用户控制——压缩输入也被排除在 Slurm job array 之外，因为 array 路径没有逐文件的
+重试钩子（见下文）。
+
 外部命令的实际执行由 `execution.py` 的后端抽象接管，`run_external_command` 通过
 `get_executor(project, backend)` 选择后端：
 

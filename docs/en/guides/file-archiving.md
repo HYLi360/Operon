@@ -1,5 +1,7 @@
 # File Archiving and Built-In QC
 
+New projects store plain FASTA/FASTQ archives as deterministic BGZF by default (`storage.compress_archive: true` in `project.yaml`): an uncompressed source is rewritten as BGZF at ingest and the manifest records the compressed bytes. Sources already ending in `.gz` (like the examples below) are stored as-is, and every built-in QC parser reads either form transparently. Opt out per run with `operon ingest --no-compress-archive`, or project-wide by setting the key to `false`; `operon recompress` migrates an existing project's plain archives later. See [BGZF archive compression](../architecture/files-and-storage.md#bgzf-archive-compression).
+
 ## Archive paired-end sequencing reads
 
 1. Create the sample and run:

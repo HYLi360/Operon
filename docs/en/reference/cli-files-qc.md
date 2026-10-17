@@ -6,13 +6,14 @@
 operon ingest \
   --source FILE --entity-type TYPE --entity-id ID --role ROLE \
   [--format FMT] [--compression COMPRESSION] \
-  [--source-url URL] [--move]
+  [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
 - Common `--role` values: `genome_fasta`, `annotation_gff3`, `cds_fasta`, `protein_fasta`, `reads_r1`, `reads_r2`, `reads_single`.
 - `--source` accepts a local path, `sftp://[user@]host[:port]/path`, or `remote://<remote-name>/<path-relative-to-remote-root>`. `remote://` uses the `remotes:` section in `project.yaml`. The source is downloaded to a temporary file and then follows the normal archive workflow. If `--source-url` is omitted, the URL is recorded as `source_url`. Paramiko for SFTP sources is included in the standard installation.
 - A `remote://` path must be a safe root-relative path and must already exist in that remote's `operon-manifest.json`; manifest SHA-256 and size are verified before and after download. A bare `sftp://` source has no mirror manifest, so `ingest` calculates and registers a new local identity after download.
 - Compression such as `.gz` is detected automatically. A file with a gzip suffix but no gzip magic bytes is rejected.
+- Plain FASTA/FASTQ sources are archived as deterministic BGZF when `storage.compress_archive` is enabled in `project.yaml` (the default for new projects): the manifest row records the compressed bytes (`compression: bgzip`, `.gz` name). `--compress-archive`/`--no-compress-archive` override the project setting for this run; an explicit `--compression` always pins the storage form; sources already gzip-compressed are stored as-is. See [BGZF archive compression](../architecture/files-and-storage.md#bgzf-archive-compression).
 - Different SHA-256 bytes for the same entity and role are rejected.
 - Archive names (entity ID, role, and format) must be nonempty filename components without `/`, `\`, control characters, or standalone `.`/`..`. Ingestion and adoption reject destinations that resolve outside the project root, including symlink escapes and reused manifest paths, before writing.
 - If the target canonical path is occupied by different bytes, Operon does not overwrite it. If another manifest row claims the occupant and its bytes match, the occupant is first moved to that row's own canonical role path and its `relative_path` is updated. An unclaimed interrupted remnant is quarantined as `<filename>.orphan-<first-12-sha>` in the same directory. Both cases are audited in `changes` and preserve bytes. `ConflictError` is raised only when the occupying bytes do not match the claiming row's checksum either.
@@ -39,6 +40,20 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 - `hardlink` and `symlink` are explicit compatibility and space-saving options.
 - An existing target with the same checksum is skipped; a different checksum is rejected.
 - New targets are built under a temporary sibling and published atomically. If copying, checksum verification, or the status transaction fails, the target and temporary link are removed so the operation can be retried without a partial artifact.
+
+## recompress
+
+```bash
+operon recompress (--file-id FIL_... | --all) [--dry-run]
+```
+
+Rewrites plain (uncompressed) FASTA/FASTQ raw archives as deterministic BGZF in place — the explicit migration for projects created before the `storage.compress_archive` default; see [BGZF archive compression](../architecture/files-and-storage.md#bgzf-archive-compression). Either `--file-id` (repeatable) or `--all` is required; `--dry-run` reports what would change and writes nothing.
+
+- Each file is fully re-hashed before and after the rewrite: the current bytes must match the manifest, and the decompressed BGZF bytes must hash back to the recorded plain-content checksum; any mismatch refuses the file with an error.
+- The manifest row is updated in one transaction (`relative_path` gains `.gz`, `sha256`/`size_bytes` become the compressed identity, `compression` becomes `bgzip`), with one `changes` audit row per field. The file's `file_locations` rows are deleted and audited — the stale remote bytes are orphaned until the next `push` supersedes them (see [SFTP Remote Storage](../guides/remote-storage.md)). Push first after a recompress: `pull` keeps refusing divergence.
+- A `STANDARDIZED` file has its `standardized/` target rebuilt under the new `.gz` name.
+- Release members are refused (releases are immutable); remote-only or locally missing files and files of retired entities are skipped with a stated reason; already-compressed files are no-ops. Any per-file error makes the command exit non-zero without stopping the batch.
+- Derived data keyed by the old SHA-256 (`qc_results`, `analysis_jobs`, the `fasta_lengths` cache) is invalidated and rebuilt lazily; the `sequences` table is keyed by `file_id` and survives unchanged.
 
 ## qc
 

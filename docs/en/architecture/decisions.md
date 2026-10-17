@@ -26,8 +26,8 @@ the same invariants as project requirements.
 | ID | Decision | Enforced by |
 |----|----------|-------------|
 | INV-1 | Structured metadata in `operon.sqlite` is the single source of truth; large sequence files never enter the database. | schema validation, `operon/schema.py` |
-| INV-2 | Raw data is immutable; derived data is rebuildable. | `ConflictError` on differing bytes, `operon/files.py` |
-| INV-3 | File identity is `file_id + sha256 + size_bytes`, never the path. | manifest archival/verification, `operon/files.py` |
+| INV-2 | Raw data is immutable; derived data is rebuildable. Compression is a storage property recorded in the manifest, not a content change: the explicit `operon recompress` migration rewrites eligible raw archives as deterministic BGZF in place, proves content preservation by re-hashing the decompressed bytes, and audits every changed field. | `ConflictError` on differing bytes, `operon/files.py`; `tests/unit/test_archive_compression.py`, `tests/unit/test_recompress.py` |
+| INV-3 | File identity is `file_id + sha256 + size_bytes` — of the **stored** bytes, never the path; a BGZF-compressed archive's identity is its compressed form, and the manifest row records the compression. | manifest archival/verification, `operon/files.py`; `tests/unit/test_archive_compression.py` |
 | INV-4 | QC tools only measure metrics; decisions come from versioned YAML profiles. | `operon/profiles.py`, `operon/rules.py` |
 | INV-5 | Every processing step is an explicit, idempotent state machine transition with machine-readable provenance. | `operon/workflow.py`, `changes`/`workflow_runs` |
 

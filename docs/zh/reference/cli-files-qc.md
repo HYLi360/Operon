@@ -6,7 +6,7 @@
 operon ingest \
   --source FILE --entity-type TYPE --entity-id ID --role ROLE \
   [--format FMT] [--compression COMPRESSION] \
-  [--source-url URL] [--move]
+  [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
 - `--role` 常用值：`genome_fasta`、`annotation_gff3`、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`。
@@ -19,6 +19,7 @@ operon ingest \
   `operon-manifest.json`；下载前后验证清单 SHA-256/size。裸 `sftp://` 没有镜像清单
   可对照，下载后由 ingest 计算并登记新的本地身份。
 - 自动识别 `.gz` 等压缩；源文件有 `gzip` 后缀但不是 gzip magic 时报错。
+- `project.yaml` 开启 `storage.compress_archive`（新项目默认开启）时，未压缩的 FASTA/FASTQ 源会归档为确定性 BGZF：manifest 行记录压缩后字节（`compression: bgzip`、带 `.gz` 的名称）。`--compress-archive`/`--no-compress-archive` 覆盖本次运行的项目设置；显式 `--compression` 始终固定存储形态；已是 gzip 压缩的源原样存储。见 [BGZF 归档压缩](../architecture/files-and-storage.md#bgzf-归档压缩)。
 - 同实体同角色不同 SHA-256 会拒绝归档。
 - 归档名称（实体 ID、角色和格式）必须是非空文件名组成部分，不得包含 `/`、`\`、控制字符或单独的 `.`/`..`。摄取和收养会在写入前拒绝解析后位于项目根目录之外的目标，包括符号链接越界和复用的 manifest 路径。
 - 目标 canonical 路径已被不同字节占用时不会直接报错：占用者若被另一 manifest 行认领且
@@ -55,6 +56,20 @@ operon standardize [--file-id FIL_...]... [--link {copy|hardlink|symlink}]
 - `hardlink`/`symlink` 为显式兼容与节省空间选项。
 - 目标已存在且 checksum 一致时跳过；不一致则拒绝覆盖。
 - 新目标先写入同目录临时路径再原子发布；复制、checksum 校验或状态事务失败时会清理目标和临时链接，不留下半成品，可直接重试。
+
+## recompress
+
+```bash
+operon recompress (--file-id FIL_... | --all) [--dry-run]
+```
+
+把未压缩的 FASTA/FASTQ raw 归档原地重写为确定性 BGZF——面向早于 `storage.compress_archive` 默认值创建的项目的显式迁移；见 [BGZF 归档压缩](../architecture/files-and-storage.md#bgzf-归档压缩)。`--file-id`（可重复）与 `--all` 必居其一；`--dry-run` 只报告将要发生的改动，不写任何内容。
+
+- 每个文件在重写前后都完整复算哈希：当前字节必须与 manifest 一致，且解压后的 BGZF 字节必须能哈希回已登记的明文内容校验和；任一不一致都会拒绝该文件并报错。
+- manifest 行在单事务内更新（`relative_path` 追加 `.gz`，`sha256`/`size_bytes` 变为压缩后身份，`compression` 变为 `bgzip`），每个字段写一条 `changes` 审计。该文件的 `file_locations` 行被删除并留审计——过时的远端字节成为孤儿，由下一次 `push` 取代（见 [SFTP 远程存储](../guides/remote-storage.md)）。recompress 之后请先 push：`pull` 维持发散拒绝。
+- 已 `STANDARDIZED` 的文件会以新的 `.gz` 名称重建其 `standardized/` 目标。
+- release 成员一律拒绝（release 不可变）；remote-only 或本地缺失的文件、已退役实体的文件跳过并写明原因；已压缩的文件是 no-op。任一文件报错都会让命令以非零退出码结束，但不中断批次。
+- 按旧 SHA-256 键控的派生数据（`qc_results`、`analysis_jobs`、`fasta_lengths` 缓存）失效并惰性重建；`sequences` 表以 `file_id` 键控，原样保留。
 
 ## qc
 

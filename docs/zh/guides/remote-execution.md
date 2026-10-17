@@ -41,7 +41,7 @@ execution:
 ```bash
 operon analyze --analysis blastn_nt --backend slurm
 operon run-external --step quast --backend ssh \
-  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta' \
+  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz' \
   --expected-output qc/quast_out/report.tsv
 ```
 
@@ -91,6 +91,11 @@ operon run-external --step quast --backend ssh \
   `run-external` 也会上传每个 `--input` 声明的输入。暂存路径在解析符号链接后必须
   仍位于本地项目根目录内。远端没有 `sha256sum` 时会通过 SFTP 流式计算 SHA-256，
   目录则计算完整树哈希，不会退化为 size 校验；已有不同内容时拒绝覆盖。
+- 以 gzip/BGZF 归档的输入（新项目对明文 FASTA/FASTQ 的默认存储形态）按原样暂存。
+  读不了压缩输入的工具会以真实退出码失败，`analyze` 随后用解压副本对该文件重试一次：
+  副本写在项目根内、与其他输入一样经 SFTP 暂存，路径改写照常覆盖；超时与传输失败绝不
+  重试。压缩输入从不进入 Slurm job array，一律走携带该重试的逐文件路径。见
+  [外部分析命令](../reference/cli-analysis.md#analyze)。
 - 配置 `storage_remote` 后，本地缺失的输入会先对照本地 SQLite、远端清单和远端实际
   内容，再直接在远端 root 原位读取，不会先下载到个人电脑。实时校验成功后，先前
   陈旧的 `MISSING` 状态会通过审计记录恢复为 `REMOTE_ONLY`。

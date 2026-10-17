@@ -52,6 +52,13 @@ operon locations
 push 后人工移除。被驱逐前已经是 `STANDARDIZED` 的文件在 `pull` 恢复后保持该状态。
 批次发布、清单 v2 身份与逐条退出码语义见[远程存储命令](../reference/cli-remote.md)。
 
+"不同字节即拒绝"有一个有意为之的例外：本地 [`recompress`](../reference/cli-files-qc.md#recompress)
+之后，文件搬到新的 `.gz` 路径，而远端仍持有同一 `file_id` 的旧对象与旧清单条目。下一次
+`push` 会上传新路径并取代过时的远端状态——删除旧对象、摘除旧清单条目，并写入一条
+`changes` 审计——因为远端镜像跟随本地真相。真正的发散仍照旧拒绝：新路径上的外来字节，
+或登记身份与本地行不一致的清单条目，都会抛出 `ConflictError`。recompress 之后请先 push：
+`pull` 对发现的发散维持拒绝。
+
 ## 本地只保留控制面，远端保存并计算大文件
 
 完整的 archive → push → evict → analyze → pull 流程见 [Remote-First 运行模式](remote-first.md)。

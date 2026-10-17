@@ -38,7 +38,7 @@ Override `execution.backend` for one command:
 ```bash
 operon analyze --analysis blastn_nt --backend slurm
 operon run-external --step quast --backend ssh \
-  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta' \
+  --command 'quast -o qc/quast_out raw/assemblies/ASM_000001/ASM_000001.genome_fasta.fasta.gz' \
   --expected-output qc/quast_out/report.tsv
 ```
 
@@ -72,6 +72,7 @@ Prerequisites and behavior:
 - When `storage_remote` is configured, its root is inherited by default. Setting a different explicit `remote_root` is a configuration error.
 - Unknown hosts are rejected by default. Add the host key to `~/.ssh/known_hosts`, configure `known_hosts`, or pin `host_key_sha256`. Use `insecure_accept_unknown_host: true` only for temporary test environments that accept the risk.
 - `analyze` uploads local inputs over SFTP; `run-external` does the same for every declared `--input` when `remote_root` is non-empty. Staged paths must resolve inside the local project root, including after symlink resolution. If `sha256sum` is unavailable remotely, SHA-256 is calculated through the SFTP stream. Directories use a full deterministic tree hash; size-only checks are never used. Different existing content is not overwritten.
+- Inputs archived as gzip/BGZF (the default for plain FASTA/FASTQ in new projects) are staged as-is. A tool that cannot read the compressed input fails with a real exit code, and `analyze` retries that file once with a decompressed copy written inside the project root and staged over SFTP like any other input — path rewriting covers it unchanged; timeouts and transport failures are never retried. Compressed inputs never enter Slurm job arrays; they take the per-file path that owns the retry. See [External Analysis Commands](../reference/cli-analysis.md#analyze).
 - With `storage_remote`, a locally absent input is checked against local SQLite, the remote manifest, and actual remote content, then consumed in place under the remote root instead of being downloaded. A successful live check reconciles a stale `MISSING` file status to `REMOTE_ONLY` through the audit log.
 - One lazy SSH connection is reused for tool-version detection, remote input validation, database checks, and all commands in a batch. A transport keep-alive (every 30 seconds) holds the connection open across long waits, so NAT gateways and firewalls do not drop it. If the connection does drop, the next operation re-connects transparently, and a mid-batch disconnect costs only the file that was being processed. When no new connection can be established (the remote is unreachable), the batch stops with an error instead of emitting one identical connection error per remaining file; re-run the same command to resume — completed files are reused through the cache.
 - Before a run, an existing expected-output path under `remote_root` is renamed to a `<path>.operon-prev-<uuid>` backup instead of being deleted; the backup is dropped once the run succeeds and the new output verifies, and a failed or interrupted run best-effort restores it in place. Retrieved outputs are compared again after transfer. A different existing local output is a conflict.
