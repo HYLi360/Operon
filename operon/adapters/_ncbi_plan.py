@@ -21,7 +21,12 @@ import yaml
 from operon.config import Project, resolve_actor
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
-from operon.files import ingest_file, raw_bucket, standardize_file
+from operon.files import (
+    ingest_file,
+    raw_bucket,
+    standardize_file,
+    stored_content_sha256,
+)
 from operon.schema import (
     ENTITY_ID_COLUMNS,
     ENTITY_PREFIXES,
@@ -975,7 +980,7 @@ def _adapter_schema(project: Project, *, persist: bool) -> Schema:
     return Schema(document)
 
 
-def _preflight_assets(db: Database, plan: ImportPlan) -> None:
+def _preflight_assets(db: Database, project: Project, plan: ImportPlan) -> None:
     """Detect package-internal and manifest conflicts before metadata changes."""
 
     unique_assets: list[DatasetAsset] = []
@@ -1001,14 +1006,20 @@ def _preflight_assets(db: Database, plan: ImportPlan) -> None:
             continue
         seen[key] = (digest, asset)
         existing = db.conn.execute(
-            "SELECT file_id, sha256 FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
+            "SELECT file_id, sha256, compression, relative_path FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
             key,
         ).fetchone()
         if existing and str(existing["sha256"]).lower() != digest.lower():
-            raise ConflictError(
-                f"{entity_type} {entity_id} role {asset.role} already has file "
-                f"{existing['file_id']} with different bytes; import a new assembly/annotation version"
-            )
+            # A row archived as BGZF holds the compressed bytes' checksum; a
+            # re-import of the same plain package content must still match.
+            content_digest = None
+            if str(existing["compression"]) in {"gzip", "bgzip"}:
+                content_digest = stored_content_sha256(project, dict(existing))
+            if content_digest is None or content_digest.lower() != digest.lower():
+                raise ConflictError(
+                    f"{entity_type} {entity_id} role {asset.role} already has file "
+                    f"{existing['file_id']} with different bytes; import a new assembly/annotation version"
+                )
         unique_assets.append(asset)
     plan.assets = unique_assets
 

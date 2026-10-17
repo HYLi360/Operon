@@ -50,6 +50,7 @@ class TestLineageCascade(PytestAssertions):
         script = self.root / f"{name}.py"
         script.write_text(
             textwrap.dedent(f"""
+            import gzip
             import sys
             args = sys.argv[1:]
             if '-version' in args:
@@ -57,8 +58,11 @@ class TestLineageCascade(PytestAssertions):
                 raise SystemExit(0)
             source = args[args.index('--in') + 1]
             out = args[args.index('--out') + 1]
-            with open(source) as handle:
-                data = handle.read()
+            with open(source, 'rb') as handle:
+                blob = handle.read()
+            if blob[:2] == b'\\x1f\\x8b':
+                blob = gzip.decompress(blob)
+            data = blob.decode('utf-8')
             with open(out, 'w') as handle:
                 handle.write('tool={name}\\n')
                 handle.write('input_bytes=' + str(len(data)) + '\\n')

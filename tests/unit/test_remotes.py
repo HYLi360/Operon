@@ -987,6 +987,7 @@ class TestPushPull(PytestAssertions):
         script = Path(tool_tmp.name) / "remote_tool.py"
         script.write_text(
             textwrap.dedent("""
+            import gzip
             import pathlib
             import sys
             args = sys.argv[1:]
@@ -995,7 +996,10 @@ class TestPushPull(PytestAssertions):
                 raise SystemExit(0)
             source = pathlib.Path(args[args.index('--input') + 1])
             output = pathlib.Path(args[args.index('--output') + 1])
-            output.write_text('observed=' + source.read_text().splitlines()[0] + '\\n')
+            blob = source.read_bytes()
+            if blob[:2] == b'\\x1f\\x8b':
+                blob = gzip.decompress(blob)
+            output.write_text('observed=' + blob.decode().splitlines()[0] + '\\n')
         """).strip(),
             encoding="utf-8",
         )

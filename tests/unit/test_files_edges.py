@@ -22,7 +22,7 @@ from operon.errors import (
     ValidationError,
 )
 from operon.remotes import placeholder_path
-from operon.utils import sha256_path
+from operon.utils import atomic_copy_bgzip, sha256_path
 
 
 @pytest.fixture
@@ -95,7 +95,10 @@ def test_ingest_rejects_symlink_escape_even_when_idempotent(
     source = tmp_path / "source.fa"
     source.write_text(">x\nACGT\n")
     target = (
-        project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+        project.raw_root
+        / "assemblies"
+        / "ASM_000001"
+        / "ASM_000001.genome_fasta.fasta.gz"
     )
     if existing:
         files.ingest_file(db, project, source, "assembly", "ASM_000001", "genome_fasta")
@@ -431,6 +434,7 @@ def test_standardize_missing_remote_tampered_links_and_idempotency(
         db, project, source, "assembly", "ASM_000001", "genome_fasta"
     )
     archived = project.root / row["relative_path"]
+    original_bytes = archived.read_bytes()
     archived.unlink()
     db.conn.execute(
         "UPDATE files SET status='REMOTE_ONLY' WHERE file_id=?", (row["file_id"],)
@@ -441,7 +445,7 @@ def test_standardize_missing_remote_tampered_links_and_idempotency(
     archived.write_text("tampered", encoding="utf-8")
     with pytest.raises(ChecksumError, match="does not match manifest"):
         files.standardize_file(db, project, row["file_id"])
-    archived.write_text(">x\nA\n", encoding="utf-8")
+    archived.write_bytes(original_bytes)
     result = files.standardize_file(db, project, row["file_id"], link_kind="symlink")
     assert Path(result["target"]).is_symlink()
     assert files.standardize_file(db, project, row["file_id"])["action"] == "skipped"
@@ -543,14 +547,19 @@ def test_ingest_existing_unregistered_target_and_directory_conflict(
     source = tmp_path / "source.fna"
     source.write_text(">x\nA\n", encoding="utf-8")
     target = (
-        project.raw_root / "assemblies" / "ASM_000001" / "ASM_000001.genome_fasta.fasta"
+        project.raw_root
+        / "assemblies"
+        / "ASM_000001"
+        / "ASM_000001.genome_fasta.fasta.gz"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(source.read_bytes())
+    # The new default archives plain FASTA as deterministic BGZF, so an
+    # unregistered target with the same bytes holds the compressed form.
+    atomic_copy_bgzip(source, target)
     row = files.ingest_file(
         db, project, source, "assembly", "ASM_000001", "genome_fasta"
     )
-    assert row["relative_path"].endswith("ASM_000001.genome_fasta.fasta")
+    assert row["relative_path"].endswith("ASM_000001.genome_fasta.fasta.gz")
 
     directory = tmp_path / "directory"
     directory.mkdir()
@@ -786,7 +795,9 @@ def test_same_size_modification_is_caught_by_full_rehash(project_db, tmp_path):
         db, project, source, "assembly", "ASM_000001", "genome_fasta"
     )
     path = project.root / row["relative_path"]
-    path.write_text(">x\nC\n", encoding="utf-8")
+    blob = bytearray(path.read_bytes())
+    blob[len(blob) // 2] ^= 0xFF
+    path.write_bytes(bytes(blob))
 
     matched, info = files.verify_local_file_identity(db, row, path)
     assert not matched and info["verification_method"] == "full_sha256"
@@ -813,7 +824,11 @@ def test_ingest_rearchives_bytes_missing_for_manifest_row(project_db, tmp_path):
         db, project, source, "assembly", "ASM_000001", "genome_fasta"
     )
     assert restored["file_id"] == row["file_id"]
-    assert archived.read_bytes() == source.read_bytes()
+    if row["compression"] == "none":
+        assert archived.read_bytes() == source.read_bytes()
+    else:
+        with gzip.open(archived, "rt", encoding="utf-8") as handle:
+            assert handle.read() == source.read_text(encoding="utf-8")
 
 
 @pytest.mark.bug("ODR-13")

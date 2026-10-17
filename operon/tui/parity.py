@@ -279,6 +279,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "source_url": "ingest-source-url",
             "move": "ingest-move",
         },
+        waived={
+            "compress_archive": "project.yaml storage.compress_archive sets the "
+            "project default; per-run override is an advanced CLI path",
+        },
     ),
     ParityEntry(
         ("verify",),
@@ -742,6 +746,10 @@ REGISTRY: tuple[ParityEntry, ...] = (
             "compression": "pipeline-compression",
             "source_url": "pipeline-source-url",
             "yes": "pipeline-yes",
+        },
+        waived={
+            "compress_archive": "project.yaml storage.compress_archive sets the "
+            "project default; per-run override is an advanced CLI path",
         },
     ),
     ParityEntry(

@@ -13,6 +13,7 @@ audit records and files on disk.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import os
@@ -1990,7 +1991,8 @@ def test_standardize_hardlink_publishes_and_falls_back(project_db, monkeypatch):
     result = standardize_file(db, project, row["file_id"], link_kind="hardlink")
     assert result["action"] == "hardlink"
     target = Path(result["target"])
-    assert target.read_text(encoding="utf-8") == ">a\nAC\n"
+    # raw/ stores deterministic BGZF; the standardized copy carries those bytes.
+    assert gzip.decompress(target.read_bytes()).decode("utf-8") == ">a\nAC\n"
 
     second = project.root / "second.fa"
     second.write_text(">b\nGT\n", encoding="utf-8")
@@ -2005,7 +2007,7 @@ def test_standardize_hardlink_publishes_and_falls_back(project_db, monkeypatch):
     result2 = standardize_file(db, project, row2["file_id"], link_kind="hardlink")
     target2 = Path(result2["target"])
     assert result2["action"] == "hardlink"
-    assert target2.read_text(encoding="utf-8") == ">b\nGT\n"
+    assert gzip.decompress(target2.read_bytes()).decode("utf-8") == ">b\nGT\n"
     assert not list(target2.parent.glob(".*.operon-*"))
 
 

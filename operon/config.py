@@ -51,6 +51,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "logs_root": "logs",
         "releases_root": "releases",
         "taxonomy_root": "taxonomy",
+        "compress_archive": True,
     },
     "database": {
         "path": "operon.sqlite",
@@ -157,6 +158,16 @@ class Project:
     @property
     def taxonomy_root(self) -> Path:
         return self._resolve(self.config["storage"].get("taxonomy_root", "taxonomy"))
+
+    @property
+    def compress_archive(self) -> bool:
+        """Whether plain FASTA/FASTQ sources are archived as deterministic BGZF.
+
+        Projects initialized before the key existed carry no ``compress_archive``
+        entry (``Project.find`` performs no defaults merge), so the fallback is
+        the historical behavior: store bytes uncompressed.
+        """
+        return bool(self.config["storage"].get("compress_archive", False))
 
     @property
     def taxonomy_reference_sets_dir(self) -> Path:

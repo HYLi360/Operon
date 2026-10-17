@@ -600,7 +600,7 @@ def _process_source(
         _track_assembly_groups(ctx, bundle_reports)
 
         plan = _PlanBuilder(db).build(bundle_reports, bundle_assets)
-        _preflight_assets(db, plan)
+        _preflight_assets(db, ctx.project, plan)
         # Validate each batch's plan rows exactly once; the normalized rows
         # feed `_apply_plan` below instead of being recomputed inside it.
         normalized = _validate_plan_rows(ctx.preview_schema, plan)

@@ -273,7 +273,11 @@ class TestQCAndRules(PytestAssertions):
             "genome_fasta",
         )
         archived = self.project.root / row["relative_path"]
-        archived.write_text(">ctg1\nTTTT\n", encoding="utf-8")
+        # The archive now stores deterministic BGZF; the tamper must keep the
+        # recorded size so verification reaches the full-hash path.
+        blob = bytearray(archived.read_bytes())
+        blob[len(blob) // 2] ^= 0xFF
+        archived.write_bytes(bytes(blob))
 
         with patch(
             "operon.files.sha256_path", wraps=files_module.sha256_path
@@ -537,8 +541,11 @@ class TestQCAndRules(PytestAssertions):
     def test_annotation_qc_rejects_changed_related_protein(self):
         _assembly_row, gff_row, protein_row = self._add_annotation_inputs()
         protein_path = self.project.root / protein_row["relative_path"]
-        original = protein_path.read_text(encoding="utf-8")
-        protein_path.write_text(original.replace("A", "G"), encoding="utf-8")
+        # Same-size tamper of the (BGZF) archived bytes: verification must
+        # reach the full-hash path and reject the changed related input.
+        blob = bytearray(protein_path.read_bytes())
+        blob[len(blob) // 2] ^= 0xFF
+        protein_path.write_bytes(bytes(blob))
         result = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
         self.assertFalse(result["ok"])
         self.assertIn("related protein_fasta", result["error"])
@@ -566,8 +573,9 @@ class TestQCAndRules(PytestAssertions):
         with patch("operon.qc.fasta_lengths", wraps=qc.fasta_lengths) as scanner:
             first = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
             self.assertTrue(first["ok"], first)
-            original = assembly_path.read_text(encoding="utf-8")
-            assembly_path.write_text(original.replace("A", "G", 1), encoding="utf-8")
+            blob = bytearray(assembly_path.read_bytes())
+            blob[len(blob) // 2] ^= 0xFF
+            assembly_path.write_bytes(bytes(blob))
             changed = qc_all(self.db, self.project, file_id=gff_row["file_id"])[0]
         self.assertFalse(changed["ok"])
         self.assertIn("related assembly_fasta", changed["error"])

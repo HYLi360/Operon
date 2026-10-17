@@ -142,6 +142,7 @@ def run_pipeline(
     fmt: str | None = None,
     compression: str | None = None,
     source_url: str | None = None,
+    compress_archive: bool | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run the four stages in order; a QC failure stops before evaluation."""
@@ -174,6 +175,7 @@ def run_pipeline(
             fmt=fmt,
             compression=compression,
             source_url=source_url,
+            compress_archive=compress_archive,
         )
     finally:
         if temp_path is not None:

@@ -43,6 +43,13 @@ def add_ingest_parser(sub):
     p.add_argument("--format", dest="fmt")
     p.add_argument("--compression")
     p.add_argument("--source-url")
+    p.add_argument(
+        "--compress-archive",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="archive plain FASTA/FASTQ sources as deterministic BGZF "
+        "(default: the project's storage.compress_archive setting)",
+    )
     p.add_argument("--move", action="store_true", help="move source instead of copying")
 
 
@@ -101,6 +108,7 @@ def _cmd_ingest(args: argparse.Namespace, project: Project, db: Database) -> int
             compression=args.compression,
             source_url=source_url,
             move=args.move,
+            compress_archive=getattr(args, "compress_archive", None),
         )
     finally:
         if temp_path is not None:

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import gzip
 import tempfile
 from pathlib import Path
 
@@ -238,7 +239,9 @@ class TestPipelineAndRelease(PytestAssertions):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["file_id"], row["file_id"])
             exported = out / rows[0]["export_relative_path"]
-            self.assertEqual(exported.read_bytes(), source.read_bytes())
+            self.assertEqual(
+                gzip.decompress(exported.read_bytes()), source.read_bytes()
+            )
             self.assertEqual(sha256_file(exported), rows[0]["sha256"])
             provenance = json_module.loads(
                 (out / "provenance.json").read_text(encoding="utf-8")

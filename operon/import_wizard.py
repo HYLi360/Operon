@@ -24,6 +24,7 @@ from operon.files import (
     detect_format,
     ingest_file,
     raw_bucket,
+    stored_content_sha256,
 )
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
 from operon.sql import quote_identifier
@@ -616,13 +617,19 @@ def _preflight(
         source = Path(item["path"])
         digest = sha256_path(source)
         existing = db.conn.execute(
-            "SELECT file_id, sha256 FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
+            "SELECT file_id, sha256, compression, relative_path FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
             (item["entity_type"], entity["id"], item["role"]),
         ).fetchone()
         if existing and str(existing["sha256"]).lower() != digest.lower():
-            raise ConflictError(
-                f"{item['entity_type']} {entity['id']} already has different bytes for role {item['role']}"
-            )
+            # A row archived as BGZF holds the compressed bytes' checksum; the
+            # same plain content re-imported must still be recognized.
+            content_digest = None
+            if str(existing["compression"]) in {"gzip", "bgzip"}:
+                content_digest = stored_content_sha256(project, dict(existing))
+            if content_digest is None or content_digest.lower() != digest.lower():
+                raise ConflictError(
+                    f"{item['entity_type']} {entity['id']} already has different bytes for role {item['role']}"
+                )
     return rows
 
 

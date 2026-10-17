@@ -1160,8 +1160,8 @@ def test_publish_export_validation_and_symlink_command(
     assert provenance["file_count"] == 2
     linked = sorted(path for path in (output / "data").rglob("*") if path.is_symlink())
     assert [path.name for path in linked] == [
-        "ASM_000001.genome_fasta.fasta",
-        "ASM_000002.genome_fasta.fasta",
+        "ASM_000001.genome_fasta.fasta.gz",
+        "ASM_000002.genome_fasta.fasta.gz",
     ]
 
 

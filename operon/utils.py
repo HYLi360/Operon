@@ -217,6 +217,42 @@ def atomic_copy(source: str | Path, target: str | Path) -> None:
         raise
 
 
+def atomic_copy_bgzip(
+    source: str | Path, target: str | Path, *, num_threads: int = 4
+) -> None:
+    """Compress a file into deterministic BGZF: temp file, fsync, then rename.
+
+    BGZF block headers carry no mtime and blocks deflate independently at a
+    fixed size, so identical input bytes produce identical output bytes
+    regardless of ``num_threads`` (pinned by tests); the thread count is fixed
+    anyway so an archive's bytes never depend on the caller.  Closing the
+    writer emits the BGZF EOF block, making the output a valid multi-member
+    gzip stream that every gzip-transparent reader accepts.
+    """
+    import bgzip
+
+    source = Path(source)
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "wb") as raw, open(source, "rb") as src:
+            writer = bgzip.BGZipWriter(fileobj=raw, num_threads=num_threads)
+            try:
+                shutil.copyfileobj(src, writer, length=1024 * 1024)
+            finally:
+                writer.close()
+            raw.flush()
+            os.fsync(raw.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def atomic_copytree(source: str | Path, target: str | Path) -> None:
     """Copy a directory tree to a temporary sibling, then rename it in place."""
     source = Path(source)

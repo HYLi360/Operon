@@ -81,6 +81,13 @@ def add_run_pipeline_parser(sub):
     p.add_argument("--format", dest="fmt")
     p.add_argument("--compression")
     p.add_argument("--source-url")
+    p.add_argument(
+        "--compress-archive",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="archive plain FASTA/FASTQ sources as deterministic BGZF "
+        "(default: the project's storage.compress_archive setting)",
+    )
     p.add_argument("--profile")
     p.add_argument(
         "--yes",
@@ -282,6 +289,7 @@ def _cmd_run_pipeline(args: argparse.Namespace, project: Project, db: Database) 
         fmt=args.fmt,
         compression=args.compression,
         source_url=args.source_url,
+        compress_archive=getattr(args, "compress_archive", None),
         progress=print,
     )
     if not result["qc_ok"]:

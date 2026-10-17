@@ -607,11 +607,12 @@ def test_preflight_assets_deduplicates_and_detects_internal_conflict(tmp_path):
 
         conn = Conn()
 
-    ncbi._preflight_assets(DB(), plan)
+    project = SimpleNamespace(root=tmp_path)
+    ncbi._preflight_assets(DB(), project, plan)
     assert len(plan.assets) == 1
     plan.assets = [make(first), make(different)]
     with pytest.raises(Exception, match="multiple different files"):
-        ncbi._preflight_assets(DB(), plan)
+        ncbi._preflight_assets(DB(), project, plan)
 
 
 def test_download_batches_async_success_error_and_cancellation(tmp_path, monkeypatch):
@@ -1265,13 +1266,18 @@ def test_preflight_assets_rejects_role_already_archived_with_different_bytes(tmp
         class Conn:
             @staticmethod
             def execute(*_a):
-                row = {"file_id": "FIL_000001", "sha256": "0" * 64}
+                row = {
+                    "file_id": "FIL_000001",
+                    "sha256": "0" * 64,
+                    "compression": "none",
+                    "relative_path": "raw/genomic.fna",
+                }
                 return type("Cursor", (), {"fetchone": lambda self: row})()
 
         conn = Conn()
 
     with pytest.raises(ConflictError, match="different bytes"):
-        ncbi._preflight_assets(DB(), plan)
+        ncbi._preflight_assets(DB(), SimpleNamespace(root=tmp_path), plan)
 
 
 def test_resume_run_rejects_unknown_workflow_run(project_db):

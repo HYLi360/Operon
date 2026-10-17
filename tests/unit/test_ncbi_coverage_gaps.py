@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import gzip
 import io
 import json
 import os
@@ -714,7 +715,10 @@ def test_standardize_creates_standardized_copies(project_db, tmp_path):
     ]
     assert len(standardized) == 1
     assert standardized[0].name == Path(row["relative_path"]).name
-    assert standardized[0].read_text(encoding="utf-8") == ">chr1\nACGTACGTACGT\n"
+    assert (
+        gzip.decompress(standardized[0].read_bytes()).decode("utf-8")
+        == ">chr1\nACGTACGTACGT\n"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1925,4 +1929,3 @@ def test_parallel_download_without_event_keeps_internal_cancellation(
     )
     assert len(completed) == 1
     assert consumed[0][0] == ["GCF_000000001.1"]
-
