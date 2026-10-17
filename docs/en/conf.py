@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from conf_common import apply_shared_settings  # noqa: E402
+from conf_common import apply_shared_settings
 
 apply_shared_settings(
     globals(),

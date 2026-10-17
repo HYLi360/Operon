@@ -343,50 +343,49 @@ def fanout_units(
     try:
         with tempfile.TemporaryDirectory(
             prefix="operon-fanout-", dir=project.logs_root
-        ) as staging:
-            with db.transaction():
-                for index, unit in enumerate(units, start=1):
-                    staged = Path(staging) / f"unit-{index:04d}.fasta"
-                    staged.write_text(unit["text"], encoding="utf-8")
-                    if not (unit["target"].exists() or unit["target"].is_symlink()):
-                        created_targets.append(unit["target"])
-                    record = ingest_file(
-                        db,
-                        project,
-                        staged,
-                        entity_type,
-                        entity_id,
-                        unit["role"],
-                        fmt="fasta",
-                        compression="none",
-                        source_url=f"fanout:{assignments_file_id}",
-                        run_id=run["run_id"],
-                        archive_root=derived_root,
-                        provenance_buffer=jsonl_buffer,
+        ) as staging, db.transaction():
+            for index, unit in enumerate(units, start=1):
+                staged = Path(staging) / f"unit-{index:04d}.fasta"
+                staged.write_text(unit["text"], encoding="utf-8")
+                if not (unit["target"].exists() or unit["target"].is_symlink()):
+                    created_targets.append(unit["target"])
+                record = ingest_file(
+                    db,
+                    project,
+                    staged,
+                    entity_type,
+                    entity_id,
+                    unit["role"],
+                    fmt="fasta",
+                    compression="none",
+                    source_url=f"fanout:{assignments_file_id}",
+                    run_id=run["run_id"],
+                    archive_root=derived_root,
+                    provenance_buffer=jsonl_buffer,
+                )
+                for input_file_id in [*source_file_ids, assignments_file_id]:
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO file_lineage"
+                        "(derived_file_id, input_file_id, workflow_run_id, created_at) "
+                        "VALUES(?,?,?,?)",
+                        (
+                            record["file_id"],
+                            input_file_id,
+                            run["run_id"],
+                            now_iso(),
+                        ),
                     )
-                    for input_file_id in [*source_file_ids, assignments_file_id]:
-                        db.conn.execute(
-                            "INSERT OR IGNORE INTO file_lineage"
-                            "(derived_file_id, input_file_id, workflow_run_id, created_at) "
-                            "VALUES(?,?,?,?)",
-                            (
-                                record["file_id"],
-                                input_file_id,
-                                run["run_id"],
-                                now_iso(),
-                            ),
-                        )
-                    results.append(
-                        {
-                            "unit": unit["unit"],
-                            "role": unit["role"],
-                            "sequences": len(unit["seqids"]),
-                            "file_id": record["file_id"],
-                            "relative_path": record["relative_path"],
-                            "sha256": record["sha256"],
-                            "status": "reused" if unit["reused"] else "created",
-                        }
-                    )
+                results.append(
+                    {
+                        "unit": unit["unit"],
+                        "role": unit["role"],
+                        "sequences": len(unit["seqids"]),
+                        "file_id": record["file_id"],
+                        "relative_path": record["relative_path"],
+                        "sha256": record["sha256"],
+                        "status": "reused" if unit["reused"] else "created",
+                    }
+                )
     except BaseException as exc:
         for target in reversed(created_targets):
             if target.is_dir() and not target.is_symlink():

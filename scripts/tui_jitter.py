@@ -137,7 +137,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
         original_post = WorkerResults.post_to_ui
 
-        def jittered_post(self: WorkerResults, callback: Any, *args: Any, **kwargs: Any) -> None:
+        def jittered_post(
+            self: WorkerResults, callback: Any, *args: Any, **kwargs: Any
+        ) -> None:
             # Called from the worker thread, so a plain sleep is the right tool.
             time.sleep(JITTER.draw("worker", JITTER.worker_ms))
             original_post(self, callback, *args, **kwargs)

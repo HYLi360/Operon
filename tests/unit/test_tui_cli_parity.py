@@ -783,7 +783,7 @@ def test_add_modal_command_text_matches_action_kwargs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
-    from textual.widgets import Button, Input, Select  # noqa: F401
+    from textual.widgets import Button, Input, Select
 
     from operon.tui.app import OperonApp
     from operon.tui.screens.entities import AddRecordModal, FieldRow
@@ -907,7 +907,7 @@ def test_next_id_modal_command_text_matches_action_kwargs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pytest.importorskip("textual")
-    from textual.widgets import Select, Static  # noqa: F401
+    from textual.widgets import Select, Static
 
     from operon.tui.app import OperonApp
     from operon.tui.screens.entities import NextIdModal

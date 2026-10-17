@@ -1240,11 +1240,10 @@ def save_profile(
         )
         sha256 = hashlib.sha256(profile_document.encode("utf-8")).hexdigest()
         version = int(loaded.get("version", 1))
-        with _open_writable(project) as db:
-            with db.transaction():
-                snapshot_id = db.record_profile(
-                    name, version, sha256, profile_document, now_iso()
-                )
+        with _open_writable(project) as db, db.transaction():
+            snapshot_id = db.record_profile(
+                name, version, sha256, profile_document, now_iso()
+            )
     return {
         "name": name,
         "version": version,

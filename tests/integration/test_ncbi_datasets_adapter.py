@@ -422,12 +422,11 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         usage = type("DiskUsage", (), {"free": 1024})()
         with patch(
             "operon.adapters.ncbi_datasets.shutil.disk_usage", return_value=usage
+        ), self.assertRaisesRegex(
+            ValidationError,
+            r"insufficient space.*--batch-size.*--no-preserve-source",
         ):
-            with self.assertRaisesRegex(
-                ValidationError,
-                r"insufficient space.*--batch-size.*--no-preserve-source",
-            ):
-                _require_disk_space(Path("/tmp"), 1024 * 1024, "archive test asset")
+            _require_disk_space(Path("/tmp"), 1024 * 1024, "archive test asset")
 
     def test_three_hundred_accessions_are_processed_in_bounded_batches(self):
         with tempfile.TemporaryDirectory() as tmp:
