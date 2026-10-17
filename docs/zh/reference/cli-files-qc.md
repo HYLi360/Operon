@@ -9,7 +9,7 @@ operon ingest \
   [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
-- `--role` 常用值：`genome_fasta`、`annotation_gff3`、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`。
+- `--role` 常用值：`genome_fasta`、`annotation_gff3`（同时接受 GFF3 与 GTF 注释来源——format 标签跟随文件扩展名，`.gtf` 文件名记录为 `format: gtf`）、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`。
 - `--source` 除本地路径外，还支持 `sftp://[user@]host[:port]/path` 与
   `remote://<remote名>/<相对远端root路径>`（`remote://` 引用 `project.yaml` 的
   `remotes:` 配置）；会先经 SFTP 下载到临时文件再走原归档流程。未显式给出

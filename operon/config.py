@@ -166,7 +166,7 @@ class Project:
 
     @property
     def compress_archive(self) -> bool:
-        """Whether plain FASTA/FASTQ sources are archived as deterministic BGZF.
+        """Whether plain FASTA/FASTQ/GFF3/GTF sources are archived as BGZF.
 
         Projects initialized before the key existed carry no ``compress_archive``
         entry (``Project.find`` performs no defaults merge), so the fallback is

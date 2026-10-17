@@ -33,10 +33,12 @@ from textual.widgets import (
     TabbedContent,
 )
 
+from operon.cli import main
 from operon.config import Project
 from operon.database import Database
 from operon.demo import init_demo
 from operon.errors import ValidationError
+from operon.files import ingest_file
 from operon.tui import actions
 from operon.tui.app import OperonApp
 from operon.tui.screens import analyze as analyze_module
@@ -57,6 +59,48 @@ def project(tmp_path: Path, demo_template: Project) -> Project:
     target = tmp_path / "project"
     shutil.copytree(demo_template.root, target)
     return Project.find(target)
+
+
+@pytest.fixture
+def array_project(tmp_path: Path) -> Project:
+    """A project whose job-array-eligible inputs are two plain GFF3 files.
+
+    The demo's annotation files are stored as BGZF under the storage
+    default, and compressed inputs are deliberately excluded from job
+    arrays, so the array tests ingest their own uncompressed GFF3 files.
+    """
+    assert main(["--project", str(tmp_path), "init", str(tmp_path)]) == 0
+    project = Project.find(tmp_path)
+    db = Database(project.db_path)
+    try:
+        db.insert_row(
+            "organisms", {"organism_id": "ORG_000001", "scientific_name": "Example"}
+        )
+        db.insert_row(
+            "samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"}
+        )
+        db.insert_row(
+            "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+        )
+        for annotation_id in ("ANN_000001", "ANN_000002"):
+            db.insert_row(
+                "annotations",
+                {"annotation_id": annotation_id, "assembly_id": "ASM_000001"},
+            )
+            source = tmp_path / f"{annotation_id.lower()}.gff3"
+            source.write_text("##gff-version 3\n", encoding="utf-8")
+            ingest_file(
+                db,
+                project,
+                source,
+                "annotation",
+                annotation_id,
+                "annotation_gff3",
+                compress_archive=False,
+            )
+    finally:
+        db.close()
+    return project
 
 
 SCENARIO_TIMEOUT = 180.0
@@ -143,9 +187,9 @@ def _write_fake_tool(
     (``marker``); ``fake_broken`` points at a missing executable so every
     file fails.  ``slurm`` adds a recipe-level ``slurm:`` block (e.g.
     ``{"array": True}``) exactly like a hand-written recipe.  The entity
-    type/role/format can be retargeted (e.g. at the demo's GFF3 files, which
-    stay uncompressed under the bgzip storage default — a requirement for
-    the job-array path).
+    type/role/format can be retargeted (the array tests point it at
+    ``array_project``, whose GFF3 inputs are stored uncompressed so they remain
+    job-array eligible).
     """
     script = tmp_path / "fakeblast.py"
     script.write_text(
@@ -978,21 +1022,21 @@ def test_preflight_backend_resolves_and_validates(
 
 
 def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
-    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    array_project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A cooperative cancel while the job array is queued: one scancel, and
     the unfinished tasks land as ``interrupted`` (no workflow_runs rows)."""
-    # The demo's GFF3 files stay uncompressed under the bgzip storage default;
-    # compressed inputs are deliberately excluded from job arrays.
+    # The array fixture stores its GFF3 files uncompressed because compressed
+    # inputs are deliberately excluded from job arrays.
     _write_fake_tool(
-        project,
+        array_project,
         tmp_path,
         slurm={"array": True},
         entity_type="annotation",
         file_role="annotation_gff3",
         fmt="gff3",
     )
-    project.config["execution"]["slurm"]["poll_interval"] = 0.01
+    array_project.config["execution"]["slurm"]["poll_interval"] = 0.01
     state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
 
     cancel_event = threading.Event()
@@ -1009,7 +1053,7 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
     try:
         with pytest.raises(actions.AnalysisCancelled):
             actions.run_analysis(
-                project,
+                array_project,
                 "fake_nt",
                 parameters={"marker": "TT"},
                 backend="slurm",
@@ -1020,10 +1064,12 @@ def test_run_analysis_cancel_mid_array_scancels_and_interrupts(
 
     # The array was cancelled with one scancel carrying its job id.
     assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
-    jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
+    jobs = _query(array_project, "SELECT * FROM analysis_jobs ORDER BY job_id")
     assert [job["status"] for job in jobs] == ["interrupted"] * 2
     assert (
-        _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
+        _query(
+            array_project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'"
+        )
         == []
     )
 
@@ -1081,29 +1127,29 @@ def test_analyze_modal_backend_preflight_then_slurm_run(
 
 
 def test_analyze_modal_cancel_mid_array_scancels_and_reports(
-    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    array_project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cancel while the array is queued: scancel runs, the modal reports the
     cancelled batch, and tasks land as interrupted."""
-    # The demo's GFF3 files stay uncompressed under the bgzip storage default;
-    # compressed inputs are deliberately excluded from job arrays.
+    # The array fixture stores its GFF3 files uncompressed because compressed
+    # inputs are deliberately excluded from job arrays.
     _write_fake_tool(
-        project,
+        array_project,
         tmp_path,
         slurm={"array": True},
         entity_type="annotation",
         file_role="annotation_gff3",
         fmt="gff3",
     )
-    project.config["execution"]["slurm"]["poll_interval"] = 0.01
+    array_project.config["execution"]["slurm"]["poll_interval"] = 0.01
     state = _install_fake_slurm(tmp_path, monkeypatch, holding=True)
     dismissed: list[Any] = []
 
     async def scenario() -> None:
-        app = OperonApp(project)
+        app = OperonApp(array_project)
         async with app.run_test(size=(160, 50)) as pilot:
             await _settled(app)
-            modal = AnalyzeModal(project, recipe_name="fake_nt")
+            modal = AnalyzeModal(array_project, recipe_name="fake_nt")
             app.push_screen(modal, dismissed.append)
             await pilot.pause()
             await _wait_until(
@@ -1137,10 +1183,12 @@ def test_analyze_modal_cancel_mid_array_scancels_and_reports(
     _run(scenario())
     assert (state / "scancel.log").read_text(encoding="utf-8").split() == ["4242"]
     assert dismissed == [{"cancelled": True, "done": 2, "total": 2}]
-    jobs = _query(project, "SELECT * FROM analysis_jobs ORDER BY job_id")
+    jobs = _query(array_project, "SELECT * FROM analysis_jobs ORDER BY job_id")
     assert [job["status"] for job in jobs] == ["interrupted"] * 2
     assert (
-        _query(project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'")
+        _query(
+            array_project, "SELECT * FROM workflow_runs WHERE step='analysis:fake_nt'"
+        )
         == []
     )
 

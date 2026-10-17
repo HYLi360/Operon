@@ -85,7 +85,7 @@ def add_run_pipeline_parser(sub):
         "--compress-archive",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="archive plain FASTA/FASTQ sources as deterministic BGZF "
+        help="archive plain FASTA/FASTQ/GFF3/GTF sources as deterministic BGZF "
         "(default: the project's storage.compress_archive setting)",
     )
     p.add_argument("--profile")

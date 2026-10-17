@@ -9,7 +9,7 @@ operon ingest \
   [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
-- Common `--role` values: `genome_fasta`, `annotation_gff3`, `cds_fasta`, `protein_fasta`, `reads_r1`, `reads_r2`, `reads_single`.
+- Common `--role` values: `genome_fasta`, `annotation_gff3` (accepts both GFF3 and GTF annotation sources — the format label follows the file extension, so a `.gtf` filename records `format: gtf`), `cds_fasta`, `protein_fasta`, `reads_r1`, `reads_r2`, `reads_single`.
 - `--source` accepts a local path, `sftp://[user@]host[:port]/path`, or `remote://<remote-name>/<path-relative-to-remote-root>`. `remote://` uses the `remotes:` section in `project.yaml`. The source is downloaded to a temporary file and then follows the normal archive workflow. If `--source-url` is omitted, the URL is recorded as `source_url`. Paramiko for SFTP sources is included in the standard installation.
 - A `remote://` path must be a safe root-relative path and must already exist in that remote's `operon-manifest.json`; manifest SHA-256 and size are verified before and after download. A bare `sftp://` source has no mirror manifest, so `ingest` calculates and registers a new local identity after download.
 - Compression such as `.gz` is detected automatically. A file with a gzip suffix but no gzip magic bytes is rejected.

@@ -35,6 +35,7 @@ from operon.utils import (
     atomic_copy,
     atomic_copy_bgzip,
     atomic_copytree,
+    atomic_write_text,
     is_gzip_path,
     now_iso,
     path_size_bytes,
@@ -91,6 +92,7 @@ FORMAT_EXTENSIONS = {
     "fasta": {".fasta", ".fa", ".fna", ".faa"},
     "fastq": {".fastq", ".fq"},
     "gff3": {".gff3", ".gff"},
+    "gtf": {".gtf"},
     "bam": {".bam"},
     "cram": {".cram"},
     "tsv": {".tsv"},
@@ -379,6 +381,38 @@ def raw_bucket(entity_type: str) -> str:
     return ENTITY_BUCKETS.get(entity_type, "other")
 
 
+def _ensure_gtf_format_schema(project: Project) -> None:
+    """Add the ``gtf`` format enum value to an older project's files schema.
+
+    ``files.format`` is a closed enum in ``config/schemas.yaml``; projects
+    initialized before the GTF format existed carry no ``gtf`` entry there.
+    The upgrade is idempotent and mirrors the REMOTE_ONLY schema extension.
+    """
+    import yaml
+
+    try:
+        document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8")) or {}
+        fmt = document["tables"]["files"]["fields"]["format"]
+        allowed = list(fmt.get("allowed", []))
+    except (OSError, KeyError, TypeError) as exc:
+        raise ValidationError(
+            f"cannot upgrade project files format schema: {exc}"
+        ) from exc
+    changed = False
+    if "gtf" not in allowed:
+        allowed.append("gtf")
+        fmt["allowed"] = allowed
+        changed = True
+    if str(document.get("schema_version", "")) in {"", "1.0", "1.1", "1.2"}:
+        document["schema_version"] = "1.3"
+        changed = True
+    if changed:
+        atomic_write_text(
+            project.schema_path,
+            yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+        )
+
+
 def find_existing_file(
     db: Database, entity_type: str, entity_id: str, role: str, sha256: str
 ) -> dict[str, Any] | None:
@@ -412,6 +446,36 @@ def stored_content_sha256(project: Project, record: dict[str, Any]) -> str | Non
     return sha256_path(path)
 
 
+def resolve_storage_form(
+    project: Project,
+    source: str | Path,
+    role: str,
+    fmt: str | None = None,
+    compression: str | None = None,
+) -> tuple[str, str]:
+    """The ``(format, compression)`` storage form ``ingest_file`` will record.
+
+    Mirrors the ingest-time resolution: ``storage.compress_archive`` (or the
+    explicit ``compress_archive`` argument) transcodes a plain, unpinned
+    source into BGZF; anything already compressed, pinned, or a directory is
+    stored as given. External consumers that must predict the canonical
+    archive name before ingest (the import wizard's rollback list) share this
+    helper so the prediction cannot drift from the ingest path.
+    """
+    resolved_fmt = fmt or detect_format(source, role)
+    compression_pinned = compression is not None
+    resolved_compression = compression or detect_compression(source)
+    if (
+        project.compress_archive
+        and not compression_pinned
+        and resolved_compression == "none"
+        and resolved_fmt in AUTO_BGZIP_FORMATS
+        and Path(source).is_file()
+    ):
+        resolved_compression = "bgzip"
+    return resolved_fmt, resolved_compression
+
+
 def ingest_file(
     db: Database,
     project: Project,
@@ -436,9 +500,10 @@ def ingest_file(
     derived area such as ``analysis/adopted/`` while reusing the exact same
     idempotency and conflict semantics.
 
-    ``compress_archive`` selects the storage transform for plain FASTA/FASTQ
-    sources: ``None`` follows the project's ``storage.compress_archive``
-    setting.  When enabled, an uncompressed FASTA/FASTQ *file* is first
+    ``compress_archive`` selects the storage transform for plain
+    FASTA/FASTQ/GFF3/GTF sources: ``None`` follows the project's
+    ``storage.compress_archive``
+    setting.  When enabled, an uncompressed sequence/annotation *file* is first
     rewritten as deterministic BGZF into a temporary sibling of the archive
     target and the manifest row records the compressed bytes
     (``compression="bgzip"``, ``.gz`` canonical name); sources already
@@ -461,6 +526,8 @@ def ingest_file(
     db.require_active_entity(entity_type, entity_id)
 
     fmt = fmt or detect_format(source, role)
+    if fmt == "gtf":
+        _ensure_gtf_format_schema(project)
     compression_pinned = compression is not None
     compression = compression or detect_compression(source)
     target = archive_target(
@@ -494,7 +561,7 @@ def ingest_file(
             compress_archive
             and not compression_pinned
             and compression == "none"
-            and fmt in {"fasta", "fastq"}
+            and fmt in AUTO_BGZIP_FORMATS
             and source.is_file()
         ):
             # Plain sequence bytes are archived as deterministic BGZF: the
@@ -974,7 +1041,9 @@ def verify_files(
     return results
 
 
-RECOMPRESS_FORMATS = ("fasta", "fastq")
+AUTO_BGZIP_FORMATS = frozenset({"fasta", "fastq", "gff3", "gtf"})
+
+RECOMPRESS_FORMATS = ("fasta", "fastq", "gff3", "gtf")
 
 
 def recompress_files(
@@ -985,11 +1054,12 @@ def recompress_files(
     dry_run: bool = False,
     actor: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Re-archive plain FASTA/FASTQ raw files as deterministic BGZF, in place.
+    """Re-archive plain FASTA/FASTQ/GFF3/GTF raw files as deterministic BGZF, in place.
 
     A one-shot storage migration for projects created before the
     ``storage.compress_archive`` default: each eligible manifest row
-    (``compression='none'``, FASTA/FASTQ, local bytes present, active entity)
+    (``compression='none'``, an eligible archive format, local bytes present,
+    active entity)
     is fully re-hashed, rewritten as BGZF next to the archive target, the
     decompressed bytes are re-hashed to prove content preservation, and the
     row's ``relative_path``/``sha256``/``size_bytes``/``compression`` are
@@ -1020,8 +1090,10 @@ def recompress_files(
         rows = [
             dict(row)
             for row in db.conn.execute(
-                "SELECT * FROM files WHERE compression='none' "
-                "AND format IN ('fasta','fastq') ORDER BY file_id"
+                "SELECT * FROM files WHERE compression='none' AND "
+                f"format IN ({', '.join('?' for _ in RECOMPRESS_FORMATS)}) "  # nosec B608 # fixed tuple of constant formats
+                "ORDER BY file_id",
+                RECOMPRESS_FORMATS,
             ).fetchall()
         ]
         missing = []

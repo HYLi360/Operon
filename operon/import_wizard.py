@@ -20,10 +20,9 @@ from operon.database import Database
 from operon.errors import ConflictError, ValidationError
 from operon.files import (
     canonical_filename,
-    detect_compression,
-    detect_format,
     ingest_file,
     raw_bucket,
+    resolve_storage_form,
     stored_content_sha256,
 )
 from operon.schema import ENTITY_ID_COLUMNS, ENTITY_TABLES, Schema
@@ -640,23 +639,36 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
     started_at = now_iso()
     provenance_buffer: list[dict[str, Any]] = []
     source_id = ""
+    # Rollback deletes only bytes this run created: anything that already
+    # existed under raw/ before the commit is left alone. Pre-declare target
+    # names via the shared ingest storage-form resolution -- ingest may abort
+    # (external trigger, disk failure) after its copy landed but before the
+    # manifest row is visible, so the forecasted name is the only reliable
+    # handle on those orphan bytes -- and, once a file is ingested, collect
+    # the manifest row's actual relative_path as well.
+    preexisting: set[str] = set()
+    if project.raw_root.is_dir():
+        preexisting = {str(path.resolve()) for path in project.raw_root.rglob("*")}
     new_targets: list[Path] = []
+    staged_for_rollback: set[str] = set()
+
+    def _stage_for_rollback(target: Path) -> None:
+        resolved = str(target.resolve())
+        if resolved in preexisting or resolved in staged_for_rollback:
+            return
+        staged_for_rollback.add(resolved)
+        new_targets.append(target)
+
     for item in draft.get("files", []):
         entity_id = draft[item["entity_type"]]["id"]
         source = Path(item["path"])
-        target = (
+        fmt, storage = resolve_storage_form(project, source, item["role"])
+        _stage_for_rollback(
             project.raw_root
             / raw_bucket(item["entity_type"])
             / entity_id
-            / canonical_filename(
-                entity_id,
-                item["role"],
-                detect_format(source, item["role"]),
-                detect_compression(source),
-            )
+            / canonical_filename(entity_id, item["role"], fmt, storage)
         )
-        if not target.exists():
-            new_targets.append(target)
     file_rows: list[dict[str, Any]] = []
     try:
         with db.transaction() as conn:
@@ -708,6 +720,7 @@ def _commit(db: Database, project: Project, draft: dict[str, Any]) -> dict[str, 
                         provenance_buffer=provenance_buffer,
                     )
                 )
+                _stage_for_rollback(project.root / str(file_rows[-1]["relative_path"]))
             source_objects = [
                 (entity_type, item["id"])
                 for entity_type in ENTITY_TABLES

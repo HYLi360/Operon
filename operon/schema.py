@@ -462,6 +462,7 @@ def default_schemas() -> dict[str, Any]:
                         "fasta",
                         "fastq",
                         "gff3",
+                        "gtf",
                         "bam",
                         "cram",
                         "tsv",

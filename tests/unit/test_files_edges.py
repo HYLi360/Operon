@@ -13,7 +13,7 @@ import pytest
 
 from operon import files
 from operon.cli import main
-from operon.config import load_project
+from operon.config import Project, load_project
 from operon.database import Database
 from operon.errors import (
     ChecksumError,
@@ -53,6 +53,9 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     assert files.detect_compression(directory) == "none"
     assert files.canonical_filename("A", "r", "directory", "none") == "A.r.dir"
     assert files.canonical_filename("A", "r", "fasta", "bgzip") == "A.r.fasta.gz"
+    assert files.canonical_filename("A", "r", "gtf", "bgzip") == "A.r.gtf.gz"
+    assert files.detect_format(tmp_path / "x.gtf") == "gtf"
+    assert files.detect_format(tmp_path / "x.gtf.gz", "annotation_gff3") == "gtf"
     assert files.detect_format(tmp_path / "x.unknown", "genome_fasta") == "fasta"
     assert files.detect_format(tmp_path / "x.unknown") == "other"
     assert files.raw_bucket("unknown") == "other"
@@ -64,6 +67,71 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     with gzip.open(real, "wt") as handle:
         handle.write("x")
     assert files.detect_compression(real) == "gzip"
+
+
+def test_resolve_storage_form_matches_the_ingest_time_decision(project_db, tmp_path):
+    project, db = project_db
+    plain_fasta = tmp_path / "x.fna"
+    plain_fasta.write_text(">x\nA\n", encoding="utf-8")
+    plain_gff = tmp_path / "x.gff3"
+    plain_gff.write_text("##gff-version 3\n", encoding="utf-8")
+    gzipped = tmp_path / "x.fna.gz"
+    with gzip.open(gzipped, "wt") as handle:
+        handle.write(">x\nA\n")
+
+    assert files.resolve_storage_form(project, plain_fasta, "genome_fasta") == (
+        "fasta",
+        "bgzip",
+    )
+    assert files.resolve_storage_form(project, plain_gff, "annotation_gff3") == (
+        "gff3",
+        "bgzip",
+    )
+    assert files.resolve_storage_form(project, gzipped, "genome_fasta") == (
+        "fasta",
+        "gzip",
+    )
+    assert files.resolve_storage_form(
+        project, plain_fasta, "genome_fasta", compression="none"
+    ) == ("fasta", "none")
+    no_compress = Project.find(project.root)
+    no_compress.config["storage"]["compress_archive"] = False
+    assert files.resolve_storage_form(no_compress, plain_fasta, "genome_fasta") == (
+        "fasta",
+        "none",
+    )
+    assert db.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+
+
+def test_gtf_ingest_upgrades_a_stale_schema_lazily(project_db, tmp_path):
+    import yaml
+
+    project, db = project_db
+    document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8"))
+    allowed = document["tables"]["files"]["fields"]["format"]["allowed"]
+    assert "gtf" in allowed
+    document["tables"]["files"]["fields"]["format"]["allowed"] = [
+        value for value in allowed if value != "gtf"
+    ]
+    document["schema_version"] = "1.2"
+    project.schema_path.write_text(
+        yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    source = tmp_path / "ann.gtf"
+    source.write_text("##gff-version 3\n", encoding="utf-8")
+    files.ingest_file(
+        db, project, source, "annotation", "ANN_000001", "annotation_gff3"
+    )
+
+    upgraded = yaml.safe_load(project.schema_path.read_text(encoding="utf-8"))
+    assert "gtf" in upgraded["tables"]["files"]["fields"]["format"]["allowed"]
+    assert upgraded["schema_version"] == "1.3"
+
+    before = project.schema_path.read_text(encoding="utf-8")
+    files._ensure_gtf_format_schema(project)
+    assert project.schema_path.read_text(encoding="utf-8") == before
 
 
 @pytest.mark.parametrize(
@@ -680,10 +748,11 @@ def test_standardize_missing_nonremote_target_conflict_and_postcopy_cleanup(
         db, project, source, "annotation", "ANN_000001", "annotation_gff3"
     )
     archived = project.root / row["relative_path"]
+    archived_bytes = archived.read_bytes()
     archived.unlink()
     with pytest.raises(ChecksumError, match="source missing"):
         files.standardize_file(db, project, row["file_id"])
-    archived.write_text("##gff-version 3\n", encoding="utf-8")
+    archived.write_bytes(archived_bytes)
     target = project.standardized_root / "annotations" / "ANN_000001" / archived.name
     target.parent.mkdir(parents=True)
     target.write_text("different", encoding="utf-8")

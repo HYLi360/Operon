@@ -2,7 +2,7 @@
 #  Operon (and any official addons) is libre-software, licensed under BSD-2
 #  See license file on the repo root
 #  SPDX-License-Identifier: BSD-2-Clause
-"""Explicit ``operon recompress``: plain FASTA/FASTQ raw archives to BGZF."""
+"""Explicit ``operon recompress``: plain FASTA/FASTQ/GFF3/GTF archives to BGZF."""
 
 from __future__ import annotations
 
@@ -52,6 +52,20 @@ def _ingest_plain(project, db, tmp_path: Path):
         "assembly",
         "ASM_000001",
         "genome_fasta",
+        compress_archive=False,
+    )
+
+
+def _ingest_plain_gff3(project, db, tmp_path: Path):
+    source = tmp_path / "ann.gff3"
+    source.write_text("##gff-version 3\n", encoding="utf-8")
+    return files.ingest_file(
+        db,
+        project,
+        source,
+        "annotation",
+        "ANN_000001",
+        "annotation_gff3",
         compress_archive=False,
     )
 
@@ -131,6 +145,20 @@ def test_recompress_full_flow_audit_and_content_preservation(project_db, tmp_pat
     (again,) = recompress_files(db, project, [record["file_id"]])
     assert again["status"] == "skipped"
     assert db.query("SELECT COUNT(*) AS n FROM files")[0]["n"] == 1
+
+
+def test_recompress_covers_plain_annotation_archives(project_db, tmp_path):
+    project, db = project_db
+    record = _ingest_plain_gff3(project, db, tmp_path)
+
+    (result,) = recompress_files(db, project)
+    assert result["status"] == "recompressed"
+
+    row = _row(db, record["file_id"])
+    assert row["compression"] == "bgzip"
+    assert row["relative_path"] == record["relative_path"] + ".gz"
+    blob = (project.root / row["relative_path"]).read_bytes()
+    assert gzip.decompress(blob) == b"##gff-version 3\n"
 
 
 def test_recompress_is_idempotent_noop_when_already_compressed(project_db, tmp_path):

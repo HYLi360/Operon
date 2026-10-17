@@ -55,6 +55,8 @@ operon qc
 - `assemblies.fasta_file_id`
 - `annotations.gff_file_id`, `cds_file_id`, and `protein_file_id`
 
+A `.gtf` source under the same `annotation_gff3` role is stored the same way (`format: gtf`, same BGZF default); built-in QC still evaluates GFF3 only.
+
 ## Import external QC results
 
 Convert BUSCO, QUAST, FastQC, fastp, or other outputs to TSV:

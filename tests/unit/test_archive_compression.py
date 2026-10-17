@@ -157,14 +157,34 @@ def test_legacy_project_without_the_key_keeps_plain_storage(project_db, tmp_path
     assert row["compression"] == "none"
 
 
-def test_gff3_is_not_compressed_under_the_default(project_db, tmp_path):
+@pytest.mark.parametrize(
+    ("name", "role", "canonical_suffix"),
+    [
+        ("ann.gff3", "annotation_gff3", "ANN_000001.annotation_gff3.gff3.gz"),
+        ("ann.gtf", "annotation_gff3", "ANN_000001.annotation_gff3.gtf.gz"),
+    ],
+)
+def test_plain_annotations_are_stored_as_bgzip_by_default(
+    project_db, tmp_path, name, role, canonical_suffix
+):
     project, db = project_db
-    source = _write_source(tmp_path, "ann.gff3", "##gff-version 3\n")
+    source = _write_source(tmp_path, name, "##gff-version 3\n")
+    row = files.ingest_file(db, project, source, "annotation", "ANN_000001", role)
+    assert row["compression"] == "bgzip"
+    assert row["relative_path"].endswith(canonical_suffix)
+
+
+def test_already_gzipped_annotation_is_stored_as_is(project_db, tmp_path):
+    project, db = project_db
+    source = tmp_path / "ann.gff3.gz"
+    with gzip.open(source, "wt", encoding="utf-8") as handle:
+        handle.write("##gff-version 3\n")
+    original = source.read_bytes()
     row = files.ingest_file(
         db, project, source, "annotation", "ANN_000001", "annotation_gff3"
     )
-    assert row["compression"] == "none"
-    assert row["relative_path"].endswith("ANN_000001.annotation_gff3.gff3")
+    assert row["compression"] == "gzip"
+    assert (project.root / row["relative_path"]).read_bytes() == original
 
 
 def test_explicit_compression_argument_pins_the_storage_form(project_db, tmp_path):

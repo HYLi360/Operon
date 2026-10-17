@@ -49,7 +49,7 @@ def add_ingest_parser(sub):
         "--compress-archive",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="archive plain FASTA/FASTQ sources as deterministic BGZF "
+        help="archive plain FASTA/FASTQ/GFF3/GTF sources as deterministic BGZF "
         "(default: the project's storage.compress_archive setting)",
     )
     p.add_argument("--move", action="store_true", help="move source instead of copying")
@@ -75,7 +75,7 @@ def add_standardize_parser(sub):
 def add_recompress_parser(sub):
     p = sub.add_parser(
         "recompress",
-        help="re-archive plain FASTA/FASTQ raw files as deterministic BGZF "
+        help="re-archive plain FASTA/FASTQ/GFF3/GTF raw files as deterministic BGZF "
         "(one-shot storage migration; push afterwards supersedes stale remote copies)",
     )
     p.add_argument("--file-id", action="append", default=[])
