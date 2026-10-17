@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """``operon.pipeline`` — the shared core behind `operon run-pipeline`.
 
 The four stages are the manifest's normal path (ingest → standardize → QC →

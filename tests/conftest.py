@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Suite-wide pytest configuration for Operon's tests.
 
 Fixtures only one module needs stay next to their tests (``tests/helpers.py``,

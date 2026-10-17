@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 
 # Local cross-version test matrix (Linux + uv-managed CPython 3.10-3.15).
 #

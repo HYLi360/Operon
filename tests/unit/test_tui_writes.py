@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Phase-2 TUI write actions: audited mutations through actions.py and modals."""
 
 from __future__ import annotations

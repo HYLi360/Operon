@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Query-cache adapter for the TimeTree REST API (divergence-time priors).
 
 TimeTree terms of use forbid bulk mirroring or redistribution of the data, so

@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """TUI/CLI parity registry: every CLI leaf command is accounted for.
 
 The CLI is the normative surface: the TUI must never run ahead of it.

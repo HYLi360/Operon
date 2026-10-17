@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Multiple-sequence alignment QC (pure Python reference implementation).
 
 This module measures per-sequence and per-column metrics for an aligned

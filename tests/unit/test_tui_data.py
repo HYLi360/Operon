@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Read-only data layer edge cases: tool-document guards and filtered run queries.
 
 ``operon/tui/data.py`` is the only place the TUI reads the database.  The happy

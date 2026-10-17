@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Online acquisition for the NCBI Datasets adapter: requests/aiohttp downloads and Entrez fallback."""
 
 from __future__ import annotations

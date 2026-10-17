@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Coverage-focused error-path tests for the NCBI Datasets adapter.
 
 The happy paths are covered by ``tests/unit/test_ncbi_edge_cases.py`` and

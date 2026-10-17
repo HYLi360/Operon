@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Parity regressions: the Cython parsers must match the pure-Python ones.
 
 `operon.qc._parsers` is the required production backend, while

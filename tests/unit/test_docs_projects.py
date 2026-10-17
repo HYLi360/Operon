@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Guard: the documentation keeps one Sphinx project per language.
 
 Each language owns a source tree, a Sphinx configuration, and the Read the Docs

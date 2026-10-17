@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Derived-artifact modals: extract-domains, select-sequences, adopt, fanout.
 
 The fixture builds the smallest realistic project the four commands need: a

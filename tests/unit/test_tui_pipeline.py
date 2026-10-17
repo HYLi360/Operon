@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """The Files screen's ``P`` entry for `operon run-pipeline` (milestone M4).
 
 The dialog takes one source file through the pipeline's four stages

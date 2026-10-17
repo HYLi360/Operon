@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Manifest artifact operations: immutable archival, content identity, verification.
 
 Path is a mutable property; identity is `file_id + sha256 + size_bytes` for

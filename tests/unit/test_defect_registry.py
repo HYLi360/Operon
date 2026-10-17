@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Validate the defect registry (defects.yml + defects/*.yml) and its test closure.
 
 Every ``@pytest.mark.bug("ODR-XXXX")`` in the suite must name a registry

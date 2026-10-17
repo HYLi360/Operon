@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Remote storage mirrors over SFTP (Paramiko), plus remote URL fetching.
 
 A configured remote keeps a byte-for-byte mirror of manifest files under its

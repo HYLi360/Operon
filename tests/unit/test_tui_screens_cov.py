@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Coverage-focused headless tests for the remaining TUI screen branches.
 
 ``test_tui.py`` / ``test_tui_screens_more.py`` and friends drive the happy

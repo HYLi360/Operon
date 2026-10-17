@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Guard: every CI step is named, and its name identifies one step.
 
 A red run is triaged from the step list GitHub reports, so each step has to say

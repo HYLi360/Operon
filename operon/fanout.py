@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Data-derived fan-out: split registered sequence files into per-unit FASTAs.
 
 An adopted assignment manifest (a TSV of unit -> seqid rows, itself already

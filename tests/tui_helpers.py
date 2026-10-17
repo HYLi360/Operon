@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Shared helpers for the headless TUI tests.
 
 Every TUI test module used to carry its own copy of :func:`click` — and four of

@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Tool launch commands, version probing and command provenance.
 
 Also holds the shared TTL cache (:func:`_identity_cache_get`) behind the

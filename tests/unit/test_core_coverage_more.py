@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Contracts not exercised elsewhere: CLI dispatch/reporting, migration and
 retirement database paths, file standardization fallbacks, the workflow state
 machine, rule-engine policies and built-in QC aggregation.

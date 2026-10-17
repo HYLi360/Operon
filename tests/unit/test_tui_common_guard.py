@@ -1,3 +1,7 @@
+#  Copyright (c) 2026 hyli360
+#  Operon (and any official addons) is libre-software, licensed under BSD-2
+#  See license file on the repo root
+#  SPDX-License-Identifier: BSD-2-Clause
 """Shared TUI helpers, the FittingSelect mount guard, and message routing.
 
 The M5 close-out recorded this area as quality debt: the small shared helpers
