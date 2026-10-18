@@ -55,6 +55,37 @@ from operon.qc.measure import (
 from operon.utils import now_iso
 from operon.workflow import log_run, set_state_guarded
 
+# Public facade: the QC entry points defined here plus the re-exports the CLI,
+# the TUI and plugin code import from ``operon.qc``.
+__all__ = [
+    "ASSEMBLY_FILE_ROLES",
+    "ASSEMBLY_METRICS",
+    "DEFAULT_PARAMETER_SET",
+    "FASTA_LENGTH_CACHE_FORMAT",
+    "MEASURE_SCHEMA_VERSION",
+    "PARSER_BACKEND",
+    "TOOL_NAME",
+    "TOOL_VERSION",
+    "AlignmentQCResult",
+    "alignment_qc",
+    "coerce_metric_value",
+    "compute_alignment_qc",
+    "fasta_lengths",
+    "fasta_stats",
+    "fastq_record_count",
+    "fastq_stats",
+    "file_qc_status",
+    "file_qc_statuses",
+    "gff3_stats",
+    "measure_file",
+    "metric",
+    "protein_stats",
+    "qc_all",
+    "qc_file",
+    "render_summary_json",
+    "write_alignment_qc",
+]
+
 FASTA_LENGTH_CACHE_FORMAT = "operon-fasta-lengths-v1"
 
 

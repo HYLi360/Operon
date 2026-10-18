@@ -1313,7 +1313,6 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._init(root)
-            accession = "GCF_000001405.40"
             package = root / "ncbi_dataset.zip"
             with zipfile.ZipFile(package, "w") as archive:
                 archive.writestr(

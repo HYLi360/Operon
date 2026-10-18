@@ -243,7 +243,7 @@ def fanout_units(
     units, duplicate_rows = parse_assignments(
         assignments_path, unit_column=unit_column, seqid_column=seqid_column
     )
-    resolution = _resolve_seqids(db, source_file_ids, units)
+    _resolve_seqids(db, source_file_ids, units)
     derived_root = project.analysis_root / DERIVED_SUBDIR
     for unit in units:
         unit["role"] = f"{role_prefix}:{unit['unit']}"
