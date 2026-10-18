@@ -2697,7 +2697,7 @@ defects:
     Route every cell through operon.utils.escape_formula_text() before writing, the contract ODR-40
     established for the report writers. Non-string values pass through untouched, so numeric columns
     keep their exact bytes.
-  fix_commit: null
+  fix_commit: 'dca100b9f2cd227b18ba1d6ffc24427401976654'
   fixed_in: null
   regression_tests:
     - tests/unit/test_feature_index.py::test_query_cli_escapes_formula_trigger_cells
