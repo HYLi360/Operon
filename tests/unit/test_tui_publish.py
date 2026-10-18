@@ -841,6 +841,7 @@ def test_coverage_screen_empty_project(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("row", ["family\t1\tunexpected", "family", ""])
+@pytest.mark.bug("ODR-82")
 def test_coverage_malformed_row_is_inline_and_recoverable(
     coverage_project: Project, row: str
 ) -> None:
@@ -885,6 +886,7 @@ def test_coverage_malformed_row_is_inline_and_recoverable(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-82")
 def test_coverage_validates_rows_beyond_display_limit(
     coverage_project: Project, monkeypatch
 ) -> None:
@@ -913,6 +915,7 @@ def test_coverage_validates_rows_beyond_display_limit(
 
 
 @pytest.mark.parametrize("blank_lines", [1, 501])
+@pytest.mark.bug("ODR-82")
 def test_coverage_blank_header_rejected(
     coverage_project: Project, blank_lines: int
 ) -> None:

@@ -928,6 +928,7 @@ def test_coverage_panel_report_browsing(project: Project) -> None:
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-82")
 def test_coverage_panel_report_load_failure(project: Project, monkeypatch) -> None:
     """An unreadable report is reported in the headline, not raised."""
 
