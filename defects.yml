@@ -2503,3 +2503,163 @@ defects:
   regression_tests:
     - tests/unit/test_tui_analyze.py::test_config_screen_run_analysis_entry
     - tests/unit/test_tui_analyze.py::test_analysis_failure_callback_shows_error_dialog
+- id: ODR-79
+  title: 'A failed analysis run keeps its partial output on disk'
+  reported: '2026-10-18'
+  introduced_in: null
+  affected: |
+    All releases up to and including 0.10.0: triggered by any non-interrupt terminal failure of a
+    per-file analysis run (a non-zero tool exit, a missing or empty expected output, a failed
+    decompressed-input retry, a result-parsing error such as
+    _require_artifact_kind/parse_and_store_results, or RemoteUnavailableError) that also leaves the
+    partial artifact on disk.
+  severity: 'medium'
+  component: 'tools'
+  status: 'open'
+  reproduction: |
+    _fail_analysis_execution() (operon/tools/_execute.py:333-346) is the single choke point for every
+    non-interrupt terminal path: the except-Exception arm of run_analysis_for_file (:411-421) and every
+    failure call site in operon/tools/_run.py (sequential batch error results, array finalize loops,
+    whole-batch failure, and the per-task finalize branch inside _finalize_interrupted_array). It
+    updates analysis_jobs to failed but removes only plan.work_dir (:345-346), while the interrupt
+    finalizer _interrupt_analysis_execution (:309-330) also removes plan.output_path and
+    plan.events_path (:325-328). A truncated TSV or a half-written events file therefore survives a
+    failed run in analysis/ and looks like a result: the failed row carries no
+    output_relative_path/output_sha256 (success-only writes at :274-289), the completed-only cache
+    lookups cannot adopt it, and the artifact is deleted only by the next plan-time stale-output wipe in
+    _insert_running_job (operon/tools/_plan.py:683). The CLI help scopes --keep-partial to
+    Ctrl+C/SIGTERM (operon/cli/_tools.py:118) and docs/en/reference/behaviors-and-limitations.md:112
+    documents exactly that: only an interrupt removes the computed artifact.
+  disposition: |
+    Fix shape (0.10.1): symmetric cleanup with a maintainer decision that --keep-partial applies to
+    failures as well. _fail_analysis_execution removes plan.output_path, plan.events_path and
+    plan.work_dir through _remove_output_artifact when keep_partial is false, mirroring the interrupt
+    finalizer; keep_partial=True spares all three on failure the way it already spared work_dir. The CLI
+    help (operon/cli/_tools.py:118) and the TUI checkbox label (operon/tui/screens/analyze.py:137) widen
+    from interrupt-only to interrupt-or-failure. docs/{en,zh}/reference/behaviors-and-limitations.md and
+    docs/{en,zh}/reference/cli-analysis.md updated. Regression tests marked @pytest.mark.bug(ODR-79): a
+    unit test of _fail_analysis_execution removal and keep-partial retention, an end-to-end
+    run_analysis_for_file failure test, and a CLI integration test asserting the default removes the
+    partial output while --keep-partial preserves it.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-80
+  title: 'A hardlink fallback is invisible in release and export provenance'
+  reported: '2026-10-18'
+  introduced_in: null
+  affected: |
+    All releases up to and including 0.10.0: triggered when os.link is rejected (a cross-device
+    filesystem or one without hardlink support) for any file member of a --link hardlink release or
+    export, and for every directory member under --link hardlink (directories are always copied).
+  severity: 'low'
+  component: 'release'
+  status: 'open'
+  reproduction: |
+    operon/release.py:340-343 wraps os.link(source, target) in except OSError: atomic_copy(source,
+    target) with no record and no warning; a directory member is always atomic_copytree
+    (release.py:337-338). operon/export.py:342-345 is the same shape. provenance.json records the
+    requested value only: release.py:484 writes "storage_mode": link_kind, export.py:406 writes
+    "link_kind": link_kind and export.py:233 mirrors the same into workflow_runs.execution_details. Two
+    in-tree tests prove the fallback while the record stays wrong:
+    tests/unit/test_misc_coverage_more.py:858 (test_export_hardlink_falls_back_to_a_copy) asserts the
+    exported file is an ordinary copy on a different inode while provenance still says hardlink, and
+    tests/unit/test_views_release_reports_edges.py:240 monkeypatches os.link to raise for a whole
+    hardlink release without asserting provenance. The fallback produces identical bytes, so manifests
+    and checksums.sha256 stay valid; only the provenance claim diverges from reality, an asymmetry that
+    docs/en/reference/behaviors-and-limitations.md:186 already listed as a known issue.
+  disposition: |
+    Fix shape (0.10.1): keep storage_mode/link_kind as the requested value and record the actual outcome
+    in add-only fields present when hardlink is requested - hardlink_fallback_count (file members whose
+    os.link was rejected and were copied) and directory_members_copied (directory members materialized
+    as ordinary copies) - in release provenance.json, export provenance.json, the export summary and the
+    export workflow_runs.execution_details. Copy and symlink modes are unchanged. Maintainer decision:
+    add-only counters rather than overwriting the requested value. Regression tests extend the two
+    existing fallback tests (export and release) with provenance assertions and carry
+    @pytest.mark.bug(ODR-80).
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-81
+  title: 'The import-wizard draft outlived the database state and broke page repopulation'
+  reported: '2026-10-18'
+  introduced_in: null
+  affected: |
+    The TUI import-wizard screen keyed by a stale draft, in three shapes: a draft reuse id whose entity
+    was retired or removed while the wizard was open (InvalidSelectValueError on page repopulation, so
+    the page never rendered and no inline error appeared), a failed startup that left navigation enabled
+    with an empty reserved-ID map (an uncaught KeyError on Next with a typed organism name), and stale
+    widget text surviving a disabled sequencing/annotation section.
+  severity: 'medium'
+  component: 'tui'
+  status: 'open'
+  reproduction: |
+    Reported verbatim as the known-issue bullet of docs/en/reference/behaviors-and-limitations.md:257
+    (Chinese mirror :256) while the screen was in development. Registration arrived late: the
+    mitigations and the regression tests landed inside commit fa6a7f531afe3d1eaa72d39c53a7256ce1371ce4
+    and were never given a registry record, so the closure chain the defect process requires was
+    missing. The three raise mechanisms were real: a direct select.value assignment with a draft id
+    absent from the freshly loaded options reaches Textual InvalidSelectValueError
+    (textual/widgets/_select.py:589-598) inside the worker callback, where
+    WorkerResults.apply_from_worker (operon/tui/screens/common.py:609-618) catches only (MountError,
+    NoMatches); direct dict access self.reserved_ids[...] raised KeyError; leaving the
+    sequencing/annotation page cleared only the enable checkbox.
+  disposition: |
+    Already implemented in fa6a7f531afe3d1eaa72d39c53a7256ce1371ce4; this round completes the three-part
+    closure (bug markers and the stale bullet). (1) Stale draft ids: _restore_choice
+    (operon/tui/screens/import_wizard.py:395-403) checks the draft id against the freshly loaded option
+    values (_choice_values, rebuilt by _set_choice_options at :391 before _populate runs) and falls back
+    to Select.NULL with the inline "<id> is no longer available. Select an existing entity or create a
+    new one." error instead of assigning through Textual; applied at :535/:554/:589/:607. (2) Failed
+    startup: _startup_done (:352-362) keeps _ready false and relabels Next to Retry initialization;
+    _advance (:805-812) routes the press back into _startup (re-entrance guarded by _loading), _goto
+    (:405-407) refuses navigation while not ready, and _collect (:636-637) answers with the inline
+    initialization message instead of touching the empty map. (3) Disabled sections: _populate resets
+    the sequencing inputs from (run or {}).get(row) (:567-585) and explicitly clears the annotation
+    choice and inputs in its off branch (:602-626), so re-enabling cannot resurrect stale text.
+    Regression tests (tests/unit/test_tui_publish.py):
+    test_wizard_retired_draft_choice_requires_reselection (:983, parametrized
+    organism/sample/assembly/annotation), test_wizard_startup_failure_can_retry_without_navigation
+    (:1031), test_wizard_disabled_sections_clear_inputs_and_choices (:1071); each now carries
+    @pytest.mark.bug(ODR-81). docs/en/reference/cli-tui.md:174-180 (and the zh mirror) already document
+    the fixed behavior; the stale known-issue bullet was removed.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
+- id: ODR-82
+  title: 'A ragged coverage-report TSV crashed the TUI viewer'
+  reported: '2026-10-18'
+  introduced_in: null
+  affected: |
+    The TUI coverage viewer against a hand-edited reports/coverage/COV_*/coverage_*.tsv whose row field
+    count differs from its header; the CLI is strict through the same reader convention and unaffected.
+  severity: 'medium'
+  component: 'tui'
+  status: 'open'
+  reproduction: |
+    Reported verbatim as the known-issue bullet of docs/en/reference/behaviors-and-limitations.md:273
+    (Chinese mirror :272). The mechanism is real: CoveragePanel._apply_report
+    (operon/tui/screens/coverage.py:319-321) feeds TSV rows verbatim into DataTable.add_row, and Textual
+    raises ValueError at textual/widgets/_data_table.py:1699-1700 (More values provided than there are
+    columns.) inside the worker callback, where WorkerResults.apply_from_worker
+    (operon/tui/screens/common.py:609-618) catches only (MountError, NoMatches), so it fails the worker
+    and the application instead of showing an inline error. Registration arrived late: the mitigations
+    and the regression tests landed at commit fa6a7f531afe3d1eaa72d39c53a7256ce1371ce4 and never
+    received a registry record.
+  disposition: |
+    Already implemented; this round completes the three-part closure (bug markers and the stale bullet).
+    The read layer validates every row width against the header and raises a file+line ValidationError
+    (operon/tui/data.py:1283-1291, including the empty-header case at :1283 and rows beyond the 500-row
+    display cap), matching the house read_tsv rule that a ragged row is a named error rather than data
+    to normalize; the panel converts any read failure into an exception payload and renders it in the
+    red report headline instead of raising (operon/tui/screens/coverage.py:288-300), with re-selection
+    of a repaired report working normally. Regression tests: tests/unit/test_tui_publish.py
+    test_coverage_malformed_row_is_inline_and_recoverable (:844, parametrized
+    extra-field/fewer-field/empty row, plus recovery), test_coverage_validates_rows_beyond_display_limit
+    (:888), test_coverage_blank_header_rejected (:916), and tests/unit/test_tui_screens_more.py
+    test_coverage_panel_report_load_failure (:931); each now carries @pytest.mark.bug(ODR-82). No
+    product change was needed: the data-layer validation is the invariant holder, and a screen-side
+    padding-or-dropping fallback would have diverged from the CLI and cache-integrity semantics.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
