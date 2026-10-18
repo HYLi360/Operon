@@ -18,6 +18,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -504,18 +505,12 @@ def run_external_command(
     logs = project.logs_root
     logs.mkdir(parents=True, exist_ok=True)
     run_id = run_id or new_run_id()
-    argv_steps = (
-        [[str(a) for a in block] for block in commands]
-        if commands is not None
-        else [[str(a) for a in argv]]
+    argv_steps, step_details = _normalize_command_steps(argv, commands, command_details)
+    state = _CommandRunState(
+        stdout_file=logs / f"{run_id}.stdout.log",
+        stderr_file=logs / f"{run_id}.stderr.log",
+        executor=executor,
     )
-    step_details = [dict(item) for item in command_details or ()]
-    if step_details and len(step_details) != len(argv_steps):
-        raise ValidationError(
-            "command_details length must match the number of command steps"
-        )
-    stdout_file = logs / f"{run_id}.stdout.log"
-    stderr_file = logs / f"{run_id}.stderr.log"
     record: dict[str, Any] = {
         "run_id": run_id,
         "entity_type": entity_type,
@@ -533,6 +528,103 @@ def run_external_command(
         "threads": threads,
     }
     base = Path(cwd) if cwd else project.root
+    resolved_outputs, extra_details = _resolve_expected_outputs(
+        base, expected_outputs, events, extra_details
+    )
+    resolved_inputs, input_entries = _resolve_declared_inputs(base, inputs)
+    if input_entries:
+        record["input_sha256"] = _combined_input_sha256(input_entries)
+    owns_executor = executor is None
+    try:
+        re_raise = _attempt_command(
+            db,
+            project,
+            record,
+            state,
+            backend=backend,
+            argv_steps=argv_steps,
+            step_details=step_details,
+            logs=logs,
+            run_id=run_id,
+            cwd=cwd,
+            timeout=timeout,
+            threads=threads,
+            base=base,
+            stage_inputs=stage_inputs,
+            resolved_inputs=resolved_inputs,
+            resolved_outputs=resolved_outputs,
+            input_entries=input_entries,
+            extra_details=extra_details,
+        )
+    finally:
+        if owns_executor and state.executor is not None:
+            close = getattr(state.executor, "close", None)
+            if close is not None:
+                close()
+    record.update(
+        finished_at=now_iso(),
+        stdout_file=str(state.stdout_file),
+        stderr_file=str(state.stderr_file),
+    )
+    for key in ("max_rss_mb", "avg_rss_mb", "cpu_seconds"):
+        record.setdefault(key, None)
+    if state.environment:
+        with db.transaction():
+            record["environment_id"] = db.record_environment(state.environment)
+    duration = time.monotonic() - started_monotonic
+    record["duration_seconds"] = round(duration, 3)
+    log_run(db, project, record)
+    if re_raise is not None:
+        raise re_raise
+    if record.get("status") != "completed":
+        raise ExternalCommandFailed(
+            f"{step} failed: {record.get('error') or 'unknown error'}", record
+        )
+    return record
+
+
+@dataclass
+class _CommandRunState:
+    """Mutable per-run state shared between the command runner and its helpers.
+
+    The exception handlers in :func:`run_external_command` still finalize the
+    record after a mid-chain failure, so the log files of the last completed
+    step, the best environment probe, and the acquired executor must survive
+    the propagation.
+    """
+
+    stdout_file: Path
+    stderr_file: Path
+    environment: dict[str, Any] | None = None
+    executor: Any = None
+
+
+def _normalize_command_steps(
+    argv: list[str],
+    commands: Iterable[Iterable[str]] | None,
+    command_details: Iterable[dict[str, Any]] | None,
+) -> tuple[list[list[str]], list[dict[str, Any]]]:
+    """Normalize the single ``argv`` or a ``commands`` chain plus its details."""
+    argv_steps = (
+        [[str(a) for a in block] for block in commands]
+        if commands is not None
+        else [[str(a) for a in argv]]
+    )
+    step_details = [dict(item) for item in command_details or ()]
+    if step_details and len(step_details) != len(argv_steps):
+        raise ValidationError(
+            "command_details length must match the number of command steps"
+        )
+    return argv_steps, step_details
+
+
+def _resolve_expected_outputs(
+    base: Path,
+    expected_outputs: Iterable[str | Path] | None,
+    events: str | Path | None,
+    extra_details: dict[str, Any] | None,
+) -> tuple[list[Path], dict[str, Any] | None]:
+    """Resolve expected outputs against ``base``; an events file joins the list."""
     resolved_outputs: list[Path] = []
     for output in expected_outputs or []:
         path = Path(output)
@@ -546,8 +638,15 @@ def run_external_command(
         extra_details = {**(extra_details or {}), "events_path": str(events_path)}
         if events_path not in resolved_outputs:
             resolved_outputs.append(events_path)
-    input_entries: list[dict[str, Any]] = []
+    return resolved_outputs, extra_details
+
+
+def _resolve_declared_inputs(
+    base: Path, inputs: Iterable[str | Path]
+) -> tuple[list[Path], list[dict[str, Any]]]:
+    """Resolve and hash declared inputs; every declared input must exist."""
     resolved_inputs: list[Path] = []
+    input_entries: list[dict[str, Any]] = []
     for raw_input in inputs:
         path = Path(raw_input)
         if not path.is_absolute():
@@ -556,176 +655,123 @@ def run_external_command(
             raise ValidationError(f"declared input does not exist: {path}")
         resolved_inputs.append(path)
         input_entries.append({"path": str(path), "sha256": sha256_path(path)})
-    if input_entries:
-        combined = "\n".join(
-            f"{entry['path']}:{entry['sha256']}"
-            for entry in sorted(input_entries, key=lambda entry: entry["path"])
-        )
-        record["input_sha256"] = hashlib.sha256(combined.encode("utf-8")).hexdigest()
-    owns_executor = executor is None
-    environment: dict[str, Any] | None = None
-    # Set when the executor's connection is unrecoverable: the run is still
-    # recorded failed, but the original exception type propagates so batch
-    # callers can stop remaining files from producing identical errors.
-    re_raise: RemoteUnavailableError | None = None
-    try:
-        if executor is None:
-            from operon.execution import get_executor
+    return resolved_inputs, input_entries
 
-            executor = get_executor(project, backend)
-        record["executor"] = executor.describe()
-        resolved_stage_inputs: list[Path] = []
-        for raw_input in stage_inputs:
-            path = Path(raw_input)
-            if not path.is_absolute():
-                path = base / path
-            resolved_stage_inputs.append(path)
-        if getattr(executor, "name", None) == "ssh" and getattr(
-            executor, "remote_root", ""
-        ):
-            # A non-shared SSH project needs every declared local input in its
-            # remote mirror. Preserve explicit staging for analysis callers and
-            # de-duplicate paths without changing their user-facing spelling.
-            staged: dict[str, Path] = {}
-            for path in [*resolved_inputs, *resolved_stage_inputs]:
-                staged.setdefault(str(path.resolve(strict=False)), path)
-            resolved_stage_inputs = list(staged.values())
-        probe = getattr(executor, "probe_environment", None)
-        if probe is not None:
-            try:
-                environment = probe()
-            except Exception:  # noqa: BLE001 - probe failures must never affect the run  # pylint: disable=broad-exception-caught
-                environment = None
-        # Backends with chain-scoped output hooks (the SSH backend) back up
-        # existing remote outputs before the first step and pull them after the
-        # last one: a mid-chain step may legitimately produce the final
-        # artifact, so per-step reset/pull around the last step would rename
-        # that artifact away before retrieval. The backups are restored on any
-        # failure or interrupt and dropped only once the pulled outputs verify.
-        chain_outputs = bool(resolved_outputs) and all(
-            callable(getattr(executor, attr, None))
-            for attr in (
-                "reset_expected_outputs",
-                "pull_expected_outputs",
-                "restore_expected_outputs",
-            )
+
+def _combined_input_sha256(input_entries: list[dict[str, Any]]) -> str:
+    """Combined run fingerprint over the sorted ``path:sha256`` input lines."""
+    combined = "\n".join(
+        f"{entry['path']}:{entry['sha256']}"
+        for entry in sorted(input_entries, key=lambda entry: entry["path"])
+    )
+    return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+
+def _resolve_stage_inputs(
+    executor: Any,
+    base: Path,
+    stage_inputs: Iterable[str | Path],
+    resolved_inputs: list[Path],
+) -> list[Path]:
+    """Resolve staged inputs; a non-shared SSH project also mirrors declared inputs."""
+    resolved_stage_inputs: list[Path] = []
+    for raw_input in stage_inputs:
+        path = Path(raw_input)
+        if not path.is_absolute():
+            path = base / path
+        resolved_stage_inputs.append(path)
+    if getattr(executor, "name", None) == "ssh" and getattr(
+        executor, "remote_root", ""
+    ):
+        # A non-shared SSH project needs every declared local input in its
+        # remote mirror. Preserve explicit staging for analysis callers and
+        # de-duplicate paths without changing their user-facing spelling.
+        staged: dict[str, Path] = {}
+        for path in [*resolved_inputs, *resolved_stage_inputs]:
+            staged.setdefault(str(path.resolve(strict=False)), path)
+        resolved_stage_inputs = list(staged.values())
+    return resolved_stage_inputs
+
+
+def _probe_executor_environment(executor: Any) -> dict[str, Any] | None:
+    """Best-effort environment probe; probe failures must never affect the run."""
+    probe = getattr(executor, "probe_environment", None)
+    if probe is None:
+        return None
+    try:
+        return probe()
+    except Exception:  # noqa: BLE001 - probe failures must never affect the run  # pylint: disable=broad-exception-caught
+        return None
+
+
+def _chain_output_hooks_available(executor: Any, resolved_outputs: list[Path]) -> bool:
+    """Whether the executor backs up and pulls expected outputs around a chain.
+
+    Backends with chain-scoped output hooks (the SSH backend) back up
+    existing remote outputs before the first step and pull them after the
+    last one: a mid-chain step may legitimately produce the final
+    artifact, so per-step reset/pull around the last step would rename
+    that artifact away before retrieval. The backups are restored on any
+    failure or interrupt and dropped only once the pulled outputs verify.
+    """
+    return bool(resolved_outputs) and all(
+        callable(getattr(executor, attr, None))
+        for attr in (
+            "reset_expected_outputs",
+            "pull_expected_outputs",
+            "restore_expected_outputs",
         )
-        step_records: list[dict[str, Any]] = []
-        result = None
-        output_backups: Any = None
-        output_backups_settled = False
-        try:
-            if chain_outputs:
-                output_backups = executor.reset_expected_outputs(resolved_outputs)
-            for step_index, step_argv in enumerate(argv_steps, start=1):
-                if len(argv_steps) > 1:
-                    step_stdout = logs / f"{run_id}.step{step_index}.stdout.log"
-                    step_stderr = logs / f"{run_id}.step{step_index}.stderr.log"
-                    step_run_id = f"{run_id}-s{step_index}"
-                else:
-                    step_stdout, step_stderr, step_run_id = (
-                        stdout_file,
-                        stderr_file,
-                        run_id,
-                    )
-                result = executor.run(
-                    step_argv,
-                    cwd=cwd,
-                    stdout_path=step_stdout,
-                    stderr_path=step_stderr,
-                    timeout=timeout,
-                    threads=threads,
-                    run_id=step_run_id,
-                    stage_inputs=resolved_stage_inputs if step_index == 1 else (),
-                    expected_outputs=resolved_outputs
-                    if not chain_outputs and step_index == len(argv_steps)
-                    else (),
-                )
-                step_record = dict(step_details[step_index - 1]) if step_details else {}
-                step_record.update(
-                    {
-                        "index": step_index,
-                        "argv": step_argv,
-                        "exit_code": result.exit_code,
-                        "stdout_file": str(step_stdout),
-                        "stderr_file": str(step_stderr),
-                    }
-                )
-                if result.details.get("environment"):
-                    environment = result.details["environment"]
-                    with db.transaction():
-                        step_record["environment_id"] = db.record_environment(
-                            environment
-                        )
-                step_records.append(step_record)
-                stdout_file, stderr_file = step_stdout, step_stderr
-                if result.exit_code != 0 or result.error:
-                    break
-            if chain_outputs:
-                if result.exit_code != 0 or result.error:
-                    output_backups_settled = True
-                    executor.restore_expected_outputs(output_backups)
-                else:
-                    try:
-                        executor.pull_expected_outputs(output_backups, resolved_outputs)
-                        output_backups_settled = True
-                    except BaseException:
-                        output_backups_settled = True
-                        executor.restore_expected_outputs(output_backups)
-                        raise
-        except BaseException:
-            if (
-                chain_outputs
-                and output_backups is not None
-                and not output_backups_settled
-            ):
-                executor.restore_expected_outputs(output_backups)
-            raise
-        record.update(
-            exit_code=result.exit_code,
-            status="completed" if result.exit_code == 0 else "failed",
+    )
+
+
+def _attempt_command(
+    db: Database,
+    project: Project,
+    record: dict[str, Any],
+    state: _CommandRunState,
+    *,
+    backend: str | None,
+    argv_steps: list[list[str]],
+    step_details: list[dict[str, Any]],
+    logs: Path,
+    run_id: str,
+    cwd: str | Path | None,
+    timeout: float | None,
+    threads: int | None,
+    base: Path,
+    stage_inputs: Iterable[str | Path],
+    resolved_inputs: list[Path],
+    resolved_outputs: list[Path],
+    input_entries: list[dict[str, Any]],
+    extra_details: dict[str, Any] | None,
+) -> RemoteUnavailableError | None:
+    """Run the command, folding any failure into the run record.
+
+    Returns an unrecoverable connection error for the caller to re-raise once
+    the record is finalized; every other failure is only recorded.
+    """
+    try:
+        _execute_command(
+            db,
+            project,
+            record,
+            state,
+            backend=backend,
+            argv_steps=argv_steps,
+            step_details=step_details,
+            logs=logs,
+            run_id=run_id,
+            cwd=cwd,
+            timeout=timeout,
+            threads=threads,
+            base=base,
+            stage_inputs=stage_inputs,
+            resolved_inputs=resolved_inputs,
+            resolved_outputs=resolved_outputs,
+            input_entries=input_entries,
+            extra_details=extra_details,
         )
-        record["scheduler_job_id"] = result.scheduler_job_id
-        # Duck-typed executors may predate the resources field.
-        resources = getattr(result, "resources", None)
-        if not isinstance(resources, dict):
-            resources = {}
-        record["max_rss_mb"] = resources.get("max_rss_mb")
-        record["avg_rss_mb"] = resources.get("avg_rss_mb")
-        record["cpu_seconds"] = resources.get("cpu_seconds")
-        details = dict(result.details)
-        if len(argv_steps) > 1:
-            details["steps"] = step_records
-        if input_entries:
-            details["inputs"] = input_entries
-        if extra_details:
-            details.update(extra_details)
-        record["execution_details"] = json.dumps(
-            details, ensure_ascii=False, sort_keys=True
-        )
-        # Slurm probes the compute side inside the job; prefer that document.
-        if result.details.get("environment"):
-            environment = result.details["environment"]
-        if result.exit_code != 0:
-            record["error"] = result.error or f"exit code {result.exit_code}"
-            if len(argv_steps) > 1:
-                record["error"] = (
-                    f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
-                )
-            record["status"] = "failed"
-        elif result.error:
-            record["status"] = "failed"
-            record["error"] = result.error
-            if len(argv_steps) > 1:
-                record["error"] = (
-                    f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
-                )
-        else:
-            for path in resolved_outputs:
-                if not path_is_nonempty(path):
-                    record["status"] = "failed"
-                    record["error"] = f"expected output missing or empty: {path}"
-                    break
+        return None
     except subprocess.TimeoutExpired:
         record.update(
             status="failed", error=f"timeout after {timeout}s", exit_code=None
@@ -737,7 +783,7 @@ def run_external_command(
         # real exception type so callers abort the whole batch instead of
         # burning the remaining files with identical per-file errors.
         record.update(status="failed", error=str(exc), exit_code=None)
-        re_raise = exc
+        return exc
     except OperonError as exc:
         record.update(status="failed", error=str(exc), exit_code=None)
     except Exception as exc:  # noqa: BLE001 - failures are recorded as failed runs and re-raised  # pylint: disable=broad-exception-caught
@@ -746,31 +792,217 @@ def run_external_command(
             error=f"{type(exc).__name__}: {exc}",
             exit_code=None,
         )
-    finally:
-        if owns_executor and executor is not None:
-            close = getattr(executor, "close", None)
-            if close is not None:
-                close()
-    record.update(
-        finished_at=now_iso(),
-        stdout_file=str(stdout_file),
-        stderr_file=str(stderr_file),
+    return None
+
+
+def _execute_command(
+    db: Database,
+    project: Project,
+    record: dict[str, Any],
+    state: _CommandRunState,
+    *,
+    backend: str | None,
+    argv_steps: list[list[str]],
+    step_details: list[dict[str, Any]],
+    logs: Path,
+    run_id: str,
+    cwd: str | Path | None,
+    timeout: float | None,
+    threads: int | None,
+    base: Path,
+    stage_inputs: Iterable[str | Path],
+    resolved_inputs: list[Path],
+    resolved_outputs: list[Path],
+    input_entries: list[dict[str, Any]],
+    extra_details: dict[str, Any] | None,
+) -> None:
+    """Acquire the executor, run the command chain, and fold in the result.
+
+    Mutates ``record`` and ``state``; failures propagate to the caller, which
+    records them on the run row.
+    """
+    if state.executor is None:
+        from operon.execution import get_executor
+
+        state.executor = get_executor(project, backend)
+    executor = state.executor
+    record["executor"] = executor.describe()
+    resolved_stage_inputs = _resolve_stage_inputs(
+        executor, base, stage_inputs, resolved_inputs
     )
-    for key in ("max_rss_mb", "avg_rss_mb", "cpu_seconds"):
-        record.setdefault(key, None)
-    if environment:
-        with db.transaction():
-            record["environment_id"] = db.record_environment(environment)
-    duration = time.monotonic() - started_monotonic
-    record["duration_seconds"] = round(duration, 3)
-    log_run(db, project, record)
-    if re_raise is not None:
-        raise re_raise
-    if record.get("status") != "completed":
-        raise ExternalCommandFailed(
-            f"{step} failed: {record.get('error') or 'unknown error'}", record
-        )
-    return record
+    state.environment = _probe_executor_environment(executor)
+    chain_outputs = _chain_output_hooks_available(executor, resolved_outputs)
+    result, step_records = _run_command_steps(
+        db,
+        executor,
+        state,
+        argv_steps=argv_steps,
+        step_details=step_details,
+        logs=logs,
+        run_id=run_id,
+        cwd=cwd,
+        timeout=timeout,
+        threads=threads,
+        stage_inputs=resolved_stage_inputs,
+        resolved_outputs=resolved_outputs,
+        chain_outputs=chain_outputs,
+    )
+    _interpret_command_result(
+        record,
+        state,
+        result,
+        step_records,
+        argv_steps=argv_steps,
+        input_entries=input_entries,
+        extra_details=extra_details,
+        resolved_outputs=resolved_outputs,
+    )
+
+
+def _run_command_steps(
+    db: Database,
+    executor: Any,
+    state: _CommandRunState,
+    *,
+    argv_steps: list[list[str]],
+    step_details: list[dict[str, Any]],
+    logs: Path,
+    run_id: str,
+    cwd: str | Path | None,
+    timeout: float | None,
+    threads: int | None,
+    stage_inputs: list[Path],
+    resolved_outputs: list[Path],
+    chain_outputs: bool,
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Run the argv chain under one run, aborting on the first failed step."""
+    step_records: list[dict[str, Any]] = []
+    result = None
+    output_backups: Any = None
+    output_backups_settled = False
+    try:
+        if chain_outputs:
+            output_backups = executor.reset_expected_outputs(resolved_outputs)
+        for step_index, step_argv in enumerate(argv_steps, start=1):
+            if len(argv_steps) > 1:
+                step_stdout = logs / f"{run_id}.step{step_index}.stdout.log"
+                step_stderr = logs / f"{run_id}.step{step_index}.stderr.log"
+                step_run_id = f"{run_id}-s{step_index}"
+            else:
+                step_stdout, step_stderr, step_run_id = (
+                    state.stdout_file,
+                    state.stderr_file,
+                    run_id,
+                )
+            result = executor.run(
+                step_argv,
+                cwd=cwd,
+                stdout_path=step_stdout,
+                stderr_path=step_stderr,
+                timeout=timeout,
+                threads=threads,
+                run_id=step_run_id,
+                stage_inputs=stage_inputs if step_index == 1 else (),
+                expected_outputs=resolved_outputs
+                if not chain_outputs and step_index == len(argv_steps)
+                else (),
+            )
+            step_record = dict(step_details[step_index - 1]) if step_details else {}
+            step_record.update(
+                {
+                    "index": step_index,
+                    "argv": step_argv,
+                    "exit_code": result.exit_code,
+                    "stdout_file": str(step_stdout),
+                    "stderr_file": str(step_stderr),
+                }
+            )
+            if result.details.get("environment"):
+                state.environment = result.details["environment"]
+                with db.transaction():
+                    step_record["environment_id"] = db.record_environment(
+                        state.environment
+                    )
+            step_records.append(step_record)
+            state.stdout_file, state.stderr_file = step_stdout, step_stderr
+            if result.exit_code != 0 or result.error:
+                break
+        if chain_outputs:
+            if result.exit_code != 0 or result.error:
+                output_backups_settled = True
+                executor.restore_expected_outputs(output_backups)
+            else:
+                try:
+                    executor.pull_expected_outputs(output_backups, resolved_outputs)
+                    output_backups_settled = True
+                except BaseException:
+                    output_backups_settled = True
+                    executor.restore_expected_outputs(output_backups)
+                    raise
+    except BaseException:
+        if chain_outputs and output_backups is not None and not output_backups_settled:
+            executor.restore_expected_outputs(output_backups)
+        raise
+    return result, step_records
+
+
+def _interpret_command_result(
+    record: dict[str, Any],
+    state: _CommandRunState,
+    result: Any,
+    step_records: list[dict[str, Any]],
+    *,
+    argv_steps: list[list[str]],
+    input_entries: list[dict[str, Any]],
+    extra_details: dict[str, Any] | None,
+    resolved_outputs: list[Path],
+) -> None:
+    """Fold the executor result into the run record: status, error, details."""
+    record.update(
+        exit_code=result.exit_code,
+        status="completed" if result.exit_code == 0 else "failed",
+    )
+    record["scheduler_job_id"] = result.scheduler_job_id
+    # Duck-typed executors may predate the resources field.
+    resources = getattr(result, "resources", None)
+    if not isinstance(resources, dict):
+        resources = {}
+    record["max_rss_mb"] = resources.get("max_rss_mb")
+    record["avg_rss_mb"] = resources.get("avg_rss_mb")
+    record["cpu_seconds"] = resources.get("cpu_seconds")
+    details = dict(result.details)
+    if len(argv_steps) > 1:
+        details["steps"] = step_records
+    if input_entries:
+        details["inputs"] = input_entries
+    if extra_details:
+        details.update(extra_details)
+    record["execution_details"] = json.dumps(
+        details, ensure_ascii=False, sort_keys=True
+    )
+    # Slurm probes the compute side inside the job; prefer that document.
+    if result.details.get("environment"):
+        state.environment = result.details["environment"]
+    if result.exit_code != 0:
+        record["error"] = result.error or f"exit code {result.exit_code}"
+        if len(argv_steps) > 1:
+            record["error"] = (
+                f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
+            )
+        record["status"] = "failed"
+    elif result.error:
+        record["status"] = "failed"
+        record["error"] = result.error
+        if len(argv_steps) > 1:
+            record["error"] = (
+                f"step {step_records[-1]['index']}/{len(argv_steps)} failed: {record['error']}"
+            )
+    else:
+        for path in resolved_outputs:
+            if not path_is_nonempty(path):
+                record["status"] = "failed"
+                record["error"] = f"expected output missing or empty: {path}"
+                break
 
 
 def record_execution_result(
