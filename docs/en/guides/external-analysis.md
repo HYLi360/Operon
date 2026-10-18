@@ -95,7 +95,7 @@ Long batches do not need to own the terminal they were started from. `--detach` 
 operon analyze --analysis blastn_nt --detach
 ```
 
-The session keeps running after the terminal — or the TUI — closes. `operon inspect workflow list --step analysis:blastn_nt` shows per-file progress; the TUI Runs screen shows the same rows live. In the TUI's analyze form, the same behavior is available as a "Run detached" toggle: confirming hands the batch to a background session and reports its PID. `kill <pid>` stops the batch the way Ctrl+C would, and re-running the same command finishes whatever remains — completed files are reused from the cache.
+The session keeps running after the terminal — or the TUI — closes. `operon workflow list --step analysis:blastn_nt` shows per-file progress; the TUI Runs screen shows the same rows live. In the TUI's analyze form, the same behavior is available as a "Run detached" toggle: confirming hands the batch to a background session and reports its PID. `kill <pid>` stops the batch the way Ctrl+C would, and re-running the same command finishes whatever remains — completed files are reused from the cache.
 
 Inspect synchronized results:
 

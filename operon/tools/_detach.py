@@ -11,7 +11,7 @@ terminal and the session that spawned it), and streams the child's console
 output into a log file under the project logs directory. The caller gets the
 handle — PID plus log path — immediately, and progress remains visible through
 the per-file ``workflow_runs`` rows the child records (INV-1), e.g.
-``operon inspect workflow list --step analysis:<recipe> --status running``.
+``operon workflow list --step analysis:<recipe> --status running``.
 """
 
 from __future__ import annotations

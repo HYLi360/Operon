@@ -299,7 +299,7 @@ def _cmd_analyze(args: argparse.Namespace, project: Project, db: Database) -> in
         )
         print(f"detached analyze: pid {pid}")
         print(f"console log: {log_path}")
-        print(f"watch: operon inspect workflow list --step analysis:{args.analysis}")
+        print(f"watch: operon workflow list --step analysis:{args.analysis}")
         print(f"stop: kill {pid}")
         return 0
     from operon.tools import run_analysis

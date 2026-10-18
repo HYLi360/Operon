@@ -485,7 +485,7 @@ def test_analyze_detach_spawns_independent_session(project_db, monkeypatch, caps
     ]
     assert "--detach" not in argv
     assert "pid 4242" in out
-    assert "watch: operon inspect workflow list --step analysis:fake_recipe" in out
+    assert "watch: operon workflow list --step analysis:fake_recipe" in out
     assert "kill 4242" in out
     console_log = Path(out.split("console log: ", 1)[1].splitlines()[0])
     assert console_log.exists()

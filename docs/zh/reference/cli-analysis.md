@@ -150,7 +150,7 @@ operon analyze --analysis busco_lineage \
 
 分离执行：`--detach` 以一个独立 OS 会话重新启动同一分析并立即返回，打印子进程 PID 和控制台
 日志路径（`logs/analyze-detach-<时间戳>.log`，首行记录完整命令）。会话在其终端与 TUI 退出后
-继续运行。进度来自已记录的运行（`operon inspect workflow list --step analysis:<recipe>`，或
+继续运行。进度来自已记录的运行（`operon workflow list --step analysis:<recipe>`，或
 TUI Runs 界面），`kill <pid>` 与 Ctrl+C 语义完全一致：取消当前作业、其行标记 `interrupted`，
 重跑同一命令即可继续。`--detach` 不能与 `--dry-run` 组合。未知 recipe 在会话创建前即被拒绝；
 会话启动后发生的 recipe 级失败会体现在控制台日志与逐文件的 error 行中。之后再重跑时，已完成
