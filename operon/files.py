@@ -525,6 +525,108 @@ def ingest_file(
         raise ValidationError(f"source artifact does not exist: {source}")
     db.require_active_entity(entity_type, entity_id)
 
+    fmt, compression, compression_pinned, target = _resolve_ingest_form(
+        project, source, entity_type, entity_id, role, fmt, compression, archive_root
+    )
+    if compress_archive is None:
+        compress_archive = project.compress_archive
+    staged_compression: Path | None = None
+    effective_source = source
+    try:
+        staged = _stage_bgzip_archive(
+            project,
+            source,
+            entity_type,
+            entity_id,
+            role,
+            fmt,
+            compression,
+            compression_pinned=compression_pinned,
+            compress_archive=compress_archive,
+            archive_root=archive_root,
+        )
+        if staged is not None:
+            target, staged_compression, compression = staged
+            effective_source = staged_compression
+        source_sha = sha256_path(effective_source)
+        source_size = path_size_bytes(effective_source)
+        existing = find_existing_file(db, entity_type, entity_id, role, source_sha)
+        _reject_conflicting_role_bytes(db, entity_type, entity_id, role, source_sha)
+        if existing is not None:
+            reused = _reuse_verified_archive(
+                db,
+                project,
+                existing,
+                source=source,
+                source_sha=source_sha,
+                source_url=source_url,
+                actor=actor,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                role=role,
+                run_id=run_id,
+                provenance_buffer=provenance_buffer,
+            )
+            if reused is not None:
+                return reused
+        target = archive_target(
+            project, entity_type, entity_id, role, fmt, compression, archive_root
+        )
+        adopted = _prepare_archive_target(
+            db,
+            project,
+            target,
+            source=source,
+            source_sha=source_sha,
+            source_size=source_size,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            role=role,
+            fmt=fmt,
+            compression=compression,
+            source_url=source_url,
+            run_id=run_id,
+            provenance_buffer=provenance_buffer,
+        )
+        if adopted is not None:
+            return adopted
+        return _archive_and_register(
+            db,
+            project,
+            source,
+            effective_source,
+            target,
+            source_sha=source_sha,
+            source_size=source_size,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            role=role,
+            fmt=fmt,
+            compression=compression,
+            source_url=source_url,
+            move=move,
+            run_id=run_id,
+            provenance_buffer=provenance_buffer,
+        )
+    finally:
+        if staged_compression is not None:
+            staged_compression.unlink(missing_ok=True)
+
+
+def _resolve_ingest_form(
+    project: Project,
+    source: Path,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str | None,
+    compression: str | None,
+    archive_root: str | Path | None,
+) -> tuple[str, str, bool, Path]:
+    """Resolve the ``(format, compression, pinned, target)`` storage form.
+
+    Raises when the source kind contradicts the requested format/compression.
+    """
     fmt = fmt or detect_format(source, role)
     if fmt == "gtf":
         _ensure_gtf_format_schema(project)
@@ -551,166 +653,161 @@ def ingest_file(
     }:
         # Not fatal for binary formats that commonly use bgzip (bam/cram are already compressed).
         pass
+    return fmt, compression, compression_pinned, target
 
-    if compress_archive is None:
-        compress_archive = project.compress_archive
-    staged_compression: Path | None = None
-    effective_source = source
-    try:
-        if (
-            compress_archive
-            and not compression_pinned
-            and compression == "none"
-            and fmt in AUTO_BGZIP_FORMATS
-            and source.is_file()
-        ):
-            # Plain sequence bytes are archived as deterministic BGZF: the
-            # manifest identity binds the compressed bytes actually stored.
-            target = archive_target(
-                project, entity_type, entity_id, role, fmt, "bgzip", archive_root
-            )
-            target.parent.mkdir(parents=True, exist_ok=True)
-            fd, staged = tempfile.mkstemp(
-                prefix=f".{target.name}.bgzip-", dir=str(target.parent)
-            )
-            os.close(fd)
-            staged_compression = Path(staged)
-            atomic_copy_bgzip(source, staged_compression)
-            effective_source = staged_compression
-            compression = "bgzip"
 
-        source_sha = sha256_path(effective_source)
-        source_size = path_size_bytes(effective_source)
-        existing = find_existing_file(db, entity_type, entity_id, role, source_sha)
-        same_role = db.conn.execute(
-            "SELECT * FROM files WHERE entity_type=? AND entity_id=? AND file_role=? ORDER BY file_id LIMIT 1",
-            (entity_type, entity_id, role),
-        ).fetchone()
-        if (
-            same_role is not None
-            and str(same_role["sha256"]).lower() != source_sha.lower()
-        ):
-            # raw/ is immutable: a different byte stream for the same entity+role is
-            # a new version (new entity ID) or an explicit audited replacement, not
-            # a silent overwrite of the archive.
-            raise ConflictError(
-                f"{entity_type} {entity_id} already has {same_role['file_id']} for role {role!r} "
-                f"with sha256 {same_role['sha256'][:12]}...; source has {source_sha[:12]}... "
-                "Create a new entity/version for the new bytes."
-            )
-        if existing is not None:
-            target = project.root / existing["relative_path"]
-            _require_project_path(project, target)
-            if target.exists() and sha256_path(target) == source_sha:
-                with db.transaction():
-                    if str(existing["status"]) != "STANDARDIZED":
-                        # Audited, and a no-op when already CHECKSUM_VERIFIED;
-                        # a standardized file keeps its status: re-verifying the
-                        # same raw bytes must not demote it.
-                        db.set_file_status(
-                            existing["file_id"],
-                            "CHECKSUM_VERIFIED",
-                            reason="re-ingested identical bytes; checksum re-verified",
-                            actor=actor or "operon ingest",
-                        )
-                    db.conn.execute(
-                        "UPDATE files SET downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
-                        (now_iso(), source_url, existing["file_id"]),
-                    )
-                    # Idempotency must also repair a missing denormalized entity
-                    # link.  Older TSV round-trips could clear these columns while
-                    # leaving the immutable file manifest row intact.
-                    _link_file_to_entity(
-                        db, entity_type, entity_id, role, existing["file_id"]
-                    )
-                existing_record = dict(existing)
-                remember_local_file_verification(db, existing_record, target)
-                _advance_checksum_state(
-                    db,
-                    entity_type,
-                    entity_id,
-                    f"file {existing['file_id']} already archived and verified",
-                )
-                _workflow_log(
-                    db,
-                    project,
-                    run_id,
-                    "ingest",
-                    entity_type,
-                    entity_id,
-                    "completed",
-                    provenance_buffer=provenance_buffer,
-                    command=f"ingest {source}",
-                    input_sha256=source_sha,
-                )
-                return existing_record
+def _stage_bgzip_archive(
+    project: Project,
+    source: Path,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str,
+    compression: str,
+    *,
+    compression_pinned: bool,
+    compress_archive: bool,
+    archive_root: str | Path | None,
+) -> tuple[Path, Path, str] | None:
+    """Rewrite a plain, unpinned, eligible source as deterministic BGZF.
 
-        target = archive_target(
-            project, entity_type, entity_id, role, fmt, compression, archive_root
+    Returns ``(target, staged_path, "bgzip")`` when staging happened; the
+    manifest identity binds the compressed bytes actually stored.  Returns
+    ``None`` when the source is stored as given.
+    """
+    if not (
+        compress_archive
+        and not compression_pinned
+        and compression == "none"
+        and fmt in AUTO_BGZIP_FORMATS
+        and source.is_file()
+    ):
+        return None
+    target = archive_target(
+        project, entity_type, entity_id, role, fmt, "bgzip", archive_root
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, staged = tempfile.mkstemp(
+        prefix=f".{target.name}.bgzip-", dir=str(target.parent)
+    )
+    os.close(fd)
+    staged_compression = Path(staged)
+    atomic_copy_bgzip(source, staged_compression)
+    return target, staged_compression, "bgzip"
+
+
+def _reject_conflicting_role_bytes(
+    db: Database, entity_type: str, entity_id: str, role: str, source_sha: str
+) -> None:
+    """Refuse different bytes for an entity+role already present in the manifest."""
+    same_role = db.conn.execute(
+        "SELECT * FROM files WHERE entity_type=? AND entity_id=? AND file_role=? ORDER BY file_id LIMIT 1",
+        (entity_type, entity_id, role),
+    ).fetchone()
+    if same_role is not None and str(same_role["sha256"]).lower() != source_sha.lower():
+        # raw/ is immutable: a different byte stream for the same entity+role is
+        # a new version (new entity ID) or an explicit audited replacement, not
+        # a silent overwrite of the archive.
+        raise ConflictError(
+            f"{entity_type} {entity_id} already has {same_role['file_id']} for role {role!r} "
+            f"with sha256 {same_role['sha256'][:12]}...; source has {source_sha[:12]}... "
+            "Create a new entity/version for the new bytes."
         )
-        if target.exists():
-            target_sha = sha256_path(target)
-            if target_sha == source_sha:
-                row = _register_file(
-                    db,
-                    project,
-                    entity_type,
-                    entity_id,
-                    role,
-                    fmt,
-                    compression,
-                    target,
-                    source_url,
-                    source_sha,
-                    source_size,
-                )
-                remember_local_file_verification(db, row, target)
-                _advance_checksum_state(
-                    db,
-                    entity_type,
-                    entity_id,
-                    f"file {row['file_id']} matched existing target",
-                )
-                _workflow_log(
-                    db,
-                    project,
-                    run_id,
-                    "ingest",
-                    entity_type,
-                    entity_id,
-                    "completed",
-                    provenance_buffer=provenance_buffer,
-                    command=f"ingest {source}",
-                    input_sha256=source_sha,
-                )
-                return row
-            if not target.is_dir():
-                _resolve_occupied_target(db, project, target, target_sha)
-            else:
-                raise ConflictError(
-                    f"target {target} already exists with a different checksum "
-                    f"({target_sha[:12]}... != {source_sha[:12]}...); refusing to overwrite"
-                )
 
-        # A move is deliberately implemented as copy -> verify -> register ->
-        # remove-source.  This is slightly more work on one filesystem than
-        # ``os.replace``, but it leaves the source recoverable if copying,
-        # verification, or the manifest transaction fails (including cross-device
-        # moves, where rename is unavailable).
-        if effective_source.is_dir():
-            atomic_copytree(effective_source, target)
-        else:
-            atomic_copy(effective_source, target)
-        target_sha = sha256_path(target)
-        target_size = path_size_bytes(target)
-        if target_sha != source_sha or target_size != source_size:
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-            else:
-                target.unlink(missing_ok=True)
-            raise ChecksumError(
-                f"checksum mismatch while archiving {source} to {target}"
+
+def _reuse_verified_archive(
+    db: Database,
+    project: Project,
+    existing: dict[str, Any],
+    *,
+    source: Path,
+    source_sha: str,
+    source_url: str | None,
+    actor: str | None,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    run_id: str | None,
+    provenance_buffer: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Idempotent path: the manifest row's archived bytes verify locally.
+
+    Returns the existing row on a byte match; ``None`` when the archived
+    bytes are absent or no longer match, so the caller archives anew.
+    """
+    target = project.root / existing["relative_path"]
+    _require_project_path(project, target)
+    if not (target.exists() and sha256_path(target) == source_sha):
+        return None
+    with db.transaction():
+        if str(existing["status"]) != "STANDARDIZED":
+            # Audited, and a no-op when already CHECKSUM_VERIFIED;
+            # a standardized file keeps its status: re-verifying the
+            # same raw bytes must not demote it.
+            db.set_file_status(
+                existing["file_id"],
+                "CHECKSUM_VERIFIED",
+                reason="re-ingested identical bytes; checksum re-verified",
+                actor=actor or "operon ingest",
             )
+        db.conn.execute(
+            "UPDATE files SET downloaded_at=COALESCE(downloaded_at, ?), source_url=COALESCE(source_url, ?) WHERE file_id=?",
+            (now_iso(), source_url, existing["file_id"]),
+        )
+        # Idempotency must also repair a missing denormalized entity
+        # link.  Older TSV round-trips could clear these columns while
+        # leaving the immutable file manifest row intact.
+        _link_file_to_entity(db, entity_type, entity_id, role, existing["file_id"])
+    existing_record = dict(existing)
+    remember_local_file_verification(db, existing_record, target)
+    _advance_checksum_state(
+        db,
+        entity_type,
+        entity_id,
+        f"file {existing['file_id']} already archived and verified",
+    )
+    _workflow_log(
+        db,
+        project,
+        run_id,
+        "ingest",
+        entity_type,
+        entity_id,
+        "completed",
+        provenance_buffer=provenance_buffer,
+        command=f"ingest {source}",
+        input_sha256=source_sha,
+    )
+    return existing_record
+
+
+def _prepare_archive_target(
+    db: Database,
+    project: Project,
+    target: Path,
+    *,
+    source: Path,
+    source_sha: str,
+    source_size: int,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str,
+    compression: str,
+    source_url: str | None,
+    run_id: str | None,
+    provenance_buffer: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Adopt an identical existing target or free a conflicting occupied one.
+
+    Returns the registered row when the target already holds the source
+    bytes; returns ``None`` once the path is free for the caller to archive
+    into.
+    """
+    if not target.exists():
+        return None
+    target_sha = sha256_path(target)
+    if target_sha == source_sha:
         row = _register_file(
             db,
             project,
@@ -721,15 +818,15 @@ def ingest_file(
             compression,
             target,
             source_url,
-            target_sha,
-            target_size,
+            source_sha,
+            source_size,
         )
         remember_local_file_verification(db, row, target)
         _advance_checksum_state(
             db,
             entity_type,
             entity_id,
-            f"file {row['file_id']} archived and checksum verified",
+            f"file {row['file_id']} matched existing target",
         )
         _workflow_log(
             db,
@@ -741,17 +838,95 @@ def ingest_file(
             "completed",
             provenance_buffer=provenance_buffer,
             command=f"ingest {source}",
-            input_sha256=target_sha,
+            input_sha256=source_sha,
         )
-        if move:
-            if source.is_dir() and not source.is_symlink():
-                shutil.rmtree(source)
-            else:
-                source.unlink()
         return row
-    finally:
-        if staged_compression is not None:
-            staged_compression.unlink(missing_ok=True)
+    if not target.is_dir():
+        _resolve_occupied_target(db, project, target, target_sha)
+        return None
+    raise ConflictError(
+        f"target {target} already exists with a different checksum "
+        f"({target_sha[:12]}... != {source_sha[:12]}...); refusing to overwrite"
+    )
+
+
+def _archive_and_register(
+    db: Database,
+    project: Project,
+    source: Path,
+    effective_source: Path,
+    target: Path,
+    *,
+    source_sha: str,
+    source_size: int,
+    entity_type: str,
+    entity_id: str,
+    role: str,
+    fmt: str,
+    compression: str,
+    source_url: str | None,
+    move: bool,
+    run_id: str | None,
+    provenance_buffer: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Copy the source into the archive, verify it, and register the row.
+
+    A move is deliberately implemented as copy -> verify -> register ->
+    remove-source.  This is slightly more work on one filesystem than
+    ``os.replace``, but it leaves the source recoverable if copying,
+    verification, or the manifest transaction fails (including cross-device
+    moves, where rename is unavailable).
+    """
+    if effective_source.is_dir():
+        atomic_copytree(effective_source, target)
+    else:
+        atomic_copy(effective_source, target)
+    target_sha = sha256_path(target)
+    target_size = path_size_bytes(target)
+    if target_sha != source_sha or target_size != source_size:
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+        raise ChecksumError(f"checksum mismatch while archiving {source} to {target}")
+    row = _register_file(
+        db,
+        project,
+        entity_type,
+        entity_id,
+        role,
+        fmt,
+        compression,
+        target,
+        source_url,
+        target_sha,
+        target_size,
+    )
+    remember_local_file_verification(db, row, target)
+    _advance_checksum_state(
+        db,
+        entity_type,
+        entity_id,
+        f"file {row['file_id']} archived and checksum verified",
+    )
+    _workflow_log(
+        db,
+        project,
+        run_id,
+        "ingest",
+        entity_type,
+        entity_id,
+        "completed",
+        provenance_buffer=provenance_buffer,
+        command=f"ingest {source}",
+        input_sha256=target_sha,
+    )
+    if move:
+        if source.is_dir() and not source.is_symlink():
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+    return row
 
 
 def _resolve_occupied_target(
