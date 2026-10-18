@@ -20,6 +20,7 @@ from typing import Any
 
 from operon.cli._common import _print_table
 from operon.errors import EntityNotFoundError, FeatureIndexError
+from operon.utils import escape_formula_text
 
 
 def _add_selection(parser: argparse.ArgumentParser) -> None:
@@ -229,7 +230,10 @@ def _features_query(args: argparse.Namespace, project, db) -> int:
         )
         for row in rows:
             writer.writerow(
-                ["" if row.get(column) is None else row[column] for column in columns]
+                [
+                    escape_formula_text("" if row.get(column) is None else row[column])
+                    for column in columns
+                ]
             )
             returned_any = True
     return 0 if returned_any or not explicit else 1

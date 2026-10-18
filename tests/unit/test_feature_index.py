@@ -452,3 +452,32 @@ def test_stats_cli_counts(project_db, tmp_path, capsys):
         )
         == 2
     )
+
+
+@pytest.mark.bug("ODR-83")
+def test_query_cli_escapes_formula_trigger_cells(project_db, tmp_path, capsys):
+    """A TSV cell beginning with a spreadsheet formula trigger is escaped."""
+    project, db = project_db
+    source = tmp_path / "formula.gff3"
+    source.write_text(
+        "##gff-version 3\n=1+1\tncbi\tgene\t10\t20\t.\t+\t.\tID=g1;Name=g1\n",
+        encoding="utf-8",
+    )
+    record = ingest_file(
+        db, project, source, "annotation", "ANN_000001", "annotation_gff3"
+    )
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "query",
+                "--file-id",
+                record["file_id"],
+            ]
+        )
+        == 0
+    )
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines[1].split("\t")[0] == "'=1+1"
