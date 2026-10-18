@@ -88,6 +88,9 @@
 | ODR-0073 | 分析 | 随附的 `rpsblast_cdd` 命令链现在真的能跑：`database` 指 CDD 索引目录，第 1 步把 BLAST 前缀重组为 `${database}/Cdd`，第 2 步用 `-d ${database}` 让 `rpsbproc` 找到 CDD dump 文件，不再让每个作业在 `step 2/2` 以退出码 2（`Cannot find data files`）失败。 |
 | ODR-0074 | 远端执行 | 冒烟核对表改为从 `workflow_runs` 行的 `scheduler_job_id`/`executor` 列读取 Slurm 作业号与 ssh 目标，不再声称它们在 `execution_details` 里（SSH+Slurm 路径从未写入该键）；`tests/unit/test_docs_remote_execution.py` 同时钉住两张表和它描述的 schema。 |
 | ODR-0075 | 执行后端 | `${output}` 在最后一步之前产出的 `commands` 链现在能在 SSH 后端上跑完：`run_external_command` 改用执行器的链级输出钩子（`reset_expected_outputs` / `pull_expected_outputs` / `restore_expected_outputs`），既有远端输出在第一步之前备份、最后一步之后才取回，不再被最后一步的 reset 把前一步刚写出的产物改名挪走（`expected output missing or empty`，并毁掉此前的远端输出）。 |
+| ODR-0076 | 执行后端 | SSH 执行器会替换已死掉的缓存传输（`connect_ssh` 配置 30 秒 keepalive），重连失败时抛 `RemoteUnavailableError`，并在在途文件后停止顺序批处理循环以便重跑从作业缓存续起；四个回归测试钉住替换、错误类型与批量中止。 |
+| ODR-0077 | TUI 测试 | `test_runs_more_filters_accept_resumes_run_id` 在赋值前同时等待 `RunsFiltersModal` 界面与其 `#runs-filter-resumes-run-id` 输入挂载完成，慢挂载再也抢不到查询之前。 |
+| ODR-0078 | TUI 测试 | 两处 run-analysis 入口测试等待关闭后的 `#main` ContentSwitcher 真正到达 `"runs"`，而不是在关闭等待后立即断言——回调的延迟切换窗口到此关闭。 |
 
 ## K 系列（历史）
 

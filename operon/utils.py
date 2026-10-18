@@ -217,33 +217,33 @@ def atomic_copy(source: str | Path, target: str | Path) -> None:
         raise
 
 
-def atomic_copy_bgzip(
-    source: str | Path, target: str | Path, *, num_threads: int = 4
-) -> None:
+def atomic_copy_bgzip(source: str | Path, target: str | Path) -> None:
     """Compress a file into deterministic BGZF: temp file, fsync, then rename.
 
     BGZF block headers carry no mtime and blocks deflate independently at a
     fixed size, so identical input bytes produce identical output bytes
-    regardless of ``num_threads`` (pinned by tests); the thread count is fixed
-    anyway so an archive's bytes never depend on the caller.  Closing the
-    writer emits the BGZF EOF block, making the output a valid multi-member
-    gzip stream that every gzip-transparent reader accepts.
+    (pinned by tests).  Closing the writer emits the BGZF EOF block, making
+    the output a valid multi-member gzip stream that every gzip-transparent
+    reader accepts, and the block structure supports random access through
+    ``pysam.BGZFile``'s ``seek``.  The writer comes from ``pysam`` (htslib),
+    which publishes prebuilt wheels for every supported platform, so the
+    archive form never depends on a compiler or an OpenMP setup on macOS.
     """
-    import bgzip
+    import pysam
 
     source = Path(source)
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+    os.close(fd)
     try:
-        with os.fdopen(fd, "wb") as raw, open(source, "rb") as src:
-            writer = bgzip.BGZipWriter(fileobj=raw, num_threads=num_threads)
-            try:
-                shutil.copyfileobj(src, writer, length=1024 * 1024)
-            finally:
-                writer.close()
-            raw.flush()
-            os.fsync(raw.fileno())
+        with pysam.BGZFile(tmp, "wb") as writer, open(source, "rb") as src:
+            shutil.copyfileobj(src, writer, length=1024 * 1024)
+        archive_fd = os.open(tmp, os.O_RDWR)
+        try:
+            os.fsync(archive_fd)
+        finally:
+            os.close(archive_fd)
         os.replace(tmp, target)
     except BaseException:
         try:

@@ -22,7 +22,7 @@ license-files = ["LICENSE"]
 
 dependencies = [
     "aiohttp>=3.9",
-    "bgzip>=0.5.1,<0.6.0",
+    "pysam>=0.24.0,<0.25",  # BGZF via htslib; prebuilt wheels on macOS too, no OpenMP build step
     "biopython>=1.85",
     "paramiko>=3.4",
     "pyarrow>=25.0.0",  # 26.0 needs python 3.11+
