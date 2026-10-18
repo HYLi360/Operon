@@ -108,7 +108,6 @@
 - **`--threads` 参与缓存指纹。** 解析后的线程数（默认 4）会被哈希进参数指纹，因此即使工具输出完全相同，改动线程数也会让每个文件重跑（`tools/_inputs.py`）。
 - **是否参与 array 对缓存不可见。** 一个批次以单个 Slurm job array 还是逐文件作业提交，从不进入参数指纹或缓存身份，因此两种提交形式共享同一份完成缓存（`tools/_inputs.py、tools/_run.py`）。
 - **`analyze` 不向任何后端传超时。** 因此挂起的工具在本地和 SSH 上都会无限运行，Slurm 后端只受默认 `--time=24:00:00` 限制（`tools/_execute.py`、`execution.py`）。
-- **已知问题：失败的运行会保留部分输出。** 只有中断才会删除已算出的产物；其他任何失败（包括结果解析错误）都会把截断的 TSV 或写了一半的输出目录留在磁盘上，看起来就像结果（`tools/_execute.py`）。
 - **`analyze` 可能改写 manifest。** 配置了 SSH `storage_remote` 时，本地字节缺失而远端副本校验通过的文件会被静默改标为 `REMOTE_ONLY` 并留下审计行，因此一次分析会改动文件状态（`tools/_plan.py`）。
 - **陈旧 `RUNNING` 清扫按当前 analysis 限定范围。** 非 dry 的 `analyze` 只把本 analysis 遗留的 `RUNNING` 行标为 `interrupted`；并发跑同一 recipe 的两个进程仍可能互相清扫对方的活作业（`tools/_cache.py`）。
 - **结果汇总基于被截断的 hit 集。** `hit_count`、`best_evalue` 与由此得出的“top hit”只用 `max_hits_per_query` 之内保留的 hits，`hit_rank` 是该行在结果文件中的位置而非得分排序，因此汇总可能偏少并给出错误顺序（`tools/_results.py`）。

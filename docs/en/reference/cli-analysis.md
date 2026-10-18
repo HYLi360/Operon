@@ -77,6 +77,8 @@ Interruption and graceful shutdown: on Ctrl+C (SIGINT) or SIGTERM, `analyze`:
 - Stops the batch and exits with code 130. Rerunning the same command resumes unfinished files because `interrupted` rows do not match the cache.
 - A second signal during cleanup exits immediately with code `128 + signum`.
 
+A failed run cleans the same way: any non-interrupt failure — a non-zero exit code, a missing or empty expected output, a failed decompressed-input retry, or a result-parsing error — drops the file's partial output, events file, and `${work_dir}` exactly like an interrupt does, and `--keep-partial` preserves them on failure as well; stdout/stderr logs always remain for debugging.
+
 If a process is killed by SIGKILL or another uncatchable mechanism, a residual `RUNNING` row of the same analysis is cleaned to `interrupted` on the next `analyze` startup.
 
 Detached execution: `--detach` relaunches the same analysis as an independent OS session and returns immediately, printing the child PID and the console log path — `logs/analyze-detach-<timestamp>.log`, headed by the full command. The session survives its terminal and the TUI. Progress is read from the recorded runs (`operon workflow list --step analysis:<recipe>`, or the TUI Runs screen), and `kill <pid>` stops the session exactly like Ctrl+C: the current job is cancelled, its row is marked `interrupted`, and re-running the same command resumes. `--detach` cannot be combined with `--dry-run`. An unknown recipe is rejected before the session is created; recipe-level failures that happen inside the session surface in the console log and as per-file error rows. Completed files are reused through the cache on any later re-run.

@@ -337,13 +337,20 @@ def _fail_analysis_execution(
     exc: BaseException,
     keep_partial: bool = False,
 ) -> None:
+    """Failure: finalize the job row and drop any partial output it left
+    behind (unless --keep-partial), the same cleanup the interrupt path
+    applies.  Partial stdout/stderr logs are kept for diagnosis."""
     with db.transaction() as conn:
         conn.execute(
             "UPDATE analysis_jobs SET status='failed', finished_at=?, error=? WHERE job_id=?",
             (now_iso(), f"{type(exc).__name__}: {exc}", plan.job_id),
         )
-    if plan.work_dir is not None and not keep_partial:
-        _remove_output_artifact(project, plan.work_dir)
+    if not keep_partial:
+        _remove_output_artifact(project, plan.output_path)
+        if plan.events_path:
+            _remove_output_artifact(project, plan.events_path)
+        if plan.work_dir is not None:
+            _remove_output_artifact(project, plan.work_dir)
 
 
 def run_analysis_for_file(

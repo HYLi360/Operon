@@ -1673,6 +1673,64 @@ def test_run_analysis_for_file_failure_keeps_partial_work_directory(
     assert work_dir.is_dir()
 
 
+@pytest.mark.bug("ODR-79")
+def test_run_analysis_for_file_failure_removes_partial_output_like_an_interrupt(
+    operon_project, tmp_path, monkeypatch
+):
+    project, db = operon_project
+    record = ingest_assembly(project, db, 1)
+    remote_root = tmp_path / "mirror"
+    remote_root.mkdir()
+    executor = _ssh_executor(project, remote_root)
+    _stub_version_probe(monkeypatch)
+
+    output = (
+        project.analysis_root
+        / "chain"
+        / record["entity_id"]
+        / f"{record['file_id']}.genome_fasta.out"
+    )
+    work_dir = output.with_name(output.name + ".work")
+
+    def exploding_and_writing(*_args, **kwargs):
+        for path in kwargs.get("expected_outputs") or ():
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("partial tsv\n", encoding="utf-8")
+        work_dir.mkdir(parents=True, exist_ok=True)
+        raise ExternalToolError("backend exploded")
+
+    monkeypatch.setattr(executor, "run", exploding_and_writing)
+    analysis = recipe(
+        tool_name="faketool",
+        database="refdb",
+        database_version="v1",
+        output_subdir="chain",
+        output_suffix=".out",
+        arguments=[],
+        commands=[
+            tools.RecipeCommand(
+                ["faketool", "--out", "${output}"], ["--version"], r"faketool:\s*(\S+)"
+            )
+        ],
+        raw={"database_mode": "mutable_cache"},
+    )
+    tool = tool_spec(name="faketool", executable="faketool", run_method="")
+
+    with pytest.raises(RuntimeError, match="backend exploded"):
+        run_analysis_for_file(
+            project, db, analysis, tool, {}, record, executor=executor
+        )
+    job = db.query("SELECT * FROM analysis_jobs ORDER BY job_id DESC LIMIT 1")[0]
+    assert job["status"] == "failed"
+    assert "backend exploded" in job["error"]
+    # The same cleanup an interrupt applies now covers the failure path: the
+    # truncated output and the scratch directory do not sit in analysis/
+    # looking like a result.
+    assert not output.exists()
+    assert not work_dir.exists()
+
+
 # ---------------------------------------------------------------------------
 # compressed-input fallback: retry once with a decompressed copy
 # ---------------------------------------------------------------------------

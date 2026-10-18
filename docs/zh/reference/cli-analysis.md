@@ -145,6 +145,8 @@ operon analyze --analysis busco_lineage \
   继续（`interrupted` 行不参与缓存命中）；
 - 清理期间再次发送信号会立即强制退出（退出码 128+signum）。
 
+失败路径以同样的方式清理：任何非中断的失败——非零退出码、预期输出缺失或为空、解压输入重试失败、结果解析错误——都会像中断一样删除该文件的部分输出、events 文件与 `${work_dir}`；`--keep-partial` 在失败路径同样保留它们；stdout/stderr 日志始终保留用于排查。
+
 若进程被 SIGKILL 等无法捕获的方式杀死，残留的同一 analysis 的 `RUNNING` 行会在下一次 `analyze`
 启动时被清扫为 `interrupted`。
 

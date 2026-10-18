@@ -134,7 +134,7 @@ class AnalyzeModal(WriteModal):
         )
         yield Checkbox("Force re-run (--force)", id="analyze-force")
         yield Checkbox(
-            "Keep partial outputs on interrupt (--keep-partial)",
+            "Keep partial outputs on interrupt or failure (--keep-partial)",
             id="analyze-keep-partial",
         )
         yield Checkbox(

@@ -91,6 +91,7 @@
 | ODR-0076 | 执行后端 | SSH 执行器会替换已死掉的缓存传输（`connect_ssh` 配置 30 秒 keepalive），重连失败时抛 `RemoteUnavailableError`，并在在途文件后停止顺序批处理循环以便重跑从作业缓存续起；四个回归测试钉住替换、错误类型与批量中止。 |
 | ODR-0077 | TUI 测试 | `test_runs_more_filters_accept_resumes_run_id` 在赋值前同时等待 `RunsFiltersModal` 界面与其 `#runs-filter-resumes-run-id` 输入挂载完成，慢挂载再也抢不到查询之前。 |
 | ODR-0078 | TUI 测试 | 两处 run-analysis 入口测试等待关闭后的 `#main` ContentSwitcher 真正到达 `"runs"`，而不是在关闭等待后立即断言——回调的延迟切换窗口到此关闭。 |
+| ODR-0079 | 分析 | 失败的分析运行按中断完全相同的规则清理：`_fail_analysis_execution` 在所有失败路径（逐文件批、array 收尾、整批失败、结果解析错误）删除输出产物、部分 events 文件与 `${work_dir}` 暂存目录，除非设置 `--keep-partial`——该 flag 现在对中断与失败对称适用。stdout/stderr 日志始终保留用于排查。 |
 
 ## K 系列（历史）
 

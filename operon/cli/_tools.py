@@ -115,7 +115,7 @@ def add_analyze_parser(sub):
     p.add_argument(
         "--keep-partial",
         action="store_true",
-        help="on Ctrl+C/SIGTERM, keep the interrupted step's partial output instead of deleting it",
+        help="on interrupt or failure, keep the step's partial output instead of deleting it",
     )
     p.add_argument(
         "--detach",

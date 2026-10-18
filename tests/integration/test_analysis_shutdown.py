@@ -307,6 +307,71 @@ class TestAnalysisShutdown(PytestAssertions):
         self.assertIn("exit code 3", jobs[0]["error"])
         self.assertFalse("expected output missing" in jobs[0]["error"])
 
+    @pytest.mark.bug("ODR-79")
+    def test_failed_run_removes_partial_output_and_keep_partial_preserves_it(self):
+        """A failed run drops the truncated artifact an interrupt would drop;
+        --keep-partial applies to the failure path the same way."""
+        script = self.root / "fakeblast.py"
+        script.write_text(
+            textwrap.dedent("""
+            import os
+            import sys
+            args = sys.argv[1:]
+            if '-version' in args:
+                print('fakeblast: 9.8.7')
+                raise SystemExit(0)
+            out = args[args.index('-out') + 1]
+            mode = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                'fakeblast-failmode')
+            if os.path.exists(mode):
+                with open(out, 'w') as handle:
+                    handle.write('partial tsv')
+                raise SystemExit(3)
+            with open(out, 'w') as handle:
+                handle.write('q1\\ts1\\t99.0\\t100\\t1e-10\\t500\\n')
+            raise SystemExit(0)
+        """).strip(),
+            encoding="utf-8",
+        )
+        self._write_tool_config(script)
+        mode = self.root / "fakeblast-failmode"
+        file_row = self._add_assembly()
+        output = self._output_path(file_row["file_id"])
+
+        # First failure: the partial output does not survive like a result.
+        mode.write_text("fail", encoding="utf-8")
+        rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"])
+        self.assertEqual(rc, 1)
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["failed"])
+        self.assertIsNotNone(jobs[0]["finished_at"])
+        self.assertFalse(output.exists())
+
+        # With --keep-partial the failure keeps its partial output, and a clean
+        # re-run afterwards still produces the real result (the stale partial
+        # is wiped at plan time).
+        rc = main(
+            [
+                "--project",
+                str(self.root),
+                "analyze",
+                "--analysis",
+                "fake_nt",
+                "--keep-partial",
+            ]
+        )
+        self.assertEqual(rc, 1)
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["failed", "failed"])
+        self.assertEqual(output.read_text(), "partial tsv")
+
+        mode.unlink()
+        rc = main(["--project", str(self.root), "analyze", "--analysis", "fake_nt"])
+        self.assertEqual(rc, 0)
+        jobs = self.db.query("SELECT * FROM analysis_jobs ORDER BY job_id")
+        self.assertEqual([j["status"] for j in jobs], ["failed", "failed", "completed"])
+        self.assertEqual(output.read_text(), "q1\ts1\t99.0\t100\t1e-10\t500\n")
+
     def test_missing_local_input_is_an_error_not_a_remote_fetch(self):
         self._write_fake_blast()
         self._write_tool_config(self.root / "fakeblast.py")

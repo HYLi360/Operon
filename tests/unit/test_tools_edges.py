@@ -1593,6 +1593,113 @@ def test_interrupt_analysis_execution_removes_partial_artifacts(tmp_path):
     assert not events.exists()
 
 
+@pytest.mark.bug("ODR-79")
+def test_fail_analysis_execution_removes_partial_artifacts(tmp_path):
+    from operon.database import Database
+    from operon.tools._execute import _fail_analysis_execution
+    from operon.tools._plan import _AnalysisExecution
+
+    p = project(tmp_path)
+    job_dir = p.analysis_root / "analysis" / "job"
+    job_dir.mkdir(parents=True)
+    output = job_dir / "hits.tsv"
+    events = job_dir / "hits.jsonl"
+    work_dir = job_dir / "hits.tsv.work"
+    output.write_text("partial hits\n", encoding="utf-8")
+    events.write_text("{}\n", encoding="utf-8")
+    work_dir.mkdir()
+    db = Database(tmp_path / "meta.sqlite")
+    try:
+        plan = _AnalysisExecution(
+            file_record={
+                "file_id": "FIL_000001",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+            },
+            job_id=7,
+            run_id="run-1",
+            argv_steps=[],
+            commands=None,
+            command_details=None,
+            command_display="tool run",
+            version="1.0",
+            threads=1,
+            output_path=output,
+            output_rel="analysis/job/hits.tsv",
+            work_dir=work_dir,
+            stage_inputs=(),
+            env_decision=None,
+            runtime_parameters=None,
+            stdout_path=job_dir / "stdout.log",
+            stderr_path=job_dir / "stderr.log",
+            started="2026-01-01T00:00:00+00:00",
+            events_path=events,
+        )
+        _fail_analysis_execution(p, db, plan, RuntimeError("tool exploded"))
+    finally:
+        db.close()
+    # A failed run cleans up the same way an interrupt does: the partial
+    # output, the partial events file and the scratch work directory are gone.
+    assert not output.exists()
+    assert not events.exists()
+    assert not work_dir.exists()
+
+
+@pytest.mark.bug("ODR-79")
+def test_fail_analysis_execution_keep_partial_retains_artifacts(tmp_path):
+    from operon.database import Database
+    from operon.tools._execute import _fail_analysis_execution
+    from operon.tools._plan import _AnalysisExecution
+
+    p = project(tmp_path)
+    job_dir = p.analysis_root / "analysis" / "job"
+    job_dir.mkdir(parents=True)
+    output = job_dir / "hits.tsv"
+    events = job_dir / "hits.jsonl"
+    work_dir = job_dir / "hits.tsv.work"
+    output.write_text("partial hits\n", encoding="utf-8")
+    events.write_text("{}\n", encoding="utf-8")
+    (work_dir / "scratch.bin").parent.mkdir(parents=True)
+    (work_dir / "scratch.bin").write_text("x", encoding="utf-8")
+    db = Database(tmp_path / "meta.sqlite")
+    try:
+        plan = _AnalysisExecution(
+            file_record={
+                "file_id": "FIL_000001",
+                "entity_type": "assembly",
+                "entity_id": "ASM_000001",
+            },
+            job_id=7,
+            run_id="run-1",
+            argv_steps=[],
+            commands=None,
+            command_details=None,
+            command_display="tool run",
+            version="1.0",
+            threads=1,
+            output_path=output,
+            output_rel="analysis/job/hits.tsv",
+            work_dir=work_dir,
+            stage_inputs=(),
+            env_decision=None,
+            runtime_parameters=None,
+            stdout_path=job_dir / "stdout.log",
+            stderr_path=job_dir / "stderr.log",
+            started="2026-01-01T00:00:00+00:00",
+            events_path=events,
+        )
+        _fail_analysis_execution(
+            p, db, plan, RuntimeError("tool exploded"), keep_partial=True
+        )
+    finally:
+        db.close()
+    # --keep-partial now applies to the failure path exactly like the
+    # interrupt path: every partial artifact survives for diagnosis.
+    assert output.exists()
+    assert events.exists()
+    assert (work_dir / "scratch.bin").exists()
+
+
 @pytest.mark.bug("ODR-73")
 def test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory(
     tmp_path, monkeypatch

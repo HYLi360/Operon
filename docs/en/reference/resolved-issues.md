@@ -99,6 +99,7 @@ New resolved issues are appended to the ODR table.
 | ODR-0076 | Execution backends | The SSH executor replaces a dead cached transport (a 30-second keepalive is configured in `connect_ssh`), raises `RemoteUnavailableError` when the re-connect fails, and stops the sequential batch loops after the in-flight file so a re-run resumes through the job cache; four regression tests pin the replacement, the error type and the batch abort. |
 | ODR-0077 | TUI tests | `test_runs_more_filters_accept_resumes_run_id` waits for the `RunsFiltersModal` screen and its `#runs-filter-resumes-run-id` input together before assigning the value, so a slow mount can no longer beat the query. |
 | ODR-0078 | TUI tests | Both run-analysis entry tests wait for the post-dismissal `#main` ContentSwitcher to actually reach `"runs"` instead of asserting immediately after the dismissal wait, closing the callback's deferred-switch window. |
+| ODR-0079 | Analysis | A failed analysis run cleans up exactly like an interrupt: `_fail_analysis_execution` removes the output artifact, the partial events file and the `${work_dir}` scratch directory at every failure site (sequential batch, array finalize, whole-batch failure, result-parsing errors), unless `--keep-partial` is set — a flag that now applies symmetrically to interrupts and failures. stdout/stderr logs always remain for debugging. |
 
 ## K series (historical)
 
