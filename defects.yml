@@ -2676,3 +2676,28 @@ defects:
     - tests/unit/test_tui_publish.py::test_coverage_validates_rows_beyond_display_limit
     - tests/unit/test_tui_publish.py::test_coverage_blank_header_rejected
     - tests/unit/test_tui_screens_more.py::test_coverage_panel_report_load_failure
+- id: ODR-83
+  title: |
+    operon features query TSV writes cells verbatim, so a seqid or identifier beginning with = + - @
+    executes as a formula when the output is opened in a spreadsheet
+  reported: '2026-10-18'
+  introduced_in: null
+  affected: |
+    All released versions: any annotation GFF3/GTF whose seqid, source, type, id, parent, gene_id or
+    transcript_id begins with =, +, -, @ (also TAB/CR). operon features query writes TSV to stdout; a
+    redirected file opened in a spreadsheet evaluates the cell.
+  severity: 'low'
+  component: 'cli'
+  status: 'fixed'
+  reproduction: |
+    operon/cli/_features.py writes each query cell with csv.writer verbatim. A GFF3 whose seqid is
+    '=1+1' lands in the TSV as a formula cell, while sequence_qc.tsv and schema.write_tsv already escape
+    the same input. Confirmed by the 2026-10-18 Codacy high-severity triage of the defusedcsv finding.
+  disposition: |
+    Route every cell through operon.utils.escape_formula_text() before writing, the contract ODR-40
+    established for the report writers. Non-string values pass through untouched, so numeric columns
+    keep their exact bytes.
+  fix_commit: 'dca100b9f2cd227b18ba1d6ffc24427401976654'
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_feature_index.py::test_query_cli_escapes_formula_trigger_cells

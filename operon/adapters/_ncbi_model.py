@@ -509,7 +509,7 @@ def _date_only(value: Any) -> str | None:
         pass
     for fmt in ("%Y/%m/%d", "%b %d, %Y", "%Y-%m"):
         try:
-            parsed = datetime.strptime(text, fmt).date()
+            parsed = datetime.strptime(text, fmt).date()  # noqa: DTZ007 - date-only parse; %z does not apply
             return parsed.isoformat()
         except ValueError:
             continue

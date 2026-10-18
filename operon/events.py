@@ -257,10 +257,10 @@ def import_events(
                 published = True
     except BaseException:
         if published:
-            if plan["previous"] is None:
-                plan["out"].unlink(missing_ok=True)
+            if plan["previous"] is None:  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
+                plan["out"].unlink(missing_ok=True)  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
             else:
-                atomic_write_text(plan["out"], plan["previous"].decode("utf-8"))
+                atomic_write_text(plan["out"], plan["previous"].decode("utf-8"))  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
         raise
     flush_run_log(project, buffer)
     return {key: plan[key] for key in ("imported", "skipped", "duplicates")} | {

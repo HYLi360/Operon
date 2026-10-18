@@ -294,7 +294,7 @@ def _excel_datetime(raw: str, uses_1904_dates: bool, includes_time: bool) -> str
         serial = float(raw)
     except ValueError:
         return raw
-    base = datetime(1904, 1, 1) if uses_1904_dates else datetime(1899, 12, 30)
+    base = datetime(1904, 1, 1) if uses_1904_dates else datetime(1899, 12, 30)  # noqa: DTZ001 - Excel serial dates are timezone-less
     value = base + timedelta(days=serial)
     if includes_time or serial % 1:
         return value.isoformat(timespec="seconds")

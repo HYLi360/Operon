@@ -255,7 +255,7 @@ def test_slurm_probe_runs_after_setup_inside_launcher(tmp_path, fake_conda):
         slurm=SlurmConfig(setup_commands=["export OMP_NUM_THREADS=3"]),
         probe_path=str(probe),
     )
-    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)  # noqa: PLW1510 - returncode asserted below
     assert result.returncode == 0, result.stderr
     env = parse_probe_output(probe.read_text())
     assert probe.stat().st_mode & 0o077 == 0
@@ -575,7 +575,7 @@ def test_bounded_shell_propagates_the_wrapped_exit_status(
 ):
     if hide_timeout:
         _path_without_timeout(tmp_path, monkeypatch)
-    proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # test runs sh -c on a bounded_shell payload built in the test
+    proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # test runs sh -c on a bounded_shell payload built in the test  # noqa: PLW1510 - returncode asserted below  # pylint: disable=subprocess-run-check
         ["sh", "-c", bounded_shell(["sh", "-c", "exit 3"])],
         capture_output=True,
         text=True,

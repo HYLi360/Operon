@@ -642,7 +642,7 @@ def _adopt_verified_output(ctx: _PlanContext) -> dict[str, Any] | None:
                         "status",
                         None,
                         "completed",
-                        f"adopted verified output from job {adoptee['job_id']} "
+                        f"adopted verified output from job {adoptee['job_id']} "  # noqa: ISC004 - intentional line continuation
                         "after cache fingerprint change",
                         f"output_sha256={adoptee['output_sha256']}",
                         "operon analyze",

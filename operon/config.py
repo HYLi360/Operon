@@ -477,7 +477,7 @@ class UserConfig:
         """Write the document atomically with user-only permissions."""
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(path.parent, 0o700)
+        os.chmod(path.parent, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions  # owner-only mode; no group/other bits granted
         atomic_write_text(
             path, yaml.safe_dump(self.data, sort_keys=False, allow_unicode=True)
         )

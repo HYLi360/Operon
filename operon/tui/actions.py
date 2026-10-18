@@ -2226,7 +2226,7 @@ def check_remotes(project: Project) -> list[dict[str, Any]]:
             continue
         try:
             rows.append(check_remote(project, str(row["name"])))
-        except Exception as exc:  # noqa: BLE001 - one unreachable remote must not hide the rest
+        except Exception as exc:  # noqa: BLE001 - one unreachable remote must not hide the rest  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             rows.append(
                 {
                     **row,
@@ -2319,7 +2319,7 @@ def evict_plan(
             }
             try:
                 verify_remote_record(project, name, record, store=store, manifest=doc)
-            except Exception as exc:  # noqa: BLE001 - every failure is a verdict for this row
+            except Exception as exc:  # noqa: BLE001 - every failure is a verdict for this row  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
                 row["reason"] = f"{type(exc).__name__}: {exc}"
             else:
                 row["eligible"] = True

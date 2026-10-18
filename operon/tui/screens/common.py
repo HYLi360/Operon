@@ -764,7 +764,7 @@ class WriteModal(DismissOnce, WorkerResults, ModalScreen):
     shown inline and the modal stays open.
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "cancel", "Cancel"),
     ]
 
@@ -902,7 +902,7 @@ class WriteModal(DismissOnce, WorkerResults, ModalScreen):
 class ErrorDialog(DismissOnce, ModalScreen):
     """Simple modal showing an operation result/error with an OK button."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
         Binding("enter", "dismiss", "Close"),
     ]

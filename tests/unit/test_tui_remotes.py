@@ -567,7 +567,7 @@ def _sync_args(calls: list[tuple[tuple, dict]]) -> list[tuple[str, Any, bool]]:
     """Reduce recorded core calls to (remote name, file_ids, writable session)."""
     reduced: list[tuple[str, Any, bool]] = []
     for args, _kwargs in calls:
-        db, _project, name = args[0], args[1], args[2]
+        db, name = args[0], args[2]
         reduced.append((name, kwargs_file_ids(_kwargs, args), not db.read_only))
     return reduced
 

@@ -53,7 +53,7 @@ class RunsFiltersModal(DismissOnce, ModalScreen):
     query (``{}`` clears the advanced filters, ``None`` cancels).
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Cancel"),
     ]
 
@@ -354,7 +354,7 @@ class AnalysisJobsModal(DismissOnce, WorkerResults, ModalScreen):
     overlap its panes (ODR-20).
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 
@@ -529,7 +529,7 @@ class RunDetailScreen(WorkerResults, Screen):
     then.
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "back", "Back"),
     ]
 

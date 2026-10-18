@@ -178,7 +178,7 @@ def _archive_text_member(path: Path, basename: str) -> Iterator[TextIO]:
             archive.close()
         return
     if tarfile.is_tarfile(path):
-        archive = tarfile.open(path, "r:*")
+        archive = tarfile.open(path, "r:*")  # noqa: SIM115 - closed in the finally block
         try:
             candidates = sorted(
                 (

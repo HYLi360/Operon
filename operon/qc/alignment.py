@@ -163,7 +163,7 @@ def _format_consensus_fraction(row: dict[str, Any]) -> str:
 
 def _render_tsv(fields: list[str], rows: Iterator[list[Any]]) -> str:
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter="\t")
+    writer = csv.writer(buffer, delimiter="\t")  # nosemgrep: python.lang.security.use-defusedcsv.use-defusedcsv  # cells are escaped upstream with escape_formula_text()
     writer.writerow(fields)
     for row in rows:
         writer.writerow(row)

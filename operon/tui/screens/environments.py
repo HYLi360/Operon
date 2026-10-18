@@ -29,7 +29,7 @@ from operon.tui.screens.common import DismissOnce, WorkerResults
 class EnvironmentsModal(DismissOnce, WorkerResults, ModalScreen):
     """Read-only table of captured environments with show/export views."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 

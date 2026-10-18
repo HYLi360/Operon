@@ -98,7 +98,7 @@ def _select_value(screen: Screen, widget_id: str) -> str:
 class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
     """Full-screen wizard that builds and commits an import draft."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "cancel", "Cancel"),
     ]
 
@@ -452,7 +452,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 [("Create a new sample", CREATE_NEW)]
                 + [
                     (
-                        f"{row['sample_id']}  "
+                        f"{row['sample_id']}  "  # noqa: ISC004 - intentional line continuation
                         f"{row.get('isolate') or row.get('strain') or row.get('biosample_accession') or 'sample'}",
                         str(row["sample_id"]),
                     )
@@ -465,7 +465,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 [("Create a new assembly", CREATE_NEW)]
                 + [
                     (
-                        f"{row['assembly_id']}  "
+                        f"{row['assembly_id']}  "  # noqa: ISC004 - intentional line continuation
                         f"{row.get('assembly_accession') or row.get('assembly_name') or 'assembly'}",
                         str(row["assembly_id"]),
                     )
@@ -478,7 +478,7 @@ class ImportWizardScreen(DismissOnce, WorkerResults, Screen):
                 [("Create a new annotation", CREATE_NEW)]
                 + [
                     (
-                        f"{row['annotation_id']}  "
+                        f"{row['annotation_id']}  "  # noqa: ISC004 - intentional line continuation
                         f"{row.get('annotation_source') or 'annotation'} "
                         f"v{row.get('annotation_version') or '?'}",
                         str(row["annotation_id"]),

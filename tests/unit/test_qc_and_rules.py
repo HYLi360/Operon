@@ -137,7 +137,7 @@ class TestQCAndRules(PytestAssertions):
         source.write_text(
             _fasta_text([("ctg1", "A" * 3000), ("ctg2", "C" * 2000)]), encoding="utf-8"
         )
-        row = ingest_file(
+        ingest_file(
             self.db, self.project, source, "assembly", "ASM_000001", "genome_fasta"
         )
         result = qc_all(self.db, self.project, entity_type="assembly")[0]

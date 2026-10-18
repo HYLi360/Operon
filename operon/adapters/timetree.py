@@ -163,7 +163,7 @@ class TimeTreeClient:
             self._session.close()
             self._session = None
 
-    def __enter__(self) -> TimeTreeClient:
+    def __enter__(self) -> TimeTreeClient:  # noqa: PYI034 - typing.Self needs Python 3.11; floor is 3.10
         return self
 
     def __exit__(self, *exc_info: object) -> None:

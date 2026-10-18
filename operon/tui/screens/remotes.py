@@ -204,7 +204,7 @@ class RemotesPanel(Panel):
     def _probe(self) -> None:
         try:
             payload: Any = actions.check_remotes(self.project)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the panel
+        except Exception as exc:  # noqa: BLE001 - surfaced in the panel  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             payload = exc
         self.post_to_ui(self._apply_check, payload)
 
@@ -278,7 +278,7 @@ class RemotesPanel(Panel):
             return ""
         try:
             key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
-        except Exception:  # noqa: BLE001 - no cursor/row yet: fall back to the first
+        except Exception:  # noqa: BLE001 - no cursor/row yet: fall back to the first  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             return str(self.remotes[0]["name"]) if self.remotes else ""
         return "" if key is None else str(key.value)
 
@@ -439,7 +439,7 @@ class SyncModal(WriteModal):
             preview = data.sync_preview(
                 self.project, file_ids=values["file_ids"] or None
             )
-        except Exception as exc:  # noqa: BLE001 - rendered as a hint, the confirm repeats it
+        except Exception as exc:  # noqa: BLE001 - rendered as a hint, the confirm repeats it  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             plan.update(Text(f"{exc}", style="red"))
             return
         if not preview["count"]:
@@ -664,7 +664,7 @@ class EvictModal(SyncModal):
             payload: Any = actions.evict_plan(
                 self.project, values["remote"], values["file_ids"] or None
             )
-        except Exception as exc:  # noqa: BLE001 - surfaced in the dialog
+        except Exception as exc:  # noqa: BLE001 - surfaced in the dialog  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             payload = exc
         self.post_to_ui(self._apply_check, payload)
 

@@ -462,7 +462,7 @@ class SFTPStore:
         self._sftp: Any = None
         self._owns_client = client is None
 
-    def __enter__(self) -> SFTPStore:
+    def __enter__(self) -> SFTPStore:  # noqa: PYI034 - typing.Self needs Python 3.11; floor is 3.10
         _ = self.sftp
         return self
 

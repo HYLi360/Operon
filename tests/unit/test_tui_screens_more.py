@@ -205,7 +205,7 @@ def test_write_modal_base_contract(project: Project) -> None:
     """The base modal renders its defaults, dispatches buttons, and dismisses."""
     captured: list[Any] = []
 
-    class PlainModal(WriteModal):
+    class PlainModal(WriteModal):  # pylint: disable=abstract-method  # confirm is a stub, not an ABC
         def compose_form(self):
             yield Static("plain body", id="plain-body")
 
@@ -663,7 +663,7 @@ def test_entities_detail_error_paths(demo_template: Project, monkeypatch) -> Non
 
     async def scenario() -> None:
         app = OperonApp(demo_template)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             app.action_switch_screen("entities")
             await _settled(app)
             panel = app.query_one(EntitiesPanel)
@@ -937,7 +937,7 @@ def test_coverage_panel_report_load_failure(project: Project, monkeypatch) -> No
 
     async def scenario() -> None:
         app = OperonApp(project)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             app.action_switch_screen("coverage")
             await _settled(app)
             panel = app.query_one(CoveragePanel)
@@ -1051,7 +1051,7 @@ def test_coverage_modal_warns_on_below_threshold_result(project: Project) -> Non
             assert captured == [payload]
             assert (
                 "warning",
-                "coverage FAIL: family 12.50% (min 80.00%) "
+                "coverage FAIL: family 12.50% (min 80.00%) "  # noqa: ISC004 - intentional line continuation
                 "(reused cached report) — report /tmp/reports/coverage/COV_00A1",
             ) in _notifications(app)
 
@@ -1135,7 +1135,7 @@ def test_files_detail_rendering_and_errors(demo_template: Project, monkeypatch) 
 
     async def scenario() -> None:
         app = OperonApp(demo_template)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             app.action_switch_screen("files")
             await _settled(app)
             panel = app.query_one(FilesPanel)
@@ -1494,7 +1494,7 @@ def test_decisions_render_data_markers_and_reasons(project: Project) -> None:
 
     async def scenario() -> None:
         app = OperonApp(project)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             await _settled(app)
             panel = app.query_one(DecisionsPanel)
             rows = [
@@ -1548,7 +1548,7 @@ def test_decisions_profile_filter_survives_new_profiles(project: Project) -> Non
 
     async def scenario() -> None:
         app = OperonApp(project)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             app.action_switch_screen("decisions")
             await _settled(app)
             panel = app.query_one(DecisionsPanel)
@@ -2163,7 +2163,7 @@ def test_files_detail_drops_a_read_a_newer_selection_superseded(
 
     async def scenario() -> None:
         app = OperonApp(project)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             await _settled(app)
             app.action_switch_screen("files")
             await _settled(app)
@@ -2235,7 +2235,7 @@ def test_entity_detail_drops_a_read_a_newer_node_superseded(
 
     async def scenario() -> None:
         app = OperonApp(demo_template)
-        async with app.run_test(size=(140, 45)) as pilot:
+        async with app.run_test(size=(140, 45)):
             await _settled(app)
             app.action_switch_screen("entities")
             await _settled(app)
