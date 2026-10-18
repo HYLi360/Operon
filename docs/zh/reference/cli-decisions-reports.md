@@ -34,6 +34,9 @@ operon release --version VERSION --profile NAME \
 
 - 默认 `copy`，生成与 raw/standardized 不共享 inode 的 release。
 - `--copy-files` 是 `--link copy` 的兼容别名。
+- `--link hardlink` 下 `os.link` 被拒绝时会回退为普通拷贝，且回退会记录（ODR-0080）：
+  `provenance.json` 保留请求的 `storage_mode`，新增 `hardlink_fallback_count`
+  （以拷贝落地的文件成员数）与 `directory_members_copied`（目录成员始终为真实目录拷贝）。
 - 已存在的 version 目录会拒绝重复创建。
 - 发布预检会拒绝缺少当前 decision、或元数据在评估后发生变化的活动实体；请先重新执行 `qc` 与 `evaluate` 再重试。
 - 仅纳入 `current_decisions` 中 PASS、PASS_WITH_WARNINGS、ACCEPT_WITH_WARNING 的文件；其余实体写入 `exclusions.tsv`。
@@ -58,7 +61,11 @@ operon export --output DIR \
 - `--decision` 必须同时给出 `--profile`，匹配 `current_decisions` 中该 profile 下的
   有效决策（如 PASS、FAIL），大小写不敏感。
 - 有效退役实体始终被排除。
-- `--link` 默认 `copy`；`hardlink` 失败时自动回退 `copy`。
+- `--link` 默认 `copy`；`os.link` 被拒绝的 `hardlink` 会回退为普通 `copy`，且回退会
+  被记录（ODR-0080）：`--link hardlink` 下 `provenance.json` 保留请求的 `link_kind`，
+  并新增 `hardlink_fallback_count`（因 `os.link` 被拒而以拷贝落地的文件成员）与
+  `directory_members_copied`（目录成员始终以真实目录拷贝落地），同时镜像到 export
+  `workflow_runs.execution_details`。
 - 布局为 `data/<entity_type>/<entity_id>/<文件名>`；物化前校验源文件 SHA-256 与
   manifest 一致，不一致即拒绝。
 - 产物：
@@ -70,7 +77,8 @@ operon export --output DIR \
   - `taxa.tsv`：每个导出文件一行，列为 `file_id`、`organism_id`、`scientific_name`、
     `taxon_id`、`taxonomy_source`、`taxonomy_version`；
   - `provenance.json`：记录全部选择条件、`created_at`、`file_count`、`operon` 版本、
-    `link_kind`、`manifest_sha256` 与 `taxa_sha256` 身份。
+    `link_kind`、`manifest_sha256` 与 `taxa_sha256` 身份；`--link hardlink` 下还记录
+    `hardlink_fallback_count` 与 `directory_members_copied` 两个结果计数（ODR-0080）。
 - 会被电子表格当作公式执行的 TSV 单元格都会加前导撇号转义（以 `=`、`+`、`-`、`@`、TAB 或 CR 开头的文本值）；`provenance.json` 中的 `manifest_sha256`/`taxa_sha256` 身份按转义后的字节计算，因此再读回一致（ODR-0040）。
 - 每次导出写入一行 `workflow_runs`（step 为 `export`，`output_sha256` 为 manifest
   哈希，`execution_details` 包含选择条件）。

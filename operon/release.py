@@ -314,6 +314,13 @@ def _create_release_in_workspace(
 
     members = release_files_for(db, profile)
     manifest_rows: list[dict[str, Any]] = []
+    # Under --link hardlink provenance records what really happened: a file
+    # member whose os.link was rejected is materialized as an ordinary copy
+    # (hardlink_fallback_count), and every directory member is a real
+    # directory copy (directory_members_copied). Copy mode is all copies by
+    # definition and records nothing extra.
+    hardlink_fallback_count = 0
+    directory_members_copied = 0
     for member in members:
         source = project.root / member["relative_path"]
         if not source.exists():
@@ -336,11 +343,13 @@ def _create_release_in_workspace(
         else:
             if source.is_dir():
                 atomic_copytree(source, target)
+                directory_members_copied += 1
             else:
                 try:
                     os.link(source, target)
                 except OSError:
                     atomic_copy(source, target)
+                    hardlink_fallback_count += 1
         target_sha = sha256_path(target)
         manifest_rows.append(
             {
@@ -484,6 +493,11 @@ def _create_release_in_workspace(
         "storage_mode": link_kind,
         "metadata_sha256": metadata_sha256,
     }
+    if link_kind == "hardlink":
+        # Add-only outcome fields: how many members really ended up as
+        # ordinary copies despite the requested hardlink storage.
+        provenance["hardlink_fallback_count"] = hardlink_fallback_count
+        provenance["directory_members_copied"] = directory_members_copied
     (release_root / "provenance.json").write_text(
         json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

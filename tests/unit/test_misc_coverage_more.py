@@ -855,6 +855,7 @@ def test_export_directory_artifact_copy_and_hardlink(export_project, tmp_path):
     ).is_file()
 
 
+@pytest.mark.bug("ODR-80")
 def test_export_hardlink_falls_back_to_a_copy(export_project, tmp_path, monkeypatch):
     project, db, files = export_project
 
@@ -876,6 +877,17 @@ def test_export_hardlink_falls_back_to_a_copy(export_project, tmp_path, monkeypa
     source = project.root / row["original_relative_path"]
     assert exported.read_bytes() == source.read_bytes()
     assert exported.stat().st_ino != source.stat().st_ino
+    # The fallback is no longer invisible: provenance keeps the requested
+    # link_kind and records the real outcome in add-only counters, mirrored
+    # into the export workflow_runs execution_details.
+    provenance = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
+    assert provenance["link_kind"] == "hardlink"
+    assert provenance["hardlink_fallback_count"] == 1
+    assert provenance["directory_members_copied"] == 0
+    run = db.query("SELECT * FROM workflow_runs WHERE step='export'")[0]
+    details = json.loads(run["execution_details"])
+    assert details["hardlink_fallback_count"] == 1
+    assert details["directory_members_copied"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1014,14 @@ def test_release_hardlinks_a_directory_member(project_db, tmp_path, monkeypatch)
     )
     published = Path(summary["path"]) / "data" / "organism" / "ORG_000001" / "tree"
     assert (published / "x.txt").read_text(encoding="utf-8") == "x"
+    # A directory member is always a real copy under hardlink storage, and
+    # provenance says so explicitly; no file member fell back.
+    provenance = json.loads(
+        (Path(summary["path"]) / "provenance.json").read_text(encoding="utf-8")
+    )
+    assert provenance["storage_mode"] == "hardlink"
+    assert provenance["hardlink_fallback_count"] == 0
+    assert provenance["directory_members_copied"] == 1
 
 
 # ---------------------------------------------------------------------------

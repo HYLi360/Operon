@@ -92,6 +92,7 @@
 | ODR-0077 | TUI 测试 | `test_runs_more_filters_accept_resumes_run_id` 在赋值前同时等待 `RunsFiltersModal` 界面与其 `#runs-filter-resumes-run-id` 输入挂载完成，慢挂载再也抢不到查询之前。 |
 | ODR-0078 | TUI 测试 | 两处 run-analysis 入口测试等待关闭后的 `#main` ContentSwitcher 真正到达 `"runs"`，而不是在关闭等待后立即断言——回调的延迟切换窗口到此关闭。 |
 | ODR-0079 | 分析 | 失败的分析运行按中断完全相同的规则清理：`_fail_analysis_execution` 在所有失败路径（逐文件批、array 收尾、整批失败、结果解析错误）删除输出产物、部分 events 文件与 `${work_dir}` 暂存目录，除非设置 `--keep-partial`——该 flag 现在对中断与失败对称适用。stdout/stderr 日志始终保留用于排查。 |
+| ODR-0080 | Release / export | hardlink 回退不再不可见：`--link hardlink` 下 provenance.json 保留请求的 `storage_mode`/`link_kind`，新增 `hardlink_fallback_count`（因 `os.link` 被拒而以拷贝落地的文件成员）与 `directory_members_copied`（目录成员始终为真实目录拷贝）；export 的两个计数镜像进 `workflow_runs.execution_details`。copy 与 symlink 模式不变。 |
 
 ## K 系列（历史）
 

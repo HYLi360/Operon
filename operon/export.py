@@ -217,6 +217,17 @@ def export_files(
         published = True
         # The run row is recorded only once the destination really exists.
         selection = summary.pop("selection")
+        execution_details = {
+            "selection": selection,
+            "output_dir": str(requested),
+            "link_kind": summary["link_kind"],
+            "file_count": summary["file_count"],
+        }
+        # Mirrors the add-only provenance outcome fields when a hardlink
+        # export was requested, so the run row agrees with provenance.json.
+        for outcome_key in ("hardlink_fallback_count", "directory_members_copied"):
+            if outcome_key in summary:
+                execution_details[outcome_key] = summary[outcome_key]
         log_run(
             db,
             project,
@@ -227,12 +238,7 @@ def export_files(
                 "command": f"operon export --output {requested}",
                 "output_sha256": summary["manifest_sha256"],
                 "execution_details": json.dumps(
-                    {
-                        "selection": selection,
-                        "output_dir": str(requested),
-                        "link_kind": summary["link_kind"],
-                        "file_count": summary["file_count"],
-                    },
+                    execution_details,
                     ensure_ascii=False,
                     sort_keys=True,
                 ),
@@ -302,6 +308,14 @@ def _export_files_in_workspace(
         profile=profile,
     )
 
+    # Under --link hardlink provenance records what really happened: a file
+    # member whose os.link was rejected is materialized as an ordinary copy
+    # (hardlink_fallback_count), and every directory member is a real
+    # directory copy (directory_members_copied). Copy mode is all copies by
+    # definition and records nothing extra; symlink raises on failure.
+    hardlink_fallback_count = 0
+    directory_members_copied = 0
+
     output_root = Path(output_dir)
     output_label = Path(output_label) if output_label is not None else output_root
     if output_root.exists():
@@ -338,11 +352,13 @@ def _export_files_in_workspace(
         elif link_kind == "hardlink":
             if source.is_dir():
                 atomic_copytree(source, target)
+                directory_members_copied += 1
             else:
                 try:
                     os.link(source, target)
                 except OSError:
                     atomic_copy(source, target)
+                    hardlink_fallback_count += 1
         else:  # symlink
             os.symlink(source.resolve(), target)
         manifest_rows.append(
@@ -407,6 +423,11 @@ def _export_files_in_workspace(
         "manifest_sha256": manifest_sha256,
         "taxa_sha256": sha256_file(output_root / "taxa.tsv"),
     }
+    if link_kind == "hardlink":
+        # Add-only outcome fields: how many members really ended up as
+        # ordinary copies despite the requested hardlink storage.
+        provenance["hardlink_fallback_count"] = hardlink_fallback_count
+        provenance["directory_members_copied"] = directory_members_copied
     (output_root / "provenance.json").write_text(
         json.dumps(provenance, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -414,7 +435,7 @@ def _export_files_in_workspace(
 
     # The workflow run is logged by export_files() only after the workspace
     # has been published to its final destination.
-    return {
+    summary = {
         "file_count": len(manifest_rows),
         "output_dir": str(output_label),
         "manifest_sha256": manifest_sha256,
@@ -422,3 +443,7 @@ def _export_files_in_workspace(
         "created_at": created_at,
         "selection": selection,
     }
+    if link_kind == "hardlink":
+        summary["hardlink_fallback_count"] = hardlink_fallback_count
+        summary["directory_members_copied"] = directory_members_copied
+    return summary

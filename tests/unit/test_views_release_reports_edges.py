@@ -237,6 +237,7 @@ def test_release_rejects_metadata_changed_after_evaluation(project_db):
     assert not (project.releases_root / "stale").exists()
 
 
+@pytest.mark.bug("ODR-80")
 def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monkeypatch):
     project, db = project_db
     db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "O"})
@@ -262,6 +263,13 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
     assert (
         Path(result["path"]) / "data" / "organism" / "ORG_000001" / "tree" / "x"
     ).is_file()
+    copy_provenance = json.loads(
+        (Path(result["path"]) / "provenance.json").read_text(encoding="utf-8")
+    )
+    # Copy mode is all copies by definition and records no outcome counters.
+    assert copy_provenance["storage_mode"] == "copy"
+    assert "hardlink_fallback_count" not in copy_provenance
+    assert "directory_members_copied" not in copy_provenance
 
     source = project.root / "raw" / "file"
     source.write_text("y", encoding="utf-8")
@@ -274,6 +282,14 @@ def test_release_checksum_directory_copy_and_hardlink_fallback(project_db, monke
     assert (
         Path(result["path"]) / "data" / "organism" / "ORG_000001" / "file"
     ).read_text() == "y"
+    fallback_provenance = json.loads(
+        (Path(result["path"]) / "provenance.json").read_text(encoding="utf-8")
+    )
+    # The rejection is visible: storage_mode keeps the requested value and
+    # the outcome counters say one file member was materialized as a copy.
+    assert fallback_provenance["storage_mode"] == "hardlink"
+    assert fallback_provenance["hardlink_fallback_count"] == 1
+    assert fallback_provenance["directory_members_copied"] == 0
 
 
 @pytest.mark.bug("ODR-6")

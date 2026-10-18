@@ -32,6 +32,7 @@ operon release --version VERSION --profile NAME \
 
 - The default is `copy`, producing a release that shares no inodes with raw/standardized.
 - `--copy-files` is a compatibility alias for `--link copy`.
+- Under `--link hardlink`, a rejected `os.link` falls back to an ordinary copy and the outcome is recorded (ODR-0080): `provenance.json` keeps `storage_mode` as requested and adds `hardlink_fallback_count` (file members materialized as copies) plus `directory_members_copied` (directory members are always real copies).
 - An existing version directory is never recreated.
 - Release preflight rejects active, in-scope entities with no current decision or with metadata changed after evaluation; run `qc` and `evaluate` again before retrying.
 - Only files whose `current_decisions` are PASS, PASS_WITH_WARNINGS, or ACCEPT_WITH_WARNING are included; all other entities are written to `exclusions.tsv`.
@@ -53,14 +54,14 @@ Materializes database entities into a directory by file identity for consumption
 - At least one selection criterion is required: `--entity-type`, `--entity-id` (repeatable), `--file-id` (repeatable), `--file-role`, `--format`, `--state`, or `--decision`.
 - `--decision` requires `--profile` and matches the effective decision under that profile in `current_decisions` (e.g. PASS, FAIL), case-insensitively.
 - Effectively retired entities are always excluded.
-- `--link` defaults to `copy`; a failed `hardlink` falls back to `copy`.
+- `--link` defaults to `copy`; a rejected `hardlink` falls back to an ordinary `copy`, and the fallback is recorded (ODR-0080): under `--link hardlink`, `provenance.json` keeps `link_kind` as requested and adds `hardlink_fallback_count` (file members whose `os.link` was rejected) plus `directory_members_copied` (directory members are always real copies), mirrored into the export `workflow_runs.execution_details`.
 - The layout is `data/<entity_type>/<entity_id>/<filename>`; before materialization the source file SHA-256 is checked against the manifest, and any mismatch is refused.
 - Artifacts:
   - `manifest.tsv` with columns `file_id`, `entity_type`, `entity_id`, `file_role`, `format`, `compression`, `export_relative_path`, `original_relative_path`, `source_url`, `size_bytes`, `sha256`; `sha256` is recomputed over the materialized bytes;
   - `qc.tsv`: a QC long-table snapshot of the exported entities, written by default; skipped with `--no-qc`. QC is fetched in bounded batches so exports with thousands of entities do not exceed SQLite expression/parameter limits; entity/stage/metric ordering is preserved;
   - `checksums.sha256`: checksums of the exported bytes;
   - `taxa.tsv`: one row per exported file recording `file_id`, `organism_id`, `scientific_name`, `taxon_id`, `taxonomy_source`, and `taxonomy_version`;
-  - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the `manifest_sha256` and `taxa_sha256` identities.
+  - `provenance.json`: records all selection criteria, `created_at`, `file_count`, the `operon` version, `link_kind`, and the `manifest_sha256` and `taxa_sha256` identities; under `--link hardlink` it also records the `hardlink_fallback_count` and `directory_members_copied` outcome counters (ODR-0080).
 - Every TSV cell a spreadsheet would execute is escaped with a leading apostrophe (a text value beginning with `=`, `+`, `-`, `@`, TAB or CR); the `manifest_sha256`/`taxa_sha256` identities in `provenance.json` are computed over the escaped bytes, so a re-read matches (ODR-0040).
 - Every export writes one `workflow_runs` row (step `export`, `output_sha256` set to the manifest hash, `execution_details` containing the selection criteria).
 - Semantically complementary to release: release targets publication (QC-gated, immutable snapshot), while export targets analysis inputs (arbitrary selection criteria, materialized on demand).
