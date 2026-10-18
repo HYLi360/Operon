@@ -980,6 +980,7 @@ def test_export_file_ids_preview_command_and_manifest(
         ("annotation", "ANN_000001"),
     ],
 )
+@pytest.mark.bug("ODR-81")
 def test_wizard_retired_draft_choice_requires_reselection(
     project: Project, page: str, identifier: str
 ) -> None:
@@ -1028,6 +1029,7 @@ def test_wizard_retired_draft_choice_requires_reselection(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-81")
 def test_wizard_startup_failure_can_retry_without_navigation(
     project: Project, monkeypatch
 ) -> None:
@@ -1068,6 +1070,7 @@ def test_wizard_startup_failure_can_retry_without_navigation(
     _run(scenario())
 
 
+@pytest.mark.bug("ODR-81")
 def test_wizard_disabled_sections_clear_inputs_and_choices(project: Project) -> None:
     async def scenario() -> None:
         app = OperonApp(project)

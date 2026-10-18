@@ -93,6 +93,7 @@
 | ODR-0078 | TUI 测试 | 两处 run-analysis 入口测试等待关闭后的 `#main` ContentSwitcher 真正到达 `"runs"`，而不是在关闭等待后立即断言——回调的延迟切换窗口到此关闭。 |
 | ODR-0079 | 分析 | 失败的分析运行按中断完全相同的规则清理：`_fail_analysis_execution` 在所有失败路径（逐文件批、array 收尾、整批失败、结果解析错误）删除输出产物、部分 events 文件与 `${work_dir}` 暂存目录，除非设置 `--keep-partial`——该 flag 现在对中断与失败对称适用。stdout/stderr 日志始终保留用于排查。 |
 | ODR-0080 | Release / export | hardlink 回退不再不可见：`--link hardlink` 下 provenance.json 保留请求的 `storage_mode`/`link_kind`，新增 `hardlink_fallback_count`（因 `os.link` 被拒而以拷贝落地的文件成员）与 `directory_members_copied`（目录成员始终为真实目录拷贝）；export 的两个计数镜像进 `workflow_runs.execution_details`。copy 与 symlink 模式不变。 |
+| ODR-0081 | TUI | 导入向导的草稿生命周期长于数据库状态时不再中断：草稿 id 不在新加载选项中时回退 `Select.NULL` 并内联显示"no longer available"，而不是在 worker 回调里抛 `InvalidSelectValueError`（`_restore_choice`）；启动失败后导航被"Retry initialization"按下路径挡住，`_collect` 以内联消息作答而非抛未捕获的 `KeyError`；重新启用 sequencing/annotation 段时输入从零开始，因为 `_populate` 依据缺席的草稿行重置它们。迟到登记：三处缓解与测试均落在 fa6a7f5，本条目补齐闭环链。 |
 
 ## K 系列（历史）
 
