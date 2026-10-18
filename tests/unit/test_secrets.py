@@ -63,7 +63,7 @@ elif command == "clear":
     target.unlink(missing_ok=True)
 else:
     sys.exit(2)
-"""
+"""  # nosec B105  # fake backend script text, not a credential
 
 SYSTEMD_CREDS_FAKE = """#!__PYTHON__
 import base64
@@ -444,7 +444,7 @@ def test_fake_backends_are_pinned_to_this_interpreter(scratch: Path) -> None:
 class _SecurityExists(type(Path("/"))):
     """A ``pathlib.Path`` that reports only the macOS keychain binary as present."""
 
-    def exists(self) -> bool:
+    def exists(self) -> bool:  # pylint: disable=arguments-differ  # test double narrows Path.exists()
         return str(self) == "/usr/bin/security"
 
 

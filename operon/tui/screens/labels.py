@@ -31,7 +31,7 @@ SUMMARY_COLUMNS = ("label", "profile_name", "sequences", "files")
 class SequenceLabelsModal(DismissOnce, WorkerResults, ModalScreen):
     """Read-only ``sequence_labels`` browser (per file + project summary)."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 

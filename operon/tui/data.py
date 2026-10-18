@@ -1339,7 +1339,7 @@ def list_remotes(project: Project) -> list[dict[str, Any]]:
         }
         try:
             spec = get_remote(project, name)
-        except Exception as exc:  # noqa: BLE001 - one bad entry must not hide the rest
+        except Exception as exc:  # noqa: BLE001 - one bad entry must not hide the rest  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             row.update(status="invalid", error=f"{type(exc).__name__}: {exc}")
         else:
             row.update(address=spec.address, root=spec.root)

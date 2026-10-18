@@ -233,7 +233,7 @@ def _run_analysis_two_phase(
             )
         except ShutdownRequested:
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - per-file isolation; ShutdownRequested re-raised  # pylint: disable=broad-exception-caught
             results[index - 1] = _analysis_error_result(file_record, recipe, exc)
             if progress_callback is not None:
                 progress_callback(index, total, file_record["file_id"], "error")

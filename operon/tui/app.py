@@ -74,7 +74,7 @@ NAV_LABELS = {
 class HelpScreen(DismissOnce, ModalScreen):
     """Modal listing the global key bindings."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
         Binding("question_mark", "dismiss", "Close"),
     ]
@@ -120,7 +120,7 @@ class OperonApp(App):
 
     CSS_PATH = "app.tcss"
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("ctrl+q", "quit", "Quit"),
         Binding("1", "switch_screen('home')", "Home"),
         Binding("2", "switch_screen('entities')", "Entities"),

@@ -228,7 +228,7 @@ class CurateModal(WriteModal):
 class DecisionsPanel(Panel):
     """Current decisions with filters and evaluate/curate write actions."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("e", "evaluate", "Evaluate"),
         Binding("c", "curate", "Curate"),
     ]

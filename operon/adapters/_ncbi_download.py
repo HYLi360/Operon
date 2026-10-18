@@ -94,7 +94,7 @@ def download_ncbi_dataset(
         for attempt in range(max_retries + 1):
             if attempt:
                 time.sleep(
-                    retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5)
+                    retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5)  # nosemgrep: python_random_rule-random  # jittered retry backoff, not a security token
                 )
             try:
                 return _download_ncbi_dataset_once(
@@ -200,7 +200,7 @@ def _stream_zip_to_destination(
         _finalize_zip_download(tmp_name, destination, canonical)
     except BaseException as exc:
         _discard_zip_tempfile(tmp_name)
-        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:  # pylint: disable=no-member  # isinstance narrows the branch to OSError
             raise _no_space_error(
                 destination.parent, "download NCBI dataset package", exc
             ) from exc
@@ -484,7 +484,7 @@ async def _download_batches_async(
                     retry_backoff=retry_backoff,
                     cancel_event=cancel_event,
                 )
-            except BaseException as exc:
+            except BaseException as exc:  # noqa: BLE001 - batch error returned to the caller, not swallowed  # pylint: disable=broad-exception-caught
                 return batch, None, exc
         return batch, destination, None
 
@@ -664,7 +664,7 @@ async def _download_batch_aiohttp(
             raise _DownloadCancelled()
         if attempt:
             await _interruptible_retry_sleep(
-                retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5),
+                retry_backoff * (2 ** (attempt - 1)) + random.uniform(0.0, 0.5),  # nosemgrep: python_random_rule-random  # jittered retry backoff, not a security token
                 cancel_event,
             )
         try:

@@ -458,7 +458,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--severity", required=True, choices=SEVERITIES)
     add_parser.add_argument("--component", required=True)
     add_parser.add_argument(
-        "--reported", type=_iso_date, default=datetime.date.today().isoformat()
+        "--reported",
+        type=_iso_date,
+        default=datetime.date.today().isoformat(),  # noqa: DTZ011 - registry records the local calendar date
     )
     add_parser.add_argument("--affected")
     add_parser.add_argument("--reproduction")

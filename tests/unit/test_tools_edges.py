@@ -1016,13 +1016,13 @@ def test_cache_environment_decision_mismatch_warn_and_strict(tmp_path, monkeypat
         tmp_path,
     )
     assert decision["reuse"]
-    assert decision["details"]["environment_compare"] == "mismatch"
-    warning = decision["details"]["environment_warning"]
+    assert decision["details"]["environment_compare"] == "mismatch"  # pylint: disable=unsubscriptable-object  # decision['details'] is a dict
+    warning = decision["details"]["environment_warning"]  # pylint: disable=unsubscriptable-object  # decision['details'] is a dict
     assert (
         warning["cached_relevance_fingerprint"]
         != warning["current_relevance_fingerprint"]
     )
-    assert "environment_policy=warn" in decision["warning"]
+    assert "environment_policy=warn" in decision["warning"]  # pylint: disable=unsupported-membership-test  # warning is a str
     decision = tools._cache_environment_decision(
         db,
         recipe(raw={"environment_policy": "strict"}),
@@ -1049,8 +1049,8 @@ def test_cache_environment_decision_unavailable_degrades_strict(tmp_path, monkey
         tmp_path,
     )
     assert decision["reuse"]
-    assert decision["details"]["environment_compare"] == "unavailable"
-    assert "environment_policy_degraded" not in decision["details"]
+    assert decision["details"]["environment_compare"] == "unavailable"  # pylint: disable=unsubscriptable-object  # decision['details'] is a dict
+    assert "environment_policy_degraded" not in decision["details"]  # pylint: disable=unsupported-membership-test  # details is a dict
     decision = tools._cache_environment_decision(
         db,
         recipe(raw={"environment_policy": "strict"}),
@@ -1061,7 +1061,7 @@ def test_cache_environment_decision_unavailable_degrades_strict(tmp_path, monkey
     )
     assert decision["reuse"]
     assert decision["details"]["environment_compare"] == "unavailable"
-    assert decision["details"]["environment_policy_degraded"] == "strict->warn"
+    assert decision["details"]["environment_policy_degraded"] == "strict->warn"  # pylint: disable=unsubscriptable-object  # decision['details'] is a dict
     db.close()
 
 

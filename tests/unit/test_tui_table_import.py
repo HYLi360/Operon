@@ -201,7 +201,7 @@ def test_table_template_writes_csv_and_xlsx_and_validates(
 ) -> None:
     csv_result = actions.table_template(project, "organisms", str(tmp_path / "t.csv"))
     assert Path(csv_result["path"]).read_text(encoding="utf-8-sig").splitlines() == [
-        "organism_id,scientific_name,taxon_id,taxonomic_rank,taxonomy_source,"
+        "organism_id,scientific_name,taxon_id,taxonomic_rank,taxonomy_source,"  # noqa: ISC004 - intentional line continuation
         "taxonomy_version",
     ]
     xlsx_result = actions.table_template(project, "samples", str(tmp_path / "s.xlsx"))
@@ -856,7 +856,7 @@ def test_modal_drops_result_after_teardown(project: Project, monkeypatch) -> Non
             # delivery drops it quietly and the app survives.
             app.pop_screen()
             await pilot.pause()
-            with pytest.raises(Exception):
+            with pytest.raises(Exception):  # noqa: B017 - asserts the raw callback raises
                 modal._action_done(
                     {
                         "inserted": 1,

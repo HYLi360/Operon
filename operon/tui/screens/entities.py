@@ -497,7 +497,7 @@ class RetiredModal(DismissOnce, WorkerResults, ModalScreen):
     Nothing is written: the modal only reads the lifecycle views.
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 
@@ -1004,7 +1004,7 @@ class NextIdModal(WriteModal):
 class EntitiesPanel(Panel):
     """Organisms → samples → runs/assemblies → annotations with details."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("t", "toggle_retired", "Show/hide retired"),
         Binding("x", "lifecycle", "Retire/restore"),
         Binding("s", "set_state", "Set state"),

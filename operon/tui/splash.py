@@ -116,7 +116,7 @@ class LakeArt(Static):
     def render(self) -> Text:
         if self.mode == "text":
             encoding = (
-                (getattr(sys.__stdout__, "encoding", None) or "ascii")
+                (getattr(sys.__stdout__, "encoding", None) or "ascii")  # pylint: disable=no-member  # getattr on sys.__stdout__
                 .lower()
                 .replace("-", "")
             )
@@ -181,7 +181,7 @@ class LakeArt(Static):
 class SplashScreen(ModalScreen):
     """Block navigation while initial reads finish; quitting stays available."""
 
-    BINDINGS = [Binding("ctrl+q", "app.quit", "Quit", priority=True)]
+    BINDINGS = [Binding("ctrl+q", "app.quit", "Quit", priority=True)]  # noqa: RUF012 - Textual BINDINGS contract
     DEFAULT_CSS = """
     SplashScreen { background: #000000; layout: vertical; }
     LakeArt { width: 1fr; height: 1fr; background: #000000; overflow: hidden; }

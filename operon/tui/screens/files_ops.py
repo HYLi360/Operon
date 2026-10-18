@@ -291,7 +291,7 @@ class ImportQcModal(WriteModal):
     def _preview(self, path: str) -> None:
         try:
             payload: Any = actions.qc_import_preview(self.project, path)
-        except Exception as exc:  # noqa: BLE001 - surfaced in the modal
+        except Exception as exc:  # noqa: BLE001 - surfaced in the modal  # pylint: disable=broad-exception-caught  # boundary; failure surfaced to the caller
             payload = exc
         self.post_to_ui(self._preview_done, payload)
 

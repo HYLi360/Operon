@@ -369,7 +369,7 @@ def test_package_without_reports_falls_back_to_entrez(project_db, monkeypatch):
         def __init__(self, value: Any):
             self.value = value
 
-        def __enter__(self) -> Handle:
+        def __enter__(self) -> Handle:  # noqa: PYI034 - typing.Self needs Python 3.11; floor is 3.10
             return self
 
         def __exit__(self, *_args: object) -> None:
@@ -1540,7 +1540,7 @@ def _install_fake_aiohttp(monkeypatch, outcomes: list[Any]) -> Any:
         def __init__(self, **_kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> Session:
+        async def __aenter__(self) -> Session:  # noqa: PYI034 - typing.Self needs Python 3.11; floor is 3.10
             return self
 
         async def __aexit__(self, *_args: object) -> None:
@@ -1681,7 +1681,7 @@ def test_download_retries_connection_error_raised_while_closing(tmp_path, monkey
     class FlakyCloseResponse(_SyncResponse):
         """Fails the first close() of the attempt, mimicking a dropped connection."""
 
-        close_calls: list[Any] = []
+        close_calls: list[Any] = []  # noqa: RUF012 - class-level call counter is the point of the fake
 
         def close(self) -> None:
             FlakyCloseResponse.close_calls.append(self)

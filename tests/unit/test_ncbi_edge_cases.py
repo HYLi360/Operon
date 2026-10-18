@@ -435,7 +435,7 @@ def test_download_retry_and_fallback_error_paths(tmp_path: Path, monkeypatch):
 
 def test_single_download_falls_back_and_rejects_readme_package(tmp_path: Path):
     class Response:
-        headers = {"Content-Length": "not-an-int"}
+        headers = {"Content-Length": "not-an-int"}  # noqa: RUF012 - test fixture headers; never mutated
 
         def __init__(self, status, payload=b""):
             self.status_code = status

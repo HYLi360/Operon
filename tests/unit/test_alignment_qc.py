@@ -157,7 +157,7 @@ def test_formula_trigger_headers_are_escaped_in_sequence_qc_tsv(tmp_path):
 
 @pytest.mark.bug("ODR-40")
 def test_formula_trigger_headers_match_across_backends():
-    from operon.qc import _alignment as cy_alignment
+    from operon.qc import _alignment as cy_alignment  # pylint: disable=no-name-in-module  # Cython extension module
     from operon.qc import alignment as py_alignment
 
     records = [
@@ -253,7 +253,7 @@ class TestErrors:
 
 
 class TestWriters:
-    RECORDS = [
+    RECORDS = [  # noqa: RUF012 - test fixture table; never mutated
         ("s1", "AC-T"),
         ("s2", "AC.A"),
     ]

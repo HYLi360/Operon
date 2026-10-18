@@ -141,7 +141,7 @@ class TestEnvironmentDocuments(PytestAssertions):
         )
 
     def test_probe_round_trip_matches_local_document(self):
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: PLW1510 - returncode asserted below
             ["bash", "-c", " ; ".join(PROBE_SHELL_LINES)],
             capture_output=True,
             text=True,

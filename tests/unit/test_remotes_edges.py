@@ -537,7 +537,7 @@ def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(
 
         def get(self, _rel, destination):
             destination = Path(destination)
-            if self.entry["kind"] == "directory":
+            if self.entry["kind"] == "directory":  # pylint: disable=unsubscriptable-object  # Store.entry is a dict at this point
                 destination.mkdir()
                 (destination / "part").write_text("wrong", encoding="utf-8")
             else:
@@ -565,7 +565,7 @@ def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(
         return str(directory_temp)
 
     monkeypatch.setattr(remotes.tempfile, "mkdtemp", make_directory)
-    Store.entry["kind"] = "directory"
+    Store.entry["kind"] = "directory"  # pylint: disable=unsupported-assignment-operation  # Store.entry is a dict at this point
     with pytest.raises(RemoteError, match="download verification failed"):
         remotes.fetch_url_to_temp(configured_project, "remote://r/artifact")
     assert not directory_temp.exists()
@@ -576,7 +576,7 @@ def test_fetch_remote_manifest_conflicts_and_failed_verification_cleanup(
         return os.open(file_temp, os.O_CREAT | os.O_RDWR), str(file_temp)
 
     monkeypatch.setattr(remotes.tempfile, "mkstemp", make_file)
-    Store.entry["kind"] = "file"
+    Store.entry["kind"] = "file"  # pylint: disable=unsupported-assignment-operation  # Store.entry is a dict at this point
     with pytest.raises(RemoteError, match="download verification failed"):
         remotes.fetch_url_to_temp(configured_project, "remote://r/artifact")
     assert not file_temp.exists()

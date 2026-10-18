@@ -158,7 +158,7 @@ def _prepare(db: Database, source: str | Path) -> dict[str, Any]:
                 subjects[rank_key] = row["subject_id"]
             rows.append(row)
         evidence[table] = sorted(
-            rows, key=lambda row: tuple(row[c] for c in EVIDENCE_KEYS[table])
+            rows, key=lambda row: tuple(row[c] for c in EVIDENCE_KEYS[table])  # pylint: disable=cell-var-from-loop  # consumed immediately by sorted()
         )
     existing = {}
     for table, columns in EVIDENCE_COLUMNS.items():
@@ -169,7 +169,7 @@ def _prepare(db: Database, source: str | Path) -> dict[str, Any]:
                     f"SELECT * FROM {table} WHERE job_id=?", (job["job_id"],)
                 )
             ],
-            key=lambda row: tuple(row[c] for c in EVIDENCE_KEYS[table]),
+            key=lambda row: tuple(row[c] for c in EVIDENCE_KEYS[table]),  # pylint: disable=cell-var-from-loop  # consumed immediately by sorted()
         )
     digest = canonical_hash(evidence)
     ledger = details.get("hits_imports", {})

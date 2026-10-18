@@ -205,7 +205,7 @@ def test_write_modal_base_contract(project: Project) -> None:
     """The base modal renders its defaults, dispatches buttons, and dismisses."""
     captured: list[Any] = []
 
-    class PlainModal(WriteModal):
+    class PlainModal(WriteModal):  # pylint: disable=abstract-method  # confirm is a stub, not an ABC
         def compose_form(self):
             yield Static("plain body", id="plain-body")
 
@@ -1051,7 +1051,7 @@ def test_coverage_modal_warns_on_below_threshold_result(project: Project) -> Non
             assert captured == [payload]
             assert (
                 "warning",
-                "coverage FAIL: family 12.50% (min 80.00%) "
+                "coverage FAIL: family 12.50% (min 80.00%) "  # noqa: ISC004 - intentional line continuation
                 "(reused cached report) — report /tmp/reports/coverage/COV_00A1",
             ) in _notifications(app)
 

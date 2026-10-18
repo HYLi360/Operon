@@ -660,7 +660,7 @@ def _parse_sbatch_job_id(output: str) -> str:
 
 
 def _submit_slurm_job(sbatch: str, script_path: Path) -> str:
-    proc = subprocess.run(
+    proc = subprocess.run(  # noqa: PLW1510 - returncode inspected below
         [sbatch, "--parsable", str(script_path)], capture_output=True, text=True
     )
     if proc.returncode != 0:
@@ -671,7 +671,7 @@ def _submit_slurm_job(sbatch: str, script_path: Path) -> str:
 
 
 def _squeue_job_gone(squeue: str, job_id: str) -> bool:
-    proc = subprocess.run([squeue, "-h", "-j", job_id], capture_output=True, text=True)
+    proc = subprocess.run([squeue, "-h", "-j", job_id], capture_output=True, text=True)  # noqa: PLW1510 - returncode inspected below
     if proc.returncode != 0:
         # Completed jobs disappear with "Invalid job id specified".
         if "Invalid job id" in (proc.stderr or ""):
@@ -688,7 +688,7 @@ def _scancel_slurm_job(job_id: str) -> None:
     if not scancel:
         return
     try:
-        subprocess.run([scancel, job_id], capture_output=True)
+        subprocess.run([scancel, job_id], capture_output=True)  # noqa: PLW1510 - best-effort scancel by design
     except OSError:
         pass
 
@@ -1924,7 +1924,7 @@ class SSHExecutor:
             scheduler_job_id=job_id,
         )
 
-    def run_array(
+    def run_array(  # pylint: disable=method-hidden  # capability sentinel read via getattr
         self,
         tasks: Iterable[dict[str, Any]],
         *,

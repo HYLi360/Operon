@@ -472,7 +472,7 @@ class CommandRow(ComposedRows, Vertical):
 class SnapshotViewModal(DismissOnce, ModalScreen):
     """Read-only rendering of one recorded snapshot document."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 
@@ -503,7 +503,7 @@ class HistoryModal(DismissOnce, ModalScreen):
     the editor, and saving it creates the *next* version of the config file.
     """
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 
@@ -588,7 +588,7 @@ class HistoryModal(DismissOnce, ModalScreen):
 class NewProfileModal(DismissOnce, ModalScreen):
     """Prompt for the name and kind of a new profile."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 

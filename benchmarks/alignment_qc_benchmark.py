@@ -70,13 +70,23 @@ def main() -> None:
             size = f"{n_sequences}x{n_columns}"
 
             py_core = median_time(
-                lambda: py_alignment.compute_alignment_qc(iter(records)), CORE_RUNS
+                lambda records=records: py_alignment.compute_alignment_qc(
+                    iter(records)
+                ),
+                CORE_RUNS,
             )
             cy_core = median_time(
-                lambda: cy_alignment.compute_alignment_qc(iter(records)), CORE_RUNS
+                lambda records=records: cy_alignment.compute_alignment_qc(
+                    iter(records)
+                ),
+                CORE_RUNS,
             )
-            py_e2e = median_time(lambda: py_alignment.alignment_qc(path), E2E_RUNS)
-            cy_e2e = median_time(lambda: cy_alignment.alignment_qc(path), E2E_RUNS)
+            py_e2e = median_time(
+                lambda path=path: py_alignment.alignment_qc(path), E2E_RUNS
+            )
+            cy_e2e = median_time(
+                lambda path=path: cy_alignment.alignment_qc(path), E2E_RUNS
+            )
 
             print(
                 f"{size:>18}  {'python':>8}  {py_core:>10.4f}  {py_e2e:>10.4f}  "

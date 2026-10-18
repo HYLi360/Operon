@@ -96,7 +96,7 @@ class FakeSession:
             raise item
         return item
 
-    def __enter__(self) -> FakeSession:
+    def __enter__(self) -> FakeSession:  # noqa: PYI034 - typing.Self needs Python 3.11; floor is 3.10
         return self
 
     def __exit__(self, *exc_info) -> bool:

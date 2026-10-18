@@ -364,7 +364,7 @@ class _PlanBuilder:
                 DatasetAsset(
                     path=asset.path,
                     accession=full,
-                    role=(asset.role if target_type == "annotation" else asset_role),
+                    role=(asset.role if target_type == "annotation" else asset_role),  # pylint: disable=possibly-used-before-assignment  # the else branch never sees an annotation
                     source_url=asset.source_url,
                     archive_path=asset.archive_path,
                     archive_member=asset.archive_member,

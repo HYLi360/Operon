@@ -45,7 +45,7 @@ RELOAD_WIDGETS = (*LOOKUP_WIDGETS, "hits-include-retired")
 class AnalysisHitsModal(DismissOnce, WorkerResults, ModalScreen):
     """Filter + table browser over ``analysis_alignments``."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("escape", "dismiss", "Close"),
     ]
 

@@ -110,7 +110,7 @@ class _FakeRemoteSlurmExecutor:
     def _execute(self, argv, cwd, stdout_path, stderr_path):
         Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
         with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
-            return subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # fake executor runs the test-provided argv
+            return subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # fake executor runs the test-provided argv  # noqa: PLW1510 - CompletedProcess returned to the caller  # pylint: disable=subprocess-run-check
                 [str(a) for a in argv], stdout=out, stderr=err, cwd=cwd
             )
 
@@ -312,7 +312,7 @@ class TestAnalysisArray(PytestAssertions):
             self.run_calls.append({"argv": [str(a) for a in argv], "run_id": run_id})
             Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
             with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
-                proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # fake executor runs the test-provided argv
+                proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # fake executor runs the test-provided argv  # noqa: PLW1510 - fake executor: returncode becomes exit_code  # pylint: disable=subprocess-run-check
                     [str(a) for a in argv], stdout=out, stderr=err, cwd=cwd
                 )
             return ExecResult(

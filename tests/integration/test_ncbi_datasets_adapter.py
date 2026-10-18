@@ -530,7 +530,7 @@ class TestNCBIDatasetsAdapter(PytestAssertions):
 
         class FakeResponse:
             status_code = 200
-            headers = {"Content-Length": str(len(payload))}
+            headers = {"Content-Length": str(len(payload))}  # noqa: RUF012 - test fixture headers; never mutated
 
             def raise_for_status(self):
                 return None

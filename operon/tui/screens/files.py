@@ -47,7 +47,7 @@ KNOWN_FILE_STATUSES = [
 class FilesPanel(Panel):
     """Manifest files with substring/status filters and residency details."""
 
-    BINDINGS = [
+    BINDINGS = [  # noqa: RUF012 - Textual BINDINGS contract
         Binding("i", "ingest", "Ingest"),
         Binding("v", "verify", "Verify"),
         Binding("q", "qc", "Run QC"),

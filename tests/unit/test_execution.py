@@ -116,15 +116,15 @@ class FakeSSHClient:
             # The production remote contract requires util-linux setsid. The
             # fake executes that Linux-side payload on the CI host, where
             # macOS has no setsid, so emulate only the session boundary.
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: PLW1510 - caller reads the returncode
                 argv[2:],
                 capture_output=True,
                 timeout=timeout,
                 start_new_session=True,
             )
         else:
-            proc = subprocess.run(
-                command, shell=True, capture_output=True, timeout=timeout  # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true # test fake emulates the remote shell contract; the command comes from the production SSH layer
+            proc = subprocess.run(  # nosemgrep: python_exec_rule-subprocess-popen-shell-true  # test double runs the production command string
+                command, shell=True, capture_output=True, timeout=timeout  # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true # test fake emulates the remote shell contract; the command comes from the production SSH layer  # nosec B602  # test double runs the production command string
             )  # fmt: skip
         channel = _FakeChannel(proc)
         return (
@@ -237,7 +237,7 @@ class FakeSFTP:
 
 
 class _FakeStatEntry(_FakeStat):
-    def __init__(self, path: Path):
+    def __init__(self, path: Path):  # pylint: disable=super-init-not-called  # test double bypasses the base __init__
         obj = path.lstat()
         self.st_size = obj.st_size
         self.st_mode = obj.st_mode
@@ -1499,7 +1499,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                     if line.startswith("#SBATCH --error="):
                         err = line.split("=", 1)[1]
                 with open(out, "wb") as o, open(err, "wb") as e:
-                    subprocess.run(["bash", script], stdout=o, stderr=e)
+                    subprocess.run(["bash", script], stdout=o, stderr=e)  # noqa: PLW1510 - fake writes SBATCH output; result unused
                 proc = subprocess.CompletedProcess(
                     command,
                     0,
@@ -1522,7 +1522,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                     )
             else:
                 proc = subprocess.run(
-                    command, shell=True, capture_output=True, timeout=timeout
+                    command, shell=True, capture_output=True, timeout=timeout  # nosec B602  # test double runs the production command string
                 )
             channel = _FakeChannel(proc)
             return (
@@ -1600,7 +1600,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                             err.replace("%A", "4242").replace("%a", str(index)), "wb"
                         ) as e,
                     ):
-                        subprocess.run(
+                        subprocess.run(  # noqa: PLW1510 - fake writes SBATCH output; result unused  # pylint: disable=subprocess-run-check
                             ["bash", script_path], stdout=o, stderr=e, env=env
                         )
                 proc = subprocess.CompletedProcess(command, 0, b"4242\n", b"")
@@ -1608,7 +1608,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
                 proc = subprocess.CompletedProcess(command, 0, b"", b"")
             else:
                 proc = subprocess.run(
-                    command, shell=True, capture_output=True, timeout=timeout
+                    command, shell=True, capture_output=True, timeout=timeout  # nosec B602  # test double runs the production command string
                 )
             channel = _FakeChannel(proc)
             return (

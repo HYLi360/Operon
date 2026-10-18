@@ -159,10 +159,10 @@ def add_preset(project, db: Database, source: str | Path) -> dict[str, Any]:
             )
     except BaseException:
         invalidate_tools_config_cache(project)
-        if plan is not None and not plan["unchanged"]:
-            if plan["previous"] is None:
+        if plan is not None and not plan["unchanged"]:  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
+            if plan["previous"] is None:  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
                 path.unlink(missing_ok=True)
             else:
-                atomic_write_text(path, plan["previous"].decode("utf-8"))
+                atomic_write_text(path, plan["previous"].decode("utf-8"))  # pylint: disable=unsubscriptable-object  # plan is a dict once _prepare() returns
         raise
     return {"unchanged": False, "recipes": plan["recipes"], "snapshots": snapshots}
