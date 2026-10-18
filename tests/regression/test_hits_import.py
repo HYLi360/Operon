@@ -85,7 +85,7 @@ def setup(tmp_path):
 
 def counts(db):
     return tuple(
-        db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # test helper; table names come from a fixed literal list
         for table in [
             "analysis_results",
             "analysis_hits",
@@ -94,7 +94,7 @@ def counts(db):
             "changes",
             "workflow_runs",
         ]
-    )
+    )  # fmt: skip
 
 
 def test_hits_import_preview_identity_and_idempotency(setup):
@@ -265,7 +265,7 @@ def test_unrepresentable_real_metric_is_rejected(setup):
 def test_job_validation_before_evidence_write(setup, field, value):
     project, db, source, payload = setup
     with db.transaction():
-        db.conn.execute(
+        db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # test fixture; field comes from a fixed parametrize list; values bound
             f"UPDATE analysis_jobs SET {field}=? WHERE job_id=?",
             (value, payload["job_id"]),
         )

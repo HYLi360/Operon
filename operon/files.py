@@ -902,7 +902,7 @@ def verify_files(
     """Verify local bytes or live-check at least one recorded remote copy."""
     if file_ids:
         placeholders = ", ".join("?" for _ in file_ids)
-        rows = db.conn.execute(
+        rows = db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
             f"SELECT * FROM files WHERE file_id IN ({placeholders})", file_ids
         ).fetchall()  # nosec B608 # fixed record keys or role mapping; values are bound
     else:
@@ -1079,7 +1079,7 @@ def recompress_files(
         placeholders = ", ".join("?" for _ in file_ids)
         rows = [
             dict(row)
-            for row in db.conn.execute(
+            for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                 f"SELECT * FROM files WHERE file_id IN ({placeholders}) ORDER BY file_id",  # nosec B608 # values are bound
                 file_ids,
             ).fetchall()
@@ -1290,7 +1290,7 @@ def standardize_file(
     raw/ remains immutable. standardized/ uses independent copies by default;
     explicit symlink/hardlink modes remain available for compatibility.
     """
-    row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()
+    row = db.conn.execute("SELECT * FROM files WHERE file_id=?", (file_id,)).fetchone()  # nosemgrep: python_sql_rule-hardcoded-sql-expression # literal SQL; the only value is bound # fmt: skip
     if not row:
         raise EntityNotFoundError(f"file {file_id} does not exist")
     record = dict(row)

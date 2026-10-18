@@ -189,7 +189,7 @@ def _missing_includes(
         mapped_ids = (
             [
                 str(row["annotation_id"])
-                for row in db.conn.execute(
+                for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                     "SELECT DISTINCT n.annotation_id FROM ncbi_annotation_records n "
                     "WHERE n.assembly_accession=? "
                     + (
@@ -233,7 +233,7 @@ def _missing_includes(
             present: set[str] = set()
             for include in requested_annotation:
                 role = _ANNOTATION_INCLUDE_ROLES[include]
-                row = db.conn.execute(
+                row = db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression # literal SQL; all values bound
                     "SELECT entity_id, relative_path, status FROM files "
                     "WHERE entity_type='annotation' AND entity_id=? AND file_role=? LIMIT 1",
                     (annotation_id, role),
@@ -294,7 +294,7 @@ class _IdAllocator:
             table = ENTITY_TABLES[entity_type]
             id_col = ENTITY_ID_COLUMNS[entity_type]
             maximum = 0
-            for row in db.conn.execute(f"SELECT {id_col} AS value FROM {table}"):  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+            for row in db.conn.execute(f"SELECT {id_col} AS value FROM {table}"):  # nosec B608 # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # fixed mappings or validated schema identifiers; values are bound
                 match = re.fullmatch(rf"{re.escape(prefix)}_(\d+)", str(row["value"]))
                 if match:
                     maximum = max(maximum, int(match.group(1)))
@@ -316,7 +316,7 @@ class _PlanBuilder:
             id_col = ENTITY_ID_COLUMNS[entity_type]
             self.rows[table] = {
                 str(row[id_col]): dict(row)
-                for row in db.conn.execute(f"SELECT * FROM {table}")  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
+                for row in db.conn.execute(f"SELECT * FROM {table}")  # nosec B608 # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # fixed mappings or validated schema identifiers; values are bound
             }
         self.rows["accessions"] = {
             f"{row['namespace']}\0{row['accession']}": dict(row)
@@ -843,11 +843,11 @@ def _apply_plan(
             )
             for row in rows:
                 where = " AND ".join(f"{key}=?" for key in keys)
-                existing = conn.execute(
+                existing = conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                     f"SELECT * FROM {table} WHERE {where}",
                     [row.get(key) for key in keys],  # nosec B608 # fixed mappings or validated schema identifiers; values are bound
                 ).fetchone()
-                conn.execute(sql, [row.get(col) for col in columns])
+                conn.execute(sql, [row.get(col) for col in columns])  # nosemgrep: python_sql_rule-hardcoded-sql-expression # sql is built from quoted schema identifiers and placeholders; values are bound # fmt: skip
                 before = dict(existing) if existing else {}
                 object_id = ":".join(str(row.get(key)) for key in keys)
                 for column in columns:
@@ -855,7 +855,7 @@ def _apply_plan(
                     new_value = row.get(column)
                     if old_value == new_value:
                         continue
-                    conn.execute(
+                    conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression # literal SQL; all values bound
                         "INSERT INTO changes "
                         "(object_type, object_id, field, old_value, new_value, reason, evidence, "
                         "actor, changed_at, workflow_run_id, reverts_change_id) "

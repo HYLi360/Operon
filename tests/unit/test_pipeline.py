@@ -81,11 +81,11 @@ def test_plan_pipeline_validates_the_pipeline_preconditions(
         }
         blank_source = dict(base, source="   ")
         with pytest.raises(ValidationError):
-            plan_pipeline(db, project, **blank_source)
+            plan_pipeline(db, project, **blank_source)  # pylint: disable=E1132
         with pytest.raises(ValidationError):
-            plan_pipeline(db, project, **dict(base, entity_id=""))
+            plan_pipeline(db, project, **dict(base, entity_id=""))  # pylint: disable=E1132
         with pytest.raises(ValidationError):
-            plan_pipeline(db, project, **dict(base, role=""))
+            plan_pipeline(db, project, **dict(base, role=""))  # pylint: disable=E1132
         with pytest.raises(ValidationError):
             plan_pipeline(db, project, **dict(base, profile="no_such_profile"))
     finally:

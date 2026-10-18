@@ -930,7 +930,7 @@ def test_remote_slurm_run_array_rejects_unsplittable_command(tmp_path, monkeypat
         }
     ]
     with pytest.raises(ValidationError, match="shlex-quoted"):
-        ssh.run_array(tasks, cwd=root)
+        ssh.run_array(tasks, cwd=root)  # pylint: disable=E1102
 
 
 def test_remote_slurm_run_array_interrupt_cancels_and_pulls_exitcodes(
@@ -956,7 +956,7 @@ def test_remote_slurm_run_array_interrupt_cancels_and_pulls_exitcodes(
 
     monkeypatch.setattr(execution.time, "sleep", interrupting_sleep)
     with pytest.raises(ShutdownRequested):
-        ssh.run_array(_array_tasks(root / "logs"), cwd=root, batch_id="RB")
+        ssh.run_array(_array_tasks(root / "logs"), cwd=root, batch_id="RB")  # pylint: disable=E1102
     assert any(command.startswith("scancel") for command in calls)
     # The finished task's exit-code file was pulled back so the caller can
     # apply the same which-exitcode-files-exist bookkeeping as locally.
@@ -987,7 +987,7 @@ def test_remote_slurm_run_array_timeout_cancels_and_reports_partial(
     monkeypatch.setattr(ssh, "_remote_exec", fake_exec)
     times = iter([0, 2, 2])
     monkeypatch.setattr(execution.time, "monotonic", lambda: next(times, 2))
-    results = ssh.run_array(
+    results = ssh.run_array(  # pylint: disable=E1102
         _array_tasks(root / "logs"), cwd=root, timeout=1, batch_id="RB"
     )
     assert any(command.startswith("scancel") for command in calls)

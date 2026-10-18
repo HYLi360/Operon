@@ -165,7 +165,7 @@ def _prepare(db: Database, source: str | Path) -> dict[str, Any]:
         existing[table] = sorted(
             [
                 {c: row[c] for c in columns}
-                for row in db.conn.execute(
+                for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                     f"SELECT * FROM {table} WHERE job_id=?", (job["job_id"],)
                 )
             ],
@@ -221,7 +221,7 @@ def import_hits(db: Database, project, source: str | Path) -> dict[str, Any]:
             for row in rows:
                 data = {**base, **row}
                 columns = list(data)
-                db.conn.execute(
+                db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                     f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
                     list(data.values()),
                 )

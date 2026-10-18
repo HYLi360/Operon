@@ -869,7 +869,7 @@ class Database:
         workflow_columns = set(self.table_columns("workflow_runs"))
         for column in ("executor", "scheduler_job_id", "execution_details"):
             if column not in workflow_columns:
-                self._conn.execute(
+                self._conn.execute(  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query # column names come from a fixed literal tuple
                     f'ALTER TABLE workflow_runs ADD COLUMN "{column}" TEXT'
                 )
         self._conn.executescript(

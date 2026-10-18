@@ -222,7 +222,7 @@ def test_python_files_in_a_checkout_are_the_tracked_set(tmp_path):
     init = ["git", "init", "-q"]
     add = ["git", "add", "operon/module.py"]
     for command in (init, add):
-        subprocess.run(command, cwd=tmp_path, capture_output=True, check=True)
+        subprocess.run(command, cwd=tmp_path, capture_output=True, check=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # runs git init/add with fixed literals in a tmp dir # fmt: skip
     staging = tmp_path / "operondbs-0.9.0"
     staging.mkdir()
     (staging / "conf_common.py").write_text("VALUE = 2\n", encoding="utf-8")

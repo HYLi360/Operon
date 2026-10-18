@@ -70,7 +70,7 @@ def _detect_version_record(
         combined = _version_output_via_executor(executor, command, timeout)
     else:
         try:
-            proc = subprocess.run(
+            proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # the version probe executable comes from the versioned tools.yaml config; no shell
                 command, capture_output=True, text=True, timeout=timeout
             )
         except FileNotFoundError as exc:

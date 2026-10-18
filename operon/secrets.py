@@ -68,7 +68,7 @@ def _run(
 ) -> subprocess.CompletedProcess:
     """Run a backend helper, mapping every process failure to ``SecretError``."""
     try:
-        return subprocess.run(
+        return subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # argv[0] is a fixed backend helper binary; no shell
             command,
             input=stdin,
             capture_output=True,

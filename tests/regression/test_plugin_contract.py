@@ -114,7 +114,7 @@ def test_standalone_plugin_contract_full_file_loop(tmp_path):
     assert main([*base, "report", "view", "--out", str(bundle)]) == 0
     svg = tmp_path / "view.svg"
     before = project.db_path.read_bytes()
-    subprocess.run(
+    subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # runs sys.executable on the bundled test fixture script
         [
             sys.executable,
             str(SAMPLES / "toy_viz.py"),
@@ -128,7 +128,7 @@ def test_standalone_plugin_contract_full_file_loop(tmp_path):
     assert "<svg " in svg.read_text()
     assert project.db_path.read_bytes() == before
     (bundle / "entities.tsv").write_text("tampered")
-    bad = subprocess.run(
+    bad = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # runs sys.executable on the bundled test fixture script
         [
             sys.executable,
             str(SAMPLES / "toy_viz.py"),

@@ -63,7 +63,7 @@ def _entities(db: Database) -> list[dict[str, Any]]:
     rows = []
     for kind, table in ENTITY_TABLES.items():
         column = quote_identifier(ENTITY_ID_COLUMNS[kind])
-        for row in db.conn.execute(
+        for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from quoted fixed identifier mappings; no values
             f"SELECT {column} AS entity_id FROM {quote_identifier(table)} ORDER BY {column}"
         ):
             ident = row["entity_id"]

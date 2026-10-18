@@ -162,7 +162,7 @@ def _fetch_organism_graph(
         placeholders = ", ".join("?" for _ in sample_ids)
         graph["runs"] = [
             dict(row)
-            for row in db.conn.execute(
+            for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier mappings/placeholders; all values bound
                 f"SELECT * FROM runs WHERE sample_id IN ({placeholders}) ORDER BY sample_id, run_id",
                 sample_ids,  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
             ).fetchall()

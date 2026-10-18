@@ -628,12 +628,12 @@ def _adopt_verified_output(ctx: _PlanContext) -> dict[str, Any] | None:
                 "recipe_snapshot_id": adoptee["recipe_snapshot_id"],
             }
             with db.transaction() as conn:
-                cursor = conn.execute(
+                cursor = conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed job columns; all values bound
                     f"INSERT INTO analysis_jobs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",  # nosec B608 # fixed job columns; values are bound
                     [adopted_job.get(c) for c in columns],
                 )
                 adopted_job_id = int(cursor.lastrowid)
-                conn.execute(
+                conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression # literal SQL; all values bound
                     "INSERT INTO changes(object_type, object_id, field, old_value, new_value, "
                     "reason, evidence, actor, changed_at) VALUES(?,?,?,?,?,?,?,?,?)",
                     (

@@ -119,7 +119,7 @@ def spawn_detached_analysis(
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(f"# {now_iso()} operon analyze (detached): {shlex.join(argv)}\n")
         handle.flush()
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # argv[0] is sys.executable running operon itself; no shell
             argv,
             stdin=subprocess.DEVNULL,
             stdout=handle,

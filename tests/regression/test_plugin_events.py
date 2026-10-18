@@ -82,9 +82,9 @@ def setup(tmp_path):
 
 def counts(db):
     return tuple(
-        db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.lang.security.audit.formatted-sql-query.formatted-sql-query, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # test helper; table names come from a fixed literal list
         for table in ["qc_results", "changes", "workflow_runs", "files"]
-    )
+    )  # fmt: skip
 
 
 def test_events_preview_dedup_and_draft_reconstruction(setup, tmp_path):

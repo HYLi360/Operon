@@ -415,8 +415,8 @@ def test_empty_or_truncated_probe_output_is_not_complete(monkeypatch):
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "", ""),
-    )
+        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "", ""),  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # monkeypatch stub replacing subprocess.run in tests
+    )  # fmt: skip
     assert capture_local(["true"])["capture_status"] == "failed"
     truncated = parse_probe_output("capture_schema=1\npackage\n")
     assert truncated["capture_status"] == "partial"
@@ -575,7 +575,7 @@ def test_bounded_shell_propagates_the_wrapped_exit_status(
 ):
     if hide_timeout:
         _path_without_timeout(tmp_path, monkeypatch)
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # test runs sh -c on a bounded_shell payload built in the test
         ["sh", "-c", bounded_shell(["sh", "-c", "exit 3"])],
         capture_output=True,
         text=True,

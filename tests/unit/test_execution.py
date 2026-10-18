@@ -124,8 +124,8 @@ class FakeSSHClient:
             )
         else:
             proc = subprocess.run(
-                command, shell=True, capture_output=True, timeout=timeout
-            )
+                command, shell=True, capture_output=True, timeout=timeout  # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true # test fake emulates the remote shell contract; the command comes from the production SSH layer
+            )  # fmt: skip
         channel = _FakeChannel(proc)
         return (
             None,
@@ -1629,7 +1629,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
             }
             for i in (1, 2)
         ]
-        results = executor.run_array(tasks, cwd=self.root, batch_id="RB1")
+        results = executor.run_array(tasks, cwd=self.root, batch_id="RB1")  # pylint: disable=E1102
         self.assertEqual([r.exit_code for r in results], [0, 0])
         self.assertEqual([r.scheduler_job_id for r in results], ["4242_1", "4242_2"])
         # Per-task payload output was redirected remotely and pulled back.
@@ -1712,7 +1712,7 @@ class TestSSHExecutorWithFakeClient(PytestAssertions):
         cancel_event = threading.Event()
         cancel_event.set()
         with self.assertRaises(ShutdownRequested):
-            executor.run_array(
+            executor.run_array(  # pylint: disable=E1102
                 tasks, cwd=self.root, batch_id="RC1", cancel_event=cancel_event
             )
         self.assertTrue(any(c.startswith("scancel 4242") for c in client.commands))

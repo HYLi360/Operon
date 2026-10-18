@@ -1785,7 +1785,7 @@ def test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory(
     index = proc.index("-d")
     without_data_dir = [*proc[:index], *proc[index + 2 :]]
 
-    with_dir = subprocess.run(
+    with_dir = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # runs sys.executable on a test-generated stub
         [sys.executable, str(stub), *proc],
         capture_output=True,
         text=True,
@@ -1796,7 +1796,7 @@ def test_shipped_rpsblast_cdd_recipe_gives_rpsbproc_its_data_directory(
     assert output.is_file()
 
     output.unlink()
-    missing = subprocess.run(
+    missing = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # runs sys.executable on a test-generated stub
         [sys.executable, str(stub), *without_data_dir],
         capture_output=True,
         text=True,

@@ -85,7 +85,7 @@ def _export_taxa(db: Database, members: list[dict[str, Any]]) -> list[dict[str, 
         if key not in cache:
             organism_id = _organism_for(db, *key)
             cache[key] = dict(
-                db.conn.execute(
+                db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression # literal SQL; the only value is bound
                     "SELECT * FROM organisms WHERE organism_id=?",
                     (organism_id,),
                 ).fetchone()
@@ -393,7 +393,7 @@ def _export_files_in_workspace(
             params = [value for pair in batch for value in pair]
             qc_rows.extend(
                 dict(row)
-                for row in db.conn.execute(
+                for row in db.conn.execute(  # nosemgrep: python_sql_rule-hardcoded-sql-expression # SQL built from generated placeholders; all values bound
                     f"SELECT q.* FROM qc_results q WHERE ({clause}) "
                     "ORDER BY q.entity_type, q.entity_id, q.qc_stage, q.metric_name",  # nosec B608 # fixed SQL fragments and generated placeholders; values are bound
                     params,

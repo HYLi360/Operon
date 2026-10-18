@@ -243,7 +243,7 @@ def capture_local(argv: list[str], cwd: str | Path | None = None) -> dict[str, A
     if cached is not None and now - cached[0] < _LOCAL_CAPTURE_TTL_SECONDS:
         return dict(cached[1])
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit # the probe payload is shlex-quoted by probe_shell from the trusted argv
             ["sh", "-c", probe_shell(argv)],
             cwd=cwd,
             capture_output=True,

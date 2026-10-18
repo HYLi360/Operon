@@ -135,7 +135,7 @@ def _rows_for_ids(
     for start in range(0, len(ids), 500):
         chunk = ids[start : start + 500]
         placeholders = ", ".join("?" for _ in chunk)
-        found = db.conn.execute(
+        found = db.conn.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query # SQL built from fixed identifier arguments/placeholders; all values bound
             f"SELECT {columns} FROM {table} WHERE {id_column} IN ({placeholders})",  # nosec B608 # fixed internal table/column arguments; IDs are bound
             chunk,
         ).fetchall()
