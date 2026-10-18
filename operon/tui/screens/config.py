@@ -47,7 +47,6 @@ from operon.config import Project
 from operon.errors import ValidationError
 from operon.tui import actions, data
 from operon.tui.screens.common import (
-    ENTITY_TYPE_OPTIONS,
     ComposedRows,
     ErrorDialog,
     FittingSelect,
@@ -80,11 +79,7 @@ from operon.tui.screens.config_modals import (
     ToolSaveModal,
 )
 from operon.tui.screens.config_recipe import (
-    ARTIFACT_KINDS,
-    DATABASE_MODES,
-    ENVIRONMENT_POLICIES,
-    HMMER_MODES,
-    RESULT_PARSERS,
+    ENVIRONMENT_POLICIES,  # noqa: F401 - re-exported; asserted against operon.tools by tests/unit/test_tui_config.py
     RecipeEditor,
 )
 from operon.tui.screens.config_rows import (
@@ -153,422 +148,203 @@ class ConfigPanel(RecipeEditor, Panel):
         with TabbedContent(id="config-tabs"):
             with TabPane("QC Profiles", id="tab-profiles"):
                 with Horizontal(id="profiles-layout"):
-                    with Vertical(id="profiles-sidebar"):
-                        yield ListView(id="profiles-list")
-                        with Horizontal(classes="config-buttons"):
-                            yield Button("New profile", id="profile-new")
-                            yield Button("History", id="profile-history", disabled=True)
-                            yield Button(
-                                "Run classify", id="profile-run", disabled=True
-                            )
-                    with VerticalScroll(id="profile-editor"):  # pragma: no branch
-                        yield Static("select a profile", id="profile-heading")
-                        yield Static("Description", classes="modal-label")
-                        yield Input(id="profile-description")
-                        yield Static("Applies to", classes="modal-label")
-                        for entity_type in ENTITY_TYPE_NAMES:
-                            yield Checkbox(
-                                entity_type, id=f"profile-applies-{entity_type}"
-                            )
-                        yield Static("", id="profile-version-note")
-                        yield Static("", id="profile-extras-note")
-                        yield Static("Required rules", classes="modal-label")
-                        yield MountTracked(id="profile-required-rules")
-                        yield Button("add rule", id="profile-add-required")
-                        yield Static("Warning rules", classes="modal-label")
-                        yield MountTracked(id="profile-warnings-rules")
-                        yield Button("add rule", id="profile-add-warnings")
-                        with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button(
-                                "Save profile",
-                                id="profile-save",
-                                variant="primary",
-                                disabled=True,
-                            )
-                    with VerticalScroll(
-                        id="classification-editor"
-                    ):  # pragma: no branch
-                        yield Static("select a profile", id="classification-heading")
-                        yield Static("", id="classification-readonly-note")
-                        yield Static("Description", classes="modal-label")
-                        yield Input(id="classification-description")
-                        yield Static(
-                            "Applies to (entity_type + file_role)",
-                            classes="modal-label",
-                        )
-                        yield Input(
-                            placeholder="entity_type", id="classification-entity-type"
-                        )
-                        yield Input(
-                            placeholder="file_role", id="classification-file-role"
-                        )
-                        yield Static("", id="classification-version-note")
-                        yield Static("", id="classification-extras-note")
-                        yield Static(
-                            "Sources (name → analysis, filter, best_by)",
-                            classes="modal-label",
-                        )
-                        yield MountTracked(id="classification-sources")
-                        yield Button("add source", id="classification-add-source")
-                        yield Static(
-                            "Rules (first match wins; label + source/when, absent, "
-                            "or default)",
-                            classes="modal-label",
-                        )
-                        yield MountTracked(id="classification-rules")
-                        yield Button("add rule", id="classification-add-rule")
-                        yield Static("", id="classification-save-error")
-                        with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button(
-                                "Save profile",
-                                id="classification-save",
-                                variant="primary",
-                                disabled=True,
-                            )
-                            yield Button(
-                                "History", id="classification-history", disabled=True
-                            )
-                    with VerticalScroll(id="coverage-editor"):  # pragma: no branch
-                        yield Static("select a profile", id="coverage-heading")
-                        yield Static("", id="coverage-readonly-note")
-                        yield Static("Description", classes="modal-label")
-                        yield Input(id="coverage-description")
-                        yield Static("Taxonomy source", classes="modal-label")
-                        yield FittingSelect(
-                            [(source, source) for source in ("NCBI",)],
-                            value="NCBI",
-                            id="coverage-taxonomy-source",
-                            allow_blank=False,
-                        )
-                        yield Static(
-                            "Root TaxIDs (comma separated)", classes="modal-label"
-                        )
-                        yield Input(placeholder="e.g. 33090", id="coverage-root-taxids")
-                        yield Static("Target ranks", classes="modal-label")
-                        yield Checkbox("family", id="coverage-rank-family")
-                        yield Checkbox("genus", id="coverage-rank-genus")
-                        yield Static("Filters", classes="modal-label")
-                        yield Checkbox(
-                            "exclude extinct taxa", id="coverage-exclude-extinct"
-                        )
-                        yield Static(
-                            "Excluded subtrees (comma separated TaxIDs)",
-                            classes="modal-label",
-                        )
-                        yield Input(
-                            placeholder="blank = none", id="coverage-exclude-subtrees"
-                        )
-                        yield Static(
-                            "Excluded name patterns (one regular expression per line)",
-                            classes="modal-label",
-                        )
-                        yield TextArea(id="coverage-exclude-patterns")
-                        yield Static(
-                            "Minimum coverage percent per checked target rank",
-                            classes="modal-label",
-                        )
-                        yield Input(
-                            placeholder="family %", id="coverage-threshold-family"
-                        )
-                        yield Input(
-                            placeholder="genus %", id="coverage-threshold-genus"
-                        )
-                        yield Static("", id="coverage-version-note")
-                        yield Static("", id="coverage-extras-note")
-                        yield Static("", id="coverage-save-error")
-                        with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button(
-                                "Save profile",
-                                id="coverage-save",
-                                variant="primary",
-                                disabled=True,
-                            )
-                            yield Button(
-                                "History", id="coverage-history", disabled=True
-                            )
+                    yield from self._compose_profiles_sidebar()
+                    yield from self._compose_qc_profile_editor()
+                    yield from self._compose_classification_editor()
+                    yield from self._compose_coverage_editor()
             with TabPane("Tools && Recipes", id="tab-tools"):
                 with Vertical(id="tools-layout"):  # pragma: no branch
-                    yield Static(
-                        "Conda defaults (every tool that inherits them)",
-                        classes="modal-label",
-                    )
-                    yield Input(
-                        placeholder="conda binary (blank = conda)", id="conda-bin"
-                    )
-                    yield Static(
-                        "conda run args (one token per line; blank = "
-                        "run --no-capture-output)",
-                        classes="modal-label",
-                    )
-                    yield TextArea(id="conda-run-args")
-                    yield Static("", id="conda-note")
-                    yield Static("", id="conda-save-error")
-                    with Horizontal(classes="config-buttons"):
-                        yield Button("Save defaults", id="conda-save", disabled=True)
-                        yield Button("Check tools", id="tools-check")
-                    yield DataTable(id="tools-table", cursor_type="row")
-                    with VerticalScroll(id="tool-editor"):  # pragma: no branch
-                        yield Static("select a tool", id="tool-heading")
-                        yield Static("Description", classes="modal-label")
-                        yield Input(id="tool-description")
-                        yield Static(
-                            "Executable (blank = tool name)", classes="modal-label"
-                        )
-                        yield Input(id="tool-executable")
-                        yield Static(
-                            "Version args (one token per line)", classes="modal-label"
-                        )
-                        yield TextArea(id="tool-version-args")
-                        yield Static(
-                            "Version pattern (regular expression)",
-                            classes="modal-label",
-                        )
-                        yield Input(id="tool-version-pattern")
-                        yield Static("Run method", classes="modal-label")
-                        yield FittingSelect(
-                            TOOL_RUN_METHOD_OPTIONS,
-                            id="tool-run-method",
-                            prompt="no run_method (run directly)",
-                            allow_blank=True,
-                        )
-                        with Vertical(id="tool-run-string-row"):
-                            yield Static(
-                                "Launcher command (run verbatim)", classes="modal-label"
-                            )
-                            yield Input(id="tool-run-string")
-                        with Vertical(id="tool-run-conda-row"):
-                            yield Static(
-                                "conda environment (required)", classes="modal-label"
-                            )
-                            yield Input(id="tool-run-conda-env")
-                            yield Static(
-                                "conda binary (blank = top-level conda.bin)",
-                                classes="modal-label",
-                            )
-                            yield Input(id="tool-run-conda-bin")
-                            yield Static(
-                                "conda run args (one token per line; blank = "
-                                "top-level conda.run_args)",
-                                classes="modal-label",
-                            )
-                            yield TextArea(id="tool-run-conda-args")
-                        with Vertical(id="tool-run-prefix-row"):
-                            yield Static(
-                                "Launcher prefix (one token per line)",
-                                classes="modal-label",
-                            )
-                            yield TextArea(id="tool-run-prefix")
-                        yield Static("", id="tool-extras-note")
-                        yield Static("", id="tool-save-error")
-                        with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button(
-                                "Save tool",
-                                id="tool-save",
-                                variant="primary",
-                                disabled=True,
-                            )
-                    yield Static("Recipes", classes="modal-label")
-                    yield DataTable(id="recipes-table", cursor_type="row")
-                    with Horizontal(classes="config-buttons"):
-                        yield Button("Run analysis", id="recipe-run", disabled=True)
-                    with VerticalScroll(id="recipe-editor"):  # pragma: no branch
-                        yield Static("select a recipe", id="recipe-heading")
-                        yield Static("Description", classes="modal-label")
-                        yield Input(id="recipe-description")
-                        yield Static("Entity type (blank = *)", classes="modal-label")
-                        yield FittingSelect(
-                            ENTITY_TYPE_OPTIONS,
-                            id="recipe-entity-type",
-                            allow_blank=True,
-                        )
-                        yield Input(placeholder="file_role", id="recipe-file-role")
-                        yield Input(
-                            placeholder="file_role_prefix (mutually exclusive with "
-                            "file_role)",
-                            id="recipe-file-role-prefix",
-                        )
-                        yield Input(placeholder="format", id="recipe-format")
-                        yield Static(
-                            "Input kind (blank = key absent)", classes="modal-label"
-                        )
-                        yield FittingSelect(
-                            [(kind, kind) for kind in ARTIFACT_KINDS],
-                            id="recipe-input-kind",
-                            allow_blank=True,
-                        )
-                        yield Static(
-                            "Output kind (blank = key absent)", classes="modal-label"
-                        )
-                        yield FittingSelect(
-                            [(kind, kind) for kind in ARTIFACT_KINDS],
-                            id="recipe-output-kind",
-                            allow_blank=True,
-                        )
-                        yield Input(placeholder="database", id="recipe-database")
-                        yield Input(
-                            placeholder="database_version", id="recipe-database-version"
-                        )
-                        yield FittingSelect(
-                            [(mode, mode) for mode in DATABASE_MODES],
-                            id="recipe-database-mode",
-                            allow_blank=True,
-                        )
-                        yield Input(
-                            placeholder="database_checksum (sha256 hex; optional)",
-                            id="recipe-database-checksum",
-                        )
-                        yield Static(
-                            "Environment policy (blank = key absent; core default "
-                            "'warn')",
-                            classes="modal-label",
-                        )
-                        yield FittingSelect(
-                            [(policy, policy) for policy in ENVIRONMENT_POLICIES],
-                            id="recipe-environment-policy",
-                            allow_blank=True,
-                        )
-                        yield Static(
-                            "Slurm overrides (optional; merges over "
-                            "execution.slurm — unknown keys preserved)",
-                            classes="modal-label",
-                        )
-                        yield Input(
-                            placeholder="slurm partition", id="recipe-slurm-partition"
-                        )
-                        yield Input(
-                            placeholder="slurm time (e.g. 24:00:00)",
-                            id="recipe-slurm-time",
-                        )
-                        yield Input(
-                            placeholder="slurm mem_gb", id="recipe-slurm-mem-gb"
-                        )
-                        yield Input(
-                            placeholder="slurm poll_interval (seconds)",
-                            id="recipe-slurm-poll-interval",
-                        )
-                        yield FittingSelect(
-                            [("true", "true"), ("false", "false")],
-                            id="recipe-slurm-array",
-                            allow_blank=True,
-                        )
-                        yield Input(
-                            placeholder="slurm array_concurrency",
-                            id="recipe-slurm-array-concurrency",
-                        )
-                        yield Static(
-                            "slurm extra_sbatch (one sbatch flag per line)",
-                            classes="modal-label",
-                        )
-                        yield TextArea(id="recipe-slurm-extra-sbatch")
-                        yield Static(
-                            "slurm setup_commands (one command per line)",
-                            classes="modal-label",
-                        )
-                        yield TextArea(id="recipe-slurm-setup-commands")
-                        yield Static("", id="recipe-slurm-note")
-                        yield Input(
-                            placeholder="output_subdir", id="recipe-output-subdir"
-                        )
-                        yield Input(
-                            placeholder="output_suffix", id="recipe-output-suffix"
-                        )
-                        yield Input(
-                            placeholder="output_name (template, e.g. ${file_id}.out)",
-                            id="recipe-output-name",
-                        )
-                        yield Static(
-                            "Arguments (one per line; ${placeholders} stay as-is)",
-                            classes="modal-label",
-                        )
-                        yield TextArea(id="recipe-arguments")
-                        yield Static(
-                            "Runtime parameters (name=default per line, then "
-                            "optional `; required`, `; choices=a,b` and "
-                            "`; pattern=<regex>` — pattern takes the rest of the "
-                            "line; other spec keys preserved)",
-                            classes="modal-label",
-                        )
-                        yield TextArea(id="recipe-parameters")
-                        yield Static("", id="recipe-parameters-note")
-                        yield Static(
-                            "Commands chain (optional; mutually exclusive with "
-                            "arguments — every step runs in the parent tool's single "
-                            "run_method environment)",
-                            classes="modal-label",
-                        )
-                        yield MountTracked(id="recipe-command-list")
-                        with Horizontal(classes="config-buttons"):
-                            yield Button("Add step", id="recipe-add-command")
-                        yield Static("", id="recipe-command-note")
-                        yield Static("Result parser", classes="modal-label")
-                        yield FittingSelect(
-                            [(parser, parser) for parser in RESULT_PARSERS],
-                            value="none",
-                            id="recipe-result-parser",
-                            allow_blank=False,
-                        )
-                        yield Input(placeholder="result_glob", id="recipe-result-glob")
-                        yield Static(
-                            "HMMER mode (blank = key absent)", classes="modal-label"
-                        )
-                        yield FittingSelect(
-                            [(mode, mode) for mode in HMMER_MODES],
-                            id="recipe-hmmer-mode",
-                            allow_blank=True,
-                        )
-                        yield Input(
-                            placeholder="result_columns (comma separated)",
-                            id="recipe-result-columns",
-                        )
-                        yield Input(
-                            placeholder="hit_metric_columns (comma separated)",
-                            id="recipe-hit-metric-columns",
-                        )
-                        yield Static(
-                            "Column mapping (blank = parser defaults)",
-                            classes="modal-label",
-                        )
-                        yield Input(
-                            placeholder="query_column", id="recipe-query-column"
-                        )
-                        yield Input(
-                            placeholder="subject_column", id="recipe-subject-column"
-                        )
-                        yield Input(
-                            placeholder="numeric_columns (comma separated)",
-                            id="recipe-numeric-columns",
-                        )
-                        yield Input(
-                            placeholder="qstart_column", id="recipe-qstart-column"
-                        )
-                        yield Input(placeholder="qend_column", id="recipe-qend-column")
-                        yield Input(
-                            placeholder="sstart_column", id="recipe-sstart-column"
-                        )
-                        yield Input(placeholder="send_column", id="recipe-send-column")
-                        yield Input(
-                            placeholder="evalue_column", id="recipe-evalue-column"
-                        )
-                        yield Input(
-                            placeholder="bitscore_column", id="recipe-bitscore-column"
-                        )
-                        yield Input(
-                            placeholder="pident_column", id="recipe-pident-column"
-                        )
-                        yield Input(
-                            placeholder="max_hits_per_query (blank restores default: 5)",
-                            id="recipe-max-hits",
-                        )
-                        yield Static("", id="recipe-extras-note")
-                        yield Static("", id="recipe-save-error")
-                        with Horizontal(classes="config-buttons"):  # pragma: no branch
-                            yield Button(
-                                "Save recipe",
-                                id="recipe-save",
-                                variant="primary",
-                                disabled=True,
-                            )
-                            yield Button("History", id="recipe-history", disabled=True)
+                    yield from self._compose_conda_section()
+                    yield from self._compose_tool_editor()
+                    yield from self._compose_recipe_editor()
+
+    def _compose_profiles_sidebar(self) -> ComposeResult:
+        with Vertical(id="profiles-sidebar"):
+            yield ListView(id="profiles-list")
+            with Horizontal(classes="config-buttons"):
+                yield Button("New profile", id="profile-new")
+                yield Button("History", id="profile-history", disabled=True)
+                yield Button("Run classify", id="profile-run", disabled=True)
+
+    def _compose_qc_profile_editor(self) -> ComposeResult:
+        with VerticalScroll(id="profile-editor"):  # pragma: no branch
+            yield Static("select a profile", id="profile-heading")
+            yield Static("Description", classes="modal-label")
+            yield Input(id="profile-description")
+            yield Static("Applies to", classes="modal-label")
+            for entity_type in ENTITY_TYPE_NAMES:
+                yield Checkbox(entity_type, id=f"profile-applies-{entity_type}")
+            yield Static("", id="profile-version-note")
+            yield Static("", id="profile-extras-note")
+            yield Static("Required rules", classes="modal-label")
+            yield MountTracked(id="profile-required-rules")
+            yield Button("add rule", id="profile-add-required")
+            yield Static("Warning rules", classes="modal-label")
+            yield MountTracked(id="profile-warnings-rules")
+            yield Button("add rule", id="profile-add-warnings")
+            with Horizontal(classes="config-buttons"):  # pragma: no branch
+                yield Button(
+                    "Save profile",
+                    id="profile-save",
+                    variant="primary",
+                    disabled=True,
+                )
+
+    def _compose_classification_editor(self) -> ComposeResult:
+        with VerticalScroll(id="classification-editor"):  # pragma: no branch
+            yield Static("select a profile", id="classification-heading")
+            yield Static("", id="classification-readonly-note")
+            yield Static("Description", classes="modal-label")
+            yield Input(id="classification-description")
+            yield Static(
+                "Applies to (entity_type + file_role)",
+                classes="modal-label",
+            )
+            yield Input(placeholder="entity_type", id="classification-entity-type")
+            yield Input(placeholder="file_role", id="classification-file-role")
+            yield Static("", id="classification-version-note")
+            yield Static("", id="classification-extras-note")
+            yield Static(
+                "Sources (name → analysis, filter, best_by)",
+                classes="modal-label",
+            )
+            yield MountTracked(id="classification-sources")
+            yield Button("add source", id="classification-add-source")
+            yield Static(
+                "Rules (first match wins; label + source/when, absent, or default)",
+                classes="modal-label",
+            )
+            yield MountTracked(id="classification-rules")
+            yield Button("add rule", id="classification-add-rule")
+            yield Static("", id="classification-save-error")
+            with Horizontal(classes="config-buttons"):  # pragma: no branch
+                yield Button(
+                    "Save profile",
+                    id="classification-save",
+                    variant="primary",
+                    disabled=True,
+                )
+                yield Button("History", id="classification-history", disabled=True)
+
+    def _compose_coverage_editor(self) -> ComposeResult:
+        with VerticalScroll(id="coverage-editor"):  # pragma: no branch
+            yield Static("select a profile", id="coverage-heading")
+            yield Static("", id="coverage-readonly-note")
+            yield Static("Description", classes="modal-label")
+            yield Input(id="coverage-description")
+            yield Static("Taxonomy source", classes="modal-label")
+            yield FittingSelect(
+                [(source, source) for source in ("NCBI",)],
+                value="NCBI",
+                id="coverage-taxonomy-source",
+                allow_blank=False,
+            )
+            yield Static("Root TaxIDs (comma separated)", classes="modal-label")
+            yield Input(placeholder="e.g. 33090", id="coverage-root-taxids")
+            yield Static("Target ranks", classes="modal-label")
+            yield Checkbox("family", id="coverage-rank-family")
+            yield Checkbox("genus", id="coverage-rank-genus")
+            yield Static("Filters", classes="modal-label")
+            yield Checkbox("exclude extinct taxa", id="coverage-exclude-extinct")
+            yield Static(
+                "Excluded subtrees (comma separated TaxIDs)",
+                classes="modal-label",
+            )
+            yield Input(placeholder="blank = none", id="coverage-exclude-subtrees")
+            yield Static(
+                "Excluded name patterns (one regular expression per line)",
+                classes="modal-label",
+            )
+            yield TextArea(id="coverage-exclude-patterns")
+            yield Static(
+                "Minimum coverage percent per checked target rank",
+                classes="modal-label",
+            )
+            yield Input(placeholder="family %", id="coverage-threshold-family")
+            yield Input(placeholder="genus %", id="coverage-threshold-genus")
+            yield Static("", id="coverage-version-note")
+            yield Static("", id="coverage-extras-note")
+            yield Static("", id="coverage-save-error")
+            with Horizontal(classes="config-buttons"):  # pragma: no branch
+                yield Button(
+                    "Save profile",
+                    id="coverage-save",
+                    variant="primary",
+                    disabled=True,
+                )
+                yield Button("History", id="coverage-history", disabled=True)
+
+    def _compose_conda_section(self) -> ComposeResult:
+        yield Static(
+            "Conda defaults (every tool that inherits them)",
+            classes="modal-label",
+        )
+        yield Input(placeholder="conda binary (blank = conda)", id="conda-bin")
+        yield Static(
+            "conda run args (one token per line; blank = run --no-capture-output)",
+            classes="modal-label",
+        )
+        yield TextArea(id="conda-run-args")
+        yield Static("", id="conda-note")
+        yield Static("", id="conda-save-error")
+        with Horizontal(classes="config-buttons"):
+            yield Button("Save defaults", id="conda-save", disabled=True)
+            yield Button("Check tools", id="tools-check")
+
+    def _compose_tool_editor(self) -> ComposeResult:
+        yield DataTable(id="tools-table", cursor_type="row")
+        with VerticalScroll(id="tool-editor"):  # pragma: no branch
+            yield Static("select a tool", id="tool-heading")
+            yield Static("Description", classes="modal-label")
+            yield Input(id="tool-description")
+            yield Static("Executable (blank = tool name)", classes="modal-label")
+            yield Input(id="tool-executable")
+            yield Static("Version args (one token per line)", classes="modal-label")
+            yield TextArea(id="tool-version-args")
+            yield Static(
+                "Version pattern (regular expression)",
+                classes="modal-label",
+            )
+            yield Input(id="tool-version-pattern")
+            yield Static("Run method", classes="modal-label")
+            yield FittingSelect(
+                TOOL_RUN_METHOD_OPTIONS,
+                id="tool-run-method",
+                prompt="no run_method (run directly)",
+                allow_blank=True,
+            )
+            with Vertical(id="tool-run-string-row"):
+                yield Static("Launcher command (run verbatim)", classes="modal-label")
+                yield Input(id="tool-run-string")
+            with Vertical(id="tool-run-conda-row"):
+                yield Static("conda environment (required)", classes="modal-label")
+                yield Input(id="tool-run-conda-env")
+                yield Static(
+                    "conda binary (blank = top-level conda.bin)",
+                    classes="modal-label",
+                )
+                yield Input(id="tool-run-conda-bin")
+                yield Static(
+                    "conda run args (one token per line; blank = "
+                    "top-level conda.run_args)",
+                    classes="modal-label",
+                )
+                yield TextArea(id="tool-run-conda-args")
+            with Vertical(id="tool-run-prefix-row"):
+                yield Static(
+                    "Launcher prefix (one token per line)",
+                    classes="modal-label",
+                )
+                yield TextArea(id="tool-run-prefix")
+            yield Static("", id="tool-extras-note")
+            yield Static("", id="tool-save-error")
+            with Horizontal(classes="config-buttons"):  # pragma: no branch
+                yield Button(
+                    "Save tool",
+                    id="tool-save",
+                    variant="primary",
+                    disabled=True,
+                )
 
     def on_mount(self) -> None:
         tools_table = self.query_one("#tools-table", DataTable)

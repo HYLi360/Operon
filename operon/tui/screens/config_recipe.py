@@ -20,11 +20,18 @@ import re
 from typing import Any
 
 from rich.text import Text
-from textual.widgets import Button, Input, Select, Static, TextArea
+from textual.app import ComposeResult
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import Button, DataTable, Input, Select, Static, TextArea
 
 from operon.errors import ValidationError
 from operon.tui import data
-from operon.tui.screens.common import ENTITY_TYPE_OPTIONS, MountTracked, remount
+from operon.tui.screens.common import (
+    ENTITY_TYPE_OPTIONS,
+    FittingSelect,
+    MountTracked,
+    remount,
+)
 from operon.tui.screens.config_modals import HistoryModal, RecipeSaveModal
 from operon.tui.screens.config_rows import (
     _PARAM_NAME_RE,
@@ -117,6 +124,178 @@ class RecipeEditor:
     initializes it.  Nothing here overrides ``Panel``; the split is pure
     code motion, so the handlers and helpers read exactly as before.
     """
+
+    def _compose_recipe_editor(self) -> ComposeResult:
+        yield Static("Recipes", classes="modal-label")
+        yield DataTable(id="recipes-table", cursor_type="row")
+        with Horizontal(classes="config-buttons"):
+            yield Button("Run analysis", id="recipe-run", disabled=True)
+        with VerticalScroll(id="recipe-editor"):  # pragma: no branch
+            yield Static("select a recipe", id="recipe-heading")
+            yield Static("Description", classes="modal-label")
+            yield Input(id="recipe-description")
+            yield Static("Entity type (blank = *)", classes="modal-label")
+            yield FittingSelect(
+                ENTITY_TYPE_OPTIONS,
+                id="recipe-entity-type",
+                allow_blank=True,
+            )
+            yield Input(placeholder="file_role", id="recipe-file-role")
+            yield Input(
+                placeholder="file_role_prefix (mutually exclusive with file_role)",
+                id="recipe-file-role-prefix",
+            )
+            yield Input(placeholder="format", id="recipe-format")
+            yield Static("Input kind (blank = key absent)", classes="modal-label")
+            yield FittingSelect(
+                [(kind, kind) for kind in ARTIFACT_KINDS],
+                id="recipe-input-kind",
+                allow_blank=True,
+            )
+            yield Static("Output kind (blank = key absent)", classes="modal-label")
+            yield FittingSelect(
+                [(kind, kind) for kind in ARTIFACT_KINDS],
+                id="recipe-output-kind",
+                allow_blank=True,
+            )
+            yield Input(placeholder="database", id="recipe-database")
+            yield Input(placeholder="database_version", id="recipe-database-version")
+            yield FittingSelect(
+                [(mode, mode) for mode in DATABASE_MODES],
+                id="recipe-database-mode",
+                allow_blank=True,
+            )
+            yield Input(
+                placeholder="database_checksum (sha256 hex; optional)",
+                id="recipe-database-checksum",
+            )
+            yield Static(
+                "Environment policy (blank = key absent; core default 'warn')",
+                classes="modal-label",
+            )
+            yield FittingSelect(
+                [(policy, policy) for policy in ENVIRONMENT_POLICIES],
+                id="recipe-environment-policy",
+                allow_blank=True,
+            )
+            yield Static(
+                "Slurm overrides (optional; merges over "
+                "execution.slurm — unknown keys preserved)",
+                classes="modal-label",
+            )
+            yield Input(placeholder="slurm partition", id="recipe-slurm-partition")
+            yield Input(
+                placeholder="slurm time (e.g. 24:00:00)",
+                id="recipe-slurm-time",
+            )
+            yield Input(placeholder="slurm mem_gb", id="recipe-slurm-mem-gb")
+            yield Input(
+                placeholder="slurm poll_interval (seconds)",
+                id="recipe-slurm-poll-interval",
+            )
+            yield FittingSelect(
+                [("true", "true"), ("false", "false")],
+                id="recipe-slurm-array",
+                allow_blank=True,
+            )
+            yield Input(
+                placeholder="slurm array_concurrency",
+                id="recipe-slurm-array-concurrency",
+            )
+            yield Static(
+                "slurm extra_sbatch (one sbatch flag per line)",
+                classes="modal-label",
+            )
+            yield TextArea(id="recipe-slurm-extra-sbatch")
+            yield Static(
+                "slurm setup_commands (one command per line)",
+                classes="modal-label",
+            )
+            yield TextArea(id="recipe-slurm-setup-commands")
+            yield Static("", id="recipe-slurm-note")
+            yield Input(placeholder="output_subdir", id="recipe-output-subdir")
+            yield Input(placeholder="output_suffix", id="recipe-output-suffix")
+            yield Input(
+                placeholder="output_name (template, e.g. ${file_id}.out)",
+                id="recipe-output-name",
+            )
+            yield Static(
+                "Arguments (one per line; ${placeholders} stay as-is)",
+                classes="modal-label",
+            )
+            yield TextArea(id="recipe-arguments")
+            yield Static(
+                "Runtime parameters (name=default per line, then "
+                "optional `; required`, `; choices=a,b` and "
+                "`; pattern=<regex>` — pattern takes the rest of the "
+                "line; other spec keys preserved)",
+                classes="modal-label",
+            )
+            yield TextArea(id="recipe-parameters")
+            yield Static("", id="recipe-parameters-note")
+            yield Static(
+                "Commands chain (optional; mutually exclusive with "
+                "arguments — every step runs in the parent tool's single "
+                "run_method environment)",
+                classes="modal-label",
+            )
+            yield MountTracked(id="recipe-command-list")
+            with Horizontal(classes="config-buttons"):
+                yield Button("Add step", id="recipe-add-command")
+            yield Static("", id="recipe-command-note")
+            yield Static("Result parser", classes="modal-label")
+            yield FittingSelect(
+                [(parser, parser) for parser in RESULT_PARSERS],
+                value="none",
+                id="recipe-result-parser",
+                allow_blank=False,
+            )
+            yield Input(placeholder="result_glob", id="recipe-result-glob")
+            yield Static("HMMER mode (blank = key absent)", classes="modal-label")
+            yield FittingSelect(
+                [(mode, mode) for mode in HMMER_MODES],
+                id="recipe-hmmer-mode",
+                allow_blank=True,
+            )
+            yield Input(
+                placeholder="result_columns (comma separated)",
+                id="recipe-result-columns",
+            )
+            yield Input(
+                placeholder="hit_metric_columns (comma separated)",
+                id="recipe-hit-metric-columns",
+            )
+            yield Static(
+                "Column mapping (blank = parser defaults)",
+                classes="modal-label",
+            )
+            yield Input(placeholder="query_column", id="recipe-query-column")
+            yield Input(placeholder="subject_column", id="recipe-subject-column")
+            yield Input(
+                placeholder="numeric_columns (comma separated)",
+                id="recipe-numeric-columns",
+            )
+            yield Input(placeholder="qstart_column", id="recipe-qstart-column")
+            yield Input(placeholder="qend_column", id="recipe-qend-column")
+            yield Input(placeholder="sstart_column", id="recipe-sstart-column")
+            yield Input(placeholder="send_column", id="recipe-send-column")
+            yield Input(placeholder="evalue_column", id="recipe-evalue-column")
+            yield Input(placeholder="bitscore_column", id="recipe-bitscore-column")
+            yield Input(placeholder="pident_column", id="recipe-pident-column")
+            yield Input(
+                placeholder="max_hits_per_query (blank restores default: 5)",
+                id="recipe-max-hits",
+            )
+            yield Static("", id="recipe-extras-note")
+            yield Static("", id="recipe-save-error")
+            with Horizontal(classes="config-buttons"):  # pragma: no branch
+                yield Button(
+                    "Save recipe",
+                    id="recipe-save",
+                    variant="primary",
+                    disabled=True,
+                )
+                yield Button("History", id="recipe-history", disabled=True)
 
     def _render_recipe_form(
         self, name: str, document: dict[str, Any], note: str = ""
