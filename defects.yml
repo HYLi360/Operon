@@ -2515,7 +2515,7 @@ defects:
     partial artifact on disk.
   severity: 'medium'
   component: 'tools'
-  status: 'open'
+  status: 'verified'
   reproduction: |
     _fail_analysis_execution() (operon/tools/_execute.py:333-346) is the single choke point for every
     non-interrupt terminal path: the except-Exception arm of run_analysis_for_file (:411-421) and every
@@ -2541,9 +2541,13 @@ defects:
     unit test of _fail_analysis_execution removal and keep-partial retention, an end-to-end
     run_analysis_for_file failure test, and a CLI integration test asserting the default removes the
     partial output while --keep-partial preserves it.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fix_commit: 'a48b62603d7398a518a35389adbb0cf31028a0b4'
+  fixed_in: '0.10.1'
+  regression_tests:
+    - tests/unit/test_tools_edges.py::test_fail_analysis_execution_removes_partial_artifacts
+    - tests/unit/test_tools_edges.py::test_fail_analysis_execution_keep_partial_retains_artifacts
+    - tests/unit/test_tools_execution_more.py::test_run_analysis_for_file_failure_removes_partial_output_like_an_interrupt
+    - tests/integration/test_analysis_shutdown.py::TestAnalysisShutdown::test_failed_run_removes_partial_output_and_keep_partial_preserves_it
 - id: ODR-80
   title: 'A hardlink fallback is invisible in release and export provenance'
   reported: '2026-10-18'
@@ -2554,7 +2558,7 @@ defects:
     export, and for every directory member under --link hardlink (directories are always copied).
   severity: 'low'
   component: 'release'
-  status: 'open'
+  status: 'verified'
   reproduction: |
     operon/release.py:340-343 wraps os.link(source, target) in except OSError: atomic_copy(source,
     target) with no record and no warning; a directory member is always atomic_copytree
@@ -2577,9 +2581,11 @@ defects:
     add-only counters rather than overwriting the requested value. Regression tests extend the two
     existing fallback tests (export and release) with provenance assertions and carry
     @pytest.mark.bug(ODR-80).
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fix_commit: 'f74506f1239c702f411b10f4a00567b5402e7be4'
+  fixed_in: '0.10.1'
+  regression_tests:
+    - tests/unit/test_misc_coverage_more.py::test_export_hardlink_falls_back_to_a_copy
+    - tests/unit/test_views_release_reports_edges.py::test_release_checksum_directory_copy_and_hardlink_fallback
 - id: ODR-81
   title: 'The import-wizard draft outlived the database state and broke page repopulation'
   reported: '2026-10-18'
@@ -2592,7 +2598,7 @@ defects:
     widget text surviving a disabled sequencing/annotation section.
   severity: 'medium'
   component: 'tui'
-  status: 'open'
+  status: 'verified'
   reproduction: |
     Reported verbatim as the known-issue bullet of docs/en/reference/behaviors-and-limitations.md:257
     (Chinese mirror :256) while the screen was in development. Registration arrived late: the
@@ -2623,9 +2629,12 @@ defects:
     (:1031), test_wizard_disabled_sections_clear_inputs_and_choices (:1071); each now carries
     @pytest.mark.bug(ODR-81). docs/en/reference/cli-tui.md:174-180 (and the zh mirror) already document
     the fixed behavior; the stale known-issue bullet was removed.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fix_commit: 'fa6a7f531afe3d1eaa72d39c53a7256ce1371ce4'
+  fixed_in: '0.8.1'
+  regression_tests:
+    - tests/unit/test_tui_publish.py::test_wizard_retired_draft_choice_requires_reselection
+    - tests/unit/test_tui_publish.py::test_wizard_startup_failure_can_retry_without_navigation
+    - tests/unit/test_tui_publish.py::test_wizard_disabled_sections_clear_inputs_and_choices
 - id: ODR-82
   title: 'A ragged coverage-report TSV crashed the TUI viewer'
   reported: '2026-10-18'
@@ -2635,7 +2644,7 @@ defects:
     count differs from its header; the CLI is strict through the same reader convention and unaffected.
   severity: 'medium'
   component: 'tui'
-  status: 'open'
+  status: 'verified'
   reproduction: |
     Reported verbatim as the known-issue bullet of docs/en/reference/behaviors-and-limitations.md:273
     (Chinese mirror :272). The mechanism is real: CoveragePanel._apply_report
@@ -2660,6 +2669,10 @@ defects:
     test_coverage_panel_report_load_failure (:931); each now carries @pytest.mark.bug(ODR-82). No
     product change was needed: the data-layer validation is the invariant holder, and a screen-side
     padding-or-dropping fallback would have diverged from the CLI and cache-integrity semantics.
-  fix_commit: null
-  fixed_in: null
-  regression_tests: []
+  fix_commit: 'fa6a7f531afe3d1eaa72d39c53a7256ce1371ce4'
+  fixed_in: '0.8.1'
+  regression_tests:
+    - tests/unit/test_tui_publish.py::test_coverage_malformed_row_is_inline_and_recoverable
+    - tests/unit/test_tui_publish.py::test_coverage_validates_rows_beyond_display_limit
+    - tests/unit/test_tui_publish.py::test_coverage_blank_header_rejected
+    - tests/unit/test_tui_screens_more.py::test_coverage_panel_report_load_failure
