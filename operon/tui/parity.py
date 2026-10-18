@@ -368,13 +368,13 @@ REGISTRY: tuple[ParityEntry, ...] = (
         ("recipes", "history"),
         STATUS_IMPLEMENTED,
         actions="data.recipe_history",
-        modal="operon.tui.screens.config::HistoryModal",
+        modal="operon.tui.screens.config_modals::HistoryModal",
     ),
     ParityEntry(
         ("recipes", "show"),
         STATUS_IMPLEMENTED,
         actions="data.get_recipe_document",
-        modal="operon.tui.screens.config::SnapshotViewModal",
+        modal="operon.tui.screens.config_modals::SnapshotViewModal",
         params={"snapshot_id": "context: HistoryModal snapshot selection"},
     ),
     ParityEntry(
@@ -384,7 +384,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "one snapshot table (qc_profiles); the Config screen dispatches each "
         "document to the form its own kind models",
         actions="data.profile_history",
-        modal="operon.tui.screens.config::HistoryModal",
+        modal="operon.tui.screens.config_modals::HistoryModal",
     ),
     ParityEntry(
         ("profiles", "show"),
@@ -393,7 +393,7 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "one snapshot table (qc_profiles); the Config screen dispatches each "
         "document to the form its own kind models",
         actions="data.get_profile_document",
-        modal="operon.tui.screens.config::SnapshotViewModal",
+        modal="operon.tui.screens.config_modals::SnapshotViewModal",
         params={"snapshot_id": "context: HistoryModal snapshot selection"},
     ),
     ParityEntry(
