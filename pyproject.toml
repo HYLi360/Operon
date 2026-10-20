@@ -21,16 +21,16 @@ license = "BSD-2-Clause"
 license-files = ["LICENSE"]
 
 dependencies = [
-    "aiohttp>=3.9",
-    "pysam>=0.24.1,<0.25",  # BGZF via htslib; 0.24.1 adds cp315 wheels, so every matrix leg avoids the sdist build
-    "biopython>=1.85",
-    "paramiko>=3.4",
-    "pyarrow>=25.0.0",  # 26.0 needs python 3.11+
-    "polars>=2.0.0",
-    "PyYAML>=6.0",
-    "questionary>=2.1",
-    "requests>=2.32",
-    "textual>=8.0",
+    "aiohttp>=3.9,<4",
+    "biopython>=1.85,<2",
+    "paramiko>=3.4,<6",
+    "polars>=2.0.0,<3",
+    "pyarrow>=25.0.0,<27",  # 26.0 needs python 3.11+
+    "pysam>=0.24.1,<0.25",  # BGZF via htslib; 0.24.1 adds cp315 wheels
+    "PyYAML>=6.0.1,<7",  # 6.0.1 is the first line with cp312 wheels
+    "questionary>=2.1,<3",
+    "requests>=2.32,<3",
+    "textual>=8.0,<9",  # textual has repeatedly broken APIs between minor lines
 ]
 
 [project.urls]
@@ -41,7 +41,6 @@ Issues = "https://github.com/HYLi360/Operon/issues"
 test = [
     "coverage>=7.0",
     "cython>=3.0",
-    "paramiko>=3.4",
     "pytest>=8.0",
     "pytest-cov>=7.0",
     "pytest-randomly>=3.16",
@@ -59,16 +58,16 @@ docs = [
 dev = [
     "coverage>=7.0",
     "cython>=3.0",
+    "myst-parser>=4.0,<5",
     "pytest>=8.0",
     "pytest-cov>=7.0",
     "pytest-randomly>=3.16",
     "pytest-xdist>=3.8",
     "ruff>=0.16.9,<0.17.0",
     "setuptools>=77",
-    "tomli>=2.0; python_version < '3.11'",
     "Sphinx>=7.4,<9",
-    "myst-parser>=4.0,<5",
     "sphinx-rtd-theme>=3.0,<4",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]
