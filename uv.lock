@@ -1778,7 +1778,6 @@ requires-dist = [
     { name = "myst-parser", marker = "extra == 'dev'", specifier = ">=4.0,<5" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=4.0,<5" },
     { name = "paramiko", specifier = ">=3.4,<6" },
-    { name = "paramiko", marker = "extra == 'test'", specifier = ">=3.4" },
     { name = "polars", specifier = ">=2.0.0,<3" },
     { name = "pyarrow", specifier = ">=25.0.0,<27" },
     { name = "pysam", specifier = ">=0.24.1,<0.25" },
