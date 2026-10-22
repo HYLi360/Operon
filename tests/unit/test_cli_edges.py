@@ -493,6 +493,157 @@ def test_analyze_detach_spawns_independent_session(project_db, monkeypatch, caps
     assert header.startswith("# ") and "operon analyze (detached)" in header
 
 
+@pytest.mark.bug("ODR-85")
+def test_detach_refuses_concurrent_same_recipe_spawn(project_db, monkeypatch, capsys):
+    import hashlib
+
+    from tests.unit.test_tools_execution_more import write_tool_config
+
+    project, db = project_db
+    write_tool_config(project)
+    beacon = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        spawned: list[list] = []
+
+        def fake_popen(argv, **kwargs):
+            spawned.append(list(argv))
+            return SimpleNamespace(pid=beacon.pid)
+
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+        # First detached launch claims the marker with the (mock) child pid.
+        assert (
+            cli._cmd_analyze(
+                _analyze_ns(detach=True, analysis="fake_recipe"),
+                project,
+                db,
+            )
+            == 0
+        )
+        assert len(spawned) == 1
+        capsys.readouterr()
+        marker = (
+            project.root / ".operon" / "analysis-locks"
+        ) / f"{hashlib.sha256(b'fake_recipe').hexdigest()[:16]}.json"
+
+        # A second spawn of the same recipe refuses without launching a child.
+        with pytest.raises(ValidationError, match="already running"):
+            cli._cmd_analyze(
+                _analyze_ns(detach=True, analysis="fake_recipe"),
+                project,
+                db,
+            )
+        assert len(spawned) == 1  # nothing new launched
+        assert marker.is_file()
+    finally:
+        beacon.kill()
+        beacon.wait()
+
+
+@pytest.mark.bug("ODR-85")
+def test_detach_takes_over_a_stale_marker_and_publishes_pid(
+    project_db, monkeypatch, capsys
+):
+    import hashlib
+    import json as json_module
+    from datetime import datetime, timedelta, timezone
+
+    from operon.tools._detach import detached_analysis_marker_path
+    from tests.unit.test_tools_execution_more import write_tool_config
+
+    project, db = project_db
+    write_tool_config(project)
+    marker = detached_analysis_marker_path(project, "fake_recipe")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    reaped = subprocess.Popen(["true"])
+    reaped.wait()
+    assert reaped.pid > 0
+
+    # A marker whose pid is dead (crashed/finished child) is stale and taken
+    # over; the next spawn republishes its own child pid.
+    marker.write_text(
+        json_module.dumps(
+            {
+                "analysis": "fake_recipe",
+                "pid": reaped.pid,
+                "started_at": "2026-10-22T00:00:00+08:00",
+                "argv": "argv-from-a-dead-child",
+            }
+        ),
+        encoding="utf-8",
+    )
+    launched: list[list] = []
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda argv, **_k: launched.append(argv) or SimpleNamespace(pid=4242),
+    )
+    assert (
+        cli._cmd_analyze(
+            _analyze_ns(detach=True, analysis="fake_recipe"),
+            project,
+            db,
+        )
+        == 0
+    )
+    payload = json_module.loads(marker.read_text(encoding="utf-8"))
+    assert payload["pid"] == 4242
+    assert payload["analysis"] == "fake_recipe"
+    assert "--analysis fake_recipe" in payload["argv"]
+    assert len(launched) == 1
+    capsys.readouterr()
+    marker.unlink(missing_ok=True)
+
+    # A young pid-less claim (the crash window: another session is holding on
+    # between claim and launch) refuses without spawning anything.
+    marker.write_text(
+        json_module.dumps(
+            {
+                "analysis": "fake_recipe",
+                "pid": None,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "argv": "claim-in-flight",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="already running"):
+        cli._cmd_analyze(
+            _analyze_ns(detach=True, analysis="fake_recipe"),
+            project,
+            db,
+        )
+    assert len(launched) == 1
+    capsys.readouterr()
+
+    # The same claim past its grace window is stale and taken over.
+    marker.write_text(
+        json_module.dumps(
+            {
+                "analysis": "fake_recipe",
+                "pid": None,
+                "started_at": (
+                    datetime.now(timezone.utc) - timedelta(seconds=12)
+                ).isoformat(),
+                "argv": "abandoned-claim",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        cli._cmd_analyze(
+            _analyze_ns(detach=True, analysis="fake_recipe"),
+            project,
+            db,
+        )
+        == 0
+    )
+    payload = json_module.loads(marker.read_text(encoding="utf-8"))
+    assert payload["pid"] == 4242 and len(launched) == 2
+    marker_suffix = hashlib.sha256(b"fake_recipe").hexdigest()[:16]
+    assert marker.name == f"{marker_suffix}.json"
+
+
 def _run_external_ns(**overrides):
     values = dict(
         command_line="echo ok",

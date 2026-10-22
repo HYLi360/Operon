@@ -2701,3 +2701,45 @@ defects:
   fixed_in: null
   regression_tests:
     - tests/unit/test_feature_index.py::test_query_cli_escapes_formula_trigger_cells
+- id: ODR-85
+  title: |
+    `analysis --detach` spawns duplicates of the same recipe: the second launch sweeps the first child's
+    in-flight RUNNING rows and both children compute concurrently
+  reported: '2026-10-22'
+  introduced_in: '899344a2f9984fd8660a1fe08045459637e03f96'
+  affected: |
+    `operon/tools/_detach.py` spawn_detached_analysis never checks whether an active detached runner of
+    the same analysis exists: every `operon analyze --detach` Popen's an independent session, so N calls
+    keep N same-recipe children alive. The bookkeeping then actively lies: `_sweep_stale_running_jobs`
+    (operon/tools/_cache.py) is scoped per analysis_name by design ("a concurrent run of a different
+    analysis keeps its live rows untouched"), so the second child's startup sweep marks the first
+    child's in-flight RUNNING rows `interrupted` with the fabricated reason "swept at startup: previous
+    run terminated abnormally" while that child is still computing; both children also append to the
+    same-second analyze-detach-<stamp>.log and leave duplicated per-file analysis_jobs rows.
+  severity: 'medium'
+  component: 'tools'
+  status: 'fixed'
+  reproduction: |
+    Manual repro on master 3d1cf82 (observed twice): temp project with one plain FASTA and a slow fake
+    batch tool (sleep 4). `operon analyze --analysis slow_batch --detach` twice: both children detached
+    (pids 897537/897541; `ps -o pid,etime,cmd` shows both `python -m operon ... analyze --analysis
+    slow_batch` alive), and the second child's startup sweep recorded `{job_id: 1, status:
+    'interrupted', error: 'swept at startup: previous run terminated abnormally'}` for the RUNNING row
+    the first child had just written while its process was still alive.
+  disposition: |
+    spawn_detached_analysis now claims a per-recipe liveness marker before Popen:
+    `.operon/analysis-locks/<sha16-of-analysis>.json` records pid/started_at/argv, created with an
+    exclusive `open(path, "x")` so a concurrent duplicate loses the claim outright. A marker whose pid
+    is alive refuses the spawn with a `ValidationError` naming the pid ("already running (pid …, started
+    …)"); an exited pid (crashed or finished child, marker left behind by design) is cleared and the
+    spawn proceeds; a pid-less claim refuses inside a ten-second grace window (another session may be
+    publishing its child) and is stale beyond it. The pid is written atomically after Popen; a Popen
+    failure removes the claim. Foreground runs are deliberately not gated: an operator-run `analyze` is
+    user-observed in its own terminal, and the remaining scope is recorded in docs. Regression tests
+    marked ODR-85 pin duplicate refusal (live pid), stale takeover, the crash-before-publish window, and
+    the CLI surface.
+  fix_commit: null
+  fixed_in: null
+  regression_tests:
+    - tests/unit/test_cli_edges.py::test_detach_refuses_concurrent_same_recipe_spawn
+    - tests/unit/test_cli_edges.py::test_detach_takes_over_a_stale_marker_and_publishes_pid

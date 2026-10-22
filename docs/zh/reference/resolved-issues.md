@@ -96,6 +96,7 @@
 | ODR-0081 | TUI | 导入向导的草稿生命周期长于数据库状态时不再中断：草稿 id 不在新加载选项中时回退 `Select.NULL` 并内联显示"no longer available"，而不是在 worker 回调里抛 `InvalidSelectValueError`（`_restore_choice`）；启动失败后导航被"Retry initialization"按下路径挡住，`_collect` 以内联消息作答而非抛未捕获的 `KeyError`；重新启用 sequencing/annotation 段时输入从零开始，因为 `_populate` 依据缺席的草稿行重置它们。迟到登记：三处缓解与测试均落在 fa6a7f5，本条目补齐闭环链。 |
 | ODR-0082 | TUI | 字段数不齐的 coverage 报告 TSV 不再让 TUI 查看器崩溃：`data.read_coverage_report` 校验每一行的字段数与表头一致，否则抛出带文件名与行号的 `ValidationError`（含 500 行显示上限之外的行与空表头），而面板把任何读取失败渲染进红色的报告标题区、修复后重选即恢复——保持 `read_tsv` 的本仓规则，不做补齐或丢弃式规范化。迟到登记：校验逻辑与四个回归测试均落在 fa6a7f5，本条目补齐闭环链。 |
 | ODR-0083 | CLI | `operon features query` 现在会转义表格公式触发符：每个 TSV 单元格在交给 `csv.writer` 前都经过 `escape_formula_text()`，因此以 `=`、`+`、`-`、`@` 开头（或携带 TAB/CR）的 seqid、source、type、id、parent、gene_id、transcript_id 会带前导单引号写出，而不会被当作公式求值——与 ODR-0040 为 `sequence_qc.tsv` 与 `schema.write_tsv` 定下的契约一致。非字符串值原样通过，数值列的字节不变。 |
+| ODR-0085 | Tools | `analyze --detach` 强制同一 recipe 只能有一个 detach 子进程：启动在 `.operon/analysis-locks/` 认领 pid/started_at/argv 存活标记（独占建文件，并发认领自然串行化），前一个子进程仍可被信号触达时拒绝重复——其待行 RUNNING 行不再被重复启动的 startup sweep 清扫掉。已退出的子进程会留下过期标记，由下一次 spawn 清收。前台运行不设这道闸。 |
 
 ## K 系列（历史）
 
