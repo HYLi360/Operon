@@ -299,7 +299,7 @@ def measure_file(
             for stage, name, value, unit in _gff3_metric_specs(stats, pstats)
         )
     # parseable=1 only when a format parser actually ran; formats without a
-    # parser (other, directory, bam, ...) leave parseable unmeasured so
+    # parser (other, directory, bam, cram) leave parseable unmeasured so
     # required `parseable == 1` gates stay NOT_EVALUATED for them.
     if file_format in {"fasta", "fastq", "gff3"}:
         entries.append(

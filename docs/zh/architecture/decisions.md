@@ -14,8 +14,8 @@
 | 编号 | 决策 | 执法者 |
 |------|------|--------|
 | INV-1 | `operon.sqlite` 中的结构化元数据是唯一真相；大型序列文件从不进入数据库。 | schema 校验，`operon/schema.py` |
-| INV-2 | 原始数据不可变；派生数据可重建。压缩是登记在 manifest 里的存储属性，不是内容变更：显式的 `operon recompress` 迁移把符合条件的 raw 归档原地改写为确定性 BGZF，通过对解压字节复算哈希证明内容保持，并逐字段留审计。 | 字节不一致即 `ConflictError`，`operon/files.py`；`tests/unit/test_archive_compression.py`、`tests/unit/test_recompress.py` |
-| INV-3 | 文件身份是 `file_id + sha256 + size_bytes`——以**落盘字节**为准，永远不是路径；BGZF 压缩归档的身份即其压缩形态，压缩方式记录在 manifest 行里。 | 清单归档与校验，`operon/files.py`；`tests/unit/test_archive_compression.py` |
+| INV-2 | 原始数据不可变；派生数据可重建。压缩是登记在 manifest 里的存储属性，不是内容变更：显式的 `operon recompress` 迁移把符合条件的 raw 归档原地改写为确定性 BGZF，通过对解压字节复算哈希证明内容保持，并逐字段留审计。属于格式本身的压缩（BAM 的 BGZF 容器、CRAM 的块编码）是格式的一部分，记录为 `compression: none`，不是存储转换。 | 字节不一致即 `ConflictError`，`operon/files.py`；`tests/unit/test_archive_compression.py`、`tests/unit/test_recompress.py` |
+| INV-3 | 文件身份是 `file_id + sha256 + size_bytes`——以**落盘字节**为准，永远不是路径；BGZF 压缩归档的身份即其压缩形态，压缩方式记录在 manifest 行里。容器本身即压缩格式的格式（BAM/CRAM）保持 `compression: none`：这些落盘字节就是内容身份，导入预检绝不对它们解压。 | 清单归档与校验，`operon/files.py`；`tests/unit/test_archive_compression.py` |
 | INV-4 | QC 工具只测量指标；判定只来自版本化的 YAML profile。 | `operon/profiles.py`、`operon/rules.py` |
 | INV-5 | 每一步处理都是显式、幂等的状态机迁移，并留下机器可读的 provenance。 | `operon/workflow.py`，`changes`/`workflow_runs` |
 

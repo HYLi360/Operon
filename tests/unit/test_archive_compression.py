@@ -310,3 +310,37 @@ def test_stored_content_sha256_matches_content_regardless_of_storage_form(
         )
         is None
     )
+
+
+@pytest.mark.bug("ODR-84")
+def test_bam_intrinsic_compression_stays_none_and_preflight_compares_stored_bytes(
+    project_db, tmp_path
+):
+    project, db = project_db
+    payload = b"BAM\x01binary-payload"
+    plain = tmp_path / "payload.bin"
+    plain.write_bytes(payload)
+    source = tmp_path / "reads.bam"
+    atomic_copy_bgzip(plain, source)
+
+    row = files.ingest_file(
+        db, project, source, "assembly", "ASM_000001", "alignment_bam"
+    )
+    assert row["format"] == "bam"
+    assert row["compression"] == "none"
+    assert row["relative_path"].endswith("ASM_000001.alignment_bam.bam")
+    assert not row["relative_path"].endswith(".gz")
+    assert files.stored_content_sha256(project, row) == sha256_path(source)
+
+    # A legacy row recorded before the correction says gzip and points at a
+    # BGZF-named path; the preflight must compare its stored bytes, not the
+    # decompressed BAM stream the ingest path can never reproduce.
+    legacy_path = tmp_path / "legacy.bam.gz"
+    legacy_path.write_bytes(source.read_bytes())
+    legacy = dict(
+        row,
+        compression="gzip",
+        relative_path=str(legacy_path.relative_to(project.root)),
+    )
+    assert files.stored_content_sha256(project, legacy) == sha256_path(legacy_path)
+    assert files.stored_content_sha256(project, legacy) != sha256_path(plain)

@@ -53,11 +53,23 @@ ROLE_FORMATS = {
     "reads_r1": "fastq",
     "reads_r2": "fastq",
     "reads_single": "fastq",
+    "alignment_bam": "bam",
+    "alignment_cram": "cram",
     "assembly_report": "txt",
     "assembly_report_genbank": "txt",
     "assembly_report_refseq": "txt",
     "other": "other",
 }
+
+# Formats whose compression is part of the format itself, not a storage
+# transform.  BAM's container is BGZF by specification, and CRAM compresses
+# its own blocks, so a plain-named file records compression="none"; only a
+# gzip filename suffix (or an explicit --compression) records an outer layer.
+INTRINSIC_COMPRESSION_FORMATS = frozenset({"bam", "cram"})
+
+#: Roles that select the intrinsic-compression annotation-adjacent alignment
+#: formats; they are appended lazily to older projects' ``file_role`` enum.
+ALIGNMENT_FILE_ROLES = ("alignment_bam", "alignment_cram")
 
 _CHECKSUM_ADVANCE_FROM = {
     None,
@@ -364,11 +376,24 @@ def detect_format(path: str | Path, role: str | None = None) -> str:
     return "other"
 
 
-def detect_compression(path: str | Path) -> str:
+def detect_compression(path: str | Path, fmt: str | None = None) -> str:
+    """Detect the storage compression of ``path`` for a resolved ``fmt``.
+
+    BAM and CRAM carry their compression inside the format.  A plain-named
+    ``.bam`` whose magic bytes are BGZF therefore records ``none``: the gzip
+    framing belongs to BAM, not to the storage layer.  A gzip filename suffix
+    (``x.bam.gz``) or an explicit ``--compression`` still records an outer
+    layer; callers that know the manifest format pass it so a role-based
+    detection cannot fall back to magic bytes alone.
+    """
     if Path(path).is_dir():
         return "none"
     name = Path(path).name.lower()
-    if any(name.endswith(suffix) for suffix in GZIP_SUFFIXES):
+    has_gzip_suffix = any(name.endswith(suffix) for suffix in GZIP_SUFFIXES)
+    resolved_fmt = fmt or detect_format(path)
+    if resolved_fmt in INTRINSIC_COMPRESSION_FORMATS and not has_gzip_suffix:
+        return "none"
+    if has_gzip_suffix:
         if is_gzip_path(path):
             return "gzip"
         raise ValidationError(
@@ -413,6 +438,47 @@ def _ensure_gtf_format_schema(project: Project) -> None:
         )
 
 
+def _ensure_alignment_role_schema(project: Project) -> None:
+    """Add the alignment roles to an older project's files schema.
+
+    ``files.file_role`` is a closed enum in ``config/schemas.yaml``; projects
+    initialized before ``alignment_bam``/``alignment_cram`` existed carry no
+    such entries there. The upgrade is idempotent, mirrors the GTF format
+    extension, and only advances ``schema_version`` when it still marks a
+    pre-alignment contract (a crafted ``1.4`` file missing the roles gains
+    the roles with its marker unchanged).
+    """
+    import yaml
+
+    try:
+        document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8")) or {}
+        roles = document["tables"]["files"]["fields"]["file_role"]
+        allowed = list(roles.get("allowed", []))
+    except (OSError, KeyError, TypeError) as exc:
+        raise ValidationError(
+            f"cannot upgrade project files role schema: {exc}"
+        ) from exc
+    changed = False
+    for role in ALIGNMENT_FILE_ROLES:
+        if role not in allowed:
+            allowed.append(role)
+            changed = True
+    if changed:
+        roles["allowed"] = allowed
+        if str(document.get("schema_version", "")) in {
+            "",
+            "1.0",
+            "1.1",
+            "1.2",
+            "1.3",
+        }:
+            document["schema_version"] = "1.4"
+        atomic_write_text(
+            project.schema_path,
+            yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+        )
+
+
 def find_existing_file(
     db: Database, entity_type: str, entity_id: str, role: str, sha256: str
 ) -> dict[str, Any] | None:
@@ -430,11 +496,19 @@ def stored_content_sha256(project: Project, record: dict[str, Any]) -> str | Non
     that holds the plain source bytes must still recognize a row ingest archived
     as BGZF.  Returns ``None`` when the local bytes are absent (a remote-only
     row cannot prove a content match).
+
+    Formats whose compression is intrinsic (BAM's BGZF, CRAM's block codec) are
+    never decompressed here: their stored bytes *are* the content identity, and
+    decompressing would compare a derived stream against a raw source hash that
+    the ingest path can never reproduce.
     """
     path = project.root / str(record["relative_path"])
     if not path.is_file():
         return None
-    if str(record["compression"]) in {"gzip", "bgzip"}:
+    if (
+        str(record["compression"]) in {"gzip", "bgzip"}
+        and str(record["format"]) not in INTRINSIC_COMPRESSION_FORMATS
+    ):
         digest = hashlib.sha256()
         with gzip.open(path, "rb") as handle:
             while True:
@@ -464,7 +538,7 @@ def resolve_storage_form(
     """
     resolved_fmt = fmt or detect_format(source, role)
     compression_pinned = compression is not None
-    resolved_compression = compression or detect_compression(source)
+    resolved_compression = compression or detect_compression(source, resolved_fmt)
     if (
         project.compress_archive
         and not compression_pinned
@@ -630,8 +704,10 @@ def _resolve_ingest_form(
     fmt = fmt or detect_format(source, role)
     if fmt == "gtf":
         _ensure_gtf_format_schema(project)
+    if fmt in INTRINSIC_COMPRESSION_FORMATS:
+        _ensure_alignment_role_schema(project)
     compression_pinned = compression is not None
-    compression = compression or detect_compression(source)
+    compression = compression or detect_compression(source, fmt)
     target = archive_target(
         project, entity_type, entity_id, role, fmt, compression, archive_root
     )

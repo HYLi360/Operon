@@ -69,6 +69,18 @@ operon qc
 
 同一 `annotation_gff3` 角色下的 `.gtf` 来源按同样方式存储（`format: gtf`、同样的 BGZF 默认）；内置 QC 仍只评估 GFF3。每个注释归档在首次查询时还会获得 `index/features/` 下的扁平 feature 缓存——见 [Feature 索引命令](../reference/cli-features.md)。
 
+## 归档比对 BAM/CRAM
+
+```bash
+operon ingest --source /data/sample.bam \
+  --entity-type assembly --entity-id ASM_000001 --role alignment_bam
+
+operon ingest --source /data/sample.cram \
+  --entity-type assembly --entity-id ASM_000001 --role alignment_cram
+```
+
+BAM 与 CRAM 以 `format: bam`/`cram`、`compression: none` 归档：它们的压缩属于格式本身，因此 canonical 名称为 `<entity>.<role>.bam`/`.cram`（不带 `.gz`）。显式 `.gz` 源后缀或 `--compression gzip` 则记录为外层压缩。内置 `qc` 尚无 BAM/CRAM 解析器；`qc-measure --format bam|cram` 只测量文件完整性指标，专题解析器属于后续档位。
+
 ## 导入外部 QC 结果
 
 把 BUSCO/QUAST/FastQC/fastp 等输出整理为 TSV：

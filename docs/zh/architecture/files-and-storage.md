@@ -19,6 +19,8 @@
 
 开关是 `project.yaml` 的 `storage.compress_archive`，每次 ingest 的解析顺序为：CLI 旗标 `--compress-archive`/`--no-compress-archive` > 项目键 > 键缺失。键缺失的旧项目保持明文存储——不会发生隐式迁移。源文件已是 gzip/BGZF 时原样存储；显式 `--compression` 参数固定存储形态；目录与其他二进制格式永不转换。
 
+属于格式本身的压缩不是存储转换。BAM 的容器按规范就是 BGZF，CRAM 压缩自己的块，因此普通命名的 `.bam`/`.cram` 记录 `compression: none`，canonical 名称不带 `.gz`；只有显式 gzip 文件名后缀或 `--compression` 才记录外层压缩。早于该规则归档的行保留其已登记的路径与压缩值。文件名没有可用扩展名时，`alignment_bam` 与 `alignment_cram` 角色决定这两种格式；在这些角色之前初始化的项目，会在首次 BAM/CRAM ingest 时从 `config/schemas.yaml` 惰性补获它们（并顺带把 `schema_version` 推进到当前契约），与 GTF 格式扩展同一模式。
+
 `operon recompress` 是面向既有项目的显式一次性迁移：把每个符合条件的明文 FASTA/FASTQ/GFF3/GTF 归档原地重写（先完整复算当前字节，再 BGZF 改写，再对解压字节复算哈希作为内容保持证明，然后逐字段带审计地更新 manifest 行），删除该文件已登记的远程位置（下一次 `push` 会取代过时的远端副本），并在文件已标准化时重建 `standardized/` 视图。release 成员一律拒绝——release 不可变；remote-only 或已退役实体的文件跳过并写明原因。按旧 SHA-256 键控的派生数据（`qc_results`、`analysis_jobs`、`fasta_lengths` 缓存）自然失效、按需惰性重建；以 `file_id` 键控的 `sequences` 表不受影响。见[文件与 QC 命令](../reference/cli-files-qc.md#recompress)。
 
 ## 派生索引缓存

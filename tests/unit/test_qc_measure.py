@@ -319,6 +319,40 @@ class TestQCMeasureCLI(PytestAssertions):
         self.assertEqual(payload["file"]["file_role"], "genome_fasta")
         self.assertTrue(payload["metrics"])
 
+    def test_bam_and_cram_measure_identity_only(self, capsys):
+        for fmt, name, role in (
+            ("bam", "reads.bam", "alignment_bam"),
+            ("cram", "reads.cram", "alignment_cram"),
+        ):
+            path = self.root / name
+            path.write_bytes(b"BAM\x01binary" if fmt == "bam" else b"CRAM\x03binary")
+            identity = _identity(path)
+            code = main(
+                [
+                    "--project",
+                    str(self.root / "no-project-here"),
+                    "qc-measure",
+                    "--file",
+                    str(path),
+                    "--format",
+                    fmt,
+                    "--role",
+                    role,
+                    "--sha256",
+                    identity["sha256"],
+                    "--size-bytes",
+                    str(identity["size_bytes"]),
+                ]
+            )
+            self.assertEqual(code, 0)
+            payload = json.loads(capsys.readouterr().out)
+            self.assertEqual(payload["file"]["format"], fmt)
+            metrics = {
+                (item["qc_stage"], item["metric_name"]) for item in payload["metrics"]
+            }
+            self.assertIn(("file_integrity", "sha256_match"), metrics)
+            self.assertFalse(("file_integrity", "parseable") in metrics)
+
     def test_out_writes_atomically(self, capsys):
         path = self._fasta()
         identity = _identity(path)

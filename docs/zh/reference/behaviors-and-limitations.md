@@ -16,7 +16,7 @@
 
 - **raw 不可变性是绝对的，本地文件丢失也不例外。** 同实体同角色重新 ingest 不同字节会抛出 `ConflictError`，即使先前归档的文件在本地已缺失或损坏（`files.py`）。不存在就地替换路径；请归档为新实体版本，或走带审计的修复流程。
 - **不受清单管理的遗留文件会被隔离，而非删除。** 当 `raw/` 内规范目标路径被清单不认识的字节占用时，占用者会被移动为同目录下的 `<name>.orphan-<sha12-prefix>`（`files.py`）。这类文件可能出现在本应不可变的归档目录中，且不是 manifest 成员；占用行归属与审计细节见 [ingest 页面](cli-files-qc.md#ingest)。
-- **压缩检测是不对称的。** 名为 `.gz` 但 magic bytes 不是 gzip 的文件会被拒绝；反之，普通文件名但内容为 gzip 的文件会被静默记录为 `compression=gzip`（`files.py`，`detect_compression`）。
+- **压缩检测是不对称的。** 名为 `.gz` 但 magic bytes 不是 gzip 的文件会被拒绝；反之，普通文件名但内容为 gzip 的文件会被静默记录为 `compression=gzip`（`files.py`，`detect_compression`）。BAM 与 CRAM 是例外：它们的压缩属于格式本身，普通命名的 `.bam`/`.cram` 记录 `compression=none`，只有 `.gz` 文件名后缀或显式 `--compression` 才记录外层压缩；早于该规则归档的行保留其已登记的路径与压缩值。
 - **格式检测先看扩展名，再看调用方给出的 file role，从不看内容。** 至多剥掉一个 `.gz` 类后缀，role 回退只在扩展名查找之后、返回 `other` 之前生效，因此以 `genome_fasta` 身份 ingest 的 `x.fasta.bz2` 会记为 `fasta` 而非 `other`（`files.py`，`detect_format`）。
 - **manifest 相对路径是 POSIX 路径。** Windows 上 `Project.project_rel` 原样返回 `os.path.relpath`，因此存储的 manifest 路径可能含反斜杠；`remotes.py` 是唯一把 `\` 归一化为 `/` 的模块，而 release 与 export 原样复制 `relative_path`，所以存储契约仅支持 POSIX（`config.py`、`remotes.py`、`export.py`）。
 - **`standardize --link hardlink` 对目录产物回退为完整复制**——只有单文件能建立硬链接（`files.py`，`standardize_file`）。新标准化目标采用原子发布，任何失败都会清理。
@@ -56,7 +56,7 @@
 
 ## 指标与判定
 
-- **没有解析器的格式会停留在 `QC_COMPLETE`。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED` 而不是失败（见 [QC profile 指南](../guides/qc-profiles.md)），因此没有解析器的格式（如 BAM）同样停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。
+- **没有解析器的格式会停留在 `QC_COMPLETE`。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED` 而不是失败（见 [QC profile 指南](../guides/qc-profiles.md)），因此没有解析器的格式（如 BAM、CRAM）同样停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。`qc-measure` 接受 `--format bam`/`cram`，但只记录 `file_integrity` 指标；专题解析器属于后续档位（`qc/measure.py`）。
 - **`evaluate` 只覆盖已有 QC 结果的实体。** 从未被 `qc` 处理过的实体不会有 decision；发布预检会在创建任何产物前拒绝这类活动范围内实体（`rules.py`、`release.py`）。
 - **多文件实体会混合来自不同文件的指标。** `latest_metrics` 按输入身份分区：保守布尔指标（`file_exists`、`sha256_match`、`parseable`、`paired_read_count_match`）取所有输入的最小值，而其他指标取最近评估输入的值——一个判定可能把一个文件的计数与另一个文件的布尔值组合起来（`database.py`）。
 - **更改 QC 采样参数会累积行。** QC 结果按参数集 upsert；用不同 `--sample-size`/`--phred-offset` 重跑 `qc` 会新增一组平行行而非替换，`latest_metrics` 中最新的静默胜出（`database.py`）。

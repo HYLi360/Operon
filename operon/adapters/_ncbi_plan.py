@@ -1006,7 +1006,7 @@ def _preflight_assets(db: Database, project: Project, plan: ImportPlan) -> None:
             continue
         seen[key] = (digest, asset)
         existing = db.conn.execute(
-            "SELECT file_id, sha256, compression, relative_path FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
+            "SELECT file_id, sha256, compression, format, relative_path FROM files WHERE entity_type=? AND entity_id=? AND file_role=? LIMIT 1",
             key,
         ).fetchone()
         if existing and str(existing["sha256"]).lower() != digest.lower():

@@ -57,6 +57,18 @@ operon qc
 
 A `.gtf` source under the same `annotation_gff3` role is stored the same way (`format: gtf`, same BGZF default); built-in QC still evaluates GFF3 only. Every annotation archive also gets a flattened feature cache under `index/features/` on first query — see [Feature index commands](../reference/cli-features.md).
 
+## Archive alignment BAM/CRAM
+
+```bash
+operon ingest --source /data/sample.bam \
+  --entity-type assembly --entity-id ASM_000001 --role alignment_bam
+
+operon ingest --source /data/sample.cram \
+  --entity-type assembly --entity-id ASM_000001 --role alignment_cram
+```
+
+BAM and CRAM are archived with `format: bam`/`cram` and `compression: none`: their compression belongs to the format, so the canonical name is `<entity>.<role>.bam`/`.cram` (no `.gz`). An explicit `.gz` source suffix or `--compression gzip` records an outer layer instead. Built-in `qc` has no BAM/CRAM parser yet; `qc-measure --format bam|cram` measures only the file-integrity metrics, and the dedicated parser is a later tier.
+
 ## Import external QC results
 
 Convert BUSCO, QUAST, FastQC, fastp, or other outputs to TSV:

@@ -9,7 +9,7 @@ operon ingest \
   [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
-- `--role` 常用值：`genome_fasta`、`annotation_gff3`（同时接受 GFF3 与 GTF 注释来源——format 标签跟随文件扩展名，`.gtf` 文件名记录为 `format: gtf`）、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`。
+- `--role` 常用值：`genome_fasta`、`annotation_gff3`（同时接受 GFF3 与 GTF 注释来源——format 标签跟随文件扩展名，`.gtf` 文件名记录为 `format: gtf`）、`cds_fasta`、`protein_fasta`、`reads_r1`、`reads_r2`、`reads_single`、`alignment_bam`、`alignment_cram`。
 - `--source` 除本地路径外，还支持 `sftp://[user@]host[:port]/path` 与
   `remote://<remote名>/<相对远端root路径>`（`remote://` 引用 `project.yaml` 的
   `remotes:` 配置）；会先经 SFTP 下载到临时文件再走原归档流程。未显式给出
@@ -19,6 +19,7 @@ operon ingest \
   `operon-manifest.json`；下载前后验证清单 SHA-256/size。裸 `sftp://` 没有镜像清单
   可对照，下载后由 ingest 计算并登记新的本地身份。
 - 自动识别 `.gz` 等压缩；源文件有 `gzip` 后缀但不是 gzip magic 时报错。
+- BAM 与 CRAM 的压缩属于格式本身：普通命名的 `.bam`/`.cram` 记录 `compression: none`，canonical 名称不带 `.gz`（BAM 的 BGZF 容器就是格式，不是存储转换）。只有显式 `.gz` 文件名后缀或 `--compression` 才记录外层压缩；历史行保留其归档时的路径与压缩值。
 - `project.yaml` 开启 `storage.compress_archive`（新项目默认开启）时，未压缩的 FASTA/FASTQ 源会归档为确定性 BGZF：manifest 行记录压缩后字节（`compression: bgzip`、带 `.gz` 的名称）。`--compress-archive`/`--no-compress-archive` 覆盖本次运行的项目设置；显式 `--compression` 始终固定存储形态；已是 gzip 压缩的源原样存储。见 [BGZF 归档压缩](../architecture/files-and-storage.md#bgzf-归档压缩)。
 - 同实体同角色不同 SHA-256 会拒绝归档。
 - 归档名称（实体 ID、角色和格式）必须是非空文件名组成部分，不得包含 `/`、`\`、控制字符或单独的 `.`/`..`。摄取和收养会在写入前拒绝解析后位于项目根目录之外的目标，包括符号链接越界和复用的 manifest 路径。
@@ -105,7 +106,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
 ## qc-measure
 
 ```bash
-operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
+operon qc-measure --file PATH --format {fasta,fastq,gff3,bam,cram,other} --role ROLE \
                   --sha256 HEX --size-bytes N [--file-id FIL_...] \
                   [--assembly-fasta PATH] [--protein-fasta PATH] [--paired-read PATH] \
                   [--sample-size N] [--phred-offset {33,64,auto}] \
@@ -115,6 +116,7 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
 - 不依赖任何项目、数据库或 manifest 即可运行内置 QC 解析器，只要归档字节可读（例如 HPC 计算节点）就能执行。它是 `qc` 的远程度量对应物，产出的 stage/metric 名称与单位完全一致。
 - 解析前先按 manifest 值校验文件 SHA-256 与大小；不一致即以非零退出码中止。
 - `--role` 按与 `qc` 相同的规则选择 FASTA 指标组：`genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` 产出 `assembly_basic`，其余 role 产出 `sequence_basic`。
+- `--format bam` 与 `--format cram` 校验调用方给出的身份并只产出 `file_integrity` 指标；BAM/CRAM 解析器尚未接入，因此不测量 `parseable`（专题解析器属于后续档位）。文件名没有可用扩展名时，`alignment_bam`/`alignment_cram` 角色决定这两种格式。
 - `--format gff3` 需通过 `--assembly-fasta` 和/或 `--protein-fasta` 提供关联输入，用于 seqid/坐标与 protein 交叉校验指标；二者都缺失时命令失败。双端 FASTQ 用 `--paired-read` 追加 `paired_read_count_match`。
 - JSON payload（schema_version 1）默认写 stdout；指定 `--out` 时原子写入（可作为 `run-external --expected-output` 拉回）。回到项目后用 `operon import-qc --file payload.json` 落库。`--format fasta` 的 payload 还额外携带 `sequences` 对象（seqid 到长度的映射），`import-qc` 会把它写入项目的 `sequences` 表。
 

@@ -448,6 +448,8 @@ def default_schemas() -> dict[str, Any]:
                         "reads_r1",
                         "reads_r2",
                         "reads_single",
+                        "alignment_bam",
+                        "alignment_cram",
                         "assembly_report",
                         *NCBI_SOURCE_FILE_ROLES,
                         "taxonomy_package",

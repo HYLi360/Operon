@@ -78,7 +78,7 @@ def add_qc_measure_parser(sub):
         "--format",
         dest="fmt",
         required=True,
-        choices=["fasta", "fastq", "gff3", "other"],
+        choices=["fasta", "fastq", "gff3", "bam", "cram", "other"],
         help="file format as recorded in the manifest",
     )
     p.add_argument(

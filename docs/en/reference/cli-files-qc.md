@@ -9,10 +9,11 @@ operon ingest \
   [--source-url URL] [--move] [--compress-archive | --no-compress-archive]
 ```
 
-- Common `--role` values: `genome_fasta`, `annotation_gff3` (accepts both GFF3 and GTF annotation sources — the format label follows the file extension, so a `.gtf` filename records `format: gtf`), `cds_fasta`, `protein_fasta`, `reads_r1`, `reads_r2`, `reads_single`.
+- Common `--role` values: `genome_fasta`, `annotation_gff3` (accepts both GFF3 and GTF annotation sources — the format label follows the file extension, so a `.gtf` filename records `format: gtf`), `cds_fasta`, `protein_fasta`, `reads_r1`, `reads_r2`, `reads_single`, `alignment_bam`, `alignment_cram`.
 - `--source` accepts a local path, `sftp://[user@]host[:port]/path`, or `remote://<remote-name>/<path-relative-to-remote-root>`. `remote://` uses the `remotes:` section in `project.yaml`. The source is downloaded to a temporary file and then follows the normal archive workflow. If `--source-url` is omitted, the URL is recorded as `source_url`. Paramiko for SFTP sources is included in the standard installation.
 - A `remote://` path must be a safe root-relative path and must already exist in that remote's `operon-manifest.json`; manifest SHA-256 and size are verified before and after download. A bare `sftp://` source has no mirror manifest, so `ingest` calculates and registers a new local identity after download.
 - Compression such as `.gz` is detected automatically. A file with a gzip suffix but no gzip magic bytes is rejected.
+- BAM and CRAM carry compression inside the format: a plain-named `.bam`/`.cram` records `compression: none` and keeps a canonical name without `.gz` (BAM's BGZF container is the format, not a storage transform). Only an explicit `.gz` filename suffix or `--compression` records an outer compression layer; legacy rows keep the path and compression they were archived with.
 - Plain FASTA/FASTQ sources are archived as deterministic BGZF when `storage.compress_archive` is enabled in `project.yaml` (the default for new projects): the manifest row records the compressed bytes (`compression: bgzip`, `.gz` name). `--compress-archive`/`--no-compress-archive` override the project setting for this run; an explicit `--compression` always pins the storage form; sources already gzip-compressed are stored as-is. See [BGZF archive compression](../architecture/files-and-storage.md#bgzf-archive-compression).
 - Different SHA-256 bytes for the same entity and role are rejected.
 - Archive names (entity ID, role, and format) must be nonempty filename components without `/`, `\`, control characters, or standalone `.`/`..`. Ingestion and adoption reject destinations that resolve outside the project root, including symlink escapes and reused manifest paths, before writing.
@@ -77,7 +78,7 @@ operon qc [--file-id FIL_...] [--entity-type TYPE] [--entity-id ID] \
 ## qc-measure
 
 ```bash
-operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
+operon qc-measure --file PATH --format {fasta,fastq,gff3,bam,cram,other} --role ROLE \
                   --sha256 HEX --size-bytes N [--file-id FIL_...] \
                   [--assembly-fasta PATH] [--protein-fasta PATH] [--paired-read PATH] \
                   [--sample-size N] [--phred-offset {33,64,auto}] \
@@ -87,6 +88,7 @@ operon qc-measure --file PATH --format {fasta,fastq,gff3,other} --role ROLE \
 - Runs the built-in QC parsers without any project, database, or manifest, so it works anywhere the archived bytes are readable (e.g. an HPC compute node). It is the remote-measurement counterpart of `qc` and produces the same stage/metric names and units.
 - The file's SHA-256 and size are verified against the manifest values before parsing; a mismatch aborts with a non-zero exit code.
 - `--role` selects the FASTA metric group exactly as in `qc`: `genome_fasta`/`genome_fasta_genbank`/`genome_fasta_refseq` produce `assembly_basic`, other roles produce `sequence_basic`.
+- `--format bam` and `--format cram` verify the supplied identity and emit only the `file_integrity` metrics; no BAM/CRAM parser runs yet, so `parseable` stays unmeasured (the dedicated parser is a later tier). The `alignment_bam`/`alignment_cram` roles select these formats when a filename has no usable extension.
 - For `--format gff3`, pass `--assembly-fasta` and/or `--protein-fasta` so seqid/coordinate and protein cross-check metrics can be computed; without either the command fails. For paired FASTQ, `--paired-read` adds `paired_read_count_match`.
 - The JSON payload (schema_version 1) goes to stdout, or atomically to `--out` (suitable as a `run-external --expected-output`). Feed it to `operon import-qc --file payload.json` back in the project. For `--format fasta` the payload additionally carries a `sequences` object mapping each seqid to its length, which `import-qc` writes into the project's `sequences` table.
 

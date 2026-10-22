@@ -816,7 +816,7 @@ def qc_file(
                 )
             )
         # parseable=1 only when a format parser actually ran; formats without
-        # a parser (other, directory, bam, ...) leave parseable unmeasured so
+        # a parser (other, directory, bam, cram) leave parseable unmeasured so
         # required `parseable == 1` gates stay NOT_EVALUATED for them.
         if record["format"] in {"fasta", "fastq", "gff3"}:
             metrics.append(

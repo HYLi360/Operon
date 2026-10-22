@@ -58,7 +58,23 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     assert files.detect_format(tmp_path / "x.gtf.gz", "annotation_gff3") == "gtf"
     assert files.detect_format(tmp_path / "x.unknown", "genome_fasta") == "fasta"
     assert files.detect_format(tmp_path / "x.unknown") == "other"
+    assert files.detect_format(tmp_path / "x.unknown", "alignment_bam") == "bam"
+    assert files.detect_format(tmp_path / "x.unknown", "alignment_cram") == "cram"
     assert files.raw_bucket("unknown") == "other"
+    bam = tmp_path / "x.bam"
+    bam.write_bytes(b"\x1f\x8b\x08\x04")
+    assert files.detect_format(bam) == "bam"
+    assert files.detect_compression(bam) == "none"
+    assert files.detect_compression(bam, "bam") == "none"
+    assert files.canonical_filename("A", "alignment_bam", "bam", "none") == (
+        "A.alignment_bam.bam"
+    )
+    cram = tmp_path / "x.cram"
+    cram.write_bytes(b"CRAM")
+    assert files.detect_compression(cram, "cram") == "none"
+    outer_gzip = tmp_path / "x.bam.gz"
+    outer_gzip.write_bytes(b"\x1f\x8b\x08\x04")
+    assert files.detect_compression(outer_gzip, "bam") == "gzip"
     fake = tmp_path / "fake.gz"
     fake.write_text("not gzip", encoding="utf-8")
     with pytest.raises(ValidationError, match="claims gzip"):
@@ -67,6 +83,21 @@ def test_format_compression_filename_and_bucket_detection(tmp_path):
     with gzip.open(real, "wt") as handle:
         handle.write("x")
     assert files.detect_compression(real) == "gzip"
+
+
+def test_alignment_roles_are_builtin_and_map_to_their_formats(tmp_path):
+    from operon.schema import default_schemas
+
+    allowed = default_schemas()["tables"]["files"]["fields"]["file_role"]["allowed"]
+    assert {"alignment_bam", "alignment_cram"} <= set(allowed)
+    role_only = tmp_path / "payload.unknown"
+    role_only.write_bytes(b"\x1f\x8b\x08\x04")
+    assert files.detect_format(role_only, "alignment_bam") == "bam"
+    assert files.detect_format(role_only, "alignment_cram") == "cram"
+    assert files.detect_compression(role_only, "bam") == "none"
+    assert files.canonical_filename("A", "alignment_cram", "cram", "none") == (
+        "A.alignment_cram.cram"
+    )
 
 
 def test_resolve_storage_form_matches_the_ingest_time_decision(project_db, tmp_path):
@@ -78,6 +109,10 @@ def test_resolve_storage_form_matches_the_ingest_time_decision(project_db, tmp_p
     gzipped = tmp_path / "x.fna.gz"
     with gzip.open(gzipped, "wt") as handle:
         handle.write(">x\nA\n")
+    bam = tmp_path / "x.bam"
+    bam.write_bytes(b"\x1f\x8b\x08\x04")
+    cram = tmp_path / "x.cram"
+    cram.write_bytes(b"CRAM")
 
     assert files.resolve_storage_form(project, plain_fasta, "genome_fasta") == (
         "fasta",
@@ -94,6 +129,14 @@ def test_resolve_storage_form_matches_the_ingest_time_decision(project_db, tmp_p
     assert files.resolve_storage_form(
         project, plain_fasta, "genome_fasta", compression="none"
     ) == ("fasta", "none")
+    assert files.resolve_storage_form(project, bam, "alignment_bam") == (
+        "bam",
+        "none",
+    )
+    assert files.resolve_storage_form(project, cram, "alignment_cram") == (
+        "cram",
+        "none",
+    )
     no_compress = Project.find(project.root)
     no_compress.config["storage"]["compress_archive"] = False
     assert files.resolve_storage_form(no_compress, plain_fasta, "genome_fasta") == (
@@ -132,6 +175,61 @@ def test_gtf_ingest_upgrades_a_stale_schema_lazily(project_db, tmp_path):
     before = project.schema_path.read_text(encoding="utf-8")
     files._ensure_gtf_format_schema(project)
     assert project.schema_path.read_text(encoding="utf-8") == before
+
+
+def test_alignment_roles_upgrade_a_stale_schema_lazily(project_db, tmp_path):
+    import yaml
+
+    project, db = project_db
+    document = yaml.safe_load(project.schema_path.read_text(encoding="utf-8"))
+    allowed_field = document["tables"]["files"]["fields"]["file_role"]
+    fresh_allowed = list(allowed_field["allowed"])
+    assert "alignment_bam" in fresh_allowed and "alignment_cram" in fresh_allowed
+    # Downgrade to the pre-alignment contract: the GTF-era schema knows the
+    # file formats but not the alignment roles.
+    document["schema_version"] = "1.3"
+    allowed_field["allowed"] = [
+        value
+        for value in fresh_allowed
+        if value not in {"alignment_bam", "alignment_cram"}
+    ]
+    project.schema_path.write_text(
+        yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+    source = tmp_path / "aln.bam"
+    source.write_bytes(b"\x1f\x8b\x08\x04BAM\x01")
+    files.ingest_file(db, project, source, "assembly", "ASM_000001", "alignment_bam")
+
+    upgraded = yaml.safe_load(project.schema_path.read_text(encoding="utf-8"))
+    upgraded_roles = upgraded["tables"]["files"]["fields"]["file_role"]["allowed"]
+    assert "alignment_bam" in upgraded_roles and "alignment_cram" in upgraded_roles
+    assert upgraded["schema_version"] == "1.4"
+
+    before = project.schema_path.read_text(encoding="utf-8")
+    files._ensure_alignment_role_schema(project)
+    assert project.schema_path.read_text(encoding="utf-8") == before
+
+    # A documented-1.4-but-role-less file gains the roles without moving its
+    # marker: the version bump only tracks contracts older than this one.
+    document["schema_version"] = "1.4"
+    allowed_field["allowed"] = [
+        value
+        for value in fresh_allowed
+        if value not in {"alignment_bam", "alignment_cram"}
+    ]
+    project.schema_path.write_text(
+        yaml.safe_dump(document, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    files._ensure_alignment_role_schema(project)
+    re_patched = yaml.safe_load(project.schema_path.read_text(encoding="utf-8"))
+    assert (
+        "alignment_bam"
+        in re_patched["tables"]["files"]["fields"]["file_role"]["allowed"]
+    )
+    assert re_patched["schema_version"] == "1.4"
 
 
 @pytest.mark.parametrize(

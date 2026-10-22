@@ -187,7 +187,9 @@ def _validate_adopt_batch(
             raise ValidationError(f"adopt item source does not exist: {source}")
         item["path"] = str(source)
         item["format"] = item["format"] or detect_format(source, item["role"])
-        item["compression"] = item["compression"] or detect_compression(source)
+        item["compression"] = item["compression"] or detect_compression(
+            source, item["format"]
+        )
         if source.is_dir() != (item["format"] == "directory") or (
             source.is_dir() and item["compression"] != "none"
         ):

@@ -15,6 +15,7 @@ from operon.cli import main
 from operon.config import load_project
 from operon.database import Database
 from operon.errors import ConflictError, ValidationError
+from operon.utils import atomic_copy_bgzip, sha256_path
 
 
 @pytest.fixture
@@ -375,6 +376,65 @@ def test_preflight_rejects_same_role_different_bytes(project_db, tmp_path):
                 "label": "Genome FASTA",
                 "entity_type": "assembly",
                 "role": "genome_fasta",
+                "path": str(source),
+            }
+        ],
+    }
+    with pytest.raises(ConflictError, match="already has different bytes"):
+        wizard._preflight(db, project, draft)
+
+
+@pytest.mark.bug("ODR-84")
+def test_preflight_does_not_decompress_legacy_bam_rows(project_db, tmp_path):
+    project, db = project_db
+    db.insert_row("organisms", {"organism_id": "ORG_000001", "scientific_name": "One"})
+    db.insert_row("samples", {"sample_id": "SMP_000001", "organism_id": "ORG_000001"})
+    db.insert_row(
+        "assemblies", {"assembly_id": "ASM_000001", "sample_id": "SMP_000001"}
+    )
+    payload = b"BAM\x01legacy-payload"
+    plain = tmp_path / "payload.bin"
+    plain.write_bytes(payload)
+    stored = (
+        project.raw_root
+        / "assemblies"
+        / "ASM_000001"
+        / "ASM_000001.alignment_bam.bam.gz"
+    )
+    stored.parent.mkdir(parents=True)
+    atomic_copy_bgzip(plain, stored)
+    db.insert_row(
+        "files",
+        {
+            "file_id": "FIL_000001",
+            "entity_type": "assembly",
+            "entity_id": "ASM_000001",
+            "file_role": "alignment_bam",
+            "format": "bam",
+            "compression": "gzip",
+            "relative_path": str(stored.relative_to(project.root)),
+            "size_bytes": stored.stat().st_size,
+            "sha256": sha256_path(stored),
+            "status": "CHECKSUM_VERIFIED",
+        },
+    )
+    # The decompressed payload would have matched the old decompress-and-compare
+    # fallback, but the ingest path can never store those bytes, so the
+    # preflight must reject the source here instead of passing it to _commit.
+    source = tmp_path / "decompressed.bam"
+    source.write_bytes(payload)
+    draft = {
+        "source": {"source_type": "insdc", "database_name": "NCBI", "provider": "NCBI"},
+        "organism": {"action": "reuse", "id": "ORG_000001"},
+        "sample": {"action": "reuse", "id": "SMP_000001"},
+        "run": None,
+        "assembly": {"action": "reuse", "id": "ASM_000001"},
+        "annotation": None,
+        "files": [
+            {
+                "label": "Alignment BAM",
+                "entity_type": "assembly",
+                "role": "alignment_bam",
                 "path": str(source),
             }
         ],
