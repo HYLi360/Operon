@@ -2698,7 +2698,7 @@ defects:
     established for the report writers. Non-string values pass through untouched, so numeric columns
     keep their exact bytes.
   fix_commit: 'dca100b9f2cd227b18ba1d6ffc24427401976654'
-  fixed_in: null
+  fixed_in: '0.10.1'
   regression_tests:
     - tests/unit/test_feature_index.py::test_query_cli_escapes_formula_trigger_cells
 - id: ODR-84
@@ -2721,7 +2721,7 @@ defects:
     compression=none, so canonical names stay .bam/.cram; an explicit .gz suffix or --compression still
     records an outer layer. stored_content_sha256() no longer decompresses intrinsic-format rows,
     restoring preflight/ingest agreement; legacy rows keep their recorded path and compression.
-  fix_commit: null
+  fix_commit: '9c9a148317ac9238d4e1a9b6a23b33adee752469'
   fixed_in: null
   regression_tests:
     - tests/unit/test_archive_compression.py::test_bam_intrinsic_compression_stays_none_and_preflight_compares_stored_bytes
