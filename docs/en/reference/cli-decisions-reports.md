@@ -146,7 +146,7 @@ A coverage run returns 0 when it succeeds and meets every threshold in the profi
 operon query "SQL"
 ```
 
-Read-only SQL. SELECT and read-only PRAGMA statements (such as `table_info` and `foreign_key_list`) are allowed; DML/DDL/write PRAGMA/ATTACH/VACUUM and similar statements are rejected.
+Read-only SQL. SELECT and read-only PRAGMA statements (such as `table_info` and `foreign_key_list`) are allowed; DML/DDL/write PRAGMA/ATTACH/VACUUM and similar statements are rejected. Typed, purpose-built reads (feature-index queries, status surfaces, the report views) live on their own commands; `operon query` deliberately stays the one generic, reversible-to-audit SQL admission point, so duplicate-shaped convenience on the SQL surface is a feature, not a defect.
 
 ## show
 

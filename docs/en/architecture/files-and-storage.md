@@ -34,7 +34,7 @@ restored project rebuilds whatever it needs lazily. The layout convention is
 - `index/fasta_lengths/{file_id}.{sha256}.v1.tsv` — the assembly
   `seqid -> length` map used by built-in QC (relocated from the pre-`index/`
   layout `qc/cache/fasta_lengths/`; legacy entries are adopted on first use).
-- `index/features/{file_id}.{sha256}.v1/` — the flattened GFF3/GTF feature
+- `index/features/{file_id}.{sha256}.v2/` — the flattened GFF3/GTF feature
   cache (`data.parquet` + `meta.json` identity marker) behind
   `operon features`; built lazily on first query and rebuilt transparently
   when it is stale, corrupt or missing its commit marker. Row groups follow

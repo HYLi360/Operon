@@ -30,7 +30,7 @@
 | EXT-5 | 事件承载的是**事实，而非判定**：插件可以报告它测量到或产出了什么，永远不能报告状态、决策或 QC 结论——那些只来自版本化 profile（见 INV-4）。 | 生效（由 INV-4 推出） | 本页 |
 | EXT-6 | 可视化插件只读 `report view` bundle（带 `bundle_schema_version` 与各成员校验和的只读目录），永不写项目数据库。 | 生效 | [插件契约](../reference/plugin-contract.md)；`tests/regression/test_view_bundle.py` |
 | EXT-7 | 插件发行版继承 Operon 当前的开发者与许可证；发行名与托管位置待定。 | 生效 | 本页 |
-| EXT-8 | 逐文件的 GFF3/GTF 扁平 feature 索引位于 `index/features/{file_id}.{sha256}.v1/`，是**可重建的派生 Parquet 缓存**（每个文件一份 `data.parquet` 加一个 `meta.json` 身份标记）。键为 manifest 身份（INV-3），不属于 manifest、release 与备份（INV-2）；过期、损坏或半途而废的索引在下一次使用时从归档字节透明重建。只有 `operon features` 消费它们；其他任何入口都不得写进该目录。 | 生效 | [派生索引缓存](files-and-storage.md#派生索引缓存)；`operon/features.py`、`operon/cli/_features.py`；`tests/unit/test_feature_index.py`、`tests/unit/test_tui_cli_parity.py` |
+| EXT-8 | 逐文件的 GFF3/GTF 扁平 feature 索引位于 `index/features/{file_id}.{sha256}.v2/`，是**可重建的派生 Parquet 缓存**（每个文件一份 `data.parquet` 加一个 `meta.json` 身份标记）。键为 manifest 身份（INV-3），不属于 manifest、release 与备份（INV-2）；过期、损坏或半途而废的索引在下一次使用时从归档字节透明重建。只有 `operon features` 消费它们；其他任何入口都不得写进该目录。 | 生效 | [派生索引缓存](files-and-storage.md#派生索引缓存)；`operon/features.py`、`operon/cli/_features.py`；`tests/unit/test_feature_index.py`、`tests/unit/test_tui_cli_parity.py` |
 
 ## 契约与闸门
 
