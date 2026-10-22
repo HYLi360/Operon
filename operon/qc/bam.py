@@ -119,6 +119,10 @@ def _scan(handle: pysam.AlignmentFile) -> dict[str, Any]:
     nm_present = 0
     insert_sizes: Counter[int] = Counter()
     references_with_mapped: set[int] = set()
+    forward_mapped = 0
+    reverse_mapped = 0
+    soft_clipped_bases = 0
+    mapped_query_bases = 0
     coverage_bases = 0
     diffs: dict[int, array] = {}
     skipped_references: set[int] = set()
@@ -143,6 +147,16 @@ def _scan(handle: pysam.AlignmentFile) -> dict[str, Any]:
         else:
             mapped += 1
             references_with_mapped.add(read.reference_id)
+            if flag & 0x10:
+                reverse_mapped += 1
+            else:
+                forward_mapped += 1
+            query_bases = read.query_length or 0
+            mapped_query_bases += query_bases
+            if query_bases and read.cigartuples:
+                soft_clipped_bases += sum(
+                    length for op, length in read.cigartuples if op == 4
+                )
             if not is_secondary and not is_supplementary:
                 primary_mapped += 1
                 if read.mapping_quality >= 30:
@@ -282,6 +296,11 @@ def _scan(handle: pysam.AlignmentFile) -> dict[str, Any]:
         "singleton_percent": pct(singletons, paired),
         "mate_different_reference_count": mate_different_reference,
         "mate_different_reference_mapq5_count": mate_different_reference_mapq5,
+        "forward_mapped_count": forward_mapped,
+        "reverse_mapped_count": reverse_mapped,
+        "forward_mapped_percent": pct(forward_mapped, forward_mapped + reverse_mapped),
+        "soft_clipped_bases": soft_clipped_bases,
+        "soft_clipped_percent": pct(soft_clipped_bases, mapped_query_bases),
         "read_length_min": length_min or 0,
         "read_length_max": length_max,
         "read_length_mean": (length_total / length_n) if length_n else 0.0,

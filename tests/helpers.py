@@ -123,7 +123,7 @@ class PytestAssertions:
         return pytest.raises(exception, match=pattern)
 
 
-def _bam_segment(
+def bam_segment(
     qname: str,
     flag: int,
     rname: int,
@@ -179,7 +179,7 @@ def write_test_bam(path: str | Path) -> Path:
         ],
     }
     reads = [
-        _bam_segment(
+        bam_segment(
             "r1",
             0x63,
             0,
@@ -192,7 +192,7 @@ def write_test_bam(path: str | Path) -> Path:
             mpos=350,
             tags=(("NM", 0),),
         ),
-        _bam_segment(
+        bam_segment(
             "r2",
             0xA3,
             0,
@@ -205,19 +205,19 @@ def write_test_bam(path: str | Path) -> Path:
             mpos=100,
             tags=(("NM", 2),),
         ),
-        _bam_segment("r3", 0x4, -1, -1, 0, None, "G" * 50),
-        _bam_segment("r4", 0x100, 0, 200, 20, "50M", "T" * 50, tags=(("NM", 1),)),
-        _bam_segment("r5", 0x800, 1, 10, 60, "50M", "A" * 50, tags=(("NM", 0),)),
-        _bam_segment("r6", 0x400, 0, 150, 10, "50M", "N" * 50, tags=(("NM", 3),)),
-        _bam_segment("r7", 0x49, 0, 500, 40, "50M", "ACGT" * 12 + "AC", mate=0, mpos=0),
-        _bam_segment("r8", 0x204, -1, -1, 0, None, "T" * 40),
-        _bam_segment(
+        bam_segment("r3", 0x4, -1, -1, 0, None, "G" * 50),
+        bam_segment("r4", 0x100, 0, 200, 20, "50M", "T" * 50, tags=(("NM", 1),)),
+        bam_segment("r5", 0x800, 1, 10, 60, "50M", "A" * 50, tags=(("NM", 0),)),
+        bam_segment("r6", 0x400, 0, 150, 10, "50M", "N" * 50, tags=(("NM", 3),)),
+        bam_segment("r7", 0x49, 0, 500, 40, "50M", "ACGT" * 12 + "AC", mate=0, mpos=0),
+        bam_segment("r8", 0x204, -1, -1, 0, None, "T" * 40),
+        bam_segment(
             "r9", 0x41, 0, 600, 20, "50M", "G" * 50, mate=1, mpos=50, tags=(("NM", 0),)
         ),
-        _bam_segment(
+        bam_segment(
             "r10", 0x81, 1, 50, 2, "50M", "A" * 50, mate=0, mpos=600, tags=(("NM", 1),)
         ),
-        _bam_segment(
+        bam_segment(
             "r11",
             0x63,
             1,
@@ -230,7 +230,7 @@ def write_test_bam(path: str | Path) -> Path:
             mpos=150,
             tags=(("NM", 0),),
         ),
-        _bam_segment(
+        bam_segment(
             "r12",
             0xA3,
             1,

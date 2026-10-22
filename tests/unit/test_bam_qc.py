@@ -20,7 +20,7 @@ from operon.qc import file_qc_status, measure_file, qc_file
 from operon.qc.bam import bam_stats
 from operon.qc.measure import _bam_metric_specs
 from operon.utils import sha256_file
-from tests.helpers import PytestAssertions, write_test_bam
+from tests.helpers import PytestAssertions, bam_segment, write_test_bam
 
 
 def _identity(path: Path) -> dict:
@@ -85,6 +85,35 @@ class TestBamStats(PytestAssertions):
         self.assertEqual(self.stats["depth_ge10_percent"], 0.0)
         self.assertEqual(self.stats["depth_ge30_percent"], 0.0)
         self.assertEqual(self.stats["coverage_breadth_skipped"], 0)
+
+    def test_strand_and_soft_clip_defaults(self):
+        # The shared fixture has only forward reads with plain 50M CIGARs.
+        self.assertEqual(self.stats["forward_mapped_count"], 10)
+        self.assertEqual(self.stats["reverse_mapped_count"], 0)
+        self.assertEqual(self.stats["forward_mapped_percent"], 100.0)
+        self.assertEqual(self.stats["soft_clipped_bases"], 0)
+        self.assertEqual(self.stats["soft_clipped_percent"], 0.0)
+
+    def test_strand_balance_and_soft_clip(self):
+        import pysam
+
+        path = self.root / "strand.bam"
+        header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": "chr1", "LN": 1000}]}
+        reads = [
+            bam_segment("s1", 0, 0, 100, 60, "50M", "A" * 50),
+            bam_segment("s2", 0x10, 0, 200, 60, "10S40M", "C" * 50),
+            bam_segment("s3", 0x10, 0, 300, 60, "5S45M", "G" * 50),
+            bam_segment("s4", 0x4, -1, -1, 0, None, "T" * 50),
+        ]
+        with pysam.AlignmentFile(str(path), "wb", header=header) as out:
+            for read in reads:
+                out.write(read)
+        stats = bam_stats(path, file_format="bam")
+        self.assertEqual(stats["forward_mapped_count"], 1)
+        self.assertEqual(stats["reverse_mapped_count"], 2)
+        self.assertAlmostEqual(stats["forward_mapped_percent"], 1 / 3 * 100)
+        self.assertEqual(stats["soft_clipped_bases"], 15)
+        self.assertAlmostEqual(stats["soft_clipped_percent"], 10.0)
 
     def test_coverage_memory_guard(self, monkeypatch):
         monkeypatch.setattr(bam_module, "COVERAGE_MAX_REFERENCE_BASES", 10)

@@ -57,6 +57,8 @@
 ## 指标与判定
 
 - **没有解析器的格式会停留在 `QC_COMPLETE`。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED` 而不是失败（见 [QC profile 指南](../guides/qc-profiles.md)），因此没有解析器的格式（如 `other`、目录）同样停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。BAM/CRAM 现在已有解析器：`qc-measure --format bam`/`cram` 记录完整的 `alignment_basic` stage（`qc/measure.py`）。
+- **比对 QC 不读取 header 的排序声明，也不交叉核对序列字典。** `alignment_basic` stage 只流式遍历记录：不记录 `@HD SO` 排序方式，也不会把 BAM/CRAM 的 `@SQ` 名称/长度（或 `M5` 校验和）与该 entity 的组装 FASTA 比对——因此用错参考基因组版本比对的 BAM 在内置 QC 下不会被发现，除非 profile 约束了会被扭曲的计数/比例指标。GC bias 与逐 reference 覆盖均衡同样不测量；这些需求请通过 `run-external`/`import-qc` 接入 Picard/verifybamid2 类外部工具。
+- **比对索引文件（`.bai`/`.csi`/`.crai`）没有格式与角色。** 索引是可重建的派生数据（INV-2），不应归档：manifest 中没有任何字段把它与所属比对文件关联，归档后只能记为 `format: other` 且 canonical 名称会丢失 `.bam.bai` 关联；纯命名的 `.csi`（BGZF 内容）还会被上文所述的非对称压缩检测静默记为 `compression: gzip`。内置 QC 流式读取比对文件，从不需要索引。
 - **`evaluate` 只覆盖已有 QC 结果的实体。** 从未被 `qc` 处理过的实体不会有 decision；发布预检会在创建任何产物前拒绝这类活动范围内实体（`rules.py`、`release.py`）。
 - **多文件实体会混合来自不同文件的指标。** `latest_metrics` 按输入身份分区：保守布尔指标（`file_exists`、`sha256_match`、`parseable`、`paired_read_count_match`）取所有输入的最小值，而其他指标取最近评估输入的值——一个判定可能把一个文件的计数与另一个文件的布尔值组合起来（`database.py`）。
 - **更改 QC 采样参数会累积行。** QC 结果按参数集 upsert；用不同 `--sample-size`/`--phred-offset` 重跑 `qc` 会新增一组平行行而非替换，`latest_metrics` 中最新的静默胜出（`database.py`）。

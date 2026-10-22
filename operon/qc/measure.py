@@ -109,6 +109,7 @@ _BAM_BP_METRICS = {
     "insert_size_min",
     "insert_size_max",
     "covered_bases",
+    "soft_clipped_bases",
 }
 
 

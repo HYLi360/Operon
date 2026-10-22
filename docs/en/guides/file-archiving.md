@@ -67,7 +67,7 @@ operon ingest --source /data/sample.cram \
   --entity-type assembly --entity-id ASM_000001 --role alignment_cram
 ```
 
-BAM and CRAM are archived with `format: bam`/`cram` and `compression: none`: their compression belongs to the format, so the canonical name is `<entity>.<role>.bam`/`.cram` (no `.gz`). An explicit `.gz` source suffix or `--compression gzip` records an outer layer instead. Built-in `qc` measures both formats with pysam (flagstat-style counts and rates, insert-size statistics, MAPQ>=30 fraction, NM-tag error rate, mean depth and coverage breadth — the `alignment_basic` stage), and `qc-measure --format bam|cram` produces the same metrics without a project.
+BAM and CRAM are archived with `format: bam`/`cram` and `compression: none`: their compression belongs to the format, so the canonical name is `<entity>.<role>.bam`/`.cram` (no `.gz`). An explicit `.gz` source suffix or `--compression gzip` records an outer layer instead. Built-in `qc` measures both formats with pysam (flagstat-style counts and rates, insert-size statistics, MAPQ>=30 fraction, NM-tag error rate, strand balance, soft-clip fraction, mean depth and coverage breadth — the `alignment_basic` stage), and `qc-measure --format bam|cram` produces the same metrics without a project. Index files (`.bai`/`.csi`/`.crai`) are rebuildable derived data and are not archived; built-in QC streams the alignment and never needs one.
 
 ## Import external QC results
 
