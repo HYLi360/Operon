@@ -38,8 +38,35 @@ from operon.config import Project, project_rel
 from operon.errors import FeatureIndexError
 from operon.utils import now_iso, open_maybe_gzip
 
-FEATURES_CACHE_FORMAT = "operon-features-v1"
-FEATURE_INDEX_DIR_SUFFIX = ".v1"
+FEATURES_CACHE_FORMAT = "operon-features-v2"
+FEATURE_INDEX_DIR_SUFFIX = ".v2"
+
+# Public facade: the feature-index entry points and constants the CLI (and,
+# eventually, adopt paths) call. Ordering follows ruff's RUF022 isort style.
+__all__ = [
+    "FEATURES_CACHE_FORMAT",
+    "FEATURES_SCHEMA",
+    "FEATURE_FIELDS",
+    "FEATURE_INDEX_DIR_SUFFIX",
+    "FEATURE_ROW_GROUP_ROWS",
+    "QUERY_DEFAULT_COLUMNS",
+    "SUPPORTED_SOURCE_FORMATS",
+    "TRANSCRIPT_TYPES",
+    "AttributeFilter",
+    "apply_feature_filters",
+    "build_features_index",
+    "ensure_features_index",
+    "feature_ancestor_expr",
+    "feature_bed_rows",
+    "feature_bins_rows",
+    "feature_descendant_expr",
+    "feature_longest_rows",
+    "feature_query_rows",
+    "feature_stats",
+    "features_index_dir",
+    "features_scan",
+]
+
 #: Source lines buffered per row group; one flush is one row group, so
 #: region filters prune on row-group statistics without a global sort.
 FEATURE_ROW_GROUP_ROWS = 100_000
@@ -163,6 +190,33 @@ def _attribute_value(values: dict[str, str], *keys: str) -> str | None:
     return None
 
 
+def _structural_identity(
+    feature_type: str, values: dict[str, str], source_format: str
+) -> tuple[str | None, str | None]:
+    """Own id and parent id for one flattened row, per dialect.
+
+    GFF3 reads ``ID``/``Parent`` attributes verbatim. GTF has no such keys:
+    its hierarchy lives entirely in the ``gene_id``/``transcript_id``
+    attributes, so the gene row aliases its ``gene_id`` as its id, a
+    transcript row aliases ``transcript_id`` and points at its gene, and
+    sub-feature rows (CDS/exon/…) carry no own id and point at their
+    transcript. This keeps the flattened columns homogenous across both
+    dialects (the cache format bumped to v2 for the filled columns).
+    """
+    if source_format != "gtf":
+        return (
+            _attribute_value(values, "ID"),
+            _attribute_value(values, "Parent"),
+        )
+    gene_id = _attribute_value(values, "gene_id")
+    transcript_id = _attribute_value(values, "transcript_id")
+    if feature_type in TRANSCRIPT_TYPES:
+        return transcript_id, gene_id
+    if feature_type == "gene":
+        return gene_id, None
+    return None, transcript_id
+
+
 def _strict_value(
     converter: type, column: str, text: str, file_id: str, line_number: int
 ) -> Any:
@@ -212,6 +266,7 @@ def _parse_feature_row(
     else:
         score = _strict_value(float, "score", score_text, file_id, line_number)
     values = _parse_attributes(attributes, source_format)
+    own_id, parent_id = _structural_identity(feature_type, values, source_format)
     return {
         "seqid": seqid,
         "source": source or None,
@@ -221,8 +276,8 @@ def _parse_feature_row(
         "score": score,
         "strand": strand or None,
         "phase": phase or None,
-        "id": _attribute_value(values, "ID"),
-        "parent": _attribute_value(values, "Parent"),
+        "id": own_id,
+        "parent": parent_id,
         "gene_id": _attribute_value(values, "gene_id"),
         "transcript_id": _attribute_value(values, "transcript_id"),
         "attributes": attributes,
@@ -539,17 +594,18 @@ def _feature_nodes(frame: pl.LazyFrame, columns: list[str]) -> list[tuple[Any, .
 def feature_ancestor_expr(
     frame: pl.LazyFrame,
     *,
-    source_format: str,
     initial_ids: Iterable[str],
     until_type: str = "gene",
     max_depth: int = 100,
 ) -> pl.Expr | None:
     """Predicate selecting the row(s) reached walking up from feature ids.
 
-    GFF3 climbs the ``parent`` chain (stop at ``until_type`` or the
-    parent-less chain root); GTF has no ``Parent`` edges, so the "gene" of
-    an id resolves through its ``gene_id`` attribute materialized on the
-    nearest transcript row. Returns ``None`` when no id is present at all.
+    The flattened ``parent`` column carries the hierarchy for both dialects
+    (GTF rows materialize their structural identity at build time), so this
+    is one chain walk: climb ``parent`` until ``until_type`` appears in the
+    layer or the parent-less root is reached (the parent-less chain top
+    stays answerable, mirroring the prototype). Returns ``None`` when no id
+    is present at all.
     """
     wanted: list[str] = []
     for identifier in initial_ids:
@@ -557,29 +613,6 @@ def feature_ancestor_expr(
             wanted.append(identifier)
     if not wanted:
         return None
-    if source_format == "gtf":
-        transcript_gene: dict[str, str | None] = {}
-        gene_present: set[str] = set()
-        for feature_type, gene_id, transcript_id in _feature_nodes(
-            frame, ["type", "gene_id", "transcript_id"]
-        ):
-            if gene_id:
-                gene_present.add(str(gene_id))
-            if transcript_id:
-                transcript_gene.setdefault(str(transcript_id), gene_id)
-        resolved: set[str] = set()
-        for identifier in wanted:
-            if identifier in transcript_gene:
-                gene_of = transcript_gene[identifier]
-                if gene_of:
-                    resolved.add(gene_of)
-            elif identifier in gene_present:
-                resolved.add(identifier)
-        if not resolved:
-            return None
-        return (pl.col("type") == until_type) & pl.col("gene_id").is_in(
-            sorted(resolved)
-        )
     parent_of: dict[str, str | None] = {}
     type_of: dict[str, str | None] = {}
     for feature_id, parent, feature_type in _feature_nodes(
@@ -616,16 +649,14 @@ def feature_ancestor_expr(
 def feature_descendant_expr(
     frame: pl.LazyFrame,
     *,
-    source_format: str,
     initial_ids: Iterable[str],
     recursive: bool = False,
 ) -> pl.Expr | None:
     """Predicate selecting the child rows of the given feature ids.
 
-    GFF3 children hang off ``parent`` (direct, or every level when
-    ``recursive``); GTF children hang off ``gene_id`` (the transcript rows),
-    and ``recursive`` adds every row referencing those transcripts through
-    ``transcript_id``. Returns ``None`` when no id matches.
+    Direct children hang off ``parent``; ``recursive`` BFS-fills every level
+    below (both dialects share the same ``parent`` chain semantics after the
+    v2 flattening). Returns ``None`` when no id matches.
     """
     wanted: list[str] = []
     for identifier in initial_ids:
@@ -633,34 +664,6 @@ def feature_descendant_expr(
             wanted.append(identifier)
     if not wanted:
         return None
-    if source_format == "gtf":
-        gene_present: set[str] = set()
-        transcripts_of_gene: dict[str, set[str]] = {}
-        for gene_id, transcript_id, feature_type in _feature_nodes(
-            frame, ["gene_id", "transcript_id", "type"]
-        ):
-            if gene_id:
-                gene_present.add(str(gene_id))
-            if gene_id and feature_type in TRANSCRIPT_TYPES and transcript_id:
-                transcripts_of_gene.setdefault(str(gene_id), set()).add(
-                    str(transcript_id)
-                )
-        resolved = [identifier for identifier in wanted if identifier in gene_present]
-        if not resolved:
-            return None
-        predicates = [
-            (pl.col("gene_id") == identifier)
-            & pl.col("type").is_in(list(TRANSCRIPT_TYPES))
-            for identifier in resolved
-        ]
-        if recursive:
-            for identifier in resolved:
-                transcripts = transcripts_of_gene.get(identifier)
-                if transcripts:
-                    predicates.append(
-                        pl.col("transcript_id").is_in(sorted(transcripts))
-                    )
-        return pl.any_horizontal(predicates)
     child_of: dict[str, set[str]] = {}
     for feature_id, parent in _feature_nodes(frame, ["id", "parent"]):
         if parent:
@@ -699,12 +702,14 @@ def feature_longest_rows(
     """One BED row per gene carrying its longest transcript.
 
     ``measure="CDS"`` ranks transcripts by the summed length of their CDS
-    children; ``"mRNA"`` ranks by the transcript's own span. When no
-    transcript rows exist at all (bacteria), CDS rows fall back to their
-    direct gene (GFF3 ``parent``, GTF ``gene_id`` attribute) and the longest
-    single CDS row becomes the feature. Gene coordinates, score and strand
-    come from the gene row; the name is the transcript's ``id`` (GFF3), or
-    its ``name_attr`` attribute value when given.
+    children; ``"mRNA"`` ranks by the transcript's own span. Gene coordinates,
+    score and strand come from the gene row (the flattened ``id``/``parent``
+    columns are dialect-unified at v2, so both dialects share the
+    transcript→gene edge); the name is the transcript's id, or its
+    ``name_attr`` attribute value when given. When no transcript rows exist
+    at all, the longest single CDS row becomes the feature: for GFF3 the CDS
+    hangs off its gene via ``parent``, for GTF the ``gene_id`` attribute
+    resolves the gene.
     """
     if measure not in {"CDS", "mRNA"}:
         raise FeatureIndexError(f"unsupported --measure {measure!r} (CDS|mRNA)")
@@ -724,17 +729,12 @@ def _bed_row(gene: dict[str, Any], name: str | None) -> dict[str, Any]:
     }
 
 
-def _gene_rows(
-    collected: pl.DataFrame, source_format: str
-) -> dict[str, dict[str, Any]]:
-    """Gene-row coordinates keyed by gene identifier (first wins)."""
+def _gene_rows(collected: pl.DataFrame) -> dict[str, dict[str, Any]]:
+    """Gene-row coordinates keyed by own id (``id`` is dialect-unified at
+    v2 — GFF3 uses ``ID``, GTF aliases its ``gene_id``; first wins)."""
     genes: dict[str, dict[str, Any]] = {}
     for seqid, start, end, score, strand, gene_id, row_id in collected.iter_rows():
-        key = ""
-        if gene_id:
-            key = str(gene_id)
-        elif source_format == "gff3" and row_id:
-            key = str(row_id)
+        key = str(row_id) if row_id else (str(gene_id) if gene_id else "")
         if not key:
             continue
         genes.setdefault(
@@ -750,46 +750,23 @@ def _gene_rows(
     return genes
 
 
-def _transcript_rows(frame: pl.LazyFrame, source_format: str) -> list[dict[str, Any]]:
-    """Transcript-level rows with their gene reference (per dialect)."""
+def _transcript_rows(frame: pl.LazyFrame) -> list[dict[str, Any]]:
+    """Transcript-level rows (id = own transient id, gene_ref = parent)."""
     transcript = frame.filter(pl.col("type").is_in(list(TRANSCRIPT_TYPES)))
-    if source_format == "gtf":
-        rows = transcript.select(
-            [
-                "transcript_id",
-                "gene_id",
-                "seqid",
-                "start",
-                "end",
-                "attributes",
-            ]
-        ).collect()
-        result = [
-            {
-                "id": str(transcript_id) if transcript_id else "",
-                "gene_ref": str(gene_id) if gene_id else None,
-                "seqid": seqid,
-                "start": start,
-                "end": end,
-                "attributes": attributes,
-            }
-            for transcript_id, gene_id, seqid, start, end, attributes in rows.iter_rows()
-        ]
-    else:
-        rows = transcript.select(
-            ["id", "parent", "seqid", "start", "end", "attributes"]
-        ).collect()
-        result = [
-            {
-                "id": str(row_id) if row_id else "",
-                "gene_ref": str(parent) if parent else None,
-                "seqid": seqid,
-                "start": start,
-                "end": end,
-                "attributes": attributes,
-            }
-            for row_id, parent, seqid, start, end, attributes in rows.iter_rows()
-        ]
+    rows = transcript.select(
+        ["id", "parent", "seqid", "start", "end", "attributes"]
+    ).collect()
+    result = [
+        {
+            "id": str(row_id) if row_id else "",
+            "gene_ref": str(parent) if parent else None,
+            "seqid": seqid,
+            "start": start,
+            "end": end,
+            "attributes": attributes,
+        }
+        for row_id, parent, seqid, start, end, attributes in rows.iter_rows()
+    ]
     return [row for row in result if row["id"] and row["gene_ref"]]
 
 
@@ -820,9 +797,9 @@ def _longest_rows_by_cds(
     gene_frame = frame.filter(pl.col("type") == "gene").select(
         ["seqid", "start", "end", "score", "strand", "gene_id", "id"]
     )
-    genes = _gene_rows(gene_frame.collect(), source_format)
+    genes = _gene_rows(gene_frame.collect())
     cds_frame = frame.filter(pl.col("type") == "CDS")
-    key_expr = pl.col("transcript_id") if source_format == "gtf" else pl.col("parent")
+    key_expr = pl.col("parent")
     links = cds_frame.select(
         key_expr.alias("group_key"),
         (pl.col("end") - pl.col("start") + 1).alias("length"),
@@ -832,7 +809,7 @@ def _longest_rows_by_cds(
         "attributes",
     ).collect()
     totals = _cds_sum([(row[0], row[1]) for row in links.iter_rows()])
-    transcripts = _transcript_rows(frame, source_format)
+    transcripts = _transcript_rows(frame)
     if not transcripts:
         # Bacteria-style sources: CDS rows hang directly off their gene; the
         # longest single CDS row is the feature (ties break alphabetically).
@@ -895,35 +872,12 @@ def _longest_rows_by_cds(
                 _bed_row(gene, _name_for(holder["row"], name_attr, source_format))
             )
     return _sorted_bed_rows(rows)
-    per_gene: dict[str, dict[str, Any]] = {}
-    for transcript in transcripts:
-        gene_key = str(transcript["gene_ref"])
-        weight = totals.get(transcript["id"], 0)
-        holder = per_gene.get(gene_key)
-        if (
-            holder is None
-            or weight > holder["weight"]
-            or (weight == holder["weight"] and transcript["id"] < holder["id"])
-        ):
-            per_gene[gene_key] = {
-                "id": transcript["id"],
-                "weight": weight,
-                "row": transcript,
-            }
-    rows = []
-    for gene_key, holder in per_gene.items():
-        gene = genes.get(gene_key)
-        if gene is not None:
-            rows.append(
-                _bed_row(gene, _name_for(holder["row"], name_attr, source_format))
-            )
-    return _sorted_bed_rows(rows)
 
 
 def _longest_rows_by_span(
     frame: pl.LazyFrame, source_format: str, name_attr: str | None
 ) -> list[dict[str, Any]]:
-    transcripts = _transcript_rows(frame, source_format)
+    transcripts = _transcript_rows(frame)
     if not transcripts:
         return _longest_rows_by_cds(frame, source_format, name_attr)
     per_gene: dict[str, dict[str, Any]] = {}
@@ -936,15 +890,11 @@ def _longest_rows_by_span(
             or weight > holder["weight"]
             or (weight == holder["weight"] and transcript["id"] < holder["id"])
         ):
-            per_gene[gene_key] = {
-                "row": transcript,
-                "weight": weight,
-                "_gene_placeholder": None,
-            }
+            per_gene[gene_key] = {"row": transcript, "weight": weight}
     gene_frame = frame.filter(pl.col("type") == "gene").select(
         ["seqid", "start", "end", "score", "strand", "gene_id", "id"]
     )
-    genes = _gene_rows(gene_frame.collect(), source_format)
+    genes = _gene_rows(gene_frame.collect())
     rows = []
     for gene_key, holder in per_gene.items():
         gene = genes.get(gene_key)

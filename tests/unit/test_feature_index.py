@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
@@ -41,6 +42,43 @@ GTF_TEXT = (
 )
 
 FASTA_TAIL = ">chr1\nACGT\n"
+
+_EXPECTED_FEATURES__ALL = [
+    "FEATURES_CACHE_FORMAT",
+    "FEATURES_SCHEMA",
+    "FEATURE_FIELDS",
+    "FEATURE_INDEX_DIR_SUFFIX",
+    "FEATURE_ROW_GROUP_ROWS",
+    "QUERY_DEFAULT_COLUMNS",
+    "SUPPORTED_SOURCE_FORMATS",
+    "TRANSCRIPT_TYPES",
+    "AttributeFilter",
+    "apply_feature_filters",
+    "build_features_index",
+    "ensure_features_index",
+    "feature_ancestor_expr",
+    "feature_bed_rows",
+    "feature_bins_rows",
+    "feature_descendant_expr",
+    "feature_longest_rows",
+    "feature_query_rows",
+    "feature_stats",
+    "features_index_dir",
+    "features_scan",
+]
+
+
+def test_all_pins_the_public_surface():
+    """``__all__`` is the deliberate facade: every name resolves and the list
+    matches the pinned contract (RUF022 ordering)."""
+    assert features_module.__all__ == _EXPECTED_FEATURES__ALL
+    for name in features_module.__all__:
+        assert hasattr(features_module, name), name
+    for name, value in vars(features_module).items():
+        if name.startswith("_"):
+            continue
+        if inspect.getmodule(value) is features_module:
+            assert name in features_module.__all__, name
 
 
 @pytest.fixture
@@ -92,10 +130,10 @@ def test_roundtrip_on_a_bgzip_archive(project_db, tmp_path):
     directory, meta = features_module.ensure_features_index(project, record)
     assert meta["status"] == "built"
     assert meta["feature_count"] == 4
-    assert meta["cache_format"] == "operon-features-v1"
+    assert meta["cache_format"] == "operon-features-v2"
     assert meta["sha256"] == record["sha256"].lower()
     assert directory == features_index_dir(project, record)
-    assert directory.name.endswith(".v1")
+    assert directory.name.endswith(".v2")
     assert (directory / "data.parquet").is_file()
     assert (directory / "meta.json").is_file()
     # The second visit reuses the index (hit).
@@ -146,8 +184,12 @@ def test_gtf_dialect_flattens_quoted_attributes(project_db, tmp_path):
     frame, _meta = features_scan(project, record)
     rows = _rows(frame)
     assert rows[0]["gene_id"] == "A" and rows[0]["transcript_id"] == "t1"
+    # The v2 flattener materializes the structural identity GTF implies:
+    # transcript rows alias transcript_id with parent = gene_id; the CDS row
+    # carries no own id and points at its transcript.
+    assert rows[0]["id"] == "t1" and rows[0]["parent"] == "A"
+    assert rows[1]["id"] is None and rows[1]["parent"] == "t1"
     assert rows[0]["phase"] == "." and rows[1]["phase"] == "0"
-    assert rows[0]["id"] is None and rows[0]["parent"] is None
 
 
 def test_fasta_tail_terminates_the_stream(project_db, tmp_path):
@@ -857,7 +899,8 @@ def test_traversal_gtf_parents_and_children(project_db, tmp_path, capsys):
     )
     document = json.loads(capsys.readouterr().out)["files"][0]
     (row,) = document["rows"]
-    assert row["type"] == "gene" and row["gene_id"] == "G1" and row["id"] is None
+    # v2 fills the GTF gene row's own id with its gene_id alias.
+    assert row["type"] == "gene" and row["gene_id"] == "G1" and row["id"] == "G1"
     assert (
         main(
             [

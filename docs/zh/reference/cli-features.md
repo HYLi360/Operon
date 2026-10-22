@@ -2,7 +2,7 @@
 
 `operon features` 查询 `index/features/` 下的扁平 GFF3/GTF feature 缓存（EXT-8；见
 [派生索引缓存](../architecture/files-and-storage.md#派生索引缓存)）。每份 GFF3/GTF 注释归档对应
-一个 `{file_id}.{sha256}.v1` 目录，内含 `data.parquet` 与 `meta.json` 身份标记。该索引是未登记、
+一个 `{file_id}.{sha256}.v2` 目录，内含 `data.parquet` 与 `meta.json` 身份标记。该索引是未登记、
 可重建的派生数据：不属于 manifest、release 与备份；过期、损坏或缺提交标记的缓存都会在下一次使用时
 从归档字节透明重建。构建按有界批次流式进行且行级严格——任一不是恰好 9 列合法数据的源行都会中止构建
 并报出源行号。
@@ -30,9 +30,11 @@ operon features query (--file-id FIL_… | --entity-type TYPE --entity-id ID)
   `seqid source type start end strand phase id parent gene_id transcript_id line_number`；
   `--format json` 输出完整行——含 `score` 与逐字的 `attributes`——并按文件分组附带索引统计。
 - `--rebuild` 先丢弃缓存索引并从归档重建。
-- 扁平列：GFF 的九个 feature 列，加上规范化的 `id`/`parent`（GFF3 的 `ID`/`Parent`，值做百分号解码）、
-  两种方言共有的 `gene_id`/`transcript_id` 字面键、逐字的 `attributes` 文本，以及可溯源的源
-  `line_number`。
+- 扁平列：GFF 的九个 feature 列、规范化的 `id`/`parent` 与 `gene_id`/`transcript_id`、
+  逐字的 `attributes` 文本、可溯源的源 `line_number`。v2 起 `id`/`parent` 在两种方言间同构：
+  GFF3 读 `ID`/`Parent`（百分号解码）；GTF 把属性蕴含的结构身份物化——gene 行以 `gene_id`
+  作为自身 id，transcript 行以 `transcript_id` 为 id、`parent = gene_id`，CDS/exon 等子行
+  无自身 id、parent 指向所属转录本。此前的 v1 缓存会透明重建。
 
 ## features bed
 

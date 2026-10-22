@@ -223,7 +223,7 @@ coverage 计算成功且达到 profile 中全部阈值时返回 0；报告成功
 operon query "SQL"
 ```
 
-只读 SQL。允许 SELECT 与只读 PRAGMA（如 `table_info`、`foreign_key_list`）；拒绝 DML/DDL/写 PRAGMA/ATTACH/VACUUM 等。
+只读 SQL。允许 SELECT 与只读 PRAGMA（如 `table_info`、`foreign_key_list`）；拒绝 DML/DDL/写 PRAGMA/ATTACH/VACUUM 等。面向类型的专用读取（feature 索引查询、状态面板、report 视图）落在各自的命令上，`operon query` 有意保留为唯一通用的 SQL 入口：跨表联查无需逐一等待 typed 面，这是分层设计而不是重复缺陷。
 
 ## show
 

@@ -31,7 +31,7 @@ manifest，因此不进入 release 快照与备份——恢复后的项目按需
 
 - `index/fasta_lengths/{file_id}.{sha256}.v1.tsv` —— 内置 QC 使用的 assembly
   `seqid -> length` 映射（自 `index/` 引入前的 `qc/cache/fasta_lengths/` 迁来；旧条目在首次使用时收编）。
-- `index/features/{file_id}.{sha256}.v1/` —— 扁平 GFF3/GTF feature 缓存（`data.parquet` +
+- `index/features/{file_id}.{sha256}.v2/` —— 扁平 GFF3/GTF feature 缓存（`data.parquet` +
   `meta.json` 身份标记），由 `operon features` 消费；首次查询时惰性构建，过期、损坏或缺少提交标记时透明重建。
   行组按源文件顺序写入（不全局排序），区域过滤靠行组统计修剪；查询经 polars `scan_parquet` 走
   投影与谓词下推。

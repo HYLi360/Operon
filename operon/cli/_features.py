@@ -569,7 +569,6 @@ def _features_traversal(
         if direction == "parents":
             expr = features.feature_ancestor_expr(
                 frame,
-                source_format=record["format"],
                 initial_ids=args.feature_ids,
                 until_type=args.until_type or "gene",
                 max_depth=args.max_depth,
@@ -577,7 +576,6 @@ def _features_traversal(
         else:
             expr = features.feature_descendant_expr(
                 frame,
-                source_format=record["format"],
                 initial_ids=args.feature_ids,
                 recursive=args.recursive,
             )

@@ -146,7 +146,7 @@ project/
 ├── reports/                  # decisions、汇总导出及 coverage 报告
 ├── taxonomy/reference_sets/  # 编译后的不可变 family/genus 分母与 provenance
 ├── index/                    # 可重建的派生索引缓存（不进入 manifest）
-│   └── features/{file_id}.{sha256}.v1/   # 扁平 GFF3/GTF Parquet feature 索引（EXT-8）
+│   └── features/{file_id}.{sha256}.v2/   # 扁平 GFF3/GTF Parquet feature 索引（EXT-8）
 ├── logs/workflow.jsonl       # 机器可读工作流日志（首次 workflow 运行时创建）
 ├── .operon/placeholders/     # REMOTE_ONLY 文件的小型、非权威指针
 │                             #   （首次远程 evict/pull 时创建）

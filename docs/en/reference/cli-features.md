@@ -2,7 +2,7 @@
 
 `operon features` queries the flattened GFF3/GTF feature cache under
 `index/features/` (EXT-8; see [Derived index caches](../architecture/files-and-storage.md#derived-index-caches)). One GFF3/GTF annotation archive yields one
-`{file_id}.{sha256}.v1` directory holding `data.parquet` plus a `meta.json`
+`{file_id}.{sha256}.v2` directory holding `data.parquet` plus a `meta.json`
 identity marker. The index is unregistered rebuildable derived data: it is
 never part of the manifest, a release snapshot or a backup, and a stale,
 corrupt or partially-written cache is rebuilt transparently from the archived
@@ -42,9 +42,14 @@ operon features query (--file-id FIL_… | --entity-type TYPE --entity-id ID)
   `attributes` — grouped per file with index statistics.
 - `--rebuild` drops the cached index and rebuilds it from the archive first.
 - Flattened columns: the nine GFF feature columns, normalized `id`/`parent`
-  (GFF3 `ID`/`Parent`, percent-decoded) and `gene_id`/`transcript_id`
-  (literal attribute keys of either dialect), the raw `attributes` text, and
-  the source `line_number` for trace-back.
+  and `gene_id`/`transcript_id`, the raw `attributes` text, and the source
+  `line_number` for trace-back. At v2 the `id`/`parent` pair is
+  dialect-unified: GFF3 reads `ID`/`Parent` (percent-decoded); GTF
+  materializes the structural identity its attributes imply — the gene row
+  aliases `gene_id` as its id, a transcript row aliases `transcript_id` with
+  `parent = gene_id`, and CDS/exon rows carry no own id and point at their
+  transcript. Any earlier v1 cache is rebuilt transparently.
+
 
 ## features bed
 
