@@ -74,6 +74,7 @@ Operon 是一个 Python 编写、以文件为载体的数据库系统，面向�
 ├── qc                        # 全部 QC 功能的归属地
 │   ├── alignment.py           # 多序列比对 QC 的 Python 实现（仅作行为参照）
 │   ├── _alignment.pyx         # 同一 API 的 Cython 实现（生产使用）
+│   ├── bam.py                 # 基于 pysam 的 BAM/CRAM 比对 QC 测量（alignment_basic）
 │   ├── imports.py
 │   ├── __init__.py
 │   ├── measure.py

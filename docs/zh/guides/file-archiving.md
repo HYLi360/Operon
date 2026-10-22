@@ -79,7 +79,7 @@ operon ingest --source /data/sample.cram \
   --entity-type assembly --entity-id ASM_000001 --role alignment_cram
 ```
 
-BAM 与 CRAM 以 `format: bam`/`cram`、`compression: none` 归档：它们的压缩属于格式本身，因此 canonical 名称为 `<entity>.<role>.bam`/`.cram`（不带 `.gz`）。显式 `.gz` 源后缀或 `--compression gzip` 则记录为外层压缩。内置 `qc` 尚无 BAM/CRAM 解析器；`qc-measure --format bam|cram` 只测量文件完整性指标，专题解析器属于后续档位。
+BAM 与 CRAM 以 `format: bam`/`cram`、`compression: none` 归档：它们的压缩属于格式本身，因此 canonical 名称为 `<entity>.<role>.bam`/`.cram`（不带 `.gz`）。显式 `.gz` 源后缀或 `--compression gzip` 则记录为外层压缩。内置 `qc` 用 pysam 测量这两种格式（flagstat 式计数与比例、insert size 统计、MAPQ>=30 比例、NM tag 错误率、平均深度与覆盖广度，即 `alignment_basic` stage）；`qc-measure --format bam|cram` 在无项目环境下产出同样的指标。
 
 ## 导入外部 QC 结果
 

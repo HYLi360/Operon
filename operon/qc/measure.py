@@ -14,7 +14,8 @@ so it must stay free of project/configuration dependencies.
 The ``_*_metric_specs`` helpers are the single source of truth for the
 stats-dict -> (stage, name, value, unit) mapping; ``qc_file`` and
 ``_annotation_metrics`` consume them so local and remote measurement can
-never drift apart.
+never drift apart.  BAM/CRAM files are measured with pysam instead of the
+Cython text parsers; their payload records ``parser_backend: pysam``.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from operon.qc._parsers import (
     gff3_stats,
     protein_stats,
 )
+from operon.qc.bam import bam_stats
 from operon.utils import sha256_file
 
 TOOL_NAME = "operon.builtin"
@@ -96,6 +98,18 @@ _PROTEIN_METRICS = [
     "protein_missing_stop_count",
     "cds_protein_count_match",
 ]
+
+_BAM_BP_METRICS = {
+    "read_length_min",
+    "read_length_max",
+    "read_length_mean",
+    "insert_size_mean",
+    "insert_size_std",
+    "insert_size_median",
+    "insert_size_min",
+    "insert_size_max",
+    "covered_bases",
+}
 
 
 def coerce_metric_value(value: Any) -> tuple[str, float | None] | None:
@@ -181,6 +195,22 @@ def _gff3_metric_specs(
                     )
                 )
     specs.append(("annotation_basic", "parseable", 1, None))
+    return specs
+
+
+def _bam_metric_specs(
+    stats: dict[str, Any],
+) -> list[tuple[str, str, Any, str | None]]:
+    specs = []
+    for name, value in stats.items():
+        if value is None:
+            continue
+        unit = (
+            "bp"
+            if name in _BAM_BP_METRICS
+            else ("percent" if name.endswith("percent") else None)
+        )
+        specs.append(("alignment_basic", name, value, unit))
     return specs
 
 
@@ -298,10 +328,16 @@ def measure_file(
             _payload_metric(stage, name, value, unit, parameter_set)
             for stage, name, value, unit in _gff3_metric_specs(stats, pstats)
         )
+    elif file_format in {"bam", "cram"}:
+        stats = bam_stats(path, file_format=file_format)
+        entries.extend(
+            _payload_metric(stage, name, value, unit, parameter_set)
+            for stage, name, value, unit in _bam_metric_specs(stats)
+        )
     # parseable=1 only when a format parser actually ran; formats without a
-    # parser (other, directory, bam, cram) leave parseable unmeasured so
-    # required `parseable == 1` gates stay NOT_EVALUATED for them.
-    if file_format in {"fasta", "fastq", "gff3"}:
+    # parser (other, directory) leave parseable unmeasured so required
+    # `parseable == 1` gates stay NOT_EVALUATED for them.
+    if file_format in {"fasta", "fastq", "gff3", "bam", "cram"}:
         entries.append(
             _payload_metric("file_integrity", "parseable", 1, None, parameter_set)
         )
@@ -310,7 +346,7 @@ def measure_file(
         "schema_version": MEASURE_SCHEMA_VERSION,
         "tool": TOOL_NAME,
         "tool_version": TOOL_VERSION,
-        "parser_backend": PARSER_BACKEND,
+        "parser_backend": "pysam" if file_format in {"bam", "cram"} else PARSER_BACKEND,
         "parameter_set": parameter_set,
         "file": {
             "file_id": file_id,

@@ -83,6 +83,10 @@ class PytestAssertions:
         assert member in container, message
 
     @staticmethod
+    def assertNotIn(member: Any, container: Any, message: Any = None) -> None:
+        assert member not in container, message
+
+    @staticmethod
     def assertIsNone(value: Any, message: Any = None) -> None:
         assert value is None, message
 
@@ -117,3 +121,130 @@ class PytestAssertions:
         exception: type[BaseException], pattern: str
     ) -> AbstractContextManager[Any]:
         return pytest.raises(exception, match=pattern)
+
+
+def _bam_segment(
+    qname: str,
+    flag: int,
+    rname: int,
+    pos: int,
+    mapq: int,
+    cigar: str | None,
+    seq: str,
+    tlen: int = 0,
+    mate: int = -1,
+    mpos: int = -1,
+    tags: tuple[tuple[str, int], ...] = (),
+):
+    import pysam
+
+    segment = pysam.AlignedSegment()
+    segment.query_name = qname
+    segment.flag = flag
+    segment.reference_id = rname
+    segment.reference_start = pos
+    segment.mapping_quality = mapq
+    segment.cigarstring = cigar
+    segment.query_sequence = seq
+    segment.query_qualities = pysam.qualitystring_to_array("I" * len(seq))
+    segment.template_length = tlen
+    segment.next_reference_id = mate
+    segment.next_reference_start = mpos
+    for key, value in tags:
+        segment.set_tag(key, value)
+    return segment
+
+
+def write_test_bam(path: str | Path) -> Path:
+    """Write the deterministic 12-read BAM used by the alignment-QC tests.
+
+    References: chr1 (1000 bp), chr2 (500 bp), chr3 (200 bp, no reads).
+    Expected measurements (verified by hand against flagstat conventions):
+    12 alignments (1 QC-failed, 1 secondary, 1 supplementary), 10 mapped,
+    8 primary-mapped, 2 unmapped, 1 duplicate; 7 paired (4 read1, 3 read2),
+    4 proper pairs, 1 singleton, 2 mates on a different reference (1 with
+    MAPQ>=5); 5 primary-mapped reads at MAPQ>=30; insert sizes {300, 100};
+    error rate 7/450 from NM tags (r7 carries none); coverage over 440 of
+    1700 reference bases (450 aligned bases).
+    """
+    import pysam
+
+    path = Path(path)
+    header = {
+        "HD": {"VN": "1.6", "SO": "coordinate"},
+        "SQ": [
+            {"SN": "chr1", "LN": 1000},
+            {"SN": "chr2", "LN": 500},
+            {"SN": "chr3", "LN": 200},
+        ],
+    }
+    reads = [
+        _bam_segment(
+            "r1",
+            0x63,
+            0,
+            100,
+            60,
+            "50M",
+            "A" * 50,
+            tlen=300,
+            mate=0,
+            mpos=350,
+            tags=(("NM", 0),),
+        ),
+        _bam_segment(
+            "r2",
+            0xA3,
+            0,
+            350,
+            60,
+            "50M",
+            "C" * 50,
+            tlen=-300,
+            mate=0,
+            mpos=100,
+            tags=(("NM", 2),),
+        ),
+        _bam_segment("r3", 0x4, -1, -1, 0, None, "G" * 50),
+        _bam_segment("r4", 0x100, 0, 200, 20, "50M", "T" * 50, tags=(("NM", 1),)),
+        _bam_segment("r5", 0x800, 1, 10, 60, "50M", "A" * 50, tags=(("NM", 0),)),
+        _bam_segment("r6", 0x400, 0, 150, 10, "50M", "N" * 50, tags=(("NM", 3),)),
+        _bam_segment("r7", 0x49, 0, 500, 40, "50M", "ACGT" * 12 + "AC", mate=0, mpos=0),
+        _bam_segment("r8", 0x204, -1, -1, 0, None, "T" * 40),
+        _bam_segment(
+            "r9", 0x41, 0, 600, 20, "50M", "G" * 50, mate=1, mpos=50, tags=(("NM", 0),)
+        ),
+        _bam_segment(
+            "r10", 0x81, 1, 50, 2, "50M", "A" * 50, mate=0, mpos=600, tags=(("NM", 1),)
+        ),
+        _bam_segment(
+            "r11",
+            0x63,
+            1,
+            100,
+            60,
+            "50M",
+            "C" * 50,
+            tlen=100,
+            mate=1,
+            mpos=150,
+            tags=(("NM", 0),),
+        ),
+        _bam_segment(
+            "r12",
+            0xA3,
+            1,
+            150,
+            60,
+            "50M",
+            "T" * 50,
+            tlen=-100,
+            mate=1,
+            mpos=100,
+            tags=(("NM", 0),),
+        ),
+    ]
+    with pysam.AlignmentFile(str(path), "wb", header=header) as out:
+        for read in reads:
+            out.write(read)
+    return path

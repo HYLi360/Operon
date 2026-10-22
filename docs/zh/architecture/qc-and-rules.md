@@ -16,6 +16,9 @@
 | `sequence_basic` | 其他 FASTA（如独立的 CDS 或蛋白 FASTA） | `sequence_count`、`total_length`、`empty_sequence_count`、`duplicate_sequence_id_count` |
 | `reads_basic` | FASTQ | `read_count`、`total_bases`、`q20_percent`、`q30_percent`、`gc_percent`、`duplicate_percent`、采样数量/策略、`overrepresented_sequence_count`、read length N50、R1/R2 配对 |
 | `annotation_basic` | GFF3 (+组装 FASTA/蛋白 FASTA) | gene/mRNA/CDS 数量、CDS 三联体比例、ID/Parent 完整性、坐标错误、seqid 匹配、蛋白重复 ID、X 比例、内部终止密码子 |
+| `alignment_basic` | BAM/CRAM（pysam 后端） | 与 flagstat 约定一致的计数（`alignment_count`、`mapped_count`/`mapped_percent`、`primary_mapped_count`、`secondary_count`、`supplementary_count`、`duplicate_percent`、`proper_pair_percent`、`singleton_percent`、mate 落在不同 reference 的计数）、read 长度、mapped read 的 `gc_percent`、`mapq_ge30_percent`（STAR 的 255 唯一比对哨兵值计入 >=30）、NM tag 导出的 `error_rate`、由 proper-pair read1 的 TLEN 统计的 insert size、`reference_count`、`mean_depth`、`covered_bases`/`coverage_percent`、`depth_ge10_percent`/`depth_ge30_percent` |
+
+BAM 与 CRAM 由 pysam/htslib 单次流式遍历测量（payload 与运行日志记录 `parser_backend: pysam`）；损坏的文件或参考不可达的 CRAM 记录 `parseable=0`。覆盖广度对每条 reference 使用一个差分数组（每碱基 4 字节），统计 mapped、非 secondary、非 QC-fail 的 reads（supplementary 与 duplicate 计入）；超过 250 Mb 的 reference——或会使累计分配超过 1 Gb 的 reference——被跳过，一旦有 reference 被跳过，广度/深度阈值类指标整体不记录（`coverage_breadth_skipped=1`），而 `mean_depth` 始终精确（只需比对碱基总数与 header 长度）。
 
 归档或显式 `verify` 完整计算 SHA-256 成功后，系统把 manifest SHA-256 与本地文件的
 `size + device + inode + mtime_ns + ctime_ns` 绑定到可重建缓存。后续内置 QC 只在这组

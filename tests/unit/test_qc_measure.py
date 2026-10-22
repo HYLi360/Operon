@@ -19,7 +19,7 @@ from operon.errors import ChecksumError, QCError, ValidationError
 from operon.files import ingest_file
 from operon.qc import file_qc_status, measure_file, qc_file
 from operon.utils import sha256_file
-from tests.helpers import PytestAssertions
+from tests.helpers import PytestAssertions, write_test_bam
 
 FASTA = ">ctg1\n" + "ACGT" * 50 + "\n>ctg2\n" + "GGGG" * 25 + "\n"
 FASTQ_R1 = "@r1\nACGT\n+\nIIII\n@r2\nTGCA\n+\nIIII\n"
@@ -319,7 +319,39 @@ class TestQCMeasureCLI(PytestAssertions):
         self.assertEqual(payload["file"]["file_role"], "genome_fasta")
         self.assertTrue(payload["metrics"])
 
-    def test_bam_and_cram_measure_identity_only(self, capsys):
+    def test_bam_measure_runs_alignment_parser(self, capsys):
+        path = write_test_bam(self.root / "reads.bam")
+        identity = _identity(path)
+        code = main(
+            [
+                "--project",
+                str(self.root / "no-project-here"),
+                "qc-measure",
+                "--file",
+                str(path),
+                "--format",
+                "bam",
+                "--role",
+                "alignment_bam",
+                "--sha256",
+                identity["sha256"],
+                "--size-bytes",
+                str(identity["size_bytes"]),
+            ]
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(capsys.readouterr().out)
+        self.assertEqual(payload["file"]["format"], "bam")
+        self.assertEqual(payload["parser_backend"], "pysam")
+        metrics = {
+            (item["qc_stage"], item["metric_name"]): item["metric_numeric"]
+            for item in payload["metrics"]
+        }
+        self.assertEqual(metrics[("file_integrity", "parseable")], 1.0)
+        self.assertEqual(metrics[("alignment_basic", "alignment_count")], 12.0)
+        self.assertEqual(metrics[("alignment_basic", "mapped_count")], 10.0)
+
+    def test_invalid_bam_and_cram_fail_measurement(self, capsys):
         for fmt, name, role in (
             ("bam", "reads.bam", "alignment_bam"),
             ("cram", "reads.cram", "alignment_cram"),
@@ -344,14 +376,8 @@ class TestQCMeasureCLI(PytestAssertions):
                     str(identity["size_bytes"]),
                 ]
             )
-            self.assertEqual(code, 0)
-            payload = json.loads(capsys.readouterr().out)
-            self.assertEqual(payload["file"]["format"], fmt)
-            metrics = {
-                (item["qc_stage"], item["metric_name"]) for item in payload["metrics"]
-            }
-            self.assertIn(("file_integrity", "sha256_match"), metrics)
-            self.assertFalse(("file_integrity", "parseable") in metrics)
+            self.assertEqual(code, 1)
+            self.assertIn("cannot parse", capsys.readouterr().err)
 
     def test_out_writes_atomically(self, capsys):
         path = self._fasta()

@@ -56,7 +56,7 @@
 
 ## 指标与判定
 
-- **没有解析器的格式会停留在 `QC_COMPLETE`。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED` 而不是失败（见 [QC profile 指南](../guides/qc-profiles.md)），因此没有解析器的格式（如 BAM、CRAM）同样停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。`qc-measure` 接受 `--format bam`/`cram`，但只记录 `file_integrity` 指标；专题解析器属于后续档位（`qc/measure.py`）。
+- **没有解析器的格式会停留在 `QC_COMPLETE`。** 必需规则对应的指标没有值时判定为 `NOT_EVALUATED` 而不是失败（见 [QC profile 指南](../guides/qc-profiles.md)），因此没有解析器的格式（如 `other`、目录）同样停留在 `QC_COMPLETE`，仅因永远到不了 `PASS` 而被 release 排除（`rules.py`）。BAM/CRAM 现在已有解析器：`qc-measure --format bam`/`cram` 记录完整的 `alignment_basic` stage（`qc/measure.py`）。
 - **`evaluate` 只覆盖已有 QC 结果的实体。** 从未被 `qc` 处理过的实体不会有 decision；发布预检会在创建任何产物前拒绝这类活动范围内实体（`rules.py`、`release.py`）。
 - **多文件实体会混合来自不同文件的指标。** `latest_metrics` 按输入身份分区：保守布尔指标（`file_exists`、`sha256_match`、`parseable`、`paired_read_count_match`）取所有输入的最小值，而其他指标取最近评估输入的值——一个判定可能把一个文件的计数与另一个文件的布尔值组合起来（`database.py`）。
 - **更改 QC 采样参数会累积行。** QC 结果按参数集 upsert；用不同 `--sample-size`/`--phred-offset` 重跑 `qc` 会新增一组平行行而非替换，`latest_metrics` 中最新的静默胜出（`database.py`）。

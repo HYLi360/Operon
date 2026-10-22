@@ -38,6 +38,7 @@ from operon.qc.alignment import (
     render_summary_json,
     write_alignment_qc,
 )
+from operon.qc.bam import bam_stats
 from operon.qc.measure import (
     ASSEMBLY_FILE_ROLES,
     ASSEMBLY_METRICS,
@@ -46,6 +47,7 @@ from operon.qc.measure import (
     PARSER_BACKEND,
     TOOL_NAME,
     TOOL_VERSION,
+    _bam_metric_specs,
     _fasta_metric_specs,
     _fastq_metric_specs,
     _gff3_metric_specs,
@@ -68,6 +70,7 @@ __all__ = [
     "TOOL_VERSION",
     "AlignmentQCResult",
     "alignment_qc",
+    "bam_stats",
     "coerce_metric_value",
     "compute_alignment_qc",
     "fasta_lengths",
@@ -541,6 +544,7 @@ def _qc_timing_details(
     timings: dict[str, float],
     related_inputs: list[dict[str, Any]],
     duration: float,
+    parser_backend: str = PARSER_BACKEND,
 ) -> dict[str, Any]:
     measured = sum(timings.values())
     stages = dict(timings)
@@ -548,7 +552,7 @@ def _qc_timing_details(
     return {
         "schema_version": 1,
         "clock": "perf_counter",
-        "parser_backend": PARSER_BACKEND,
+        "parser_backend": parser_backend,
         "integrity": {
             "verification_method": file_info.get("verification_method"),
             "verification_cached_at": file_info.get("verification_cached_at"),
@@ -578,6 +582,7 @@ def _log_qc_run(
     timings: dict[str, float],
     related_inputs: list[dict[str, Any]],
     error: str | None = None,
+    parser_backend: str = PARSER_BACKEND,
 ) -> None:
     duration = time.perf_counter() - total_started
     timing_details = _qc_timing_details(
@@ -586,6 +591,7 @@ def _log_qc_run(
         timings,
         related_inputs,
         duration,
+        parser_backend,
     )
     workflow_record: dict[str, Any] = {
         "entity_type": record["entity_type"],
@@ -595,7 +601,7 @@ def _log_qc_run(
         "file_format": record.get("format"),
         "input_size_bytes": int(file_info.get("size_bytes") or 0),
         "checksum_verification_method": file_info.get("verification_method"),
-        "parser_backend": PARSER_BACKEND,
+        "parser_backend": parser_backend,
         "step": "qc",
         "status": status,
         "started_at": started_at,
@@ -652,6 +658,7 @@ def qc_file(
             "file_statuses": file_qc_statuses(db, entity_type, entity_id),
         }
     path = project.root / record["relative_path"]
+    parser_backend = "pysam" if record["format"] in {"bam", "cram"} else PARSER_BACKEND
     started = now_iso()
     total_started = time.perf_counter()
     timings: dict[str, float] = {}
@@ -742,6 +749,7 @@ def qc_file(
             timings=timings,
             related_inputs=related_inputs,
             error=error,
+            parser_backend=parser_backend,
         )
         return {
             "file_id": file_id,
@@ -815,10 +823,22 @@ def qc_file(
                     force_checksum=force_checksum,
                 )
             )
+        elif record["format"] in {"bam", "cram"}:
+            stats = _timed_call(
+                timings,
+                "bam_stats",
+                bam_stats,
+                path,
+                file_format=record["format"],
+            )
+            metrics.extend(
+                metric(entity_type, entity_id, stage, name, value, unit, parameter_set)
+                for stage, name, value, unit in _bam_metric_specs(stats)
+            )
         # parseable=1 only when a format parser actually ran; formats without
-        # a parser (other, directory, bam, cram) leave parseable unmeasured so
-        # required `parseable == 1` gates stay NOT_EVALUATED for them.
-        if record["format"] in {"fasta", "fastq", "gff3"}:
+        # a parser (other, directory) leave parseable unmeasured so required
+        # `parseable == 1` gates stay NOT_EVALUATED for them.
+        if record["format"] in {"fasta", "fastq", "gff3", "bam", "cram"}:
             metrics.append(
                 metric(
                     entity_type,
@@ -866,6 +886,7 @@ def qc_file(
             file_info=file_info,
             timings=timings,
             related_inputs=related_inputs,
+            parser_backend=parser_backend,
         )
         return {
             "file_id": file_id,
@@ -917,6 +938,7 @@ def qc_file(
             timings=timings,
             related_inputs=related_inputs,
             error=error,
+            parser_backend=parser_backend,
         )
         return {
             "file_id": file_id,
