@@ -158,6 +158,13 @@ TUI Runs 界面），`kill <pid>` 与 Ctrl+C 语义完全一致：取消当前�
 会话启动后发生的 recipe 级失败会体现在控制台日志与逐文件的 error 行中。之后再重跑时，已完成
 文件由缓存复用。
 
+同一 recipe 只允许一个 detach 子进程：前一个子进程仍活着时再次 `--detach` 同一分析会被拒绝
+（`already running (pid …, started …)`）。启动在 `.operon/analysis-locks/` 认领存活标记——
+记录 pid、启动时间与子进程 argv，当该 pid 仍可被信号触达时拒绝重复；已被杀死的子进程（崩溃或
+正常完成的那次运行）留下的过期标记会在下一次 spawn 时清掉，被杀会话的恢复只需一次重跑。在
+claim 与 pid 落盘之间的崩溃窗口内，标记先给出十秒宽限的拒绝、超窗后才被接管。前台运行不设这道
+闸。启动自身的失败（synthetic）在子进程存在之前即透传。
+
 每个待处理文件在实际执行前都会把当前 recipe 及其引用的 tool spec 快照记录到
 `recipe_snapshots`（内容寻址去重），`analysis_jobs.recipe_snapshot_id` 回指该快照；
 缓存命中同样记录当前配置的快照，续跑收养的作业继承原作业的快照 id。详见下文
