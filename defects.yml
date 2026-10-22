@@ -2738,8 +2738,8 @@ defects:
     user-observed in its own terminal, and the remaining scope is recorded in docs. Regression tests
     marked ODR-85 pin duplicate refusal (live pid), stale takeover, the crash-before-publish window, and
     the CLI surface.
-  fix_commit: null
-  fixed_in: null
+  fix_commit: '85a7c3793b2ef186948c4fadf0bcb3012001d9a3'
+  fixed_in: '0.11.0'
   regression_tests:
     - tests/unit/test_cli_edges.py::test_detach_refuses_concurrent_same_recipe_spawn
     - tests/unit/test_cli_edges.py::test_detach_takes_over_a_stale_marker_and_publishes_pid
