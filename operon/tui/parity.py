@@ -587,6 +587,31 @@ REGISTRY: tuple[ParityEntry, ...] = (
         "the same exclusions as the 'features query' leaf apply",
     ),
     ParityEntry(
+        ("features", "bed"),
+        STATUS_CLI_ONLY,
+        note="a raw BED6 coordinate export for command-line genomics tools; "
+        "the same derived-Parquet exclusions as the 'features query' leaf "
+        "apply",
+    ),
+    ParityEntry(
+        ("features", "parents"),
+        STATUS_CLI_ONLY,
+        note="annotation-hierarchy traversal prints a feature row set; the "
+        "same derived-Parquet exclusions as the 'features query' leaf apply",
+    ),
+    ParityEntry(
+        ("features", "children"),
+        STATUS_CLI_ONLY,
+        note="annotation-hierarchy traversal prints a feature row set; the "
+        "same derived-Parquet exclusions as the 'features query' leaf apply",
+    ),
+    ParityEntry(
+        ("features", "bins"),
+        STATUS_CLI_ONLY,
+        note="per-bin feature density tables for plotting pipelines; the "
+        "same derived-Parquet exclusions as the 'features query' leaf apply",
+    ),
+    ParityEntry(
         ("migrate",),
         STATUS_CLI_ONLY,
         note="administrative schema migration; diagnostic/maintenance only",

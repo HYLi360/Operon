@@ -481,3 +481,586 @@ def test_query_cli_escapes_formula_trigger_cells(project_db, tmp_path, capsys):
     )
     lines = capsys.readouterr().out.strip().splitlines()
     assert lines[1].split("\t")[0] == "'=1+1"
+
+
+GFF3_HIERARCHY_TEXT = (
+    "##gff-version 3\n"
+    "chr1\tncbi\tgene\t100\t300\t.\t+\t.\tID=g1;Name=g1\n"
+    "chr1\tncbi\tmRNA\t100\t300\t.\t+\t.\tID=t1;Parent=g1;protein_id=P1\n"
+    "chr1\tncbi\tCDS\t100\t150\t.\t+\t0\tID=c1a;Parent=t1\n"
+    "chr1\tncbi\tCDS\t200\t300\t.\t+\t0\tID=c1b;Parent=t1\n"
+    "chr1\tncbi\texon\t100\t300\t.\t+\t.\tID=e1;Parent=t1\n"
+    "chr1\tncbi\tmRNA\t100\t400\t.\t+\t.\tID=t2;Parent=g1;protein_id=P2\n"
+    "chr1\tncbi\tCDS\t100\t120\t.\t+\t0\tID=c2;Parent=t2\n"
+    "chr2\tncbi\tgene\t500\t700\t.\t-\t.\tID=g2\n"
+)
+
+GFF3_NO_MRNA_TEXT = (
+    "##gff-version 3\n"
+    "chr1\tncbi\tgene\t10\t40\t.\t+\t.\tID=gb1\n"
+    "chr1\tncbi\tCDS\t10\t25\t.\t+\t0\tID=cb1;Parent=gb1\n"
+    "chr1\tncbi\tgene\t50\t80\t.\t+\t.\tID=gb2\n"
+    "chr1\tncbi\tCDS\t50\t60\t.\t+\t0\tID=cb2a;Parent=gb2\n"
+    "chr1\tncbi\tCDS\t68\t80\t.\t+\t0\tID=cb2b;Parent=gb2\n"
+)
+
+GTF_HIERARCHY_TEXT = (
+    "##gt-version 3\n"
+    'chr1\tsrc\tgene\t100\t300\t.\t+\t.\tgene_id "G1";\n'
+    'chr1\tsrc\ttranscript\t100\t300\t.\t+\t.\tgene_id "G1"; transcript_id "T1"; protein_id "P1";\n'
+    'chr1\tsrc\tCDS\t100\t150\t.\t+\t0\tgene_id "G1"; transcript_id "T1";\n'
+    'chr1\tsrc\tCDS\t200\t300\t.\t+\t0\tgene_id "G1"; transcript_id "T1";\n'
+    'chr1\tsrc\ttranscript\t100\t400\t.\t+\t.\tgene_id "G1"; transcript_id "T2";\n'
+    'chr1\tsrc\tCDS\t100\t120\t.\t+\t0\tgene_id "G1"; transcript_id "T2";\n'
+    'chr2\tsrc\tgene\t500\t700\t.\t-\t.\tgene_id "G2";\n'
+    'chr2\tsrc\ttranscript\t500\t700\t.\t-\t.\tgene_id "G2"; transcript_id "T3";\n'
+)
+
+_BED_COLUMNS = ["chrom", "chromStart", "chromEnd", "name", "score", "strand"]
+
+
+def _bed_lines(text: str) -> list[list[str]]:
+    return [line.split("\t") for line in text.strip().splitlines() if line.strip()]
+
+
+def _add_annotation(project, db, tmp_path: Path, name: str, text: str) -> dict:
+    source = tmp_path / name
+    source.write_text(text, encoding="utf-8")
+    return ingest_file(
+        db, project, source, "annotation", "ANN_000001", "annotation_gff3"
+    )
+
+
+def test_bed_cli_by_type(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--type",
+                "gene",
+            ]
+        )
+        == 0
+    )
+    lines = _bed_lines(capsys.readouterr().out)
+    assert lines == [
+        ["chr1", "99", "300", "g1", "0", "+"],
+        ["chr2", "499", "700", "g2", "0", "-"],
+    ]
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--type",
+                "mRNA",
+                "--limit",
+                "1",
+            ]
+        )
+        == 0
+    )
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "t1", "0", "+"],
+    ]
+
+
+def test_bed_cli_writes_zero_rows_exit_and_output_path(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--type",
+                "antenna",
+            ]
+        )
+        == 1
+    )
+    assert capsys.readouterr().out == ""
+    target = tmp_path / "out.bed"
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--type",
+                "exon",
+                "--output",
+                str(target),
+            ]
+        )
+        == 0
+    )
+    assert target.read_text(encoding="utf-8") == "chr1\t99\t300\te1\t0\t+\n"
+
+
+def test_bed_cli_does_not_escape_formula_triggers(project_db, tmp_path, capsys):
+    """BED is a coordinate tool format: raw cells, unlike ``query`` TSV."""
+    project, db = project_db
+    record = _add_annotation(
+        project,
+        db,
+        tmp_path,
+        "formula.gff3",
+        "##gff-version 3\n=1+1\tncbi\tgene\t10\t20\t.\t+\t.\tID=g1\n",
+    )
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+            ]
+        )
+        == 0
+    )
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["=1+1", "9", "20", "g1", "0", "+"],
+    ]
+
+
+def test_bed_cli_longest_transcript_ranks_and_names(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "bed",
+        "--file-id",
+        record["file_id"],
+        "--longest-transcript",
+    ]
+    # CDS measure: t1 carries 152 bases of CDS (152 > 21), t2 wins only by span.
+    assert main(ours) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "t1", "0", "+"],
+    ]
+    # Span measure uses the transcript's own coordinates: t2 (301) beats t1.
+    assert main(ours + ["--measure", "mRNA"]) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "t2", "0", "+"],
+    ]
+    # protein_id of the winning transcript names the row instead of its id.
+    assert main(ours + ["--measure", "mRNA", "--name-attr", "protein_id"]) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "P2", "0", "+"],
+    ]
+
+
+def test_bed_cli_longest_transcript_without_mrnas_falls_back(
+    project_db, tmp_path, capsys
+):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "prok.gff3", GFF3_NO_MRNA_TEXT)
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--longest-transcript",
+            ]
+        )
+        == 0
+    )
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "9", "40", "cb1", "0", "+"],
+        ["chr1", "49", "80", "cb2b", "0", "+"],
+    ]
+
+
+def test_bed_cli_longest_transcript_on_gtf(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gtf", GTF_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "bed",
+        "--file-id",
+        record["file_id"],
+        "--longest-transcript",
+    ]
+    # GTF transcripts reference genes via the gene_id attribute; the gene row
+    # supplies chrom coordinates, score and strand.
+    assert main(ours) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "T1", "0", "+"],
+        ["chr2", "499", "700", "T3", "0", "-"],
+    ]
+    assert main(ours + ["--measure", "mRNA"]) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "T2", "0", "+"],
+        ["chr2", "499", "700", "T3", "0", "-"],
+    ]
+    assert main(ours + ["--name-attr", "protein_id"]) == 0
+    assert _bed_lines(capsys.readouterr().out) == [
+        ["chr1", "99", "300", "P1", "0", "+"],
+        ["chr2", "499", "700", "T3", "0", "-"],
+    ]
+
+
+def test_traversal_gff3_parents_and_children(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "parents",
+        "--file-id",
+        record["file_id"],
+    ]
+    # CDS/exon -> mRNA -> gene: the gene row is the terminal answer.
+    assert main(ours + ["--id", "e1"]) == 0
+    text = capsys.readouterr().out.strip().splitlines()
+    assert len(text) == 2 and text[1].split("\t")[7] == "g1"
+    assert main(ours + ["--id", "t1", "--until", "gene"]) == 0
+    assert capsys.readouterr().out.strip().splitlines()[1].split("\t")[7] == "g1"
+    # An unknown id yields no rows and fails when explicitly selected.
+    assert main(ours + ["--id", "nosuch"]) == 1
+    capsys.readouterr()
+    # children: direct mRNAs only; --type filters the reachable set in this
+    # mode (exons hang off the transcripts, so the gene's direct children
+    # have none), and --recursive covers all levels.
+    walk = main(
+        [
+            "--project",
+            str(project.root),
+            "features",
+            "children",
+            "--file-id",
+            record["file_id"],
+            "--id",
+            "g1",
+        ]
+    )
+    assert walk == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert [row.split("\t")[7] for row in rows] == ["t1", "t2"]
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "children",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "g1",
+                "--type",
+                "exon",
+            ]
+        )
+        == 1
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "children",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "g1",
+                "--type",
+                "exon",
+                "--recursive",
+            ]
+        )
+        == 0
+    )
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert [row.split("\t")[7] for row in rows] == ["e1"]
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "children",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "g1",
+                "--recursive",
+            ]
+        )
+        == 0
+    )
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    # Row order follows the flattened file; the recursive sweep visits all
+    # six child levels: mRNAs, then their exons and CDS segments.
+    assert [row.split("\t")[7] for row in rows] == [
+        "t1",
+        "c1a",
+        "c1b",
+        "e1",
+        "t2",
+        "c2",
+    ]
+
+
+def test_traversal_gtf_parents_and_children(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gtf", GTF_HIERARCHY_TEXT)
+    # parents --until gene resolves the gene row by its gene_id attribute.
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "parents",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "T1",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    document = json.loads(capsys.readouterr().out)["files"][0]
+    (row,) = document["rows"]
+    assert row["type"] == "gene" and row["gene_id"] == "G1" and row["id"] is None
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "children",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "G1",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    document = json.loads(capsys.readouterr().out)["files"][0]
+    assert [row["type"] for row in document["rows"]] == ["transcript", "transcript"]
+    assert {row["transcript_id"] for row in document["rows"]} == {"T1", "T2"}
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "children",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "G1",
+                "--recursive",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    document = json.loads(capsys.readouterr().out)["files"][0]
+    # Row order follows the flattened file; compare as a multiset.
+    assert sorted(row["type"] for row in document["rows"]) == [
+        "CDS",
+        "CDS",
+        "CDS",
+        "transcript",
+        "transcript",
+    ]
+    assert "T2" in {row["transcript_id"] for row in document["rows"]}
+    # An empty scrambled traversal also reports no-row failure explicitly.
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "parents",
+                "--file-id",
+                record["file_id"],
+                "--id",
+                "G_nonexistent",
+            ]
+        )
+        == 1
+    )
+
+
+def test_query_cli_attribute_filters(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "query",
+        "--file-id",
+        record["file_id"],
+    ]
+    assert main(ours + ["--attribute", "Name=g1"]) == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert [row.split("\t")[7] for row in rows] == ["g1"]
+    # Flattened keys short-circuit: ID/gene_id/transcript_id/parent columns
+    # carry decoded values, so regex matching lands there.
+    assert main(ours + ["--attribute", "ID~=^t\\d"]) == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert [row.split("\t")[7] for row in rows] == ["t1", "t2"]
+    # The repeated --attribute tokens join with OR; other column filters
+    # (e.g. --type) stay AND-composed with the attribute group.
+    assert main(ours + ["--attribute", "ID~=^t\\d", "--attribute", "ID~=^e1$"]) == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert sorted([row.split("\t")[7] for row in rows]) == ["e1", "t1", "t2"]
+    # A malformed token fails with validation guidance.
+    assert main(ours + ["--attribute", "nonsense"]) == 2
+
+
+def test_query_cli_attribute_filters_on_gtf(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gtf", GTF_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "query",
+        "--file-id",
+        record["file_id"],
+    ]
+    assert main(ours + ["--attribute", "gene_id=G1"]) == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    counts = [row.split("\t")[9] for row in rows]
+    # gene G1 row plus its transcripts/CDS rows carry the gene_id column key.
+    assert counts.count("G1") == 6
+    assert main(ours + ["--attribute", "protein_id~=P\\d"]) == 0
+    rows = capsys.readouterr().out.strip().splitlines()[1:]
+    assert len(rows) == 1 and rows[0].split("\t")[10] == "T1"
+
+
+def test_bins_cli_counts_and_density(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    ours = [
+        "--project",
+        str(project.root),
+        "features",
+        "bins",
+        "--file-id",
+        record["file_id"],
+    ]
+    assert main(ours) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines[0].split("\t") == [
+        "seqid",
+        "bin_start",
+        "bin_end",
+        "count",
+        "feature_start_min",
+        "feature_end_max",
+        "features_per_bp",
+    ]
+    # The default bin (100kb) puts both genes into their own first bins.
+    assert [row.split("\t") for row in lines[1:]] == [
+        ["chr1", "1", "100000", "1", "100", "300", "1e-05"],
+        ["chr2", "1", "100000", "1", "500", "700", "1e-05"],
+    ]
+    # Feature coordinates land in the 1-based bin that contains their start:
+    # --bin-size 100 puts chr1's three 100-starting features (gene g1 and the
+    # two mRNAs t1/t2) into bin 0, and chr2's g2 (start 500) into bin 4.
+    assert main(ours + ["--bin-size", "100", "--type", "gene", "--type", "mRNA"]) == 0
+    rows = [row.split("\t") for row in capsys.readouterr().out.strip().splitlines()[1:]]
+    assert rows == [
+        ["chr1", "1", "100", "3", "100", "400", "0.03"],
+        ["chr2", "401", "500", "1", "500", "700", "0.01"],
+    ]
+
+
+def test_bins_cli_json(project_db, tmp_path, capsys):
+    project, db = project_db
+    record = _add_annotation(project, db, tmp_path, "hier.gff3", GFF3_HIERARCHY_TEXT)
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bins",
+                "--file-id",
+                record["file_id"],
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    (document,) = json.loads(capsys.readouterr().out)["files"]
+    assert document["bin_size"] == 100_000 and document["returned"] == 2
+    assert document["bins"][0]["seqid"] == "chr1" and document["bins"][0]["count"] == 1
+    assert document["bins"][0]["features_per_bp"] == 1 / 100_000
+
+
+def test_bed_cli_longest_transcript_keeps_parentless_genes(
+    project_db, tmp_path, capsys
+):
+    """A gene with no transcripts at all is not emitted by --longest-transcript."""
+    project, db = project_db
+    record = _add_annotation(
+        project,
+        db,
+        tmp_path,
+        "hier-with-gaps.gff3",
+        GFF3_HIERARCHY_TEXT + "chr3\tncbi\tgene\t900\t950\t.\t+\t.\tID=g3\n",
+    )
+    assert (
+        main(
+            [
+                "--project",
+                str(project.root),
+                "features",
+                "bed",
+                "--file-id",
+                record["file_id"],
+                "--longest-transcript",
+            ]
+        )
+        == 0
+    )
+    chroms = [cells[0] for cells in _bed_lines(capsys.readouterr().out)]
+    assert "chr3" not in chroms
+    assert "chr1" in chroms and "chr2" not in chroms
