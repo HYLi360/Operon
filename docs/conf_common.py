@@ -41,12 +41,6 @@ from pathlib import Path
 
 from sphinx.errors import ConfigError
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib
-
-
 DOCS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DOCS_DIR.parent
 
@@ -85,8 +79,22 @@ def package_version() -> str:
     try:
         return _distribution_version("OperonDBS")
     except PackageNotFoundError:
-        with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
-            return tomllib.load(handle)["project"]["version"]
+        pass
+    # No installed package: derive from the git tag the way the build does
+    # (pyproject.toml no longer carries a literal version). ``get_version``
+    # also reads the ``PKG-INFO`` of unpacked sdist trees. Sphinx running
+    # without the package and without setuptools-scm means an author skipped
+    # both the editable install and the docs extra — fail with the fix named
+    # instead of deep inside the build.
+    try:
+        from setuptools_scm import get_version
+    except ModuleNotFoundError as exc:
+        raise ConfigError(
+            "cannot determine the Operon version: the package is not installed and "
+            "setuptools-scm is unavailable; install the package "
+            "(pip install -e '.[docs]') or setuptools-scm"
+        ) from exc
+    return get_version(root=str(REPO_ROOT), fallback_version="0.0.0")
 
 
 def source_constant(module: str, name: str) -> str:

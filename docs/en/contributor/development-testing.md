@@ -3,7 +3,7 @@
 ## Setup and test runs
 
 Install the repository checkout with the `dev` extra as described in [Installation](../getting-started/installation.md#install-from-the-repository); it adds pytest, Cython, and
-Sphinx. An editable install resolves `operon.__version__` from install-time metadata, so after every version bump in `pyproject.toml` re-run `pip install -e '.[dev]'` — otherwise the CLI/TUI keep displaying the previous version outside the checkout directory. Then:
+Sphinx. The application version derives from the git tag via setuptools-scm, and an editable install stamps the version it saw **at install time** into the metadata. Re-run `pip install -e '.[dev]'` after the derivation changes (new commits past a tag) — otherwise the CLI/TUI keep displaying the older version when invoked outside the checkout directory; `python -m setuptools_scm` previews the current derivation at any time. Then:
 
 ```bash
 python -m pytest
@@ -242,10 +242,10 @@ When changing the CLI, configuration fields, behavior, or storage layout, update
 | `tools.yaml` recipes, placeholders, or parsers | `docs/*/reference/recipe-*.md` |
 | Migrations, performance diagnostics, or compatibility boundaries | `docs/*/operations/` |
 
-Software versions, database schema versions, and metadata schema versions stated in the documentation must stay consistent with `pyproject.toml` and the code. Write current version markers in the Markdown sources as substitutions:
+Software versions, database schema versions, and metadata schema versions stated in the documentation must stay consistent with the code: the application version derives from the git tag via setuptools-scm, and the schema versions are module constants. Write current version markers in the Markdown sources as substitutions:
 
 ```text
 {{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
 ```
 
-`docs/conf_common.py` resolves them from `pyproject.toml` and the code constants at build time. Substitutions expand in paragraph text only, not inside code spans or fenced code blocks; examples there use `<version>` placeholders instead. Intentional historical pins stay literal: they either live on the allowlisted era-pinned pages under `docs/*/operations/` or carry an inline `<!-- version-pin -->` marker. `tests/unit/test_docs_versions.py` enforces the rule.
+`docs/conf_common.py` resolves them from the installed package metadata (falling back to the setuptools-scm derivation of the checkout) and the code constants at build time. Substitutions expand in paragraph text only, not inside code spans or fenced code blocks; examples there use `<version>` placeholders instead. Intentional historical pins stay literal: they either live on the allowlisted era-pinned pages under `docs/*/operations/` or carry an inline `<!-- version-pin -->` marker. `tests/unit/test_docs_versions.py` enforces the rule.

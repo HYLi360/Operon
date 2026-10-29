@@ -4,12 +4,12 @@ PyPI 分发名为 `OperonDBS`，因为 `operon` 分发名已属于另一个无�
 导入包名或命令名：用户安装 `OperonDBS`，在 Python 中导入 `operon`，并执行
 `operon` 命令。
 
-PEP 517 构建依赖仅包含 setuptools 与 Cython。
+PEP 517 构建依赖仅包含 setuptools、Cython 与 setuptools-scm。
 
 ## GitHub Actions 发布链路
 
 `.github/workflows/publish.yml` 只在 GitHub Release 正式发布时运行。它先验证 release
-tag 必须严格等于 `v<project.version>`，再构建：
+tag 严格等于 setuptools-scm 在该提交上推导出的版本（`v<version>`），再构建：
 
 - 一份源码分发包；
 - CPython 3.10-3.14 的 manylinux x86-64 wheel；
@@ -33,22 +33,26 @@ workflow 填 `publish.yml`，environment 填 `pypi`。GitHub environment 名称�
 
 ## 发布步骤
 
-1. 更新 `[project].version`；如有变化，同时更新代码中的 `SCHEMA_VERSION` /
-   `METADATA_SCHEMA_VERSION`。文档版本标记通过 `docs/conf_common.py` 的
+1. 主程序版本不再需要手工改动：`pyproject.toml` 声明 `dynamic = ["version"]`，版本由
+   setuptools-scm 从附注、GPG 签名的 `vX.Y.Z` tag 推导。如有变化，同时更新代码中的
+   `SCHEMA_VERSION` / `METADATA_SCHEMA_VERSION`。文档版本标记通过 `docs/conf_common.py` 的
    `myst_substitutions` 从这些唯一来源渲染，无需手工批量替换；
-   `tests/unit/test_docs_versions.py` 会拒绝 Markdown 源文件中硬编码的当前版本。
+   `tests/unit/test_docs_versions.py` 会拒绝 Markdown 源文件中硬编码的当前版本。因此准备
+   发布不再改变任何提交——曾经的版本 bump 提交，以及它曾引发的证据重做，一并消失。
 2. 运行 `scripts/release-preflight.sh` —— 一条命令、一个退出码，就是发布闸门：
-   全量 pytest 套件、两棵树语言的严格文档构建、`pyproject.toml` 版本与已安装元数据的
-   一致性、缺陷登记库（凡是 `fixed_in` 为本版本的记录都必须 `verified`、带
+   全量 pytest 套件、两棵树语言的严格文档构建、setuptools-scm 为本次检出推导的版本与已安装
+   元数据的一致性、缺陷登记库（凡是 `fixed_in` 为本版本的记录都必须 `verified`、带
    `fix_commit`，且该提交包含在当前树中），以及"你即将打 tag 的那个提交"的跨版本矩阵
    证据（`--run-matrix` 会把矩阵跑在闸门里；`--tag vX.Y.Z` 还会断言 create 出来的 tag
    是附注、已 GPG 签名、名为 `v<version>` 且指向 `HEAD`）。发布不再依赖谁记得住这些
    单个命令。
-3. 提交发布状态，并让 `v<project.version>` tag 指向该提交；不要复用仍指向旧软件包
-   元数据的 tag。
+3. 在发布提交上打 tag：`git tag -s -m "Operon vX.Y.Z" vX.Y.Z`。打 tag 不改变任何提交，因此
+   该提交已录得的绿色 `test` run 与矩阵证据，以及读取同一检出的 preflight，在打 tag 之后
+   仍然有效。不要复用仍指向旧软件包元数据的 tag。
 4. 等待该 tag 对应提交的 `test` workflow 全部通过。若该 run 缺失、被取消或为红，
    发布链路会拒绝构建与上传；先用 `gh run rerun <run-id>` 给它补一轮，再发布。
 5. 从该 tag 创建 GitHub Release；如仍需检查发布说明可先保存为 draft，确认后发布。
 6. 在 PyPI 的 `OperonDBS` 项目页核对文件与元数据。
 
-PyPI 同一版本的文件不可覆盖。如果错误内容已经发布，应递增项目版本，而不是尝试替换。
+PyPI 同一版本的文件不可覆盖。如果错误内容已经发布，应该发布新版本：修复内容，在新发布提交上
+打 `vX.Y.(Z+1)` tag 再发布——绝不替换或移动已发布的版本。

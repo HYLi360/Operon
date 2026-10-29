@@ -1,10 +1,13 @@
 [build-system]
-requires = ["setuptools>=77", "Cython>=3.0"]
+requires = ["setuptools>=77", "Cython>=3.0", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "OperonDBS"
-version = "0.10.2"
+# The application version authority is the annotated, GPG-signed git tag,
+# derived at build time by setuptools-scm ([tool.setuptools_scm] below);
+# `python -m setuptools_scm` previews the derived value in a checkout.
+dynamic = ["version"]
 description = "Operon the Database System: Archive, Quality-Control, Organize, Analyze and Release Your Bio-Data"
 authors = [
     { name = "hyli360", email = "lihuanyu2003@gmail.com" }
@@ -47,12 +50,14 @@ test = [
     "pytest-xdist>=3.8",
     "ruff>=0.16.9,<0.17.0",
     "setuptools>=77",
+    "setuptools-scm>=8",
     "textual>=8.0",
 ]
 docs = [
     "Sphinx>=7.4,<9",
     "myst-parser>=4.0,<5",
     "sphinx-rtd-theme>=3.0,<4",
+    "setuptools-scm>=8",
     "tomli>=2.0; python_version < '3.11'",
 ]
 dev = [
@@ -65,6 +70,7 @@ dev = [
     "pytest-xdist>=3.8",
     "ruff>=0.16.9,<0.17.0",
     "setuptools>=77",
+    "setuptools-scm>=8",
     "Sphinx>=7.4,<9",
     "sphinx-rtd-theme>=3.0,<4",
     "tomli>=2.0; python_version < '3.11'",
@@ -72,6 +78,16 @@ dev = [
 
 [project.scripts]
 operon = "operon.cli:main"
+
+[tool.setuptools_scm]
+# Environments without tag history — PR matrix legs, shallow clones — fall
+# back to this placeholder instead of failing their build; release artifacts
+# are built from the tagged commit, where the derivation is exact.
+fallback_version = "0.0.0"
+# Runtime versions come from installed metadata, so no version file exists:
+# keep the future no-source-tree-write default in force and silence the
+# transition warning (setuptools-scm 10).
+write_to_source = false
 
 [tool.setuptools.packages.find]
 include = ["operon*"]

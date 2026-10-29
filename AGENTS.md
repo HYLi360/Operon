@@ -331,12 +331,16 @@ schema 版本的位置，**必须**使用替换占位符（`{{ operon_version }}
 
 所有当前版本号都有单一、权威的来源：
 
-- 主程序：`pyproject.toml`
+- 主程序：git tag（setuptools-scm 在构建时据此推导；`pyproject.toml` 只声明
+  `dynamic = ["version"]`，不再持有字面版本号。发布 = 在目标提交上打附注、经 GPG 签名的
+  `vX.Y.Z` tag，不再需要版本 bump 提交；检出内用 `python -m setuptools_scm` 预览推导值）
 - 数据库 schema：`operon/database.py` 的 `SCHEMA_VERSION`
 - 元数据 schema：`operon/schema.py` 的 `METADATA_SCHEMA_VERSION`
 
-因此直接改动它们来 bump 是安全的。需额外注意：若已在 `pyproject.toml` bump 主程序版本号，**必须**
-先执行一次 `python -m pip install -e .`，然后再运行测试套件。
+无 tag 历史的浅检出（例如 PR 的 matrix 腿）回退到 `[tool.setuptools_scm] fallback_version`，
+不会因此构建失败。editable 安装的元数据在安装时定型：打上新 tag 后，希望 `operon -v` 反映
+最新推导值时重新执行一次 `python -m pip install -e .`（在干净的 tag 提交上，推导值与旧
+静态值一致，通常无需重装）。
 
 运行 `operon -v` 或 `operon --version` 可查看：
 

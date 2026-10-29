@@ -13,7 +13,7 @@
 #   scripts/release-preflight.sh --ci --tag vX   # the subset a CI runner asserts
 #
 # Checks
-#   1. version  pyproject.toml's version, and the installed metadata for it
+#   1. version  the setuptools-scm-derived version (git tags), and the installed metadata for it
 #   2. tests    python -m pytest (the coverage gate lives in its configuration)
 #   3. docs     sphinx-build -W --keep-going for docs/en and docs/zh
 #   4. registry tests/unit/test_defect_registry.py, plus: every record whose
@@ -56,22 +56,19 @@ pass() { printf '  ok    %s\n' "$1"; }
 skip() { printf '  skip  %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n        %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-pyproject_version=$("$PYTHON" - <<'PY' 2>/dev/null || true
-import tomllib
-with open("pyproject.toml", "rb") as handle:
-    print(tomllib.load(handle)["project"]["version"])
-PY
-)
-[ -n "$pyproject_version" ] || pyproject_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -1)
-[ -n "$version" ] || version=$pyproject_version
+version_explicit=$([ -n "$version" ] && echo 1 || true)
+scm_version=$("$PYTHON" -m setuptools_scm 2>/dev/null || true)
+[ -n "$version" ] || version=$scm_version
 
 check "version"
-if [ -z "$pyproject_version" ]; then
-  fail "pyproject.toml" "no [project] version found"
-elif [ "$version" != "$pyproject_version" ]; then
-  fail "version under test" "--version $version but pyproject.toml says $pyproject_version"
+if [ -z "$scm_version" ]; then
+  fail "version derivation" "python -m setuptools_scm produced nothing — reinstall the dev extra (pip install -e '.[dev]') so setuptools-scm is available to $PYTHON"
+elif [ -n "$tag" ] && [ "$version" != "${tag#v}" ]; then
+  fail "version under test" "--tag $tag but setuptools-scm derives $version — place the tag on the commit being tested (a clean tree on the tag peels to HEAD)"
+elif [ -n "$version_explicit" ] && [ "$version" != "$scm_version" ]; then
+  fail "version under test" "--version $version but setuptools-scm derives $scm_version"
 else
-  pass "pyproject.toml says $pyproject_version"
+  pass "setuptools-scm derives $scm_version"
 fi
 installed=$("$PYTHON" - "$ROOT" <<'PY' 2>/dev/null || true
 import importlib.metadata as md, json, pathlib, sys
@@ -91,10 +88,10 @@ if [ -z "$installed" ]; then
   skip "OperonDBS is not installed for $PYTHON (editable metadata not checked)"
 elif [ "$installed" = "OTHER" ]; then
   skip "the installed OperonDBS belongs to another checkout (editable metadata not checked)"
-elif [ "$installed" = "$pyproject_version" ]; then
+elif [ "$installed" = "$version" ]; then
   pass "installed metadata matches ($installed)"
 else
-  fail "installed metadata" "$installed != $pyproject_version — re-run: pip install -e '.[dev]'"
+  fail "installed metadata" "$installed != $version — re-run: pip install -e '.[dev]'"
 fi
 
 if [ "$use_tests" = 1 ]; then

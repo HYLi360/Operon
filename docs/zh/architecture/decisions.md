@@ -40,7 +40,7 @@
 | GATE-2 | TUI 的每次写入都是"预览 → 等价 CLI 命令 → 显式确认"，调用与 CLI 相同的核心函数，并留下相同的 `changes`/`workflow_runs` provenance。 | `operon/tui/actions.py`、TUI 屏幕测试 |
 | GATE-3 | 手动覆盖（`curate`、强制 `set-state`）一律记入 `changes` 审计表。 | `operon/lifecycle.py`、审计测试 |
 | GATE-4 | 覆盖率与分支覆盖率门禁、Codacy 政策与贡献流程。 | [开发与测试](../contributor/development-testing.md) |
-| GATE-5 | 版本号有单一来源（`pyproject.toml`、`operon/database.py`、`operon/schema.py`），且**不得**在文档里写字面值——使用 `{{ operon_version }}`、`{{ db_schema }}`、`{{ metadata_schema }}` 替换引用。 | `tests/unit/test_docs_versions.py` |
+| GATE-5 | 版本号有单一来源（主程序版本由 setuptools-scm 从附注、GPG 签名的 git tag 推导；schema 版本常量在 `operon/database.py` 与 `operon/schema.py` 中），且**不得**在文档里写字面值——使用 `{{ operon_version }}`、`{{ db_schema }}`、`{{ metadata_schema }}` 替换引用。 | `tests/unit/test_docs_versions.py` |
 | GATE-6 | 缺陷先登记再修复，一次提交修一个缺陷，且每条 `fixed`/`verified` 记录至少列出一条带 `@pytest.mark.bug("ODR-XXXX")` 的回归测试。 | `scripts/defects.sh`、`tests/unit/test_defect_registry.py` |
 | GATE-7 | TUI 与机读出口的性能预算。 | [性能预算](../operations/performance-budgets.md)——政策已定，基线待测 |
 | GATE-8 | TUI 改动不得引入 Textual 竞态缺陷：断言 UI 状态前必须谓词等待；框架级 guard 的修理走最小覆盖；改动后本地以随机序至少跑 3 次 TUI 测试模块。 | [开发与测试](../contributor/development-testing.md)；缺陷 ODR-0027、ODR-0050、ODR-0051、ODR-0055、ODR-0056、ODR-0057 |

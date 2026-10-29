@@ -2,7 +2,7 @@
 
 ## 安装与测试执行
 
-仓库检出后按[安装](../getting-started/installation.md)的说明以 `dev` extra 安装（包含 pytest、Cython 与 Sphinx）。editable 安装的 `operon.__version__` 取自安装时生成的元数据，因此每次在 `pyproject.toml` 中 bump 版本后都要重新执行 `pip install -e '.[dev]'`——否则在检出目录之外运行时 CLI/TUI 会显示旧版本号。然后：
+仓库检出后按[安装](../getting-started/installation.md)的说明以 `dev` extra 安装（包含 pytest、Cython 与 Sphinx）。主程序版本由 setuptools-scm 从 git tag 推导，editable 安装把**安装时刻**的推导值写进元数据：当推导值变化（tag 之后有新提交）时，重新执行 `pip install -e '.[dev]'`，否则在检出目录之外运行时 CLI/TUI 会显示旧的推导值；`python -m setuptools_scm` 可随时预览当前推导值。然后：
 
 ```bash
 python -m pytest
@@ -184,14 +184,14 @@ Textual 的消息循环让若干失败变成时序相关：widget 还没挂载�
 | `tools.yaml` recipe、占位符或 parser | `docs/*/reference/recipe-*.md` |
 | 迁移、性能诊断或兼容边界 | `docs/*/operations/` |
 
-文档中的软件版本、database schema 和 metadata schema 必须与 `pyproject.toml` 及代码保持一致。当前版本标记在 Markdown
+文档中的软件版本、database schema 和 metadata schema 必须与代码保持一致：主程序版本由 setuptools-scm 从 git tag 推导，schema 版本是模块常量。当前版本标记在 Markdown
 源文件中写作替换引用：
 
 ```text
 {{ operon_version }}  {{ db_schema }}  {{ metadata_schema }}
 ```
 
-由 `docs/conf_common.py` 在构建时从 `pyproject.toml` 与代码常量解析。替换只在正文段落中展开，行内代码与代码块内不生效，
+由 `docs/conf_common.py` 在构建时从已安装包的元数据（包未安装时退回 checkout 的 setuptools-scm 推导值）与代码常量解析。替换只在正文段落中展开，行内代码与代码块内不生效，
 这些位置的示例改用 `<version>` 占位符。有意保留的历史版本号保持字面量：要么位于 `docs/*/operations/`
 下 allowlist 中的时代绑定页面，要么在行内附带 `<!-- version-pin -->` 标记。`tests/unit/test_docs_versions.py`
 负责强制此规则。

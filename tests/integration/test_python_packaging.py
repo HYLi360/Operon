@@ -75,11 +75,25 @@ def _build_sdist(output: Path) -> Path:
     return output / filename
 
 
+def _dist_version() -> str:
+    """The version the build names the distribution with.
+
+    Read with a reload under the machine-wide build lock (like every other
+    metadata lookup in this module) so a sibling xdist worker's egg_info
+    rewrite never yields a half-stale value.
+    """
+    import importlib
+
+    with _sdist_build_lock():
+        importlib.reload(operon)
+        return operon.__version__
+
+
 @pytest.mark.filterwarnings("ignore:pkg_resources is deprecated:DeprecationWarning")
 def test_sdist_contains_complete_project_source(tmp_path):
     pyproject = _load_pyproject()
     name = re.sub(r"[-_.]+", "-", pyproject["project"]["name"]).lower()
-    version = pyproject["project"]["version"]
+    version = _dist_version()
     archive = _build_sdist(tmp_path)
     assert archive.name == f"{name}-{version}.tar.gz"
     prefix = f"{name}-{version}/"
@@ -132,13 +146,14 @@ def _package_name(requirement: str) -> str:
 @pytest.mark.parametrize(
     ("section", "required", "marker", "forbidden", "only"),
     [
-        # Building the Cython extension needs setuptools + Cython, nothing else.
+        # Building the Cython extension needs setuptools + Cython, and the
+        # version derivation hook adds setuptools-scm; nothing else belongs.
         (
             "build-system",
             ("cython>=3.0", "setuptools>="),
             None,
             (),
-            ("cython", "setuptools"),
+            ("cython", "setuptools", "setuptools-scm"),
         ),
         # Cython is a build/test tool: it must never become a runtime dependency.
         ("dependencies", (), None, ("cython",), ()),
@@ -184,18 +199,30 @@ def test_pyproject_dependency_contract(section, required, marker, forbidden, onl
 
 
 @pytest.mark.bug("ODR-17")
-def test_pyproject_is_the_single_application_version_source():
+def test_version_source_is_the_tag_and_installed_metadata():
+    """The application version stays single-sourced under setuptools-scm.
+
+    pyproject.toml declares ``dynamic = ["version"]`` and lets setuptools-scm
+    derive the value from the git tag; there is no literal version left to
+    drift against, ``operon.__version__`` keeps resolving through installed
+    metadata, and ``__init__.py`` carries no hardcoded version string.
+    """
     pyproject = _load_pyproject()
+    assert "version" not in pyproject["project"]
+    assert "version" in pyproject["project"]["dynamic"]
+    assert "setuptools-scm" in " ".join(pyproject["build-system"]["requires"])
+
     # operon.__version__ is read from installed metadata at import time; from
     # this checkout it resolves to the in-tree OperonDBS.egg-info, which a
     # sibling xdist worker's sdist build rewrites in place.  Reload under the
     # machine-wide build lock so the assertion never observes a half-rewritten
     # (or site-packages-shadowed) metadata lookup frozen at import time.
     import importlib
+    import importlib.metadata
 
     with _sdist_build_lock():
         importlib.reload(operon)
-        assert pyproject["project"]["version"] == operon.__version__
+        assert operon.__version__ == importlib.metadata.version("OperonDBS")
     assert 'version = "' not in (ROOT / "operon" / "__init__.py").read_text(
         encoding="utf-8"
     )

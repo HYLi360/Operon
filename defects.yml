@@ -412,7 +412,7 @@ defects:
   fix_commit: '49b802d46b0548c02fcea62a828d06ac4fe9c756'
   fixed_in: '0.8.3'
   regression_tests:
-    - tests/integration/test_python_packaging.py::test_pyproject_is_the_single_application_version_source
+    - tests/integration/test_python_packaging.py::test_version_source_is_the_tag_and_installed_metadata
 - id: ODR-18
   title: 'Array analysis swallows progress-callback cancellations as per-file failures'
   reported: '2026-09-18'
