@@ -2688,7 +2688,7 @@ defects:
     redirected file opened in a spreadsheet evaluates the cell.
   severity: 'low'
   component: 'cli'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     operon/cli/_features.py writes each query cell with csv.writer verbatim. A GFF3 whose seqid is
     '=1+1' lands in the TSV as a formula cell, while sequence_qc.tsv and schema.write_tsv already escape
@@ -2698,7 +2698,7 @@ defects:
     established for the report writers. Non-string values pass through untouched, so numeric columns
     keep their exact bytes.
   fix_commit: 'dca100b9f2cd227b18ba1d6ffc24427401976654'
-  fixed_in: '0.10.1'
+  fixed_in: '0.10.2'
   regression_tests:
     - tests/unit/test_feature_index.py::test_query_cli_escapes_formula_trigger_cells
 - id: ODR-84
@@ -2708,7 +2708,7 @@ defects:
   affected: 'all releases; any ingest of a .bam file and the import wizard preflight for such rows'
   severity: 'medium'
   component: 'files'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Ingesting a BGZF .bam detects format=bam but detect_compression() reads the BGZF magic and records
     compression=gzip, so canonical_filename() appends .gz and the archive is named
@@ -2722,7 +2722,7 @@ defects:
     records an outer layer. stored_content_sha256() no longer decompresses intrinsic-format rows,
     restoring preflight/ingest agreement; legacy rows keep their recorded path and compression.
   fix_commit: '9c9a148317ac9238d4e1a9b6a23b33adee752469'
-  fixed_in: null
+  fixed_in: '0.10.2'
   regression_tests:
     - tests/unit/test_archive_compression.py::test_bam_intrinsic_compression_stays_none_and_preflight_compares_stored_bytes
     - tests/unit/test_import_wizard_edges.py::test_preflight_does_not_decompress_legacy_bam_rows
@@ -2743,7 +2743,7 @@ defects:
     same-second analyze-detach-<stamp>.log and leave duplicated per-file analysis_jobs rows.
   severity: 'medium'
   component: 'tools'
-  status: 'fixed'
+  status: 'verified'
   reproduction: |
     Manual repro on master 3d1cf82 (observed twice): temp project with one plain FASTA and a slow fake
     batch tool (sleep 4). `operon analyze --analysis slow_batch --detach` twice: both children detached
@@ -2764,7 +2764,7 @@ defects:
     marked ODR-85 pin duplicate refusal (live pid), stale takeover, the crash-before-publish window, and
     the CLI surface.
   fix_commit: '85a7c3793b2ef186948c4fadf0bcb3012001d9a3'
-  fixed_in: null
+  fixed_in: '0.10.2'
   regression_tests:
     - tests/unit/test_cli_edges.py::test_detach_refuses_concurrent_same_recipe_spawn
     - tests/unit/test_cli_edges.py::test_detach_takes_over_a_stale_marker_and_publishes_pid
