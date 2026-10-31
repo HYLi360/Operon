@@ -2768,3 +2768,33 @@ defects:
   regression_tests:
     - tests/unit/test_cli_edges.py::test_detach_refuses_concurrent_same_recipe_spawn
     - tests/unit/test_cli_edges.py::test_detach_takes_over_a_stale_marker_and_publishes_pid
+- id: ODR-97
+  title: |
+    A remote Slurm job whose client connection dies mid-poll is left running, and a retry of the same
+    file then shares its output paths
+  reported: '2026-10-31'
+  introduced_in: '9a357972d02f5f913d01518ae241511523501216'
+  affected: |
+    operon/execution.py SSHExecutor._run_via_slurm: the poll loop cancels the submitted job on timeout
+    and on KeyboardInterrupt, but any other exception — a dropped connection (SSHException, EOFError)
+    while polling squeue — propagates without cancellation, so the remote job keeps running unmanaged.
+    Because the archive-style recipes write the raw intermediate to ${work_dir}/../<file_id>.hits.asn
+    next to the artifact, a retry of the same file starts a second writer against the same intermediate
+    and output paths.
+  severity: 'medium'
+  component: 'execution'
+  status: 'confirmed'
+  reproduction: |
+    Production SSH+Slurm deployment, 2026-10-31: run WF_20261031_110017 (analysis_jobs 2196, entity
+    ANN_000529, a 621 MB / 1.58M-sequence input whose step 1 runs for hours) failed at 12:29 with
+    `EOFError` while polling; its Slurm job 59659 kept RUNNING for over 3 hours until it was manually
+    scancelled together with the retry's job 59670, both of which had been writing
+    analysis/rpsblast_cdd/ANN_000529/FIL_001587.hits.asn. Code reading pins the gap: the poll loop's
+    only cancellation sites are the deadline and KeyboardInterrupt branches.
+  disposition: |
+    Open. Fix candidate: cancel the submitted job (best-effort, cancellation recorded in details)
+    whenever the poll loop exits abnormally, mirroring the timeout path, so a connection-loss failure
+    cannot orphan cluster jobs or cross-write a retry's intermediates.
+  fix_commit: null
+  fixed_in: null
+  regression_tests: []
